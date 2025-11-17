@@ -137,7 +137,7 @@
     "@types/debug": "^4.1.12",
     "@types/graceful-fs": "^4.1.9",
     "@types/jest": "^30.0.0",
-    "@types/node": "20.6.2",
+    "@types/node": "24.10.1",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18.2.21",
     "@types/react-dom": "^19.2.3",
