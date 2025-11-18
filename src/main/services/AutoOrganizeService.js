@@ -1,5 +1,7 @@
 const { logger } = require('../../shared/logger');
 const path = require('path');
+const fs = require('fs').promises;
+const { app } = require('electron');
 
 /**
  * AutoOrganizeService - Handles automatic file organization
@@ -28,19 +30,21 @@ class AutoOrganizeService {
 
   /**
    * Automatically organize files based on their analysis
-   * Uses suggestions behind the scenes for improved accuracy
+   * Uses batched suggestions for improved performance
    */
   async organizeFiles(files, smartFolders, options = {}) {
     const {
       confidenceThreshold = this.thresholds.autoApprove,
       defaultLocation = 'Documents',
       preserveNames = false,
+      batchSize = 10, // Process files in batches of 10
     } = options;
 
     logger.info('[AutoOrganize] Starting automatic organization', {
       fileCount: files.length,
       smartFolderCount: smartFolders.length,
       confidenceThreshold,
+      batchSize,
     });
 
     const results = {
@@ -50,30 +54,279 @@ class AutoOrganizeService {
       operations: [],
     };
 
-    // Process each file
+    // Separate files with and without analysis
+    const filesWithAnalysis = [];
+    const filesWithoutAnalysis = [];
+
     for (const file of files) {
-      try {
-        // Skip files without analysis
-        if (!file.analysis) {
-          logger.warn(
-            '[AutoOrganize] Skipping file without analysis:',
-            file.name,
+      if (!file.analysis) {
+        filesWithoutAnalysis.push(file);
+      } else {
+        filesWithAnalysis.push(file);
+      }
+    }
+
+    // Process files without analysis first (they use the default folder)
+    if (filesWithoutAnalysis.length > 0) {
+      await this._processFilesWithoutAnalysis(
+        filesWithoutAnalysis,
+        smartFolders,
+        defaultLocation,
+        results,
+      );
+    }
+
+    // Process files with analysis in batches
+    if (filesWithAnalysis.length > 0) {
+      // Split into batches for efficient processing
+      const batches = [];
+      for (let i = 0; i < filesWithAnalysis.length; i += batchSize) {
+        batches.push(filesWithAnalysis.slice(i, i + batchSize));
+      }
+
+      logger.info('[AutoOrganize] Processing files in batches', {
+        totalFiles: filesWithAnalysis.length,
+        batchCount: batches.length,
+        batchSize,
+      });
+
+      // Process each batch
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+
+        logger.debug('[AutoOrganize] Processing batch', {
+          batchIndex: batchIndex + 1,
+          totalBatches: batches.length,
+          filesInBatch: batch.length,
+        });
+
+        try {
+          // Get batch suggestions - this is the key optimization
+          const batchSuggestions =
+            await this.suggestionService.getBatchSuggestions(
+              batch,
+              smartFolders,
+            );
+
+          if (
+            !batchSuggestions.success ||
+            !batchSuggestions.groups ||
+            batchSuggestions.groups.length === 0
+          ) {
+            // Fallback to individual processing if batch fails
+            logger.warn(
+              '[AutoOrganize] Batch suggestions failed or empty, falling back to individual processing',
+            );
+            await this._processFilesIndividually(
+              batch,
+              smartFolders,
+              {
+                confidenceThreshold,
+                defaultLocation,
+                preserveNames,
+              },
+              results,
+            );
+            continue;
+          }
+
+          // Process batch results
+          await this._processBatchResults(
+            batchSuggestions,
+            batch,
+            {
+              confidenceThreshold,
+              defaultLocation,
+              preserveNames,
+            },
+            results,
           );
-          results.failed.push({
+        } catch (error) {
+          logger.error('[AutoOrganize] Batch processing failed', {
+            batchIndex: batchIndex + 1,
+            error: error.message,
+          });
+
+          // Fallback to individual processing for this batch
+          await this._processFilesIndividually(
+            batch,
+            smartFolders,
+            {
+              confidenceThreshold,
+              defaultLocation,
+              preserveNames,
+            },
+            results,
+          );
+        }
+      }
+    }
+
+    // Log summary
+    logger.info('[AutoOrganize] Organization complete', {
+      organized: results.organized.length,
+      needsReview: results.needsReview.length,
+      failed: results.failed.length,
+    });
+
+    return results;
+  }
+
+  /**
+   * Process batch suggestion results
+   */
+  async _processBatchResults(batchSuggestions, files, options, results) {
+    const { confidenceThreshold, defaultLocation, preserveNames } = options;
+
+    // Create a map of files by name for quick lookup
+    const fileMap = new Map(files.map((f) => [f.name, f]));
+
+    for (const group of batchSuggestions.groups) {
+      for (const fileWithSuggestion of group.files) {
+        const file = fileMap.get(fileWithSuggestion.name) || fileWithSuggestion;
+        const suggestion = fileWithSuggestion.suggestion;
+        const confidence = group.confidence || 0;
+
+        if (!suggestion) {
+          // Use fallback if no suggestion
+          const fallbackDestination = this.getFallbackDestination(
             file,
-            reason: 'No analysis available',
+            [],
+            defaultLocation,
+          );
+
+          results.organized.push({
+            file,
+            destination: fallbackDestination,
+            confidence: 0.3,
+            method: 'batch-fallback',
+          });
+
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination: fallbackDestination,
           });
           continue;
         }
 
-        // Get suggestion for the file
-        const suggestion = await this.suggestionService.getSuggestionsForFile(
-          file,
-          smartFolders,
-          { includeAlternatives: false },
-        );
+        // Determine action based on confidence
+        if (confidence >= confidenceThreshold) {
+          // High confidence - organize automatically
+          const destination = this.buildDestinationPath(
+            file,
+            suggestion,
+            defaultLocation,
+            preserveNames,
+          );
 
-        if (!suggestion.success || !suggestion.primary) {
+          results.organized.push({
+            file,
+            suggestion,
+            destination,
+            confidence,
+            method: 'batch-automatic',
+          });
+
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination,
+          });
+
+          // CRITICAL FIX #3a: Record feedback with proper error handling
+          // Record feedback for learning (non-blocking but with proper error handling)
+          this.suggestionService
+            .recordFeedback(file, suggestion, true)
+            .catch((err) => {
+              // Log error but don't fail the operation - batch processing continues
+              logger.warn(
+                '[AutoOrganize] Failed to record feedback (non-critical):',
+                {
+                  file: file.path,
+                  error: err.message,
+                },
+              );
+            });
+        } else if (confidence >= this.thresholds.requireReview) {
+          // Medium confidence - needs review
+          results.needsReview.push({
+            file,
+            suggestion,
+            alternatives: fileWithSuggestion.alternatives,
+            confidence,
+            explanation: `Batch suggestion with ${Math.round(confidence * 100)}% confidence`,
+          });
+        } else {
+          // Low confidence - use fallback
+          const fallbackDestination = this.getFallbackDestination(
+            file,
+            [],
+            defaultLocation,
+          );
+
+          results.organized.push({
+            file,
+            destination: fallbackDestination,
+            confidence,
+            method: 'batch-low-confidence-fallback',
+          });
+
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination: fallbackDestination,
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Process files individually as fallback
+   */
+  async _processFilesIndividually(files, smartFolders, options, results) {
+    const { confidenceThreshold, defaultLocation, preserveNames } = options;
+
+    for (const file of files) {
+      try {
+        // Get suggestion for the file
+        let suggestion;
+        try {
+          suggestion = await this.suggestionService.getSuggestionsForFile(
+            file,
+            smartFolders,
+            { includeAlternatives: false },
+          );
+        } catch (suggestionError) {
+          logger.error('[AutoOrganize] Failed to get suggestion for file:', {
+            file: file.name,
+            error: suggestionError.message,
+          });
+
+          // Use fallback logic on suggestion failure
+          const fallbackDestination = this.getFallbackDestination(
+            file,
+            smartFolders,
+            defaultLocation,
+          );
+
+          results.organized.push({
+            file,
+            destination: fallbackDestination,
+            confidence: 0.2,
+            method: 'individual-suggestion-error-fallback',
+          });
+
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination: fallbackDestination,
+          });
+          continue;
+        }
+
+        if (!suggestion || !suggestion.success || !suggestion.primary) {
           // Use fallback logic from original system
           const fallbackDestination = this.getFallbackDestination(
             file,
@@ -85,7 +338,7 @@ class AutoOrganizeService {
             file,
             destination: fallbackDestination,
             confidence: 0.3,
-            method: 'fallback',
+            method: 'individual-fallback',
           });
 
           results.operations.push({
@@ -114,7 +367,7 @@ class AutoOrganizeService {
             suggestion: primary,
             destination,
             confidence,
-            method: 'automatic',
+            method: 'individual-automatic',
           });
 
           results.operations.push({
@@ -123,8 +376,20 @@ class AutoOrganizeService {
             destination,
           });
 
-          // Record feedback for learning
-          this.suggestionService.recordFeedback(file, primary, true);
+          // CRITICAL FIX #3b: Wrap recordFeedback in try-catch to prevent batch failure
+          // Record feedback for learning with proper error handling
+          try {
+            await this.suggestionService.recordFeedback(file, primary, true);
+          } catch (feedbackError) {
+            // Log error but continue processing - feedback recording is non-critical
+            logger.warn(
+              '[AutoOrganize] Failed to record feedback (non-critical):',
+              {
+                file: file.path,
+                error: feedbackError.message,
+              },
+            );
+          }
         } else if (confidence >= this.thresholds.requireReview) {
           // Medium confidence - needs review
           results.needsReview.push({
@@ -146,7 +411,7 @@ class AutoOrganizeService {
             file,
             destination: fallbackDestination,
             confidence,
-            method: 'low-confidence-fallback',
+            method: 'individual-low-confidence-fallback',
           });
 
           results.operations.push({
@@ -156,25 +421,265 @@ class AutoOrganizeService {
           });
         }
       } catch (error) {
-        logger.error('[AutoOrganize] Failed to process file:', {
-          file: file.name,
+        // Bug #33: Include file path, batch ID, timestamp in error messages
+        const fileErrorDetails = {
+          fileName: file.name,
+          filePath: file.path,
+          fileSize: file.size,
+          batchId: `organize-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: new Date().toISOString(),
           error: error.message,
-        });
+          errorStack: error.stack,
+        };
+
+        logger.error(
+          '[AutoOrganize] Failed to process file:',
+          fileErrorDetails,
+        );
+
         results.failed.push({
           file,
           reason: error.message,
+          filePath: file.path,
+          timestamp: fileErrorDetails.timestamp,
+          batchId: fileErrorDetails.batchId,
         });
       }
     }
+  }
 
-    // Log summary
-    logger.info('[AutoOrganize] Organization complete', {
-      organized: results.organized.length,
-      needsReview: results.needsReview.length,
-      failed: results.failed.length,
+  /**
+   * Process files without analysis (use default folder)
+   */
+  async _processFilesWithoutAnalysis(
+    files,
+    smartFolders,
+    defaultLocation,
+    results,
+  ) {
+    logger.info('[AutoOrganize] Processing files without analysis', {
+      count: files.length,
     });
 
-    return results;
+    // Find or create default folder once for all files
+    let defaultFolder = smartFolders.find(
+      (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized',
+    );
+
+    if (!defaultFolder) {
+      defaultFolder = await this._createDefaultFolder(smartFolders);
+
+      if (!defaultFolder) {
+        // Could not create default folder, mark all files as failed
+        for (const file of files) {
+          results.failed.push({
+            file,
+            reason: 'No analysis available and failed to create default folder',
+          });
+        }
+        return;
+      }
+    }
+
+    // Process all files without analysis in batch
+    for (const file of files) {
+      const destination = path.join(
+        defaultFolder.path || `${defaultLocation}/${defaultFolder.name}`,
+        file.name,
+      );
+
+      results.organized.push({
+        file,
+        destination,
+        confidence: 0.1,
+        method: 'no-analysis-default-batch',
+      });
+
+      results.operations.push({
+        type: 'move',
+        source: file.path,
+        destination,
+      });
+    }
+  }
+
+  /**
+   * Create default folder for unanalyzed files
+   */
+  async _createDefaultFolder(smartFolders) {
+    logger.warn(
+      '[AutoOrganize] No default folder found, creating emergency fallback',
+    );
+
+    try {
+      // CRITICAL FIX: Validate documentsDir exists and is accessible
+      const documentsDir = app.getPath('documents');
+
+      if (!documentsDir || typeof documentsDir !== 'string') {
+        throw new Error('Invalid documents directory path from Electron');
+      }
+
+      // CRITICAL FIX (BUG #4): Enhanced path validation with UNC path detection
+      // Prevent path traversal attacks including UNC paths on Windows (\\server\share)
+
+      // Step 1: Check for UNC paths which can bypass security checks on Windows
+      // UNC paths start with \\ or // followed by server name
+      const isUNCPath = (p) => {
+        if (!p || typeof p !== 'string') return false;
+        return p.startsWith('\\\\') || p.startsWith('//');
+      };
+
+      if (isUNCPath(documentsDir)) {
+        throw new Error(
+          `Security violation: UNC paths not allowed in documents directory. ` +
+            `Detected UNC path: ${documentsDir}`,
+        );
+      }
+
+      // Step 2: Sanitize folder path components to prevent directory traversal
+      const sanitizedBaseName = 'StratoSort'.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const sanitizedFolderName = 'Uncategorized'.replace(
+        /[^a-zA-Z0-9_-]/g,
+        '_',
+      );
+
+      // Step 3: Use path.resolve to normalize path and prevent traversal
+      const defaultFolderPath = path.resolve(
+        documentsDir,
+        sanitizedBaseName,
+        sanitizedFolderName,
+      );
+
+      // Step 4: Additional UNC path check on resolved path
+      if (isUNCPath(defaultFolderPath)) {
+        throw new Error(
+          `Security violation: UNC path detected after resolution. ` +
+            `Path ${defaultFolderPath} is a UNC path which is not allowed`,
+        );
+      }
+
+      // Step 5: Verify the resolved path is actually inside documents directory
+      // This prevents path traversal even if path components contain ".."
+      const resolvedDocumentsDir = path.resolve(documentsDir);
+
+      // On Windows, normalize path separators for consistent comparison
+      const normalizedDefaultPath = defaultFolderPath
+        .replace(/\\/g, '/')
+        .toLowerCase();
+      const normalizedDocumentsDir = resolvedDocumentsDir
+        .replace(/\\/g, '/')
+        .toLowerCase();
+
+      if (!normalizedDefaultPath.startsWith(normalizedDocumentsDir)) {
+        throw new Error(
+          `Security violation: Attempted path traversal detected. ` +
+            `Path ${defaultFolderPath} is outside documents directory ${resolvedDocumentsDir}`,
+        );
+      }
+
+      // Step 6: Additional validation - check for suspicious path patterns
+      const suspiciousPatterns = [
+        /\.\./, // Parent directory reference
+        /\.\.[\\/]/, // Parent with separator
+        /[\\/]\.\./, // Separator with parent
+        /^[a-zA-Z]:/, // Different drive letter (if not expected)
+        /\0/, // Null bytes
+        /[<>:"|?*]/, // Invalid Windows filename chars in unexpected positions
+      ];
+
+      for (const pattern of suspiciousPatterns) {
+        if (
+          pattern.test(defaultFolderPath.substring(resolvedDocumentsDir.length))
+        ) {
+          throw new Error(
+            `Security violation: Suspicious path pattern detected. ` +
+              `Path contains potentially dangerous characters or sequences`,
+          );
+        }
+      }
+
+      logger.info(
+        '[AutoOrganize] Path validation passed for emergency default folder',
+        {
+          documentsDir: resolvedDocumentsDir,
+          defaultFolderPath,
+          sanitized: true,
+          uncPathCheck: 'passed',
+          traversalCheck: 'passed',
+        },
+      );
+
+      // HIGH PRIORITY FIX #6: Add fs.lstat check to detect and reject symbolic links
+      // Check if directory already exists before creating
+      // This prevents race conditions and permission errors
+      let dirExists = false;
+      let isSymbolicLink = false;
+      try {
+        // Use lstat instead of stat to detect symbolic links
+        const stats = await fs.lstat(defaultFolderPath);
+        dirExists = stats.isDirectory();
+        isSymbolicLink = stats.isSymbolicLink();
+
+        // HIGH PRIORITY FIX #6: Reject symbolic links for security
+        if (isSymbolicLink) {
+          throw new Error(
+            `Security violation: Symbolic links are not allowed for safety reasons. ` +
+              `Path ${defaultFolderPath} is a symbolic link.`,
+          );
+        }
+      } catch (error) {
+        // Directory doesn't exist, which is fine - we'll create it
+        if (error.code !== 'ENOENT') {
+          // Some other error (permission denied, symbolic link rejection, etc.)
+          throw error;
+        }
+      }
+
+      if (!dirExists) {
+        // Ensure directory exists with proper error handling
+        await fs.mkdir(defaultFolderPath, { recursive: true });
+        logger.info(
+          '[AutoOrganize] Created emergency default folder at:',
+          defaultFolderPath,
+        );
+      } else {
+        logger.info(
+          '[AutoOrganize] Emergency default folder already exists at:',
+          defaultFolderPath,
+        );
+      }
+
+      // Create default folder object
+      const defaultFolder = {
+        id: 'emergency-default-' + Date.now(),
+        name: 'Uncategorized',
+        path: defaultFolderPath,
+        description: 'Emergency fallback folder for files without analysis',
+        keywords: [],
+        isDefault: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Add to smartFolders array for this session
+      smartFolders.push(defaultFolder);
+
+      logger.info(
+        '[AutoOrganize] Emergency default folder configured at:',
+        defaultFolderPath,
+      );
+
+      return defaultFolder;
+    } catch (error) {
+      logger.error(
+        '[AutoOrganize] Failed to create emergency default folder:',
+        {
+          error: error.message,
+          stack: error.stack,
+        },
+      );
+
+      return null;
+    }
   }
 
   /**
@@ -227,22 +732,49 @@ class AutoOrganizeService {
                 destination,
               });
 
-              // Record positive feedback
+              // CRITICAL FIX: Await recordFeedback to prevent floating promises
+              // This ensures feedback is recorded before continuing with batch operations
+              // and allows proper error handling if feedback recording fails
               if (file.suggestion) {
-                this.suggestionService.recordFeedback(
-                  file,
-                  file.suggestion,
-                  true,
-                );
+                try {
+                  await this.suggestionService.recordFeedback(
+                    file,
+                    file.suggestion,
+                    true,
+                  );
+                } catch (feedbackError) {
+                  // Log feedback errors but don't fail the operation
+                  logger.warn(
+                    '[AutoOrganize] Failed to record feedback for file:',
+                    {
+                      file: file.path,
+                      error: feedbackError.message,
+                    },
+                  );
+                  // Continue with file operation even if feedback fails
+                }
               }
             } catch (fileError) {
-              logger.error('[AutoOrganize] Failed to process file in batch:', {
-                file: file.path,
+              // Bug #33: Include file path, batch ID, timestamp in error messages
+              const errorDetails = {
+                filePath: file.path,
+                fileName: file.name || path.basename(file.path),
+                batchId: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                timestamp: new Date().toISOString(),
                 error: fileError.message,
-              });
+                errorStack: fileError.stack,
+              };
+
+              logger.error(
+                '[AutoOrganize] Failed to process file in batch:',
+                errorDetails,
+              );
+
               groupFailures.push({
                 file,
                 error: fileError.message,
+                filePath: file.path,
+                timestamp: errorDetails.timestamp,
               });
             }
           }
@@ -277,14 +809,28 @@ class AutoOrganizeService {
           });
         }
       } catch (groupError) {
-        logger.error('[AutoOrganize] Failed to process group in batch:', {
+        // Bug #33: Include batch ID, timestamp, and detailed context in error messages
+        const groupErrorDetails = {
           folder: group.folder,
+          folderPath: group.path,
+          fileCount: group.files ? group.files.length : 0,
+          batchId: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: new Date().toISOString(),
           error: groupError.message,
-        });
+          errorStack: groupError.stack,
+        };
+
+        logger.error(
+          '[AutoOrganize] Failed to process group in batch:',
+          groupErrorDetails,
+        );
+
         results.failed.push({
           group: group.folder,
           files: group.files,
           error: groupError.message,
+          timestamp: groupErrorDetails.timestamp,
+          batchId: groupErrorDetails.batchId,
         });
       }
     }

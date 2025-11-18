@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { Card, Button } from '../ui';
 
-function OrganizationSuggestions({
+const OrganizationSuggestions = memo(function OrganizationSuggestions({
   file,
   suggestions,
   onAccept,
@@ -24,6 +24,31 @@ function OrganizationSuggestions({
     explanation,
   } = suggestions;
 
+  // CRITICAL FIX #1: Validate confidence to prevent NaN/undefined in SVG calculations
+  // Ensures strokeDasharray always gets a valid numeric value
+  const safeConfidence = Number.isFinite(confidence) ? confidence : 0;
+
+  // SECURITY FIX #7: Comprehensive XSS prevention in folder names
+  // React automatically escapes text content when using {}, but we add defense-in-depth:
+  // 1. Type validation to prevent object injection
+  // 2. Remove script-injection characters and control characters
+  // 3. Prevent empty strings that could cause layout issues
+  const sanitizeFolderName = (name) => {
+    if (typeof name !== 'string') return 'Unknown';
+
+    // Remove dangerous characters for defense-in-depth:
+    // - HTML tags: < > (prevent <script> injection)
+    // - Quotes: ' " ` (prevent attribute injection)
+    // - Null bytes: \0 (prevent string termination attacks)
+    // - Control characters: \u0000-\u001F (prevent terminal injection if logged)
+    const sanitized = name
+      // eslint-disable-next-line no-control-regex
+      .replace(/[<>'"`\u0000-\u001F]/g, '')
+      .trim();
+
+    return sanitized || 'Unknown';
+  };
+
   const getConfidenceColor = (conf) => {
     if (conf >= 0.8) return 'text-stratosort-success';
     if (conf >= 0.5) return 'text-stratosort-warning';
@@ -36,12 +61,15 @@ function OrganizationSuggestions({
     return 'Possible Match';
   };
 
-  const handleStrategySelect = (strategyId) => {
-    setSelectedStrategy(strategyId);
-    if (onStrategyChange) {
-      onStrategyChange(file, strategyId);
-    }
-  };
+  const handleStrategySelect = useCallback(
+    (strategyId) => {
+      setSelectedStrategy(strategyId);
+      if (onStrategyChange) {
+        onStrategyChange(file, strategyId);
+      }
+    },
+    [file, onStrategyChange],
+  );
 
   return (
     <div className="space-y-4">
@@ -53,8 +81,9 @@ function OrganizationSuggestions({
               <h4 className="font-medium text-system-gray-900">
                 Suggested Organization
               </h4>
-              <span className={`text-sm ${getConfidenceColor(confidence)}`}>
-                {getConfidenceLabel(confidence)} ({Math.round(confidence * 100)}
+              <span className={`text-sm ${getConfidenceColor(safeConfidence)}`}>
+                {getConfidenceLabel(safeConfidence)} (
+                {Math.round(safeConfidence * 100)}
                 %)
               </span>
             </div>
@@ -63,10 +92,12 @@ function OrganizationSuggestions({
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-system-gray-600">Folder:</span>
                 <span className="font-medium text-stratosort-blue">
-                  {primary.folder}
+                  {sanitizeFolderName(primary.folder)}
                 </span>
                 {primary.path && (
-                  <span className="text-system-gray-500">({primary.path})</span>
+                  <span className="text-system-gray-500">
+                    ({sanitizeFolderName(primary.path)})
+                  </span>
                 )}
               </div>
 
@@ -122,13 +153,13 @@ function OrganizationSuggestions({
                   stroke="currentColor"
                   strokeWidth="4"
                   fill="none"
-                  strokeDasharray={`${2 * Math.PI * 28 * confidence} ${2 * Math.PI * 28}`}
-                  className={getConfidenceColor(confidence)}
+                  strokeDasharray={`${2 * Math.PI * 28 * safeConfidence} ${2 * Math.PI * 28}`}
+                  className={getConfidenceColor(safeConfidence)}
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-sm font-medium">
-                  {Math.round(confidence * 100)}%
+                  {Math.round(safeConfidence * 100)}%
                 </span>
               </div>
             </div>
@@ -163,7 +194,7 @@ function OrganizationSuggestions({
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">
-                          {alt.folder}
+                          {sanitizeFolderName(alt.folder)}
                         </span>
                         <span
                           className={`text-xs ${getConfidenceColor(alt.confidence || 0)}`}
@@ -236,7 +267,7 @@ function OrganizationSuggestions({
       )}
     </div>
   );
-}
+});
 
 const suggestionShape = PropTypes.shape({
   folder: PropTypes.string,

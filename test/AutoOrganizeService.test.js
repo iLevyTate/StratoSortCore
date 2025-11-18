@@ -291,8 +291,12 @@ describe('AutoOrganizeService', () => {
 
         const result = await service.organizeFiles(files, mockSmartFolders);
 
-        expect(result.failed).toHaveLength(1);
-        expect(result.failed[0].reason).toBe('No analysis available');
+        // Files without analysis should go to default folder, not fail
+        expect(result.organized).toHaveLength(1);
+        expect(result.failed).toHaveLength(0);
+        // Should have low confidence and use no-analysis-default method
+        expect(result.organized[0].confidence).toBe(0.1);
+        expect(result.organized[0].method).toBe('no-analysis-default');
       });
 
       test('handles suggestion service errors', async () => {
@@ -300,6 +304,7 @@ describe('AutoOrganizeService', () => {
           {
             name: 'error.pdf',
             path: '/downloads/error.pdf',
+            extension: '.pdf', // FIXED: Added extension property for fallback logic
             analysis: { category: 'document' },
           },
         ];
@@ -310,8 +315,13 @@ describe('AutoOrganizeService', () => {
 
         const result = await service.organizeFiles(files, mockSmartFolders);
 
-        expect(result.failed).toHaveLength(1);
-        expect(result.failed[0].reason).toBe('Service unavailable');
+        // IMPROVED BEHAVIOR: Now catches suggestion service errors and uses fallback
+        // instead of failing completely. This ensures resilience when suggestion
+        // service is unavailable.
+        expect(result.organized).toHaveLength(1);
+        expect(result.failed).toHaveLength(0);
+        expect(result.organized[0].method).toBe('suggestion-error-fallback');
+        expect(result.organized[0].confidence).toBe(0.2);
       });
 
       test('continues processing after individual file errors', async () => {

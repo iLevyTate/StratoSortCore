@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import {
   FiHome,
   FiFolder,
@@ -6,11 +6,13 @@ import {
   FiBarChart2,
   FiSettings,
 } from 'react-icons/fi';
-import FilesTab from './tabs/FilesTab';
-import OrganizeTab from './tabs/OrganizeTab';
-import SmartFoldersTab from './tabs/SmartFoldersTab';
-import AnalyticsTab from './tabs/AnalyticsTab';
-import SettingsTab from './tabs/SettingsTab';
+import { LazyLoadingSpinner } from '../LoadingSkeleton';
+
+const FilesTab = lazy(() => import('./tabs/FilesTab'));
+const OrganizeTab = lazy(() => import('./tabs/OrganizeTab'));
+const SmartFoldersTab = lazy(() => import('./tabs/SmartFoldersTab'));
+const AnalyticsTab = lazy(() => import('./tabs/AnalyticsTab'));
+const SettingsTab = lazy(() => import('./tabs/SettingsTab'));
 
 const TABS = [
   {
@@ -141,7 +143,17 @@ export default function TabContainer() {
       {/* Tab Content */}
       <main className="flex-1 overflow-auto bg-base-200">
         <div className="container mx-auto p-6">
-          {ActiveComponent && <ActiveComponent />}
+          {ActiveComponent && (
+            <Suspense
+              fallback={
+                <LazyLoadingSpinner
+                  message={`Loading ${TABS.find((t) => t.id === activeTab)?.label}...`}
+                />
+              }
+            >
+              <ActiveComponent />
+            </Suspense>
+          )}
         </div>
       </main>
 

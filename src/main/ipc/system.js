@@ -1,10 +1,4 @@
 const { withErrorLogging } = require('./withErrorLogging');
-// let z;
-// try {
-//   z = require('zod');
-// } catch {
-//   z = null;
-// }
 
 function registerSystemIpc({
   ipcMain,

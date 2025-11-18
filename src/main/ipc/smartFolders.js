@@ -198,6 +198,42 @@ function registerSmartFoldersIpc({
             error: 'Folders must be an array',
             errorCode: 'INVALID_INPUT',
           };
+
+        // Ensure all folder paths exist as physical directories
+        for (const folder of folders) {
+          if (folder.path) {
+            try {
+              const stats = await fs.stat(folder.path);
+              if (!stats.isDirectory()) {
+                return {
+                  success: false,
+                  error: `Path "${folder.path}" exists but is not a directory`,
+                  errorCode: 'INVALID_PATH',
+                };
+              }
+            } catch (error) {
+              if (error.code === 'ENOENT') {
+                // Directory doesn't exist, create it
+                try {
+                  await fs.mkdir(folder.path, { recursive: true });
+                  logger.info(
+                    '[SMART-FOLDERS] Created directory:',
+                    folder.path,
+                  );
+                } catch (createError) {
+                  return {
+                    success: false,
+                    error: `Failed to create directory "${folder.path}": ${createError.message}`,
+                    errorCode: 'DIRECTORY_CREATION_FAILED',
+                  };
+                }
+              } else {
+                throw error;
+              }
+            }
+          }
+        }
+
         const originalFolders = [...getCustomFolders()];
         try {
           setCustomFolders(folders);
@@ -229,6 +265,42 @@ function registerSmartFoldersIpc({
             error: 'Folders must be an array',
             errorCode: 'INVALID_INPUT',
           };
+
+        // Ensure all folder paths exist as physical directories
+        for (const folder of folders) {
+          if (folder.path) {
+            try {
+              const stats = await fs.stat(folder.path);
+              if (!stats.isDirectory()) {
+                return {
+                  success: false,
+                  error: `Path "${folder.path}" exists but is not a directory`,
+                  errorCode: 'INVALID_PATH',
+                };
+              }
+            } catch (error) {
+              if (error.code === 'ENOENT') {
+                // Directory doesn't exist, create it
+                try {
+                  await fs.mkdir(folder.path, { recursive: true });
+                  logger.info(
+                    '[SMART-FOLDERS] Created directory:',
+                    folder.path,
+                  );
+                } catch (createError) {
+                  return {
+                    success: false,
+                    error: `Failed to create directory "${folder.path}": ${createError.message}`,
+                    errorCode: 'DIRECTORY_CREATION_FAILED',
+                  };
+                }
+              } else {
+                throw error;
+              }
+            }
+          }
+        }
+
         const originalFolders = [...getCustomFolders()];
         try {
           setCustomFolders(folders);

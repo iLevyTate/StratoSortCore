@@ -7,6 +7,7 @@ const { app, dialog, BrowserWindow } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const { ERROR_TYPES } = require('../../shared/constants');
+const { logger } = require('../../shared/logger');
 
 class ErrorHandler {
   constructor() {
@@ -34,7 +35,10 @@ class ErrorHandler {
       this.isInitialized = true;
       await this.log('info', 'ErrorHandler initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize ErrorHandler:', error);
+      logger.error('Failed to initialize ErrorHandler:', {
+        error: error.message,
+        stack: error.stack,
+      });
     }
   }
 
@@ -154,7 +158,11 @@ class ErrorHandler {
    * Handle critical errors that may crash the app
    */
   async handleCriticalError(message, error) {
-    console.error('CRITICAL ERROR:', message, error);
+    logger.error('[CRITICAL ERROR]', {
+      message,
+      error: error?.toString(),
+      stack: error?.stack,
+    });
 
     // Log to file
     await this.log('critical', message, {
@@ -207,7 +215,7 @@ class ErrorHandler {
    */
   async log(level, message, data = {}) {
     if (!this.isInitialized) {
-      console.log(`[${level.toUpperCase()}] ${message}`, data);
+      logger.log(level, `[${level.toUpperCase()}] ${message}`, data);
       return;
     }
 
@@ -222,7 +230,7 @@ class ErrorHandler {
       const logLine = JSON.stringify(logEntry) + '\n';
       await fs.appendFile(this.currentLogFile, logLine);
     } catch (error) {
-      console.error('Failed to write to log file:', error);
+      logger.error('Failed to write to log file:', { error: error.message });
     }
   }
 
@@ -248,7 +256,7 @@ class ErrorHandler {
 
       return errors;
     } catch (error) {
-      console.error('Failed to read error log:', error);
+      logger.error('Failed to read error log:', { error: error.message });
       return [];
     }
   }
@@ -274,7 +282,7 @@ class ErrorHandler {
         }
       }
     } catch (error) {
-      console.error('Failed to cleanup logs:', error);
+      logger.error('Failed to cleanup logs:', { error: error.message });
     }
   }
 }

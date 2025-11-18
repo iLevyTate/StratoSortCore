@@ -6,6 +6,7 @@
 const { Ollama } = require('ollama');
 const { logger } = require('../../shared/logger');
 const { DEFAULT_AI_MODELS } = require('../../shared/constants');
+const { fetchWithRetry } = require('../utils/ollamaApiRetry');
 
 class ModelVerifier {
   constructor() {
@@ -25,12 +26,39 @@ class ModelVerifier {
 
   async checkOllamaConnection() {
     try {
-      const response = await fetch(`${this.ollamaHost}/api/tags`);
+      let response;
+      try {
+        response = await fetchWithRetry(
+          `${this.ollamaHost}/api/tags`,
+          {},
+          {
+            operation: 'Check Ollama connection',
+            maxRetries: 3,
+            initialDelay: 1000,
+            maxDelay: 4000,
+          },
+        );
+      } catch (fetchError) {
+        logger.warn(
+          '[ModelVerifier] Network error checking Ollama connection after retries:',
+          fetchError,
+        );
+        return {
+          connected: false,
+          error: `Network error: ${fetchError.message}`,
+          suggestion: 'Make sure Ollama is running. Use: ollama serve',
+        };
+      }
+
       if (response.ok) {
         return { connected: true };
       }
       return { connected: false, error: 'HTTP error: ' + response.status };
     } catch (error) {
+      logger.error(
+        '[ModelVerifier] Unexpected error checking connection:',
+        error,
+      );
       return {
         connected: false,
         error: error.message,
@@ -287,27 +315,41 @@ class ModelVerifier {
   }
 
   async getSystemStatus() {
-    const connection = await this.checkOllamaConnection();
-    const models = await this.verifyEssentialModels();
-    const functionality = await this.testModelFunctionality();
+    try {
+      const connection = await this.checkOllamaConnection();
+      const models = await this.verifyEssentialModels();
+      const functionality = await this.testModelFunctionality();
 
-    return {
-      timestamp: new Date().toISOString(),
-      connection,
-      models,
-      functionality,
-      overall: {
-        healthy:
-          connection.connected && models.success && functionality.success,
-        issues: [
-          ...(!connection.connected ? ['Ollama not connected'] : []),
-          ...(models.missingModels.length > 0
-            ? [`Missing models: ${models.missingModels.join(', ')}`]
-            : []),
-          ...(!functionality.success ? ['Model functionality issues'] : []),
-        ],
-      },
-    };
+      return {
+        timestamp: new Date().toISOString(),
+        connection,
+        models,
+        functionality,
+        overall: {
+          healthy:
+            connection.connected && models.success && functionality.success,
+          issues: [
+            ...(!connection.connected ? ['Ollama not connected'] : []),
+            ...(models.missingModels.length > 0
+              ? [`Missing models: ${models.missingModels.join(', ')}`]
+              : []),
+            ...(!functionality.success ? ['Model functionality issues'] : []),
+          ],
+        },
+      };
+    } catch (error) {
+      logger.error('[ModelVerifier] Failed to get system status:', error);
+      return {
+        timestamp: new Date().toISOString(),
+        connection: { connected: false, error: error.message },
+        models: { success: false, error: error.message, missingModels: [] },
+        functionality: { success: false, error: error.message, tests: [] },
+        overall: {
+          healthy: false,
+          issues: [`System status check failed: ${error.message}`],
+        },
+      };
+    }
   }
 }
 

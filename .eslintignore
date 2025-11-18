@@ -5,6 +5,7 @@ coverage/
 assets/
 tmpUserData/
 release/build/
+Documents/
 
 **/*.min.js
 **/*.bundle.js

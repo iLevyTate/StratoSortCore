@@ -35,12 +35,16 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
         for (const kw of folder.keywords)
           if (lowerFileName.includes(String(kw).toLowerCase())) score += 4;
       }
-      if (folder.path) {
-        const parts = folder.path
-          .toLowerCase()
-          .split(/[\\/]/)
-          .filter((p) => p.length > 2);
-        for (const part of parts) if (lowerFileName.includes(part)) score += 3;
+      // FIXED Bug #25: Validate split() result before access to prevent crashes
+      if (folder.path && typeof folder.path === 'string') {
+        const pathParts = folder.path.toLowerCase().split(/[\\/]/);
+        // Validate that split returned an array
+        if (Array.isArray(pathParts)) {
+          const parts = pathParts.filter((p) => p && p.length > 2);
+          for (const part of parts) {
+            if (lowerFileName.includes(part)) score += 3;
+          }
+        }
       }
       if (folder.category) {
         for (const word of folder.category.toLowerCase().split(/[\s_-]+/)) {
@@ -219,17 +223,31 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'leave',
     ],
   };
+  // FIXED Bug #27: Add early exit optimization when perfect match found
   const categoryScores = {};
+  let maxScore = 0;
+  let bestCategory = null;
+
   for (const [category, keywords] of Object.entries(patterns)) {
     let score = 0;
-    for (const keyword of keywords)
-      if (lowerFileName.includes(keyword)) score += keyword.length;
-    if (score > 0) categoryScores[category] = score;
+    for (const keyword of keywords) {
+      if (lowerFileName.includes(keyword)) {
+        score += keyword.length;
+      }
+    }
+    if (score > 0) {
+      categoryScores[category] = score;
+      // Track best category during iteration for early exit
+      if (score > maxScore) {
+        maxScore = score;
+        bestCategory = category;
+      }
+    }
   }
-  if (Object.keys(categoryScores).length > 0) {
-    return Object.keys(categoryScores).reduce((a, b) =>
-      categoryScores[a] > categoryScores[b] ? a : b,
-    );
+
+  // Early exit: if we found a category, return it
+  if (bestCategory) {
+    return bestCategory;
   }
 
   const extensionCategories = {
@@ -280,7 +298,83 @@ function getIntelligentKeywords(fileName, extension) {
 }
 
 function safeSuggestedName(fileName, extension) {
-  return fileName.replace(extension, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  // CRITICAL FIX: Comprehensive input sanitization to prevent file system issues
+
+  // Strip extension, sanitize the base name, then add extension back
+  let nameWithoutExt = fileName.replace(extension, '');
+
+  // CRITICAL FIX: Handle reserved Windows file names
+  const reservedNames = [
+    'CON',
+    'PRN',
+    'AUX',
+    'NUL',
+    'COM1',
+    'COM2',
+    'COM3',
+    'COM4',
+    'COM5',
+    'COM6',
+    'COM7',
+    'COM8',
+    'COM9',
+    'LPT1',
+    'LPT2',
+    'LPT3',
+    'LPT4',
+    'LPT5',
+    'LPT6',
+    'LPT7',
+    'LPT8',
+    'LPT9',
+  ];
+
+  const upperName = nameWithoutExt.toUpperCase().trim();
+  if (reservedNames.includes(upperName)) {
+    nameWithoutExt = nameWithoutExt + '_file';
+  }
+
+  // CRITICAL FIX: Handle leading dots (hidden files on Unix-like systems)
+  // and prevent empty names
+  if (!nameWithoutExt || nameWithoutExt.trim().length === 0) {
+    nameWithoutExt = 'unnamed_file';
+  }
+
+  // Remove leading/trailing dots and spaces
+  nameWithoutExt = nameWithoutExt
+    .trim()
+    .replace(/^\.+/, '')
+    .replace(/\.+$/, '');
+
+  // If stripping dots results in empty name, use default
+  if (!nameWithoutExt || nameWithoutExt.length === 0) {
+    nameWithoutExt = 'unnamed_file';
+  }
+
+  // CRITICAL FIX: Sanitize invalid characters (comprehensive)
+  // Windows: < > : " / \ | ? *
+  // Unix: /
+  // Also remove control characters
+  const sanitized = nameWithoutExt
+    // eslint-disable-next-line no-control-regex
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .replace(/\s+/g, '_') // Replace spaces with underscores
+    .replace(/_+/g, '_') // Collapse multiple underscores
+    .replace(/^_+/, '') // Remove leading underscores
+    .replace(/_+$/, ''); // Remove trailing underscores
+
+  // Final fallback if name is empty after sanitization
+  const finalName = sanitized || 'unnamed_file';
+
+  // CRITICAL FIX: Ensure name doesn't exceed filesystem limits (255 chars typical)
+  const maxLength = 200; // Leave room for extension and path components
+  const truncatedName =
+    finalName.length > maxLength
+      ? finalName.substring(0, maxLength)
+      : finalName;
+
+  // Always include extension to prevent files from becoming unopenable
+  return truncatedName + extension;
 }
 
 module.exports = {

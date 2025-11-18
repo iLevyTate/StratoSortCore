@@ -4,6 +4,8 @@ import { Card, Button } from '../ui';
 import OrganizationSuggestions from './OrganizationSuggestions';
 import BatchOrganizationSuggestions from './BatchOrganizationSuggestions';
 import OrganizationPreview from './OrganizationPreview';
+// HIGH PRIORITY FIX #8: Use GlobalErrorBoundary for better error handling and reporting
+import GlobalErrorBoundary from '../GlobalErrorBoundary';
 
 /**
  * SmartOrganizer - Simplified, intuitive interface for file organization
@@ -90,12 +92,20 @@ function SmartOrganizer({
     }));
 
     // Record feedback for learning
-    window.electronAPI.suggestions.recordFeedback(file, suggestion, true);
+    window.electronAPI.suggestions
+      .recordFeedback(file, suggestion, true)
+      .catch((error) => {
+        console.error('Failed to record feedback:', error);
+      });
   };
 
   const handleRejectSuggestion = (file, suggestion) => {
     // Record feedback for learning
-    window.electronAPI.suggestions.recordFeedback(file, suggestion, false);
+    window.electronAPI.suggestions
+      .recordFeedback(file, suggestion, false)
+      .catch((error) => {
+        console.error('Failed to record feedback:', error);
+      });
   };
 
   const handleConfirmOrganization = () => {
@@ -265,27 +275,33 @@ function SmartOrganizer({
             </Card>
           )}
 
+          {/* HIGH PRIORITY FIX #8: Wrap OrganizationSuggestions with GlobalErrorBoundary */}
+          {/* This provides comprehensive error handling with better error reporting and auto-recovery */}
           {/* File Suggestions */}
           {files.length === 1 ? (
-            <OrganizationSuggestions
-              file={files[0]}
-              suggestions={suggestions[files[0].path]}
-              onAccept={handleAcceptSuggestion}
-              onReject={handleRejectSuggestion}
-            />
+            <GlobalErrorBoundary>
+              <OrganizationSuggestions
+                file={files[0]}
+                suggestions={suggestions[files[0].path]}
+                onAccept={handleAcceptSuggestion}
+                onReject={handleRejectSuggestion}
+              />
+            </GlobalErrorBoundary>
           ) : (
-            <BatchOrganizationSuggestions
-              batchSuggestions={batchSuggestions}
-              onAcceptStrategy={(strategy) => {
-                // Apply strategy to all files
-                console.log('Applying strategy:', strategy);
-                setCurrentStep('preview');
-              }}
-              onCustomizeGroup={(groupIndex, group) => {
-                console.log('Customizing group:', groupIndex, group);
-              }}
-              onRejectAll={onCancel}
-            />
+            <GlobalErrorBoundary>
+              <BatchOrganizationSuggestions
+                batchSuggestions={batchSuggestions}
+                onAcceptStrategy={(strategy) => {
+                  // Apply strategy to all files
+                  console.log('Applying strategy:', strategy);
+                  setCurrentStep('preview');
+                }}
+                onCustomizeGroup={(groupIndex, group) => {
+                  console.log('Customizing group:', groupIndex, group);
+                }}
+                onRejectAll={onCancel}
+              />
+            </GlobalErrorBoundary>
           )}
 
           <div className="flex justify-between pt-4">

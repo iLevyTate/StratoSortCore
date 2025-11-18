@@ -1,5 +1,4 @@
 const fs = require('fs').promises;
-// const path = require('path');
 const pdf = require('pdf-parse');
 const sharp = require('sharp');
 const tesseract = require('node-tesseract-ocr');
@@ -9,6 +8,7 @@ const XLSX = require('xlsx-populate');
 const AdmZip = require('adm-zip');
 
 const { FileProcessingError } = require('../errors/AnalysisError');
+const { logger } = require('../../shared/logger');
 
 // Memory management constants
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB max file size
@@ -156,9 +156,10 @@ async function extractTextFromXlsx(filePath) {
           // Fixed: Limit rows to prevent memory exhaustion
           const rowsToProcess = Math.min(values.length, MAX_XLSX_ROWS);
           if (values.length > MAX_XLSX_ROWS) {
-            console.warn(
-              `[XLSX] Sheet has ${values.length} rows, limiting to ${MAX_XLSX_ROWS}`,
-            );
+            logger.warn('[XLSX] Sheet row limit applied', {
+              totalRows: values.length,
+              limit: MAX_XLSX_ROWS,
+            });
           }
 
           for (let i = 0; i < rowsToProcess; i++) {

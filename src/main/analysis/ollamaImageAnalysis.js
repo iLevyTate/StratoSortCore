@@ -6,6 +6,9 @@ const {
   loadOllamaConfig,
   getOllamaClient,
 } = require('../ollamaUtils');
+const { buildOllamaOptions } = require('../services/PerformanceService');
+const { globalDeduplicator } = require('../utils/llmOptimization');
+const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const {
   AI_DEFAULTS,
   SUPPORTED_IMAGE_EXTENSIONS,
@@ -107,17 +110,41 @@ Analyze this image:`;
       getOllamaVisionModel() ||
       cfg.selectedVisionModel ||
       AppConfig.ai.imageAnalysis.defaultModel;
-    const client = await getOllamaClient();
-    const response = await client.generate({
+
+    // Use deduplicator to prevent duplicate LLM calls for identical images
+    const deduplicationKey = globalDeduplicator.generateKey({
+      image: imageBase64.slice(0, 1000), // Use first 1000 chars as signature
       model: modelToUse,
-      prompt,
-      images: [imageBase64],
-      options: {
-        temperature: AppConfig.ai.imageAnalysis.temperature,
-        num_predict: AppConfig.ai.imageAnalysis.maxTokens,
-      },
-      format: 'json',
+      fileName: originalFileName,
+      folders: smartFolders.map((f) => f.name).join(','),
     });
+
+    const client = await getOllamaClient();
+    const perfOptions = await buildOllamaOptions('vision');
+    const response = await globalDeduplicator.deduplicate(
+      deduplicationKey,
+      () =>
+        generateWithRetry(
+          client,
+          {
+            model: modelToUse,
+            prompt,
+            images: [imageBase64],
+            options: {
+              temperature: AppConfig.ai.imageAnalysis.temperature,
+              num_predict: AppConfig.ai.imageAnalysis.maxTokens,
+              ...perfOptions,
+            },
+            format: 'json',
+          },
+          {
+            operation: `Image analysis for ${originalFileName}`,
+            maxRetries: 3,
+            initialDelay: 1000,
+            maxDelay: 4000,
+          },
+        ),
+    );
 
     if (response.response) {
       try {
@@ -234,8 +261,12 @@ async function analyzeImageFile(filePath, smartFolders = []) {
   try {
     const connectionCheck = await modelVerifier.checkOllamaConnection();
     if (!connectionCheck.connected) {
-      console.warn(
-        `[ANALYSIS-FALLBACK] Ollama unavailable (${connectionCheck.error}). Using filename-based analysis for image ${fileName}.`,
+      logger.warn(
+        '[ANALYSIS-FALLBACK] Ollama unavailable, using filename-based analysis',
+        {
+          fileName,
+          error: connectionCheck.error,
+        },
       );
       const intelligentCategory = getIntelligentImageCategory(
         fileName,
@@ -258,7 +289,9 @@ async function analyzeImageFile(filePath, smartFolders = []) {
       };
     }
   } catch (error) {
-    console.error('[IMAGE] Pre-flight verification failed:', error.message);
+    logger.error('[IMAGE] Pre-flight verification failed', {
+      error: error.message,
+    });
     // Continue with fallback
     const intelligentCategory = getIntelligentImageCategory(
       fileName,
@@ -283,7 +316,23 @@ async function analyzeImageFile(filePath, smartFolders = []) {
 
   try {
     // First, check if file exists and has content
-    const stats = await fs.stat(filePath);
+    let stats;
+    try {
+      stats = await fs.stat(filePath);
+    } catch (statError) {
+      // CRITICAL FIX: Handle ENOENT and other file access errors gracefully
+      if (statError.code === 'ENOENT') {
+        logger.error(`Image file does not exist`, { path: filePath });
+        return {
+          error: 'Image file not found (ENOENT)',
+          category: 'error',
+          keywords: [],
+          confidence: 0,
+        };
+      }
+      throw statError; // Re-throw other errors
+    }
+
     if (stats.size === 0) {
       logger.error(`Image file is empty`, { path: filePath });
       return {
@@ -296,8 +345,23 @@ async function analyzeImageFile(filePath, smartFolders = []) {
 
     logger.debug(`Image file size`, { bytes: stats.size });
 
-    // Read and encode image as base64
-    let imageBuffer = await fs.readFile(filePath);
+    // CRITICAL FIX: Wrap readFile in try-catch to handle TOCTOU race condition
+    // File could be deleted between stat() and readFile() calls
+    let imageBuffer;
+    try {
+      imageBuffer = await fs.readFile(filePath);
+    } catch (readError) {
+      if (readError.code === 'ENOENT') {
+        logger.error(`Image file disappeared during read`, { path: filePath });
+        return {
+          error: 'Image file was deleted during analysis (TOCTOU)',
+          category: 'error',
+          keywords: [],
+          confidence: 0,
+        };
+      }
+      throw readError; // Re-throw other errors
+    }
 
     // Cache quick path: signature based on file stats
     const signature = `${filePath}|${stats.size}|${stats.mtimeMs}`;
@@ -392,42 +456,144 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     try {
       // Reuse single service instances to avoid reloading data repeatedly
       const chromaDb = chromaDbSingleton || (chromaDbSingleton = getChromaDB());
-      const folderMatcher =
-        folderMatcherSingleton ||
-        (folderMatcherSingleton = new FolderMatchingService(chromaDb));
 
-      // Fixed: Initialize FolderMatchingService on first use
-      if (folderMatcher && !folderMatcher.embeddingCache.initialized) {
-        folderMatcher.initialize();
-      }
-
-      if (smartFolders && smartFolders.length > 0) {
-        await Promise.all(
-          smartFolders.map((f) => folderMatcher.upsertFolderEmbedding(f)),
+      // BUG FIX #8: Comprehensive null/undefined validation with duck typing
+      // CRITICAL: folderMatcher can be an object with undefined methods, causing crashes
+      if (!chromaDb) {
+        logger.warn(
+          '[IMAGE] ChromaDB not available, skipping semantic folder refinement',
         );
-      }
-      const fileId = `image:${filePath}`;
-      const summary = [
-        analysis.project,
-        analysis.purpose,
-        (analysis.keywords || []).join(' '),
-        analysis.content_type || '',
-      ]
-        .filter(Boolean)
-        .join('\n');
-      await folderMatcher.upsertFileEmbedding(fileId, summary, {
-        path: filePath,
-      });
-      const candidates = await folderMatcher.matchFileToFolders(fileId, 5);
-      if (Array.isArray(candidates) && candidates.length > 0) {
-        const top = candidates[0];
-        if (top.score >= 0.55) {
-          analysis.category = top.name;
+      } else {
+        const folderMatcher =
+          folderMatcherSingleton ||
+          (folderMatcherSingleton = new FolderMatchingService(chromaDb));
+
+        // BUG FIX #8: Duck typing validation - check that all required methods exist
+        // Don't just check if object is truthy, validate it has the methods we need
+        const hasRequiredMethods =
+          folderMatcher &&
+          typeof folderMatcher === 'object' &&
+          typeof folderMatcher.initialize === 'function' &&
+          typeof folderMatcher.upsertFolderEmbedding === 'function' &&
+          typeof folderMatcher.upsertFileEmbedding === 'function' &&
+          typeof folderMatcher.matchFileToFolders === 'function';
+
+        if (!hasRequiredMethods) {
+          logger.warn(
+            '[IMAGE] FolderMatcher invalid or missing required methods',
+            {
+              hasFolderMatcher: !!folderMatcher,
+              folderMatcherType: typeof folderMatcher,
+              hasInitialize: typeof folderMatcher?.initialize === 'function',
+              hasUpsertFolder:
+                typeof folderMatcher?.upsertFolderEmbedding === 'function',
+              hasUpsertFile:
+                typeof folderMatcher?.upsertFileEmbedding === 'function',
+              hasMatchFile:
+                typeof folderMatcher?.matchFileToFolders === 'function',
+            },
+          );
+        } else {
+          // Initialize FolderMatchingService on first use
+          if (!folderMatcher.embeddingCache?.initialized) {
+            try {
+              await folderMatcher.initialize();
+            } catch (initError) {
+              logger.warn(
+                '[IMAGE] FolderMatcher initialization error:',
+                initError.message,
+              );
+              // Don't continue if initialization failed
+              return;
+            }
+          }
+
+          // Validate smartFolders before attempting to upsert
+          if (
+            smartFolders &&
+            Array.isArray(smartFolders) &&
+            smartFolders.length > 0
+          ) {
+            try {
+              // Validate each folder has required properties before upserting
+              const validFolders = smartFolders.filter(
+                (f) => f && typeof f === 'object' && (f.name || f.id || f.path),
+              );
+
+              if (validFolders.length > 0) {
+                await Promise.all(
+                  validFolders.map((f) =>
+                    folderMatcher.upsertFolderEmbedding(f),
+                  ),
+                );
+              }
+            } catch (upsertError) {
+              logger.warn(
+                '[IMAGE] Folder embedding upsert error:',
+                upsertError.message,
+              );
+              // Continue even if folder upsert fails - we can still try file matching
+            }
+          }
+
+          // Continue with file embedding and matching
+          const fileId = `image:${filePath}`;
+          const summary = [
+            analysis.project,
+            analysis.purpose,
+            (analysis.keywords || []).join(' '),
+            analysis.content_type || '',
+          ]
+            .filter(Boolean)
+            .join('\n');
+
+          try {
+            // Validate summary is non-empty before upserting
+            if (summary && summary.trim().length > 0) {
+              await folderMatcher.upsertFileEmbedding(fileId, summary, {
+                path: filePath,
+              });
+
+              const candidates = await folderMatcher.matchFileToFolders(
+                fileId,
+                5,
+              );
+
+              // Validate candidates structure before accessing
+              if (Array.isArray(candidates) && candidates.length > 0) {
+                const top = candidates[0];
+
+                // Validate top candidate has required properties
+                if (
+                  top &&
+                  typeof top === 'object' &&
+                  typeof top.score === 'number' &&
+                  top.name
+                ) {
+                  if (top.score >= 0.55) {
+                    analysis.category = top.name;
+                  }
+                  analysis.folderMatchCandidates = candidates;
+                }
+              }
+            } else {
+              logger.debug(
+                '[IMAGE] Empty summary, skipping folder matching for:',
+                filePath,
+              );
+            }
+          } catch (matchError) {
+            logger.warn('[IMAGE] Folder matching error:', matchError.message);
+          }
         }
-        analysis.folderMatchCandidates = candidates;
       }
-    } catch {
-      // Non-fatal; continue without refinement
+    } catch (error) {
+      // EDGE CASE: Catch unexpected errors and log details
+      logger.warn('[IMAGE] Unexpected error in semantic folder refinement:', {
+        error: error?.message,
+        stack: error?.stack,
+        filePath,
+      });
     }
 
     if (analysis && !analysis.error) {
@@ -477,7 +643,7 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     }
     return result;
   } catch (error) {
-    console.error(`Error processing image ${filePath}:`, error.message);
+    logger.error('Error processing image', { filePath, error: error.message });
     return {
       error: `Failed to process image: ${error.message}`,
       category: 'error',
@@ -490,6 +656,7 @@ async function analyzeImageFile(filePath, smartFolders = []) {
 
 // OCR capability using Ollama for text extraction from images
 async function extractTextFromImage(filePath) {
+  const { logger } = require('../../shared/logger');
   try {
     const imageBuffer = await fs.readFile(filePath);
     const imageBase64 = imageBuffer.toString('base64');
@@ -502,15 +669,24 @@ async function extractTextFromImage(filePath) {
       cfg2.selectedVisionModel ||
       AppConfig.ai.imageAnalysis.defaultModel;
     const client2 = await getOllamaClient();
-    const response = await client2.generate({
-      model: modelToUse2,
-      prompt,
-      images: [imageBase64],
-      options: {
-        temperature: 0.1, // Lower temperature for text extraction
-        num_predict: 2000,
+    const response = await generateWithRetry(
+      client2,
+      {
+        model: modelToUse2,
+        prompt,
+        images: [imageBase64],
+        options: {
+          temperature: 0.1, // Lower temperature for text extraction
+          num_predict: 2000,
+        },
       },
-    });
+      {
+        operation: `Text extraction from image ${path.basename(filePath)}`,
+        maxRetries: 3,
+        initialDelay: 1000,
+        maxDelay: 4000,
+      },
+    );
 
     if (response.response && response.response.trim() !== 'NO_TEXT_FOUND') {
       return response.response.trim();
@@ -518,7 +694,7 @@ async function extractTextFromImage(filePath) {
 
     return null;
   } catch (error) {
-    console.error('Error extracting text from image:', error.message);
+    logger.error('Error extracting text from image', { error: error.message });
     return null;
   }
 }

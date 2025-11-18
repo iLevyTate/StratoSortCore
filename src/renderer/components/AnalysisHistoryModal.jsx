@@ -46,23 +46,30 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
 
   const exportHistory = async (format) => {
     try {
-      const res = await window.electronAPI.analysisHistory.export(format);
-      if (!res || res.success === false)
-        throw new Error(res?.error || 'Export failed');
+      const exportResponse =
+        await window.electronAPI.analysisHistory.export(format);
+      if (!exportResponse || exportResponse.success === false)
+        throw new Error(exportResponse?.error || 'Export failed');
       const blob = new Blob(
-        [typeof res.data === 'string' ? res.data : JSON.stringify(res.data)],
+        [
+          typeof exportResponse.data === 'string'
+            ? exportResponse.data
+            : JSON.stringify(exportResponse.data),
+        ],
         {
           type:
-            res.mime || (format === 'csv' ? 'text/csv' : 'application/json'),
+            exportResponse.mime ||
+            (format === 'csv' ? 'text/csv' : 'application/json'),
         },
       );
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = res.filename || `analysis-history.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const downloadLink = document.createElement('a');
+      downloadLink.href = url;
+      downloadLink.download =
+        exportResponse.filename || `analysis-history.${format}`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
       URL.revokeObjectURL(url);
       addNotification(
         `Analysis history exported as ${format.toUpperCase()}`,
@@ -199,7 +206,13 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search analysis history..."
                       className="flex-1"
-                      onKeyDown={(e) => e.key === 'Enter' && searchHistory()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          searchHistory().catch((error) => {
+                            console.error('Search failed:', error);
+                          });
+                        }
+                      }}
                     />
                     <Button onClick={searchHistory} variant="primary">
                       Search

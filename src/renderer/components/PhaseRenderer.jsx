@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useKeyboardShortcuts } from '../hooks';
 import { usePhase } from '../contexts/PhaseContext';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
+import { LazyLoadingSpinner, ModalLoadingOverlay } from './LoadingSkeleton';
 
 const WelcomePhase = lazy(() => import('../phases/WelcomePhase'));
 const SetupPhase = lazy(() => import('../phases/SetupPhase'));
 const DiscoverPhase = lazy(() => import('../phases/DiscoverPhase'));
 const OrganizePhase = lazy(() => import('../phases/OrganizePhase'));
 const CompletePhase = lazy(() => import('../phases/CompletePhase'));
-import SettingsPanel from './SettingsPanel';
+const SettingsPanel = lazy(() => import('./SettingsPanel'));
 import { PHASES } from '../../shared/constants';
 
 const pageVariants = {
@@ -81,13 +82,7 @@ function PhaseRenderer() {
 
   return (
     <div className="flex flex-col w-full">
-      <Suspense
-        fallback={
-          <div className="container-centered py-21 text-center text-system-gray-500">
-            <div className="animate-pulse">Loading…</div>
-          </div>
-        }
-      >
+      <Suspense fallback={<LazyLoadingSpinner message="Loading phase..." />}>
         <AnimatePresence mode="wait">
           <motion.div
             key={currentPhase}
@@ -102,7 +97,15 @@ function PhaseRenderer() {
           </motion.div>
         </AnimatePresence>
       </Suspense>
-      {showSettings && <SettingsPanel />}
+      {showSettings && (
+        <Suspense
+          fallback={<ModalLoadingOverlay message="Loading Settings..." />}
+        >
+          <PhaseErrorBoundary phaseName="Settings">
+            <SettingsPanel />
+          </PhaseErrorBoundary>
+        </Suspense>
+      )}
     </div>
   );
 }

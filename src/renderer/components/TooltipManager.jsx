@@ -12,6 +12,8 @@ export default function TooltipManager() {
   const currentTargetRef = useRef(null);
   const titleCacheRef = useRef(new WeakMap());
   const rafRef = useRef(0);
+  // Bug #37: Add debouncing for rapid mouseover events
+  const debounceTimerRef = useRef(null);
 
   useEffect(() => {
     // Create tooltip container once
@@ -33,20 +35,44 @@ export default function TooltipManager() {
     tooltipRef.current = tooltip;
     arrowRef.current = arrow;
 
+    // Clean up on window visibility change to prevent dangling references
+    const handleVisibilityChange = () => {
+      if (document.hidden && currentTargetRef.current) {
+        // Hide tooltip when window is hidden/minimized
+        if (tooltipRef.current) {
+          tooltipRef.current.classList.remove('show');
+          tooltipRef.current.style.opacity = '0';
+          tooltipRef.current.style.transform =
+            'translate3d(-10000px, -10000px, 0)';
+        }
+        currentTargetRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    /**
+     * Schedule a callback using requestAnimationFrame for smooth updates
+     * @param {Function} cb - Callback function to execute
+     */
     const schedule = (cb) => {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(cb);
     };
 
+    /**
+     * Show tooltip for the given target element
+     * @param {HTMLElement} target - Element to show tooltip for
+     */
     const showTooltip = (target) => {
-      if (!tooltipRef.current) return;
+      if (!tooltipRef.current || !titleCacheRef.current) return;
       const title =
         target.getAttribute('data-tooltip') || target.getAttribute('title');
       if (!title) return;
 
       // Prevent native tooltip by clearing title temporarily
       if (target.hasAttribute('title')) {
-        if (!titleCacheRef.current.get(target)) {
+        // Add null check before calling .get()
+        if (titleCacheRef.current && !titleCacheRef.current.get(target)) {
           titleCacheRef.current.set(target, title);
         }
         target.setAttribute('data-title', title);
@@ -61,20 +87,30 @@ export default function TooltipManager() {
       positionTooltip(target);
     };
 
+    /**
+     * Hide tooltip and restore original title attribute
+     * @param {HTMLElement} target - Element to hide tooltip for
+     */
     const hideTooltip = (target) => {
       if (!tooltipRef.current) return;
       tooltipRef.current.classList.remove('show');
       tooltipRef.current.style.opacity = '0';
       tooltipRef.current.style.transform = 'translate3d(-10000px, -10000px, 0)';
 
-      // Restore native title
-      const cached = titleCacheRef.current.get(target);
-      if (cached && !target.getAttribute('title')) {
-        target.setAttribute('title', cached);
+      // Restore native title - add null check before calling .get()
+      if (titleCacheRef.current) {
+        const cached = titleCacheRef.current.get(target);
+        if (cached && !target.getAttribute('title')) {
+          target.setAttribute('title', cached);
+        }
       }
       target.removeAttribute('data-title');
     };
 
+    /**
+     * Calculate and apply optimal tooltip position relative to target
+     * @param {HTMLElement} target - Element to position tooltip relative to
+     */
     const positionTooltip = (target) => {
       schedule(() => {
         if (!tooltipRef.current || !arrowRef.current) return;
@@ -122,13 +158,32 @@ export default function TooltipManager() {
     };
 
     const delegatedMouseOver = (e) => {
+      // Check if refs are still valid before processing events
+      if (!tooltipRef.current || !titleCacheRef.current) return;
       const target = e.target.closest('[title], [data-tooltip]');
       if (!target || !(target instanceof HTMLElement)) return;
-      currentTargetRef.current = target;
-      showTooltip(target);
+
+      // Bug #37: Debounce rapid mouseover events (300ms delay)
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
+      debounceTimerRef.current = setTimeout(() => {
+        currentTargetRef.current = target;
+        showTooltip(target);
+      }, 300);
     };
 
     const delegatedMouseOut = (e) => {
+      // Check if refs are still valid before processing events
+      if (!tooltipRef.current || !titleCacheRef.current) return;
+
+      // Bug #37: Clear debounce timer on mouseout
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
       const target = currentTargetRef.current;
       if (!target) return;
       // Only hide when leaving the element completely
@@ -139,6 +194,8 @@ export default function TooltipManager() {
     };
 
     const delegatedFocus = (e) => {
+      // Check if refs are still valid before processing events
+      if (!tooltipRef.current || !titleCacheRef.current) return;
       const target = e.target.closest('[title], [data-tooltip]');
       if (!target || !(target instanceof HTMLElement)) return;
       currentTargetRef.current = target;
@@ -146,6 +203,8 @@ export default function TooltipManager() {
     };
 
     const delegatedBlur = () => {
+      // Check if refs are still valid before processing events
+      if (!tooltipRef.current || !titleCacheRef.current) return;
       if (currentTargetRef.current) {
         hideTooltip(currentTargetRef.current);
         currentTargetRef.current = null;
@@ -164,16 +223,42 @@ export default function TooltipManager() {
     window.addEventListener('resize', handleViewportChange);
 
     return () => {
-      cancelAnimationFrame(rafRef.current);
+      // Remove event listeners first to prevent any new events during cleanup
       document.removeEventListener('mouseover', delegatedMouseOver, true);
       document.removeEventListener('mouseout', delegatedMouseOut, true);
       document.removeEventListener('focusin', delegatedFocus);
       document.removeEventListener('focusout', delegatedBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('scroll', handleViewportChange, true);
       window.removeEventListener('resize', handleViewportChange);
+
+      // Bug #37: Clear debounce timer on cleanup
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
+      // Cancel any pending animations
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+
+      // Hide tooltip if it's currently showing
+      if (currentTargetRef.current && titleCacheRef.current) {
+        hideTooltip(currentTargetRef.current);
+      }
+
+      // Clear refs in the correct order
+      currentTargetRef.current = null;
+
+      // Remove DOM element before clearing refs that might be accessed
       if (tooltipRef.current && tooltipRef.current.parentNode) {
         tooltipRef.current.parentNode.removeChild(tooltipRef.current);
       }
+
+      // Clear remaining refs last
+      tooltipRef.current = null;
+      arrowRef.current = null;
+      titleCacheRef.current = null;
     };
   }, []);
 

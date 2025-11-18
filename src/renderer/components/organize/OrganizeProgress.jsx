@@ -117,7 +117,7 @@ function OrganizeProgress({
           <div className="indeterminate-bar" />
         )}
         {batchProgress.currentFile && (
-          <div className="text-xs text-system-gray-500 mt-3 truncate">
+          <div className="text-xs text-system-gray-500 mt-3 break-words">
             Currently processing: {batchProgress.currentFile}
           </div>
         )}
@@ -134,11 +134,11 @@ function OrganizeProgress({
             {preview.slice(0, 6).map((op, idx) => (
               <div key={idx} className="flex items-start gap-8 text-sm">
                 <span className="mt-1">📄</span>
-                <div className="min-w-0">
-                  <div className="font-medium text-system-gray-900 truncate">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-system-gray-900 break-words">
                     {op.fileName}
                   </div>
-                  <div className="text-xs text-system-gray-600 truncate">
+                  <div className="text-xs text-system-gray-600 break-all">
                     → {op.destination}
                   </div>
                 </div>

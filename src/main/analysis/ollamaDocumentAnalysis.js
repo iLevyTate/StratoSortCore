@@ -5,6 +5,7 @@ const {
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_ARCHIVE_EXTENSIONS,
 } = require('../../shared/constants');
+const appLogger = require('../../shared/appLogger');
 
 // Enforce required dependency for AI-first operation
 const {
@@ -35,13 +36,19 @@ const {
 const { getInstance: getChromaDB } = require('../services/ChromaDBService');
 const FolderMatchingService = require('../services/FolderMatchingService');
 
+// Cache configuration constants
+const CACHE_CONFIG = {
+  MAX_FILE_CACHE: 500, // Maximum number of files to cache in memory
+  FALLBACK_CONFIDENCE: 65, // Confidence score for fallback analysis
+  DEFAULT_CONFIDENCE: 85, // Default confidence for successful analysis
+};
+
 // In-memory cache of per-file analysis results (path|size|mtimeMs -> result)
 const fileAnalysisCache = new Map();
-const MAX_FILE_CACHE = 500;
 function setFileCache(signature, value) {
   if (!signature) return;
   fileAnalysisCache.set(signature, value);
-  if (fileAnalysisCache.size > MAX_FILE_CACHE) {
+  if (fileAnalysisCache.size > CACHE_CONFIG.MAX_FILE_CACHE) {
     const firstKey = fileAnalysisCache.keys().next().value;
     fileAnalysisCache.delete(firstKey);
   }
@@ -51,17 +58,21 @@ function setFileCache(signature, value) {
 const { FileProcessingError } = require('../errors/AnalysisError');
 const ModelVerifier = require('../services/ModelVerifier');
 
-// AppConfig now provided by documentLlm.js
-
 const modelVerifier = new ModelVerifier();
 const chromaDbService = getChromaDB();
 const folderMatcher = new FolderMatchingService(chromaDbService);
 
-// LLM moved to documentLlm.js
+// Create logger instance for this module
+const logger = appLogger.createLogger('DocumentAnalysis');
 
+/**
+ * Analyzes a document file using AI or fallback methods
+ * @param {string} filePath - Path to the document file
+ * @param {Array} smartFolders - Array of smart folder configurations
+ * @returns {Promise<Object>} Analysis result with metadata
+ */
 async function analyzeDocumentFile(filePath, smartFolders = []) {
-  const { logger } = require('../../shared/logger');
-  logger.info(`[DOC] Analyzing document file`, { path: filePath });
+  logger.info('Analyzing document file', { path: filePath });
   const fileExtension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
 
@@ -69,8 +80,8 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   try {
     const connectionCheck = await modelVerifier.checkOllamaConnection();
     if (!connectionCheck.connected) {
-      console.warn(
-        `[ANALYSIS-FALLBACK] Ollama unavailable (${connectionCheck.error}). Using filename-based analysis for ${fileName}.`,
+      logger.warn(
+        `Ollama unavailable (${connectionCheck.error}). Using filename-based analysis for ${fileName}.`,
       );
       const intelligentCategory = getIntelligentCategory(
         fileName,
@@ -81,31 +92,35 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         fileName,
         fileExtension,
       );
+      // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
+      const safeCategory = intelligentCategory || 'document';
       return {
-        purpose: `${intelligentCategory.charAt(0).toUpperCase() + intelligentCategory.slice(1)} document (fallback)`,
+        purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
         project: fileName.replace(fileExtension, ''),
-        category: intelligentCategory,
+        category: safeCategory,
         date: new Date().toISOString().split('T')[0],
         keywords: intelligentKeywords,
-        confidence: 65,
+        confidence: CACHE_CONFIG.FALLBACK_CONFIDENCE,
         suggestedName: safeSuggestedName(fileName, fileExtension),
         extractionMethod: 'filename_fallback',
       };
     }
   } catch (error) {
-    console.error('Pre-flight verification failed:', error.message);
+    logger.error('Pre-flight verification failed:', error);
     const intelligentCategory = getIntelligentCategory(
       fileName,
       fileExtension,
       smartFolders,
     );
     const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
+    // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
+    const safeCategory = intelligentCategory || 'document';
     return {
-      purpose: `${intelligentCategory.charAt(0).toUpperCase() + intelligentCategory.slice(1)} document (fallback)`,
+      purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
       project: fileName.replace(fileExtension, ''),
-      category: intelligentCategory,
+      category: safeCategory,
       date: new Date().toISOString().split('T')[0],
-      keywords: intelligentKeywords,
+      keywords: intelligentKeywords || [],
       confidence: 65,
       suggestedName: safeSuggestedName(fileName, fileExtension),
       extractionMethod: 'filename_fallback',
@@ -319,11 +334,13 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         fileName,
         fileExtension,
       );
+      // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
+      const safeCategory = intelligentCategory || 'document';
 
       return {
-        purpose: `${intelligentCategory.charAt(0).toUpperCase() + intelligentCategory.slice(1)} document`,
+        purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document`,
         project: fileName.replace(fileExtension, ''),
-        category: intelligentCategory,
+        category: safeCategory,
         date: new Date().toISOString().split('T')[0],
         keywords: intelligentKeywords,
         confidence: 75, // Higher confidence for pattern-based detection
@@ -474,10 +491,12 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       smartFolders,
     );
     const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
+    // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
+    const safeCategory = intelligentCategory || 'document';
     return {
-      purpose: `${intelligentCategory.charAt(0).toUpperCase() + intelligentCategory.slice(1)} document (fallback)`,
+      purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
       project: fileName.replace(fileExtension, ''),
-      category: intelligentCategory,
+      category: safeCategory,
       date: new Date().toISOString().split('T')[0],
       keywords: intelligentKeywords,
       confidence: 60,

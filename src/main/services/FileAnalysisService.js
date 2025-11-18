@@ -1,14 +1,8 @@
 const path = require('path');
-// const { getInstance: getChromaDB } = require('../services/ChromaDBService');
-// const FolderMatchingService = require('../services/FolderMatchingService');
-// const ModelVerifier = require('../services/ModelVerifier');
 
 class FileAnalysisService {
   constructor(ollamaService = null) {
     this.ollamaService = ollamaService;
-    // this.modelVerifier = new ModelVerifier();
-    // this.chromaDbService = getChromaDB();
-    // this.folderMatcher = new FolderMatchingService(this.chromaDbService);
     this.fileAnalysisCache = new Map();
     this.MAX_FILE_CACHE = 500;
   }
@@ -45,10 +39,6 @@ class FileAnalysisService {
     void smartFolders;
     const { logger } = require('../../shared/logger');
     logger.info(`[DOC] Analyzing document file`, { path: filePath });
-    // const fileExtension = path.extname(filePath).toLowerCase();
-    // const fileName = path.basename(filePath);
-
-    // ... (rest of the analyzeDocumentFile function)
   }
 
   async analyzeImage(filePath) {

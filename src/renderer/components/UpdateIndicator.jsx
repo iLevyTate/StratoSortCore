@@ -1,29 +1,77 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
-export default function UpdateIndicator() {
+const UpdateIndicator = React.memo(function UpdateIndicator() {
   const [status, setStatus] = useState('idle');
   const [visible, setVisible] = useState(false);
+  const isMountedRef = useRef(true);
+  const unsubscribeRef = useRef(null);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
+    // Check if API is available
+    if (!window?.electronAPI?.events?.onAppUpdate) {
+      console.warn('[UpdateIndicator] Update API not available');
+      return;
+    }
+
     // Listen for update events from main
-    const off = window.electronAPI?.events?.onAppUpdate?.((payload) => {
-      try {
-        if (!payload || !payload.status) return;
-        if (payload.status === 'ready') {
-          setStatus('ready');
-          setVisible(true);
-        } else if (payload.status === 'available') {
-          setStatus('downloading');
-          setVisible(false);
-        } else if (payload.status === 'none') {
-          setVisible(false);
-        }
-      } catch (error) {
-        console.error('[UpdateIndicator] Error handling update event:', error);
-      }
-    });
+    try {
+      unsubscribeRef.current = window.electronAPI.events.onAppUpdate(
+        (payload) => {
+          // Check if component is still mounted
+          if (!isMountedRef.current) return;
+
+          try {
+            if (!payload || !payload.status) {
+              console.warn(
+                '[UpdateIndicator] Invalid update payload:',
+                payload,
+              );
+              return;
+            }
+
+            // Update state only if mounted
+            if (payload.status === 'ready') {
+              setStatus('ready');
+              setVisible(true);
+            } else if (payload.status === 'available') {
+              setStatus('downloading');
+              setVisible(false);
+            } else if (payload.status === 'none') {
+              setVisible(false);
+            }
+          } catch (error) {
+            console.error(
+              '[UpdateIndicator] Error handling update event:',
+              error,
+            );
+          }
+        },
+      );
+    } catch (error) {
+      console.error(
+        '[UpdateIndicator] Failed to set up update listener:',
+        error,
+      );
+    }
+
+    // Cleanup function
     return () => {
-      if (typeof off === 'function') off();
+      isMountedRef.current = false;
+
+      // Safely unsubscribe
+      if (
+        unsubscribeRef.current &&
+        typeof unsubscribeRef.current === 'function'
+      ) {
+        try {
+          unsubscribeRef.current();
+        } catch (error) {
+          console.error('[UpdateIndicator] Error during cleanup:', error);
+        }
+      }
+      unsubscribeRef.current = null;
     };
   }, []);
 
@@ -32,9 +80,27 @@ export default function UpdateIndicator() {
   return (
     <button
       onClick={async () => {
+        // Prevent multiple clicks
+        if (status === 'applying') return;
+
         try {
+          // Check if API is available
+          if (!window?.electronAPI?.system?.applyUpdate) {
+            console.error('[UpdateIndicator] Apply update API not available');
+            setStatus('error');
+            return;
+          }
+
           setStatus('applying');
-          const res = await window.electronAPI?.system?.applyUpdate?.();
+
+          // Add timeout for update operation
+          const updatePromise = window.electronAPI.system.applyUpdate();
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Update timeout')), 30000),
+          );
+
+          const res = await Promise.race([updatePromise, timeoutPromise]);
+
           if (!res?.success) {
             setStatus('error');
             console.error('[UpdateIndicator] Failed to apply update');
@@ -84,4 +150,6 @@ export default function UpdateIndicator() {
       />
     </button>
   );
-}
+});
+
+export default UpdateIndicator;

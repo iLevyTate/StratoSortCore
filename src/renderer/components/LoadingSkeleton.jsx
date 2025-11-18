@@ -1,6 +1,19 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 
+// Animation configuration constants
+const ANIMATION_CONFIG = {
+  DELAY_INCREMENT: 0.1, // Seconds between skeleton animation delays
+  DEFAULT_FILE_COUNT: 5, // Default number of file skeletons to show
+  DEFAULT_FOLDER_COUNT: 6, // Default number of folder skeletons to show
+};
+
+/**
+ * LoadingSkeleton component for displaying placeholder content while data loads
+ * @param {string} className - Additional CSS classes
+ * @param {string} variant - Type of skeleton to display
+ * @param {number} count - Number of skeletons to render
+ */
 const LoadingSkeleton = ({
   className = '',
   variant = 'default',
@@ -26,7 +39,7 @@ const LoadingSkeleton = ({
       key={i}
       className={`${baseClasses} ${variantClasses[variant] || variantClasses.default} ${className}`}
       aria-hidden="true"
-      style={{ animationDelay: `${i * 0.1}s` }}
+      style={{ animationDelay: `${i * ANIMATION_CONFIG.DELAY_INCREMENT}s` }}
     />
   ));
 
@@ -53,8 +66,13 @@ LoadingSkeleton.propTypes = {
   count: PropTypes.number,
 };
 
-// Composite loading states for common UI patterns
-export const FileListSkeleton = ({ count = 5 }) => (
+/**
+ * Composite loading state for file list UI
+ * @param {number} count - Number of skeleton items to display
+ */
+export const FileListSkeleton = ({
+  count = ANIMATION_CONFIG.DEFAULT_FILE_COUNT,
+}) => (
   <div className="space-y-3" role="status" aria-label="Loading files">
     {Array.from({ length: count }, (_, i) => (
       <div
@@ -77,7 +95,13 @@ FileListSkeleton.propTypes = {
   count: PropTypes.number,
 };
 
-export const FolderGridSkeleton = ({ count = 6 }) => (
+/**
+ * Composite loading state for folder grid UI
+ * @param {number} count - Number of skeleton items to display
+ */
+export const FolderGridSkeleton = ({
+  count = ANIMATION_CONFIG.DEFAULT_FOLDER_COUNT,
+}) => (
   <div
     className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
     role="status"
@@ -129,5 +153,43 @@ export const AnalysisProgressSkeleton = () => (
 
 // Alias for backward compatibility
 export const SmartFolderSkeleton = FolderGridSkeleton;
+
+// Enhanced loading spinner for lazy-loaded components
+export const LazyLoadingSpinner = ({ message = 'Loading...' }) => (
+  <div
+    className="flex items-center justify-center py-21"
+    role="status"
+    aria-label={message}
+  >
+    <div className="text-center">
+      <div className="animate-spin w-13 h-13 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
+      <p className="text-system-gray-700">{message}</p>
+      <span className="sr-only">{message}</span>
+    </div>
+  </div>
+);
+
+LazyLoadingSpinner.propTypes = {
+  message: PropTypes.string,
+};
+
+// Modal loading overlay for lazy-loaded modals/panels
+export const ModalLoadingOverlay = ({ message = 'Loading...' }) => (
+  <div
+    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    role="status"
+    aria-label={message}
+  >
+    <div className="bg-white rounded-lg shadow-xl p-21 text-center">
+      <div className="animate-spin w-13 h-13 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
+      <p className="text-system-gray-700">{message}</p>
+      <span className="sr-only">{message}</span>
+    </div>
+  </div>
+);
+
+ModalLoadingOverlay.propTypes = {
+  message: PropTypes.string,
+};
 
 export default LoadingSkeleton;

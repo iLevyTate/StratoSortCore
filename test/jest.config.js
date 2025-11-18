@@ -5,14 +5,23 @@
 
 module.exports = {
   displayName: 'Stratosort Tests',
-  testEnvironment: 'node',
+  testEnvironment: 'jsdom',
   roots: ['<rootDir>'],
   testMatch: [
     '**/__tests__/**/*.+(js|ts|tsx)',
     '**/*.(test|spec).+(js|ts|tsx)',
   ],
   transform: {
-    '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
+    '^.+\\.(js|jsx|ts|tsx)$': [
+      'babel-jest',
+      {
+        presets: [
+          ['@babel/preset-env', { targets: { node: 'current' } }],
+          '@babel/preset-react',
+          '@babel/preset-typescript',
+        ],
+      },
+    ],
   },
   // No transforms needed for plain JS
   collectCoverageFrom: ['../src/**/*.js', '!../src/**/node_modules/**'],

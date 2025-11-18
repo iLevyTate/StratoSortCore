@@ -14,7 +14,7 @@ function AnalysisResultsList({
   const handleAction = useMemo(() => onFileAction, [onFileAction]);
   if (isEmpty) return null;
   return (
-    <div className="space-y-8 overflow-x-auto">
+    <div className="space-y-8">
       {items.map((file, index) => {
         const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
         return (
@@ -22,7 +22,7 @@ function AnalysisResultsList({
             <div className="flex items-start gap-13">
               <div className="text-2xl">📄</div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-system-gray-900 truncate">
+                <div className="font-medium text-system-gray-900 break-words">
                   {file.name}
                 </div>
                 <div className="text-xs text-system-gray-500">

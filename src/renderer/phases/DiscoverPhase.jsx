@@ -1,10 +1,20 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  Suspense,
+  lazy,
+} from 'react';
 import { PHASES, RENDERER_LIMITS } from '../../shared/constants';
 import { usePhase } from '../contexts/PhaseContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog, useDragAndDrop } from '../hooks';
 import { Collapsible, Button } from '../components/ui';
-import AnalysisHistoryModal from '../components/AnalysisHistoryModal';
+import { ModalLoadingOverlay } from '../components/LoadingSkeleton';
+const AnalysisHistoryModal = lazy(
+  () => import('../components/AnalysisHistoryModal'),
+);
 import {
   NamingSettings,
   SelectionControls,
@@ -41,7 +51,11 @@ function DiscoverPhase() {
   const analyzeFilesRef = useRef(null);
   const heartbeatIntervalRef = useRef(null); // Store heartbeat interval for cleanup
   const analysisTimeoutRef = useRef(null); // Store analysis timeout for cleanup
+  // Bug #35: Add AbortController for progress cancellation
+  const abortControllerRef = useRef(null); // Store AbortController for cancellation support
 
+  // CRITICAL FIX: Initial state restoration effect - runs only once on mount
+  // This prevents infinite loops from phaseData updates
   useEffect(() => {
     const persistedResults = phaseData.analysisResults || [];
     const persistedFiles = phaseData.selectedFiles || [];
@@ -90,7 +104,9 @@ function DiscoverPhase() {
         setCurrentAnalysisFile(persistedCurrent);
       }
     }
-  }, [phaseData]);
+    // CRITICAL FIX: Only run on mount, not on every phaseData change
+    // This prevents infinite loops and stale closures
+  }, []);
 
   // Fixed: Consolidated analysis resume logic - extracted reset function
   const resetAnalysisState = useCallback(
@@ -196,9 +212,19 @@ function DiscoverPhase() {
     resetAnalysisState,
   ]);
 
-  // Fixed: Cleanup heartbeat interval and analysis timeout on component unmount to prevent memory leak
+  // Bug #35: Cleanup resources on unmount including AbortController
   useEffect(() => {
     return () => {
+      // Bug #35: Cancel any ongoing operations via AbortController
+      if (abortControllerRef.current) {
+        try {
+          abortControllerRef.current.abort();
+        } catch (error) {
+          console.error('[DISCOVER] Error aborting operations:', error);
+        }
+        abortControllerRef.current = null;
+      }
+
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
@@ -482,40 +508,57 @@ function DiscoverPhase() {
         }
       }
     },
-    [selectedFiles, addNotification, actions, updateFileState],
+    [selectedFiles, addNotification, actions, updateFileState, analyzeFilesRef],
   );
 
   const { isDragging, dragProps } = useDragAndDrop(handleFileDrop);
 
-  const getBatchFileStats = async (
-    filePaths,
-    batchSize = RENDERER_LIMITS.FILE_STATS_BATCH_SIZE,
-  ) => {
-    const results = [];
-    for (let i = 0; i < filePaths.length; i += batchSize) {
-      const batch = filePaths.slice(i, i + batchSize);
-      const batchResults = await Promise.allSettled(
-        batch.map(async (filePath) => {
-          try {
-            if (i > 0) await new Promise((resolve) => setTimeout(resolve, 5));
-            const stats = await window.electronAPI.files.getStats(filePath);
+  const getBatchFileStats = useCallback(
+    async (filePaths, batchSize = RENDERER_LIMITS.FILE_STATS_BATCH_SIZE) => {
+      const results = [];
+      for (let i = 0; i < filePaths.length; i += batchSize) {
+        const batch = filePaths.slice(i, i + batchSize);
+        const batchResults = await Promise.allSettled(
+          batch.map(async (filePath) => {
+            try {
+              if (i > 0) await new Promise((resolve) => setTimeout(resolve, 5));
+              const stats = await window.electronAPI.files.getStats(filePath);
+              const fileName = filePath.split(/[\\/]/).pop();
+              const extension = fileName.includes('.')
+                ? '.' + fileName.split('.').pop().toLowerCase()
+                : '';
+              return {
+                name: fileName,
+                path: filePath,
+                extension,
+                size: stats?.size || 0,
+                type: 'file',
+                created: stats?.created,
+                modified: stats?.modified,
+                success: true,
+              };
+            } catch (error) {
+              const fileName = filePath.split(/[\\/]/).pop();
+              return {
+                name: fileName,
+                path: filePath,
+                extension: fileName.includes('.')
+                  ? '.' + fileName.split('.').pop().toLowerCase()
+                  : '',
+                size: 0,
+                type: 'file',
+                success: false,
+                error: error.message,
+              };
+            }
+          }),
+        );
+        batchResults.forEach((result, index) => {
+          if (result.status === 'fulfilled') results.push(result.value);
+          else {
+            const filePath = batch[index];
             const fileName = filePath.split(/[\\/]/).pop();
-            const extension = fileName.includes('.')
-              ? '.' + fileName.split('.').pop().toLowerCase()
-              : '';
-            return {
-              name: fileName,
-              path: filePath,
-              extension,
-              size: stats?.size || 0,
-              type: 'file',
-              created: stats?.created,
-              modified: stats?.modified,
-              success: true,
-            };
-          } catch (error) {
-            const fileName = filePath.split(/[\\/]/).pop();
-            return {
+            results.push({
               name: fileName,
               path: filePath,
               extension: fileName.includes('.')
@@ -524,34 +567,17 @@ function DiscoverPhase() {
               size: 0,
               type: 'file',
               success: false,
-              error: error.message,
-            };
+              error: result.reason?.message || 'Unknown error',
+            });
           }
-        }),
-      );
-      batchResults.forEach((result, index) => {
-        if (result.status === 'fulfilled') results.push(result.value);
-        else {
-          const filePath = batch[index];
-          const fileName = filePath.split(/[\\/]/).pop();
-          results.push({
-            name: fileName,
-            path: filePath,
-            extension: fileName.includes('.')
-              ? '.' + fileName.split('.').pop().toLowerCase()
-              : '',
-            size: 0,
-            type: 'file',
-            success: false,
-            error: result.reason?.message || 'Unknown error',
-          });
-        }
-      });
-      if (i + batchSize < filePaths.length)
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    return results;
-  };
+        });
+        if (i + batchSize < filePaths.length)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return results;
+    },
+    [],
+  );
 
   const handleFileSelection = useCallback(async () => {
     try {
@@ -656,7 +682,13 @@ function DiscoverPhase() {
     } finally {
       setIsScanning(false);
     }
-  }, [selectedFiles, addNotification, actions, updateFileState]);
+  }, [
+    selectedFiles,
+    addNotification,
+    actions,
+    updateFileState,
+    getBatchFileStats,
+  ]);
 
   const handleFolderSelection = useCallback(async () => {
     try {
@@ -832,7 +864,13 @@ function DiscoverPhase() {
     } finally {
       setIsScanning(false);
     }
-  }, [selectedFiles, addNotification, actions, updateFileState]);
+  }, [
+    selectedFiles,
+    addNotification,
+    actions,
+    updateFileState,
+    getBatchFileStats,
+  ]);
 
   const handleFileAction = useCallback(
     async (action, filePath) => {
@@ -924,6 +962,7 @@ function DiscoverPhase() {
       setAnalysisResults,
       actions,
       updateFileState,
+      showConfirm, // CRITICAL FIX: Missing dependency for delete confirmation
     ],
   );
 
@@ -960,6 +999,18 @@ function DiscoverPhase() {
       // Lock acquired successfully, continue with analysis
       setGlobalAnalysisActive(true);
       console.log('[ANALYSIS] Analysis lock acquired atomically');
+
+      // Bug #35: Create new AbortController for this analysis session
+      abortControllerRef.current = new AbortController();
+      const abortSignal = abortControllerRef.current.signal;
+
+      // Bug #35: Check if already aborted before continuing
+      if (abortSignal.aborted) {
+        console.log('[ANALYSIS] Analysis aborted before start');
+        analysisLockRef.current = false;
+        setGlobalAnalysisActive(false);
+        return;
+      }
 
       // Small delay to ensure lock is properly established
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1275,6 +1326,12 @@ function DiscoverPhase() {
         // Process files with controlled concurrency
         const processBatch = async (batch) => {
           try {
+            // Bug #35: Check abort signal before processing each batch
+            if (abortSignal.aborted) {
+              console.log('[ANALYSIS] Batch processing aborted by user');
+              throw new Error('Analysis cancelled by user');
+            }
+
             const promises = batch.map((file) => processFile(file));
             await Promise.all(promises);
 
@@ -1295,6 +1352,11 @@ function DiscoverPhase() {
               );
             }
           } catch (error) {
+            // Bug #35: Don't log abort errors as errors
+            if (error.message === 'Analysis cancelled by user') {
+              console.log('[ANALYSIS] User cancelled batch processing');
+              throw error; // Re-throw to stop processing
+            }
             console.error('[ANALYSIS] Batch processing error:', error);
             // Don't fail the entire analysis for batch errors
           }
@@ -1302,6 +1364,15 @@ function DiscoverPhase() {
 
         // Process files in batches to control concurrency
         for (let i = 0; i < fileQueue.length; i += concurrency) {
+          // Bug #35: Check abort signal before each batch
+          if (abortSignal.aborted) {
+            console.log(
+              '[ANALYSIS] Analysis cancelled, stopping batch processing',
+            );
+            addNotification('Analysis cancelled by user', 'info', 2000);
+            break;
+          }
+
           const batch = fileQueue.slice(i, i + concurrency);
           await processBatch(batch);
         }
@@ -1428,24 +1499,37 @@ function DiscoverPhase() {
       }
     },
     [
+      // CRITICAL FIX: Complete dependency array to prevent stale closures
+      // State setters (stable - don't cause re-renders)
       setIsAnalyzing,
       setCurrentAnalysisFile,
       setAnalysisProgress,
       setAnalysisResults,
       setSelectedFiles,
       setFileStates,
+      setGlobalAnalysisActive,
+      // Context functions
       addNotification,
       actions,
+      // Callback functions (already memoized)
       updateFileState,
       generatePreviewName,
+      validateProgressState,
+      resetAnalysisState,
+      // State values used in the callback
       namingConvention,
       dateFormat,
       caseConvention,
       separator,
-      analysisLockRef,
-      setGlobalAnalysisActive,
-      validateProgressState,
-      resetAnalysisState,
+      isAnalyzing, // CRITICAL: Used in lock check
+      analysisProgress, // CRITICAL: Used in lock check and progress tracking
+      phaseData, // CRITICAL: Used for localStorage persistence
+      analysisResults, // CRITICAL: Used for merging results
+      fileStates, // CRITICAL: Used for merging file states
+      // Refs are stable and don't need to be in deps, but included for completeness
+      // analysisLockRef - stable ref, doesn't trigger re-renders
+      // heartbeatIntervalRef - stable ref
+      // analysisTimeoutRef - stable ref
     ],
   );
 
@@ -1463,7 +1547,7 @@ function DiscoverPhase() {
     );
   }, [analysisLockRef, setGlobalAnalysisActive, addNotification]);
 
-  const clearAnalysisQueue = () => {
+  const clearAnalysisQueue = useCallback(() => {
     setSelectedFiles([]);
     setAnalysisResults([]);
     setFileStates({});
@@ -1476,7 +1560,7 @@ function DiscoverPhase() {
     actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
     actions.setPhaseData('currentAnalysisFile', '');
     addNotification('Analysis queue cleared', 'info', 2000, 'queue-management');
-  };
+  }, [actions, addNotification]);
 
   return (
     <div className="container-responsive gap-6 py-6 flex flex-col">
@@ -1791,11 +1875,17 @@ function DiscoverPhase() {
 
       <ConfirmDialog />
       {showAnalysisHistory && (
-        <AnalysisHistoryModal
-          onClose={() => setShowAnalysisHistory(false)}
-          analysisStats={analysisStats}
-          setAnalysisStats={setAnalysisStats}
-        />
+        <Suspense
+          fallback={
+            <ModalLoadingOverlay message="Loading Analysis History..." />
+          }
+        >
+          <AnalysisHistoryModal
+            onClose={() => setShowAnalysisHistory(false)}
+            analysisStats={analysisStats}
+            setAnalysisStats={setAnalysisStats}
+          />
+        </Suspense>
       )}
     </div>
   );

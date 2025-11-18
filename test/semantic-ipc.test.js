@@ -10,15 +10,21 @@ describe('Embeddings/Semantic IPC', () => {
   test('REBUILD_FOLDERS calls embedding upsert for custom folders', async () => {
     jest.resetModules();
     const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn() };
-    // Spy on FolderMatchingService to intercept upsertFolderEmbedding
-    const upserts = [];
+    // IMPROVED BEHAVIOR: Now uses batch operations for better performance
+    // Track batch upserts instead of individual upsertFolderEmbedding calls
+    const batchUpserts = [];
     jest.doMock('../src/main/services/FolderMatchingService', () =>
       jest.fn().mockImplementation(() => ({
-        upsertFolderEmbedding: jest.fn(async (f) => {
-          upserts.push(f);
-          return f;
-        }),
+        // New batch processing requires embedText method
+        // eslint-disable-next-line no-unused-vars
+        embedText: jest.fn(async (_text) => ({
+          vector: [0.1, 0.2, 0.3],
+          model: 'nomic-embed-text',
+        })),
+        generateFolderId: jest.fn((f) => f.id || `folder-${f.name}`),
+        upsertFolderEmbedding: jest.fn(async (f) => f),
         upsertFileEmbedding: jest.fn(async () => {}),
+        initialize: jest.fn(),
       })),
     );
     jest.doMock('../src/main/services/ChromaDBService', () => ({
@@ -29,6 +35,11 @@ describe('Embeddings/Semantic IPC', () => {
         migrateFromJsonl: jest.fn(async () => 0),
         cleanup: jest.fn(async () => {}),
         resetAll: jest.fn(async () => {}),
+        // IMPROVED: Batch operations for better performance
+        batchUpsertFolders: jest.fn(async (payloads) => {
+          batchUpserts.push(...payloads);
+          return payloads.length;
+        }),
       }),
     }));
     const { registerAllIpc } = require('../src/main/ipc');
@@ -53,21 +64,32 @@ describe('Embeddings/Semantic IPC', () => {
       IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
     );
     const result = await handler();
-    expect(result).toMatchObject({ success: true });
-    expect(upserts.length).toBe(1);
-    expect(upserts[0].name).toBe('Finance');
+
+    // IMPROVED: Now validates batch operations instead of individual calls
+    expect(result).toMatchObject({ success: true, folders: 1 });
+    expect(batchUpserts.length).toBe(1);
+    expect(batchUpserts[0].name).toBe('Finance');
   });
 
   test('REBUILD_FILES rebuilds vectors from analysis history', async () => {
     jest.resetModules();
     const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn() };
+    // IMPROVED BEHAVIOR: Now uses batch operations for better performance
     const inserted = [];
     jest.doMock('../src/main/services/FolderMatchingService', () =>
       jest.fn().mockImplementation(() => ({
+        // New batch processing requires embedText method
+        // eslint-disable-next-line no-unused-vars
+        embedText: jest.fn(async (_text) => ({
+          vector: [0.1, 0.2, 0.3],
+          model: 'nomic-embed-text',
+        })),
+        generateFolderId: jest.fn((f) => f.id || `folder-${f.name}`),
         upsertFolderEmbedding: jest.fn(async () => {}),
         upsertFileEmbedding: jest.fn(async (id, summary) => {
           inserted.push({ id, summary });
         }),
+        initialize: jest.fn(),
       })),
     );
     jest.doMock('../src/main/services/ChromaDBService', () => ({
@@ -78,6 +100,12 @@ describe('Embeddings/Semantic IPC', () => {
         migrateFromJsonl: jest.fn(async () => 0),
         cleanup: jest.fn(async () => {}),
         resetAll: jest.fn(async () => {}),
+        // IMPROVED: Batch operations for better performance
+        batchUpsertFolders: jest.fn(async (payloads) => payloads.length),
+        batchUpsertFiles: jest.fn(async (payloads) => {
+          payloads.forEach((p) => inserted.push(p));
+          return payloads.length;
+        }),
       }),
     }));
     const { registerAllIpc } = require('../src/main/ipc');
@@ -102,16 +130,20 @@ describe('Embeddings/Semantic IPC', () => {
       logger,
       systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
       getServiceIntegration: () => ({ analysisHistory: mockHistory }),
-      getCustomFolders: () => [{ id: '1', name: 'Finance' }],
+      getCustomFolders: () => [
+        { id: '1', name: 'Finance', description: 'Finance folder' },
+      ],
     });
 
     const handler = ipcMain._handlers.get(
       IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
     );
     const result = await handler();
+    // IMPROVED: Now validates batch file operations work correctly
     expect(result.success).toBe(true);
     expect(result.files).toBe(1);
-    expect(inserted.length).toBe(1);
+    expect(inserted.length).toBe(1); // Only file entries tracked (folders processed separately)
+    // The file entry should have the correct ID format
     expect(inserted[0].id).toContain('file:');
   });
 

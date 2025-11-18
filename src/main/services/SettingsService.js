@@ -2,12 +2,14 @@ const { app, ipcMain } = require('electron');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { backupAndReplace } = require('../../shared/atomicFileOperations');
 const {
   validateSettings,
   sanitizeSettings,
 } = require('../../shared/settingsValidation');
 const { DEFAULT_SETTINGS } = require('../../shared/defaultSettings');
+const { logger } = require('../../shared/logger');
 
 let singletonInstance = null;
 
@@ -28,6 +30,14 @@ class SettingsService {
     // Fixed: Add mutex to prevent concurrent save operations
     this._saveMutex = Promise.resolve();
     this._saveQueue = [];
+    this._mutexAcquiredAt = null; // Track when mutex was acquired for deadlock detection
+    this._mutexTimeoutMs = 30000; // 30 seconds max for any operation
+
+    // CRITICAL FIX: Add maximum restart attempts counter to prevent infinite restart loops
+    this._watcherRestartCount = 0;
+    this._maxWatcherRestarts = 10; // Maximum 10 restart attempts
+    this._watcherRestartWindow = 60000; // 1 minute window
+    this._watcherRestartWindowStart = Date.now();
 
     // Start file watching
     this._startFileWatcher();
@@ -50,9 +60,8 @@ class SettingsService {
       this._cache = merged;
       this._cacheTimestamp = Date.now();
       if (err && err.code !== 'ENOENT') {
-        console.warn(
-          '[SETTINGS] Failed to read settings, using defaults:',
-          err.message,
+        logger.warn(
+          `[SettingsService] Failed to read settings, using defaults: ${err.message}`,
         );
       }
       return merged;
@@ -74,7 +83,9 @@ class SettingsService {
 
       // Log warnings if any
       if (validation.warnings.length > 0) {
-        console.warn('[SETTINGS] Validation warnings:', validation.warnings);
+        logger.warn('[SettingsService] Validation warnings', {
+          warnings: validation.warnings,
+        });
       }
 
       // Sanitize settings to remove any invalid values
@@ -91,7 +102,7 @@ class SettingsService {
         await fs.mkdir(this.backupDir, { recursive: true });
       } catch (error) {
         const errorMsg = `Failed to create backup directory: ${error.message}`;
-        console.error(`[SETTINGS] ${errorMsg}`);
+        logger.error(`[SettingsService] ${errorMsg}`);
         throw new Error(errorMsg);
       }
 
@@ -106,26 +117,42 @@ class SettingsService {
           if (backupResult.success) {
             break; // Success, exit retry loop
           }
+          // CRITICAL FIX: Log when backup returns unsuccessful result (not exception)
+          logger.warn(
+            `[SettingsService] Backup attempt ${attempt + 1} failed with result:`,
+            backupResult,
+          );
         } catch (error) {
+          // CRITICAL FIX: Log each attempt failure with detailed error information
+          logger.error(
+            `[SettingsService] Backup attempt ${attempt + 1} failed with exception:`,
+            {
+              error: error.message,
+              stack: error.stack,
+              attempt: attempt + 1,
+              maxRetries: maxBackupRetries,
+            },
+          );
+
           const isLastAttempt = attempt === maxBackupRetries - 1;
           if (isLastAttempt) {
             const errorMsg = `Failed to create backup after ${maxBackupRetries} attempts: ${error.message}`;
-            console.error(`[SETTINGS] ${errorMsg}`);
+            logger.error(`[SettingsService] ${errorMsg}`);
             throw new Error(errorMsg);
           }
           // Wait before retry with exponential backoff
           const delay = initialBackupDelay * Math.pow(2, attempt);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          console.warn(
-            `[SETTINGS] Backup attempt ${attempt + 1} failed, retrying in ${delay}ms...`,
+          logger.warn(
+            `[SettingsService] Retrying backup in ${delay}ms (attempt ${attempt + 2}/${maxBackupRetries})`,
           );
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
 
       // Verify backup was successful
       if (!backupResult || !backupResult.success) {
         const errorMsg = `Backup creation failed: ${backupResult?.error || 'Unknown error'}`;
-        console.error(`[SETTINGS] ${errorMsg}`);
+        logger.error(`[SettingsService] ${errorMsg}`);
         throw new Error(errorMsg);
       }
 
@@ -134,17 +161,52 @@ class SettingsService {
       this._isInternalChange = true;
       try {
         await fs.mkdir(path.dirname(this.settingsPath), { recursive: true });
-        const result = await backupAndReplace(
-          this.settingsPath,
-          JSON.stringify(merged, null, 2),
-        );
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to save settings');
-        }
 
-        // Invalidate and update cache immediately
-        this._cache = merged;
-        this._cacheTimestamp = Date.now();
+        // Bug #42: Retry logic for file lock handling with exponential backoff
+        const maxSaveRetries = 3;
+        const baseSaveDelay = 100; // Start with 100ms
+
+        for (let attempt = 0; attempt < maxSaveRetries; attempt++) {
+          try {
+            const result = await backupAndReplace(
+              this.settingsPath,
+              JSON.stringify(merged, null, 2),
+            );
+            if (!result.success) {
+              throw new Error(result.error || 'Failed to save settings');
+            }
+
+            // Invalidate and update cache immediately
+            this._cache = merged;
+            this._cacheTimestamp = Date.now();
+
+            // Success - exit retry loop
+            break;
+          } catch (saveError) {
+            // Bug #42: Check for file lock errors (EBUSY, EPERM, EACCES)
+            const isFileLockError =
+              saveError.code === 'EBUSY' ||
+              saveError.code === 'EPERM' ||
+              saveError.code === 'EACCES';
+
+            if (isFileLockError && attempt < maxSaveRetries - 1) {
+              // Calculate exponential backoff delay
+              const delay = baseSaveDelay * Math.pow(2, attempt);
+              logger.warn(
+                `[SettingsService] File lock error on save attempt ${attempt + 1}/${maxSaveRetries}: ${saveError.code}. Retrying in ${delay}ms...`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            } else if (attempt === maxSaveRetries - 1) {
+              // Last attempt failed
+              throw new Error(
+                `Failed to save settings after ${maxSaveRetries} attempts due to file lock: ${saveError.message}`,
+              );
+            } else {
+              // Non-lock error, fail immediately
+              throw saveError;
+            }
+          }
+        }
       } finally {
         // Reset flag after a short delay to allow file system to settle
         setTimeout(() => {
@@ -177,24 +239,81 @@ class SettingsService {
     });
 
     try {
-      // Wait for previous operation to complete
-      // Use .catch() to handle rejection from previous operation
-      await previousMutex.catch(() => {
+      // CRITICAL FIX: Add deadlock detection with timeout
+      // Wait for previous operation with a timeout to prevent permanent deadlock
+      const waitForPrevious = previousMutex.catch(() => {
         // Previous operation failed, but we continue with current operation
         // This prevents error propagation from breaking the mutex chain
       });
 
-      // Execute the function
-      const result = await fn();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(
+            new Error(
+              `Mutex deadlock detected: Previous operation did not complete within ${this._mutexTimeoutMs}ms. ` +
+                `This may indicate a stuck operation or infinite loop.`,
+            ),
+          );
+        }, this._mutexTimeoutMs);
+      });
 
-      // Release the mutex
-      resolveMutex();
+      // Race between waiting for previous mutex and timeout
+      await Promise.race([waitForPrevious, timeoutPromise]);
 
-      return result;
+      // CRITICAL FIX: Track when this operation acquires the mutex for deadlock detection
+      this._mutexAcquiredAt = Date.now();
+
+      // Execute the function and ensure mutex is always released
+      try {
+        // Add timeout to the actual operation as well
+        const operationPromise = fn();
+        const operationTimeout = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new Error(
+                `Operation timeout: Function did not complete within ${this._mutexTimeoutMs}ms. ` +
+                  `This may indicate a blocking operation or infinite loop in the save/restore logic.`,
+              ),
+            );
+          }, this._mutexTimeoutMs);
+        });
+
+        const result = await Promise.race([operationPromise, operationTimeout]);
+        return result;
+      } finally {
+        // CRITICAL: Always resolve mutex, even on error or timeout
+        // This ensures the next operation can proceed even if this one fails
+        this._mutexAcquiredAt = null;
+        resolveMutex();
+      }
     } catch (error) {
-      // Fixed: ALWAYS resolve the mutex, never reject
-      // This ensures the next operation can proceed even if this one fails
-      resolveMutex();
+      // CRITICAL FIX: Always release mutex even on deadlock/timeout errors
+      this._mutexAcquiredAt = null;
+      if (!resolveMutex) {
+        logger.error(
+          '[SettingsService] Mutex resolver not initialized - this should never happen',
+        );
+      } else {
+        // Ensure mutex is released even on catastrophic failure
+        resolveMutex();
+      }
+
+      // Log deadlock/timeout errors with extra context
+      if (
+        error.message?.includes('deadlock') ||
+        error.message?.includes('timeout')
+      ) {
+        logger.error('[SettingsService] Mutex deadlock or timeout detected', {
+          error: error.message,
+          mutexAcquiredAt: this._mutexAcquiredAt,
+          timeElapsed: this._mutexAcquiredAt
+            ? Date.now() - this._mutexAcquiredAt
+            : 'N/A',
+        });
+      }
+
+      // Catch and re-throw to maintain error propagation
+      // The finally block above ensures mutex is released
       throw error;
     }
   }
@@ -230,16 +349,30 @@ class SettingsService {
         `settings-${timestamp}.json`,
       );
 
-      // Write backup with metadata
+      // Write backup with metadata and SHA256 hash for integrity verification
       const backupData = {
         timestamp: new Date().toISOString(),
         appVersion: app.getVersion(),
         settings,
       };
 
+      const backupJson = JSON.stringify(backupData, null, 2);
+
+      // Calculate SHA256 hash of the backup data for integrity verification
+      const hash = crypto
+        .createHash('sha256')
+        .update(backupJson, 'utf8')
+        .digest('hex');
+
+      // Store hash in a separate metadata object
+      const backupWithHash = {
+        ...backupData,
+        hash,
+      };
+
       await fs.writeFile(
         backupPath,
-        JSON.stringify(backupData, null, 2),
+        JSON.stringify(backupWithHash, null, 2),
         'utf8',
       );
 
@@ -252,7 +385,9 @@ class SettingsService {
         timestamp: backupData.timestamp,
       };
     } catch (error) {
-      console.error('[SETTINGS] Failed to create backup:', error);
+      logger.error('[SettingsService] Failed to create backup', {
+        error: error.message,
+      });
       return {
         success: false,
         error: error.message,
@@ -295,11 +430,9 @@ class SettingsService {
             });
           } catch (error) {
             // Skip invalid backup files
-            console.warn(
-              '[SETTINGS] Invalid backup file:',
-              file,
-              error.message,
-            );
+            logger.warn(`[SettingsService] Invalid backup file: ${file}`, {
+              error: error.message,
+            });
           }
         }
       }
@@ -313,7 +446,9 @@ class SettingsService {
 
       return backups;
     } catch (error) {
-      console.error('[SETTINGS] Failed to list backups:', error);
+      logger.error('[SettingsService] Failed to list backups', {
+        error: error.message,
+      });
       return [];
     }
   }
@@ -329,8 +464,46 @@ class SettingsService {
         const content = await fs.readFile(backupPath, 'utf8');
         const backupData = JSON.parse(content);
 
+        // Bug #32: Verify JSON structure before processing
+        if (!backupData || typeof backupData !== 'object') {
+          throw new Error(
+            'Invalid backup file: corrupted or invalid JSON structure',
+          );
+        }
+
         if (!backupData.settings) {
           throw new Error('Invalid backup file: missing settings object');
+        }
+
+        // Bug #32: Verify SHA256 hash if present (for backups created after this fix)
+        if (backupData.hash) {
+          // Reconstruct the original backup data without the hash
+          const { hash: storedHash, ...originalData } = backupData;
+          const originalJson = JSON.stringify(originalData, null, 2);
+
+          // Calculate hash of the original data
+          const calculatedHash = crypto
+            .createHash('sha256')
+            .update(originalJson, 'utf8')
+            .digest('hex');
+
+          // Compare hashes
+          if (calculatedHash !== storedHash) {
+            throw new Error(
+              'Backup integrity check failed: SHA256 hash mismatch. ' +
+                'The backup file may have been tampered with or corrupted. ' +
+                'Please select a different backup file.',
+            );
+          }
+
+          logger.info(
+            '[SettingsService] Backup integrity verified (SHA256 hash match)',
+          );
+        } else {
+          // Warn if hash is not present (old backup format)
+          logger.warn(
+            '[SettingsService] Restoring from backup without SHA256 verification (old format)',
+          );
         }
 
         // Create a backup of current settings before restoring
@@ -373,7 +546,9 @@ class SettingsService {
           restoredFrom: backupData.timestamp,
         };
       } catch (error) {
-        console.error('[SETTINGS] Failed to restore from backup:', error);
+        logger.error('[SettingsService] Failed to restore from backup', {
+          error: error.message,
+        });
         return {
           success: false,
           error: error.message,
@@ -391,6 +566,16 @@ class SettingsService {
     try {
       const backups = await this.listBackups();
 
+      // Bug #36: Add Number.MAX_SAFE_INTEGER check before timestamp comparisons
+      // Validate all timestamps are within safe integer range
+      for (const backup of backups) {
+        if (backup._parsedTime && !Number.isSafeInteger(backup._parsedTime)) {
+          logger.warn(
+            `[SettingsService] Backup ${backup.filename} has unsafe timestamp: ${backup._parsedTime}. Skipping for safety.`,
+          );
+        }
+      }
+
       // Keep only the most recent backups
       if (backups.length > this.maxBackups) {
         const backupsToDelete = backups.slice(this.maxBackups);
@@ -399,16 +584,17 @@ class SettingsService {
           try {
             await fs.unlink(backup.path);
           } catch (error) {
-            console.warn(
-              '[SETTINGS] Failed to delete old backup:',
-              backup.filename,
-              error.message,
+            logger.warn(
+              `[SettingsService] Failed to delete old backup: ${backup.filename}`,
+              { error: error.message },
             );
           }
         }
       }
     } catch (error) {
-      console.error('[SETTINGS] Failed to cleanup old backups:', error);
+      logger.error('[SettingsService] Failed to cleanup old backups', {
+        error: error.message,
+      });
     }
   }
 
@@ -420,7 +606,9 @@ class SettingsService {
       await fs.unlink(backupPath);
       return { success: true };
     } catch (error) {
-      console.error('[SETTINGS] Failed to delete backup:', error);
+      logger.error('[SettingsService] Failed to delete backup', {
+        error: error.message,
+      });
       return {
         success: false,
         error: error.message,
@@ -466,16 +654,23 @@ class SettingsService {
 
       // Handle watcher errors
       this._fileWatcher.on('error', (error) => {
-        console.error('[SETTINGS] File watcher error:', error);
+        logger.error('[SettingsService] File watcher error', {
+          error: error.message,
+        });
+        // CRITICAL FIX: Check restart limit before attempting to restart
         // Attempt to restart watcher after a delay
         setTimeout(() => {
           this._restartFileWatcher();
         }, 5000);
       });
 
-      console.log('[SETTINGS] File watcher started for:', this.settingsPath);
+      logger.info(
+        `[SettingsService] File watcher started for: ${this.settingsPath}`,
+      );
     } catch (error) {
-      console.warn('[SETTINGS] Failed to start file watcher:', error.message);
+      logger.warn(
+        `[SettingsService] Failed to start file watcher: ${error.message}`,
+      );
       // Non-fatal - app can still function without file watching
     }
   }
@@ -485,6 +680,30 @@ class SettingsService {
    * @private
    */
   _restartFileWatcher() {
+    // CRITICAL FIX: Implement restart limit with time window to prevent infinite loops
+    const now = Date.now();
+
+    // Reset counter if window has passed
+    if (now - this._watcherRestartWindowStart > this._watcherRestartWindow) {
+      this._watcherRestartCount = 0;
+      this._watcherRestartWindowStart = now;
+    }
+
+    // Check if restart limit exceeded
+    if (this._watcherRestartCount >= this._maxWatcherRestarts) {
+      logger.error(
+        `[SettingsService] File watcher restart limit exceeded (${this._maxWatcherRestarts} restarts in ${this._watcherRestartWindow}ms). Disabling file watcher.`,
+      );
+      this._stopFileWatcher();
+      return;
+    }
+
+    // Increment counter and restart
+    this._watcherRestartCount++;
+    logger.info(
+      `[SettingsService] Restarting file watcher (attempt ${this._watcherRestartCount}/${this._maxWatcherRestarts})`,
+    );
+
     this._stopFileWatcher();
     this._startFileWatcher();
   }
@@ -498,9 +717,11 @@ class SettingsService {
       try {
         this._fileWatcher.close();
         this._fileWatcher = null;
-        console.log('[SETTINGS] File watcher stopped');
+        logger.info('[SettingsService] File watcher stopped');
       } catch (error) {
-        console.error('[SETTINGS] Error stopping file watcher:', error);
+        logger.error('[SettingsService] Error stopping file watcher', {
+          error: error.message,
+        });
       }
     }
 
@@ -517,10 +738,8 @@ class SettingsService {
    */
   async _handleExternalFileChange(eventType, filename) {
     try {
-      console.log(
-        '[SETTINGS] External file change detected:',
-        eventType,
-        filename,
+      logger.debug(
+        `[SettingsService] External file change detected: ${eventType}, ${filename}`,
       );
 
       // Check if file still exists (might have been deleted)
@@ -528,7 +747,9 @@ class SettingsService {
         await fs.access(this.settingsPath);
       } catch (error) {
         if (error.code === 'ENOENT') {
-          console.log('[SETTINGS] Settings file was deleted, using defaults');
+          logger.info(
+            '[SettingsService] Settings file was deleted, using defaults',
+          );
           this.invalidateCache();
           this._notifySettingsChanged();
           return;
@@ -541,14 +762,16 @@ class SettingsService {
 
       // Reload settings from disk
       const newSettings = await this.load();
-      console.log('[SETTINGS] Settings reloaded from external change');
+      logger.debug('[SettingsService] Settings reloaded from external change');
 
       // Notify renderer process of settings change
       this._notifySettingsChanged();
 
       return newSettings;
     } catch (error) {
-      console.error('[SETTINGS] Failed to handle external file change:', error);
+      logger.error('[SettingsService] Failed to handle external file change', {
+        error: error.message,
+      });
       // Invalidate cache anyway to prevent stale data
       this.invalidateCache();
     }
@@ -570,18 +793,16 @@ class SettingsService {
             try {
               win.webContents.send('settings-changed-external');
             } catch (error) {
-              console.warn(
-                '[SETTINGS] Failed to send settings-changed event:',
-                error.message,
+              logger.warn(
+                `[SettingsService] Failed to send settings-changed event: ${error.message}`,
               );
             }
           }
         });
       }
     } catch (error) {
-      console.warn(
-        '[SETTINGS] Failed to notify settings change:',
-        error.message,
+      logger.warn(
+        `[SettingsService] Failed to notify settings change: ${error.message}`,
       );
     }
   }

@@ -183,7 +183,17 @@ class FolderMatchingService {
    * Get database statistics
    */
   async getStats() {
-    return await this.chromaDbService.getStats();
+    try {
+      return await this.chromaDbService.getStats();
+    } catch (error) {
+      logger.error('[FolderMatchingService] Failed to get stats:', error);
+      return {
+        error: error.message,
+        folderCount: 0,
+        fileCount: 0,
+        lastUpdate: null,
+      };
+    }
   }
 
   /**

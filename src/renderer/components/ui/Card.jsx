@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 const VARIANT_TO_CLASS = {
@@ -19,21 +19,26 @@ const VARIANT_TO_CLASS = {
     'bg-surface-primary rounded-xl border border-border-light shadow-sm p-6 xl:p-21 2xl:p-26 transition-transform duration-150 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] backdrop-blur-sm',
 };
 
-export default function Card({
+const Card = memo(function Card({
   as: Component = 'div',
   variant = 'default',
   className = '',
   children,
   ...rest
 }) {
-  const variantClass = VARIANT_TO_CLASS[variant] || VARIANT_TO_CLASS.default;
-  const classes = `${variantClass} ${className}`.trim();
+  const classes = useMemo(() => {
+    const variantClass = VARIANT_TO_CLASS[variant] || VARIANT_TO_CLASS.default;
+    return `${variantClass} ${className}`.trim();
+  }, [variant, className]);
+
   return (
     <Component className={classes} {...rest}>
       {children}
     </Component>
   );
-}
+});
+
+export default Card;
 
 Card.propTypes = {
   as: PropTypes.elementType,

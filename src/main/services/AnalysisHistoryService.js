@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
 const crypto = require('crypto');
+const { logger } = require('../../shared/logger');
 
 class AnalysisHistoryService {
   constructor() {
@@ -33,9 +34,11 @@ class AnalysisHistoryService {
       await this.loadHistory();
       await this.loadIndex();
       this.initialized = true;
-      console.log('AnalysisHistoryService initialized successfully');
+      logger.info('[AnalysisHistoryService] Initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize AnalysisHistoryService:', error);
+      logger.error('[AnalysisHistoryService] Failed to initialize', {
+        error: error.message,
+      });
       await this.createDefaultStructures();
     }
   }
@@ -357,31 +360,44 @@ class AnalysisHistoryService {
     const categories = Object.keys(this.analysisIndex.categoryIndex);
     const tags = Object.keys(this.analysisIndex.tagIndex);
 
+    // CRITICAL FIX (BUG #5): Prevent division by zero when entries array is empty
+    // Previous code would crash with NaN values if no files have been analyzed
+    const entryCount = entries.length;
+    const hasEntries = entryCount > 0;
+
+    // Calculate sums for averages (only if we have entries)
+    let totalConfidence = 0;
+    let totalProcessingTime = 0;
+
+    if (hasEntries) {
+      for (const entry of entries) {
+        totalConfidence += entry.analysis.confidence || 0;
+        totalProcessingTime += entry.processing.processingTimeMs || 0;
+      }
+    }
+
     return {
-      totalFiles: entries.length,
+      totalFiles: entryCount,
       totalSize: this.analysisHistory.totalSize,
       categoriesCount: categories.length,
       tagsCount: tags.length,
-      averageConfidence:
-        entries.reduce((sum, e) => sum + (e.analysis.confidence || 0), 0) /
-        entries.length,
-      averageProcessingTime:
-        entries.reduce(
-          (sum, e) => sum + (e.processing.processingTimeMs || 0),
-          0,
-        ) / entries.length,
-      oldestAnalysis:
-        entries.length > 0
-          ? entries.reduce((oldest, e) =>
-              new Date(e.timestamp) < new Date(oldest.timestamp) ? e : oldest,
-            ).timestamp
-          : null,
-      newestAnalysis:
-        entries.length > 0
-          ? entries.reduce((newest, e) =>
-              new Date(e.timestamp) > new Date(newest.timestamp) ? e : newest,
-            ).timestamp
-          : null,
+      // CRITICAL: Return 0 or null for averages when no entries exist, not NaN
+      averageConfidence: hasEntries ? totalConfidence / entryCount : 0,
+      averageProcessingTime: hasEntries ? totalProcessingTime / entryCount : 0,
+      // CRITICAL: Only calculate min/max when entries exist
+      oldestAnalysis: hasEntries
+        ? entries.reduce((oldest, e) =>
+            new Date(e.timestamp) < new Date(oldest.timestamp) ? e : oldest,
+          ).timestamp
+        : null,
+      newestAnalysis: hasEntries
+        ? entries.reduce((newest, e) =>
+            new Date(e.timestamp) > new Date(newest.timestamp) ? e : newest,
+          ).timestamp
+        : null,
+      // Additional metadata for debugging
+      isEmpty: !hasEntries,
+      lastUpdated: this.analysisHistory.updatedAt,
     };
   }
 
@@ -432,7 +448,9 @@ class AnalysisHistoryService {
     }
 
     if (removedCount > 0) {
-      console.log(`Removed ${removedCount} expired analysis entries`);
+      logger.info(
+        `[AnalysisHistoryService] Removed ${removedCount} expired analysis entries`,
+      );
       await this.saveHistory();
       await this.saveIndex();
     }
@@ -472,7 +490,9 @@ class AnalysisHistoryService {
 
   async migrateHistory() {
     // Future migration logic for schema changes
-    console.log('Schema migration not yet implemented');
+    logger.debug(
+      '[AnalysisHistoryService] Schema migration not yet implemented',
+    );
   }
 
   async createDefaultStructures() {

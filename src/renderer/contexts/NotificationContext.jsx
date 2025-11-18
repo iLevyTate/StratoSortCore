@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
 } from 'react';
 import PropTypes from 'prop-types';
 import { ToastContainer, useToast } from '../components/Toast';
@@ -55,19 +56,32 @@ export function NotificationProvider({ children }) {
     return cleanup;
   }, [showError, showWarning, showInfo]);
 
+  // Memoize the context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({
+      notifications: toasts,
+      addNotification,
+      removeNotification,
+      clearAllNotifications: clearAllToasts,
+      showSuccess,
+      showError,
+      showWarning,
+      showInfo,
+    }),
+    [
+      toasts,
+      addNotification,
+      removeNotification,
+      clearAllToasts,
+      showSuccess,
+      showError,
+      showWarning,
+      showInfo,
+    ],
+  );
+
   return (
-    <NotificationContext.Provider
-      value={{
-        notifications: toasts,
-        addNotification,
-        removeNotification,
-        clearAllNotifications: clearAllToasts,
-        showSuccess,
-        showError,
-        showWarning,
-        showInfo,
-      }}
-    >
+    <NotificationContext.Provider value={contextValue}>
       {children}
       <ToastContainer
         toasts={toasts}

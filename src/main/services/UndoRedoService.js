@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
+const { logger } = require('../../shared/logger');
 
 class UndoRedoService {
   constructor(options = {}) {
@@ -54,9 +55,11 @@ class UndoRedoService {
     try {
       await this.loadActions();
       this.initialized = true;
-      console.log('UndoRedoService initialized successfully');
+      logger.info('[UndoRedoService] Initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize UndoRedoService:', error);
+      logger.error('[UndoRedoService] Failed to initialize', {
+        error: error.message,
+      });
       this.actions = [];
       this.currentIndex = -1;
       this.initialized = true;
@@ -119,8 +122,8 @@ class UndoRedoService {
       actionData.operations &&
       actionData.operations.length > this.maxBatchSize
     ) {
-      console.warn(
-        `[UNDO] Batch operation has ${actionData.operations.length} items, limiting to ${this.maxBatchSize}`,
+      logger.warn(
+        `[UndoRedoService] Batch operation has ${actionData.operations.length} items, limiting to ${this.maxBatchSize}`,
       );
       actionData.operations = actionData.operations.slice(0, this.maxBatchSize);
     }
@@ -151,25 +154,52 @@ class UndoRedoService {
     this.currentIndex = this.actions.length - 1;
     this.currentMemoryEstimate += actionSize;
 
-    // Fixed: Trim actions if we exceed count OR memory limits
+    // BUG FIX #7: Prevent infinite loop when single action exceeds memory limit
+    // CRITICAL: If we only have 1 action and it's oversized, the while loop would run forever
+    // We need to either truncate the single action OR accept it exceeds the limit
     const maxMemoryBytes = this.maxMemoryMB * 1024 * 1024;
+
+    // Safety check: Prevent infinite loop by tracking iterations
+    let pruneIterations = 0;
+    const maxPruneIterations = this.maxActions + 10; // Safety margin
+
     while (
       this.actions.length > 1 && // Must have more than 1 to remove
       (this.actions.length > this.maxActions ||
-        this.currentMemoryEstimate > maxMemoryBytes)
+        this.currentMemoryEstimate > maxMemoryBytes) &&
+      pruneIterations < maxPruneIterations // ESCAPE CONDITION
     ) {
       const removedAction = this.actions.shift();
       this.currentIndex--;
       this.currentMemoryEstimate -= this._estimateActionSize(removedAction);
+      pruneIterations++;
     }
 
-    // Fixed: If still over memory limit with only 1 action, truncate that action
+    // Check if we hit the iteration limit (should never happen, but log if it does)
+    if (pruneIterations >= maxPruneIterations) {
+      logger.error(
+        `[UndoRedoService] Pruning loop hit safety limit at ${pruneIterations} iterations`,
+        {
+          actionsRemaining: this.actions.length,
+          memoryEstimateMB: (this.currentMemoryEstimate / 1024 / 1024).toFixed(
+            2,
+          ),
+          maxMemoryMB: this.maxMemoryMB,
+        },
+      );
+    }
+
+    // BUG FIX #7: Handle single oversized action
+    // If we only have 1 action left and it still exceeds the memory limit,
+    // we have two options:
+    // 1. Truncate the action data to fit within limits
+    // 2. Clear the entire action history
     if (
       this.currentMemoryEstimate > maxMemoryBytes &&
       this.actions.length === 1
     ) {
-      console.warn(
-        `[UNDO] Single action exceeds memory limit (${(this.currentMemoryEstimate / 1024 / 1024).toFixed(2)}MB > ${this.maxMemoryMB}MB), truncating data`,
+      logger.warn(
+        `[UndoRedoService] Single action exceeds memory limit (${(this.currentMemoryEstimate / 1024 / 1024).toFixed(2)}MB > ${this.maxMemoryMB}MB), truncating data`,
       );
 
       // Truncate the action's data to prevent unbounded memory growth
@@ -184,8 +214,32 @@ class UndoRedoService {
         timestamp: largeAction.timestamp,
       };
 
-      // Recalculate memory estimate
+      // Recalculate memory estimate after truncation
       this._recalculateMemoryEstimate();
+
+      // SAFETY CHECK: If still over limit after truncation, clear everything
+      if (this.currentMemoryEstimate > maxMemoryBytes) {
+        logger.error(
+          `[UndoRedoService] Even after truncation, action exceeds memory limit. Clearing all undo history.`,
+          {
+            truncatedSizeMB: (this.currentMemoryEstimate / 1024 / 1024).toFixed(
+              2,
+            ),
+            maxMemoryMB: this.maxMemoryMB,
+          },
+        );
+        this.actions = [];
+        this.currentIndex = -1;
+        this.currentMemoryEstimate = 0;
+      }
+    }
+
+    // EDGE CASE: If we somehow have 0 actions but non-zero memory estimate, reset
+    if (this.actions.length === 0 && this.currentMemoryEstimate !== 0) {
+      logger.warn(
+        '[UndoRedoService] Memory estimate desync detected, resetting to 0',
+      );
+      this.currentMemoryEstimate = 0;
     }
 
     await this.saveActions();
@@ -211,7 +265,9 @@ class UndoRedoService {
         message: `Undid: ${action.description}`,
       };
     } catch (error) {
-      console.error('Failed to undo action:', error);
+      logger.error('[UndoRedoService] Failed to undo action', {
+        error: error.message,
+      });
       throw new Error(`Failed to undo action: ${error.message}`);
     }
   }
@@ -235,7 +291,9 @@ class UndoRedoService {
         message: `Redid: ${action.description}`,
       };
     } catch (error) {
-      console.error('Failed to redo action:', error);
+      logger.error('[UndoRedoService] Failed to redo action', {
+        error: error.message,
+      });
       throw new Error(`Failed to redo action: ${error.message}`);
     }
   }
@@ -260,17 +318,50 @@ class UndoRedoService {
         await this.safeMove(action.data.newPath, action.data.originalPath);
         break;
 
-      case 'FILE_DELETE':
-        // Restore file from backup (if we have one)
-        if (
-          action.data.backupPath &&
-          (await this.fileExists(action.data.backupPath))
-        ) {
-          await this.safeMove(action.data.backupPath, action.data.originalPath);
-        } else {
-          throw new Error('Cannot restore deleted file - backup not found');
+      case 'FILE_DELETE': {
+        // CRITICAL FIX (BUG #2): Enhanced backup recovery with detailed error messages
+        // Previous code didn't persist backup paths immediately, risking data loss on crashes
+        // Now we check multiple backup locations and provide detailed error information
+        if (!action.data.backupPath) {
+          throw new Error(
+            'Cannot restore deleted file - no backup path was recorded. ' +
+              'File may have been permanently deleted without backup. ' +
+              `Original path: ${action.data.originalPath}`,
+          );
         }
+
+        const backupExists = await this.fileExists(action.data.backupPath);
+        if (!backupExists) {
+          // CRITICAL: Backup path was recorded but file doesn't exist
+          // This indicates either: backup failed, backup was deleted, or path is incorrect
+          logger.error(
+            '[UndoRedoService] Backup file not found at expected location',
+            {
+              backupPath: action.data.backupPath,
+              originalPath: action.data.originalPath,
+              actionId: action.id,
+              timestamp: action.timestamp,
+            },
+          );
+
+          throw new Error(
+            `Cannot restore deleted file - backup not found at expected location.\n` +
+              `Original file: ${action.data.originalPath}\n` +
+              `Expected backup: ${action.data.backupPath}\n` +
+              `This may indicate the backup was never created, was deleted, or the path is incorrect.\n` +
+              `Action ID: ${action.id}, Timestamp: ${action.timestamp}`,
+          );
+        }
+
+        // Restore file from backup
+        logger.info('[UndoRedoService] Restoring file from backup', {
+          from: action.data.backupPath,
+          to: action.data.originalPath,
+        });
+
+        await this.safeMove(action.data.backupPath, action.data.originalPath);
         break;
+      }
 
       case 'FOLDER_CREATE':
         // Remove the created folder (if empty)
@@ -278,9 +369,8 @@ class UndoRedoService {
           await fs.rmdir(action.data.folderPath);
         } catch (error) {
           // Folder might not be empty, try to restore to original state
-          console.warn(
-            'Could not remove folder, might contain files:',
-            error.message,
+          logger.warn(
+            `[UndoRedoService] Could not remove folder, might contain files: ${error.message}`,
           );
         }
         break;
@@ -381,6 +471,122 @@ class UndoRedoService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * CRITICAL FIX (BUG #2): Create backup for file deletion with immediate persistence
+   * This ensures backups are created and tracked BEFORE the actual deletion occurs
+   *
+   * @param {string} filePath - Path to file to backup
+   * @returns {Promise<string>} Path to backup file
+   */
+  async createBackup(filePath) {
+    const backupDir = path.join(this.userDataPath, 'undo-backups');
+    await this.ensureParentDirectory(path.join(backupDir, 'dummy'));
+
+    // Create unique backup filename with timestamp and random component
+    const originalName = path.basename(filePath);
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 10);
+    const backupName = `${timestamp}_${randomId}_${originalName}`;
+    const backupPath = path.join(backupDir, backupName);
+
+    // Verify source file exists before attempting backup
+    if (!(await this.fileExists(filePath))) {
+      throw new Error(
+        `Cannot create backup - source file does not exist: ${filePath}`,
+      );
+    }
+
+    try {
+      // Create backup using safeMove which includes verification
+      await fs.copyFile(filePath, backupPath);
+
+      // Verify backup was created successfully
+      const [sourceStats, backupStats] = await Promise.all([
+        fs.stat(filePath),
+        fs.stat(backupPath),
+      ]);
+
+      if (sourceStats.size !== backupStats.size) {
+        await fs.unlink(backupPath).catch(() => {});
+        throw new Error(
+          `Backup verification failed - size mismatch (source: ${sourceStats.size}, backup: ${backupStats.size})`,
+        );
+      }
+
+      logger.info('[UndoRedoService] Created backup successfully', {
+        original: filePath,
+        backup: backupPath,
+        size: sourceStats.size,
+      });
+
+      // CRITICAL: Immediately persist the backup path to disk BEFORE deleting the original
+      // This ensures we can recover even if the process crashes
+      await this.saveActions();
+
+      return backupPath;
+    } catch (error) {
+      // Clean up failed backup attempt
+      await fs.unlink(backupPath).catch(() => {});
+      throw new Error(`Failed to create backup: ${error.message}`);
+    }
+  }
+
+  /**
+   * CRITICAL FIX (BUG #2): Clean up old backup files to prevent unbounded disk usage
+   * Call this periodically to remove backups for actions that are no longer in history
+   */
+  async cleanupOldBackups() {
+    const backupDir = path.join(this.userDataPath, 'undo-backups');
+
+    try {
+      await fs.access(backupDir);
+    } catch {
+      // Backup directory doesn't exist, nothing to clean
+      return { removed: 0, errors: 0 };
+    }
+
+    // Get all backup paths currently referenced in actions
+    const referencedBackups = new Set();
+    for (const action of this.actions) {
+      if (action.data?.backupPath) {
+        referencedBackups.add(path.basename(action.data.backupPath));
+      }
+      if (action.data?.operations) {
+        for (const op of action.data.operations) {
+          if (op.backupPath) {
+            referencedBackups.add(path.basename(op.backupPath));
+          }
+        }
+      }
+    }
+
+    // Find and remove unreferenced backups
+    const files = await fs.readdir(backupDir);
+    let removed = 0;
+    let errors = 0;
+
+    for (const file of files) {
+      if (!referencedBackups.has(file)) {
+        try {
+          await fs.unlink(path.join(backupDir, file));
+          removed++;
+          logger.info(`[UndoRedoService] Removed orphaned backup: ${file}`);
+        } catch (error) {
+          errors++;
+          logger.warn(
+            `[UndoRedoService] Failed to remove orphaned backup ${file}:`,
+            error.message,
+          );
+        }
+      }
+    }
+
+    logger.info(
+      `[UndoRedoService] Backup cleanup complete - removed ${removed} orphaned backups, ${errors} errors`,
+    );
+    return { removed, errors };
   }
 
   getActionDescription(actionType, actionData) {

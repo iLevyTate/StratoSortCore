@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.js';
+import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
 import './tailwind.css';
 
 // Enable smooth scrolling globally
@@ -9,8 +10,8 @@ if (typeof window !== 'undefined') {
   document.documentElement.style.scrollBehavior = 'smooth';
   document.body.style.scrollBehavior = 'smooth';
 
-  // Add smooth scroll behavior to all internal links
-  document.addEventListener('click', (e) => {
+  // Add smooth scroll behavior to all internal links with proper cleanup
+  const clickHandler = (e) => {
     const link = e.target.closest('a');
     if (link && link.getAttribute('href')?.startsWith('#')) {
       e.preventDefault();
@@ -22,6 +23,27 @@ if (typeof window !== 'undefined') {
           block: 'start',
           inline: 'nearest',
         });
+      }
+    }
+  };
+
+  document.addEventListener('click', clickHandler);
+
+  // Add cleanup on page unload to prevent dangling references
+  window.addEventListener('beforeunload', () => {
+    document.removeEventListener('click', clickHandler);
+  });
+
+  // Handle visibility changes to clean up references during minimize/restore
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      // Clear any pending animations or timers when window is hidden
+      if (typeof cancelAnimationFrame !== 'undefined') {
+        // Cancel any pending animation frames to prevent dangling callbacks
+        let id = requestAnimationFrame(() => {});
+        while (id > 0) {
+          cancelAnimationFrame(id--);
+        }
       }
     }
   });
@@ -45,10 +67,12 @@ function initializeApp() {
     // Create React root
     const root = createRoot(container);
 
-    // Render the React app
+    // Render the React app with global error boundary
     root.render(
       <React.StrictMode>
-        <App />
+        <GlobalErrorBoundary>
+          <App />
+        </GlobalErrorBoundary>
       </React.StrictMode>,
     );
 

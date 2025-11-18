@@ -5,6 +5,7 @@ const { getInstance: getChromaDB } = require('./ChromaDBService');
 const FolderMatchingService = require('./FolderMatchingService');
 const OrganizationSuggestionService = require('./OrganizationSuggestionService');
 const AutoOrganizeService = require('./AutoOrganizeService');
+const { logger } = require('../../shared/logger');
 
 class ServiceIntegration {
   constructor() {
@@ -20,6 +21,8 @@ class ServiceIntegration {
 
   async initialize() {
     if (this.initialized) return;
+
+    logger.info('[ServiceIntegration] Starting initialization...');
 
     // Initialize core services
     this.analysisHistory = new AnalysisHistoryService();
@@ -48,22 +51,56 @@ class ServiceIntegration {
       undoRedoService: this.undoRedo,
     });
 
-    // Check ChromaDB availability before initializing
-    const isChromaReady = await this.chromaDbService.isServerAvailable();
-    if (!isChromaReady) {
-      console.error(
-        '[ChromaDB] ChromaDB server is not available. Please ensure ChromaDB is installed and running.',
+    // Check ChromaDB availability before initializing with timeout
+    let isChromaReady = false;
+    try {
+      // Add a shorter timeout for the availability check
+      isChromaReady = await Promise.race([
+        this.chromaDbService.isServerAvailable(2000),
+        new Promise((resolve) => setTimeout(() => resolve(false), 2000)),
+      ]);
+    } catch (error) {
+      logger.warn(
+        '[ServiceIntegration] ChromaDB availability check failed:',
+        error.message,
       );
-      // Optionally, you can decide how to handle this case, e.g., by disabling features that depend on ChromaDB
+      isChromaReady = false;
     }
 
-    // Initialize all services
-    await Promise.all([
+    if (!isChromaReady) {
+      logger.warn(
+        '[ServiceIntegration] ChromaDB server is not available. Running in degraded mode.',
+      );
+      // Continue without ChromaDB - don't block startup
+    }
+
+    // Fixed: Initialize all services with graceful degradation
+    // Use Promise.allSettled to continue even if some services fail
+    const results = await Promise.allSettled([
       this.analysisHistory.initialize(),
       this.undoRedo.initialize(),
       this.processingState.initialize(),
       isChromaReady ? this.chromaDbService.initialize() : Promise.resolve(),
     ]);
+
+    // Log any service initialization failures but continue
+    const serviceNames = [
+      'analysisHistory',
+      'undoRedo',
+      'processingState',
+      'chromaDb',
+    ];
+    const failures = results
+      .map((result, index) => ({ result, name: serviceNames[index] }))
+      .filter(({ result }) => result.status === 'rejected');
+
+    if (failures.length > 0) {
+      logger.error('[ServiceIntegration] Some services failed to initialize:');
+      failures.forEach(({ name, result }) => {
+        logger.error(`  - ${name}: ${result.reason?.message || result.reason}`);
+      });
+      // Continue with degraded functionality
+    }
 
     // Fixed: Initialize FolderMatchingService after ChromaDB is ready
     // This starts the embedding cache cleanup interval only after successful initialization
@@ -120,9 +157,11 @@ class ServiceIntegration {
       this.autoOrganizeService = null;
       this.initialized = false;
 
-      console.log('[ServiceIntegration] All services shut down successfully');
+      logger.info('[ServiceIntegration] All services shut down successfully');
     } catch (error) {
-      console.error('[ServiceIntegration] Error during shutdown:', error);
+      logger.error('[ServiceIntegration] Error during shutdown', {
+        error: error.message,
+      });
     }
   }
 }

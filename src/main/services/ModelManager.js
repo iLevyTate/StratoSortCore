@@ -7,6 +7,7 @@ const { Ollama } = require('ollama');
 const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
+const { logger } = require('../../shared/logger');
 
 class ModelManager {
   constructor(host = 'http://127.0.0.1:11434') {
@@ -17,6 +18,11 @@ class ModelManager {
     this.modelCapabilities = new Map();
     this.lastHealthCheck = null;
     this.configPath = path.join(app.getPath('userData'), 'model-config.json');
+
+    // Add initialization guards to prevent race conditions
+    this.initialized = false;
+    this._initPromise = null;
+    this._isInitializing = false;
 
     // Model categories and their capabilities
     this.modelCategories = {
@@ -65,29 +71,125 @@ class ModelManager {
   }
 
   /**
-   * Initialize the model manager
+   * Initialize the model manager with race condition protection
    */
   async initialize() {
-    try {
-      console.log('[MODEL-MANAGER] Initializing...');
-
-      // Load saved configuration
-      await this.loadConfig();
-
-      // Discover available models
-      await this.discoverModels();
-
-      // Ensure we have a working model
-      await this.ensureWorkingModel();
-
-      console.log(
-        `[MODEL-MANAGER] Initialized with model: ${this.selectedModel}`,
-      );
+    // If already initialized, return success
+    if (this.initialized) {
       return true;
-    } catch (error) {
-      console.error('[MODEL-MANAGER] Initialization failed:', error);
-      return false;
     }
+
+    // If initialization is in progress, wait for it
+    if (this._initPromise) {
+      return this._initPromise;
+    }
+
+    // Prevent concurrent initialization
+    if (this._isInitializing) {
+      // Wait for the ongoing initialization
+      return new Promise((resolve) => {
+        let checkInterval;
+        let timeoutId;
+
+        try {
+          checkInterval = setInterval(() => {
+            if (!this._isInitializing) {
+              clearInterval(checkInterval);
+              if (timeoutId) clearTimeout(timeoutId);
+              resolve(this.initialized);
+            }
+          }, 100);
+
+          // Add timeout to prevent infinite waiting
+          timeoutId = setTimeout(() => {
+            if (checkInterval) clearInterval(checkInterval);
+            resolve(false);
+          }, 10000); // 10 second timeout
+
+          // Ensure timers don't keep process alive
+          if (checkInterval && checkInterval.unref) {
+            checkInterval.unref();
+          }
+          if (timeoutId && timeoutId.unref) {
+            timeoutId.unref();
+          }
+        } catch (error) {
+          // Cleanup on error
+          if (checkInterval) clearInterval(checkInterval);
+          if (timeoutId) clearTimeout(timeoutId);
+          logger.error(
+            '[ModelManager] Error setting up initialization wait:',
+            error,
+          );
+          resolve(false);
+        }
+      });
+    }
+
+    // Set initialization flag
+    this._isInitializing = true;
+
+    // Create initialization promise
+    this._initPromise = (async () => {
+      try {
+        logger.info('[ModelManager] Initializing');
+
+        // Load saved configuration
+        await this.loadConfig();
+
+        // Discover available models with timeout
+        const discoverPromise = this.discoverModels();
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error('Model discovery timeout')),
+            5000,
+          );
+          // Ensure timeout doesn't keep process alive
+          if (timeoutId && timeoutId.unref) {
+            timeoutId.unref();
+          }
+        });
+
+        try {
+          await Promise.race([discoverPromise, timeoutPromise]);
+        } catch (error) {
+          logger.warn('[ModelManager] Model discovery failed or timed out', {
+            error: error.message,
+          });
+        } finally {
+          // Clean up timeout
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+        }
+
+        // Ensure we have a working model
+        await this.ensureWorkingModel();
+
+        // Mark as initialized
+        this.initialized = true;
+        this._isInitializing = false;
+
+        logger.info(
+          `[ModelManager] Initialized with model: ${this.selectedModel}`,
+        );
+        return true;
+      } catch (error) {
+        logger.error('[ModelManager] Initialization failed', {
+          error: error.message,
+        });
+
+        // Clear initialization state on failure
+        this.initialized = false;
+        this._isInitializing = false;
+        this._initPromise = null;
+
+        return false;
+      }
+    })();
+
+    return this._initPromise;
   }
 
   /**
@@ -103,12 +205,14 @@ class ModelManager {
         this.analyzeModelCapabilities(model);
       }
 
-      console.log(
-        `[MODEL-MANAGER] Discovered ${this.availableModels.length} models`,
+      logger.info(
+        `[ModelManager] Discovered ${this.availableModels.length} models`,
       );
       return this.availableModels;
     } catch (error) {
-      console.error('[MODEL-MANAGER] Failed to discover models:', error);
+      logger.error('[ModelManager] Failed to discover models', {
+        error: error.message,
+      });
       this.availableModels = [];
       return [];
     }
@@ -168,8 +272,8 @@ class ModelManager {
         (m) => m.name === this.selectedModel,
       );
       if (modelExists && (await this.testModel(this.selectedModel))) {
-        console.log(
-          `[MODEL-MANAGER] Using existing model: ${this.selectedModel}`,
+        logger.info(
+          `[ModelManager] Using existing model: ${this.selectedModel}`,
         );
         return this.selectedModel;
       }
@@ -200,7 +304,7 @@ class ModelManager {
       );
 
       if (model && (await this.testModel(model.name))) {
-        console.log(`[MODEL-MANAGER] Selected preferred model: ${model.name}`);
+        logger.info(`[ModelManager] Selected preferred model: ${model.name}`);
         return model.name;
       }
     }
@@ -210,7 +314,7 @@ class ModelManager {
       const capabilities = this.modelCapabilities.get(model.name);
       if (capabilities && (capabilities.text || capabilities.chat)) {
         if (await this.testModel(model.name)) {
-          console.log(`[MODEL-MANAGER] Selected fallback model: ${model.name}`);
+          logger.info(`[ModelManager] Selected fallback model: ${model.name}`);
           return model.name;
         }
       }
@@ -219,8 +323,8 @@ class ModelManager {
     // Last resort: try the first available model
     const firstModel = this.availableModels[0];
     if (await this.testModel(firstModel.name)) {
-      console.log(
-        `[MODEL-MANAGER] Selected first available model: ${firstModel.name}`,
+      logger.info(
+        `[ModelManager] Selected first available model: ${firstModel.name}`,
       );
       return firstModel.name;
     }
@@ -230,13 +334,20 @@ class ModelManager {
 
   /**
    * Test if a model is working
+   * HIGH PRIORITY FIX #5: Use AbortController for proper cancellation and cleanup
    */
   async testModel(modelName, timeout = 10000) {
+    // Create AbortController for proper cleanup
+    const abortController = new AbortController();
+    let timeoutId = null;
+
     try {
-      console.log(`[MODEL-MANAGER] Testing model: ${modelName}`);
+      logger.debug(`[ModelManager] Testing model: ${modelName}`);
 
       const { buildOllamaOptions } = require('./PerformanceService');
       const perfOptions = await buildOllamaOptions('text');
+
+      // Create the test promise with abort signal support
       const testPromise = this.ollamaClient.generate({
         model: modelName,
         prompt: 'Hello',
@@ -245,28 +356,56 @@ class ModelManager {
           num_predict: 5,
           temperature: 0.1,
         },
+        // Pass abort signal if ollama client supports it
+        signal: abortController.signal,
       });
 
+      // HIGH PRIORITY FIX #5: Implement timeout with proper cleanup
       const timeoutPromise = new Promise((_, reject) => {
-        const t = setTimeout(
-          () => reject(new Error('Model test timeout')),
-          timeout,
-        );
-        try {
-          t.unref();
-        } catch {
-          // Non-fatal if timer is already cleared
+        timeoutId = setTimeout(() => {
+          // Signal cancellation to all operations
+          abortController.abort();
+          reject(new Error('Model test timeout'));
+        }, timeout);
+
+        // Ensure timeout doesn't keep process alive
+        if (timeoutId.unref) {
+          timeoutId.unref();
         }
       });
 
+      // Race between test and timeout
       await Promise.race([testPromise, timeoutPromise]);
-      console.log(`[MODEL-MANAGER] Model ${modelName} is working`);
+
+      // Clear timeout on success
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      logger.debug(`[ModelManager] Model ${modelName} is working`);
       return true;
     } catch (error) {
-      console.log(
-        `[MODEL-MANAGER] Model ${modelName} failed test: ${error.message}`,
+      // Ensure cleanup happens on any error
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+
+      logger.debug(
+        `[ModelManager] Model ${modelName} failed test: ${error.message}`,
       );
       return false;
+    } finally {
+      // HIGH PRIORITY FIX #5: Guarantee cleanup in finally block
+      // Clear any remaining timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // Abort any ongoing operations
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
     }
   }
 
@@ -321,7 +460,7 @@ class ModelManager {
 
     this.selectedModel = modelName;
     await this.saveConfig();
-    console.log(`[MODEL-MANAGER] Selected model set to: ${modelName}`);
+    logger.info(`[ModelManager] Selected model set to: ${modelName}`);
   }
 
   /**
@@ -356,7 +495,7 @@ class ModelManager {
 
     for (const modelName of modelsToTry) {
       try {
-        console.log(`[MODEL-MANAGER] Attempting generation with: ${modelName}`);
+        logger.debug(`[ModelManager] Attempting generation with: ${modelName}`);
 
         const { buildOllamaOptions } = require('./PerformanceService');
         const perfOptions = await buildOllamaOptions('text');
@@ -379,8 +518,8 @@ class ModelManager {
           };
         }
       } catch (error) {
-        console.log(
-          `[MODEL-MANAGER] Model ${modelName} failed: ${error.message}`,
+        logger.debug(
+          `[ModelManager] Model ${modelName} failed: ${error.message}`,
         );
         continue;
       }
@@ -397,10 +536,12 @@ class ModelManager {
       const data = await fs.readFile(this.configPath, 'utf-8');
       const config = JSON.parse(data);
       this.selectedModel = config.selectedModel || null;
-      console.log(`[MODEL-MANAGER] Loaded config: ${this.selectedModel}`);
+      logger.debug(`[ModelManager] Loaded config: ${this.selectedModel}`);
     } catch (error) {
       if (error.code !== 'ENOENT') {
-        console.error('[MODEL-MANAGER] Error loading config:', error);
+        logger.error('[ModelManager] Error loading config', {
+          error: error.message,
+        });
       }
     }
   }
@@ -416,7 +557,9 @@ class ModelManager {
       };
       await fs.writeFile(this.configPath, JSON.stringify(config, null, 2));
     } catch (error) {
-      console.error('[MODEL-MANAGER] Error saving config:', error);
+      logger.error('[ModelManager] Error saving config', {
+        error: error.message,
+      });
     }
   }
 

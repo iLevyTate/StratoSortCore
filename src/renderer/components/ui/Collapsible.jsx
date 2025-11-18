@@ -1,7 +1,14 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, {
+  useEffect,
+  useId,
+  useState,
+  useCallback,
+  useMemo,
+  memo,
+} from 'react';
 import PropTypes from 'prop-types';
 
-export default function Collapsible({
+const Collapsible = memo(function Collapsible({
   title,
   children,
   actions = null,
@@ -12,7 +19,7 @@ export default function Collapsible({
 }) {
   const contentId = useId();
   const storageKey = persistKey ? `collapsible:${persistKey}` : null;
-  const initialOpen = (() => {
+  const initialOpen = useMemo(() => {
     if (storageKey && typeof window !== 'undefined') {
       try {
         const saved = window.localStorage.getItem(storageKey);
@@ -23,10 +30,11 @@ export default function Collapsible({
       }
     }
     return Boolean(defaultOpen);
-  })();
+  }, [storageKey, defaultOpen]);
+
   const [isOpen, setIsOpen] = useState(initialOpen);
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     setIsOpen((prev) => {
       const next = !prev;
       if (storageKey && typeof window !== 'undefined') {
@@ -39,7 +47,7 @@ export default function Collapsible({
       }
       return next;
     });
-  };
+  }, [storageKey]);
 
   // React to external expand/collapse broadcasts via storage events
   useEffect(() => {
@@ -103,7 +111,7 @@ export default function Collapsible({
       </div>
     </section>
   );
-}
+});
 
 Collapsible.propTypes = {
   title: PropTypes.string.isRequired,
@@ -114,3 +122,5 @@ Collapsible.propTypes = {
   contentClassName: PropTypes.string,
   persistKey: PropTypes.string,
 };
+
+export default Collapsible;

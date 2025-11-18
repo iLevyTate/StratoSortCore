@@ -5,6 +5,21 @@ const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
 const { sanitizeMetadata } = require('../../shared/pathSanitization');
 
+// FIXED Bug #26: Named constants for magic numbers
+const QUERY_CACHE_TTL_MS = 120000; // 2 minutes
+const MAX_CACHE_SIZE = 200;
+const BATCH_INSERT_DELAY_MS = 100;
+const DEFAULT_SERVER_PROTOCOL = 'http';
+const DEFAULT_SERVER_HOST = '127.0.0.1';
+const DEFAULT_SERVER_PORT = 8000;
+const DEFAULT_HTTPS_PORT = 443;
+const DEFAULT_HTTP_PORT = 80;
+
+// FIXED Bug #40: Validation constants for environment variables
+const MAX_PORT_NUMBER = 65535;
+const MIN_PORT_NUMBER = 1;
+const VALID_PROTOCOLS = ['http', 'https'];
+
 /**
  * ChromaDB-based Vector Database Service
  * Replaces the JSON-based EmbeddingIndexService with a proper vector database
@@ -21,30 +36,106 @@ class ChromaDBService {
     this._initPromise = null;
     this._isInitializing = false; // Lock flag to prevent concurrent init attempts
 
-    this.serverProtocol = 'http';
-    this.serverHost = '127.0.0.1';
-    this.serverPort = 8000;
-    this.serverUrl = 'http://127.0.0.1:8000';
+    // FIXED Bug #31: Proper LRU cache with Map for ordered iteration
+    this.queryCache = new Map(); // Cache for query results (insertion-ordered)
+    this.queryCacheTTL = QUERY_CACHE_TTL_MS;
+    this.maxCacheSize = MAX_CACHE_SIZE;
+
+    // Query optimization: Batch operation queues
+    this.batchInsertQueue = [];
+    this.batchInsertTimer = null;
+    this.batchInsertDelay = BATCH_INSERT_DELAY_MS;
+
+    // Query optimization: In-flight query deduplication
+    this.inflightQueries = new Map(); // Track in-flight queries to deduplicate
+
+    // FIXED Bug #40: Validate and sanitize environment variables
+    this.serverProtocol = DEFAULT_SERVER_PROTOCOL;
+    this.serverHost = DEFAULT_SERVER_HOST;
+    this.serverPort = DEFAULT_SERVER_PORT;
+    this.serverUrl = `${DEFAULT_SERVER_PROTOCOL}://${DEFAULT_SERVER_HOST}:${DEFAULT_SERVER_PORT}`;
 
     const envUrl = process.env.CHROMA_SERVER_URL;
     if (envUrl) {
       try {
         const parsed = new URL(envUrl);
-        this.serverProtocol = parsed.protocol?.replace(':', '') || 'http';
-        this.serverHost = parsed.hostname || '127.0.0.1';
-        this.serverPort =
-          Number(parsed.port) || (this.serverProtocol === 'https' ? 443 : 80);
-        this.serverUrl = `${parsed.protocol}//${parsed.host}`;
+
+        // Validate protocol
+        const protocol =
+          parsed.protocol?.replace(':', '') || DEFAULT_SERVER_PROTOCOL;
+        if (!VALID_PROTOCOLS.includes(protocol)) {
+          throw new Error(
+            `Invalid protocol "${protocol}". Must be http or https.`,
+          );
+        }
+
+        // Validate and sanitize hostname
+        const hostname = parsed.hostname || DEFAULT_SERVER_HOST;
+        if (
+          !hostname ||
+          typeof hostname !== 'string' ||
+          hostname.length > 253
+        ) {
+          throw new Error('Invalid hostname in CHROMA_SERVER_URL');
+        }
+
+        // Validate port
+        let port = Number(parsed.port);
+        if (!port) {
+          port = protocol === 'https' ? DEFAULT_HTTPS_PORT : DEFAULT_HTTP_PORT;
+        }
+        if (isNaN(port) || port < MIN_PORT_NUMBER || port > MAX_PORT_NUMBER) {
+          throw new Error(
+            `Invalid port number ${port}. Must be between ${MIN_PORT_NUMBER} and ${MAX_PORT_NUMBER}.`,
+          );
+        }
+
+        this.serverProtocol = protocol;
+        this.serverHost = hostname;
+        this.serverPort = port;
+        this.serverUrl = `${protocol}://${hostname}:${port}`;
       } catch (error) {
         logger.warn(
           '[ChromaDB] Invalid CHROMA_SERVER_URL provided, falling back to defaults',
           { url: envUrl, message: error?.message },
         );
+        // Keep defaults set above
       }
     } else {
-      this.serverProtocol = process.env.CHROMA_SERVER_PROTOCOL || 'http';
-      this.serverHost = process.env.CHROMA_SERVER_HOST || '127.0.0.1';
-      this.serverPort = Number(process.env.CHROMA_SERVER_PORT || 8000);
+      // Validate individual env vars
+      const envProtocol = process.env.CHROMA_SERVER_PROTOCOL;
+      if (envProtocol && VALID_PROTOCOLS.includes(envProtocol)) {
+        this.serverProtocol = envProtocol;
+      }
+
+      const envHost = process.env.CHROMA_SERVER_HOST;
+      // Validate hostname format (RFC 1123 compliant)
+      const hostnameRegex =
+        /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$|^localhost$|^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
+      if (
+        envHost &&
+        typeof envHost === 'string' &&
+        envHost.length > 0 &&
+        envHost.length <= 253 &&
+        hostnameRegex.test(envHost)
+      ) {
+        this.serverHost = envHost;
+      } else if (envHost) {
+        logger.warn(
+          '[ChromaDB] Invalid hostname format in CHROMA_SERVER_HOST:',
+          envHost,
+        );
+      }
+
+      const envPort = Number(process.env.CHROMA_SERVER_PORT);
+      if (
+        !isNaN(envPort) &&
+        envPort >= MIN_PORT_NUMBER &&
+        envPort <= MAX_PORT_NUMBER
+      ) {
+        this.serverPort = envPort;
+      }
+
       this.serverUrl = `${this.serverProtocol}://${this.serverHost}:${this.serverPort}`;
     }
   }
@@ -58,6 +149,96 @@ class ChromaDBService {
     }
   }
 
+  /**
+   * Check if ChromaDB connection is healthy
+   * @returns {boolean} true if healthy, false otherwise
+   */
+  async checkHealth() {
+    try {
+      // CRITICAL FIX: Use HTTP endpoint directly for health check instead of client.heartbeat()
+      // which may fail due to connection state issues
+      const axios = require('axios');
+      const baseUrl = this.serverUrl;
+
+      // Try multiple endpoints for compatibility with different ChromaDB versions
+      const endpoints = [
+        '/api/v2/heartbeat', // v2 endpoint (current version)
+        '/api/v1/heartbeat', // v1 endpoint (ChromaDB 1.0.x)
+        '/api/v1', // Some versions just have this
+      ];
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await axios.get(`${baseUrl}${endpoint}`, {
+            timeout: 2000,
+            validateStatus: () => true, // Accept any status code for checking
+          });
+
+          if (response.status === 200) {
+            // Validate response data
+            if (response.data) {
+              // Check for error responses
+              if (typeof response.data === 'object' && response.data.error) {
+                logger.debug(
+                  `[ChromaDB] Health check endpoint ${endpoint} returned error: ${response.data.error}`,
+                );
+                continue;
+              }
+
+              // Check for valid heartbeat response
+              if (
+                response.data.nanosecond_heartbeat !== undefined ||
+                response.data['nanosecond heartbeat'] !== undefined ||
+                response.data.status === 'ok' ||
+                response.data.version
+              ) {
+                logger.debug(
+                  `[ChromaDB] Health check successful on ${endpoint}`,
+                );
+                return true;
+              }
+            }
+
+            // If we got a 200 with no specific error, consider it healthy
+            logger.debug(
+              `[ChromaDB] Health check successful (generic 200) on ${endpoint}`,
+            );
+            return true;
+          }
+        } catch (error) {
+          // Continue to next endpoint
+          logger.debug(
+            `[ChromaDB] Health check failed on ${endpoint}: ${error.message}`,
+          );
+        }
+      }
+
+      // If none of the endpoints worked, try the client heartbeat as fallback
+      if (this.client) {
+        try {
+          const response = await this.client.heartbeat();
+          const isHealthy =
+            response &&
+            (response.nanosecond_heartbeat > 0 ||
+              response['nanosecond heartbeat'] > 0);
+          if (isHealthy) {
+            logger.debug(
+              '[ChromaDB] Health check successful via client.heartbeat()',
+            );
+          }
+          return isHealthy;
+        } catch (error) {
+          logger.debug('[ChromaDB] Client heartbeat failed:', error.message);
+        }
+      }
+
+      return false;
+    } catch (error) {
+      logger.debug('[ChromaDB] Health check failed:', error.message);
+      return false;
+    }
+  }
+
   async initialize() {
     // Fixed: Use initialization promise to prevent race conditions
     // If initialization is already in progress, wait for it
@@ -65,29 +246,89 @@ class ChromaDBService {
       return this._initPromise;
     }
 
-    // If already initialized, return immediately
+    // PERFORMANCE FIX: Check health before assuming initialized
     if (this.initialized) {
-      return Promise.resolve();
+      try {
+        const isHealthy = await this.checkHealth();
+        if (isHealthy) {
+          return Promise.resolve();
+        }
+        // Connection lost, need to reinitialize
+        logger.warn('[ChromaDB] Connection lost, reinitializing...');
+        this.initialized = false;
+        this.client = null;
+        this.fileCollection = null;
+        this.folderCollection = null;
+      } catch (error) {
+        // Health check failed, reinitialize
+        logger.warn('[ChromaDB] Health check error:', error.message);
+        this.initialized = false;
+        this.client = null;
+      }
     }
 
-    // Fixed: Use lock flag to prevent concurrent initialization after failure
+    // BUG FIX #6: Atomic flag + promise reference for race condition prevention
+    // CRITICAL: If _isInitializing is true, another thread is actively initializing
+    // We must wait for that initialization to complete (either success or failure)
     if (this._isInitializing) {
-      // Another initialization attempt is in progress, wait for it
+      // Return the existing init promise if available
+      if (this._initPromise) {
+        return this._initPromise;
+      }
+
+      // CRITICAL FIX #2: Enhanced race condition handling with proper timeout
+      // This edge case can occur if initialization fails and leaves _isInitializing true
       return new Promise((resolve, reject) => {
-        const checkInterval = setInterval(() => {
-          if (!this._isInitializing) {
-            clearInterval(checkInterval);
-            if (this.initialized) {
-              resolve();
-            } else {
-              reject(new Error('Previous initialization attempt failed'));
+        const maxWait = 30000; // Extended to 30 seconds for slow systems
+        const checkInterval = 100; // Check every 100ms
+        const startTime = Date.now();
+        let timeoutId = null; // Track timeout ID for cleanup
+
+        const cleanup = () => {
+          if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+        };
+
+        const checkStatus = () => {
+          // ATOMIC CHECK: Re-check both flags to ensure consistency
+          if (!this._isInitializing && this.initialized) {
+            // Initialization complete successfully
+            cleanup();
+            resolve();
+          } else if (!this._isInitializing && !this.initialized) {
+            // Initialization failed
+            cleanup();
+            reject(new Error('Previous initialization attempt failed'));
+          } else if (Date.now() - startTime > maxWait) {
+            // CRITICAL: Clean up flags on timeout to prevent forever-locked state
+            this._isInitializing = false;
+            this._initPromise = null;
+            this.initialized = false;
+            cleanup();
+            reject(
+              new Error(
+                'Initialization timeout after 30 seconds - flags cleaned up',
+              ),
+            );
+          } else {
+            // Continue checking with recursive setTimeout
+            timeoutId = setTimeout(checkStatus, checkInterval);
+            // Allow process to exit even if this timeout is pending
+            if (timeoutId.unref) {
+              timeoutId.unref();
             }
           }
-        }, 100);
+        };
+
+        // Start the recursive check
+        checkStatus();
       });
     }
 
-    // Set lock flag
+    // ATOMIC OPERATION: Set both flags before starting async work
+    // This ensures concurrent calls will wait for this initialization
     this._isInitializing = true;
 
     // Create initialization promise that concurrent calls can wait on
@@ -120,8 +361,17 @@ class ChromaDBService {
           },
         });
 
+        // HIGH PRIORITY FIX #7: Use atomic flag update pattern with proper ordering
+        // Update flags in correct order to prevent race conditions
+        // 1. First mark as initialized (allows operations to proceed)
+        // 2. Then clear the initializing flag (allows new init attempts)
+        // This ordering ensures no window where both are false
         this.initialized = true;
-        this._isInitializing = false; // Clear lock flag on success
+        // Memory barrier - ensure initialized is set before clearing lock
+        process.nextTick(() => {
+          this._isInitializing = false; // Clear lock flag after initialization is visible
+        });
+
         logger.info('[ChromaDB] Successfully initialized vector database', {
           dbPath: this.dbPath,
           serverUrl: this.serverUrl,
@@ -129,10 +379,24 @@ class ChromaDBService {
           folderCount: await this.folderCollection.count(),
         });
       } catch (error) {
-        // Clear the promise and lock on failure so retry is possible
+        // CRITICAL FIX #2b: Enhanced cleanup on initialization failure
+        // ATOMIC CLEANUP: Clear both promise and lock on failure
+        // This allows retries and prevents permanent deadlock
         this._initPromise = null;
         this._isInitializing = false; // Clear lock flag on failure
+        this.initialized = false; // Ensure consistent state
+
         logger.error('[ChromaDB] Initialization failed:', error);
+
+        // Ensure we always clean up properly even on unexpected errors
+        try {
+          if (this.fileCollection) this.fileCollection = null;
+          if (this.folderCollection) this.folderCollection = null;
+          if (this.client) this.client = null;
+        } catch (cleanupError) {
+          logger.error('[ChromaDB] Error during cleanup:', cleanupError);
+        }
+
         throw new Error(`Failed to initialize ChromaDB: ${error.message}`);
       }
     })();
@@ -171,12 +435,113 @@ class ChromaDBService {
         documents: [folder.name || folder.id], // Store name as document for reference
       });
 
+      // Invalidate query cache entries that might reference this folder
+      this._invalidateCacheForFolder();
+
       logger.debug('[ChromaDB] Upserted folder embedding', {
         id: folder.id,
         name: folder.name,
       });
     } catch (error) {
-      logger.error('[ChromaDB] Failed to upsert folder:', error);
+      // ERROR CONTEXT FIX #11: Enhanced error logging with operation context
+      logger.error('[ChromaDB] Failed to upsert folder with context:', {
+        operation: 'upsert-folder',
+        folderId: folder.id,
+        folderName: folder.name,
+        folderPath: folder.path,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        errorStack: error.stack,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Batch upsert folder embeddings (optimization for bulk operations)
+   * @param {Array<Object>} folders - Array of folder objects
+   * @returns {Object} Object with count of successful upserts and array of skipped items
+   */
+  async batchUpsertFolders(folders) {
+    await this.initialize();
+
+    if (!folders || folders.length === 0) {
+      return { count: 0, skipped: [] };
+    }
+
+    const ids = [];
+    const embeddings = [];
+    const metadatas = [];
+    const documents = [];
+    // CRITICAL FIX: Return array of skipped items for better error tracking
+    const skipped = [];
+
+    try {
+      for (const folder of folders) {
+        if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
+          logger.warn('[ChromaDB] Skipping invalid folder in batch', {
+            id: folder.id,
+            name: folder.name,
+            reason: !folder.id
+              ? 'missing_id'
+              : !folder.vector
+                ? 'missing_vector'
+                : 'invalid_vector_type',
+          });
+          skipped.push({
+            folder: { id: folder.id, name: folder.name },
+            reason: !folder.id
+              ? 'missing_id'
+              : !folder.vector
+                ? 'missing_vector'
+                : 'invalid_vector_type',
+          });
+          continue;
+        }
+
+        const metadata = {
+          name: folder.name || '',
+          description: folder.description || '',
+          path: folder.path || '',
+          model: folder.model || '',
+          updatedAt: folder.updatedAt || new Date().toISOString(),
+        };
+
+        ids.push(folder.id);
+        embeddings.push(folder.vector);
+        metadatas.push(sanitizeMetadata(metadata));
+        documents.push(folder.name || folder.id);
+      }
+
+      if (ids.length > 0) {
+        await this.folderCollection.upsert({
+          ids,
+          embeddings,
+          metadatas,
+          documents,
+        });
+
+        // Invalidate cache for all affected folders
+        this._invalidateCacheForFolder();
+
+        logger.info('[ChromaDB] Batch upserted folder embeddings', {
+          count: ids.length,
+          skipped: skipped.length,
+        });
+      }
+
+      return { count: ids.length, skipped };
+    } catch (error) {
+      // ERROR CONTEXT FIX #11: Enhanced error logging with batch context
+      logger.error('[ChromaDB] Failed to batch upsert folders with context:', {
+        operation: 'batch-upsert-folders',
+        totalFolders: folders.length,
+        successfulCount: ids.length,
+        skippedCount: skipped.length,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        errorStack: error.stack,
+      });
       throw error;
     }
   }
@@ -212,12 +577,96 @@ class ChromaDBService {
         documents: [sanitized.path || file.id], // Store sanitized path as document
       });
 
+      // Invalidate query cache entries that might reference this file
+      this._invalidateCacheForFile(file.id);
+
       logger.debug('[ChromaDB] Upserted file embedding', {
         id: file.id,
         path: sanitized.path,
       });
     } catch (error) {
-      logger.error('[ChromaDB] Failed to upsert file:', error);
+      // ERROR CONTEXT FIX #11: Enhanced error logging with file context
+      logger.error('[ChromaDB] Failed to upsert file with context:', {
+        operation: 'upsert-file',
+        fileId: file.id,
+        filePath: file.meta?.path,
+        fileName: file.meta?.name,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        errorStack: error.stack,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Batch upsert file embeddings (optimization for bulk operations)
+   * @param {Array<Object>} files - Array of file objects
+   * @returns {number} Number of successfully upserted files
+   */
+  async batchUpsertFiles(files) {
+    await this.initialize();
+
+    if (!files || files.length === 0) {
+      return 0;
+    }
+
+    const ids = [];
+    const embeddings = [];
+    const metadatas = [];
+    const documents = [];
+
+    try {
+      for (const file of files) {
+        if (!file.id || !file.vector || !Array.isArray(file.vector)) {
+          logger.warn('[ChromaDB] Skipping invalid file in batch', {
+            id: file.id,
+          });
+          continue;
+        }
+
+        const baseMetadata = {
+          path: file.meta?.path || '',
+          name: file.meta?.name || '',
+          model: file.model || '',
+          updatedAt: file.updatedAt || new Date().toISOString(),
+        };
+
+        const sanitized = sanitizeMetadata({ ...baseMetadata, ...file.meta });
+
+        ids.push(file.id);
+        embeddings.push(file.vector);
+        metadatas.push(sanitized);
+        documents.push(sanitized.path || file.id);
+      }
+
+      if (ids.length > 0) {
+        await this.fileCollection.upsert({
+          ids,
+          embeddings,
+          metadatas,
+          documents,
+        });
+
+        // Invalidate cache for all affected files
+        ids.forEach((id) => this._invalidateCacheForFile(id));
+
+        logger.info('[ChromaDB] Batch upserted file embeddings', {
+          count: ids.length,
+        });
+      }
+
+      return ids.length;
+    } catch (error) {
+      // ERROR CONTEXT FIX #11: Enhanced error logging with batch context
+      logger.error('[ChromaDB] Failed to batch upsert files with context:', {
+        operation: 'batch-upsert-files',
+        totalFiles: files.length,
+        successfulCount: ids.length,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        errorStack: error.stack,
+      });
       throw error;
     }
   }
@@ -231,18 +680,74 @@ class ChromaDBService {
   async queryFolders(fileId, topK = 5) {
     await this.initialize();
 
+    // Check cache first
+    const cacheKey = `query:folders:${fileId}:${topK}`;
+    const cached = this._getCachedQuery(cacheKey);
+    if (cached) {
+      logger.debug('[ChromaDB] Query cache hit for folders', { fileId });
+      return cached;
+    }
+
+    // Check for in-flight query and deduplicate
+    if (this.inflightQueries.has(cacheKey)) {
+      logger.debug('[ChromaDB] Deduplicating in-flight query', { fileId });
+      return this.inflightQueries.get(cacheKey);
+    }
+
+    // Create query promise and track it
+    const queryPromise = this._executeQueryFolders(fileId, topK);
+    this.inflightQueries.set(cacheKey, queryPromise);
+
     try {
+      const results = await queryPromise;
+
+      // Cache the results
+      this._setCachedQuery(cacheKey, results);
+
+      return results;
+    } finally {
+      // Remove from in-flight queries
+      this.inflightQueries.delete(cacheKey);
+    }
+  }
+
+  /**
+   * Internal method to execute folder query (used by queryFolders)
+   * @private
+   */
+  async _executeQueryFolders(fileId, topK) {
+    try {
+      // Validate collections are initialized
+      if (!this.fileCollection) {
+        logger.error('[ChromaDB] File collection not initialized');
+        return [];
+      }
+      if (!this.folderCollection) {
+        logger.error('[ChromaDB] Folder collection not initialized');
+        return [];
+      }
+
       // First get the file's embedding
       const fileResult = await this.fileCollection.get({
         ids: [fileId],
       });
 
-      if (!fileResult.embeddings || fileResult.embeddings.length === 0) {
+      if (
+        !fileResult ||
+        !fileResult.embeddings ||
+        fileResult.embeddings.length === 0
+      ) {
         logger.warn('[ChromaDB] File not found for querying:', fileId);
         return [];
       }
 
       const fileEmbedding = fileResult.embeddings[0];
+
+      // Validate embedding
+      if (!Array.isArray(fileEmbedding) || fileEmbedding.length === 0) {
+        logger.warn('[ChromaDB] Invalid file embedding:', fileId);
+        return [];
+      }
 
       // Query the folder collection for similar embeddings
       const results = await this.folderCollection.query({
@@ -250,16 +755,64 @@ class ChromaDBService {
         nResults: topK,
       });
 
-      if (!results.ids || results.ids[0].length === 0) {
+      // Fixed: Comprehensive validation to prevent array access errors
+      if (
+        !results ||
+        !results.ids ||
+        !Array.isArray(results.ids) ||
+        results.ids.length === 0 ||
+        !Array.isArray(results.ids[0]) ||
+        results.ids[0].length === 0
+      ) {
+        logger.debug('[ChromaDB] No matching folders found for file:', fileId);
+        return [];
+      }
+
+      // Validate distances array structure
+      if (
+        !results.distances ||
+        !Array.isArray(results.distances) ||
+        results.distances.length === 0 ||
+        !Array.isArray(results.distances[0])
+      ) {
+        logger.warn('[ChromaDB] Invalid distances structure in query results');
+        return [];
+      }
+
+      // HIGH PRIORITY FIX #4: Add comprehensive bounds checking before accessing array indices
+      // Validate that all arrays have matching structure
+      if (
+        !results.ids ||
+        !Array.isArray(results.ids) ||
+        results.ids.length === 0 ||
+        !Array.isArray(results.ids[0]) ||
+        results.ids[0].length === 0
+      ) {
+        logger.warn(
+          '[ChromaDB] Invalid or empty ids structure in query results',
+        );
         return [];
       }
 
       // Format results to match expected interface
       const matches = [];
-      for (let i = 0; i < results.ids[0].length; i++) {
-        const folderId = results.ids[0][i];
-        const distance = results.distances[0][i];
-        const metadata = results.metadatas[0][i];
+      const idsArray = results.ids[0];
+      const distancesArray = results.distances[0];
+      const metadatasArray = results.metadatas?.[0] || [];
+
+      // HIGH PRIORITY FIX #4: Ensure arrays have matching lengths to prevent out-of-bounds access
+      const resultCount = Math.min(idsArray.length, distancesArray.length);
+
+      for (let i = 0; i < resultCount; i++) {
+        const folderId = idsArray[i];
+        const distance = distancesArray[i];
+        const metadata = metadatasArray[i];
+
+        // Validate required fields
+        if (!folderId || distance === undefined) {
+          logger.warn('[ChromaDB] Incomplete query result, skipping entry');
+          continue;
+        }
 
         // Convert distance to similarity score (1 - distance for cosine)
         // ChromaDB returns distances where 0 = identical, 2 = opposite
@@ -267,10 +820,10 @@ class ChromaDBService {
 
         matches.push({
           folderId,
-          name: metadata.name || folderId,
+          name: metadata?.name || folderId,
           score,
-          description: metadata.description,
-          path: metadata.path,
+          description: metadata?.description,
+          path: metadata?.path,
         });
       }
 
@@ -421,13 +974,13 @@ class ChromaDBService {
     try {
       const data = await fs.readFile(jsonlPath, 'utf8');
       const lines = data.split(/\r?\n/).filter(Boolean);
-      console.log(`Found ${lines.length} lines in JSONL file.`);
+      logger.info(`[ChromaDB] Found ${lines.length} lines in JSONL file.`);
 
       let migrated = 0;
       for (const line of lines) {
         try {
           const obj = JSON.parse(line);
-          console.log('Parsed object:', obj);
+          logger.debug('[ChromaDB] Parsed object:', obj);
           if (obj && obj.id && obj.vector) {
             if (type === 'folder') {
               await this.upsertFolder(obj);
@@ -440,7 +993,7 @@ class ChromaDBService {
               });
             }
             migrated++;
-            console.log('Migrated entry:', obj.id);
+            logger.debug('[ChromaDB] Migrated entry:', obj.id);
           }
         } catch (error) {
           logger.warn('[ChromaDB] Failed to migrate line:', error.message);
@@ -464,7 +1017,7 @@ class ChromaDBService {
   }
 
   /**
-   * Get collection statistics
+   * Get collection statistics (including query cache metrics)
    */
   async getStats() {
     await this.initialize();
@@ -479,6 +1032,8 @@ class ChromaDBService {
         dbPath: this.dbPath,
         serverUrl: this.serverUrl,
         initialized: this.initialized,
+        queryCache: this.getQueryCacheStats(),
+        inflightQueries: this.inflightQueries.size,
       };
     } catch (error) {
       logger.error('[ChromaDB] Failed to get stats:', error);
@@ -488,16 +1043,143 @@ class ChromaDBService {
         dbPath: this.dbPath,
         serverUrl: this.serverUrl,
         initialized: false,
+        queryCache: this.getQueryCacheStats(),
+        inflightQueries: 0,
         error: error.message,
       };
     }
   }
 
   /**
+   * Cache management: Get cached query result
+   * @private
+   */
+  _getCachedQuery(key) {
+    const cached = this.queryCache.get(key);
+    if (!cached) {
+      return null;
+    }
+
+    // Check if cache entry has expired
+    if (Date.now() - cached.timestamp > this.queryCacheTTL) {
+      this.queryCache.delete(key);
+      return null;
+    }
+
+    return cached.data;
+  }
+
+  /**
+   * Cache management: Set cached query result
+   * FIXED Bug #31: Proper LRU eviction with Map
+   * @private
+   */
+  _setCachedQuery(key, data) {
+    // If key already exists, delete it first to update its position (LRU behavior)
+    if (this.queryCache.has(key)) {
+      this.queryCache.delete(key);
+    }
+
+    // Evict oldest entry if cache is at capacity (Map maintains insertion order)
+    if (this.queryCache.size >= this.maxCacheSize) {
+      const oldestKey = this.queryCache.keys().next().value;
+      if (oldestKey) {
+        this.queryCache.delete(oldestKey);
+      }
+    }
+
+    // Add new entry (will be at the end of iteration order)
+    this.queryCache.set(key, {
+      data,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Cache invalidation: Remove cache entries for a specific file
+   * Optimized to delete directly during iteration (single pass)
+   * @private
+   */
+  _invalidateCacheForFile(fileId) {
+    // Optimization: Delete directly during iteration instead of creating array first
+    // This reduces memory allocation and makes it a true single-pass operation
+    for (const key of this.queryCache.keys()) {
+      if (key.includes(fileId)) {
+        this.queryCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Cache invalidation: Remove cache entries that might reference a folder
+   * Optimized to delete directly during iteration (single pass)
+   * @private
+   */
+  _invalidateCacheForFolder() {
+    // Optimization: Delete directly during iteration instead of creating array first
+    // This reduces memory allocation and makes it a true single-pass operation
+    for (const key of this.queryCache.keys()) {
+      if (key.startsWith('query:folders:')) {
+        this.queryCache.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Clear all query cache
+   */
+  clearQueryCache() {
+    const size = this.queryCache.size;
+    this.queryCache.clear();
+    logger.info('[ChromaDB] Query cache cleared', { entriesCleared: size });
+  }
+
+  /**
+   * Get query cache statistics
+   */
+  getQueryCacheStats() {
+    return {
+      size: this.queryCache.size,
+      maxSize: this.maxCacheSize,
+      ttlMs: this.queryCacheTTL,
+    };
+  }
+
+  /**
    * Cleanup and close connections
+   * FIXED Bug #38: Wait for pending operations before cleanup
    */
   async cleanup() {
     if (this.client) {
+      // Clear batch insert timer if active
+      if (this.batchInsertTimer) {
+        clearTimeout(this.batchInsertTimer);
+        this.batchInsertTimer = null;
+      }
+
+      // FIXED Bug #38: Wait for all in-flight queries to complete
+      if (this.inflightQueries.size > 0) {
+        logger.info(
+          `[ChromaDB] Waiting for ${this.inflightQueries.size} in-flight queries to complete...`,
+        );
+        try {
+          // Wait for all in-flight queries with a timeout
+          await Promise.race([
+            Promise.allSettled(Array.from(this.inflightQueries.values())),
+            new Promise((resolve) => setTimeout(resolve, 5000)), // 5 second timeout
+          ]);
+        } catch (error) {
+          logger.warn(
+            '[ChromaDB] Error waiting for in-flight queries:',
+            error.message,
+          );
+        }
+      }
+
+      // Clear caches
+      this.queryCache.clear();
+      this.inflightQueries.clear();
+
       // ChromaDB client doesn't require explicit cleanup in JS
       // but we'll reset our references
       this.fileCollection = null;
@@ -510,47 +1192,93 @@ class ChromaDBService {
 
   /**
    * Check if ChromaDB server is running and available
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 10000)
+   * FIXED Bug #30: Add exponential backoff retry for network failures
+   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @param {number} maxRetries - Maximum retry attempts (default: 3)
    * @returns {Promise<boolean>}
    */
-  async isServerAvailable(timeoutMs = 10000) {
-    try {
-      // Always create a lightweight client for heartbeat checks
-      const client = new ChromaClient({
-        path: this.serverUrl,
-      });
+  async isServerAvailable(timeoutMs = 3000, maxRetries = 3) {
+    let lastError = null;
 
-      // Wrap heartbeat in Promise.race with timeout
-      const heartbeatPromise = client.heartbeat();
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Heartbeat timeout after ${timeoutMs}ms`));
-        }, timeoutMs);
-      });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // PERFORMANCE FIX: Reuse existing client if available to avoid creating
+        // disposable ChromaClient instances that create TIME_WAIT connections
+        const client =
+          this.client ||
+          new ChromaClient({
+            path: this.serverUrl,
+          });
 
-      const hb = await Promise.race([heartbeatPromise, timeoutPromise]);
-
-      logger.info('[ChromaDB] Server heartbeat successful:', {
-        hb,
-        serverUrl: this.serverUrl,
-      });
-      return true;
-    } catch (error) {
-      // Distinguish between timeout and connection failures
-      const isTimeout = error.message && error.message.includes('timeout');
-      if (isTimeout) {
-        logger.warn('[ChromaDB] Server heartbeat timed out:', {
-          timeoutMs,
-          serverUrl: this.serverUrl,
+        // Wrap heartbeat in Promise.race with timeout (reduced from 10s to 3s)
+        const heartbeatPromise = client.heartbeat();
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Heartbeat timeout after ${timeoutMs}ms`));
+          }, timeoutMs);
         });
-      } else {
-        logger.warn('[ChromaDB] Server heartbeat failed:', {
-          message: error.message,
+
+        const hb = await Promise.race([heartbeatPromise, timeoutPromise]);
+
+        logger.debug('[ChromaDB] Server heartbeat successful:', {
+          hb,
           serverUrl: this.serverUrl,
+          attempt: attempt + 1,
         });
+        return true;
+      } catch (error) {
+        lastError = error;
+
+        // Distinguish between timeout and connection failures
+        const isTimeout = error.message && error.message.includes('timeout');
+        const isNetworkError =
+          error.code === 'ECONNREFUSED' ||
+          error.code === 'ETIMEDOUT' ||
+          error.code === 'ENOTFOUND';
+
+        // Only retry on transient errors (network issues, timeouts)
+        const shouldRetry =
+          (isTimeout || isNetworkError) && attempt < maxRetries - 1;
+
+        if (shouldRetry) {
+          // Exponential backoff: 500ms, 1000ms, 2000ms
+          const delay = 500 * Math.pow(2, attempt);
+          logger.debug('[ChromaDB] Server heartbeat failed, retrying...:', {
+            attempt: attempt + 1,
+            maxRetries,
+            delayMs: delay,
+            error: error.message,
+            serverUrl: this.serverUrl,
+          });
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          // Non-retriable error or final attempt
+          if (isTimeout) {
+            logger.debug('[ChromaDB] Server heartbeat timed out:', {
+              timeoutMs,
+              serverUrl: this.serverUrl,
+              attempt: attempt + 1,
+            });
+          } else {
+            logger.debug('[ChromaDB] Server heartbeat failed:', {
+              message: error.message,
+              serverUrl: this.serverUrl,
+              attempt: attempt + 1,
+            });
+          }
+        }
       }
-      return false;
     }
+
+    // All retries exhausted
+    logger.warn(
+      '[ChromaDB] Server availability check failed after all retries:',
+      {
+        maxRetries,
+        lastError: lastError?.message,
+      },
+    );
+    return false;
   }
 
   getServerConfig() {

@@ -35,14 +35,25 @@ class DownloadWatcher {
 
   start() {
     if (this.watcher) return;
-    const downloadsPath = path.join(os.homedir(), 'Downloads');
-    logger.info('[DOWNLOAD-WATCHER] Watching', downloadsPath);
-    this.watcher = chokidar.watch(downloadsPath, { ignoreInitial: true });
-    this.watcher.on('add', (filePath) => {
-      this.handleFile(filePath).catch((e) =>
-        logger.error('[DOWNLOAD-WATCHER] Failed processing', filePath, e),
-      );
-    });
+
+    try {
+      const downloadsPath = path.join(os.homedir(), 'Downloads');
+      logger.info('[DOWNLOAD-WATCHER] Watching', downloadsPath);
+      this.watcher = chokidar.watch(downloadsPath, { ignoreInitial: true });
+
+      this.watcher.on('add', (filePath) => {
+        this.handleFile(filePath).catch((e) =>
+          logger.error('[DOWNLOAD-WATCHER] Failed processing', filePath, e),
+        );
+      });
+
+      this.watcher.on('error', (error) => {
+        logger.error('[DOWNLOAD-WATCHER] Watcher error:', error);
+      });
+    } catch (error) {
+      logger.error('[DOWNLOAD-WATCHER] Failed to start watcher:', error);
+      this.watcher = null;
+    }
   }
 
   stop() {

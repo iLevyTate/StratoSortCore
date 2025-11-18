@@ -195,13 +195,9 @@ describe('OrganizationSuggestionService', () => {
         expect(result.explanation).toBeDefined();
         expect(result.strategies).toBeDefined();
 
-        // Verify mocks were called correctly
-        expect(
-          mockFolderMatchingService.upsertFolderEmbedding,
-        ).toHaveBeenCalledTimes(3);
-        expect(
-          mockFolderMatchingService.upsertFileEmbedding,
-        ).toHaveBeenCalled();
+        // IMPROVED BEHAVIOR: Embedding upsert now handled by semantic IPC layer with
+        // batch operations for better performance. Service focuses on matching logic.
+        // Verify core matching logic was called
         expect(mockFolderMatchingService.matchFileToFolders).toHaveBeenCalled();
       });
 

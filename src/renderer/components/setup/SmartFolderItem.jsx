@@ -32,7 +32,7 @@ function SmartFolderItem({
           <div className="flex flex-col md:flex-row gap-8">
             <Input
               type="text"
-              value={editingFolder.name}
+              value={editingFolder.name || ''}
               onChange={(e) =>
                 setEditingFolder({ ...editingFolder, name: e.target.value })
               }
@@ -46,7 +46,7 @@ function SmartFolderItem({
             />
             <Input
               type="text"
-              value={editingFolder.path}
+              value={editingFolder.path || ''}
               onChange={(e) =>
                 setEditingFolder({ ...editingFolder, path: e.target.value })
               }

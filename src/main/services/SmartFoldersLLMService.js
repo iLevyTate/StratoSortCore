@@ -1,4 +1,5 @@
 const { logger } = require('../../shared/logger');
+const { fetchWithRetry } = require('../utils/ollamaApiRetry');
 
 async function enhanceSmartFolderWithLLM(
   folderData,
@@ -43,27 +44,51 @@ Please provide a JSON response with the following enhancements:
     const modelToUse =
       (typeof getOllamaModel === 'function' && getOllamaModel()) ||
       require('../../shared/constants').DEFAULT_AI_MODELS.TEXT_ANALYSIS;
-    const response = await fetch(`${host}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: modelToUse,
-        prompt,
-        stream: false,
-        format: 'json',
-        options: { temperature: 0.3, num_predict: 500 },
-      }),
-    });
+
+    let response;
+    try {
+      response = await fetchWithRetry(
+        `${host}/api/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelToUse,
+            prompt,
+            stream: false,
+            format: 'json',
+            options: { temperature: 0.3, num_predict: 500 },
+          }),
+        },
+        {
+          operation: `Smart folder enhancement for ${folderData.name}`,
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 4000,
+        },
+      );
+    } catch (fetchError) {
+      logger.error(
+        '[LLM-ENHANCEMENT] Fetch request failed after retries:',
+        fetchError,
+      );
+      return { error: `Network error: ${fetchError.message}` };
+    }
 
     if (response.ok) {
-      const data = await response.json();
-      const enhancement = JSON.parse(data.response);
-      if (enhancement && typeof enhancement === 'object') {
-        logger.info('[LLM-ENHANCEMENT] Successfully enhanced smart folder');
-        return enhancement;
+      try {
+        const data = await response.json();
+        const enhancement = JSON.parse(data.response);
+        if (enhancement && typeof enhancement === 'object') {
+          logger.info('[LLM-ENHANCEMENT] Successfully enhanced smart folder');
+          return enhancement;
+        }
+      } catch (parseError) {
+        logger.error('[LLM-ENHANCEMENT] Failed to parse response:', parseError);
+        return { error: 'Invalid JSON response from LLM' };
       }
     }
-    return { error: 'Invalid LLM response format' };
+    return { error: `HTTP error: ${response.status} ${response.statusText}` };
   } catch (error) {
     logger.error(
       '[LLM-ENHANCEMENT] Failed to enhance smart folder:',
@@ -102,27 +127,60 @@ Respond with only a number between 0.0 and 1.0:`;
         const modelToUse =
           (typeof getOllamaModel === 'function' && getOllamaModel()) ||
           require('../../shared/constants').DEFAULT_AI_MODELS.TEXT_ANALYSIS;
-        const response = await fetch(`${host}/api/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelToUse,
-            prompt,
-            stream: false,
-            options: { temperature: 0.1, num_predict: 10 },
-          }),
-        });
+
+        let response;
+        try {
+          response = await fetchWithRetry(
+            `${host}/api/generate`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: modelToUse,
+                prompt,
+                stream: false,
+                options: { temperature: 0.1, num_predict: 10 },
+              }),
+            },
+            {
+              operation: `Semantic similarity for ${folder.name}`,
+              maxRetries: 3,
+              initialDelay: 1000,
+              maxDelay: 4000,
+            },
+          );
+        } catch (fetchError) {
+          logger.warn(
+            `[SEMANTIC] Network error for folder ${folder.name} after retries:`,
+            fetchError.message,
+          );
+          throw fetchError; // Caught by outer catch block
+        }
+
         if (response.ok) {
-          const data = await response.json();
-          const similarity = parseFloat((data.response || '').trim());
-          if (!isNaN(similarity) && similarity >= 0 && similarity <= 1) {
-            similarities.push({
-              name: folder.name,
-              id: folder.id,
-              confidence: similarity,
-              description: folder.description,
-            });
+          try {
+            const data = await response.json();
+            const similarity = parseFloat((data.response || '').trim());
+            if (!isNaN(similarity) && similarity >= 0 && similarity <= 1) {
+              similarities.push({
+                name: folder.name,
+                id: folder.id,
+                confidence: similarity,
+                description: folder.description,
+              });
+            }
+          } catch (parseError) {
+            logger.warn(
+              `[SEMANTIC] Failed to parse response for folder ${folder.name}:`,
+              parseError.message,
+            );
+            throw parseError; // Caught by outer catch block
           }
+        } else {
+          logger.warn(
+            `[SEMANTIC] HTTP error ${response.status} for folder ${folder.name}`,
+          );
+          throw new Error(`HTTP ${response.status}`);
         }
       } catch (folderError) {
         logger.warn(

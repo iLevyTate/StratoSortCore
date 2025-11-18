@@ -1,9 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Note: sanitize-html may not work in sandboxed preload, using basic sanitization instead
-// const sanitizeHtml = require('sanitize-html');
+// Use structured logging for preload script
+const logPrefix = '[PRELOAD]';
+const log = {
+  info: (message) => console.log(`${logPrefix} ${message}`),
+  warn: (message) => console.warn(`${logPrefix} ${message}`),
+  error: (message, error) =>
+    console.error(`${logPrefix} ${message}`, error || ''),
+};
 
-console.log('[PRELOAD] Secure preload script loaded');
+log.info('Secure preload script loaded');
 
 // Hardcoded IPC_CHANNELS to avoid requiring Node.js path module in sandboxed environment
 // This is copied from src/shared/constants.js and must be kept in sync
@@ -233,9 +239,7 @@ class SecureIPCManager {
     try {
       // Channel validation
       if (!ALL_SEND_CHANNELS.includes(channel)) {
-        console.warn(
-          `[PRELOAD] Blocked invoke to unauthorized channel: ${channel}`,
-        );
+        log.warn(`Blocked invoke to unauthorized channel: ${channel}`);
         throw new Error(`Unauthorized IPC channel: ${channel}`);
       }
 
@@ -245,9 +249,8 @@ class SecureIPCManager {
       // Argument sanitization
       const sanitizedArgs = this.sanitizeArguments(args);
 
-      console.log(
-        `[PRELOAD] Secure invoke: ${channel}`,
-        sanitizedArgs.length > 0 ? '[with args]' : '',
+      log.info(
+        `Secure invoke: ${channel}${sanitizedArgs.length > 0 ? ' [with args]' : ''}`,
       );
 
       // Add retry logic for handler not registered errors (reduced to 2 attempts as fallback)
@@ -264,8 +267,8 @@ class SecureIPCManager {
             error.message &&
             error.message.includes('No handler registered')
           ) {
-            console.warn(
-              `[PRELOAD] Handler not ready for ${channel}, attempt ${attempt + 1}/2`,
+            log.warn(
+              `Handler not ready for ${channel}, attempt ${attempt + 1}/2`,
             );
             // Wait before retrying (exponential backoff)
             await new Promise((resolve) =>
@@ -281,10 +284,7 @@ class SecureIPCManager {
       // If we exhausted retries, throw the last error
       throw lastError;
     } catch (error) {
-      console.error(
-        `[PRELOAD] IPC invoke error for ${channel}:`,
-        error.message,
-      );
+      log.error(`IPC invoke error for ${channel}: ${error.message}`);
       throw new Error(`IPC Error: ${error.message}`);
     }
   }
@@ -294,9 +294,7 @@ class SecureIPCManager {
    */
   safeOn(channel, callback) {
     if (!ALLOWED_RECEIVE_CHANNELS.includes(channel)) {
-      console.warn(
-        `[PRELOAD] Blocked listener on unauthorized channel: ${channel}`,
-      );
+      log.warn(`Blocked listener on unauthorized channel: ${channel}`);
       return () => {};
     }
 
@@ -304,9 +302,7 @@ class SecureIPCManager {
       try {
         // Validate event source
         if (!this.validateEventSource(event)) {
-          console.warn(
-            `[PRELOAD] Rejected event from invalid source on channel: ${channel}`,
-          );
+          log.warn(`Rejected event from invalid source on channel: ${channel}`);
           return;
         }
 
@@ -319,13 +315,13 @@ class SecureIPCManager {
           if (this.isValidSystemMetrics(data)) {
             callback(data);
           } else {
-            console.warn('[PRELOAD] Invalid system-metrics data rejected');
+            log.warn('Invalid system-metrics data rejected');
           }
         } else {
           callback(...sanitizedArgs);
         }
       } catch (error) {
-        console.error(`[PRELOAD] Error in ${channel} event handler:`, error);
+        log.error(`Error in ${channel} event handler:`, error);
       }
     };
 
@@ -393,7 +389,7 @@ class SecureIPCManager {
       for (const [key, value] of Object.entries(obj)) {
         // Skip dangerous keys
         if (dangerousKeys.includes(key)) {
-          console.warn('[PRELOAD] Blocked dangerous object key:', key);
+          log.warn(`Blocked dangerous object key: ${key}`);
           continue;
         }
 
@@ -405,7 +401,7 @@ class SecureIPCManager {
 
         // Double-check the cleaned key isn't dangerous
         if (dangerousKeys.includes(cleanKey)) {
-          console.warn('[PRELOAD] Blocked dangerous sanitized key:', cleanKey);
+          log.warn(`Blocked dangerous sanitized key: ${cleanKey}`);
           continue;
         }
 
@@ -563,7 +559,7 @@ class SecureIPCManager {
       ipcRenderer.removeListener(channel, callback);
     }
     this.activeListeners.clear();
-    console.log('[PRELOAD] All IPC listeners cleaned up');
+    log.info('All IPC listeners cleaned up');
   }
 }
 
@@ -719,7 +715,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           );
         }
       } catch (error) {
-        console.error('[PRELOAD] File analysis security check failed:', error);
+        log.error('File analysis security check failed:', error);
         return Promise.reject(error);
       }
     },
@@ -941,14 +937,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
     invoke: (channel, ...args) => {
-      console.warn(
-        '[PRELOAD] Using deprecated electron.ipcRenderer.invoke - migrate to window.electronAPI',
+      log.warn(
+        'Using deprecated electron.ipcRenderer.invoke - migrate to window.electronAPI',
       );
       return secureIPC.safeInvoke(channel, ...args);
     },
     on: (channel, callback) => {
-      console.warn(
-        '[PRELOAD] Using deprecated electron.ipcRenderer.on - migrate to window.electronAPI.events',
+      log.warn(
+        'Using deprecated electron.ipcRenderer.on - migrate to window.electronAPI.events',
       );
       return secureIPC.safeOn(channel, callback);
     },
@@ -958,14 +954,12 @@ contextBridge.exposeInMainWorld('electron', {
       if (allowedSendChannels.includes(channel)) {
         ipcRenderer.send(channel, ...args);
       } else {
-        console.warn(
-          `[PRELOAD] Attempted to send on disallowed channel: ${channel}`,
-        );
+        log.warn(`Attempted to send on disallowed channel: ${channel}`);
       }
     },
   },
 });
 
-console.log('[PRELOAD] Secure context bridge exposed with structured API');
+log.info('Secure context bridge exposed with structured API');
 
 module.exports = { SecureIPCManager };

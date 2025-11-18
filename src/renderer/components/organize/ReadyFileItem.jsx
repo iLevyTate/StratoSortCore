@@ -33,7 +33,7 @@ function ReadyFileItem({
 
   return (
     <div
-      className={`border rounded-lg p-13 transition-all duration-200 ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'} overflow-x-auto`}
+      className={`border rounded-lg p-13 transition-all duration-200 ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'}`}
     >
       <div className="flex items-start gap-13">
         <input
@@ -42,11 +42,11 @@ function ReadyFileItem({
           onChange={handleToggle}
           className="form-checkbox mt-3"
         />
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-8 mb-5">
             <div className="text-2xl">📄</div>
-            <div>
-              <div className="font-medium text-system-gray-900">
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-system-gray-900 break-words">
                 {file.name}
               </div>
               <div className="text-sm text-system-gray-500">
@@ -91,7 +91,9 @@ function ReadyFileItem({
               {destination && (
                 <div className="text-sm text-system-gray-600">
                   <strong>Destination:</strong>{' '}
-                  <span className="text-stratosort-blue">{destination}</span>
+                  <span className="text-stratosort-blue break-all">
+                    {destination}
+                  </span>
                 </div>
               )}
             </>

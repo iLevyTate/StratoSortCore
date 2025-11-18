@@ -9,7 +9,6 @@ const {
   nativeImage,
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
-// const { performance } = require('perf_hooks'); // no longer used
 const isDev = process.env.NODE_ENV === 'development';
 
 // Logging utility
@@ -18,7 +17,6 @@ const { logger } = require('../shared/logger');
 // Import error handling system (not needed directly in this file)
 
 const { scanDirectory } = require('./folderScanner');
-// const { getOrganizationSuggestions } = require('./llmService'); // not used currently
 const {
   getOllama,
   getOllamaModel,
@@ -31,7 +29,6 @@ const {
   setOllamaHost,
   loadOllamaConfig,
 } = require('./ollamaUtils');
-// const ModelManager = require('./services/ModelManager'); // not used currently
 const { buildOllamaOptions } = require('./services/PerformanceService');
 const {
   getService: getSettingsService,
@@ -53,9 +50,7 @@ const { analyzeImageFile } = require('./analysis/ollamaImageAnalysis');
 
 // Import OCR library
 const tesseract = require('node-tesseract-ocr');
-const { spawn, spawnSync } = require('child_process');
-const fetch = global.fetch || require('node-fetch');
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
 
 let mainWindow;
@@ -75,269 +70,15 @@ let eventListeners = [];
 let childProcessListeners = [];
 let globalProcessListeners = [];
 
-function resolveChromaCliExecutable() {
-  try {
-    const binName = process.platform === 'win32' ? 'chromadb.cmd' : 'chromadb';
-    const cliPath = path.resolve(__dirname, '../../node_modules/.bin', binName);
-    if (fs.existsSync(cliPath)) {
-      return cliPath;
-    }
-  } catch (error) {
-    logger.warn(
-      '[ChromaDB] Failed to resolve local CLI executable:',
-      error?.message || error,
-    );
-  }
-  return null;
-}
-
-function splitCommandLine(value) {
-  if (!value || typeof value !== 'string') return [];
-  const matches = value.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-  return matches.map((token) => token.replace(/^"(.*)"$/, '$1'));
-}
-
-function findPythonLauncher() {
-  const candidates =
-    process.platform === 'win32'
-      ? [
-          { command: 'py', args: ['-3'] },
-          { command: 'python3', args: [] },
-          { command: 'python', args: [] },
-        ]
-      : [
-          { command: 'python3', args: [] },
-          { command: 'python', args: [] },
-        ];
-
-  for (const candidate of candidates) {
-    try {
-      const result = spawnSync(
-        candidate.command,
-        [...candidate.args, '--version'],
-        {
-          stdio: 'pipe',
-          windowsHide: true,
-        },
-      );
-      if (result.status === 0) {
-        return candidate;
-      }
-    } catch {
-      // Ignore and continue checking other candidates
-    }
-  }
-  return null;
-}
-
-function buildChromaSpawnPlan(config) {
-  if (process.env.CHROMA_SERVER_COMMAND) {
-    const parts = splitCommandLine(process.env.CHROMA_SERVER_COMMAND);
-    if (parts.length > 0) {
-      return {
-        command: parts[0],
-        args: parts.slice(1),
-        source: 'custom-command',
-        options: { windowsHide: true },
-      };
-    }
-  }
-
-  const localCli = resolveChromaCliExecutable();
-  if (localCli) {
-    return {
-      command: localCli,
-      args: [
-        'run',
-        '--path',
-        config.dbPath,
-        '--host',
-        config.host,
-        '--port',
-        String(config.port),
-      ],
-      source: 'local-cli',
-      options: { windowsHide: true },
-    };
-  }
-
-  const pythonLauncher = findPythonLauncher();
-  if (pythonLauncher) {
-    return {
-      command: pythonLauncher.command,
-      args: [
-        ...pythonLauncher.args,
-        '-m',
-        'chromadb',
-        'run',
-        '--path',
-        config.dbPath,
-        '--host',
-        config.host,
-        '--port',
-        String(config.port),
-      ],
-      source: 'python',
-      options: { windowsHide: true },
-    };
-  }
-
-  return null;
-}
-
+// Legacy function - replaced by StartupManager
+// This function is no longer used but kept for backward compatibility
+// All startup logic has been moved to StartupManager service
+// eslint-disable-next-line no-unused-vars
 async function ensureChromaDbRunning() {
-  if (process.env.STRATOSORT_DISABLE_CHROMADB === '1') {
-    logger.warn(
-      '[ChromaDB] Startup skipped because STRATOSORT_DISABLE_CHROMADB=1',
-    );
-    return;
-  }
-
-  if (chromaDbProcess) {
-    return;
-  }
-
-  const chromaDbService = require('./services/ChromaDBService').getInstance();
-  const isUp = await chromaDbService.isServerAvailable();
-  if (isUp) {
-    logger.info('[ChromaDB] Server is already running.');
-    return;
-  }
-
-  const serverConfig = chromaDbService.getServerConfig();
-
-  logger.info('[ChromaDB] Server not available, attempting to start...', {
-    host: serverConfig.host,
-    port: serverConfig.port,
-    dbPath: serverConfig.dbPath,
-  });
-
-  try {
-    await chromaDbService.ensureDbDirectory();
-  } catch (error) {
-    logger.error('[ChromaDB] Failed to ensure database directory:', error);
-    return;
-  }
-
-  const spawnPlan = buildChromaSpawnPlan(serverConfig);
-  if (!spawnPlan) {
-    logger.warn(
-      '[ChromaDB] Unable to locate a suitable startup command. Install the Python "chromadb" package (pip install chromadb) or set CHROMA_SERVER_COMMAND manually. See CHROMADB_MIGRATION.md for details.',
-    );
-    return;
-  }
-
-  const env = { ...process.env };
-  const binPath = path.resolve(__dirname, '../../node_modules/.bin');
-  env.PATH = env.PATH ? `${binPath}${path.delimiter}${env.PATH}` : binPath;
-
-  // Fixed: Don't detach process to ensure proper cleanup on shutdown
-  // detached: true causes orphaned processes on Windows
-  const spawnOptions = {
-    detached: false, // Keep process attached to parent for proper cleanup
-    stdio: ['ignore', 'pipe', 'pipe'], // Capture both stdout and stderr
-    ...spawnPlan.options,
-    env,
-  };
-
-  chromaDbProcess = spawn(spawnPlan.command, spawnPlan.args, spawnOptions);
-
-  // Don't unref() - we need to track this process for proper shutdown
-  // chromaDbProcess.unref(); // REMOVED - was causing orphaned processes
-
-  let stderrLines = 0;
-  chromaDbProcess.stderr?.setEncoding('utf8');
-
-  // Track listeners for cleanup
-  const stderrHandler = (chunk) => {
-    if (stderrLines < 5) {
-      const text = chunk.toString().trim();
-      if (text) {
-        logger.warn('[ChromaDB] server stderr:', text);
-        stderrLines += text.split(/\r?\n/).length;
-      }
-    }
-  };
-
-  const errorHandler = (err) => {
-    logger.error('[ChromaDB] Failed to start ChromaDB process:', err);
-  };
-
-  const exitHandler = (code, signal) => {
-    logger.warn('[ChromaDB] Server process exited', { code, signal });
-    chromaDbProcess = null;
-  };
-
-  chromaDbProcess.stderr?.on('data', stderrHandler);
-  chromaDbProcess.on('error', errorHandler);
-  chromaDbProcess.on('exit', exitHandler);
-
-  // Store cleanup function
-  childProcessListeners.push(() => {
-    if (chromaDbProcess) {
-      chromaDbProcess.stderr?.removeListener('data', stderrHandler);
-      chromaDbProcess.removeListener('error', errorHandler);
-      chromaDbProcess.removeListener('exit', exitHandler);
-    }
-  });
-
-  // Fixed: Don't unref() - we need parent to wait for this process during shutdown
-  // chromaDbProcess.unref(); // REMOVED - would detach and cause orphaned processes
-
-  // Poll for server availability with exponential backoff
-  const pollInterval = 500; // Check every 500ms
-  const maxWaitTime = 15000; // Maximum 15 seconds
-  const maxAttempts = Math.floor(maxWaitTime / pollInterval); // 30 attempts
-  const startTime = Date.now();
-  let lastLogTime = startTime;
-  const logInterval = 2000; // Log progress every 2 seconds
-
-  logger.info('[ChromaDB] Polling for server availability...');
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // Check if we've exceeded max wait time
-    const elapsed = Date.now() - startTime;
-    if (elapsed >= maxWaitTime) {
-      logger.error(
-        `[ChromaDB] ❌ Server did not become available within ${maxWaitTime}ms timeout`,
-      );
-      return;
-    }
-
-    // Log progress every 2 seconds
-    if (Date.now() - lastLogTime >= logInterval) {
-      logger.info(
-        `[ChromaDB] Still waiting for server... (${Math.round(elapsed / 1000)}s elapsed)`,
-      );
-      lastLogTime = Date.now();
-    }
-
-    // Check if server is available
-    const isNowUp = await chromaDbService.isServerAvailable();
-    if (isNowUp) {
-      const totalTime = Date.now() - startTime;
-      logger.info(
-        `[ChromaDB] ✅ Server started successfully after ${totalTime}ms (${attempt + 1} attempts)`,
-      );
-      return;
-    }
-
-    // Wait before next check
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
-  }
-
-  // Final check after all attempts
-  const isNowUp = await chromaDbService.isServerAvailable();
-  if (isNowUp) {
-    const totalTime = Date.now() - startTime;
-    logger.info(
-      `[ChromaDB] ✅ Server started successfully after ${totalTime}ms`,
-    );
-  } else {
-    logger.error(
-      `[ChromaDB] ❌ Failed to start ChromaDB server after ${maxAttempts} polling attempts (${maxWaitTime}ms)`,
-    );
-  }
+  logger.warn(
+    '[ChromaDB] ensureChromaDbRunning is deprecated - using StartupManager instead',
+  );
+  // Function body removed - all startup logic now handled by StartupManager
 }
 
 /**
@@ -507,95 +248,15 @@ async function verifyIpcHandlersRegistered() {
   return false;
 }
 
+// Legacy function - replaced by StartupManager
+// This function is no longer used but kept for backward compatibility
+// All startup logic has been moved to StartupManager service
+// eslint-disable-next-line no-unused-vars
 async function ensureOllamaRunning() {
-  if (process.env.CI) return;
-
-  await loadOllamaConfig();
-  const host = getOllamaHost();
-
-  // Try to use the enhanced setup script if available
-  try {
-    const setupScript = path.join(__dirname, '../../setup-ollama.js');
-    if (fs.existsSync(setupScript)) {
-      const {
-        isOllamaInstalled,
-        isOllamaRunning,
-        startOllamaServer,
-        getInstalledModels,
-      } = require(setupScript);
-
-      // Check if Ollama is installed
-      if (!isOllamaInstalled()) {
-        logger.warn(
-          '[STARTUP] Ollama is not installed. Please run: npm run setup:ollama',
-        );
-        // Continue anyway, the app can work without Ollama
-        return;
-      }
-
-      // Check if server is running
-      if (!(await isOllamaRunning())) {
-        logger.info('[STARTUP] Starting Ollama server...');
-        const started = await startOllamaServer();
-        if (!started) {
-          logger.warn('[STARTUP] Could not start Ollama server automatically');
-        }
-      }
-
-      // Check if we have any models
-      const models = await getInstalledModels();
-      if (models.length === 0) {
-        logger.warn(
-          '[STARTUP] No Ollama models installed. Run: npm run setup:ollama',
-        );
-      } else {
-        logger.info(`[STARTUP] Found ${models.length} Ollama models`);
-      }
-
-      return;
-    }
-  } catch (e) {
-    logger.debug(
-      '[STARTUP] Enhanced Ollama setup not available, using fallback',
-    );
-  }
-
-  // Fallback to original simple check
-  async function check() {
-    try {
-      const res = await fetch(`${host}/api/tags`);
-      return res && res.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  if (await check()) {
-    return;
-  }
-
-  try {
-    logger.info(`[STARTUP] Ollama not reachable at ${host}, starting server`);
-    const child = spawn('ollama', ['serve'], {
-      detached: true,
-      stdio: 'ignore',
-      shell: process.platform === 'win32',
-    });
-    child.unref();
-  } catch (e) {
-    logger.warn('[STARTUP] Failed to launch ollama serve', e);
-    return;
-  }
-
-  for (let i = 0; i < 10; i += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((r) => setTimeout(r, 500));
-    if (await check()) {
-      logger.info('[STARTUP] Ollama server started');
-      return;
-    }
-  }
-  logger.warn('[STARTUP] Ollama did not respond after start attempt');
+  logger.warn(
+    '[Ollama] ensureOllamaRunning is deprecated - using StartupManager instead',
+  );
+  // Function body removed - all startup logic now handled by StartupManager
 }
 
 // ===== GPU PREFERENCES (Windows rendering stability) =====
@@ -792,58 +453,82 @@ function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     logger.debug('[DEBUG] Window already exists, restoring state...');
 
-    // Window state machine: Handle states in proper order
-    // State priority: fullscreen > minimized > maximized > hidden > normal
+    // Prevent dangling pointer issues by deferring state changes
+    // Use setImmediate to ensure Chromium's message loop is ready
+    setImmediate(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    // 1. Fullscreen state - preserve and focus
-    if (mainWindow.isFullScreen()) {
-      logger.debug('[WINDOW] Window is fullscreen, focusing');
-      mainWindow.focus();
-      return;
-    }
+      try {
+        // Window state machine: Handle states in proper order
+        // State priority: fullscreen > minimized > maximized > hidden > normal
 
-    // 2. Minimized state - must restore before showing
-    // restore() brings window back from taskbar/dock and makes it visible
-    if (mainWindow.isMinimized()) {
-      logger.debug('[WINDOW] Window is minimized, restoring...');
-      mainWindow.restore();
-      // restore() should make window visible, but verify
-      if (!mainWindow.isVisible()) {
-        logger.debug(
-          '[WINDOW] Window still not visible after restore, showing...',
-        );
-        mainWindow.show();
-      }
-      // After restore, window might be maximized, so check that next
-      if (mainWindow.isMaximized()) {
-        logger.debug('[WINDOW] Window is maximized after restore');
+        // 1. Fullscreen state - preserve and focus
+        if (mainWindow.isFullScreen()) {
+          logger.debug('[WINDOW] Window is fullscreen, focusing');
+          mainWindow.focus();
+          return;
+        }
+
+        // 2. Minimized state - must restore before showing
+        // restore() brings window back from taskbar/dock and makes it visible
+        if (mainWindow.isMinimized()) {
+          logger.debug('[WINDOW] Window is minimized, restoring...');
+
+          // Defer restore to next tick to avoid Chromium message pump issues
+          setTimeout(() => {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+
+            mainWindow.restore();
+
+            // Give Chromium time to process the restore
+            setTimeout(() => {
+              if (!mainWindow || mainWindow.isDestroyed()) return;
+
+              // restore() should make window visible, but verify
+              if (!mainWindow.isVisible()) {
+                logger.debug(
+                  '[WINDOW] Window still not visible after restore, showing...',
+                );
+                mainWindow.show();
+              }
+
+              // After restore, window might be maximized, so check that next
+              if (mainWindow.isMaximized()) {
+                logger.debug('[WINDOW] Window is maximized after restore');
+              }
+
+              mainWindow.focus();
+            }, 50);
+          }, 0);
+          return;
+        }
+
+        // 3. Maximized state (but not minimized) - show if hidden, preserve maximized
+        if (mainWindow.isMaximized()) {
+          logger.debug('[WINDOW] Window is maximized');
+          if (!mainWindow.isVisible()) {
+            logger.debug('[WINDOW] Maximized window is hidden, showing it');
+            mainWindow.show();
+          }
+          mainWindow.focus();
+          return;
+        }
+
+        // 4. Hidden state (not minimized, not maximized) - just show
+        if (!mainWindow.isVisible()) {
+          logger.debug('[WINDOW] Window is hidden, showing it');
+          mainWindow.show();
+          mainWindow.focus();
+          return;
+        }
+
+        // 5. Normal visible state - just focus
+        logger.debug('[WINDOW] Window is visible, focusing');
         mainWindow.focus();
-        // Handle off-screen check and Windows foreground forcing below
-      } else {
-        // Normal window state after restore
-        mainWindow.focus();
+      } catch (error) {
+        logger.error('[WINDOW] Error during window state restoration:', error);
       }
-    }
-    // 3. Maximized state (but not minimized) - show if hidden, preserve maximized
-    else if (mainWindow.isMaximized()) {
-      logger.debug('[WINDOW] Window is maximized');
-      if (!mainWindow.isVisible()) {
-        logger.debug('[WINDOW] Maximized window is hidden, showing it');
-        mainWindow.show();
-      }
-      mainWindow.focus();
-    }
-    // 4. Hidden state (not minimized, not maximized) - just show
-    else if (!mainWindow.isVisible()) {
-      logger.debug('[WINDOW] Window is hidden, showing it');
-      mainWindow.show();
-      mainWindow.focus();
-    }
-    // 5. Normal visible state - just focus
-    else {
-      logger.debug('[WINDOW] Window is visible, focusing');
-      mainWindow.focus();
-    }
+    });
 
     // 6. Ensure window is on screen (handle multi-monitor issues)
     // Only check if window is actually visible and not minimized
@@ -897,41 +582,71 @@ function createWindow() {
   // No existing window, create a new one
   mainWindow = createMainWindow();
 
+  // Store event handlers for proper cleanup
+  const windowEventHandlers = new Map();
+
   // Add state change event listeners for debugging
-  mainWindow.on('minimize', () => {
+  const minimizeHandler = () => {
     logger.debug('[WINDOW] Window minimized');
-  });
+  };
+  windowEventHandlers.set('minimize', minimizeHandler);
+  mainWindow.on('minimize', minimizeHandler);
 
-  mainWindow.on('restore', () => {
+  const restoreHandler = () => {
     logger.debug('[WINDOW] Window restored');
-  });
+  };
+  windowEventHandlers.set('restore', restoreHandler);
+  mainWindow.on('restore', restoreHandler);
 
-  mainWindow.on('show', () => {
+  const showHandler = () => {
     logger.debug('[WINDOW] Window shown');
-  });
+  };
+  windowEventHandlers.set('show', showHandler);
+  mainWindow.on('show', showHandler);
 
-  mainWindow.on('hide', () => {
+  const hideHandler = () => {
     logger.debug('[WINDOW] Window hidden');
-  });
+  };
+  windowEventHandlers.set('hide', hideHandler);
+  mainWindow.on('hide', hideHandler);
 
-  mainWindow.on('focus', () => {
+  const focusHandler = () => {
     logger.debug('[WINDOW] Window focused');
-  });
+  };
+  windowEventHandlers.set('focus', focusHandler);
+  mainWindow.on('focus', focusHandler);
 
-  mainWindow.on('blur', () => {
+  const blurHandler = () => {
     logger.debug('[WINDOW] Window lost focus');
-  });
+  };
+  windowEventHandlers.set('blur', blurHandler);
+  mainWindow.on('blur', blurHandler);
 
-  mainWindow.on('close', (e) => {
+  const closeHandler = (e) => {
     if (!isQuitting && currentSettings?.backgroundMode) {
       e.preventDefault();
       mainWindow.hide();
     }
-  });
+  };
+  windowEventHandlers.set('close', closeHandler);
+  mainWindow.on('close', closeHandler);
 
-  mainWindow.on('closed', () => {
+  const closedHandler = () => {
+    // Remove all event listeners before nulling reference
+    if (windowEventHandlers.size > 0) {
+      for (const [event, handler] of windowEventHandlers) {
+        try {
+          mainWindow.removeListener(event, handler);
+        } catch (e) {
+          // Window already destroyed
+        }
+      }
+      windowEventHandlers.clear();
+    }
     mainWindow = null;
-  });
+  };
+  windowEventHandlers.set('closed', closedHandler);
+  mainWindow.on('closed', closedHandler);
 }
 
 function updateDownloadWatcher(settings) {
@@ -1052,7 +767,12 @@ app.whenReady().then(async () => {
       app.getPath('userData'),
       'ollama-setup-complete.marker',
     );
-    const isFirstRun = !fs.existsSync(setupMarker);
+    let isFirstRun = false;
+    try {
+      await fs.access(setupMarker);
+    } catch {
+      isFirstRun = true;
+    }
 
     if (isFirstRun) {
       logger.info('[STARTUP] First run detected - will check Ollama setup');
@@ -1063,20 +783,24 @@ app.whenReady().then(async () => {
         '..',
         'first-run.marker',
       );
-      if (fs.existsSync(installerMarker)) {
+      try {
+        await fs.access(installerMarker);
         try {
-          fs.unlinkSync(installerMarker);
+          await fs.unlink(installerMarker);
         } catch (e) {
           logger.debug(
             '[STARTUP] Could not remove installer marker:',
             e.message,
           );
         }
+      } catch {
+        // Installer marker doesn't exist, no action needed
       }
 
       // Run Ollama setup check
       const setupScript = path.join(__dirname, '../../setup-ollama.js');
-      if (fs.existsSync(setupScript)) {
+      try {
+        await fs.access(setupScript);
         const {
           isOllamaInstalled,
           getInstalledModels,
@@ -1084,7 +808,7 @@ app.whenReady().then(async () => {
         } = require(setupScript);
 
         // Check if Ollama is installed and has models
-        if (isOllamaInstalled()) {
+        if (await isOllamaInstalled()) {
           const models = await getInstalledModels();
           if (models.length === 0) {
             logger.info(
@@ -1106,20 +830,30 @@ app.whenReady().then(async () => {
           );
           // Could show a dialog here prompting user to install Ollama
         }
+      } catch {
+        // Setup script doesn't exist, skip setup check
       }
 
       // Mark setup as complete
       try {
-        fs.writeFileSync(setupMarker, new Date().toISOString());
+        await fs.writeFile(setupMarker, new Date().toISOString());
       } catch (e) {
         logger.debug('[STARTUP] Could not create setup marker:', e.message);
       }
     }
 
-    // Run the new startup manager sequence
+    // Run the new startup manager sequence with timeout
     let startupResult;
     try {
-      startupResult = await startupManager.startup();
+      // Add a hard timeout to prevent hanging
+      const startupPromise = startupManager.startup();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Startup manager timeout after 30 seconds'));
+        }, 30000); // 30 second hard timeout
+      });
+
+      startupResult = await Promise.race([startupPromise, timeoutPromise]);
       logger.info('[STARTUP] Startup manager completed successfully');
     } catch (error) {
       // Log full error details for debugging
@@ -1130,6 +864,7 @@ app.whenReady().then(async () => {
       });
       // Continue in degraded mode - don't block startup
       logger.warn('[STARTUP] Continuing startup in degraded mode');
+      startupResult = { degraded: true, error: error.message };
     }
 
     // Load custom folders
@@ -1139,6 +874,74 @@ app.whenReady().then(async () => {
       customFolders.length,
       'folders',
     );
+
+    // Ensure default "Uncategorized" folder exists
+    // CRITICAL FIX: Add null checks with optional chaining to prevent NULL dereference
+    const hasDefaultFolder =
+      customFolders?.some(
+        (f) => f?.isDefault || f?.name?.toLowerCase() === 'uncategorized',
+      ) ?? false;
+
+    if (!hasDefaultFolder) {
+      const documentsDir = app.getPath('documents');
+      if (!documentsDir || typeof documentsDir !== 'string') {
+        throw new Error('Failed to get documents directory path');
+      }
+      const defaultFolderPath = path.join(
+        documentsDir,
+        'StratoSort',
+        'Uncategorized',
+      );
+
+      try {
+        // Create directory if it doesn't exist
+        await fs.mkdir(defaultFolderPath, { recursive: true });
+
+        // Verify directory was created successfully
+        const stats = await fs.stat(defaultFolderPath);
+        if (!stats.isDirectory()) {
+          throw new Error('Default folder path exists but is not a directory');
+        }
+
+        const defaultFolder = {
+          id: 'default-uncategorized-' + Date.now(),
+          name: 'Uncategorized',
+          path: defaultFolderPath,
+          description: "Default folder for files that don't match any category",
+          keywords: [],
+          isDefault: true,
+          createdAt: new Date().toISOString(),
+        };
+
+        customFolders.push(defaultFolder);
+        await saveCustomFolders(customFolders);
+
+        // Verify folder was persisted
+        const reloadedFolders = await loadCustomFolders();
+        const persistedDefault = reloadedFolders.find(
+          (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized',
+        );
+
+        if (!persistedDefault) {
+          logger.error(
+            '[STARTUP] Default folder created but failed to persist',
+          );
+        } else {
+          logger.info(
+            '[STARTUP] Created and verified default Uncategorized folder at:',
+            defaultFolderPath,
+          );
+        }
+      } catch (error) {
+        logger.error('[STARTUP] Failed to create default folder:', error);
+        // This is critical - app should not proceed without default folder
+        throw new Error(
+          `Failed to create default Uncategorized folder: ${error.message}`,
+        );
+      }
+    } else {
+      logger.info('[STARTUP] Default folder already exists, skipping creation');
+    }
 
     // Initialize service integration
     serviceIntegration = new ServiceIntegration();
@@ -1563,9 +1366,9 @@ app.on('before-quit', async () => {
 
       // Fixed: Use synchronous kill to ensure completion before continuing
       if (process.platform === 'win32') {
-        // On Windows, use synchronous taskkill with force flag
-        const { spawnSync } = require('child_process');
-        const result = spawnSync(
+        // On Windows, use async taskkill with force flag to avoid blocking
+        const { asyncSpawn } = require('./utils/asyncSpawnUtils');
+        const result = await asyncSpawn(
           'taskkill',
           ['/pid', chromaDbProcess.pid, '/f', '/t'],
           {
@@ -1796,10 +1599,6 @@ eventListeners.push(() => {
   app.removeListener('activate', activateHandler);
 });
 
-// Smart folders add moved to ipc/smartFolders.js
-
-// SmartFolders LLM enhancement moved to services/SmartFoldersLLMService.js
-
 // Error handling
 logger.info('✅ StratoSort main process initialized');
 
@@ -1831,46 +1630,7 @@ logger.debug(
 
 // All Analysis History and System metrics handlers are registered via ./ipc/* modules
 
-// Audio analysis handler REMOVED - audio analysis disabled
-// ipcMain.handle(IPC_CHANNELS.ANALYSIS.ANALYZE_AUDIO, async (event, filePath) => {
-//   try {
-//     logger.info(`[IPC-AUDIO-ANALYSIS] Starting audio analysis for: ${filePath}`);
-//
-//     // Get current smart folders to pass to analysis
-//     const smartFolders = customFolders.filter(f => !f.isDefault || f.path);
-//     const folderCategories = smartFolders.map(f => ({
-//       name: f.name,
-//       description: f.description || '',
-//       id: f.id
-//     }));
-//
-//     logger.info(`[IPC-AUDIO-ANALYSIS] Using ${folderCategories.length} smart folders for context:`, folderCategories.map(f => f.name).join(', '));
-//
-//     const result = await analyzeAudioFile(filePath, folderCategories);
-//
-//     logger.info(`[IPC-AUDIO-ANALYSIS] Result:`, {
-//       success: !result.error,
-//       category: result.category,
-//       keywords: result.keywords?.length || 0,
-//       confidence: result.confidence,
-//       has_transcription: result.has_transcription
-//     });
-//
-//     return result;
-//   } catch (error) {
-//     logger.error(`[IPC] Audio analysis failed for ${filePath}:`, error);
-//     return {
-//       error: error.message,
-//       suggestedName: path.basename(filePath, path.extname(filePath)),
-//       category: 'audio',
-//       keywords: [],
-//       confidence: 0,
-//       has_transcription: false
-//     };
-//   }
-// });
-
-// NOTE: Duplicate TRANSCRIBE_AUDIO handler removed to prevent registration error
+// NOTE: Audio analysis handlers removed - feature disabled for performance optimization
 
 // ===== TRAY INTEGRATION =====
 let tray = null;
@@ -1942,17 +1702,7 @@ function updateTrayMenu() {
   tray.setContextMenu(contextMenu);
 }
 
-// Smart Folders matching and helpers moved to ipc/smartFolders.js
-
 // Resume service
 const { resumeIncompleteBatches } = require('./services/OrganizeResumeService');
 
 // Delete folder and its contents
-// File-related handlers moved to ipc/files.js
-
-// Export helper functions for StartupManager
-module.exports = {
-  buildChromaSpawnPlan,
-  ensureChromaDbRunning,
-  ensureOllamaRunning,
-};

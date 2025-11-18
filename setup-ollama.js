@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-const { spawnSync, spawn } = require('child_process');
+const { spawn } = require('child_process');
+const { asyncSpawn } = require('./src/main/utils/asyncSpawnUtils');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -55,8 +56,8 @@ const MINIMUM_REQUIREMENT = {
 };
 
 // Helper functions
-function run(cmd, args = [], opts = {}) {
-  const res = spawnSync(cmd, args, {
+async function run(cmd, args = [], opts = {}) {
+  const res = await asyncSpawn(cmd, args, {
     stdio: 'inherit',
     shell: process.platform === 'win32',
     ...opts,
@@ -64,8 +65,9 @@ function run(cmd, args = [], opts = {}) {
   return res.status === 0;
 }
 
-function check(cmd, args = [], opts = {}) {
-  const res = spawnSync(cmd, args, {
+// eslint-disable-next-line no-unused-vars
+async function check(cmd, args = [], opts = {}) {
+  const res = await asyncSpawn(cmd, args, {
     encoding: 'utf8',
     shell: process.platform === 'win32',
     ...opts,
@@ -77,13 +79,63 @@ function check(cmd, args = [], opts = {}) {
   };
 }
 
+// Async check with timeout to prevent hanging
+async function checkAsync(cmd, args = [], timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, {
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        child.kill();
+        resolve({ ok: false, stdout: '', stderr: 'Timeout' });
+      }
+    }, timeoutMs);
+
+    child.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({
+          ok: code === 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+        });
+      }
+    });
+
+    child.on('error', (error) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({ ok: false, stdout: '', stderr: error.message });
+      }
+    });
+  });
+}
+
 async function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Check if Ollama is installed
-function isOllamaInstalled() {
-  const result = check('ollama', ['--version']);
+// Check if Ollama is installed (async with timeout to prevent hanging)
+async function isOllamaInstalled() {
+  const result = await checkAsync('ollama', ['--version'], 5000);
   return result.ok;
 }
 
@@ -109,10 +161,10 @@ async function isOllamaRunning() {
   }
 }
 
-// Get list of installed models
+// Get list of installed models (async with timeout to prevent hanging)
 async function getInstalledModels() {
   try {
-    const result = check('ollama', ['list']);
+    const result = await checkAsync('ollama', ['list'], 5000);
     if (!result.ok) return [];
 
     const lines = result.stdout.split('\n').slice(1); // Skip header
@@ -405,7 +457,7 @@ async function main() {
 
   // Just check status
   if (isCheck) {
-    const installed = isOllamaInstalled();
+    const installed = await isOllamaInstalled();
     const running = await isOllamaRunning();
     const models = await getInstalledModels();
 
@@ -432,7 +484,7 @@ async function main() {
 
   // Step 1: Check if Ollama is installed
   console.log(chalk.cyan('Step 1: Checking Ollama installation...'));
-  if (!isOllamaInstalled()) {
+  if (!(await isOllamaInstalled())) {
     console.log(chalk.red('✗ Ollama is not installed'));
     console.log(getInstallInstructions());
 
@@ -498,7 +550,7 @@ async function main() {
   // Step 4: Verify setup
   console.log(chalk.cyan('\nStep 4: Verifying setup...'));
   const finalCheck = {
-    ollama: isOllamaInstalled(),
+    ollama: await isOllamaInstalled(),
     server: await isOllamaRunning(),
     models: await getInstalledModels(),
   };

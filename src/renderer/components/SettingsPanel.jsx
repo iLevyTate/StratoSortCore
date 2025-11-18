@@ -1,6 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useNotification } from '../contexts/NotificationContext';
 import { usePhase } from '../contexts/PhaseContext';
+import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Select from './ui/Select';
@@ -8,9 +15,14 @@ import Collapsible from './ui/Collapsible';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 
-function SettingsPanel() {
+const SettingsPanel = React.memo(function SettingsPanel() {
   const { actions } = usePhase();
   const { addNotification } = useNotification();
+
+  // Memoize the toggleSettings function to avoid unnecessary re-renders
+  const handleToggleSettings = useCallback(() => {
+    actions.toggleSettings();
+  }, [actions]);
   const [settings, setSettings] = useState({
     ollamaHost: 'http://127.0.0.1:11434',
     textModel: 'llama3.2:latest',
@@ -42,9 +54,43 @@ function SettingsPanel() {
   const [isDeletingModel, setIsDeletingModel] = useState(false);
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
-  const autoSaveTimerRef = useRef(null);
   const [showAllModels, setShowAllModels] = useState(false);
   const didAutoHealthCheckRef = useRef(false);
+
+  // Memoized computed values
+  const textModelOptions = useMemo(
+    () =>
+      ollamaModelLists.text.length
+        ? ollamaModelLists.text
+        : ollamaModelLists.all,
+    [ollamaModelLists.text, ollamaModelLists.all],
+  );
+
+  const visionModelOptions = useMemo(
+    () =>
+      ollamaModelLists.vision.length
+        ? ollamaModelLists.vision
+        : ollamaModelLists.all,
+    [ollamaModelLists.vision, ollamaModelLists.all],
+  );
+
+  const embeddingModelOptions = useMemo(
+    () =>
+      ollamaModelLists.embedding.length
+        ? ollamaModelLists.embedding
+        : ollamaModelLists.all,
+    [ollamaModelLists.embedding, ollamaModelLists.all],
+  );
+
+  const pullProgressText = useMemo(() => {
+    if (!pullProgress) return null;
+    const percentage =
+      typeof pullProgress?.completed === 'number' &&
+      typeof pullProgress?.total === 'number'
+        ? ` (${Math.floor((pullProgress.completed / Math.max(1, pullProgress.total)) * 100)}%)`
+        : '';
+    return `Pulling ${newModel.trim()}… ${pullProgress?.status || ''}${percentage}`;
+  }, [pullProgress, newModel]);
 
   useEffect(() => {
     let mounted = true;
@@ -91,7 +137,7 @@ function SettingsPanel() {
     })();
   }, [settingsLoaded]);
 
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
     try {
       const savedSettings = await window.electronAPI.settings.get();
       if (savedSettings) {
@@ -102,9 +148,9 @@ function SettingsPanel() {
       console.error('Failed to load settings:', error);
       setSettingsLoaded(true);
     }
-  };
+  }, []);
 
-  const loadOllamaModels = async () => {
+  const loadOllamaModels = useCallback(async () => {
     try {
       setIsRefreshingModels(true);
       const response = await window.electronAPI.ollama.getModels();
@@ -137,51 +183,43 @@ function SettingsPanel() {
     } finally {
       setIsRefreshingModels(false);
     }
-  };
+  }, []);
 
-  const saveSettings = async () => {
+  const saveSettings = useCallback(async () => {
     try {
       setIsSaving(true);
       await window.electronAPI.settings.save(settings);
       addNotification('Settings saved successfully!', 'success');
-      actions.toggleSettings();
+      handleToggleSettings();
     } catch (error) {
       console.error('Failed to save settings:', error);
       addNotification('Failed to save settings', 'error');
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [settings, addNotification, handleToggleSettings]);
 
   // Auto-save settings on change (debounced), without closing the panel or toasts
-  const autoSaveSettings = async () => {
-    try {
-      await window.electronAPI.settings.save(settings);
-    } catch (error) {
-      console.error('Auto-save settings failed:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (!settingsLoaded) return;
-    try {
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = setTimeout(() => {
-        autoSaveSettings();
-      }, 800);
-    } catch {
-      // Non-fatal if timer fails to clear
-    }
-    return () => {
+  const autoSaveSettings = useDebouncedCallback(
+    async () => {
       try {
-        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      } catch {
-        // Non-fatal if timer fails to clear
+        await window.electronAPI.settings.save(settings);
+      } catch (error) {
+        console.error('Auto-save settings failed:', error);
       }
-    };
-  }, [settings, settingsLoaded]);
+    },
+    800,
+    [],
+  );
 
-  const testOllamaConnection = async () => {
+  // Trigger auto-save when settings change
+  useEffect(() => {
+    if (settingsLoaded) {
+      autoSaveSettings();
+    }
+  }, [settings, settingsLoaded, autoSaveSettings]);
+
+  const testOllamaConnection = useCallback(async () => {
     try {
       const res = await window.electronAPI.ollama.testConnection(
         settings.ollamaHost,
@@ -202,9 +240,9 @@ function SettingsPanel() {
     } catch (e) {
       addNotification(`Ollama test failed: ${e.message}`, 'error');
     }
-  };
+  }, [settings.ollamaHost, addNotification, loadOllamaModels]);
 
-  const addOllamaModel = async () => {
+  const addOllamaModel = useCallback(async () => {
     if (!newModel.trim()) return;
     try {
       setIsAddingModel(true);
@@ -247,9 +285,9 @@ function SettingsPanel() {
         // Non-fatal if progress unsubscribe fails
       }
     }
-  };
+  }, [newModel, addNotification, loadOllamaModels]);
 
-  const deleteOllamaModel = async () => {
+  const deleteOllamaModel = useCallback(async () => {
     if (!modelToDelete) return;
     try {
       setIsDeletingModel(true);
@@ -269,9 +307,9 @@ function SettingsPanel() {
     } finally {
       setIsDeletingModel(false);
     }
-  };
+  }, [modelToDelete, addNotification, loadOllamaModels]);
 
-  const runAPITests = async () => {
+  const runAPITests = useCallback(async () => {
     setIsTestingApi(true);
     const results = {};
 
@@ -320,7 +358,7 @@ function SettingsPanel() {
     setTestResults(results);
     setIsTestingApi(false);
     addNotification('API tests completed', 'info');
-  };
+  }, [addNotification]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -374,7 +412,7 @@ function SettingsPanel() {
                 Collapse all
               </Button>
               <Button
-                onClick={actions.toggleSettings}
+                onClick={handleToggleSettings}
                 variant="ghost"
                 className="text-system-gray-500 hover:text-system-gray-700 p-5"
                 aria-label="Close settings"
@@ -438,13 +476,9 @@ function SettingsPanel() {
                 >
                   {showAllModels ? 'Hide Models' : 'View All Models'}
                 </Button>
-                {pullProgress && (
+                {pullProgressText && (
                   <span className="text-xs text-system-gray-600">
-                    Pulling {newModel.trim()}… {pullProgress?.status || ''}
-                    {typeof pullProgress?.completed === 'number' &&
-                    typeof pullProgress?.total === 'number'
-                      ? ` (${Math.floor((pullProgress.completed / Math.max(1, pullProgress.total)) * 100)}%)`
-                      : ''}
+                    {pullProgressText}
                   </span>
                 )}
                 {ollamaHealth && (
@@ -491,10 +525,7 @@ function SettingsPanel() {
                       }))
                     }
                   >
-                    {(ollamaModelLists.text.length
-                      ? ollamaModelLists.text
-                      : ollamaModelLists.all
-                    ).map((model) => (
+                    {textModelOptions.map((model) => (
                       <option key={model} value={model}>
                         {model}
                       </option>
@@ -514,10 +545,7 @@ function SettingsPanel() {
                       }))
                     }
                   >
-                    {(ollamaModelLists.vision.length
-                      ? ollamaModelLists.vision
-                      : ollamaModelLists.all
-                    ).map((model) => (
+                    {visionModelOptions.map((model) => (
                       <option key={model} value={model}>
                         {model}
                       </option>
@@ -537,10 +565,7 @@ function SettingsPanel() {
                       }))
                     }
                   >
-                    {(ollamaModelLists.embedding.length
-                      ? ollamaModelLists.embedding
-                      : ollamaModelLists.all
-                    ).map((model) => (
+                    {embeddingModelOptions.map((model) => (
                       <option key={model} value={model}>
                         {model}
                       </option>
@@ -817,7 +842,7 @@ function SettingsPanel() {
         </div>
 
         <div className="p-21 border-t border-system-gray-200 flex justify-end gap-13">
-          <Button onClick={actions.toggleSettings} variant="secondary">
+          <Button onClick={handleToggleSettings} variant="secondary">
             Cancel
           </Button>
           <Button onClick={saveSettings} variant="primary" disabled={isSaving}>
@@ -827,6 +852,6 @@ function SettingsPanel() {
       </div>
     </div>
   );
-}
+});
 
 export default SettingsPanel;

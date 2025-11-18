@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 
-function SystemMonitoring() {
+const SystemMonitoring = React.memo(function SystemMonitoring() {
   const [systemMetrics, setSystemMetrics] = useState({
     uptime: 0,
     cpu: 0,
@@ -8,38 +8,98 @@ function SystemMonitoring() {
     disk: { used: 0, total: 0 },
   });
   const [isMonitoring, setIsMonitoring] = useState(false);
+  const [error, setError] = useState(null);
+  const intervalRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  const fetchMetrics = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
+    try {
+      // Add null check for API availability
+      if (!window?.electronAPI?.system?.getMetrics) {
+        throw new Error('System metrics API not available');
+      }
+
+      const metrics = await window.electronAPI.system.getMetrics();
+
+      // Only update state if component is still mounted
+      if (isMountedRef.current) {
+        setSystemMetrics(
+          metrics || {
+            uptime: 0,
+            cpu: 0,
+            memory: { used: 0, total: 0 },
+            disk: { used: 0, total: 0 },
+          },
+        );
+        setError(null);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch system metrics:', error);
+      if (isMountedRef.current) {
+        setError(error.message);
+      }
+    }
+  }, []);
 
   useEffect(() => {
-    let intervalId;
+    isMountedRef.current = true;
+    let timeoutId = null;
+
     const startMonitoring = async () => {
-      setIsMonitoring(true);
       try {
-        const metrics = await window.electronAPI.system.getMetrics();
-        setSystemMetrics(metrics);
-        intervalId = setInterval(async () => {
-          try {
-            const updatedMetrics = await window.electronAPI.system.getMetrics();
-            setSystemMetrics(updatedMetrics);
-          } catch (error) {
-            console.warn('Failed to update system metrics:', error);
-          }
+        // Check API availability before starting
+        if (!window?.electronAPI?.system?.getMetrics) {
+          throw new Error('System monitoring API not available');
+        }
+
+        setIsMonitoring(true);
+
+        // Initial fetch
+        await fetchMetrics();
+
+        // Set up interval for updates - store in ref to ensure cleanup
+        intervalRef.current = setInterval(() => {
+          fetchMetrics();
         }, 5000);
       } catch (error) {
         console.error('Failed to start system monitoring:', error);
-        setIsMonitoring(false);
+        if (isMountedRef.current) {
+          setIsMonitoring(false);
+          setError(error.message);
+        }
       }
     };
-    startMonitoring();
+
+    // Add slight delay to ensure API is ready
+    timeoutId = setTimeout(startMonitoring, 100);
+
+    // Cleanup function
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      isMountedRef.current = false;
+
+      // Clear timeout if it exists
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // Clear interval if it exists
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+
       setIsMonitoring(false);
     };
-  }, []);
+  }, [fetchMetrics]);
 
-  if (!isMonitoring) {
+  if (!isMonitoring || error) {
     return (
       <div className="text-sm text-system-gray-500">
-        System monitoring unavailable
+        {error
+          ? `System monitoring error: ${error}`
+          : 'System monitoring unavailable'}
       </div>
     );
   }
@@ -79,6 +139,6 @@ function SystemMonitoring() {
       </div>
     </div>
   );
-}
+});
 
 export default SystemMonitoring;

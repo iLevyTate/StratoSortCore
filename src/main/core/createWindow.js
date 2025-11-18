@@ -46,6 +46,12 @@ function createMainWindow() {
       hardwareAcceleration: true,
       enableWebGL: true,
       safeDialogs: true,
+      // CRITICAL FIX: Add offscreen to prevent Mojo interface errors
+      offscreen: false,
+      // CRITICAL FIX: Disable features that can cause Mojo errors
+      webviewTag: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
     },
     icon: path.join(__dirname, '../../../assets/stratosort-logo.png'),
     show: false,
@@ -55,12 +61,21 @@ function createMainWindow() {
 
   logger.debug('[DEBUG] BrowserWindow created');
 
-  // Manage window state
+  // Manage window state with cleanup tracking
   mainWindowState.manage(win);
 
-  // Defer content loading slightly to ensure IPC handlers are ready
-  // This is a secondary safety measure in addition to the delay in simple-main.js
-  setImmediate(() => {
+  // Add cleanup for window state keeper on window close
+  win.once('closed', () => {
+    try {
+      mainWindowState.unmanage();
+    } catch (e) {
+      // State keeper might already be cleaned up
+    }
+  });
+
+  // CRITICAL FIX: Add longer delay and webContents readiness check to prevent Mojo errors
+  // Wait for webContents to be fully ready before loading content
+  const loadContent = () => {
     const useDevServer = isDev && process.env.USE_DEV_SERVER === 'true';
     if (useDevServer) {
       win.loadURL('http://localhost:3000').catch((error) => {
@@ -85,7 +100,17 @@ function createMainWindow() {
         win.loadFile(path.join(__dirname, '../../renderer/index.html'));
       });
     }
-  });
+  };
+
+  // CRITICAL FIX: Ensure webContents is ready before loading
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-stop-loading', () => {
+      setTimeout(loadContent, 100);
+    });
+  } else {
+    // Add a small delay to ensure window is fully initialized
+    setTimeout(loadContent, 100);
+  }
 
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     let ollamaHost = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
@@ -134,14 +159,25 @@ function createMainWindow() {
   });
 
   win.once('ready-to-show', () => {
-    win.show();
-    win.focus();
-    logger.info('✅ StratoSort window ready and focused');
-    logger.debug('[DEBUG] Window state:', {
-      isVisible: win.isVisible(),
-      isFocused: win.isFocused(),
-      isMinimized: win.isMinimized(),
-    });
+    // CRITICAL FIX: Add delay before showing window to prevent Mojo interface errors
+    setTimeout(() => {
+      if (!win.isDestroyed()) {
+        win.show();
+
+        // Additional delay before focus to ensure window is fully rendered
+        setTimeout(() => {
+          if (!win.isDestroyed()) {
+            win.focus();
+            logger.info('✅ StratoSort window ready and focused');
+            logger.debug('[DEBUG] Window state:', {
+              isVisible: win.isVisible(),
+              isFocused: win.isFocused(),
+              isMinimized: win.isMinimized(),
+            });
+          }
+        }, 50);
+      }
+    }, 100);
   });
 
   win.on('closed', () => {

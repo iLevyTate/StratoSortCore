@@ -5,12 +5,23 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
   analysis,
   options = {},
 }) {
-  if (!analysis) return null;
-  const { showName = true, showCategory = true } = options;
+  // Comprehensive null check for analysis object
+  if (!analysis || typeof analysis !== 'object') return null;
+
+  // Safely extract options with defaults
+  const { showName = true, showCategory = true } = options || {};
+
+  // Safe array checks with proper validation
   const hasKeywords =
-    Array.isArray(analysis.keywords) && analysis.keywords.length > 0;
+    analysis.keywords !== null &&
+    analysis.keywords !== undefined &&
+    Array.isArray(analysis.keywords) &&
+    analysis.keywords.length > 0;
   const hasColors =
-    Array.isArray(analysis.colors) && analysis.colors.length > 0;
+    analysis.colors !== null &&
+    analysis.colors !== undefined &&
+    Array.isArray(analysis.colors) &&
+    analysis.colors.length > 0;
   const displayDate = analysis.date;
   const displayProject = analysis.project;
   const displayPurpose = analysis.purpose;
@@ -60,7 +71,10 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
 
       {hasKeywords && (
         <div className="text-sm text-system-gray-500">
-          <strong>Keywords:</strong> {analysis.keywords.join(', ')}
+          <strong>Keywords:</strong>{' '}
+          {analysis.keywords
+            .filter((k) => k != null && typeof k === 'string')
+            .join(', ')}
         </div>
       )}
 
@@ -85,21 +99,24 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
 
       {hasColors && (
         <div className="text-xs text-system-gray-500">
-          <strong>Colors:</strong> {analysis.colors.join(', ')}
+          <strong>Colors:</strong>{' '}
+          {analysis.colors
+            .filter((c) => c != null && typeof c === 'string')
+            .join(', ')}
         </div>
       )}
 
-      {analysis.ocrText && (
-        <div className="text-xs text-system-gray-500 line-clamp-2">
-          <strong>OCR:</strong> {analysis.ocrText.slice(0, 120)}
-          {analysis.ocrText.length > 120 ? '…' : ''}
+      {analysis.ocrText && typeof analysis.ocrText === 'string' && (
+        <div className="text-xs text-system-gray-500 line-clamp-6">
+          <strong>OCR:</strong> {analysis.ocrText.slice(0, 300)}
+          {analysis.ocrText.length > 300 ? '…' : ''}
         </div>
       )}
 
-      {analysis.transcript && (
-        <div className="text-xs text-system-gray-500 line-clamp-2">
-          <strong>Transcript:</strong> {analysis.transcript.slice(0, 120)}
-          {analysis.transcript.length > 120 ? '…' : ''}
+      {analysis.transcript && typeof analysis.transcript === 'string' && (
+        <div className="text-xs text-system-gray-500 line-clamp-6">
+          <strong>Transcript:</strong> {analysis.transcript.slice(0, 300)}
+          {analysis.transcript.length > 300 ? '…' : ''}
         </div>
       )}
     </div>

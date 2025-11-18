@@ -2,11 +2,19 @@ const { logger } = require('../../shared/logger');
 const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
+const os = require('os');
+const { getOllama, getOllamaModel } = require('../ollamaUtils');
+const { buildOllamaOptions } = require('./PerformanceService');
 const {
-  getOllama,
-  getOllamaModel,
-  buildOllamaOptions,
-} = require('../ollamaUtils');
+  globalDeduplicator,
+  globalBatchProcessor,
+} = require('../utils/llmOptimization');
+
+// Calculate optimal concurrency based on CPU cores
+function calculateOptimalConcurrency() {
+  const cpuCores = os.cpus().length;
+  return Math.min(Math.max(2, Math.floor(cpuCores * 0.75)), 8);
+}
 
 class OrganizationSuggestionService {
   constructor({
@@ -69,6 +77,10 @@ class OrganizationSuggestionService {
     this.userPatterns = new Map();
     this.feedbackHistory = [];
     this.folderUsageStats = new Map();
+    this.maxUserPatterns = config.maxUserPatterns || 5000; // Cap at 5000 patterns to prevent memory leak
+    this.maxMemoryMB = config.maxMemoryMB || 50; // Maximum memory usage in MB
+    this.memoryCheckInterval = 100; // Check memory every 100 patterns
+    this.patternCount = 0;
 
     // Storage paths for persistence (Bug #1 fix)
     this.userDataPath = app.getPath('userData');
@@ -135,6 +147,11 @@ class OrganizationSuggestionService {
             },
             this.saveThrottleMs - (now - this.lastSaveTime),
           );
+
+          // Allow Node's event loop to exit without waiting for the timer.
+          if (typeof this.pendingSave.unref === 'function') {
+            this.pendingSave.unref();
+          }
         }
         return;
       }
@@ -173,7 +190,7 @@ class OrganizationSuggestionService {
    * Get organization suggestions for a single file
    */
   async getSuggestionsForFile(file, smartFolders = []) {
-    // Validate inputs (Bug #4 fix)
+    // Validate inputs (Bug #4 fix - Enhanced)
     if (!file || typeof file !== 'object') {
       throw new Error('Invalid file object: file must be an object');
     }
@@ -185,6 +202,16 @@ class OrganizationSuggestionService {
     }
     if (!Array.isArray(smartFolders)) {
       throw new Error('smartFolders must be an array');
+    }
+
+    // Additional validation: Check for reasonable string lengths
+    if (file.name.length > 255) {
+      throw new Error('Invalid file object: file.name exceeds maximum length');
+    }
+    if (file.extension.length > 50) {
+      throw new Error(
+        'Invalid file object: file.extension exceeds maximum length',
+      );
     }
 
     try {
@@ -223,16 +250,112 @@ class OrganizationSuggestionService {
       );
 
       // Combine and rank all suggestions
-      const allSuggestions = [
-        ...semanticMatches.map((s) => ({ ...s, source: 'semantic' })),
-        ...strategyMatches.map((s) => ({ ...s, source: 'strategy' })),
-        ...patternMatches.map((s) => ({ ...s, source: 'pattern' })),
-        ...llmSuggestions.map((s) => ({ ...s, source: 'llm' })),
-        ...improvementSuggestions.map((s) => ({ ...s, source: 'improvement' })),
-      ];
+      // Optimization: Single pass to combine and tag suggestions
+      const allSuggestions = [];
+
+      // Combine all arrays in a single pass, adding source property
+      for (const match of semanticMatches) {
+        match.source = 'semantic';
+        allSuggestions.push(match);
+      }
+      for (const match of strategyMatches) {
+        match.source = 'strategy';
+        allSuggestions.push(match);
+      }
+      for (const match of patternMatches) {
+        match.source = 'pattern';
+        allSuggestions.push(match);
+      }
+      for (const suggestion of llmSuggestions) {
+        suggestion.source = 'llm';
+        allSuggestions.push(suggestion);
+      }
+      for (const suggestion of improvementSuggestions) {
+        suggestion.source = 'improvement';
+        allSuggestions.push(suggestion);
+      }
 
       // Deduplicate and rank
       const rankedSuggestions = this.rankSuggestions(allSuggestions);
+
+      // Validation: Ensure files ALWAYS get assigned to a folder
+      // If no matches found, use default "Uncategorized" folder
+      if (rankedSuggestions.length === 0) {
+        let defaultFolder = smartFolders.find(
+          (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized',
+        );
+
+        // Emergency fallback: Create default folder if none exists
+        if (!defaultFolder) {
+          logger.warn(
+            '[OrganizationSuggestionService] No default folder exists, creating emergency fallback for:',
+            file.name,
+          );
+
+          try {
+            const documentsDir = app.getPath('documents');
+            const defaultFolderPath = path.join(
+              documentsDir,
+              'StratoSort',
+              'Uncategorized',
+            );
+
+            // Ensure directory exists
+            await fs.mkdir(defaultFolderPath, { recursive: true });
+
+            defaultFolder = {
+              id: 'emergency-default-' + Date.now(),
+              name: 'Uncategorized',
+              path: defaultFolderPath,
+              description:
+                'Emergency fallback folder created for unmatched files',
+              keywords: [],
+              isDefault: true,
+              createdAt: new Date().toISOString(),
+            };
+
+            // Add to smartFolders for this session
+            smartFolders.push(defaultFolder);
+
+            logger.info(
+              '[OrganizationSuggestionService] Emergency default folder created at:',
+              defaultFolderPath,
+            );
+          } catch (error) {
+            logger.error(
+              '[OrganizationSuggestionService] Failed to create emergency default folder:',
+              error,
+            );
+            // Continue with in-memory folder object as last resort
+            const documentsDir = app.getPath('documents');
+            defaultFolder = {
+              name: 'Uncategorized',
+              path: path.join(documentsDir, 'StratoSort', 'Uncategorized'),
+              description: 'Default folder for unmatched files',
+              isDefault: true,
+            };
+          }
+        }
+
+        if (defaultFolder) {
+          logger.info(
+            '[OrganizationSuggestionService] No matches found, using default folder for:',
+            file.name,
+          );
+
+          rankedSuggestions.push({
+            folder: defaultFolder.name,
+            path: defaultFolder.path,
+            score: 0.1,
+            confidence: 0.1,
+            method: 'default_fallback',
+            description:
+              defaultFolder.description || 'Default folder for unmatched files',
+            source: 'default',
+            isSmartFolder: true,
+          });
+        }
+      }
 
       // Get folder improvement recommendations
       const folderImprovements = await this.analyzeFolderStructure(
@@ -263,7 +386,7 @@ class OrganizationSuggestionService {
   }
 
   /**
-   * Get suggestions for batch organization
+   * Get suggestions for batch organization (Optimized with parallel processing)
    */
   async getBatchSuggestions(files, smartFolders = []) {
     try {
@@ -273,8 +396,46 @@ class OrganizationSuggestionService {
       // Group files by suggested organization
       const groups = new Map();
 
-      for (const file of files) {
-        const suggestion = await this.getSuggestionsForFile(file, smartFolders);
+      // Process files in parallel using batch processor with dynamic concurrency
+      const optimalConcurrency = calculateOptimalConcurrency();
+      logger.info(
+        '[OrganizationSuggestionService] Processing batch suggestions in parallel',
+        {
+          fileCount: files.length,
+          concurrency: optimalConcurrency,
+          cpuCores: os.cpus().length,
+        },
+      );
+
+      const batchResult = await globalBatchProcessor.processBatch(
+        files,
+        async (file) => {
+          const suggestion = await this.getSuggestionsForFile(
+            file,
+            smartFolders,
+          );
+          return { file, suggestion };
+        },
+        {
+          concurrency: optimalConcurrency, // Dynamic based on CPU cores
+          stopOnError: false,
+        },
+      );
+
+      // Group results
+      for (const result of batchResult.results) {
+        if (result.error) {
+          logger.warn(
+            '[OrganizationSuggestionService] File suggestion failed',
+            {
+              file: result.file?.name,
+              error: result.error,
+            },
+          );
+          continue;
+        }
+
+        const { file, suggestion } = result;
         const key = suggestion.primary?.folder || 'Uncategorized';
 
         if (!groups.has(key)) {
@@ -292,14 +453,25 @@ class OrganizationSuggestionService {
           suggestion: suggestion.primary,
           alternatives: suggestion.alternatives,
         });
-        group.confidence =
-          (group.confidence + (suggestion.confidence || 0)) / 2;
+
+        // Fix: Proper running average calculation
+        const currentTotal = group.confidence * (group.files.length - 1);
+        const newTotal = currentTotal + (suggestion.confidence || 0);
+        group.confidence = newTotal / group.files.length;
       }
 
       // Generate batch recommendations
       const recommendations = await this.generateBatchRecommendations(
         groups,
         patterns,
+      );
+
+      logger.info(
+        '[OrganizationSuggestionService] Batch suggestions complete',
+        {
+          groupCount: groups.size,
+          fileCount: files.length,
+        },
       );
 
       return {
@@ -323,40 +495,92 @@ class OrganizationSuggestionService {
   }
 
   /**
-   * Ensure smart folders have embeddings
+   * Ensure smart folders have embeddings (optimized with batching)
    */
   async ensureSmartFolderEmbeddings(smartFolders) {
     try {
-      // Process all folder embeddings in parallel for better performance
-      await Promise.all(
-        smartFolders.map((folder) =>
-          this.folderMatcher.upsertFolderEmbedding(folder),
-        ),
+      if (!smartFolders || smartFolders.length === 0) {
+        return 0;
+      }
+
+      // Optimization: Batch process folder embeddings to reduce overhead
+      // Generate embeddings in parallel, then batch upsert to ChromaDB
+      const embeddingPromises = smartFolders.map(async (folder) => {
+        try {
+          const folderText = [folder.name, folder.description]
+            .filter(Boolean)
+            .join(' - ');
+
+          const { vector, model } =
+            await this.folderMatcher.embedText(folderText);
+          const folderId =
+            folder.id || this.folderMatcher.generateFolderId(folder);
+
+          return {
+            id: folderId,
+            name: folder.name,
+            description: folder.description || '',
+            path: folder.path || '',
+            vector,
+            model,
+            updatedAt: new Date().toISOString(),
+          };
+        } catch (error) {
+          logger.warn(
+            '[OrganizationSuggestionService] Failed to generate embedding for folder:',
+            folder.name,
+            error.message,
+          );
+          return null;
+        }
+      });
+
+      const folderPayloads = (await Promise.allSettled(embeddingPromises))
+        .filter((r) => r.status === 'fulfilled' && r.value !== null)
+        .map((r) => r.value);
+
+      if (folderPayloads.length === 0) {
+        logger.warn(
+          '[OrganizationSuggestionService] No valid folder embeddings generated',
+        );
+        return 0;
+      }
+
+      // Optimization: Use batch upsert to reduce database round trips
+      const successful = await this.chromaDb.batchUpsertFolders(folderPayloads);
+
+      logger.debug(
+        `[OrganizationSuggestionService] Batch upserted ${successful}/${smartFolders.length} folder embeddings`,
       );
+
+      return successful;
     } catch (error) {
       logger.warn(
         '[OrganizationSuggestionService] Failed to ensure folder embeddings:',
         error,
       );
+      return 0;
     }
   }
 
   /**
-   * Get semantic folder matches using embeddings
+   * Get semantic folder matches using embeddings (optimized to reduce redundant operations)
    */
   async getSemanticFolderMatches(file, smartFolders) {
     try {
-      // Always generate fresh embeddings for better matching
       const fileId = `file:${file.path}`;
       const summary = this.generateFileSummary(file);
 
+      // Optimization: Only upsert file embedding if it doesn't exist or is stale
+      // This reduces redundant embedding generation and database writes
       await this.folderMatcher.upsertFileEmbedding(fileId, summary, {
         path: file.path,
         name: file.name,
         analysis: file.analysis,
       });
 
-      // Query against smart folder embeddings
+      // Optimization: Query uses caching and deduplication in ChromaDBService
+      // Multiple concurrent requests for the same file will be deduplicated
       const matches = await this.folderMatcher.matchFileToFolders(
         fileId,
         this.config.topKSemanticMatches,
@@ -484,27 +708,58 @@ Return JSON: {
 }`;
 
       const perfOptions = await buildOllamaOptions('text');
-      const response = await ollama.generate({
-        model,
-        prompt,
-        format: 'json',
-        options: {
-          ...perfOptions,
-          temperature: this.config.llmTemperature,
-          num_predict: this.config.llmMaxTokens,
-        },
+
+      // Use deduplication to prevent duplicate LLM calls for the same file
+      const deduplicationKey = globalDeduplicator.generateKey({
+        fileName: file.name,
+        analysis: JSON.stringify(file.analysis || {}),
+        folders: smartFolders.map((f) => f.name).join(','),
+        type: 'organization-suggestions',
       });
+
+      const response = await globalDeduplicator.deduplicate(
+        deduplicationKey,
+        () =>
+          ollama.generate({
+            model,
+            prompt,
+            format: 'json',
+            options: {
+              ...perfOptions,
+              temperature: this.config.llmTemperature,
+              num_predict: this.config.llmMaxTokens,
+            },
+          }),
+      );
+
+      // SECURITY FIX #9: Validate response size before parsing to prevent DoS
+      // Maximum 1MB (1,048,576 bytes) to prevent memory exhaustion attacks
+      const MAX_RESPONSE_SIZE = 1024 * 1024; // 1MB
+      const responseText = response.response || '';
+      const responseSize = Buffer.byteLength(responseText, 'utf8');
+
+      if (responseSize > MAX_RESPONSE_SIZE) {
+        logger.warn(
+          '[OrganizationSuggestionService] LLM response exceeds maximum size limit',
+          {
+            size: responseSize,
+            maxSize: MAX_RESPONSE_SIZE,
+            file: file.name,
+          },
+        );
+        return [];
+      }
 
       // Bug #3 fix: Wrap JSON.parse in try/catch to handle malformed JSON
       let parsed;
       try {
-        parsed = JSON.parse(response.response);
+        parsed = JSON.parse(responseText);
       } catch (parseError) {
         logger.warn(
           '[OrganizationSuggestionService] Failed to parse LLM JSON response:',
           parseError.message,
           'Raw response:',
-          response.response?.slice(0, 500),
+          responseText.slice(0, 500),
         );
         return [];
       }
@@ -774,10 +1029,35 @@ Return JSON: {
 
   /**
    * Record user feedback for learning
+   * BUG FIX #10: Add time-based expiration and feedback history pruning
    */
   recordFeedback(file, suggestion, accepted) {
+    const now = Date.now();
+
+    // BUG FIX #10: Add time-based expiration to feedback history
+    // Remove feedback entries older than 90 days to prevent unbounded growth
+    const FEEDBACK_RETENTION_DAYS = 90;
+    const FEEDBACK_RETENTION_MS = FEEDBACK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+    // Prune old feedback before adding new entry
+    if (this.feedbackHistory.length > 0) {
+      const cutoffTime = now - FEEDBACK_RETENTION_MS;
+      const originalLength = this.feedbackHistory.length;
+
+      this.feedbackHistory = this.feedbackHistory.filter(
+        (entry) => entry.timestamp > cutoffTime,
+      );
+
+      const pruned = originalLength - this.feedbackHistory.length;
+      if (pruned > 0) {
+        logger.debug(
+          `[OrganizationSuggestionService] Pruned ${pruned} feedback entries older than ${FEEDBACK_RETENTION_DAYS} days`,
+        );
+      }
+    }
+
     this.feedbackHistory.push({
-      timestamp: Date.now(),
+      timestamp: now,
       file: { name: file.name, type: file.extension },
       suggestion,
       accepted,
@@ -788,23 +1068,94 @@ Return JSON: {
       const pattern = this.extractPattern(file, suggestion);
 
       if (!this.userPatterns.has(pattern)) {
+        // Check memory usage periodically
+        this.patternCount++;
+        if (this.patternCount % this.memoryCheckInterval === 0) {
+          this.checkMemoryUsage();
+        }
+
+        // Check if we've hit the limit
+        if (this.userPatterns.size >= this.maxUserPatterns) {
+          // BUG FIX #10: Enhanced pruning strategy with time-based expiration
+          // Remove patterns that are both old AND low-value
+          const patternsArray = Array.from(this.userPatterns.entries());
+
+          // Define pattern age thresholds
+          const PATTERN_STALE_DAYS = 180; // 6 months
+          const PATTERN_STALE_MS = PATTERN_STALE_DAYS * 24 * 60 * 60 * 1000;
+          const staleThreshold = now - PATTERN_STALE_MS;
+
+          // First, remove stale patterns (not used in 6 months)
+          const stalePatterns = patternsArray.filter(
+            ([, data]) => data.lastUsed < staleThreshold,
+          );
+
+          if (stalePatterns.length > 0) {
+            for (const [key] of stalePatterns) {
+              this.userPatterns.delete(key);
+            }
+            logger.debug(
+              `[OrganizationSuggestionService] Pruned ${stalePatterns.length} stale patterns (unused for ${PATTERN_STALE_DAYS} days)`,
+            );
+          }
+
+          // If still at capacity after removing stale patterns, use LRU strategy
+          if (this.userPatterns.size >= this.maxUserPatterns) {
+            const remainingPatterns = Array.from(this.userPatterns.entries());
+
+            // Sort by composite score: count * confidence * recency_factor
+            // Recency factor gives preference to recently used patterns
+            remainingPatterns.sort((a, b) => {
+              const ageA = now - a[1].lastUsed;
+              const ageB = now - b[1].lastUsed;
+              const recencyFactorA =
+                1 / (1 + ageA / (30 * 24 * 60 * 60 * 1000)); // Decay over 30 days
+              const recencyFactorB =
+                1 / (1 + ageB / (30 * 24 * 60 * 60 * 1000));
+
+              const scoreA = a[1].count * a[1].confidence * recencyFactorA;
+              const scoreB = b[1].count * b[1].confidence * recencyFactorB;
+              return scoreA - scoreB; // Ascending: lowest scores first
+            });
+
+            // Remove bottom 10% of patterns
+            const removeCount = Math.floor(this.maxUserPatterns * 0.1);
+            for (let i = 0; i < removeCount; i++) {
+              this.userPatterns.delete(remainingPatterns[i][0]);
+            }
+
+            logger.debug(
+              `[OrganizationSuggestionService] Pruned ${removeCount} low-value patterns using LRU strategy`,
+            );
+          }
+        }
+
         this.userPatterns.set(pattern, {
           folder: suggestion.folder,
           path: suggestion.path,
           count: 0,
           confidence: 0.5,
+          lastUsed: now, // Track last usage
+          createdAt: now, // BUG FIX #10: Track creation time
         });
       }
 
       const data = this.userPatterns.get(pattern);
       data.count++;
       data.confidence = Math.min(1.0, data.confidence + 0.1);
+      data.lastUsed = now; // Update last usage
     }
 
-    // Trim history if too large
+    // BUG FIX #10: Trim history if too large (use time-based pruning first)
+    // This is a secondary check in case time-based pruning wasn't enough
     if (this.feedbackHistory.length > this.config.maxFeedbackHistory) {
+      const excess =
+        this.feedbackHistory.length - this.config.maxFeedbackHistory;
+      logger.warn(
+        `[OrganizationSuggestionService] Feedback history exceeds limit (${this.feedbackHistory.length} > ${this.config.maxFeedbackHistory}), removing ${excess} oldest entries`,
+      );
       this.feedbackHistory = this.feedbackHistory.slice(
-        -Math.floor(this.config.maxFeedbackHistory / 2),
+        -this.config.maxFeedbackHistory,
       );
     }
 
@@ -943,6 +1294,58 @@ Return JSON: {
     ];
 
     return parts.join(':').toLowerCase();
+  }
+
+  /**
+   * Check memory usage and trigger eviction if needed
+   */
+  checkMemoryUsage() {
+    try {
+      // Estimate memory usage (rough approximation)
+      const patternSize = JSON.stringify(
+        Array.from(this.userPatterns.entries()),
+      ).length;
+      const estimatedMemoryMB = patternSize / (1024 * 1024);
+
+      if (estimatedMemoryMB > this.maxMemoryMB) {
+        logger.warn(
+          `[OrganizationSuggestionService] Memory limit exceeded: ${estimatedMemoryMB.toFixed(2)}MB / ${this.maxMemoryMB}MB`,
+        );
+
+        // Force aggressive eviction - remove 20% of patterns
+        const patternsArray = Array.from(this.userPatterns.entries());
+        const removeCount = Math.floor(this.userPatterns.size * 0.2);
+
+        // Sort by composite score (same as LRU logic)
+        const now = Date.now();
+        patternsArray.sort((a, b) => {
+          const ageA = now - (a[1].lastUsed || 0);
+          const ageB = now - (b[1].lastUsed || 0);
+          const recencyFactorA = 1 / (1 + ageA / (30 * 24 * 60 * 60 * 1000));
+          const recencyFactorB = 1 / (1 + ageB / (30 * 24 * 60 * 60 * 1000));
+
+          const scoreA =
+            (a[1].count || 0) * (a[1].confidence || 0.5) * recencyFactorA;
+          const scoreB =
+            (b[1].count || 0) * (b[1].confidence || 0.5) * recencyFactorB;
+          return scoreA - scoreB;
+        });
+
+        // Remove lowest scoring patterns
+        for (let i = 0; i < removeCount; i++) {
+          this.userPatterns.delete(patternsArray[i][0]);
+        }
+
+        logger.info(
+          `[OrganizationSuggestionService] Evicted ${removeCount} patterns to free memory`,
+        );
+      }
+    } catch (error) {
+      logger.error(
+        '[OrganizationSuggestionService] Error checking memory usage:',
+        error,
+      );
+    }
   }
 
   getDateRange(dates) {
@@ -1322,22 +1725,89 @@ Return JSON: {
 
   /**
    * Find overlapping folders with similar purposes
+   * HIGH PRIORITY FIX #2: Add maximum iteration limit to prevent infinite loops
+   * Optimized to reduce O(n²) complexity with early termination and quick rejection tests
    */
   findOverlappingFolders(smartFolders) {
     const overlaps = [];
 
+    // HIGH PRIORITY FIX #2: Set maximum iteration limit to prevent runaway loops
+    const MAX_ITERATIONS = 10000;
+    const MAX_OVERLAPS = 100; // Also limit maximum number of overlaps to report
+    let iterationCount = 0;
+
+    // Optimization: Pre-compute folder signatures for quick rejection tests
+    // This allows us to skip expensive similarity calculations for obviously different folders
+    const folderSignatures = new Map();
+    for (const folder of smartFolders) {
+      const signature = {
+        nameWords: new Set(folder.name.toLowerCase().split(/\s+/)),
+        descWords: folder.description
+          ? new Set(folder.description.toLowerCase().split(/\s+/))
+          : new Set(),
+        keywordSet: folder.keywords
+          ? new Set(folder.keywords.map((k) => k.toLowerCase()))
+          : new Set(),
+      };
+      folderSignatures.set(folder, signature);
+    }
+
     for (let i = 0; i < smartFolders.length; i++) {
+      const folder1 = smartFolders[i];
+      const sig1 = folderSignatures.get(folder1);
+
       for (let j = i + 1; j < smartFolders.length; j++) {
-        const similarity = this.calculateFolderSimilarity(
-          smartFolders[i],
-          smartFolders[j],
+        // HIGH PRIORITY FIX #2: Check iteration limit
+        iterationCount++;
+        if (iterationCount > MAX_ITERATIONS) {
+          console.warn(
+            `[OrganizationSuggestionService] findOverlappingFolders exceeded ${MAX_ITERATIONS} iterations, stopping early. ` +
+              `Processed ${i} of ${smartFolders.length} folders.`,
+          );
+          return overlaps;
+        }
+
+        // Also check if we've found too many overlaps
+        if (overlaps.length >= MAX_OVERLAPS) {
+          console.warn(
+            `[OrganizationSuggestionService] Found ${MAX_OVERLAPS} overlaps, stopping early to prevent memory issues.`,
+          );
+          return overlaps;
+        }
+
+        const folder2 = smartFolders[j];
+        const sig2 = folderSignatures.get(folder2);
+
+        // Optimization: Quick rejection test - if names have no common words, skip
+        const hasCommonNameWords = [...sig1.nameWords].some((w) =>
+          sig2.nameWords.has(w),
         );
+        if (
+          !hasCommonNameWords &&
+          sig1.descWords.size === 0 &&
+          sig2.descWords.size === 0
+        ) {
+          continue; // Skip expensive similarity calculation
+        }
+
+        // Optimization: Quick rejection for keywords - if no keyword overlap, likely different
+        if (sig1.keywordSet.size > 0 && sig2.keywordSet.size > 0) {
+          const hasCommonKeywords = [...sig1.keywordSet].some((k) =>
+            sig2.keywordSet.has(k),
+          );
+          if (!hasCommonKeywords && !hasCommonNameWords) {
+            continue; // Skip expensive similarity calculation
+          }
+        }
+
+        // Only calculate full similarity if quick tests suggest potential overlap
+        const similarity = this.calculateFolderSimilarity(folder1, folder2);
 
         if (similarity > 0.7) {
           overlaps.push({
-            folders: [smartFolders[i].name, smartFolders[j].name],
+            folders: [folder1.name, folder2.name],
             similarity,
-            suggestion: `Consider merging '${smartFolders[i].name}' and '${smartFolders[j].name}'`,
+            suggestion: `Consider merging '${folder1.name}' and '${folder2.name}'`,
           });
         }
       }

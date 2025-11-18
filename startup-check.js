@@ -3,7 +3,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { spawnSync } = require('child_process');
+const { asyncSpawn } = require('./src/main/utils/asyncSpawnUtils');
 const chalk = require('chalk');
 
 try {
@@ -24,11 +24,14 @@ function printStatus(ok, label, details) {
   console.log(`${icon} ${label}${details ? chalk.gray(` — ${details}`) : ''}`);
 }
 
-function runCmd(cmd, args = []) {
-  return spawnSync(cmd, args, { encoding: 'utf8' });
+async function runCmd(cmd, args = []) {
+  return await asyncSpawn(cmd, args, {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
 }
 
-function main() {
+async function main() {
   // eslint-disable-next-line no-console
   console.log(chalk.cyan.bold('\nStratoSort Startup Checklist'));
   // Basic file presence
@@ -43,9 +46,9 @@ function main() {
   );
   printStatus(hasDistIndex, 'Built renderer present', 'dist/index.html');
 
-  // Check Ollama (optional)
+  // Check Ollama (optional) - using async spawn to avoid blocking
   const ollamaHost = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
-  const curl = runCmd(
+  const curl = await runCmd(
     process.platform === 'win32' ? 'powershell.exe' : 'curl',
     process.platform === 'win32'
       ? [
@@ -77,4 +80,8 @@ function main() {
   );
 }
 
-main();
+// Run async main function
+main().catch((error) => {
+  console.error('Startup check failed:', error);
+  process.exit(1);
+});

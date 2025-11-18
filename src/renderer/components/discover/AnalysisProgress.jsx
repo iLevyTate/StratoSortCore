@@ -26,7 +26,7 @@ const AnalysisProgress = memo(function AnalysisProgress({
             ></div>
           </div>
           {currentFile && (
-            <div className="text-xs text-system-gray-500 mt-3 truncate">
+            <div className="text-xs text-system-gray-500 mt-3 break-words">
               {currentFile}
             </div>
           )}

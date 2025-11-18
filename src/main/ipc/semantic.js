@@ -3,7 +3,6 @@ const FolderMatchingService = require('../services/FolderMatchingService');
 const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
 const { withErrorLogging } = require('./withErrorLogging');
-// const { logger } = require('../../shared/logger');
 
 function registerEmbeddingsIpc({
   ipcMain,
@@ -57,12 +56,45 @@ function registerEmbeddingsIpc({
         const smartFolders = getCustomFolders().filter((f) => f && f.name);
         await chromaDbService.resetFolders();
 
-        // Re-index all smart folders
-        await Promise.all(
-          smartFolders.map((f) => folderMatcher.upsertFolderEmbedding(f)),
+        // Optimization: Batch process folder embeddings
+        const folderPayloads = await Promise.all(
+          smartFolders.map(async (folder) => {
+            try {
+              const folderText = [folder.name, folder.description]
+                .filter(Boolean)
+                .join(' - ');
+
+              const { vector, model } =
+                await folderMatcher.embedText(folderText);
+              const folderId =
+                folder.id || folderMatcher.generateFolderId(folder);
+
+              return {
+                id: folderId,
+                name: folder.name,
+                description: folder.description || '',
+                path: folder.path || '',
+                vector,
+                model,
+                updatedAt: new Date().toISOString(),
+              };
+            } catch (error) {
+              logger.warn(
+                '[EMBEDDINGS] Failed to generate folder embedding:',
+                folder.name,
+                error.message,
+              );
+              return null;
+            }
+          }),
         );
 
-        return { success: true, folders: smartFolders.length };
+        const validPayloads = folderPayloads.filter((p) => p !== null);
+
+        // Optimization: Use batch upsert instead of individual operations
+        const count = await chromaDbService.batchUpsertFolders(validPayloads);
+
+        return { success: true, folders: count };
       } catch (e) {
         logger.error('[EMBEDDINGS] Rebuild folders failed:', e);
         return { success: false, error: e.message };
@@ -94,17 +126,48 @@ function registerEmbeddingsIpc({
           typeof getCustomFolders === 'function' ? getCustomFolders() : []
         ).filter((f) => f && f.name);
 
-        // Ensure folder embeddings exist before matching
+        // Optimization: Batch process folder embeddings
         if (smartFolders.length > 0) {
-          await Promise.all(
-            smartFolders.map((f) => folderMatcher.upsertFolderEmbedding(f)),
+          const folderPayloads = await Promise.all(
+            smartFolders.map(async (folder) => {
+              try {
+                const folderText = [folder.name, folder.description]
+                  .filter(Boolean)
+                  .join(' - ');
+
+                const { vector, model } =
+                  await folderMatcher.embedText(folderText);
+                const folderId =
+                  folder.id || folderMatcher.generateFolderId(folder);
+
+                return {
+                  id: folderId,
+                  name: folder.name,
+                  description: folder.description || '',
+                  path: folder.path || '',
+                  vector,
+                  model,
+                  updatedAt: new Date().toISOString(),
+                };
+              } catch (error) {
+                logger.warn(
+                  '[EMBEDDINGS] Failed to generate folder embedding:',
+                  folder.name,
+                );
+                return null;
+              }
+            }),
           );
+
+          const validFolderPayloads = folderPayloads.filter((p) => p !== null);
+          await chromaDbService.batchUpsertFolders(validFolderPayloads);
         }
 
         // Reset file vectors to rebuild from scratch
         await chromaDbService.resetFiles();
 
-        let rebuilt = 0;
+        // Optimization: Batch process file embeddings
+        const filePayloads = [];
         for (const entry of allEntries) {
           try {
             const filePath = entry.originalPath;
@@ -125,19 +188,42 @@ function registerEmbeddingsIpc({
               .filter(Boolean)
               .join('\n');
 
-            await folderMatcher.upsertFileEmbedding(fileId, summary, {
-              path: filePath,
-              name: path.basename(filePath),
-              type: isImage ? 'image' : 'document',
-            });
+            // Generate embedding
+            const { vector, model } = await folderMatcher.embedText(summary);
 
-            rebuilt += 1;
+            filePayloads.push({
+              id: fileId,
+              vector,
+              model,
+              meta: {
+                path: filePath,
+                name: path.basename(filePath),
+                type: isImage ? 'image' : 'document',
+              },
+              updatedAt: new Date().toISOString(),
+            });
           } catch (e) {
             logger.warn(
-              '[EMBEDDINGS] Failed to rebuild file entry:',
+              '[EMBEDDINGS] Failed to prepare file entry:',
               e.message,
             );
             // continue on individual entry failure
+          }
+        }
+
+        // Optimization: Batch upsert all files at once (in chunks for large datasets)
+        const BATCH_SIZE = 50; // Process in chunks of 50
+        let rebuilt = 0;
+        for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
+          const batch = filePayloads.slice(i, i + BATCH_SIZE);
+          try {
+            const count = await chromaDbService.batchUpsertFiles(batch);
+            rebuilt += count;
+          } catch (e) {
+            logger.warn(
+              '[EMBEDDINGS] Failed to batch upsert files:',
+              e.message,
+            );
           }
         }
 

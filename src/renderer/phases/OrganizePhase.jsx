@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from 'react';
 import { PHASES } from '../../shared/constants';
 import { usePhase } from '../contexts/PhaseContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -12,6 +18,7 @@ import {
 } from '../components/organize';
 import { UndoRedoToolbar, useUndoRedo } from '../components/UndoRedoSystem';
 import { createOrganizeBatchAction } from '../components/UndoRedoSystem';
+import { debounce } from '../utils/performance';
 
 function OrganizePhase() {
   const { actions, phaseData } = usePhase();
@@ -81,39 +88,47 @@ function OrganizePhase() {
         (phaseData.analysisResults || []).length === 0 &&
         Object.keys(persistedStates).length > 0
       ) {
-        // Fixed: Use stored metadata for complete state reconstruction with validation
+        // Bug #34: Use spread operator to preserve all fields during state reconstruction
         const reconstructedResults = Object.entries(persistedStates).map(
           ([filePath, stateObj]) => {
             // Fixed: Validate and sanitize analysis object to prevent crashes
             const analysis = stateObj.analysis
               ? {
+                  // Bug #34: Use spread operator to preserve all original analysis fields
+                  ...stateObj.analysis,
+                  // Then apply safe defaults for critical fields
                   category: stateObj.analysis.category || 'Uncategorized',
                   suggestedName:
                     stateObj.analysis.suggestedName ||
                     filePath.split(/[\\/]/).pop(),
                   confidence:
-                    typeof stateObj.analysis.confidence === 'number'
+                    // HIGH PRIORITY FIX #3: Use Number.isFinite() instead of isNaN()
+                    Number.isFinite(stateObj.analysis.confidence)
                       ? Math.max(0, Math.min(1, stateObj.analysis.confidence)) // Clamp to 0-1
                       : 0.5,
                   summary: stateObj.analysis.summary || '',
                   keywords: Array.isArray(stateObj.analysis.keywords)
                     ? stateObj.analysis.keywords
                     : [],
-                  // Ensure all required fields exist with safe defaults
                 }
               : null;
 
+            // Bug #34: Use spread operator to preserve all original state fields
             return {
+              // Preserve all original fields from stateObj
+              ...stateObj,
+              // Override/ensure critical fields have safe values
               name: stateObj.name || filePath.split(/[\\/]/).pop(),
               path: filePath,
               size: typeof stateObj.size === 'number' ? stateObj.size : 0,
               type: stateObj.type || 'file',
-              source: 'reconstructed',
+              source: stateObj.source || 'reconstructed',
               analysis,
               error: stateObj.error || null,
               analyzedAt: stateObj.analyzedAt || new Date().toISOString(),
               confidence:
-                typeof stateObj.confidence === 'number'
+                // HIGH PRIORITY FIX #3: Use Number.isFinite() for proper type checking
+                Number.isFinite(stateObj.confidence)
                   ? stateObj.confidence
                   : 0.5,
               status:
@@ -167,80 +182,96 @@ function OrganizePhase() {
     loadPersistedData();
   }, [phaseData, analysisResults, actions]);
 
-  // Fixed: Enhanced progress tracking with proper cleanup to prevent memory leaks
+  // HIGH PRIORITY FIX #1: Use AbortController pattern for reliable cleanup
+  // This ensures proper cleanup even if component unmounts during async setup
   useEffect(() => {
+    const abortController = new AbortController();
     let unsubscribe = null;
-    let registered = false;
-    let cleanupFunction = null;
 
-    // Verify the event system is available
-    if (!window.electronAPI?.events?.onOperationProgress) {
-      console.warn(
-        '[ORGANIZE] Progress event system not available - progress updates will not be shown',
-      );
-      return undefined; // Return undefined for no-op cleanup
-    }
+    const setupProgressListener = async () => {
+      // Check abort signal early
+      if (abortController.signal.aborted) return;
 
-    try {
-      unsubscribe = window.electronAPI.events.onOperationProgress((payload) => {
-        try {
-          if (!payload || payload.type !== 'batch_organize') return;
+      // Verify the event system is available
+      if (!window.electronAPI?.events?.onOperationProgress) {
+        console.warn(
+          '[ORGANIZE] Progress event system not available - progress updates will not be shown',
+        );
+        return;
+      }
 
-          // Validate payload data
-          const current = Number(payload.current);
-          const total = Number(payload.total);
+      try {
+        unsubscribe = window.electronAPI.events.onOperationProgress(
+          (payload) => {
+            // Check if cleanup has been initiated
+            if (abortController.signal.aborted) return;
 
-          if (isNaN(current) || isNaN(total)) {
-            console.error(
-              '[ORGANIZE] Invalid progress data:',
-              payload.current,
-              payload.total,
-            );
-            return;
-          }
+            try {
+              if (!payload || payload.type !== 'batch_organize') return;
 
-          setBatchProgress({
-            current,
-            total,
-            currentFile: payload.currentFile || '',
-          });
-        } catch (error) {
-          console.error('[ORGANIZE] Error processing progress update:', error);
+              // Validate payload data
+              // HIGH PRIORITY FIX #3: Use Number.isFinite() instead of isNaN()
+              const current = Number(payload.current);
+              const total = Number(payload.total);
+
+              if (!Number.isFinite(current) || !Number.isFinite(total)) {
+                console.error(
+                  '[ORGANIZE] Invalid progress data:',
+                  payload.current,
+                  payload.total,
+                );
+                return;
+              }
+
+              setBatchProgress({
+                current,
+                total,
+                currentFile: payload.currentFile || '',
+              });
+            } catch (error) {
+              console.error(
+                '[ORGANIZE] Error processing progress update:',
+                error,
+              );
+            }
+          },
+        );
+
+        // Verify subscription succeeded
+        if (typeof unsubscribe !== 'function') {
+          console.error(
+            '[ORGANIZE] Progress subscription failed - unsubscribe is not a function',
+          );
+          unsubscribe = null;
         }
-      });
-
-      // Verify subscription succeeded
-      if (typeof unsubscribe === 'function') {
-        registered = true;
-      } else {
+      } catch (error) {
         console.error(
-          '[ORGANIZE] Progress subscription failed - unsubscribe is not a function',
+          '[ORGANIZE] Failed to subscribe to progress events:',
+          error,
         );
       }
-    } catch (error) {
-      console.error(
-        '[ORGANIZE] Failed to subscribe to progress events:',
-        error,
-      );
-    } finally {
-      // Fixed: Use finally block to GUARANTEE cleanup function is created
-      // This ensures cleanup runs even if the component unmounts during setup
-      cleanupFunction = () => {
-        if (registered && typeof unsubscribe === 'function') {
-          try {
-            unsubscribe();
-          } catch (error) {
-            console.error(
-              '[ORGANIZE] Error unsubscribing from progress events:',
-              error,
-            );
-          }
-        }
-      };
-    }
+    };
 
-    // ALWAYS return cleanup function, guaranteed by finally block
-    return cleanupFunction;
+    // Execute setup
+    setupProgressListener();
+
+    // Return cleanup function that will ALWAYS execute
+    return () => {
+      // Signal abort to all async operations
+      abortController.abort();
+
+      // Clean up event listener if it exists
+      if (typeof unsubscribe === 'function') {
+        try {
+          unsubscribe();
+        } catch (error) {
+          console.error(
+            '[ORGANIZE] Error unsubscribing from progress events:',
+            error,
+          );
+        }
+      }
+    };
   }, []);
 
   const isAnalysisRunning = phaseData.isAnalyzing || false;
@@ -249,51 +280,58 @@ function OrganizePhase() {
     total: 0,
   };
 
-  const getFileState = (filePath) => fileStates[filePath]?.state || 'pending';
-  const getFileStateDisplay = (filePath, hasAnalysis, isProcessed = false) => {
-    if (isProcessed)
-      return {
-        icon: '✅',
-        label: 'Organized',
-        color: 'text-green-600',
-        spinning: false,
-      };
-    const state = getFileState(filePath);
-    if (state === 'analyzing')
-      return {
-        icon: '🔄',
-        label: 'Analyzing...',
-        color: 'text-blue-600',
-        spinning: true,
-      };
-    if (state === 'error')
+  const getFileState = useCallback(
+    (filePath) => fileStates[filePath]?.state || 'pending',
+    [fileStates],
+  );
+
+  const getFileStateDisplay = useCallback(
+    (filePath, hasAnalysis, isProcessed = false) => {
+      if (isProcessed)
+        return {
+          icon: '✅',
+          label: 'Organized',
+          color: 'text-green-600',
+          spinning: false,
+        };
+      const state = getFileState(filePath);
+      if (state === 'analyzing')
+        return {
+          icon: '🔄',
+          label: 'Analyzing...',
+          color: 'text-blue-600',
+          spinning: true,
+        };
+      if (state === 'error')
+        return {
+          icon: '❌',
+          label: 'Error',
+          color: 'text-red-600',
+          spinning: false,
+        };
+      if (hasAnalysis && state === 'ready')
+        return {
+          icon: '📂',
+          label: 'Ready',
+          color: 'text-stratosort-blue',
+          spinning: false,
+        };
+      if (state === 'pending')
+        return {
+          icon: '⏳',
+          label: 'Pending',
+          color: 'text-yellow-600',
+          spinning: false,
+        };
       return {
         icon: '❌',
-        label: 'Error',
+        label: 'Failed',
         color: 'text-red-600',
         spinning: false,
       };
-    if (hasAnalysis && state === 'ready')
-      return {
-        icon: '📂',
-        label: 'Ready',
-        color: 'text-stratosort-blue',
-        spinning: false,
-      };
-    if (state === 'pending')
-      return {
-        icon: '⏳',
-        label: 'Pending',
-        color: 'text-yellow-600',
-        spinning: false,
-      };
-    return {
-      icon: '❌',
-      label: 'Failed',
-      color: 'text-red-600',
-      spinning: false,
-    };
-  };
+    },
+    [getFileState],
+  );
 
   const unprocessedFiles = useMemo(
     () =>
@@ -389,75 +427,118 @@ function OrganizePhase() {
     ),
   ]);
 
-  const handleEditFile = (fileIndex, field, value) => {
+  const handleEditFile = useCallback((fileIndex, field, value) => {
     setEditingFiles((prev) => ({
       ...prev,
       [fileIndex]: { ...prev[fileIndex], [field]: value },
     }));
-  };
+  }, []);
 
-  const getFileWithEdits = (file, index) => {
-    const edits = editingFiles[index];
-    if (!edits) return file;
-    const updatedCategory = edits.category || file.analysis?.category;
-    return {
-      ...file,
-      analysis: {
-        ...file.analysis,
-        suggestedName: edits.suggestedName || file.analysis?.suggestedName,
-        category: updatedCategory,
-      },
-    };
-  };
+  const getFileWithEdits = useCallback(
+    (file, index) => {
+      const edits = editingFiles[index];
+      if (!edits) return file;
+      const updatedCategory = edits.category || file.analysis?.category;
+      return {
+        ...file,
+        analysis: {
+          ...file.analysis,
+          suggestedName: edits.suggestedName || file.analysis?.suggestedName,
+          category: updatedCategory,
+        },
+      };
+    },
+    [editingFiles],
+  );
 
-  const markFilesAsProcessed = (filePaths) =>
-    setProcessedFileIds((prev) => {
-      const next = new Set(prev);
-      filePaths.forEach((path) => next.add(path));
-      return next;
-    });
-  const unmarkFilesAsProcessed = (filePaths) =>
-    setProcessedFileIds((prev) => {
-      const next = new Set(prev);
-      filePaths.forEach((path) => next.delete(path));
-      return next;
-    });
+  const markFilesAsProcessed = useCallback(
+    (filePaths) =>
+      setProcessedFileIds((prev) => {
+        const next = new Set(prev);
+        filePaths.forEach((path) => next.add(path));
+        return next;
+      }),
+    [],
+  );
 
-  const toggleFileSelection = (index) => {
-    const next = new Set(selectedFiles);
-    next.has(index) ? next.delete(index) : next.add(index);
-    setSelectedFiles(next);
-  };
-  const selectAllFiles = () => {
+  const unmarkFilesAsProcessed = useCallback(
+    (filePaths) =>
+      setProcessedFileIds((prev) => {
+        const next = new Set(prev);
+        filePaths.forEach((path) => next.delete(path));
+        return next;
+      }),
+    [],
+  );
+
+  const toggleFileSelection = useCallback(
+    (index) => {
+      const next = new Set(selectedFiles);
+      next.has(index) ? next.delete(index) : next.add(index);
+      setSelectedFiles(next);
+    },
+    [selectedFiles],
+  );
+
+  const selectAllFiles = useCallback(() => {
     selectedFiles.size === unprocessedFiles.length
       ? setSelectedFiles(new Set())
       : setSelectedFiles(
           new Set(Array.from({ length: unprocessedFiles.length }, (_, i) => i)),
         );
-  };
-  const applyBulkCategoryChange = () => {
+  }, [selectedFiles, unprocessedFiles.length]);
+
+  // PERFORMANCE FIX #10: Create debounced version of bulk operations
+  // Prevents excessive re-renders and state updates when user makes rapid changes
+  // Use ref to store debounced function to maintain identity across renders
+  const debouncedBulkCategoryChangeRef = useRef(null);
+
+  // Initialize debounced function only once
+  if (!debouncedBulkCategoryChangeRef.current) {
+    debouncedBulkCategoryChangeRef.current = debounce(
+      (category, selected, edits, notify) => {
+        if (!category) return;
+        const newEdits = {};
+        selected.forEach((i) => (newEdits[i] = { ...edits[i], category }));
+        setEditingFiles((prev) => ({ ...prev, ...newEdits }));
+        setBulkEditMode(false);
+        setBulkCategory('');
+        setSelectedFiles(new Set());
+        notify(
+          `Applied category "${category}" to ${selected.size} files`,
+          'success',
+        );
+      },
+      300,
+    ); // 300ms debounce delay
+  }
+
+  const applyBulkCategoryChange = useCallback(() => {
     if (!bulkCategory) return;
-    const newEdits = {};
-    selectedFiles.forEach(
-      (i) => (newEdits[i] = { ...editingFiles[i], category: bulkCategory }),
+    // Call debounced version with current values
+    debouncedBulkCategoryChangeRef.current(
+      bulkCategory,
+      selectedFiles,
+      editingFiles,
+      addNotification,
     );
-    setEditingFiles((prev) => ({ ...prev, ...newEdits }));
-    setBulkEditMode(false);
-    setBulkCategory('');
-    setSelectedFiles(new Set());
-    addNotification(
-      `Applied category "${bulkCategory}" to ${selectedFiles.size} files`,
-      'success',
-    );
-  };
-  const approveSelectedFiles = () => {
+  }, [bulkCategory, selectedFiles, editingFiles, addNotification]);
+
+  // PERFORMANCE FIX #10: Debounce approve operation to prevent rapid-fire clicks
+  const debouncedApproveRef = useRef(null);
+
+  if (!debouncedApproveRef.current) {
+    debouncedApproveRef.current = debounce((selected, notify) => {
+      if (selected.size === 0) return;
+      notify(`Approved ${selected.size} files for organization`, 'success');
+      setSelectedFiles(new Set());
+    }, 300); // 300ms debounce delay
+  }
+
+  const approveSelectedFiles = useCallback(() => {
     if (selectedFiles.size === 0) return;
-    addNotification(
-      `Approved ${selectedFiles.size} files for organization`,
-      'success',
-    );
-    setSelectedFiles(new Set());
-  };
+    debouncedApproveRef.current(selectedFiles, addNotification);
+  }, [selectedFiles, addNotification]);
 
   const handleOrganizeFiles = async () => {
     try {
@@ -508,10 +589,20 @@ function OrganizePhase() {
           const destinationDir = smartFolder
             ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
             : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
-          const newName =
+          const suggestedName =
             edits.suggestedName ||
             fileWithEdits.analysis?.suggestedName ||
             file.name;
+
+          // Defensive check: Ensure extension is present to prevent unopenable files
+          const originalExt = file.name.includes('.')
+            ? '.' + file.name.split('.').pop()
+            : '';
+          const newName =
+            suggestedName.includes('.') || !originalExt
+              ? suggestedName // Already has extension or no extension to preserve
+              : suggestedName + originalExt; // Add extension back
+
           const dest = `${destinationDir}/${newName}`;
           const normalized =
             window.electronAPI?.files?.normalizePath?.(dest) || dest;
@@ -542,10 +633,20 @@ function OrganizePhase() {
           const destinationDir = smartFolder
             ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
             : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
-          const newName =
+          const suggestedName =
             edits.suggestedName ||
             fileWithEdits.analysis?.suggestedName ||
             file.name;
+
+          // Defensive check: Ensure extension is present to prevent unopenable files
+          const originalExt = file.name.includes('.')
+            ? '.' + file.name.split('.').pop()
+            : '';
+          const newName =
+            suggestedName.includes('.') || !originalExt
+              ? suggestedName // Already has extension or no extension to preserve
+              : suggestedName + originalExt; // Add extension back
+
           const dest = `${destinationDir}/${newName}`;
           const normalized =
             window.electronAPI?.files?.normalizePath?.(dest) || dest;
