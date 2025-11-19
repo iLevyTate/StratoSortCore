@@ -166,7 +166,7 @@
     "css-minimizer-webpack-plugin": "^5.0.1",
     "cssnano": "^7.1.2",
     "daisyui": "^5.5.5",
-    "detect-port": "^1.5.1",
+    "detect-port": "^2.1.0",
     "electron-builder": "^26.0.12",
     "electron-devtools-installer": "^4.0.0",
     "eslint": "^8.49.0",
