@@ -112,7 +112,7 @@
     "node-tesseract-ocr": "^2.2.1",
     "officeparser": "^5.2.2",
     "ollama": "^0.6.3",
-    "pdf-parse": "^1.1.1",
+    "pdf-parse": "^2.4.5",
     "prop-types": "^15.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
