@@ -144,53 +144,168 @@ async function extractTextFromXlsx(filePath) {
   let workbook = null;
   try {
     workbook = await XLSX.fromFileAsync(filePath);
+    
+    // CRITICAL FIX: Validate workbook structure
+    if (!workbook || typeof workbook.sheets !== 'function') {
+      throw new Error('Invalid workbook structure: sheets() method not available');
+    }
+    
     const sheets = workbook.sheets();
+    if (!Array.isArray(sheets) || sheets.length === 0) {
+      throw new Error('No sheets found in XLSX file');
+    }
+    
     let allText = '';
     let totalRows = 0;
 
     for (const sheet of sheets) {
-      const usedRange = sheet.usedRange();
-      if (usedRange) {
-        const values = usedRange.value();
-        if (Array.isArray(values)) {
-          // Fixed: Limit rows to prevent memory exhaustion
-          const rowsToProcess = Math.min(values.length, MAX_XLSX_ROWS);
-          if (values.length > MAX_XLSX_ROWS) {
-            logger.warn('[XLSX] Sheet row limit applied', {
-              totalRows: values.length,
-              limit: MAX_XLSX_ROWS,
-            });
-          }
+      try {
+        // CRITICAL FIX: Add null checks and validate usedRange structure
+        if (!sheet || typeof sheet.usedRange !== 'function') {
+          logger.warn('[XLSX] Sheet missing usedRange method, skipping', {
+            sheetName: sheet?.name() || 'unknown',
+          });
+          continue;
+        }
 
-          for (let i = 0; i < rowsToProcess; i++) {
-            const row = values[i];
-            if (Array.isArray(row)) {
-              allText +=
-                row
-                  .filter((cell) => cell !== null && cell !== undefined)
-                  .join(' ') + '\n';
-              totalRows++;
+        const usedRange = sheet.usedRange();
+        if (!usedRange) {
+          logger.debug('[XLSX] Sheet has no used range, skipping', {
+            sheetName: sheet?.name() || 'unknown',
+          });
+          continue;
+        }
 
-              // Fixed: Check text length periodically to prevent runaway memory
-              if (totalRows % 1000 === 0 && allText.length > MAX_TEXT_LENGTH) {
-                allText = truncateText(allText);
-                break;
+        // CRITICAL FIX: Validate that value() method exists and returns valid data
+        if (typeof usedRange.value !== 'function') {
+          logger.warn('[XLSX] usedRange missing value() method, trying alternative extraction', {
+            sheetName: sheet?.name() || 'unknown',
+          });
+          
+          // Fallback: Try to extract cell values manually
+          try {
+            const startCell = usedRange.startCell();
+            const endCell = usedRange.endCell();
+            if (startCell && endCell) {
+              const startRow = startCell.rowNumber();
+              const endRow = endCell.rowNumber();
+              const startCol = startCell.columnNumber();
+              const endCol = endCell.columnNumber();
+              
+              for (let row = startRow; row <= endRow && totalRows < MAX_XLSX_ROWS; row++) {
+                const rowData = [];
+                for (let col = startCol; col <= endCol; col++) {
+                  try {
+                    const cell = sheet.cell(row, col);
+                    if (cell) {
+                      const cellValue = cell.value();
+                      if (cellValue !== null && cellValue !== undefined) {
+                        rowData.push(String(cellValue));
+                      }
+                    }
+                  } catch (cellError) {
+                    // Skip individual cell errors
+                  }
+                }
+                if (rowData.length > 0) {
+                  allText += rowData.join(' ') + '\n';
+                  totalRows++;
+                }
               }
             }
+          } catch (fallbackError) {
+            logger.warn('[XLSX] Fallback extraction failed', {
+              error: fallbackError.message,
+              sheetName: sheet?.name() || 'unknown',
+            });
           }
-
-          if (allText.length > MAX_TEXT_LENGTH) break;
+          continue;
         }
+
+        const values = usedRange.value();
+        if (!Array.isArray(values)) {
+          logger.warn('[XLSX] usedRange.value() did not return array', {
+            sheetName: sheet?.name() || 'unknown',
+            valueType: typeof values,
+          });
+          continue;
+        }
+
+        // Fixed: Limit rows to prevent memory exhaustion
+        const rowsToProcess = Math.min(values.length, MAX_XLSX_ROWS);
+        if (values.length > MAX_XLSX_ROWS) {
+          logger.warn('[XLSX] Sheet row limit applied', {
+            totalRows: values.length,
+            limit: MAX_XLSX_ROWS,
+          });
+        }
+
+        for (let i = 0; i < rowsToProcess; i++) {
+          const row = values[i];
+          if (Array.isArray(row)) {
+            allText +=
+              row
+                .filter((cell) => cell !== null && cell !== undefined)
+                .map((cell) => String(cell))
+                .join(' ') + '\n';
+            totalRows++;
+
+            // Fixed: Check text length periodically to prevent runaway memory
+            if (totalRows % 1000 === 0 && allText.length > MAX_TEXT_LENGTH) {
+              allText = truncateText(allText);
+              break;
+            }
+          }
+        }
+
+        if (allText.length > MAX_TEXT_LENGTH) break;
+      } catch (sheetError) {
+        // Log sheet-level errors but continue processing other sheets
+        logger.warn('[XLSX] Error processing sheet', {
+          error: sheetError.message,
+          sheetName: sheet?.name() || 'unknown',
+        });
+        continue;
       }
     }
 
     allText = allText.trim();
-    if (!allText) throw new Error('No text content in XLSX');
+    if (!allText) {
+      // CRITICAL FIX: Try fallback extraction using officeParser before giving up
+      try {
+        logger.info('[XLSX] Primary extraction failed, trying officeParser fallback');
+        const fallbackResult = await officeParser.parseOfficeAsync(filePath);
+        const fallbackText =
+          typeof fallbackResult === 'string'
+            ? fallbackResult
+            : (fallbackResult && fallbackResult.text) || '';
+        if (fallbackText && fallbackText.trim()) {
+          return truncateText(fallbackText);
+        }
+      } catch (fallbackError) {
+        logger.warn('[XLSX] Fallback extraction also failed', {
+          error: fallbackError.message,
+        });
+      }
+      throw new Error('No text content in XLSX');
+    }
 
     // Fixed: Truncate final result and clean up workbook
     const result = truncateText(allText);
     workbook = null;
     return result;
+  } catch (error) {
+    // CRITICAL FIX: Provide detailed error information
+    const errorMessage = error.message || 'Unknown XLSX extraction error';
+    logger.error('[XLSX] Extraction failed', {
+      filePath,
+      error: errorMessage,
+      errorStack: error.stack,
+    });
+    throw new FileProcessingError('XLSX_EXTRACTION_FAILURE', filePath, {
+      originalError: errorMessage,
+      suggestion: 'XLSX file may be corrupted, password-protected, or in an unsupported format',
+    });
   } finally {
     // Explicit cleanup
     workbook = null;
@@ -201,14 +316,102 @@ async function extractTextFromPptx(filePath) {
   // Fixed: Check file size before reading
   await checkFileSize(filePath, filePath);
 
-  const result = await officeParser.parseOfficeAsync(filePath);
-  const text =
-    typeof result === 'string' ? result : (result && result.text) || '';
-  if (!text || text.trim().length === 0)
-    throw new Error('No text content in PPTX');
+  try {
+    // CRITICAL FIX: Add better error handling for officeParser
+    const result = await officeParser.parseOfficeAsync(filePath);
+    
+    // CRITICAL FIX: Validate result structure
+    if (!result) {
+      throw new Error('officeParser returned null or undefined');
+    }
 
-  // Fixed: Truncate result to prevent memory issues
-  return truncateText(text);
+    // Extract text from various possible result structures
+    let text = '';
+    if (typeof result === 'string') {
+      text = result;
+    } else if (result && typeof result === 'object') {
+      // Try common property names
+      text = result.text || result.content || result.body || '';
+      
+      // If still empty, try to stringify the object (might contain structured data)
+      if (!text && Object.keys(result).length > 0) {
+        try {
+          text = JSON.stringify(result)
+            .replace(/[{}":,\[\]]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        } catch {
+          // If stringification fails, try extracting values
+          text = Object.values(result)
+            .filter((v) => typeof v === 'string' && v.trim())
+            .join(' ');
+        }
+      }
+    }
+
+    if (!text || text.trim().length === 0) {
+      // CRITICAL FIX: Try alternative extraction method before giving up
+      logger.warn('[PPTX] Primary extraction returned no text, trying ZIP-based extraction');
+      try {
+        const zip = new AdmZip(filePath);
+        const entries = zip.getEntries();
+        let extractedText = '';
+
+        // Extract text from slide XML files
+        for (const entry of entries) {
+          const name = entry.entryName.toLowerCase();
+          if (name.startsWith('ppt/slides/slide') && name.endsWith('.xml')) {
+            try {
+              const xmlContent = entry.getData().toString('utf8');
+              // Extract text from XML (simple tag stripping)
+              const slideText = extractPlainTextFromHtml(xmlContent);
+              if (slideText && slideText.trim()) {
+                extractedText += slideText + '\n';
+              }
+              
+              // Limit processing to prevent memory issues
+              if (extractedText.length > MAX_TEXT_LENGTH) {
+                break;
+              }
+            } catch (entryError) {
+              // Skip individual entry errors
+              logger.debug('[PPTX] Error processing slide entry', {
+                entry: name,
+                error: entryError.message,
+              });
+            }
+          }
+        }
+
+        if (extractedText && extractedText.trim()) {
+          return truncateText(extractedText);
+        }
+      } catch (zipError) {
+        logger.warn('[PPTX] ZIP-based extraction failed', {
+          error: zipError.message,
+        });
+      }
+
+      throw new Error('No text content in PPTX');
+    }
+
+    // Fixed: Truncate result to prevent memory issues
+    return truncateText(text);
+  } catch (error) {
+    // CRITICAL FIX: Provide detailed error information
+    const errorMessage = error.message || 'Unknown PPTX extraction error';
+    logger.error('[PPTX] Extraction failed', {
+      filePath,
+      error: errorMessage,
+      errorStack: error.stack,
+    });
+    
+    // Re-throw as FileProcessingError for consistent error handling
+    throw new FileProcessingError('PPTX_EXTRACTION_FAILURE', filePath, {
+      originalError: errorMessage,
+      suggestion: 'PPTX file may be corrupted, password-protected, or in an unsupported format',
+    });
+  }
 }
 
 function extractPlainTextFromRtf(rtf) {

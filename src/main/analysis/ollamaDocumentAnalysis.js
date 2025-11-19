@@ -259,10 +259,27 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           length: extractedText.length,
         });
       } catch (officeError) {
-        logger.error(`Error extracting office content`, {
+        // CRITICAL FIX: Provide detailed error information instead of generic "Unknown analysis error"
+        const errorMessage = officeError?.message || 'Unknown extraction error';
+        const errorCode = officeError?.code || 'UNKNOWN_ERROR';
+        const errorDetails = {
           fileName,
-          error: officeError.message,
-        });
+          fileExtension,
+          error: errorMessage,
+          errorCode,
+          errorStack: officeError?.stack,
+          errorType: officeError?.constructor?.name || 'Error',
+        };
+
+        // Check if it's a FileProcessingError with additional context
+        if (officeError?.suggestion) {
+          errorDetails.suggestion = officeError.suggestion;
+        }
+        if (officeError?.originalError) {
+          errorDetails.originalError = officeError.originalError;
+        }
+
+        logger.error(`Error extracting office content`, errorDetails);
 
         // Fall back to intelligent filename-based analysis
         const intelligentCategory = getIntelligentCategory(
@@ -292,12 +309,14 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         return {
           purpose,
           project: fileName.replace(fileExtension, ''),
-          category: intelligentCategory,
+          category: intelligentCategory || 'document',
           date: new Date().toISOString().split('T')[0],
-          keywords: intelligentKeywords,
+          keywords: intelligentKeywords || [],
           confidence,
           suggestedName: safeSuggestedName(fileName, fileExtension),
-          extractionError: officeError.message,
+          extractionError: errorMessage,
+          extractionErrorCode: errorCode,
+          extractionMethod: 'filename_fallback',
         };
       }
     } else if (SUPPORTED_ARCHIVE_EXTENSIONS.includes(fileExtension)) {
