@@ -5,8 +5,12 @@ import {
   PHASE_TRANSITIONS,
   PHASE_METADATA,
 } from '../../shared/constants';
+import { logger } from '../../shared/logger';
 import { usePhase } from '../contexts/PhaseContext';
 import UpdateIndicator from './UpdateIndicator';
+
+// Set logger context for this component
+logger.setContext('NavigationBar');
 
 // Phase Icons - Memoized to prevent unnecessary re-renders
 const HomeIcon = memo(function HomeIcon({ className = '' }) {
@@ -115,7 +119,10 @@ function NavigationBar() {
           setIsScrolled(window.scrollY > 10);
         }
       } catch (error) {
-        console.error('[NavigationBar] Error in scroll handler:', error);
+        logger.error('Error in scroll handler', {
+          error: error.message,
+          stack: error.stack,
+        });
       }
     };
 
@@ -126,7 +133,9 @@ function NavigationBar() {
     try {
       window.addEventListener('scroll', handleScroll, { passive: true });
     } catch (error) {
-      console.error('[NavigationBar] Failed to add scroll listener:', error);
+      logger.error('Failed to add scroll listener', {
+        error: error.message,
+      });
     }
 
     // Cleanup function
@@ -134,10 +143,9 @@ function NavigationBar() {
       try {
         window.removeEventListener('scroll', handleScroll);
       } catch (error) {
-        console.error(
-          '[NavigationBar] Failed to remove scroll listener:',
-          error,
-        );
+        logger.error('Failed to remove scroll listener', {
+          error: error.message,
+        });
       }
     };
   }, []);
@@ -147,7 +155,7 @@ function NavigationBar() {
       try {
         // Validate inputs
         if (!newPhase || typeof newPhase !== 'string') {
-          console.warn('[NavigationBar] Invalid phase:', newPhase);
+          logger.warn('Invalid phase', { phase: newPhase });
           return;
         }
 
@@ -160,13 +168,14 @@ function NavigationBar() {
           if (actions && typeof actions.advancePhase === 'function') {
             actions.advancePhase(newPhase);
           } else {
-            console.error(
-              '[NavigationBar] advancePhase function not available',
-            );
+            logger.error('advancePhase function not available');
           }
         }
       } catch (error) {
-        console.error('[NavigationBar] Error changing phase:', error);
+        logger.error('Error changing phase', {
+          error: error.message,
+          stack: error.stack,
+        });
       }
     },
     [currentPhase, actions],
@@ -286,15 +295,13 @@ function NavigationBar() {
                 if (actions && typeof actions.toggleSettings === 'function') {
                   actions.toggleSettings();
                 } else {
-                  console.error(
-                    '[NavigationBar] toggleSettings function not available',
-                  );
+                  logger.error('toggleSettings function not available');
                 }
               } catch (error) {
-                console.error(
-                  '[NavigationBar] Error toggling settings:',
-                  error,
-                );
+                logger.error('Error toggling settings', {
+                  error: error.message,
+                  stack: error.stack,
+                });
               }
             }}
             className="btn-ghost h-10 w-10 rounded-2xl border border-border-soft/60 bg-white/80 text-system-gray-600 hover:text-stratosort-blue"

@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useMemo,
 } from 'react';
+import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
 import { usePhase } from '../contexts/PhaseContext';
 import { useDebouncedCallback } from '../hooks/usePerformance';
@@ -14,6 +15,9 @@ import Select from './ui/Select';
 import Collapsible from './ui/Collapsible';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
+
+// Set logger context for this component
+logger.setContext('SettingsPanel');
 
 const SettingsPanel = React.memo(function SettingsPanel() {
   const { actions } = usePhase();
@@ -132,7 +136,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         }
       } catch (e) {
         // Silent fail; status text already reflects failure via GET_MODELS
-        console.error('Auto Ollama health check failed:', e);
+        logger.error('Auto Ollama health check failed', {
+          error: e.message,
+        });
       }
     })();
   }, [settingsLoaded]);
@@ -145,7 +151,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
       setSettingsLoaded(true);
     } catch (error) {
-      console.error('Failed to load settings:', error);
+      logger.error('Failed to load settings', {
+        error: error.message,
+        stack: error.stack,
+      });
       setSettingsLoaded(true);
     }
   }, []);
@@ -178,7 +187,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         }));
       }
     } catch (error) {
-      console.error('Failed to load Ollama models:', error);
+      logger.error('Failed to load Ollama models', {
+        error: error.message,
+        stack: error.stack,
+      });
       setOllamaModelLists({ text: [], vision: [], embedding: [], all: [] });
     } finally {
       setIsRefreshingModels(false);
@@ -192,7 +204,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       addNotification('Settings saved successfully!', 'success');
       handleToggleSettings();
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      logger.error('Failed to save settings', {
+        error: error.message,
+        stack: error.stack,
+      });
       addNotification('Failed to save settings', 'error');
     } finally {
       setIsSaving(false);
@@ -205,7 +220,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       try {
         await window.electronAPI.settings.save(settings);
       } catch (error) {
-        console.error('Auto-save settings failed:', error);
+        logger.error('Auto-save settings failed', {
+          error: error.message,
+          stack: error.stack,
+        });
       }
     },
     800,
@@ -277,7 +295,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       addNotification(`Failed to add model: ${e.message}`, 'error');
     } finally {
       setIsAddingModel(false);
-      setTimeout(() => setPullProgress(null), 1500);
+      // Use constant for notification delay (1.5 seconds)
+      const NOTIFICATION_DELAY_MS = 1500; // Could be moved to shared constants
+      setTimeout(() => setPullProgress(null), NOTIFICATION_DELAY_MS);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
         progressUnsubRef.current = null;

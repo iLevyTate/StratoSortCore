@@ -9,6 +9,8 @@ const {
   ACTION_TYPES,
 } = require('../../shared/constants');
 const { withErrorLogging, withValidation } = require('./withErrorLogging');
+const { logger } = require('../../shared/logger');
+logger.setContext('IPC:Files');
 let z;
 try {
   z = require('zod');
@@ -18,8 +20,6 @@ try {
 
 // CRITICAL SECURITY FIX: Resource limits to prevent DOS attacks (CRIT-8)
 const MAX_BATCH_SIZE = 1000; // Maximum operations per batch
-const MAX_CONCURRENT_OPERATIONS = 5; // Prevent CPU exhaustion
-const OPERATION_TIMEOUT = 30000; // 30 seconds per operation
 const MAX_TOTAL_BATCH_TIME = 600000; // 10 minutes max for entire batch
 
 // Helper function to compute file checksum for verification
@@ -28,6 +28,620 @@ async function computeFileChecksum(filePath) {
   const fileBuffer = await fs.readFile(filePath);
   hash.update(fileBuffer);
   return hash.digest('hex');
+}
+
+/**
+ * Shared batch organize handler logic
+ * Extracted to eliminate code duplication between zod-validated and non-validated handlers
+ */
+async function handleBatchOrganize({
+  operation,
+  logger,
+  getServiceIntegration,
+  getMainWindow,
+}) {
+  // CRITICAL SECURITY FIX: Validate batch size to prevent DOS (CRIT-8)
+  if (!operation.operations || !Array.isArray(operation.operations)) {
+    return {
+      success: false,
+      error: 'Invalid batch: operations must be an array',
+      errorCode: 'INVALID_BATCH',
+    };
+  }
+
+  if (operation.operations.length === 0) {
+    return {
+      success: false,
+      error: 'Invalid batch: no operations provided',
+      errorCode: 'EMPTY_BATCH',
+    };
+  }
+
+  if (operation.operations.length > MAX_BATCH_SIZE) {
+    logger.warn(
+      `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`,
+    );
+    return {
+      success: false,
+      error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
+      errorCode: 'BATCH_TOO_LARGE',
+      maxAllowed: MAX_BATCH_SIZE,
+      provided: operation.operations.length,
+    };
+  }
+
+  // CRITICAL FIX (BUG #3): Transaction-like rollback mechanism for batch operations
+  // Previous code had no rollback on partial failures, leaving files scattered
+  // Now we track all completed operations and can rollback on critical failures
+  const results = [];
+  const completedOperations = []; // Track for rollback
+  let successCount = 0;
+  let failCount = 0;
+  const batchId = `batch_${Date.now()}`;
+  const batchStartTime = Date.now(); // CRITICAL FIX: Track batch time
+  let shouldRollback = false;
+  let rollbackReason = null;
+
+  try {
+    const svc = getServiceIntegration();
+    const batch = await svc?.processingState?.createOrLoadOrganizeBatch(
+      batchId,
+      operation.operations,
+    );
+
+    logger.info(
+      `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files (max: ${MAX_BATCH_SIZE})`,
+    );
+
+    // CRITICAL FIX: Add timeout protection in operation loop
+    for (let i = 0; i < batch.operations.length; i += 1) {
+      // Check global batch timeout
+      if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
+        logger.error(`[FILE-OPS] Batch ${batchId} exceeded maximum time limit`);
+        throw new Error(
+          `Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`,
+        );
+      }
+
+      const op = batch.operations[i];
+      if (op.status === 'done') {
+        results.push({
+          success: true,
+          source: op.source,
+          destination: op.destination,
+          operation: op.type || 'move',
+          resumed: true,
+        });
+        successCount++;
+        continue;
+      }
+      try {
+        await getServiceIntegration()?.processingState?.markOrganizeOpStarted(
+          batchId,
+          i,
+        );
+        if (!op.source || !op.destination)
+          throw new Error(
+            `Invalid operation data: source="${op.source}", destination="${op.destination}"`,
+          );
+        const destDir = path.dirname(op.destination);
+        await fs.mkdir(destDir, { recursive: true });
+        try {
+          await fs.access(op.source);
+        } catch {
+          throw new Error(`Source file does not exist: ${op.source}`);
+        }
+
+        // BUG FIX #9: Improved collision handling with UUID fallback
+        // CRITICAL: 1000 collisions throws error, causing organization to fail
+        // Solution: Increase limit, add UUID fallback, better error handling
+        let counter = 0;
+        let uniqueDestination = op.destination;
+        const ext = path.extname(op.destination);
+        const baseName = op.destination.slice(0, -ext.length);
+        let operationComplete = false;
+        const maxNumericRetries = 5000; // Increased from 1000 to 5000
+
+        while (!operationComplete && counter < maxNumericRetries) {
+          try {
+            // Attempt atomic rename first
+            await fs.rename(op.source, uniqueDestination);
+            operationComplete = true;
+            op.destination = uniqueDestination;
+          } catch (renameError) {
+            if (renameError.code === 'EEXIST') {
+              // Destination exists, try next filename atomically
+              counter++;
+              uniqueDestination = `${baseName}_${counter}${ext}`;
+              continue; // Retry with new name
+            } else if (renameError.code === 'EXDEV') {
+              // Cross-device move: use atomic copy with COPYFILE_EXCL
+              // NOTE: There's still a small TOCTOU window between copy and verification,
+              // but this is the best we can do without OS-level file locking
+              try {
+                // Step 1: Atomic copy (fails if destination exists)
+                await fs.copyFile(
+                  op.source,
+                  uniqueDestination,
+                  fs.constants.COPYFILE_EXCL,
+                );
+
+                // Step 2: Verify file copy integrity immediately after copy
+                // Fixed: Get stats in parallel to minimize TOCTOU window
+                let sourceStats, destStats;
+                try {
+                  [sourceStats, destStats] = await Promise.all([
+                    fs.stat(op.source),
+                    fs.stat(uniqueDestination),
+                  ]);
+                } catch (error) {
+                  // Clean up the copied file if verification fails
+                  await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                    logger.warn(
+                      'Failed to cleanup file after verification error',
+                      {
+                        path: uniqueDestination,
+                        error: unlinkError.message,
+                      },
+                    );
+                  });
+                  throw new Error(`File verification failed: ${error.message}`);
+                }
+
+                // CRITICAL: Verify file size matches before proceeding
+                if (sourceStats.size !== destStats.size) {
+                  await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                    logger.warn('Failed to cleanup file after size mismatch', {
+                      path: uniqueDestination,
+                      error: unlinkError.message,
+                    });
+                  });
+                  throw new Error(
+                    `File copy verification failed - size mismatch (source: ${sourceStats.size} bytes, dest: ${destStats.size} bytes)`,
+                  );
+                }
+
+                // CRITICAL FIX (BUG #1): Always verify checksum for ALL files to prevent silent corruption
+                // Previous code only verified files >10MB, leaving smaller files vulnerable
+                // Performance trade-off: slower operations but guaranteed data integrity
+                logger.info(
+                  `[FILE-OPS] Verifying file copy integrity with checksum: ${path.basename(op.source)} (${sourceStats.size} bytes)`,
+                );
+
+                let sourceChecksum, destChecksum;
+                try {
+                  [sourceChecksum, destChecksum] = await Promise.all([
+                    computeFileChecksum(op.source),
+                    computeFileChecksum(uniqueDestination),
+                  ]);
+                } catch (checksumError) {
+                  // Clean up destination if checksum computation fails
+                  await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                    logger.warn(
+                      'Failed to cleanup file after checksum computation error',
+                      {
+                        path: uniqueDestination,
+                        error: unlinkError.message,
+                      },
+                    );
+                  });
+                  throw new Error(
+                    `Checksum computation failed: ${checksumError.message}`,
+                  );
+                }
+
+                if (sourceChecksum !== destChecksum) {
+                  await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                    logger.warn(
+                      'Failed to cleanup file after checksum mismatch',
+                      {
+                        path: uniqueDestination,
+                        error: unlinkError.message,
+                      },
+                    );
+                  });
+                  logger.error(
+                    `[FILE-OPS] Checksum mismatch detected - possible data corruption or TOCTOU race condition`,
+                    {
+                      source: op.source,
+                      destination: uniqueDestination,
+                      sourceChecksum,
+                      destChecksum,
+                    },
+                  );
+                  throw new Error(
+                    `File copy verification failed - checksum mismatch (source: ${sourceChecksum.substring(0, 8)}..., dest: ${destChecksum.substring(0, 8)}...)`,
+                  );
+                }
+
+                logger.info(
+                  `[FILE-OPS] File copy verified successfully: ${path.basename(op.source)} (checksum: ${sourceChecksum.substring(0, 16)}...)`,
+                );
+
+                // Step 3: Delete source (safe because destination verified)
+                // Fixed: Handle case where source was already deleted
+                try {
+                  await fs.unlink(op.source);
+                } catch (unlinkError) {
+                  if (unlinkError.code !== 'ENOENT') {
+                    // Source exists but can't delete - this is an error
+                    // Clean up destination and throw
+                    await fs.unlink(uniqueDestination).catch((cleanupError) => {
+                      logger.warn(
+                        'Failed to cleanup destination after source delete error',
+                        {
+                          destination: uniqueDestination,
+                          error: cleanupError.message,
+                        },
+                      );
+                    });
+                    throw new Error(
+                      `Failed to delete source after copy: ${unlinkError.message}`,
+                    );
+                  }
+                  // ENOENT is fine - source was already deleted by another process
+                }
+
+                operationComplete = true;
+                op.destination = uniqueDestination;
+              } catch (copyError) {
+                if (copyError.code === 'EEXIST') {
+                  // Destination exists, try next filename
+                  counter++;
+                  uniqueDestination = `${baseName}_${counter}${ext}`;
+                  continue; // Retry with new name
+                } else {
+                  throw copyError;
+                }
+              }
+            } else {
+              throw renameError;
+            }
+          }
+        }
+
+        // BUG FIX #9: UUID fallback if numeric counter exhausted
+        if (!operationComplete) {
+          // Try UUID-based naming as fallback
+          logger.warn(
+            `[FILE-OPS] Exhausted ${maxNumericRetries} numeric attempts for ${path.basename(op.source)}, falling back to UUID`,
+          );
+
+          const uuidAttempts = 3; // Try 3 UUID-based names
+          for (
+            let uuidTry = 0;
+            uuidTry < uuidAttempts && !operationComplete;
+            uuidTry++
+          ) {
+            // Generate UUID v4 (random) for guaranteed uniqueness
+            const uuid = require('crypto').randomUUID();
+            // Use first 8 chars of UUID for shorter filename
+            const uuidShort = uuid.split('-')[0];
+            uniqueDestination = `${baseName}_${uuidShort}${ext}`;
+
+            try {
+              // Try atomic rename with UUID name
+              await fs.rename(op.source, uniqueDestination);
+              operationComplete = true;
+              op.destination = uniqueDestination;
+              logger.info(
+                `[FILE-OPS] Successfully used UUID fallback: ${path.basename(uniqueDestination)}`,
+              );
+            } catch (uuidRenameError) {
+              if (uuidRenameError.code === 'EEXIST') {
+                // Incredibly unlikely, but UUID collision occurred
+                logger.warn(
+                  `[FILE-OPS] UUID collision (try ${uuidTry + 1}/${uuidAttempts}): ${uuidShort}`,
+                );
+                continue; // Try another UUID
+              } else if (uuidRenameError.code === 'EXDEV') {
+                // Cross-device move with UUID name - use same verified copy logic
+                try {
+                  await fs.copyFile(
+                    op.source,
+                    uniqueDestination,
+                    fs.constants.COPYFILE_EXCL,
+                  );
+
+                  let sourceStats, destStats;
+                  try {
+                    [sourceStats, destStats] = await Promise.all([
+                      fs.stat(op.source),
+                      fs.stat(uniqueDestination),
+                    ]);
+                  } catch (statError) {
+                    await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                      logger.warn(
+                        'Failed to cleanup file after stat error in UUID fallback',
+                        {
+                          path: uniqueDestination,
+                          error: unlinkError.message,
+                        },
+                      );
+                    });
+                    throw new Error(
+                      `File verification failed: ${statError.message}`,
+                    );
+                  }
+
+                  if (sourceStats.size !== destStats.size) {
+                    await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                      logger.warn(
+                        'Failed to cleanup file after size mismatch in UUID fallback',
+                        {
+                          path: uniqueDestination,
+                          error: unlinkError.message,
+                        },
+                      );
+                    });
+                    throw new Error(
+                      `File copy verification failed - size mismatch`,
+                    );
+                  }
+
+                  // Always verify checksum
+                  logger.info(
+                    `[FILE-OPS] Verifying UUID fallback copy with checksum: ${path.basename(op.source)}`,
+                  );
+                  let sourceChecksum, destChecksum;
+                  try {
+                    [sourceChecksum, destChecksum] = await Promise.all([
+                      computeFileChecksum(op.source),
+                      computeFileChecksum(uniqueDestination),
+                    ]);
+                  } catch (checksumError) {
+                    await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                      logger.warn(
+                        'Failed to cleanup file after checksum error in UUID fallback',
+                        {
+                          path: uniqueDestination,
+                          error: unlinkError.message,
+                        },
+                      );
+                    });
+                    throw new Error(
+                      `Checksum computation failed: ${checksumError.message}`,
+                    );
+                  }
+
+                  if (sourceChecksum !== destChecksum) {
+                    await fs.unlink(uniqueDestination).catch((unlinkError) => {
+                      logger.warn(
+                        'Failed to cleanup file after checksum mismatch in UUID fallback',
+                        {
+                          path: uniqueDestination,
+                          error: unlinkError.message,
+                        },
+                      );
+                    });
+                    throw new Error(
+                      `File copy verification failed - checksum mismatch`,
+                    );
+                  }
+
+                  // Delete source
+                  try {
+                    await fs.unlink(op.source);
+                  } catch (unlinkError) {
+                    if (unlinkError.code !== 'ENOENT') {
+                      await fs
+                        .unlink(uniqueDestination)
+                        .catch((cleanupError) => {
+                          logger.warn(
+                            'Failed to cleanup destination after source delete error in UUID fallback',
+                            {
+                              destination: uniqueDestination,
+                              error: cleanupError.message,
+                            },
+                          );
+                        });
+                      throw new Error(
+                        `Failed to delete source after copy: ${unlinkError.message}`,
+                      );
+                    }
+                  }
+
+                  operationComplete = true;
+                  op.destination = uniqueDestination;
+                  logger.info(
+                    `[FILE-OPS] Successfully used UUID fallback for cross-device move`,
+                  );
+                } catch (uuidCopyError) {
+                  if (uuidCopyError.code === 'EEXIST') {
+                    continue; // Try another UUID
+                  } else {
+                    throw uuidCopyError;
+                  }
+                }
+              } else {
+                throw uuidRenameError;
+              }
+            }
+          }
+
+          // Final check: if still not complete after UUID attempts, fail with detailed error
+          if (!operationComplete) {
+            throw new Error(
+              `Failed to create unique destination after ${maxNumericRetries} numeric attempts and ${uuidAttempts} UUID attempts. ` +
+                `Source: ${op.source}, Destination pattern: ${baseName}*${ext}. ` +
+                `This indicates either extreme file collision or file system issue.`,
+            );
+          }
+        }
+        await getServiceIntegration()?.processingState?.markOrganizeOpDone(
+          batchId,
+          i,
+          { destination: op.destination },
+        );
+
+        // CRITICAL FIX (BUG #3): Track completed operation for potential rollback
+        completedOperations.push({
+          index: i,
+          source: op.source,
+          destination: op.destination,
+          originalDestination: operation.operations[i].destination,
+        });
+
+        results.push({
+          success: true,
+          source: op.source,
+          destination: op.destination,
+          operation: op.type || 'move',
+        });
+        successCount++;
+        const win = getMainWindow();
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('operation-progress', {
+            type: 'batch_organize',
+            current: i + 1,
+            total: batch.operations.length,
+            currentFile: path.basename(op.source),
+          });
+        }
+      } catch (error) {
+        await getServiceIntegration()?.processingState?.markOrganizeOpError(
+          batchId,
+          i,
+          error.message,
+        );
+
+        // CRITICAL FIX (BUG #3): Determine if this error should trigger rollback
+        // Critical errors (permissions, disk full, corruption) should rollback entire batch
+        // Non-critical errors (file already exists, file not found) can continue
+        const isCriticalError =
+          error.code === 'EACCES' || // Permission denied
+          error.code === 'EPERM' || // Operation not permitted
+          error.code === 'ENOSPC' || // No space left on device
+          error.code === 'EIO' || // I/O error (corruption)
+          error.message.includes('checksum mismatch') || // Data corruption
+          error.message.includes('verification failed'); // File integrity issue
+
+        if (isCriticalError) {
+          shouldRollback = true;
+          rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
+          logger.error(
+            `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
+            {
+              error: error.message,
+              errorCode: error.code,
+              file: op.source,
+              completedCount: completedOperations.length,
+            },
+          );
+        }
+
+        results.push({
+          success: false,
+          source: op.source,
+          destination: op.destination,
+          error: error.message,
+          operation: op.type || 'move',
+          critical: isCriticalError,
+        });
+        failCount++;
+
+        // Stop processing if critical error occurred
+        if (shouldRollback) {
+          break;
+        }
+      }
+    }
+    // CRITICAL FIX (BUG #3): Execute rollback if critical error occurred
+    if (shouldRollback && completedOperations.length > 0) {
+      logger.warn(
+        `[FILE-OPS] Executing rollback for batch ${batchId} due to: ${rollbackReason}`,
+      );
+
+      const rollbackResults = [];
+      let rollbackSuccessCount = 0;
+      let rollbackFailCount = 0;
+
+      // Rollback in reverse order (LIFO - Last In First Out)
+      for (const completedOp of [...completedOperations].reverse()) {
+        try {
+          // Move file back to original source location
+          await fs.rename(completedOp.destination, completedOp.source);
+          rollbackSuccessCount++;
+          rollbackResults.push({
+            success: true,
+            file: completedOp.source,
+            message: 'Rolled back successfully',
+          });
+          logger.info(
+            `[FILE-OPS] Rolled back: ${completedOp.destination} -> ${completedOp.source}`,
+          );
+        } catch (rollbackError) {
+          rollbackFailCount++;
+          rollbackResults.push({
+            success: false,
+            file: completedOp.source,
+            destination: completedOp.destination,
+            error: rollbackError.message,
+          });
+          logger.error(
+            `[FILE-OPS] Failed to rollback ${completedOp.destination}:`,
+            rollbackError.message,
+          );
+        }
+      }
+
+      logger.warn(
+        `[FILE-OPS] Rollback complete for batch ${batchId}: ${rollbackSuccessCount} succeeded, ${rollbackFailCount} failed`,
+      );
+
+      // Return rollback results
+      return {
+        success: false,
+        rolledBack: true,
+        rollbackReason,
+        results,
+        rollbackResults,
+        successCount: 0, // All operations rolled back
+        failCount: failCount,
+        rollbackSuccessCount,
+        rollbackFailCount,
+        summary:
+          `Batch operation failed and was rolled back. Reason: ${rollbackReason}. ` +
+          `Rolled back ${rollbackSuccessCount}/${completedOperations.length} operations. ` +
+          `${rollbackFailCount > 0 ? `WARNING: ${rollbackFailCount} files could not be rolled back and may be in inconsistent state!` : ''}`,
+        batchId,
+        criticalError: true,
+      };
+    }
+
+    await getServiceIntegration()?.processingState?.completeOrganizeBatch(
+      batchId,
+    );
+
+    // Only record undo if batch completed successfully (no rollback)
+    if (!shouldRollback) {
+      try {
+        const undoOps = batch.operations.map((op) => ({
+          type: 'move',
+          originalPath: op.source,
+          newPath: op.destination,
+        }));
+        await getServiceIntegration()?.undoRedo?.recordAction?.(
+          ACTION_TYPES.BATCH_OPERATION,
+          { operations: undoOps },
+        );
+      } catch {
+        // Non-fatal if undo recording fails
+      }
+    }
+  } catch {
+    // Non-fatal if batch processing service fails
+  }
+
+  return {
+    success: successCount > 0 && !shouldRollback,
+    results,
+    successCount,
+    failCount,
+    completedOperations: completedOperations.length,
+    summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
+    batchId,
+  };
 }
 
 function registerFilesIpc({
@@ -82,8 +696,9 @@ function registerFilesIpc({
           if (mainWindow.isMinimized()) mainWindow.restore();
           if (!mainWindow.isVisible()) mainWindow.show();
           if (!mainWindow.isFocused()) mainWindow.focus();
+          const { TIMEOUTS } = require('../../shared/performanceConstants');
           await new Promise((resolve) => {
-            const t = setTimeout(resolve, 100);
+            const t = setTimeout(resolve, TIMEOUTS.DELAY_BATCH);
             try {
               t.unref();
             } catch {
@@ -406,572 +1021,13 @@ function registerFilesIpc({
                   success: true,
                   message: `Deleted ${operation.source}`,
                 };
-              case 'batch_organize': {
-                // CRITICAL SECURITY FIX: Validate batch size to prevent DOS (CRIT-8)
-                if (
-                  !operation.operations ||
-                  !Array.isArray(operation.operations)
-                ) {
-                  return {
-                    success: false,
-                    error: 'Invalid batch: operations must be an array',
-                    errorCode: 'INVALID_BATCH',
-                  };
-                }
-
-                if (operation.operations.length === 0) {
-                  return {
-                    success: false,
-                    error: 'Invalid batch: no operations provided',
-                    errorCode: 'EMPTY_BATCH',
-                  };
-                }
-
-                if (operation.operations.length > MAX_BATCH_SIZE) {
-                  logger.warn(
-                    `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`,
-                  );
-                  return {
-                    success: false,
-                    error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-                    errorCode: 'BATCH_TOO_LARGE',
-                    maxAllowed: MAX_BATCH_SIZE,
-                    provided: operation.operations.length,
-                  };
-                }
-
-                // CRITICAL FIX (BUG #3): Transaction-like rollback mechanism for batch operations
-                // Previous code had no rollback on partial failures, leaving files scattered
-                // Now we track all completed operations and can rollback on critical failures
-                const results = [];
-                const completedOperations = []; // Track for rollback
-                let successCount = 0;
-                let failCount = 0;
-                const batchId = `batch_${Date.now()}`;
-                const batchStartTime = Date.now(); // CRITICAL FIX: Track batch time
-                let shouldRollback = false;
-                let rollbackReason = null;
-
-                try {
-                  const svc = getServiceIntegration();
-                  const batch =
-                    await svc?.processingState?.createOrLoadOrganizeBatch(
-                      batchId,
-                      operation.operations,
-                    );
-
-                  logger.info(
-                    `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files (max: ${MAX_BATCH_SIZE})`,
-                  );
-
-                  // CRITICAL FIX: Add timeout protection in operation loop
-                  for (let i = 0; i < batch.operations.length; i += 1) {
-                    // Check global batch timeout
-                    if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
-                      logger.error(
-                        `[FILE-OPS] Batch ${batchId} exceeded maximum time limit`,
-                      );
-                      throw new Error(
-                        `Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`,
-                      );
-                    }
-
-                    const op = batch.operations[i];
-                    if (op.status === 'done') {
-                      results.push({
-                        success: true,
-                        source: op.source,
-                        destination: op.destination,
-                        operation: op.type || 'move',
-                        resumed: true,
-                      });
-                      successCount++;
-                      continue;
-                    }
-                    try {
-                      await getServiceIntegration()?.processingState?.markOrganizeOpStarted(
-                        batchId,
-                        i,
-                      );
-                      if (!op.source || !op.destination)
-                        throw new Error(
-                          `Invalid operation data: source="${op.source}", destination="${op.destination}"`,
-                        );
-                      const destDir = path.dirname(op.destination);
-                      await fs.mkdir(destDir, { recursive: true });
-                      try {
-                        await fs.access(op.source);
-                      } catch {
-                        throw new Error(
-                          `Source file does not exist: ${op.source}`,
-                        );
-                      }
-
-                      // BUG FIX #9: Improved collision handling with UUID fallback
-                      // CRITICAL: 1000 collisions throws error, causing organization to fail
-                      // Solution: Increase limit, add UUID fallback, better error handling
-                      let counter = 0;
-                      let uniqueDestination = op.destination;
-                      const ext = path.extname(op.destination);
-                      const baseName = op.destination.slice(0, -ext.length);
-                      let operationComplete = false;
-                      const maxNumericRetries = 5000; // Increased from 1000 to 5000
-
-                      while (
-                        !operationComplete &&
-                        counter < maxNumericRetries
-                      ) {
-                        try {
-                          // Attempt atomic rename first
-                          await fs.rename(op.source, uniqueDestination);
-                          operationComplete = true;
-                          op.destination = uniqueDestination;
-                        } catch (renameError) {
-                          if (renameError.code === 'EEXIST') {
-                            // Destination exists, try next filename atomically
-                            counter++;
-                            uniqueDestination = `${baseName}_${counter}${ext}`;
-                            continue; // Retry with new name
-                          } else if (renameError.code === 'EXDEV') {
-                            // Cross-device move: use atomic copy with COPYFILE_EXCL
-                            // NOTE: There's still a small TOCTOU window between copy and verification,
-                            // but this is the best we can do without OS-level file locking
-                            try {
-                              // Step 1: Atomic copy (fails if destination exists)
-                              await fs.copyFile(
-                                op.source,
-                                uniqueDestination,
-                                fs.constants.COPYFILE_EXCL,
-                              );
-
-                              // Step 2: Verify file copy integrity immediately after copy
-                              // Fixed: Get stats in parallel to minimize TOCTOU window
-                              let sourceStats, destStats;
-                              try {
-                                [sourceStats, destStats] = await Promise.all([
-                                  fs.stat(op.source),
-                                  fs.stat(uniqueDestination),
-                                ]);
-                              } catch (error) {
-                                // Clean up the copied file if verification fails
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                throw new Error(
-                                  `File verification failed: ${error.message}`,
-                                );
-                              }
-
-                              // CRITICAL: Verify file size matches before proceeding
-                              if (sourceStats.size !== destStats.size) {
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                throw new Error(
-                                  `File copy verification failed - size mismatch (source: ${sourceStats.size} bytes, dest: ${destStats.size} bytes)`,
-                                );
-                              }
-
-                              // CRITICAL FIX (BUG #1): Always verify checksum for ALL files to prevent silent corruption
-                              // Previous code only verified files >10MB, leaving smaller files vulnerable
-                              // Performance trade-off: slower operations but guaranteed data integrity
-                              logger.info(
-                                `[FILE-OPS] Verifying file copy integrity with checksum: ${path.basename(op.source)} (${sourceStats.size} bytes)`,
-                              );
-
-                              let sourceChecksum, destChecksum;
-                              try {
-                                [sourceChecksum, destChecksum] =
-                                  await Promise.all([
-                                    computeFileChecksum(op.source),
-                                    computeFileChecksum(uniqueDestination),
-                                  ]);
-                              } catch (checksumError) {
-                                // Clean up destination if checksum computation fails
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                throw new Error(
-                                  `Checksum computation failed: ${checksumError.message}`,
-                                );
-                              }
-
-                              if (sourceChecksum !== destChecksum) {
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                logger.error(
-                                  `[FILE-OPS] Checksum mismatch detected - possible data corruption or TOCTOU race condition`,
-                                  {
-                                    source: op.source,
-                                    destination: uniqueDestination,
-                                    sourceChecksum,
-                                    destChecksum,
-                                  },
-                                );
-                                throw new Error(
-                                  `File copy verification failed - checksum mismatch (source: ${sourceChecksum.substring(0, 8)}..., dest: ${destChecksum.substring(0, 8)}...)`,
-                                );
-                              }
-
-                              logger.info(
-                                `[FILE-OPS] File copy verified successfully: ${path.basename(op.source)} (checksum: ${sourceChecksum.substring(0, 16)}...)`,
-                              );
-
-                              // Step 3: Delete source (safe because destination verified)
-                              // Fixed: Handle case where source was already deleted
-                              try {
-                                await fs.unlink(op.source);
-                              } catch (unlinkError) {
-                                if (unlinkError.code !== 'ENOENT') {
-                                  // Source exists but can't delete - this is an error
-                                  // Clean up destination and throw
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `Failed to delete source after copy: ${unlinkError.message}`,
-                                  );
-                                }
-                                // ENOENT is fine - source was already deleted by another process
-                              }
-
-                              operationComplete = true;
-                              op.destination = uniqueDestination;
-                            } catch (copyError) {
-                              if (copyError.code === 'EEXIST') {
-                                // Destination exists, try next filename
-                                counter++;
-                                uniqueDestination = `${baseName}_${counter}${ext}`;
-                                continue; // Retry with new name
-                              } else {
-                                throw copyError;
-                              }
-                            }
-                          } else {
-                            throw renameError;
-                          }
-                        }
-                      }
-
-                      // BUG FIX #9: UUID fallback if numeric counter exhausted
-                      if (!operationComplete) {
-                        // Try UUID-based naming as fallback
-                        logger.warn(
-                          `[FILE-OPS] Exhausted ${maxNumericRetries} numeric attempts for ${path.basename(op.source)}, falling back to UUID`,
-                        );
-
-                        const uuidAttempts = 3; // Try 3 UUID-based names
-                        for (
-                          let uuidTry = 0;
-                          uuidTry < uuidAttempts && !operationComplete;
-                          uuidTry++
-                        ) {
-                          // Generate UUID v4 (random) for guaranteed uniqueness
-                          const uuid = require('crypto').randomUUID();
-                          // Use first 8 chars of UUID for shorter filename
-                          const uuidShort = uuid.split('-')[0];
-                          uniqueDestination = `${baseName}_${uuidShort}${ext}`;
-
-                          try {
-                            // Try atomic rename with UUID name
-                            await fs.rename(op.source, uniqueDestination);
-                            operationComplete = true;
-                            op.destination = uniqueDestination;
-                            logger.info(
-                              `[FILE-OPS] Successfully used UUID fallback: ${path.basename(uniqueDestination)}`,
-                            );
-                          } catch (uuidRenameError) {
-                            if (uuidRenameError.code === 'EEXIST') {
-                              // Incredibly unlikely, but UUID collision occurred
-                              logger.warn(
-                                `[FILE-OPS] UUID collision (try ${uuidTry + 1}/${uuidAttempts}): ${uuidShort}`,
-                              );
-                              continue; // Try another UUID
-                            } else if (uuidRenameError.code === 'EXDEV') {
-                              // Cross-device move with UUID name - use same verified copy logic
-                              try {
-                                await fs.copyFile(
-                                  op.source,
-                                  uniqueDestination,
-                                  fs.constants.COPYFILE_EXCL,
-                                );
-
-                                let sourceStats, destStats;
-                                try {
-                                  [sourceStats, destStats] = await Promise.all([
-                                    fs.stat(op.source),
-                                    fs.stat(uniqueDestination),
-                                  ]);
-                                } catch (statError) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `File verification failed: ${statError.message}`,
-                                  );
-                                }
-
-                                if (sourceStats.size !== destStats.size) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `File copy verification failed - size mismatch`,
-                                  );
-                                }
-
-                                // Always verify checksum
-                                logger.info(
-                                  `[FILE-OPS] Verifying UUID fallback copy with checksum: ${path.basename(op.source)}`,
-                                );
-                                let sourceChecksum, destChecksum;
-                                try {
-                                  [sourceChecksum, destChecksum] =
-                                    await Promise.all([
-                                      computeFileChecksum(op.source),
-                                      computeFileChecksum(uniqueDestination),
-                                    ]);
-                                } catch (checksumError) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `Checksum computation failed: ${checksumError.message}`,
-                                  );
-                                }
-
-                                if (sourceChecksum !== destChecksum) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `File copy verification failed - checksum mismatch`,
-                                  );
-                                }
-
-                                // Delete source
-                                try {
-                                  await fs.unlink(op.source);
-                                } catch (unlinkError) {
-                                  if (unlinkError.code !== 'ENOENT') {
-                                    await fs
-                                      .unlink(uniqueDestination)
-                                      .catch(() => {});
-                                    throw new Error(
-                                      `Failed to delete source after copy: ${unlinkError.message}`,
-                                    );
-                                  }
-                                }
-
-                                operationComplete = true;
-                                op.destination = uniqueDestination;
-                                logger.info(
-                                  `[FILE-OPS] Successfully used UUID fallback for cross-device move`,
-                                );
-                              } catch (uuidCopyError) {
-                                if (uuidCopyError.code === 'EEXIST') {
-                                  continue; // Try another UUID
-                                } else {
-                                  throw uuidCopyError;
-                                }
-                              }
-                            } else {
-                              throw uuidRenameError;
-                            }
-                          }
-                        }
-
-                        // Final check: if still not complete after UUID attempts, fail with detailed error
-                        if (!operationComplete) {
-                          throw new Error(
-                            `Failed to create unique destination after ${maxNumericRetries} numeric attempts and ${uuidAttempts} UUID attempts. ` +
-                              `Source: ${op.source}, Destination pattern: ${baseName}*${ext}. ` +
-                              `This indicates either extreme file collision or file system issue.`,
-                          );
-                        }
-                      }
-                      await getServiceIntegration()?.processingState?.markOrganizeOpDone(
-                        batchId,
-                        i,
-                        { destination: op.destination },
-                      );
-
-                      // CRITICAL FIX (BUG #3): Track completed operation for potential rollback
-                      completedOperations.push({
-                        index: i,
-                        source: op.source,
-                        destination: op.destination,
-                        originalDestination:
-                          operation.operations[i].destination,
-                      });
-
-                      results.push({
-                        success: true,
-                        source: op.source,
-                        destination: op.destination,
-                        operation: op.type || 'move',
-                      });
-                      successCount++;
-                      const win = getMainWindow();
-                      if (win && !win.isDestroyed()) {
-                        win.webContents.send('operation-progress', {
-                          type: 'batch_organize',
-                          current: i + 1,
-                          total: batch.operations.length,
-                          currentFile: path.basename(op.source),
-                        });
-                      }
-                    } catch (error) {
-                      await getServiceIntegration()?.processingState?.markOrganizeOpError(
-                        batchId,
-                        i,
-                        error.message,
-                      );
-
-                      // CRITICAL FIX (BUG #3): Determine if this error should trigger rollback
-                      // Critical errors (permissions, disk full, corruption) should rollback entire batch
-                      // Non-critical errors (file already exists, file not found) can continue
-                      const isCriticalError =
-                        error.code === 'EACCES' || // Permission denied
-                        error.code === 'EPERM' || // Operation not permitted
-                        error.code === 'ENOSPC' || // No space left on device
-                        error.code === 'EIO' || // I/O error (corruption)
-                        error.message.includes('checksum mismatch') || // Data corruption
-                        error.message.includes('verification failed'); // File integrity issue
-
-                      if (isCriticalError) {
-                        shouldRollback = true;
-                        rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
-                        logger.error(
-                          `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
-                          {
-                            error: error.message,
-                            errorCode: error.code,
-                            file: op.source,
-                            completedCount: completedOperations.length,
-                          },
-                        );
-                      }
-
-                      results.push({
-                        success: false,
-                        source: op.source,
-                        destination: op.destination,
-                        error: error.message,
-                        operation: op.type || 'move',
-                        critical: isCriticalError,
-                      });
-                      failCount++;
-
-                      // Stop processing if critical error occurred
-                      if (shouldRollback) {
-                        break;
-                      }
-                    }
-                  }
-                  // CRITICAL FIX (BUG #3): Execute rollback if critical error occurred
-                  if (shouldRollback && completedOperations.length > 0) {
-                    logger.warn(
-                      `[FILE-OPS] Executing rollback for batch ${batchId} due to: ${rollbackReason}`,
-                    );
-
-                    const rollbackResults = [];
-                    let rollbackSuccessCount = 0;
-                    let rollbackFailCount = 0;
-
-                    // Rollback in reverse order (LIFO - Last In First Out)
-                    for (const completedOp of [
-                      ...completedOperations,
-                    ].reverse()) {
-                      try {
-                        // Move file back to original source location
-                        await fs.rename(
-                          completedOp.destination,
-                          completedOp.source,
-                        );
-                        rollbackSuccessCount++;
-                        rollbackResults.push({
-                          success: true,
-                          file: completedOp.source,
-                          message: 'Rolled back successfully',
-                        });
-                        logger.info(
-                          `[FILE-OPS] Rolled back: ${completedOp.destination} -> ${completedOp.source}`,
-                        );
-                      } catch (rollbackError) {
-                        rollbackFailCount++;
-                        rollbackResults.push({
-                          success: false,
-                          file: completedOp.source,
-                          destination: completedOp.destination,
-                          error: rollbackError.message,
-                        });
-                        logger.error(
-                          `[FILE-OPS] Failed to rollback ${completedOp.destination}:`,
-                          rollbackError.message,
-                        );
-                      }
-                    }
-
-                    logger.warn(
-                      `[FILE-OPS] Rollback complete for batch ${batchId}: ${rollbackSuccessCount} succeeded, ${rollbackFailCount} failed`,
-                    );
-
-                    // Return rollback results
-                    return {
-                      success: false,
-                      rolledBack: true,
-                      rollbackReason,
-                      results,
-                      rollbackResults,
-                      successCount: 0, // All operations rolled back
-                      failCount: failCount,
-                      rollbackSuccessCount,
-                      rollbackFailCount,
-                      summary:
-                        `Batch operation failed and was rolled back. Reason: ${rollbackReason}. ` +
-                        `Rolled back ${rollbackSuccessCount}/${completedOperations.length} operations. ` +
-                        `${rollbackFailCount > 0 ? `WARNING: ${rollbackFailCount} files could not be rolled back and may be in inconsistent state!` : ''}`,
-                      batchId,
-                      criticalError: true,
-                    };
-                  }
-
-                  await getServiceIntegration()?.processingState?.completeOrganizeBatch(
-                    batchId,
-                  );
-
-                  // Only record undo if batch completed successfully (no rollback)
-                  if (!shouldRollback) {
-                    try {
-                      const undoOps = batch.operations.map((op) => ({
-                        type: 'move',
-                        originalPath: op.source,
-                        newPath: op.destination,
-                      }));
-                      await getServiceIntegration()?.undoRedo?.recordAction?.(
-                        ACTION_TYPES.BATCH_OPERATION,
-                        { operations: undoOps },
-                      );
-                    } catch {
-                      // Non-fatal if undo recording fails
-                    }
-                  }
-                } catch {
-                  // Non-fatal if batch processing service fails
-                }
-
-                return {
-                  success: successCount > 0 && !shouldRollback,
-                  results,
-                  successCount,
-                  failCount,
-                  completedOperations: completedOperations.length,
-                  summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
-                  batchId,
-                };
-              }
+              case 'batch_organize':
+                return await handleBatchOrganize({
+                  operation,
+                  logger,
+                  getServiceIntegration,
+                  getMainWindow,
+                });
               default:
                 logger.error(
                   `[FILE-OPS] Unknown operation type: ${operation.type}`,
@@ -1023,572 +1079,13 @@ function registerFilesIpc({
                   success: true,
                   message: `Deleted ${operation.source}`,
                 };
-              case 'batch_organize': {
-                // CRITICAL SECURITY FIX: Validate batch size to prevent DOS (CRIT-8)
-                if (
-                  !operation.operations ||
-                  !Array.isArray(operation.operations)
-                ) {
-                  return {
-                    success: false,
-                    error: 'Invalid batch: operations must be an array',
-                    errorCode: 'INVALID_BATCH',
-                  };
-                }
-
-                if (operation.operations.length === 0) {
-                  return {
-                    success: false,
-                    error: 'Invalid batch: no operations provided',
-                    errorCode: 'EMPTY_BATCH',
-                  };
-                }
-
-                if (operation.operations.length > MAX_BATCH_SIZE) {
-                  logger.warn(
-                    `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`,
-                  );
-                  return {
-                    success: false,
-                    error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-                    errorCode: 'BATCH_TOO_LARGE',
-                    maxAllowed: MAX_BATCH_SIZE,
-                    provided: operation.operations.length,
-                  };
-                }
-
-                // CRITICAL FIX (BUG #3): Transaction-like rollback mechanism for batch operations
-                // Previous code had no rollback on partial failures, leaving files scattered
-                // Now we track all completed operations and can rollback on critical failures
-                const results = [];
-                const completedOperations = []; // Track for rollback
-                let successCount = 0;
-                let failCount = 0;
-                const batchId = `batch_${Date.now()}`;
-                const batchStartTime = Date.now(); // CRITICAL FIX: Track batch time
-                let shouldRollback = false;
-                let rollbackReason = null;
-
-                try {
-                  const svc = getServiceIntegration();
-                  const batch =
-                    await svc?.processingState?.createOrLoadOrganizeBatch(
-                      batchId,
-                      operation.operations,
-                    );
-
-                  logger.info(
-                    `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files (max: ${MAX_BATCH_SIZE})`,
-                  );
-
-                  // CRITICAL FIX: Add timeout protection in operation loop
-                  for (let i = 0; i < batch.operations.length; i += 1) {
-                    // Check global batch timeout
-                    if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
-                      logger.error(
-                        `[FILE-OPS] Batch ${batchId} exceeded maximum time limit`,
-                      );
-                      throw new Error(
-                        `Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`,
-                      );
-                    }
-
-                    const op = batch.operations[i];
-                    if (op.status === 'done') {
-                      results.push({
-                        success: true,
-                        source: op.source,
-                        destination: op.destination,
-                        operation: op.type || 'move',
-                        resumed: true,
-                      });
-                      successCount++;
-                      continue;
-                    }
-                    try {
-                      await getServiceIntegration()?.processingState?.markOrganizeOpStarted(
-                        batchId,
-                        i,
-                      );
-                      if (!op.source || !op.destination)
-                        throw new Error(
-                          `Invalid operation data: source="${op.source}", destination="${op.destination}"`,
-                        );
-                      const destDir = path.dirname(op.destination);
-                      await fs.mkdir(destDir, { recursive: true });
-                      try {
-                        await fs.access(op.source);
-                      } catch {
-                        throw new Error(
-                          `Source file does not exist: ${op.source}`,
-                        );
-                      }
-
-                      // BUG FIX #9: Improved collision handling with UUID fallback
-                      // CRITICAL: 1000 collisions throws error, causing organization to fail
-                      // Solution: Increase limit, add UUID fallback, better error handling
-                      let counter = 0;
-                      let uniqueDestination = op.destination;
-                      const ext = path.extname(op.destination);
-                      const baseName = op.destination.slice(0, -ext.length);
-                      let operationComplete = false;
-                      const maxNumericRetries = 5000; // Increased from 1000 to 5000
-
-                      while (
-                        !operationComplete &&
-                        counter < maxNumericRetries
-                      ) {
-                        try {
-                          // Attempt atomic rename first
-                          await fs.rename(op.source, uniqueDestination);
-                          operationComplete = true;
-                          op.destination = uniqueDestination;
-                        } catch (renameError) {
-                          if (renameError.code === 'EEXIST') {
-                            // Destination exists, try next filename atomically
-                            counter++;
-                            uniqueDestination = `${baseName}_${counter}${ext}`;
-                            continue; // Retry with new name
-                          } else if (renameError.code === 'EXDEV') {
-                            // Cross-device move: use atomic copy with COPYFILE_EXCL
-                            // NOTE: There's still a small TOCTOU window between copy and verification,
-                            // but this is the best we can do without OS-level file locking
-                            try {
-                              // Step 1: Atomic copy (fails if destination exists)
-                              await fs.copyFile(
-                                op.source,
-                                uniqueDestination,
-                                fs.constants.COPYFILE_EXCL,
-                              );
-
-                              // Step 2: Verify file copy integrity immediately after copy
-                              // Fixed: Get stats in parallel to minimize TOCTOU window
-                              let sourceStats, destStats;
-                              try {
-                                [sourceStats, destStats] = await Promise.all([
-                                  fs.stat(op.source),
-                                  fs.stat(uniqueDestination),
-                                ]);
-                              } catch (error) {
-                                // Clean up the copied file if verification fails
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                throw new Error(
-                                  `File verification failed: ${error.message}`,
-                                );
-                              }
-
-                              // CRITICAL: Verify file size matches before proceeding
-                              if (sourceStats.size !== destStats.size) {
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                throw new Error(
-                                  `File copy verification failed - size mismatch (source: ${sourceStats.size} bytes, dest: ${destStats.size} bytes)`,
-                                );
-                              }
-
-                              // CRITICAL FIX (BUG #1): Always verify checksum for ALL files to prevent silent corruption
-                              // Previous code only verified files >10MB, leaving smaller files vulnerable
-                              // Performance trade-off: slower operations but guaranteed data integrity
-                              logger.info(
-                                `[FILE-OPS] Verifying file copy integrity with checksum: ${path.basename(op.source)} (${sourceStats.size} bytes)`,
-                              );
-
-                              let sourceChecksum, destChecksum;
-                              try {
-                                [sourceChecksum, destChecksum] =
-                                  await Promise.all([
-                                    computeFileChecksum(op.source),
-                                    computeFileChecksum(uniqueDestination),
-                                  ]);
-                              } catch (checksumError) {
-                                // Clean up destination if checksum computation fails
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                throw new Error(
-                                  `Checksum computation failed: ${checksumError.message}`,
-                                );
-                              }
-
-                              if (sourceChecksum !== destChecksum) {
-                                await fs
-                                  .unlink(uniqueDestination)
-                                  .catch(() => {});
-                                logger.error(
-                                  `[FILE-OPS] Checksum mismatch detected - possible data corruption or TOCTOU race condition`,
-                                  {
-                                    source: op.source,
-                                    destination: uniqueDestination,
-                                    sourceChecksum,
-                                    destChecksum,
-                                  },
-                                );
-                                throw new Error(
-                                  `File copy verification failed - checksum mismatch (source: ${sourceChecksum.substring(0, 8)}..., dest: ${destChecksum.substring(0, 8)}...)`,
-                                );
-                              }
-
-                              logger.info(
-                                `[FILE-OPS] File copy verified successfully: ${path.basename(op.source)} (checksum: ${sourceChecksum.substring(0, 16)}...)`,
-                              );
-
-                              // Step 3: Delete source (safe because destination verified)
-                              // Fixed: Handle case where source was already deleted
-                              try {
-                                await fs.unlink(op.source);
-                              } catch (unlinkError) {
-                                if (unlinkError.code !== 'ENOENT') {
-                                  // Source exists but can't delete - this is an error
-                                  // Clean up destination and throw
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `Failed to delete source after copy: ${unlinkError.message}`,
-                                  );
-                                }
-                                // ENOENT is fine - source was already deleted by another process
-                              }
-
-                              operationComplete = true;
-                              op.destination = uniqueDestination;
-                            } catch (copyError) {
-                              if (copyError.code === 'EEXIST') {
-                                // Destination exists, try next filename
-                                counter++;
-                                uniqueDestination = `${baseName}_${counter}${ext}`;
-                                continue; // Retry with new name
-                              } else {
-                                throw copyError;
-                              }
-                            }
-                          } else {
-                            throw renameError;
-                          }
-                        }
-                      }
-
-                      // BUG FIX #9: UUID fallback if numeric counter exhausted
-                      if (!operationComplete) {
-                        // Try UUID-based naming as fallback
-                        logger.warn(
-                          `[FILE-OPS] Exhausted ${maxNumericRetries} numeric attempts for ${path.basename(op.source)}, falling back to UUID`,
-                        );
-
-                        const uuidAttempts = 3; // Try 3 UUID-based names
-                        for (
-                          let uuidTry = 0;
-                          uuidTry < uuidAttempts && !operationComplete;
-                          uuidTry++
-                        ) {
-                          // Generate UUID v4 (random) for guaranteed uniqueness
-                          const uuid = require('crypto').randomUUID();
-                          // Use first 8 chars of UUID for shorter filename
-                          const uuidShort = uuid.split('-')[0];
-                          uniqueDestination = `${baseName}_${uuidShort}${ext}`;
-
-                          try {
-                            // Try atomic rename with UUID name
-                            await fs.rename(op.source, uniqueDestination);
-                            operationComplete = true;
-                            op.destination = uniqueDestination;
-                            logger.info(
-                              `[FILE-OPS] Successfully used UUID fallback: ${path.basename(uniqueDestination)}`,
-                            );
-                          } catch (uuidRenameError) {
-                            if (uuidRenameError.code === 'EEXIST') {
-                              // Incredibly unlikely, but UUID collision occurred
-                              logger.warn(
-                                `[FILE-OPS] UUID collision (try ${uuidTry + 1}/${uuidAttempts}): ${uuidShort}`,
-                              );
-                              continue; // Try another UUID
-                            } else if (uuidRenameError.code === 'EXDEV') {
-                              // Cross-device move with UUID name - use same verified copy logic
-                              try {
-                                await fs.copyFile(
-                                  op.source,
-                                  uniqueDestination,
-                                  fs.constants.COPYFILE_EXCL,
-                                );
-
-                                let sourceStats, destStats;
-                                try {
-                                  [sourceStats, destStats] = await Promise.all([
-                                    fs.stat(op.source),
-                                    fs.stat(uniqueDestination),
-                                  ]);
-                                } catch (statError) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `File verification failed: ${statError.message}`,
-                                  );
-                                }
-
-                                if (sourceStats.size !== destStats.size) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `File copy verification failed - size mismatch`,
-                                  );
-                                }
-
-                                // Always verify checksum
-                                logger.info(
-                                  `[FILE-OPS] Verifying UUID fallback copy with checksum: ${path.basename(op.source)}`,
-                                );
-                                let sourceChecksum, destChecksum;
-                                try {
-                                  [sourceChecksum, destChecksum] =
-                                    await Promise.all([
-                                      computeFileChecksum(op.source),
-                                      computeFileChecksum(uniqueDestination),
-                                    ]);
-                                } catch (checksumError) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `Checksum computation failed: ${checksumError.message}`,
-                                  );
-                                }
-
-                                if (sourceChecksum !== destChecksum) {
-                                  await fs
-                                    .unlink(uniqueDestination)
-                                    .catch(() => {});
-                                  throw new Error(
-                                    `File copy verification failed - checksum mismatch`,
-                                  );
-                                }
-
-                                // Delete source
-                                try {
-                                  await fs.unlink(op.source);
-                                } catch (unlinkError) {
-                                  if (unlinkError.code !== 'ENOENT') {
-                                    await fs
-                                      .unlink(uniqueDestination)
-                                      .catch(() => {});
-                                    throw new Error(
-                                      `Failed to delete source after copy: ${unlinkError.message}`,
-                                    );
-                                  }
-                                }
-
-                                operationComplete = true;
-                                op.destination = uniqueDestination;
-                                logger.info(
-                                  `[FILE-OPS] Successfully used UUID fallback for cross-device move`,
-                                );
-                              } catch (uuidCopyError) {
-                                if (uuidCopyError.code === 'EEXIST') {
-                                  continue; // Try another UUID
-                                } else {
-                                  throw uuidCopyError;
-                                }
-                              }
-                            } else {
-                              throw uuidRenameError;
-                            }
-                          }
-                        }
-
-                        // Final check: if still not complete after UUID attempts, fail with detailed error
-                        if (!operationComplete) {
-                          throw new Error(
-                            `Failed to create unique destination after ${maxNumericRetries} numeric attempts and ${uuidAttempts} UUID attempts. ` +
-                              `Source: ${op.source}, Destination pattern: ${baseName}*${ext}. ` +
-                              `This indicates either extreme file collision or file system issue.`,
-                          );
-                        }
-                      }
-                      await getServiceIntegration()?.processingState?.markOrganizeOpDone(
-                        batchId,
-                        i,
-                        { destination: op.destination },
-                      );
-
-                      // CRITICAL FIX (BUG #3): Track completed operation for potential rollback
-                      completedOperations.push({
-                        index: i,
-                        source: op.source,
-                        destination: op.destination,
-                        originalDestination:
-                          operation.operations[i].destination,
-                      });
-
-                      results.push({
-                        success: true,
-                        source: op.source,
-                        destination: op.destination,
-                        operation: op.type || 'move',
-                      });
-                      successCount++;
-                      const win = getMainWindow();
-                      if (win && !win.isDestroyed()) {
-                        win.webContents.send('operation-progress', {
-                          type: 'batch_organize',
-                          current: i + 1,
-                          total: batch.operations.length,
-                          currentFile: path.basename(op.source),
-                        });
-                      }
-                    } catch (error) {
-                      await getServiceIntegration()?.processingState?.markOrganizeOpError(
-                        batchId,
-                        i,
-                        error.message,
-                      );
-
-                      // CRITICAL FIX (BUG #3): Determine if this error should trigger rollback
-                      // Critical errors (permissions, disk full, corruption) should rollback entire batch
-                      // Non-critical errors (file already exists, file not found) can continue
-                      const isCriticalError =
-                        error.code === 'EACCES' || // Permission denied
-                        error.code === 'EPERM' || // Operation not permitted
-                        error.code === 'ENOSPC' || // No space left on device
-                        error.code === 'EIO' || // I/O error (corruption)
-                        error.message.includes('checksum mismatch') || // Data corruption
-                        error.message.includes('verification failed'); // File integrity issue
-
-                      if (isCriticalError) {
-                        shouldRollback = true;
-                        rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
-                        logger.error(
-                          `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
-                          {
-                            error: error.message,
-                            errorCode: error.code,
-                            file: op.source,
-                            completedCount: completedOperations.length,
-                          },
-                        );
-                      }
-
-                      results.push({
-                        success: false,
-                        source: op.source,
-                        destination: op.destination,
-                        error: error.message,
-                        operation: op.type || 'move',
-                        critical: isCriticalError,
-                      });
-                      failCount++;
-
-                      // Stop processing if critical error occurred
-                      if (shouldRollback) {
-                        break;
-                      }
-                    }
-                  }
-                  // CRITICAL FIX (BUG #3): Execute rollback if critical error occurred
-                  if (shouldRollback && completedOperations.length > 0) {
-                    logger.warn(
-                      `[FILE-OPS] Executing rollback for batch ${batchId} due to: ${rollbackReason}`,
-                    );
-
-                    const rollbackResults = [];
-                    let rollbackSuccessCount = 0;
-                    let rollbackFailCount = 0;
-
-                    // Rollback in reverse order (LIFO - Last In First Out)
-                    for (const completedOp of [
-                      ...completedOperations,
-                    ].reverse()) {
-                      try {
-                        // Move file back to original source location
-                        await fs.rename(
-                          completedOp.destination,
-                          completedOp.source,
-                        );
-                        rollbackSuccessCount++;
-                        rollbackResults.push({
-                          success: true,
-                          file: completedOp.source,
-                          message: 'Rolled back successfully',
-                        });
-                        logger.info(
-                          `[FILE-OPS] Rolled back: ${completedOp.destination} -> ${completedOp.source}`,
-                        );
-                      } catch (rollbackError) {
-                        rollbackFailCount++;
-                        rollbackResults.push({
-                          success: false,
-                          file: completedOp.source,
-                          destination: completedOp.destination,
-                          error: rollbackError.message,
-                        });
-                        logger.error(
-                          `[FILE-OPS] Failed to rollback ${completedOp.destination}:`,
-                          rollbackError.message,
-                        );
-                      }
-                    }
-
-                    logger.warn(
-                      `[FILE-OPS] Rollback complete for batch ${batchId}: ${rollbackSuccessCount} succeeded, ${rollbackFailCount} failed`,
-                    );
-
-                    // Return rollback results
-                    return {
-                      success: false,
-                      rolledBack: true,
-                      rollbackReason,
-                      results,
-                      rollbackResults,
-                      successCount: 0, // All operations rolled back
-                      failCount: failCount,
-                      rollbackSuccessCount,
-                      rollbackFailCount,
-                      summary:
-                        `Batch operation failed and was rolled back. Reason: ${rollbackReason}. ` +
-                        `Rolled back ${rollbackSuccessCount}/${completedOperations.length} operations. ` +
-                        `${rollbackFailCount > 0 ? `WARNING: ${rollbackFailCount} files could not be rolled back and may be in inconsistent state!` : ''}`,
-                      batchId,
-                      criticalError: true,
-                    };
-                  }
-
-                  await getServiceIntegration()?.processingState?.completeOrganizeBatch(
-                    batchId,
-                  );
-
-                  // Only record undo if batch completed successfully (no rollback)
-                  if (!shouldRollback) {
-                    try {
-                      const undoOps = batch.operations.map((op) => ({
-                        type: 'move',
-                        originalPath: op.source,
-                        newPath: op.destination,
-                      }));
-                      await getServiceIntegration()?.undoRedo?.recordAction?.(
-                        ACTION_TYPES.BATCH_OPERATION,
-                        { operations: undoOps },
-                      );
-                    } catch {
-                      // Non-fatal if undo recording fails
-                    }
-                  }
-                } catch {
-                  // Non-fatal if batch processing service fails
-                }
-
-                return {
-                  success: successCount > 0 && !shouldRollback,
-                  results,
-                  successCount,
-                  failCount,
-                  completedOperations: completedOperations.length,
-                  summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
-                  batchId,
-                };
-              }
+              case 'batch_organize':
+                return await handleBatchOrganize({
+                  operation,
+                  logger,
+                  getServiceIntegration,
+                  getMainWindow,
+                });
               default:
                 logger.error(
                   `[FILE-OPS] Unknown operation type: ${operation.type}`,

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { logger } from '../../shared/logger';
 import { PHASES } from '../../shared/constants';
 import { usePhase } from '../contexts/PhaseContext';
+
+logger.setContext('ProgressIndicator');
 
 function ProgressIndicator() {
   const { currentPhase, getCurrentMetadata } = usePhase();
@@ -48,8 +51,9 @@ function ProgressIndicator() {
       );
       window.dispatchEvent(new Event('storage'));
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to toggle collapsible sections', error);
+      logger.error('Failed to toggle collapsible sections', {
+        error: error.message,
+      });
     }
   };
 

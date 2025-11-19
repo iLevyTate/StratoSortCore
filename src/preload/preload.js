@@ -284,8 +284,10 @@ class SecureIPCManager {
               `Handler not ready for ${channel}, attempt ${attempt + 1}/2`,
             );
             // Wait before retrying (exponential backoff)
+            // Base delay: 100ms, doubles with each attempt (100ms, 200ms)
+            const RETRY_BASE_DELAY_MS = 100;
             await new Promise((resolve) =>
-              setTimeout(resolve, 100 * Math.pow(2, attempt)),
+              setTimeout(resolve, RETRY_BASE_DELAY_MS * Math.pow(2, attempt)),
             );
             continue;
           }
@@ -460,6 +462,7 @@ class SecureIPCManager {
     // Unix absolute path: starts with /
     // Support Unicode characters and spaces in path names
     // Match any non-null character after the slash (Unicode-safe)
+    // eslint-disable-next-line no-useless-escape
     if (/^\/[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
 
     // UNC paths: \\server\share or //server/share
@@ -467,7 +470,12 @@ class SecureIPCManager {
 
     // Relative path with typical file extensions
     // Support Unicode letters, numbers, combining marks, spaces
-    if (/^[\p{L}\p{N}\p{M}\s_.-]+\/[\p{L}\p{N}\p{M}\s_.\/-]+\.[\p{L}\p{N}]+$/u.test(str)) {
+    // eslint-disable-next-line no-useless-escape
+    if (
+      /^[\p{L}\p{N}\p{M}\s_.-]+\/[\p{L}\p{N}\p{M}\s_.\/-]+\.[\p{L}\p{N}]+$/u.test(
+        str,
+      )
+    ) {
       return true;
     }
 
@@ -834,8 +842,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFiles: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
-    getStats: () =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
+    getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
     findSimilar: (fileId, topK = 10) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR, {
         fileId,
@@ -966,8 +973,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onStartupProgress: (callback) =>
       secureIPC.safeOn('startup-progress', callback),
     onStartupError: (callback) => secureIPC.safeOn('startup-error', callback),
-    onSystemMetrics: (callback) =>
-      secureIPC.safeOn('system-metrics', callback),
+    onSystemMetrics: (callback) => secureIPC.safeOn('system-metrics', callback),
     onMenuAction: (callback) => secureIPC.safeOn('menu-action', callback),
     onSettingsChanged: (callback) =>
       secureIPC.safeOn('settings-changed-external', callback),
@@ -981,18 +987,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendError: (errorData) => {
       try {
         // Validate error data structure
-        if (
-          !errorData ||
-          typeof errorData !== 'object' ||
-          !errorData.message
-        ) {
+        if (!errorData || typeof errorData !== 'object' || !errorData.message) {
           log.warn('[events.sendError] Invalid error data structure');
           return;
         }
         // Validate channel is allowed
         const channel = 'renderer-error-report';
         if (!ALLOWED_SEND_CHANNELS.includes(channel)) {
-          log.warn(`[events.sendError] Blocked send to unauthorized channel: ${channel}`);
+          log.warn(
+            `[events.sendError] Blocked send to unauthorized channel: ${channel}`,
+          );
           return;
         }
         // Send error report to main process

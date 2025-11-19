@@ -62,7 +62,7 @@ jest.mock('../src/main/services/PerformanceService', () => ({
   buildOllamaOptions: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  generateWithRetry: jest.fn(async (client, generateOptions, retryOptions) => {
+  generateWithRetry: jest.fn(async (client, generateOptions) => {
     // generateOptions is an object with: { model, prompt, images, options, format }
     // Ollama client.generate expects these as separate parameters
     // But the mock client.generate is already set up to handle the object
@@ -90,7 +90,11 @@ describe('ollamaImageAnalysis', () => {
       generate: jest.fn(),
     };
 
-    const { getOllamaClient, getOllamaVisionModel, loadOllamaConfig } = require('../src/main/ollamaUtils');
+    const {
+      getOllamaClient,
+      getOllamaVisionModel,
+      loadOllamaConfig,
+    } = require('../src/main/ollamaUtils');
     getOllamaVisionModel.mockReturnValue('llava');
     loadOllamaConfig.mockResolvedValue({
       selectedVisionModel: 'llava',
@@ -150,7 +154,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator to pass through calls
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -190,7 +196,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator to not actually deduplicate (allow calls through)
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -327,7 +335,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -351,7 +361,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -376,7 +388,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -402,7 +416,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -428,7 +444,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -462,7 +480,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -486,7 +506,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -510,7 +532,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -537,7 +561,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -622,7 +648,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('image data'));
 
       // Mock globalDeduplicator
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -648,7 +676,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.alloc(0));
 
       // Mock globalDeduplicator (won't be called but needed for consistency)
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 
@@ -670,7 +700,9 @@ describe('ollamaImageAnalysis', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(badBuffer);
 
       // Mock globalDeduplicator (won't be called but needed for consistency)
-      const { globalDeduplicator } = require('../src/main/utils/llmOptimization');
+      const {
+        globalDeduplicator,
+      } = require('../src/main/utils/llmOptimization');
       globalDeduplicator.generateKey = jest.fn().mockReturnValue('test-key');
       globalDeduplicator.deduplicate = jest.fn((key, fn) => fn());
 

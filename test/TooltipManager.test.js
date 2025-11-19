@@ -3,10 +3,17 @@
  * Verifies that the null reference error fix works correctly
  */
 
-const { describe, it, expect, beforeEach, afterEach } = require('@jest/globals');
+const {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+} = require('@jest/globals');
 const React = require('react');
-const { render, cleanup, fireEvent, waitFor } = require('@testing-library/react');
-const TooltipManager = require('../src/renderer/components/TooltipManager').default;
+const { render, cleanup, fireEvent } = require('@testing-library/react');
+const TooltipManager =
+  require('../src/renderer/components/TooltipManager').default;
 
 // Mock requestAnimationFrame and cancelAnimationFrame
 global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
@@ -56,7 +63,6 @@ describe('TooltipManager', () => {
 
       // Check that no errors were logged
       expect(consoleSpy).not.toHaveBeenCalled();
-
     } finally {
       consoleSpy.mockRestore();
     }
@@ -111,11 +117,12 @@ describe('TooltipManager', () => {
 
   it('should handle visibility change events without errors', () => {
     const { unmount } = render(<TooltipManager />);
+    expect(unmount).toBeDefined();
 
     // Simulate visibility change
     Object.defineProperty(document, 'hidden', {
       writable: true,
-      value: true
+      value: true,
     });
 
     // Fire visibility change event
@@ -127,11 +134,7 @@ describe('TooltipManager', () => {
     // Reset document.hidden
     Object.defineProperty(document, 'hidden', {
       writable: true,
-      value: false
+      value: false,
     });
   });
 });
-
-module.exports = {
-  description: 'TooltipManager null reference fix test suite'
-};

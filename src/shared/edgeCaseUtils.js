@@ -3,6 +3,11 @@
  * Provides reusable utilities to handle common edge cases across the application
  */
 
+// Import standardized withTimeout from promiseUtils
+const {
+  withTimeout: promiseWithTimeout,
+} = require('../main/utils/promiseUtils');
+
 /**
  * CATEGORY 1: EMPTY ARRAY/STRING HANDLING
  */
@@ -324,30 +329,18 @@ function safeHasProperty(obj, prop) {
  */
 
 /**
- * Create a promise with timeout
+ * Wraps a promise with a timeout (delegates to promiseUtils for consistency)
  * @param {Promise} promise - Promise to wrap
  * @param {number} timeoutMs - Timeout in milliseconds
- * @param {string} timeoutMessage - Error message for timeout
- * @returns {Promise} Promise that rejects on timeout
+ * @param {string} timeoutMessage - Timeout error message
+ * @returns {Promise} Promise with timeout
  */
 function withTimeout(
   promise,
   timeoutMs,
   timeoutMessage = 'Operation timed out',
 ) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(timeoutMessage));
-      }, timeoutMs);
-
-      // Unref timer to allow process to exit
-      if (timer.unref) {
-        timer.unref();
-      }
-    }),
-  ]);
+  return promiseWithTimeout(promise, timeoutMs, timeoutMessage);
 }
 
 /**

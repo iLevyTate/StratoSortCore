@@ -8,6 +8,7 @@ const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../../shared/logger');
+logger.setContext('ModelManager');
 
 class ModelManager {
   constructor(host = 'http://127.0.0.1:11434') {

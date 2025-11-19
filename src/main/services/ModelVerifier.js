@@ -5,6 +5,7 @@
 
 const { Ollama } = require('ollama');
 const { logger } = require('../../shared/logger');
+logger.setContext('ModelVerifier');
 const { DEFAULT_AI_MODELS } = require('../../shared/constants');
 const { fetchWithRetry } = require('../utils/ollamaApiRetry');
 

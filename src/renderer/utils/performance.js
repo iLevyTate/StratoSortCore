@@ -14,8 +14,7 @@
  * @param {boolean} options.trailing - Invoke on the trailing edge of the timeout
  * @returns {Function} The debounced function with cancel and flush methods
  */
-export function debounce(func, wait, options = {}) {
-  let timeout;
+function debounce(func, wait, options = {}) {
   let lastArgs;
   let lastThis;
   let lastCallTime;
@@ -58,8 +57,12 @@ export function debounce(func, wait, options = {}) {
     const timeSinceLastCall = time - lastCallTime;
     const timeSinceLastInvoke = time - lastInvokeTime;
 
-    return (lastCallTime === undefined || (timeSinceLastCall >= wait) ||
-      (timeSinceLastCall < 0) || (hasMaxWait && timeSinceLastInvoke >= maxWait));
+    return (
+      lastCallTime === undefined ||
+      timeSinceLastCall >= wait ||
+      timeSinceLastCall < 0 ||
+      (hasMaxWait && timeSinceLastInvoke >= maxWait)
+    );
   }
 
   function timerExpired() {
@@ -130,11 +133,11 @@ export function debounce(func, wait, options = {}) {
  * @param {boolean} options.trailing - Invoke on the trailing edge of the timeout
  * @returns {Function} The throttled function with cancel and flush methods
  */
-export function throttle(func, wait, options = {}) {
+function throttle(func, wait, options = {}) {
   return debounce(func, wait, {
     leading: options.leading !== false,
     trailing: options.trailing !== false,
-    maxWait: wait
+    maxWait: wait,
   });
 }
 
@@ -145,10 +148,10 @@ export function throttle(func, wait, options = {}) {
  * @param {Function} keyResolver - Function to resolve cache key from arguments
  * @returns {Function} The memoized function with clear method
  */
-export function memoize(fn, keyResolver) {
+function memoize(fn, keyResolver) {
   const cache = new Map();
 
-  const memoized = function(...args) {
+  const memoized = function (...args) {
     const key = keyResolver ? keyResolver.apply(this, args) : args[0];
 
     if (cache.has(key)) {
@@ -173,7 +176,7 @@ export function memoize(fn, keyResolver) {
  * @param {number} maxSize - Maximum number of items in cache
  * @returns {Object} Cache object with get, set, has, delete, and clear methods
  */
-export function createLRUCache(maxSize = 100) {
+function createLRUCache(maxSize = 100) {
   const cache = new Map();
 
   return {
@@ -217,7 +220,7 @@ export function createLRUCache(maxSize = 100) {
 
     get size() {
       return cache.size;
-    }
+    },
   };
 }
 
@@ -227,11 +230,11 @@ export function createLRUCache(maxSize = 100) {
  * @param {Function} callback - The function to throttle
  * @returns {Function} The throttled function
  */
-export function rafThrottle(callback) {
+function rafThrottle(callback) {
   let requestId = null;
   let lastArgs;
 
-  const throttled = function(...args) {
+  const throttled = function (...args) {
     lastArgs = args;
 
     if (requestId === null) {
@@ -260,7 +263,7 @@ export function rafThrottle(callback) {
  * @param {number} maxBatchSize - Maximum batch size
  * @returns {Function} The batched function
  */
-export function batchProcessor(fn, wait = 0, maxBatchSize = Infinity) {
+function batchProcessor(fn, wait = 0, maxBatchSize = Infinity) {
   let batch = [];
   let timeoutId;
 
@@ -301,7 +304,7 @@ export function batchProcessor(fn, wait = 0, maxBatchSize = Infinity) {
         timeoutId = null;
       }
       batch = [];
-    }
+    },
   };
 }
 
@@ -312,7 +315,7 @@ export function batchProcessor(fn, wait = 0, maxBatchSize = Infinity) {
  * @param {*} b - Second value
  * @returns {boolean} True if values are deeply equal
  */
-export function deepEqual(a, b) {
+function deepEqual(a, b) {
   if (a === b) return true;
 
   if (a == null || b == null) return false;
@@ -339,14 +342,17 @@ export function deepEqual(a, b) {
  * @param {Function} resultFunc - Function that computes result from inputs
  * @returns {Function} Memoized selector function
  */
-export function createSelector(inputSelectors, resultFunc) {
+function createSelector(inputSelectors, resultFunc) {
   let lastInputs = [];
   let lastResult;
 
   return (...args) => {
-    const inputs = inputSelectors.map(selector => selector(...args));
+    const inputs = inputSelectors.map((selector) => selector(...args));
 
-    if (!lastInputs.length || !inputs.every((input, i) => input === lastInputs[i])) {
+    if (
+      !lastInputs.length ||
+      !inputs.every((input, i) => input === lastInputs[i])
+    ) {
       lastInputs = inputs;
       lastResult = resultFunc(...inputs);
     }
@@ -355,7 +361,7 @@ export function createSelector(inputSelectors, resultFunc) {
   };
 }
 
-export default {
+module.exports = {
   debounce,
   throttle,
   memoize,
@@ -363,5 +369,5 @@ export default {
   rafThrottle,
   batchProcessor,
   deepEqual,
-  createSelector
+  createSelector,
 };

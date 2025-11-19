@@ -7,6 +7,7 @@ import React, {
   lazy,
 } from 'react';
 import { PHASES, RENDERER_LIMITS } from '../../shared/constants';
+import { logger } from '../../shared/logger';
 import { usePhase } from '../contexts/PhaseContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog, useDragAndDrop } from '../hooks';
@@ -22,6 +23,9 @@ import {
   AnalysisResultsList,
   AnalysisProgress,
 } from '../components/discover';
+
+// Set logger context for this component
+logger.setContext('DiscoverPhase');
 
 function DiscoverPhase() {
   const { actions, phaseData } = usePhase();
@@ -83,9 +87,7 @@ function DiscoverPhase() {
       const isStuck = timeSinceActivity > 2 * 60 * 1000; // 2 minutes
 
       if (isStuck) {
-        console.log(
-          '[ANALYSIS] Detected stuck analysis state on mount, resetting...',
-        );
+        logger.info('Detected stuck analysis state on mount, resetting');
         // Don't restore stuck analysis state
         actions.setPhaseData('isAnalyzing', false);
         actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
@@ -111,7 +113,7 @@ function DiscoverPhase() {
   // Fixed: Consolidated analysis resume logic - extracted reset function
   const resetAnalysisState = useCallback(
     (reason) => {
-      console.log(`[ANALYSIS] Resetting analysis state: ${reason}`);
+      logger.info('Resetting analysis state', { reason });
       actions.setPhaseData('isAnalyzing', false);
       actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
       actions.setPhaseData('currentAnalysisFile', '');
@@ -155,8 +157,8 @@ function DiscoverPhase() {
         if (runAnalysis) {
           runAnalysis(remaining);
         } else {
-          console.warn(
-            '[ANALYSIS] analyzeFiles not ready during resume, skipping remaining files',
+          logger.warn(
+            'analyzeFiles not ready during resume, skipping remaining files',
           );
         }
       } else {
@@ -220,7 +222,7 @@ function DiscoverPhase() {
         try {
           abortControllerRef.current.abort();
         } catch (error) {
-          console.error('[DISCOVER] Error aborting operations:', error);
+          logger.error('Error aborting operations', { error: error.message });
         }
         abortControllerRef.current = null;
       }
@@ -502,9 +504,7 @@ function DiscoverPhase() {
         if (runAnalysis) {
           await runAnalysis(enhancedFiles);
         } else {
-          console.warn(
-            '[ANALYSIS] analyzeFiles not ready for drag & drop processing',
-          );
+          logger.warn('analyzeFiles not ready for drag & drop processing');
         }
       }
     },
@@ -665,9 +665,7 @@ function DiscoverPhase() {
         if (runAnalysis) {
           await runAnalysis(enhancedFiles);
         } else {
-          console.warn(
-            '[ANALYSIS] analyzeFiles not ready after manual file selection',
-          );
+          logger.warn('analyzeFiles not ready after manual file selection');
         }
       } else {
         addNotification('No files selected', 'info', 2000, 'file-selection');
@@ -832,9 +830,7 @@ function DiscoverPhase() {
           if (runAnalysis) {
             await runAnalysis(enhancedFiles);
           } else {
-            console.warn(
-              '[ANALYSIS] analyzeFiles not ready after folder selection',
-            );
+            logger.warn('analyzeFiles not ready after folder selection');
           }
         } else {
           addNotification(
@@ -970,10 +966,9 @@ function DiscoverPhase() {
     async (files) => {
       if (!files || files.length === 0) return;
 
-      // LOW PRIORITY FIX (LOW-2): Wrap verbose debug logs in development check
+      // Debug logging in development mode
       if (process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line no-console
-        console.log('[ANALYSIS] analyzeFiles called with:', {
+        logger.debug('analyzeFiles called', {
           filesCount: files.length,
           isAnalyzing,
           analysisProgress,
@@ -996,13 +991,13 @@ function DiscoverPhase() {
       })();
 
       if (!lockAcquired) {
-        console.log('[ANALYSIS] Lock already held by another call, skipping');
+        logger.debug('Lock already held by another call, skipping');
         return;
       }
 
       // Lock acquired successfully, continue with analysis
       setGlobalAnalysisActive(true);
-      console.log('[ANALYSIS] Analysis lock acquired atomically');
+      logger.debug('Analysis lock acquired atomically');
 
       // Bug #35: Create new AbortController for this analysis session
       abortControllerRef.current = new AbortController();
@@ -1010,7 +1005,7 @@ function DiscoverPhase() {
 
       // Bug #35: Check if already aborted before continuing
       if (abortSignal.aborted) {
-        console.log('[ANALYSIS] Analysis aborted before start');
+        logger.debug('Analysis aborted before start');
         analysisLockRef.current = false;
         setGlobalAnalysisActive(false);
         return;
@@ -1023,9 +1018,7 @@ function DiscoverPhase() {
       const lockTimeout = setTimeout(
         () => {
           if (analysisLockRef.current) {
-            console.warn(
-              '[ANALYSIS] Analysis lock timeout reached, forcing release',
-            );
+            logger.warn('Analysis lock timeout reached, forcing release');
             analysisLockRef.current = false;
             // Fixed: Clear heartbeat interval to prevent memory leak
             if (heartbeatIntervalRef.current) {
@@ -1044,9 +1037,7 @@ function DiscoverPhase() {
 
       // Force reset any existing analysis state to ensure clean start
       if (isAnalyzing || analysisProgress.total > 0) {
-        console.log(
-          '[ANALYSIS] Force resetting existing analysis state for clean start',
-        );
+        logger.debug('Force resetting existing analysis state for clean start');
         setIsAnalyzing(false);
         setCurrentAnalysisFile('');
         setAnalysisProgress({ current: 0, total: 0 });
@@ -1070,13 +1061,9 @@ function DiscoverPhase() {
       actions.setPhaseData('analysisProgress', initialProgress);
       actions.setPhaseData('currentAnalysisFile', '');
 
-      // LOW PRIORITY FIX (LOW-2): Wrap verbose debug logs in development check
+      // Debug logging in development mode
       if (process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[ANALYSIS] Started analysis with progress:',
-          initialProgress,
-        );
+        logger.debug('Started analysis with progress', { initialProgress });
       }
 
       // Set up progress heartbeat to prevent stuck states
@@ -1095,8 +1082,8 @@ function DiscoverPhase() {
             setAnalysisProgress(currentProgress);
             actions.setPhaseData('analysisProgress', currentProgress);
           } else {
-            console.warn(
-              '[ANALYSIS] Invalid heartbeat progress state detected, resetting analysis',
+            logger.warn(
+              'Invalid heartbeat progress state detected, resetting analysis',
             );
             if (heartbeatIntervalRef.current) {
               clearInterval(heartbeatIntervalRef.current);
@@ -1110,8 +1097,8 @@ function DiscoverPhase() {
       // Fixed: Set up global analysis timeout (10 minutes max for entire batch)
       analysisTimeoutRef.current = setTimeout(
         () => {
-          console.warn(
-            '[ANALYSIS] Global analysis timeout reached (10 minutes), forcing completion',
+          logger.warn(
+            'Global analysis timeout reached (10 minutes), forcing completion',
           );
           if (heartbeatIntervalRef.current) {
             clearInterval(heartbeatIntervalRef.current);
@@ -1187,9 +1174,7 @@ function DiscoverPhase() {
               actions.setPhaseData('analysisProgress', progress);
               actions.setPhaseData('currentAnalysisFile', fileName);
             } else {
-              console.warn(
-                '[ANALYSIS] Invalid progress state detected, skipping update',
-              );
+              logger.warn('Invalid progress state detected, skipping update');
             }
 
             const fileInfo = {
@@ -1225,19 +1210,24 @@ function DiscoverPhase() {
 
                 if (attempt < MAX_RETRIES && isTransient) {
                   const delay = RETRY_BASE_DELAY * Math.pow(2, attempt - 1);
-                  console.log(
-                    `[ANALYSIS] Retry ${attempt}/${MAX_RETRIES} for ${filePath} after ${delay}ms (${error.message})`,
-                  );
+                  logger.debug('Retry attempt', {
+                    attempt,
+                    maxRetries: MAX_RETRIES,
+                    filePath,
+                    delay,
+                    error: error.message,
+                  });
                   await new Promise((resolve) => setTimeout(resolve, delay));
                   return analyzeWithRetry(filePath, attempt + 1);
                 }
 
                 // Log final failure
                 if (attempt >= MAX_RETRIES) {
-                  console.warn(
-                    `[ANALYSIS] Failed after ${MAX_RETRIES} attempts: ${filePath}`,
-                    error,
-                  );
+                  logger.warn('Failed after max retries', {
+                    maxRetries: MAX_RETRIES,
+                    filePath,
+                    error: error.message,
+                  });
                 }
                 throw error;
               }
@@ -1336,7 +1326,7 @@ function DiscoverPhase() {
           try {
             // Bug #35: Check abort signal before processing each batch
             if (abortSignal.aborted) {
-              console.log('[ANALYSIS] Batch processing aborted by user');
+              logger.info('Batch processing aborted by user');
               throw new Error('Analysis cancelled by user');
             }
 
@@ -1355,17 +1345,20 @@ function DiscoverPhase() {
               setAnalysisProgress(currentProgress);
               actions.setPhaseData('analysisProgress', currentProgress);
             } else {
-              console.warn(
-                '[ANALYSIS] Invalid batch progress state detected, skipping update',
+              logger.warn(
+                'Invalid batch progress state detected, skipping update',
               );
             }
           } catch (error) {
             // Bug #35: Don't log abort errors as errors
             if (error.message === 'Analysis cancelled by user') {
-              console.log('[ANALYSIS] User cancelled batch processing');
+              logger.info('User cancelled batch processing');
               throw error; // Re-throw to stop processing
             }
-            console.error('[ANALYSIS] Batch processing error:', error);
+            logger.error('Batch processing error', {
+              error: error.message,
+              stack: error.stack,
+            });
             // Don't fail the entire analysis for batch errors
           }
         };
@@ -1374,9 +1367,7 @@ function DiscoverPhase() {
         for (let i = 0; i < fileQueue.length; i += concurrency) {
           // Bug #35: Check abort signal before each batch
           if (abortSignal.aborted) {
-            console.log(
-              '[ANALYSIS] Analysis cancelled, stopping batch processing',
-            );
+            logger.info('Analysis cancelled, stopping batch processing');
             addNotification('Analysis cancelled by user', 'info', 2000);
             break;
           }
@@ -1544,7 +1535,7 @@ function DiscoverPhase() {
   analyzeFilesRef.current = analyzeFiles;
 
   const forceReleaseAnalysisLock = useCallback(() => {
-    console.log('[ANALYSIS] Manually releasing analysis lock');
+    logger.info('Manually releasing analysis lock');
     analysisLockRef.current = false;
     setGlobalAnalysisActive(false);
     addNotification(

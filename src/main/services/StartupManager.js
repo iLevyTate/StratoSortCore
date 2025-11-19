@@ -1,15 +1,13 @@
 const { spawn, spawnSync } = require('child_process');
 const { logger } = require('../../shared/logger');
+logger.setContext('StartupManager');
 const axios = require('axios');
 const { axiosWithRetry } = require('../utils/ollamaApiRetry');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs'); // Sync version for simple operations
 const { app } = require('electron');
-const {
-  hasPythonModuleAsync,
-  asyncSpawn,
-} = require('../utils/asyncSpawnUtils');
+const { hasPythonModuleAsync } = require('../utils/asyncSpawnUtils');
 
 // FIXED Bug #28: Named constant for axios timeout
 const DEFAULT_AXIOS_TIMEOUT = 5000; // 5 seconds
@@ -98,18 +96,11 @@ class StartupManager {
   }
 
   /**
-   * Helper to wrap promises with timeout
+   * Helper to wrap promises with timeout (uses standardized promiseUtils)
    */
   _withTimeout(promise, timeoutMs, operation) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        ),
-      ),
-    ]);
+    const { withTimeout } = require('../utils/promiseUtils');
+    return withTimeout(promise, timeoutMs, operation);
   }
 
   /**
@@ -307,7 +298,9 @@ class StartupManager {
 
     for (const { cmd, args } of pythonCommands) {
       try {
-        logger.debug(`[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`);
+        logger.debug(
+          `[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`,
+        );
         const result = spawnSync(cmd, args, {
           timeout: 3000,
           windowsHide: true,
@@ -790,7 +783,10 @@ class StartupManager {
       });
 
       // Wait briefly to check for immediate failures
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const { TIMEOUTS } = require('../../shared/performanceConstants');
+      await new Promise((resolve) =>
+        setTimeout(resolve, TIMEOUTS.DELAY_MEDIUM),
+      );
 
       // If we got a port-in-use error, treat as external instance
       if (startupError === 'PORT_IN_USE') {
@@ -847,110 +843,127 @@ class StartupManager {
 
       // Start ChromaDB and Ollama in parallel for faster startup
       const [chromaResult, ollamaResult] = await Promise.all([
-        this.startChromaDB().then((result) => {
-          const statusMsg = result.success ? 'SUCCESS' : 'FAILED';
-          logger.info('[STARTUP] ChromaDB startup complete:', statusMsg);
+        (async () => {
+          try {
+            const result = await this.startChromaDB();
+            const statusMsg = result.success ? 'SUCCESS' : 'FAILED';
+            logger.info('[STARTUP] ChromaDB startup complete:', statusMsg);
 
-          // ENHANCEMENT: Report specific status to UI
-          if (result.success) {
-            if (result.external) {
+            // ENHANCEMENT: Report specific status to UI
+            if (result.success) {
+              if (result.external) {
+                this.reportProgress(
+                  'services',
+                  'ChromaDB detected (external instance)',
+                  40,
+                  {
+                    service: 'chromadb',
+                    status: 'external',
+                  },
+                );
+              } else if (result.alreadyRunning) {
+                this.reportProgress(
+                  'services',
+                  'ChromaDB already running',
+                  40,
+                  {
+                    service: 'chromadb',
+                    status: 'running',
+                  },
+                );
+              } else {
+                this.reportProgress(
+                  'services',
+                  'ChromaDB started successfully',
+                  40,
+                  {
+                    service: 'chromadb',
+                    status: 'started',
+                  },
+                );
+              }
+            } else if (result.disabled) {
               this.reportProgress(
                 'services',
-                'ChromaDB detected (external instance)',
+                'ChromaDB disabled (dependency missing)',
                 40,
                 {
                   service: 'chromadb',
-                  status: 'external',
+                  status: 'disabled',
+                  error: result.reason,
                 },
               );
-            } else if (result.alreadyRunning) {
-              this.reportProgress('services', 'ChromaDB already running', 40, {
-                service: 'chromadb',
-                status: 'running',
-              });
             } else {
-              this.reportProgress(
-                'services',
-                'ChromaDB started successfully',
-                40,
-                {
-                  service: 'chromadb',
-                  status: 'started',
-                },
-              );
-            }
-          } else if (result.disabled) {
-            this.reportProgress(
-              'services',
-              'ChromaDB disabled (dependency missing)',
-              40,
-              {
+              this.reportProgress('services', 'ChromaDB failed to start', 40, {
                 service: 'chromadb',
-                status: 'disabled',
-                error: result.reason,
-              },
-            );
-          } else {
-            this.reportProgress('services', 'ChromaDB failed to start', 40, {
-              service: 'chromadb',
-              status: 'failed',
-              error: result.error?.message,
-            });
+                status: 'failed',
+                error: result.error?.message,
+              });
+            }
+            return result;
+          } catch (error) {
+            logger.error('ChromaDB startup error', { error: error.message });
+            return { success: false, error };
           }
-          return result;
-        }),
-        this.startOllama().then((result) => {
-          const statusMsg = result.success ? 'SUCCESS' : 'FAILED';
-          logger.info('[STARTUP] Ollama startup complete:', statusMsg);
+        })(),
+        (async () => {
+          try {
+            const result = await this.startOllama();
+            const statusMsg = result.success ? 'SUCCESS' : 'FAILED';
+            logger.info('[STARTUP] Ollama startup complete:', statusMsg);
 
-          // ENHANCEMENT: Report specific status to UI
-          if (result.success) {
-            if (result.external) {
+            // ENHANCEMENT: Report specific status to UI
+            if (result.success) {
+              if (result.external) {
+                this.reportProgress(
+                  'services',
+                  'Ollama detected (external instance)',
+                  55,
+                  {
+                    service: 'ollama',
+                    status: 'external',
+                  },
+                );
+              } else if (result.alreadyRunning) {
+                this.reportProgress('services', 'Ollama already running', 55, {
+                  service: 'ollama',
+                  status: 'running',
+                });
+              } else {
+                this.reportProgress(
+                  'services',
+                  'Ollama started successfully',
+                  55,
+                  {
+                    service: 'ollama',
+                    status: 'started',
+                  },
+                );
+              }
+            } else if (result.fallbackMode) {
               this.reportProgress(
                 'services',
-                'Ollama detected (external instance)',
+                'Ollama unavailable (AI features limited)',
                 55,
                 {
                   service: 'ollama',
-                  status: 'external',
+                  status: 'failed',
+                  error: result.error?.message,
                 },
               );
-            } else if (result.alreadyRunning) {
-              this.reportProgress('services', 'Ollama already running', 55, {
-                service: 'ollama',
-                status: 'running',
-              });
             } else {
-              this.reportProgress(
-                'services',
-                'Ollama started successfully',
-                55,
-                {
-                  service: 'ollama',
-                  status: 'started',
-                },
-              );
-            }
-          } else if (result.fallbackMode) {
-            this.reportProgress(
-              'services',
-              'Ollama unavailable (AI features limited)',
-              55,
-              {
+              this.reportProgress('services', 'Ollama failed to start', 55, {
                 service: 'ollama',
                 status: 'failed',
                 error: result.error?.message,
-              },
-            );
-          } else {
-            this.reportProgress('services', 'Ollama failed to start', 55, {
-              service: 'ollama',
-              status: 'failed',
-              error: result.error?.message,
-            });
+              });
+            }
+            return result;
+          } catch (error) {
+            logger.error('Ollama startup error', { error: error.message });
+            return { success: false, error };
           }
-          return result;
-        }),
+        })(),
       ]);
 
       // ENHANCEMENT: Report overall status

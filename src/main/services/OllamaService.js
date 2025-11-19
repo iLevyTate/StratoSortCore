@@ -1,4 +1,5 @@
 const { logger } = require('../../shared/logger');
+logger.setContext('OllamaService');
 const { Ollama } = require('ollama'); // MEDIUM PRIORITY FIX (MED-10): Import Ollama for temporary instances
 const {
   getOllama,

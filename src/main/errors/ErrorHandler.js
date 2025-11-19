@@ -8,6 +8,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { ERROR_TYPES } = require('../../shared/constants');
 const { logger } = require('../../shared/logger');
+logger.setContext('ErrorHandler');
 
 class ErrorHandler {
   constructor() {

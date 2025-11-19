@@ -41,7 +41,7 @@ function validateImportedSettings(settings, logger) {
   ]);
 
   // Regex patterns for validation
-  const URL_REGEX = /^https?:\/\/[\w\-]+(\.[\w\-]+)*(:\d+)?$/;
+  const URL_REGEX = /^https?:\/\/[\w-]+(\.[\w-]+)*(:\d+)?$/;
   const MODEL_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:]*[a-zA-Z0-9]$/;
 
   // Check for prototype pollution attempts
@@ -111,7 +111,10 @@ function validateImportedSettings(settings, logger) {
         break;
 
       case 'theme':
-        if (typeof value !== 'string' || !['light', 'dark', 'auto'].includes(value)) {
+        if (
+          typeof value !== 'string' ||
+          !['light', 'dark', 'auto'].includes(value)
+        ) {
           throw new Error(`Invalid ${key}: must be 'light', 'dark', or 'auto'`);
         }
         break;
@@ -136,7 +139,9 @@ function validateImportedSettings(settings, logger) {
       case 'cacheSize':
       case 'maxBatchSize':
         if (!Number.isInteger(value) || value < 0 || value > 100000) {
-          throw new Error(`Invalid ${key}: must be integer between 0 and 100000`);
+          throw new Error(
+            `Invalid ${key}: must be integer between 0 and 100000`,
+          );
         }
         break;
 
@@ -151,9 +156,7 @@ function validateImportedSettings(settings, logger) {
   }
 
   if (ignoredCount > 0) {
-    logger.info(
-      `[SETTINGS-IMPORT] Ignored ${ignoredCount} unknown setting(s)`,
-    );
+    logger.info(`[SETTINGS-IMPORT] Ignored ${ignoredCount} unknown setting(s)`);
   }
 
   return sanitized;
@@ -475,7 +478,9 @@ function registerSettingsIpc({
 
         // Validate import data structure
         if (!importData.settings || typeof importData.settings !== 'object') {
-          throw new Error('Invalid settings file: missing or invalid settings object');
+          throw new Error(
+            'Invalid settings file: missing or invalid settings object',
+          );
         }
 
         // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings

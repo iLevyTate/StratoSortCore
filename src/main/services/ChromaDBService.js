@@ -3,6 +3,7 @@ const { ChromaClient } = require('chromadb');
 const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
+logger.setContext('ChromaDBService');
 const { sanitizeMetadata } = require('../../shared/pathSanitization');
 
 // FIXED Bug #26: Named constants for magic numbers
@@ -736,8 +737,11 @@ class ChromaDBService {
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
+          // CRITICAL FIX: Explicitly request embeddings in get() call
+          // ChromaDB may not return embeddings by default
           fileResult = await this.fileCollection.get({
             ids: [fileId],
+            include: ['embeddings', 'metadatas', 'documents'],
           });
 
           // DIAGNOSTIC FIX: Log actual response structure for debugging
@@ -1228,7 +1232,12 @@ class ChromaDBService {
           // Wait for all in-flight queries with a timeout
           await Promise.race([
             Promise.allSettled(Array.from(this.inflightQueries.values())),
-            new Promise((resolve) => setTimeout(resolve, 5000)), // 5 second timeout
+            (() => {
+              const { TIMEOUTS } = require('../../shared/performanceConstants');
+              return new Promise((resolve) =>
+                setTimeout(resolve, TIMEOUTS.HEALTH_CHECK),
+              );
+            })(), // 5 second timeout
           ]);
         } catch (error) {
           logger.warn(

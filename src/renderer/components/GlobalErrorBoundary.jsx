@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
+logger.setContext('GlobalErrorBoundary');
 
 /**
  * Global Error Boundary Component

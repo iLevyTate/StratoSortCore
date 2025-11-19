@@ -10,7 +10,6 @@
 
 const { spawn } = require('child_process');
 const axios = require('axios');
-const { logger } = require('./src/shared/logger');
 
 // Test configuration
 const OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
@@ -22,7 +21,7 @@ const colors = {
   green: '\x1b[32m',
   red: '\x1b[31m',
   yellow: '\x1b[33m',
-  blue: '\x1b[36m'
+  blue: '\x1b[36m',
 };
 
 function log(message, color = 'reset') {
@@ -37,7 +36,7 @@ async function testOllamaDetection() {
     // Check if Ollama is running
     const response = await axios.get(`${OLLAMA_URL}/api/tags`, {
       timeout: 2000,
-      validateStatus: () => true
+      validateStatus: () => true,
     });
 
     if (response.status === 200) {
@@ -47,7 +46,7 @@ async function testOllamaDetection() {
       // List available models
       if (response.data && response.data.models) {
         log(`  Available models: ${response.data.models.length}`, 'green');
-        response.data.models.slice(0, 3).forEach(model => {
+        response.data.models.slice(0, 3).forEach((model) => {
           log(`    - ${model.name}`, 'green');
         });
       }
@@ -79,7 +78,7 @@ async function testOllamaPortConflict() {
 
     // Try to start another instance
     const ollamaProcess = spawn('ollama', ['serve'], {
-      stdio: 'pipe'
+      stdio: 'pipe',
     });
 
     return new Promise((resolve) => {
@@ -88,8 +87,10 @@ async function testOllamaPortConflict() {
 
       ollamaProcess.stderr.on('data', (data) => {
         const message = data.toString();
-        if (message.includes('bind: Only one usage of each socket address') ||
-            message.includes('address already in use')) {
+        if (
+          message.includes('bind: Only one usage of each socket address') ||
+          message.includes('address already in use')
+        ) {
           errorDetected = true;
           log('✓ Port conflict correctly detected!', 'green');
           log('  Error message: ' + message.trim().substring(0, 80), 'green');
@@ -124,12 +125,7 @@ async function testOllamaPortConflict() {
 async function testChromaDBHealth() {
   log('\n=== Test 3: ChromaDB Health Check ===', 'blue');
 
-  const endpoints = [
-    '/api/v2/heartbeat',
-    '/api/v1/heartbeat',
-    '/api/v1',
-    '/'
-  ];
+  const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1', '/'];
 
   let anySuccess = false;
 
@@ -140,7 +136,7 @@ async function testChromaDBHealth() {
 
       const response = await axios.get(url, {
         timeout: 2000,
-        validateStatus: () => true
+        validateStatus: () => true,
       });
 
       if (response.status === 200) {
@@ -150,14 +146,19 @@ async function testChromaDBHealth() {
         if (response.data) {
           if (response.data.error) {
             log(`    ⚠ Contains error: ${response.data.error}`, 'yellow');
-          } else if (response.data.nanosecond_heartbeat ||
-                     response.data['nanosecond heartbeat'] ||
-                     response.data.status === 'ok' ||
-                     response.data.version) {
+          } else if (
+            response.data.nanosecond_heartbeat ||
+            response.data['nanosecond heartbeat'] ||
+            response.data.status === 'ok' ||
+            response.data.version
+          ) {
             log(`    ✓ Valid health response`, 'green');
             anySuccess = true;
           } else {
-            log(`    ⚠ Response data: ${JSON.stringify(response.data).substring(0, 100)}`, 'yellow');
+            log(
+              `    ⚠ Response data: ${JSON.stringify(response.data).substring(0, 100)}`,
+              'yellow',
+            );
           }
         }
       } else {
@@ -195,7 +196,10 @@ async function testStartupManager() {
           log(`    Error: ${event.details.error}`, 'red');
         }
         if (event.details.service) {
-          log(`    Service: ${event.details.service} - ${event.details.status}`, 'yellow');
+          log(
+            `    Service: ${event.details.service} - ${event.details.status}`,
+            'yellow',
+          );
         }
       }
     });
@@ -205,9 +209,15 @@ async function testStartupManager() {
     const preflightResults = await startupManager.runPreflightChecks();
 
     log('Pre-flight results:', 'green');
-    preflightResults.forEach(check => {
-      const icon = check.status === 'ok' ? '✓' : check.status === 'warn' ? '⚠' : '✗';
-      const color = check.status === 'ok' ? 'green' : check.status === 'warn' ? 'yellow' : 'red';
+    preflightResults.forEach((check) => {
+      const icon =
+        check.status === 'ok' ? '✓' : check.status === 'warn' ? '⚠' : '✗';
+      const color =
+        check.status === 'ok'
+          ? 'green'
+          : check.status === 'warn'
+            ? 'yellow'
+            : 'red';
       log(`  ${icon} ${check.name}: ${check.status}`, color);
       if (check.error) {
         log(`    Error: ${check.error}`, 'red');
@@ -219,14 +229,18 @@ async function testStartupManager() {
     log('\nService Status:', 'blue');
     log(`  Startup State: ${status.startup}`, 'yellow');
     log(`  Current Phase: ${status.phase}`, 'yellow');
-    log(`  ChromaDB: ${status.services.chromadb.status}`,
-        status.services.chromadb.status === 'running' ? 'green' : 'yellow');
-    log(`  Ollama: ${status.services.ollama.status}`,
-        status.services.ollama.status === 'running' ? 'green' : 'yellow');
+    log(
+      `  ChromaDB: ${status.services.chromadb.status}`,
+      status.services.chromadb.status === 'running' ? 'green' : 'yellow',
+    );
+    log(
+      `  Ollama: ${status.services.ollama.status}`,
+      status.services.ollama.status === 'running' ? 'green' : 'yellow',
+    );
 
     if (status.errors.length > 0) {
       log('\nErrors detected:', 'red');
-      status.errors.forEach(err => {
+      status.errors.forEach((err) => {
         log(`  - ${err.service || err.check}: ${err.error}`, 'red');
       });
     }
@@ -248,7 +262,7 @@ async function runAllTests() {
     ollamaDetection: false,
     ollamaPortConflict: false,
     chromadbHealth: false,
-    startupManager: false
+    startupManager: false,
   };
 
   // Run tests
@@ -266,7 +280,7 @@ async function runAllTests() {
     ollamaDetection: 'Ollama Detection',
     ollamaPortConflict: 'Port Conflict Handling',
     chromadbHealth: 'ChromaDB Health Check',
-    startupManager: 'StartupManager Integration'
+    startupManager: 'StartupManager Integration',
   };
 
   let passedCount = 0;
@@ -281,8 +295,10 @@ async function runAllTests() {
     log(`${icon} ${testNames[key]}: ${passed ? 'PASSED' : 'FAILED'}`, color);
   });
 
-  log(`\nTotal: ${passedCount}/${totalCount} tests passed`,
-      passedCount === totalCount ? 'green' : passedCount > 0 ? 'yellow' : 'red');
+  log(
+    `\nTotal: ${passedCount}/${totalCount} tests passed`,
+    passedCount === totalCount ? 'green' : passedCount > 0 ? 'yellow' : 'red',
+  );
 
   // Exit with appropriate code
   process.exit(passedCount === totalCount ? 0 : 1);
@@ -296,7 +312,7 @@ process.on('unhandledRejection', (error) => {
 });
 
 // Run tests
-runAllTests().catch(error => {
+runAllTests().catch((error) => {
   log(`\n✗ Test runner failed: ${error.message}`, 'red');
   console.error(error);
   process.exit(1);

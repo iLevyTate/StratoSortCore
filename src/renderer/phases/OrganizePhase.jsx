@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from 'react';
 import { PHASES } from '../../shared/constants';
+import { logger } from '../../shared/logger';
 import { usePhase } from '../contexts/PhaseContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { Collapsible, Button } from '../components/ui';
@@ -18,7 +19,10 @@ import {
 } from '../components/organize';
 import { UndoRedoToolbar, useUndoRedo } from '../components/UndoRedoSystem';
 import { createOrganizeBatchAction } from '../components/UndoRedoSystem';
-import { debounce } from '../utils/performance';
+const { debounce } = require('../utils/performance');
+
+// Set logger context for this component
+logger.setContext('OrganizePhase');
 
 function OrganizePhase() {
   const { actions, phaseData } = usePhase();
@@ -62,7 +66,10 @@ function OrganizePhase() {
           }
         }
       } catch (error) {
-        console.error('Failed to load smart folders in Organize phase:', error);
+        logger.error('Failed to load smart folders in Organize phase', {
+          error: error.message,
+          stack: error.stack,
+        });
       }
     };
     loadSmartFoldersIfMissing();
@@ -194,8 +201,8 @@ function OrganizePhase() {
 
       // Verify the event system is available
       if (!window.electronAPI?.events?.onOperationProgress) {
-        console.warn(
-          '[ORGANIZE] Progress event system not available - progress updates will not be shown',
+        logger.warn(
+          'Progress event system not available - progress updates will not be shown',
         );
         return;
       }
@@ -215,11 +222,10 @@ function OrganizePhase() {
               const total = Number(payload.total);
 
               if (!Number.isFinite(current) || !Number.isFinite(total)) {
-                console.error(
-                  '[ORGANIZE] Invalid progress data:',
-                  payload.current,
-                  payload.total,
-                );
+                logger.error('Invalid progress data', {
+                  current: payload.current,
+                  total: payload.total,
+                });
                 return;
               }
 
@@ -229,26 +235,26 @@ function OrganizePhase() {
                 currentFile: payload.currentFile || '',
               });
             } catch (error) {
-              console.error(
-                '[ORGANIZE] Error processing progress update:',
-                error,
-              );
+              logger.error('Error processing progress update', {
+                error: error.message,
+                stack: error.stack,
+              });
             }
           },
         );
 
         // Verify subscription succeeded
         if (typeof unsubscribe !== 'function') {
-          console.error(
-            '[ORGANIZE] Progress subscription failed - unsubscribe is not a function',
+          logger.error(
+            'Progress subscription failed - unsubscribe is not a function',
           );
           unsubscribe = null;
         }
       } catch (error) {
-        console.error(
-          '[ORGANIZE] Failed to subscribe to progress events:',
-          error,
-        );
+        logger.error('Failed to subscribe to progress events', {
+          error: error.message,
+          stack: error.stack,
+        });
       }
     };
 
@@ -265,10 +271,10 @@ function OrganizePhase() {
         try {
           unsubscribe();
         } catch (error) {
-          console.error(
-            '[ORGANIZE] Error unsubscribing from progress events:',
-            error,
-          );
+          logger.error('Error unsubscribing from progress events', {
+            error: error.message,
+            stack: error.stack,
+          });
         }
       }
     };

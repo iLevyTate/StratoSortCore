@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const chokidar = require('chokidar');
 const { logger } = require('../../shared/logger');
+logger.setContext('DownloadWatcher');
 
 // Simple utility to determine if a path is an image based on extension
 const IMAGE_EXTENSIONS = new Set([
@@ -41,10 +42,16 @@ class DownloadWatcher {
       logger.info('[DOWNLOAD-WATCHER] Watching', downloadsPath);
       this.watcher = chokidar.watch(downloadsPath, { ignoreInitial: true });
 
-      this.watcher.on('add', (filePath) => {
-        this.handleFile(filePath).catch((e) =>
-          logger.error('[DOWNLOAD-WATCHER] Failed processing', filePath, e),
-        );
+      this.watcher.on('add', async (filePath) => {
+        try {
+          await this.handleFile(filePath);
+        } catch (e) {
+          logger.error('Failed processing file', {
+            filePath,
+            error: e.message,
+            stack: e.stack,
+          });
+        }
       });
 
       this.watcher.on('error', (error) => {
@@ -73,7 +80,37 @@ class DownloadWatcher {
 
   async handleFile(filePath) {
     const ext = path.extname(filePath).toLowerCase();
-    if (ext === '' || ext.endsWith('crdownload') || ext.endsWith('tmp')) return;
+    // CRITICAL FIX: Skip temporary files, lock files, and git files
+    if (
+      ext === '' ||
+      ext.endsWith('crdownload') ||
+      ext.endsWith('tmp') ||
+      ext === '.lock' ||
+      filePath.includes('.git') ||
+      filePath.includes('node_modules') ||
+      path.basename(filePath).startsWith('.')
+    ) {
+      logger.debug(
+        '[DOWNLOAD-WATCHER] Skipping system/temporary file:',
+        filePath,
+      );
+      return;
+    }
+
+    // CRITICAL FIX: Verify file exists before processing
+    // Files may be deleted quickly (e.g., git lock files)
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        logger.debug(
+          '[DOWNLOAD-WATCHER] File no longer exists, skipping:',
+          filePath,
+        );
+        return;
+      }
+      throw error;
+    }
 
     const folders = this.getCustomFolders().filter((f) => f && f.path);
 
@@ -94,6 +131,20 @@ class DownloadWatcher {
         );
 
         if (result && result.destination) {
+          // CRITICAL FIX: Verify file still exists before renaming
+          try {
+            await fs.access(filePath);
+          } catch (error) {
+            if (error.code === 'ENOENT') {
+              logger.debug(
+                '[DOWNLOAD-WATCHER] File deleted before organization, skipping:',
+                filePath,
+              );
+              return;
+            }
+            throw error;
+          }
+
           await fs.mkdir(path.dirname(result.destination), { recursive: true });
           await fs.rename(filePath, result.destination);
           logger.info(
@@ -120,6 +171,20 @@ class DownloadWatcher {
     }
 
     // Fallback to original logic
+    // CRITICAL FIX: Verify file still exists before fallback processing
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        logger.debug(
+          '[DOWNLOAD-WATCHER] File no longer exists for fallback, skipping:',
+          filePath,
+        );
+        return;
+      }
+      throw error;
+    }
+
     const folderCategories = folders.map((f) => ({
       name: f.name,
       description: f.description || '',
@@ -141,6 +206,20 @@ class DownloadWatcher {
     const destFolder = this.resolveDestinationFolder(result, folders);
     if (!destFolder) return;
     try {
+      // CRITICAL FIX: Verify file still exists before renaming in fallback
+      try {
+        await fs.access(filePath);
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          logger.debug(
+            '[DOWNLOAD-WATCHER] File deleted before fallback rename, skipping:',
+            filePath,
+          );
+          return;
+        }
+        throw error;
+      }
+
       await fs.mkdir(destFolder.path, { recursive: true });
       const baseName = path.basename(filePath);
       const extname = path.extname(baseName);

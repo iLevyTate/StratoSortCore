@@ -1,4 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { logger } from '../../shared/logger';
+
+// Set logger context for this component
+logger.setContext('UpdateIndicator');
 
 const UpdateIndicator = React.memo(function UpdateIndicator() {
   const [status, setStatus] = useState('idle');
@@ -11,7 +15,7 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
 
     // Check if API is available
     if (!window?.electronAPI?.events?.onAppUpdate) {
-      console.warn('[UpdateIndicator] Update API not available');
+      logger.warn('Update API not available');
       return;
     }
 
@@ -24,10 +28,7 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
 
           try {
             if (!payload || !payload.status) {
-              console.warn(
-                '[UpdateIndicator] Invalid update payload:',
-                payload,
-              );
+              logger.warn('Invalid update payload', { payload });
               return;
             }
 
@@ -42,18 +43,18 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
               setVisible(false);
             }
           } catch (error) {
-            console.error(
-              '[UpdateIndicator] Error handling update event:',
-              error,
-            );
+            logger.error('Error handling update event', {
+              error: error.message,
+              stack: error.stack,
+            });
           }
         },
       );
     } catch (error) {
-      console.error(
-        '[UpdateIndicator] Failed to set up update listener:',
-        error,
-      );
+      logger.error('Failed to set up update listener', {
+        error: error.message,
+        stack: error.stack,
+      });
     }
 
     // Cleanup function
@@ -68,7 +69,10 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
         try {
           unsubscribeRef.current();
         } catch (error) {
-          console.error('[UpdateIndicator] Error during cleanup:', error);
+          logger.error('Error during cleanup', {
+            error: error.message,
+            stack: error.stack,
+          });
         }
       }
       unsubscribeRef.current = null;
@@ -86,7 +90,7 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
         try {
           // Check if API is available
           if (!window?.electronAPI?.system?.applyUpdate) {
-            console.error('[UpdateIndicator] Apply update API not available');
+            logger.error('Apply update API not available');
             setStatus('error');
             return;
           }
@@ -95,19 +99,27 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
 
           // Add timeout for update operation
           const updatePromise = window.electronAPI.system.applyUpdate();
+          // Use constant for timeout (30 seconds)
+          const UPDATE_TIMEOUT_MS = 30000; // Could be moved to shared constants
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Update timeout')), 30000),
+            setTimeout(
+              () => reject(new Error('Update timeout')),
+              UPDATE_TIMEOUT_MS,
+            ),
           );
 
           const res = await Promise.race([updatePromise, timeoutPromise]);
 
           if (!res?.success) {
             setStatus('error');
-            console.error('[UpdateIndicator] Failed to apply update');
+            logger.error('Failed to apply update');
           }
         } catch (error) {
           setStatus('error');
-          console.error('[UpdateIndicator] Error applying update:', error);
+          logger.error('Error applying update', {
+            error: error.message,
+            stack: error.stack,
+          });
         }
       }}
       className="

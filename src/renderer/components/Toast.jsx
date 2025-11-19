@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
+import { logger } from '../../shared/logger';
+
+logger.setContext('Toast');
 
 const Toast = ({
   message,
@@ -184,10 +187,9 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
         localStorage.setItem('toastCollapsed', String(!prev));
       } catch (error) {
         // Fixed: Log localStorage errors instead of silently swallowing
-        console.warn(
-          '[TOAST] Failed to save toast collapsed state to localStorage:',
-          error,
-        );
+        logger.warn('Failed to save toast collapsed state to localStorage', {
+          error: error.message,
+        });
       }
       return !prev;
     });

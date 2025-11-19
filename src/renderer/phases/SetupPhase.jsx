@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { PHASES } from '../../shared/constants';
+import { logger } from '../../shared/logger';
 import { usePhase } from '../contexts/PhaseContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog } from '../hooks';
 import { Collapsible, Button, Input, Textarea } from '../components/ui';
 import { SmartFolderSkeleton } from '../components/LoadingSkeleton';
 import { SmartFolderItem } from '../components/setup';
+
+// Set logger context for this component
+logger.setContext('SetupPhase');
 
 function SetupPhase() {
   const { actions } = usePhase();
@@ -30,7 +34,10 @@ function SetupPhase() {
       try {
         await Promise.all([loadSmartFolders(), loadDefaultLocation()]);
       } catch (error) {
-        console.error('Failed to initialize setup:', error);
+        logger.error('Failed to initialize setup', {
+          error: error.message,
+          stack: error.stack,
+        });
         showError('Failed to load setup data');
       } finally {
         setIsLoading(false);
@@ -61,22 +68,22 @@ function SetupPhase() {
         }
       }
     } catch (error) {
-      console.error('Failed to load default location:', error);
+      logger.error('Failed to load default location', {
+        error: error.message,
+      });
     }
   };
 
   const loadSmartFolders = async () => {
     try {
-      // LOW PRIORITY FIX (LOW-2): Wrap debug logs in development check
+      // Debug logging in development mode
       if (process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line no-console
-        console.log('[SetupPhase] Loading smart folders...');
+        logger.debug('Loading smart folders');
       }
 
       // Check if electronAPI is available
       if (!window.electronAPI || !window.electronAPI.smartFolders) {
-        // eslint-disable-next-line no-console
-        console.error('[SetupPhase] electronAPI.smartFolders not available');
+        logger.error('electronAPI.smartFolders not available');
         showError(
           'Electron API not available. Please restart the application.',
         );
@@ -84,19 +91,16 @@ function SetupPhase() {
       }
 
       const folders = await window.electronAPI.smartFolders.get();
-      // LOW PRIORITY FIX (LOW-2): Wrap debug logs in development check
+      // Debug logging in development mode
       if (process.env.NODE_ENV === 'development') {
-        // eslint-disable-next-line no-console
-        console.log(
-          '[SetupPhase] Loaded smart folders:',
-          folders?.length || 0,
+        logger.debug('Loaded smart folders', {
+          count: folders?.length || 0,
           folders,
-        );
+        });
       }
 
       if (!Array.isArray(folders)) {
-        // eslint-disable-next-line no-console
-        console.warn('[SetupPhase] Received non-array response:', folders);
+        logger.warn('Received non-array response', { folders });
         setSmartFolders([]);
         return;
       }
@@ -104,23 +108,19 @@ function SetupPhase() {
       setSmartFolders(folders);
       actions.setPhaseData('smartFolders', folders);
 
-      // LOW PRIORITY FIX (LOW-2): Wrap debug logs in development check
+      // Debug logging in development mode
       if (process.env.NODE_ENV === 'development') {
         if (folders.length > 0) {
-          // eslint-disable-next-line no-console
-          console.log(
-            '[SetupPhase] Smart folders loaded successfully:',
-            folders.length,
-          );
+          logger.debug('Smart folders loaded successfully', {
+            count: folders.length,
+          });
         } else {
-          // eslint-disable-next-line no-console
-          console.log('[SetupPhase] No smart folders found (using defaults)');
+          logger.debug('No smart folders found (using defaults)');
         }
       }
     } catch (error) {
-      console.error('[SetupPhase] Failed to load smart folders:', error);
-      console.error('[SetupPhase] Error details:', {
-        message: error.message,
+      logger.error('Failed to load smart folders', {
+        error: error.message,
         stack: error.stack,
         electronAPI: !!window.electronAPI,
         smartFolders: !!window.electronAPI?.smartFolders,
@@ -249,7 +249,10 @@ function SetupPhase() {
         showError(`❌ Failed to add folder: ${result.error}`);
       }
     } catch (error) {
-      console.error('Failed to add smart folder:', error);
+      logger.error('Failed to add smart folder', {
+        error: error.message,
+        stack: error.stack,
+      });
       showError('Failed to add smart folder');
     } finally {
       setIsAddingFolder(false);
@@ -283,7 +286,10 @@ function SetupPhase() {
         showError(`❌ Failed to update folder: ${result.error}`);
       }
     } catch (error) {
-      console.error('Failed to update folder:', error);
+      logger.error('Failed to update folder', {
+        error: error.message,
+        stack: error.stack,
+      });
       showError('Failed to update folder');
     } finally {
       setIsSavingEdit(false);
@@ -321,7 +327,10 @@ function SetupPhase() {
         showError(`❌ Failed to delete folder: ${result.error}`);
       }
     } catch (error) {
-      console.error('Failed to delete folder:', error);
+      logger.error('Failed to delete folder', {
+        error: error.message,
+        stack: error.stack,
+      });
       showError('❌ Failed to delete folder');
     } finally {
       setIsDeletingFolder(null);
@@ -335,7 +344,9 @@ function SetupPhase() {
         setNewFolderPath(res.folder);
       }
     } catch (error) {
-      console.error('Failed to browse folder:', error);
+      logger.error('Failed to browse folder', {
+        error: error.message,
+      });
       showError('Failed to browse folder');
     }
   };
@@ -349,7 +360,10 @@ function SetupPhase() {
         showError(`Failed to open folder: ${result?.error || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Failed to open folder:', error);
+      logger.error('Failed to open folder', {
+        error: error.message,
+        folderPath,
+      });
       showError('Failed to open folder');
     }
   };
@@ -359,7 +373,10 @@ function SetupPhase() {
       await window.electronAPI.files.createFolder(folderPath);
       return { success: true };
     } catch (error) {
-      console.error('Failed to create folder:', error);
+      logger.error('Failed to create folder', {
+        error: error.message,
+        folderPath,
+      });
       return { success: false, error: error.message };
     }
   };

@@ -9,6 +9,9 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const { logger } = require('./logger');
+
+logger.setContext('AtomicFileOperations');
 
 /**
  * Transaction-based file operation manager
@@ -189,7 +192,15 @@ class AtomicFileOperations {
           const sourceStats = await fs.stat(source);
           const destStats = await fs.stat(finalDestination);
           if (sourceStats.size !== destStats.size) {
-            await fs.unlink(finalDestination).catch(() => {});
+            await fs.unlink(finalDestination).catch((unlinkError) => {
+              logger.warn(
+                'Failed to cleanup file after size mismatch in atomic operation',
+                {
+                  path: finalDestination,
+                  error: unlinkError.message,
+                },
+              );
+            });
             throw new Error('File copy verification failed - size mismatch');
           }
           await fs.unlink(source);

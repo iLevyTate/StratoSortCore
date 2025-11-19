@@ -1,5 +1,6 @@
 const { withErrorLogging } = require('./withErrorLogging');
 const { logger } = require('../../shared/logger');
+logger.setContext('IPC:Organize');
 
 function registerOrganizeIpc({
   ipcMain,

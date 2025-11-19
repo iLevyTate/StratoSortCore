@@ -21,6 +21,8 @@ const {
 } = require('./fallbackUtils');
 const { getInstance: getChromaDB } = require('../services/ChromaDBService');
 const FolderMatchingService = require('../services/FolderMatchingService');
+const { logger } = require('../../shared/logger');
+logger.setContext('OllamaImageAnalysis');
 let chromaDbSingleton = null;
 let folderMatcherSingleton = null;
 
@@ -583,7 +585,8 @@ async function analyzeImageFile(filePath, smartFolders = []) {
             // Validate summary is non-empty before upserting
             if (summary && summary.trim().length > 0) {
               // CRITICAL FIX: Ensure ChromaDB is initialized
-              const chromaDbService = require('../services/ChromaDBService').getInstance();
+              const chromaDbService =
+                require('../services/ChromaDBService').getInstance();
               if (chromaDbService) {
                 await chromaDbService.initialize();
               }
@@ -595,7 +598,10 @@ async function analyzeImageFile(filePath, smartFolders = []) {
               // CRITICAL FIX: Add delay to ensure write consistency before querying
               // ChromaDB has retry logic with delays of 50ms, 100ms, 200ms
               // We wait slightly longer than the max retry delay to ensure consistency
-              await new Promise((resolve) => setTimeout(resolve, 250));
+              const { TIMEOUTS } = require('../../shared/performanceConstants');
+              await new Promise((resolve) =>
+                setTimeout(resolve, TIMEOUTS.DELAY_SHORT),
+              );
 
               const candidates = await folderMatcher.matchFileToFolders(
                 fileId,
@@ -614,7 +620,19 @@ async function analyzeImageFile(filePath, smartFolders = []) {
                   top.name
                 ) {
                   if (top.score >= 0.55) {
+                    // CRITICAL FIX: Ensure category and destination folder match
+                    // Category should always be the folder name
                     analysis.category = top.name;
+                    // Suggested folder name for display
+                    analysis.suggestedFolder = top.name;
+                    // Destination folder path (or name if path missing) - should correspond to category
+                    analysis.destinationFolder = top.path || top.name;
+
+                    logger.debug('[IMAGE] Folder match applied', {
+                      category: top.name,
+                      destinationFolder: top.path || top.name,
+                      score: top.score,
+                    });
                   }
                   analysis.folderMatchCandidates = candidates;
                 }

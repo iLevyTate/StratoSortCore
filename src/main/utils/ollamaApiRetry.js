@@ -4,6 +4,7 @@
  */
 
 const { logger } = require('../../shared/logger');
+logger.setContext('OllamaApiRetry');
 const { withRetry } = require('../../shared/errorHandlingUtils');
 
 /**

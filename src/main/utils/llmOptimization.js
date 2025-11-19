@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { logger } = require('../../shared/logger');
+logger.setContext('LLMOptimization');
 
 /**
  * LLM Optimization Utilities

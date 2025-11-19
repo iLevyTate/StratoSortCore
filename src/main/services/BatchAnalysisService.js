@@ -1,5 +1,6 @@
 const { globalBatchProcessor } = require('../utils/llmOptimization');
 const { logger } = require('../../shared/logger');
+logger.setContext('BatchAnalysisService');
 const { analyzeDocumentFile } = require('../analysis/ollamaDocumentAnalysis');
 const { analyzeImageFile } = require('../analysis/ollamaImageAnalysis');
 const path = require('path');

@@ -3,6 +3,7 @@
  */
 
 const { logger } = require('../../shared/logger');
+logger.setContext('SafeAccess');
 
 /**
  * Safely access nested object properties

@@ -9,6 +9,7 @@ const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const crypto = require('crypto');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { logger } = require('../../shared/logger');
+logger.setContext('DocumentLLM');
 
 const AppConfig = {
   ai: {

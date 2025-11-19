@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../shared/logger');
+logger.setContext('FolderScanner');
 
 const DEFAULT_IGNORE_PATTERNS = [
   '.DS_Store',

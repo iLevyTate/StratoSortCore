@@ -6,6 +6,7 @@ const FolderMatchingService = require('./FolderMatchingService');
 const OrganizationSuggestionService = require('./OrganizationSuggestionService');
 const AutoOrganizeService = require('./AutoOrganizeService');
 const { logger } = require('../../shared/logger');
+logger.setContext('ServiceIntegration');
 
 class ServiceIntegration {
   constructor() {

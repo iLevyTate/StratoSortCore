@@ -5,7 +5,7 @@ const {
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_ARCHIVE_EXTENSIONS,
 } = require('../../shared/constants');
-const appLogger = require('../../shared/appLogger');
+const { logger } = require('../../shared/logger');
 
 // Enforce required dependency for AI-first operation
 const {
@@ -62,8 +62,8 @@ const modelVerifier = new ModelVerifier();
 const chromaDbService = getChromaDB();
 const folderMatcher = new FolderMatchingService(chromaDbService);
 
-// Create logger instance for this module
-const logger = appLogger.createLogger('DocumentAnalysis');
+// Set logger context for this module
+logger.setContext('DocumentAnalysis');
 
 /**
  * Analyzes a document file using AI or fallback methods
@@ -135,9 +135,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       if (fileAnalysisCache.has(signature)) {
         return fileAnalysisCache.get(signature);
       }
-      // Attach to logger for debuggability
-      const { logger } = require('../../shared/logger');
-      logger.debug('[DOC] Cache miss, analyzing', { path: filePath });
+      logger.debug('Cache miss, analyzing', { path: filePath });
     } catch {
       // Non-fatal if stats fail, proceed to analysis
     }
@@ -396,15 +394,19 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       try {
         // CRITICAL FIX: Ensure ChromaDB is initialized before folder matching
         if (!chromaDbService) {
-          logger.warn('[DocumentAnalysis] ChromaDB service not available, skipping folder matching');
+          logger.warn(
+            '[DocumentAnalysis] ChromaDB service not available, skipping folder matching',
+          );
         } else {
           // CRITICAL FIX: Initialize ChromaDB service first
           await chromaDbService.initialize();
-          
+
           // Fixed: Initialize FolderMatchingService on first use
           if (folderMatcher && !folderMatcher.embeddingCache?.initialized) {
             folderMatcher.initialize();
-            logger.debug('[DocumentAnalysis] FolderMatchingService initialized');
+            logger.debug(
+              '[DocumentAnalysis] FolderMatchingService initialized',
+            );
           }
 
           // Ensure folder embeddings exist
@@ -416,7 +418,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
               smartFolders.map((f) => folderMatcher.upsertFolderEmbedding(f)),
             );
           }
-          
+
           // Create a file id for embedding lookup using path hash-like identifier
           const fileId = `file:${filePath}`;
           const summaryForEmbedding = [
@@ -427,24 +429,32 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           ]
             .filter(Boolean)
             .join('\n');
-          
-          logger.debug('[DocumentAnalysis] Upserting file embedding for folder matching', {
-            fileId,
-            summaryLength: summaryForEmbedding.length,
-          });
-          
+
+          logger.debug(
+            '[DocumentAnalysis] Upserting file embedding for folder matching',
+            {
+              fileId,
+              summaryLength: summaryForEmbedding.length,
+            },
+          );
+
           await folderMatcher.upsertFileEmbedding(fileId, summaryForEmbedding, {
             path: filePath,
           });
-          
+
           // CRITICAL FIX: Add delay to ensure write consistency before querying
           // ChromaDB has retry logic with delays of 50ms, 100ms, 200ms
           // We wait slightly longer than the max retry delay to ensure consistency
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          
-          logger.debug('[DocumentAnalysis] Querying folder matches', { fileId });
+          const { TIMEOUTS } = require('../../shared/performanceConstants');
+          await new Promise((resolve) =>
+            setTimeout(resolve, TIMEOUTS.DELAY_SHORT),
+          );
+
+          logger.debug('[DocumentAnalysis] Querying folder matches', {
+            fileId,
+          });
           const candidates = await folderMatcher.matchFileToFolders(fileId, 5);
-          
+
           if (Array.isArray(candidates) && candidates.length > 0) {
             logger.debug('[DocumentAnalysis] Folder matching results', {
               fileId,
@@ -452,19 +462,47 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
               topScore: candidates[0]?.score,
               topFolder: candidates[0]?.name,
             });
-            
+
             const top = candidates[0];
             if (top && top.score >= 0.55) {
-              logger.info('[DocumentAnalysis] Refining category based on folder match', {
-                originalCategory: analysis.category,
-                newCategory: top.name,
-                score: top.score,
-              });
-              analysis.category = top.name; // refine to closest folder name
+              logger.info(
+                '[DocumentAnalysis] Refining category based on folder match',
+                {
+                  originalCategory: analysis.category,
+                  newCategory: top.name,
+                  score: top.score,
+                  folderPath: top.path,
+                },
+              );
+              // CRITICAL FIX: Ensure category and destination folder match
+              // Category should always be the folder name
+              analysis.category = top.name;
+              // Suggested folder name for display
+              analysis.suggestedFolder = top.name;
+              // Destination folder path (or name if path missing) - should correspond to category
+              analysis.destinationFolder = top.path || top.name;
+
+              // Validation: Log if there's a mismatch between category and destination folder name
+              if (
+                top.path &&
+                !top.path.includes(top.name) &&
+                top.path !== top.name
+              ) {
+                logger.debug(
+                  '[DocumentAnalysis] Destination folder path differs from category name',
+                  {
+                    category: top.name,
+                    destinationPath: top.path,
+                    note: 'This is expected if path contains full directory path',
+                  },
+                );
+              }
             }
             analysis.folderMatchCandidates = candidates;
           } else {
-            logger.debug('[DocumentAnalysis] No folder matches found', { fileId });
+            logger.debug('[DocumentAnalysis] No folder matches found', {
+              fileId,
+            });
           }
         }
       } catch (e) {

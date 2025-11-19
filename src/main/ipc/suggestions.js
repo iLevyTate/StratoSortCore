@@ -1,6 +1,7 @@
 const { withErrorLogging } = require('./withErrorLogging');
 const OrganizationSuggestionService = require('../services/OrganizationSuggestionService');
 const { logger } = require('../../shared/logger');
+logger.setContext('IPC:Suggestions');
 
 function registerSuggestionsIpc({
   ipcMain,

@@ -1,4 +1,5 @@
 const { logger } = require('../shared/logger');
+logger.setContext('LLMService');
 const { buildOllamaOptions } = require('./services/PerformanceService');
 const {
   getOllama: getOllamaClient,

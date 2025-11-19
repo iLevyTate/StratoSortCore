@@ -13,16 +13,17 @@ import {
   PHASE_METADATA,
   UI_WORKFLOW,
 } from '../../shared/constants';
+import { logger } from '../../shared/logger';
+logger.setContext('PhaseContext');
 
 function phaseReducer(state, action) {
   switch (action.type) {
     case 'ADVANCE_PHASE': {
       // MEDIUM PRIORITY FIX (MED-1): Validate payload structure
       if (!action.payload || typeof action.payload !== 'object') {
-        console.error(
-          '[PHASE] Invalid payload in ADVANCE_PHASE action:',
-          action.payload,
-        );
+        logger.error('Invalid payload in ADVANCE_PHASE action', {
+          payload: action.payload,
+        });
         return state;
       }
 
@@ -30,16 +31,15 @@ function phaseReducer(state, action) {
 
       // Validate targetPhase
       if (!targetPhase || typeof targetPhase !== 'string') {
-        console.error(
-          '[PHASE] Invalid or missing targetPhase in ADVANCE_PHASE action:',
+        logger.error('Invalid or missing targetPhase in ADVANCE_PHASE action', {
           targetPhase,
-        );
+        });
         return state;
       }
 
       // Validate data is an object
       if (data !== null && typeof data !== 'object') {
-        console.error('[PHASE] Invalid data in ADVANCE_PHASE action:', data);
+        logger.error('Invalid data in ADVANCE_PHASE action', { data });
         return state;
       }
 
@@ -48,9 +48,10 @@ function phaseReducer(state, action) {
         targetPhase !== state.currentPhase &&
         !allowedTransitions.includes(targetPhase)
       ) {
-        console.warn(
-          `[PHASE] Invalid transition from ${state.currentPhase} to ${targetPhase}`,
-        );
+        logger.warn('Invalid phase transition', {
+          from: state.currentPhase,
+          to: targetPhase,
+        });
         return state;
       }
       return {
@@ -62,18 +63,16 @@ function phaseReducer(state, action) {
     case 'SET_PHASE_DATA':
       // MEDIUM PRIORITY FIX (MED-1): Validate payload structure
       if (!action.payload || typeof action.payload !== 'object') {
-        console.error(
-          '[PHASE] Invalid payload in SET_PHASE_DATA action:',
-          action.payload,
-        );
+        logger.error('Invalid payload in SET_PHASE_DATA action', {
+          payload: action.payload,
+        });
         return state;
       }
 
       if (!action.payload.key || typeof action.payload.key !== 'string') {
-        console.error(
-          '[PHASE] Invalid or missing key in SET_PHASE_DATA action:',
-          action.payload.key,
-        );
+        logger.error('Invalid or missing key in SET_PHASE_DATA action', {
+          key: action.payload.key,
+        });
         return state;
       }
 
@@ -86,14 +85,10 @@ function phaseReducer(state, action) {
       };
     case 'SET_LOADING':
       // MEDIUM PRIORITY FIX (MED-1): Validate payload
-      if (
-        !action.payload ||
-        typeof action.payload.isLoading !== 'boolean'
-      ) {
-        console.error(
-          '[PHASE] Invalid isLoading in SET_LOADING action:',
-          action.payload,
-        );
+      if (!action.payload || typeof action.payload.isLoading !== 'boolean') {
+        logger.error('Invalid isLoading in SET_LOADING action', {
+          payload: action.payload,
+        });
         return state;
       }
       return { ...state, isLoading: action.payload.isLoading };
@@ -104,10 +99,9 @@ function phaseReducer(state, action) {
     case 'RESTORE_STATE':
       // MEDIUM PRIORITY FIX (MED-1): Validate payload
       if (!action.payload || typeof action.payload !== 'object') {
-        console.error(
-          '[PHASE] Invalid payload in RESTORE_STATE action:',
-          action.payload,
-        );
+        logger.error('Invalid payload in RESTORE_STATE action', {
+          payload: action.payload,
+        });
         return state;
       }
 
@@ -115,10 +109,9 @@ function phaseReducer(state, action) {
         !action.payload.currentPhase ||
         typeof action.payload.currentPhase !== 'string'
       ) {
-        console.error(
-          '[PHASE] Invalid currentPhase in RESTORE_STATE action:',
-          action.payload.currentPhase,
-        );
+        logger.error('Invalid currentPhase in RESTORE_STATE action', {
+          currentPhase: action.payload.currentPhase,
+        });
         return state;
       }
 
@@ -169,7 +162,10 @@ export function PhaseProvider({ children }) {
         }
       }
     } catch (error) {
-      console.error('Failed to load workflow state:', error);
+      logger.error('Failed to load workflow state', {
+        error: error.message,
+        stack: error.stack,
+      });
       // Fixed: Clear corrupt localStorage data to prevent reload loops
       try {
         localStorage.removeItem('stratosort_workflow_state');
@@ -237,9 +233,7 @@ export function PhaseProvider({ children }) {
       } catch (error) {
         // Fixed: Handle QuotaExceededError specifically
         if (error.name === 'QuotaExceededError') {
-          console.warn(
-            '[PHASE] LocalStorage quota exceeded, clearing old state',
-          );
+          logger.warn('LocalStorage quota exceeded, clearing old state');
           try {
             // Clear the old state and try saving minimal data
             localStorage.removeItem('stratosort_workflow_state');
@@ -255,13 +249,19 @@ export function PhaseProvider({ children }) {
               'stratosort_workflow_state',
               JSON.stringify(minimalState),
             );
-          } catch {
-            console.error(
-              '[PHASE] Cannot save even minimal state, continuing without persistence',
+          } catch (saveError) {
+            logger.error(
+              'Cannot save even minimal state, continuing without persistence',
+              {
+                error: saveError.message,
+              },
             );
           }
         } else {
-          console.error('Failed to save workflow state:', error);
+          logger.error('Failed to save workflow state', {
+            error: error.message,
+            stack: error.stack,
+          });
         }
       }
     };
@@ -292,10 +292,9 @@ export function PhaseProvider({ children }) {
       localStorage.removeItem('stratosort_workflow_state');
     } catch (error) {
       // Fixed: Log localStorage errors instead of silently swallowing
-      console.warn(
-        '[PHASE] Failed to clear workflow state from localStorage:',
-        error,
-      );
+      logger.warn('Failed to clear workflow state from localStorage', {
+        error: error.message,
+      });
     }
     dispatch({ type: 'RESET_WORKFLOW' });
   }, [dispatch]);

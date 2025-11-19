@@ -1,6 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { logger } from '../../shared/logger';
 import { usePhase } from '../contexts/PhaseContext';
+
+logger.setContext('PhaseErrorBoundary');
 
 /**
  * Phase-specific error boundary that provides graceful error handling
@@ -19,11 +22,11 @@ class PhaseErrorBoundaryClass extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error(
-      `[ERROR BOUNDARY] Error in ${this.props.phaseName} phase:`,
-      error,
-      errorInfo,
-    );
+    logger.error(`Error in ${this.props.phaseName} phase`, {
+      error: error.message,
+      stack: error.stack,
+      componentStack: errorInfo?.componentStack,
+    });
 
     this.setState({ errorInfo });
 
@@ -153,7 +156,7 @@ function PhaseErrorBoundary({ children, phaseName }) {
 
   const handleError = (error, errorInfo, phase) => {
     // Optional: Send error to analytics/monitoring service
-    console.error(`[PHASE ERROR] ${phase}:`, {
+    logger.error(`Phase error: ${phase}`, {
       error: error.message,
       stack: error.stack,
       componentStack: errorInfo.componentStack,

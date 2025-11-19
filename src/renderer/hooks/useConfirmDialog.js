@@ -1,5 +1,8 @@
 import React from 'react';
+import { logger } from '../../shared/logger';
 import { ConfirmModal } from '../components/Modal';
+
+logger.setContext('useConfirmDialog');
 
 export function useConfirmDialog() {
   const [confirmState, setConfirmState] = React.useState({
@@ -50,7 +53,10 @@ export function useConfirmDialog() {
         resolverRef.current(false);
       } catch (error) {
         // Fixed: Log resolver errors instead of silently swallowing
-        console.warn('[CONFIRM] Error calling resolver:', error);
+        logger.warn('Error calling resolver', {
+          error: error.message,
+          stack: error.stack,
+        });
       }
       resolverRef.current = null;
     }

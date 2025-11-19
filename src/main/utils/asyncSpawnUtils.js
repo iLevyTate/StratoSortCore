@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const { logger } = require('../../shared/logger');
+logger.setContext('AsyncSpawnUtils');
 
 /**
  * Async utilities to replace blocking spawnSync calls

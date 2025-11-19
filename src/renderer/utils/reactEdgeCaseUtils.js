@@ -4,6 +4,9 @@
  */
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { logger } from '../shared/logger';
+
+logger.setContext('ReactEdgeCaseUtils');
 
 /**
  * CATEGORY 1: STALE STATE PREVENTION
@@ -15,7 +18,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
  * @param {*} value - Value to track
  * @returns {Object} Ref containing latest value
  */
-export function useLatest(value) {
+function useLatest(value) {
   const ref = useRef(value);
 
   useEffect(() => {
@@ -31,7 +34,7 @@ export function useLatest(value) {
  * @param {Function} callback - Callback function
  * @returns {Function} Stable callback with latest values
  */
-export function useStableCallback(callback) {
+function useStableCallback(callback) {
   const callbackRef = useLatest(callback);
 
   return useCallback((...args) => {
@@ -45,7 +48,7 @@ export function useStableCallback(callback) {
  * @param {*} value - Value to track
  * @returns {*} Previous value
  */
-export function usePrevious(value) {
+function usePrevious(value) {
   const ref = useRef();
 
   useEffect(() => {
@@ -60,7 +63,7 @@ export function usePrevious(value) {
  * @param {*} initialValue - Initial state value
  * @returns {Array} [state, setState] - Safe state tuple
  */
-export function useSafeState(initialValue) {
+function useSafeState(initialValue) {
   const [state, setState] = useState(initialValue);
   const mountedRef = useRef(true);
 
@@ -90,11 +93,12 @@ export function useSafeState(initialValue) {
  * @param {Object} target - Event target (default: window)
  * @param {Object} options - Event listener options
  */
-export function useEventListener(eventName, handler, target = null, options = {}) {
+function useEventListener(eventName, handler, target = null, options = {}) {
   const savedHandler = useLatest(handler);
 
   useEffect(() => {
-    const eventTarget = target || (typeof window !== 'undefined' ? window : null);
+    const eventTarget =
+      target || (typeof window !== 'undefined' ? window : null);
 
     if (!eventTarget || !eventTarget.addEventListener) {
       return;
@@ -115,7 +119,7 @@ export function useEventListener(eventName, handler, target = null, options = {}
  * @param {Function} callback - Callback to run on resize
  * @param {number} delay - Debounce delay in ms (default: 200)
  */
-export function useWindowResize(callback, delay = 200) {
+function useWindowResize(callback, delay = 200) {
   const savedCallback = useLatest(callback);
   const timeoutRef = useRef(null);
 
@@ -151,7 +155,7 @@ export function useWindowResize(callback, delay = 200) {
  * @param {Object} ref - Ref to element
  * @param {Function} callback - Callback when clicked outside
  */
-export function useClickOutside(ref, callback) {
+function useClickOutside(ref, callback) {
   const savedCallback = useLatest(callback);
 
   useEffect(() => {
@@ -185,7 +189,7 @@ export function useClickOutside(ref, callback) {
  * @param {number} delay - Debounce delay in ms
  * @returns {*} Debounced value
  */
-export function useDebounce(value, delay) {
+function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
   useEffect(() => {
@@ -207,19 +211,22 @@ export function useDebounce(value, delay) {
  * @param {number} delay - Debounce delay in ms
  * @returns {Function} Debounced callback
  */
-export function useDebouncedCallback(callback, delay) {
+function useDebouncedCallback(callback, delay) {
   const savedCallback = useLatest(callback);
   const timeoutRef = useRef(null);
 
-  const debouncedCallback = useCallback((...args) => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+  const debouncedCallback = useCallback(
+    (...args) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
 
-    timeoutRef.current = setTimeout(() => {
-      savedCallback.current?.(...args);
-    }, delay);
-  }, [delay]);
+      timeoutRef.current = setTimeout(() => {
+        savedCallback.current?.(...args);
+      }, delay);
+    },
+    [delay],
+  );
 
   useEffect(() => {
     return () => {
@@ -238,20 +245,23 @@ export function useDebouncedCallback(callback, delay) {
  * @param {number} limit - Throttle limit in ms
  * @returns {Function} Throttled callback
  */
-export function useThrottledCallback(callback, limit) {
+function useThrottledCallback(callback, limit) {
   const savedCallback = useLatest(callback);
   const inThrottleRef = useRef(false);
 
-  const throttledCallback = useCallback((...args) => {
-    if (!inThrottleRef.current) {
-      savedCallback.current?.(...args);
-      inThrottleRef.current = true;
+  const throttledCallback = useCallback(
+    (...args) => {
+      if (!inThrottleRef.current) {
+        savedCallback.current?.(...args);
+        inThrottleRef.current = true;
 
-      setTimeout(() => {
-        inThrottleRef.current = false;
-      }, limit);
-    }
-  }, [limit]);
+        setTimeout(() => {
+          inThrottleRef.current = false;
+        }, limit);
+      }
+    },
+    [limit],
+  );
 
   return throttledCallback;
 }
@@ -266,7 +276,7 @@ export function useThrottledCallback(callback, limit) {
  * @param {Array} deps - Dependencies array
  * @returns {Object} { data, loading, error, refetch }
  */
-export function useAsync(asyncFn, deps = []) {
+function useAsync(asyncFn, deps = []) {
   const [state, setState] = useSafeState({
     data: null,
     loading: true,
@@ -298,7 +308,7 @@ export function useAsync(asyncFn, deps = []) {
  * Hook for cancellable async operation
  * @returns {Object} { makeCancellable, cancelAll }
  */
-export function useCancellablePromises() {
+function useCancellablePromises() {
   const pendingPromises = useRef(new Set());
 
   useEffect(() => {
@@ -359,12 +369,16 @@ export function useCancellablePromises() {
  * Useful for debugging and preventing memory leaks
  * @param {string} componentName - Component name for logging
  */
-export function useMountTracking(componentName) {
+function useMountTracking(componentName) {
   useEffect(() => {
-    console.debug(`[Mount] ${componentName}`);
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug('Component mounted', { componentName });
+    }
 
     return () => {
-      console.debug(`[Unmount] ${componentName}`);
+      if (process.env.NODE_ENV === 'development') {
+        logger.debug('Component unmounted', { componentName });
+      }
     };
   }, [componentName]);
 }
@@ -374,7 +388,7 @@ export function useMountTracking(componentName) {
  * Use sparingly - usually indicates a design issue
  * @returns {Function} Function to force update
  */
-export function useForceUpdate() {
+function useForceUpdate() {
   const [, setValue] = useState(0);
   return useCallback(() => setValue((value) => value + 1), []);
 }
@@ -384,7 +398,7 @@ export function useForceUpdate() {
  * @param {Function} callback - Callback to run at interval
  * @param {number} delay - Interval delay in ms (null to pause)
  */
-export function useInterval(callback, delay) {
+function useInterval(callback, delay) {
   const savedCallback = useLatest(callback);
 
   useEffect(() => {
@@ -405,7 +419,7 @@ export function useInterval(callback, delay) {
  * @param {Function} callback - Callback to run after timeout
  * @param {number} delay - Timeout delay in ms (null to cancel)
  */
-export function useTimeout(callback, delay) {
+function useTimeout(callback, delay) {
   const savedCallback = useLatest(callback);
 
   useEffect(() => {
@@ -432,7 +446,7 @@ export function useTimeout(callback, delay) {
  * @param {*} fallback - Fallback value if validation fails
  * @returns {*} Validated value or fallback
  */
-export function useValidatedProp(prop, validator, fallback) {
+function useValidatedProp(prop, validator, fallback) {
   return useMemo(() => {
     if (typeof validator !== 'function') {
       return prop !== undefined ? prop : fallback;
@@ -452,7 +466,7 @@ export function useValidatedProp(prop, validator, fallback) {
  * @param {Array} fallback - Fallback array
  * @returns {Array} Valid non-empty array
  */
-export function useNonEmptyArray(arr, fallback = []) {
+function useNonEmptyArray(arr, fallback = []) {
   return useMemo(() => {
     if (Array.isArray(arr) && arr.length > 0) {
       return arr;
@@ -467,7 +481,7 @@ export function useNonEmptyArray(arr, fallback = []) {
  * @param {string} fallback - Fallback string
  * @returns {string} Valid non-empty string
  */
-export function useNonEmptyString(str, fallback = '') {
+function useNonEmptyString(str, fallback = '') {
   return useMemo(() => {
     if (typeof str === 'string' && str.trim().length > 0) {
       return str;
@@ -484,7 +498,7 @@ export function useNonEmptyString(str, fallback = '') {
  * Hook to detect if component is mounted
  * @returns {Object} Ref with current mount status
  */
-export function useIsMounted() {
+function useIsMounted() {
   const isMounted = useRef(false);
 
   useEffect(() => {
@@ -502,13 +516,21 @@ export function useIsMounted() {
  * Hook for window focus detection
  * @returns {boolean} True if window is focused
  */
-export function useWindowFocus() {
+function useWindowFocus() {
   const [focused, setFocused] = useState(
-    typeof document !== 'undefined' ? document.hasFocus() : true
+    typeof document !== 'undefined' ? document.hasFocus() : true,
   );
 
-  useEventListener('focus', () => setFocused(true), typeof window !== 'undefined' ? window : null);
-  useEventListener('blur', () => setFocused(false), typeof window !== 'undefined' ? window : null);
+  useEventListener(
+    'focus',
+    () => setFocused(true),
+    typeof window !== 'undefined' ? window : null,
+  );
+  useEventListener(
+    'blur',
+    () => setFocused(false),
+    typeof window !== 'undefined' ? window : null,
+  );
 
   return focused;
 }
@@ -517,13 +539,46 @@ export function useWindowFocus() {
  * Hook for online/offline detection
  * @returns {boolean} True if online
  */
-export function useOnlineStatus() {
+function useOnlineStatus() {
   const [online, setOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
 
-  useEventListener('online', () => setOnline(true), typeof window !== 'undefined' ? window : null);
-  useEventListener('offline', () => setOnline(false), typeof window !== 'undefined' ? window : null);
+  useEventListener(
+    'online',
+    () => setOnline(true),
+    typeof window !== 'undefined' ? window : null,
+  );
+  useEventListener(
+    'offline',
+    () => setOnline(false),
+    typeof window !== 'undefined' ? window : null,
+  );
 
   return online;
 }
+
+module.exports = {
+  useLatest,
+  useStableCallback,
+  usePrevious,
+  useSafeState,
+  useEventListener,
+  useWindowResize,
+  useClickOutside,
+  useDebounce,
+  useDebouncedCallback,
+  useThrottledCallback,
+  useAsync,
+  useCancellablePromises,
+  useMountTracking,
+  useForceUpdate,
+  useInterval,
+  useTimeout,
+  useValidatedProp,
+  useNonEmptyArray,
+  useNonEmptyString,
+  useIsMounted,
+  useWindowFocus,
+  useOnlineStatus,
+};

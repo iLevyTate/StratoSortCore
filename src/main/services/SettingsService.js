@@ -10,6 +10,7 @@ const {
 } = require('../../shared/settingsValidation');
 const { DEFAULT_SETTINGS } = require('../../shared/defaultSettings');
 const { logger } = require('../../shared/logger');
+logger.setContext('SettingsService');
 
 let singletonInstance = null;
 

@@ -9,6 +9,7 @@ const AdmZip = require('adm-zip');
 
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
+logger.setContext('DocumentExtractors');
 
 // Memory management constants
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB max file size
@@ -144,17 +145,19 @@ async function extractTextFromXlsx(filePath) {
   let workbook = null;
   try {
     workbook = await XLSX.fromFileAsync(filePath);
-    
+
     // CRITICAL FIX: Validate workbook structure
     if (!workbook || typeof workbook.sheets !== 'function') {
-      throw new Error('Invalid workbook structure: sheets() method not available');
+      throw new Error(
+        'Invalid workbook structure: sheets() method not available',
+      );
     }
-    
+
     const sheets = workbook.sheets();
     if (!Array.isArray(sheets) || sheets.length === 0) {
       throw new Error('No sheets found in XLSX file');
     }
-    
+
     let allText = '';
     let totalRows = 0;
 
@@ -178,10 +181,13 @@ async function extractTextFromXlsx(filePath) {
 
         // CRITICAL FIX: Validate that value() method exists and returns valid data
         if (typeof usedRange.value !== 'function') {
-          logger.warn('[XLSX] usedRange missing value() method, trying alternative extraction', {
-            sheetName: sheet?.name() || 'unknown',
-          });
-          
+          logger.warn(
+            '[XLSX] usedRange missing value() method, trying alternative extraction',
+            {
+              sheetName: sheet?.name() || 'unknown',
+            },
+          );
+
           // Fallback: Try to extract cell values manually
           try {
             const startCell = usedRange.startCell();
@@ -191,8 +197,12 @@ async function extractTextFromXlsx(filePath) {
               const endRow = endCell.rowNumber();
               const startCol = startCell.columnNumber();
               const endCol = endCell.columnNumber();
-              
-              for (let row = startRow; row <= endRow && totalRows < MAX_XLSX_ROWS; row++) {
+
+              for (
+                let row = startRow;
+                row <= endRow && totalRows < MAX_XLSX_ROWS;
+                row++
+              ) {
                 const rowData = [];
                 for (let col = startCol; col <= endCol; col++) {
                   try {
@@ -286,7 +296,9 @@ async function extractTextFromXlsx(filePath) {
     if (!allText) {
       // CRITICAL FIX: Try fallback extraction using officeParser before giving up
       try {
-        logger.info('[XLSX] Primary extraction failed, trying officeParser fallback');
+        logger.info(
+          '[XLSX] Primary extraction failed, trying officeParser fallback',
+        );
         const fallbackResult = await officeParser.parseOfficeAsync(filePath);
         const fallbackText =
           typeof fallbackResult === 'string'
@@ -317,7 +329,8 @@ async function extractTextFromXlsx(filePath) {
     });
     throw new FileProcessingError('XLSX_EXTRACTION_FAILURE', filePath, {
       originalError: errorMessage,
-      suggestion: 'XLSX file may be corrupted, password-protected, or in an unsupported format',
+      suggestion:
+        'XLSX file may be corrupted, password-protected, or in an unsupported format',
     });
   } finally {
     // Explicit cleanup
@@ -332,7 +345,7 @@ async function extractTextFromPptx(filePath) {
   try {
     // CRITICAL FIX: Add better error handling for officeParser
     const result = await officeParser.parseOfficeAsync(filePath);
-    
+
     // CRITICAL FIX: Validate result structure
     if (!result) {
       throw new Error('officeParser returned null or undefined');
@@ -345,11 +358,12 @@ async function extractTextFromPptx(filePath) {
     } else if (result && typeof result === 'object') {
       // Try common property names
       text = result.text || result.content || result.body || '';
-      
+
       // If still empty, try to stringify the object (might contain structured data)
       if (!text && Object.keys(result).length > 0) {
         try {
           text = JSON.stringify(result)
+            // eslint-disable-next-line no-useless-escape
             .replace(/[{}":,\[\]]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
@@ -364,7 +378,9 @@ async function extractTextFromPptx(filePath) {
 
     if (!text || text.trim().length === 0) {
       // CRITICAL FIX: Try alternative extraction method before giving up
-      logger.warn('[PPTX] Primary extraction returned no text, trying ZIP-based extraction');
+      logger.warn(
+        '[PPTX] Primary extraction returned no text, trying ZIP-based extraction',
+      );
       try {
         const zip = new AdmZip(filePath);
         const entries = zip.getEntries();
@@ -381,7 +397,7 @@ async function extractTextFromPptx(filePath) {
               if (slideText && slideText.trim()) {
                 extractedText += slideText + '\n';
               }
-              
+
               // Limit processing to prevent memory issues
               if (extractedText.length > MAX_TEXT_LENGTH) {
                 break;
@@ -418,11 +434,12 @@ async function extractTextFromPptx(filePath) {
       error: errorMessage,
       errorStack: error.stack,
     });
-    
+
     // Re-throw as FileProcessingError for consistent error handling
     throw new FileProcessingError('PPTX_EXTRACTION_FAILURE', filePath, {
       originalError: errorMessage,
-      suggestion: 'PPTX file may be corrupted, password-protected, or in an unsupported format',
+      suggestion:
+        'PPTX file may be corrupted, password-protected, or in an unsupported format',
     });
   }
 }
@@ -437,6 +454,7 @@ function extractPlainTextFromRtf(rtf) {
       }
     });
     const noGroups = decoded.replace(/[{}]/g, '');
+    // Fixed: RTF control words start with backslash, not bracket
     const noControls = noGroups.replace(/\\[a-zA-Z]+-?\d* ?/g, '');
     return noControls.replace(/\s+/g, ' ').trim();
   } catch {

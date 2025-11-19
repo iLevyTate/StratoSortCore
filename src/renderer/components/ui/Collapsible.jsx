@@ -7,6 +7,9 @@ import React, {
   memo,
 } from 'react';
 import PropTypes from 'prop-types';
+import { logger } from '../../../shared/logger';
+
+logger.setContext('Collapsible');
 
 const Collapsible = memo(function Collapsible({
   title,
@@ -25,8 +28,9 @@ const Collapsible = memo(function Collapsible({
         const saved = window.localStorage.getItem(storageKey);
         if (saved === 'true' || saved === 'false') return saved === 'true';
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to load collapsible state', error);
+        logger.error('Failed to load collapsible state', {
+          error: error.message,
+        });
       }
     }
     return Boolean(defaultOpen);
@@ -41,8 +45,9 @@ const Collapsible = memo(function Collapsible({
         try {
           window.localStorage.setItem(storageKey, String(next));
         } catch (error) {
-          // eslint-disable-next-line no-console
-          console.error('Failed to persist collapsible state', error);
+          logger.error('Failed to persist collapsible state', {
+            error: error.message,
+          });
         }
       }
       return next;
@@ -61,8 +66,9 @@ const Collapsible = memo(function Collapsible({
           setIsOpen(saved === 'true');
         }
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to sync collapsible state', error);
+        logger.error('Failed to sync collapsible state', {
+          error: error.message,
+        });
       }
     };
     window.addEventListener('storage', onStorage);

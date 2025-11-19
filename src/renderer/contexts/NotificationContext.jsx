@@ -6,7 +6,10 @@ import React, {
   useMemo,
 } from 'react';
 import PropTypes from 'prop-types';
+import { logger } from '../shared/logger';
 import { ToastContainer, useToast } from '../components/Toast';
+
+logger.setContext('NotificationContext');
 
 const NotificationContext = createContext(null);
 
@@ -49,7 +52,10 @@ export function NotificationProvider({ children }) {
         else if (type === 'warning') showWarning(message, 4000);
         else showInfo(message, 3000);
       } catch (e) {
-        console.error('[Renderer] Failed to display app:error', e);
+        logger.error('Failed to display app:error', {
+          error: e.message,
+          stack: e.stack,
+        });
       }
     });
 

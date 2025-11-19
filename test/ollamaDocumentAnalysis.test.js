@@ -3,7 +3,6 @@
  * Tests fallback behavior when Ollama is unavailable
  */
 
-const fs = require('fs').promises;
 const {
   analyzeDocumentFile,
 } = require('../src/main/analysis/ollamaDocumentAnalysis');
@@ -96,7 +95,10 @@ jest.mock('../src/main/utils/ollamaApiRetry', () => ({
 }));
 
 jest.mock('../src/main/analysis/utils', () => ({
-  normalizeAnalysisResult: jest.fn((data, defaults) => ({ ...defaults, ...data })),
+  normalizeAnalysisResult: jest.fn((data, defaults) => ({
+    ...defaults,
+    ...data,
+  })),
 }));
 
 jest.mock('../src/main/analysis/documentLlm', () => ({

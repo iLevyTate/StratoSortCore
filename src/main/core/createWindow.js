@@ -1,6 +1,7 @@
 const { BrowserWindow, shell, app } = require('electron');
 const path = require('path');
 const { logger } = require('../../shared/logger');
+logger.setContext('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
 
 const isDev = process.env.NODE_ENV === 'development';

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { logger } = require('../../shared/logger');
+logger.setContext('EmbeddingCache');
 
 /**
  * High-performance LRU cache for embedding vectors with TTL support

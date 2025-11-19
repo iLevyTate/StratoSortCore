@@ -3,6 +3,7 @@
  */
 
 const { logger } = require('../../shared/logger');
+logger.setContext('PromiseUtils');
 
 /**
  * Execute a promise with a timeout
@@ -181,7 +182,8 @@ async function batchProcess(items, fn, batchSize = 5) {
 
     // Add small delay between batches to prevent overwhelming the system
     if (i + batchSize < items.length) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const { TIMEOUTS } = require('../../shared/performanceConstants');
+      await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_BATCH));
     }
   }
 

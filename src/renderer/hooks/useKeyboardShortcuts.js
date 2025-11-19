@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { logger } from '../../shared/logger';
 import { usePhase } from '../contexts/PhaseContext';
 import { useNotification } from '../contexts/NotificationContext';
 import {
@@ -6,6 +7,8 @@ import {
   PHASE_TRANSITIONS,
   PHASE_METADATA,
 } from '../../shared/constants';
+
+logger.setContext('useKeyboardShortcuts');
 
 export function useKeyboardShortcuts() {
   const { actions, currentPhase, showSettings } = usePhase();
@@ -23,7 +26,10 @@ export function useKeyboardShortcuts() {
         try {
           window.electronAPI?.undoRedo?.undo?.();
         } catch (error) {
-          console.error('Undo shortcut failed:', error);
+          logger.error('Undo shortcut failed', {
+            error: error.message,
+            stack: error.stack,
+          });
         }
       }
 
@@ -37,7 +43,10 @@ export function useKeyboardShortcuts() {
         try {
           window.electronAPI?.undoRedo?.redo?.();
         } catch (error) {
-          console.error('Redo shortcut failed:', error);
+          logger.error('Redo shortcut failed', {
+            error: error.message,
+            stack: error.stack,
+          });
         }
       }
 

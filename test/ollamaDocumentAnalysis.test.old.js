@@ -30,7 +30,9 @@ jest.mock('../src/main/services/FolderMatchingService', () => {
 });
 
 // Now import the module AFTER mocks are set up
-const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
+const {
+  analyzeDocumentFile,
+} = require('../src/main/analysis/ollamaDocumentAnalysis');
 
 describe('ollamaDocumentAnalysis', () => {
   let mockModelVerifier;
@@ -59,7 +61,9 @@ describe('ollamaDocumentAnalysis', () => {
       .mockReturnValue(['document', 'file']);
     fallbackUtils.safeSuggestedName = jest
       .fn()
-      .mockImplementation((name, ext) => name ? name.replace(ext, '') : 'file');
+      .mockImplementation((name, ext) =>
+        name ? name.replace(ext, '') : 'file',
+      );
 
     // Setup utils
     const utils = require('../src/main/analysis/utils');
@@ -131,7 +135,7 @@ describe('ollamaDocumentAnalysis', () => {
         confidence: 70,
       });
 
-      const result = await analyzeDocumentFile('/test/scanned.pdf', []);
+      await analyzeDocumentFile('/test/scanned.pdf', []);
 
       // With improved code, when extraction returns empty, OCR is attempted
       expect(documentExtractors.extractTextFromPdf).toHaveBeenCalled();
@@ -258,9 +262,11 @@ describe('ollamaDocumentAnalysis', () => {
         mtimeMs: 1234567890,
       });
 
-      jest.spyOn(fs, 'readFile').mockResolvedValue(
-        'Meeting notes from project discussion on 2024-01-15',
-      );
+      jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValue(
+          'Meeting notes from project discussion on 2024-01-15',
+        );
 
       documentLlm.analyzeTextWithOllama.mockResolvedValue({
         project: 'Project Meeting',
@@ -367,7 +373,7 @@ describe('ollamaDocumentAnalysis', () => {
 
       mockFolderMatcher.matchFileToFolders.mockResolvedValue([
         { name: 'Projects', score: 0.85, folderId: 'folder-1' },
-        { name: 'Documents', score: 0.60, folderId: 'folder-2' },
+        { name: 'Documents', score: 0.6, folderId: 'folder-2' },
       ]);
 
       const smartFolders = [
@@ -391,7 +397,9 @@ describe('ollamaDocumentAnalysis', () => {
         mtimeMs: 1234567890,
       });
 
-      documentExtractors.extractTextFromPdf.mockResolvedValue('Document content');
+      documentExtractors.extractTextFromPdf.mockResolvedValue(
+        'Document content',
+      );
 
       documentLlm.analyzeTextWithOllama.mockResolvedValue({
         project: 'Test',

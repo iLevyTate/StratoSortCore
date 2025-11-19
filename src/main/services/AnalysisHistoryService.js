@@ -3,6 +3,7 @@ const path = require('path');
 const { app } = require('electron');
 const crypto = require('crypto');
 const { logger } = require('../../shared/logger');
+logger.setContext('AnalysisHistoryService');
 
 class AnalysisHistoryService {
   constructor() {

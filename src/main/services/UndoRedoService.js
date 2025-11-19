@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
+logger.setContext('UndoRedoService');
 
 class UndoRedoService {
   constructor(options = {}) {
@@ -509,7 +510,12 @@ class UndoRedoService {
       ]);
 
       if (sourceStats.size !== backupStats.size) {
-        await fs.unlink(backupPath).catch(() => {});
+        await fs.unlink(backupPath).catch((unlinkError) => {
+          logger.warn('Failed to cleanup backup file after size mismatch', {
+            backupPath,
+            error: unlinkError.message,
+          });
+        });
         throw new Error(
           `Backup verification failed - size mismatch (source: ${sourceStats.size}, backup: ${backupStats.size})`,
         );
@@ -528,7 +534,15 @@ class UndoRedoService {
       return backupPath;
     } catch (error) {
       // Clean up failed backup attempt
-      await fs.unlink(backupPath).catch(() => {});
+      await fs.unlink(backupPath).catch((unlinkError) => {
+        logger.warn(
+          'Failed to cleanup backup file after backup creation error',
+          {
+            backupPath,
+            error: unlinkError.message,
+          },
+        );
+      });
       throw new Error(`Failed to create backup: ${error.message}`);
     }
   }

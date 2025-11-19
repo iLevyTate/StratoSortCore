@@ -1,4 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { logger } from '../../shared/logger';
+
+logger.setContext('SystemMonitoring');
 
 const SystemMonitoring = React.memo(function SystemMonitoring() {
   const [systemMetrics, setSystemMetrics] = useState({
@@ -36,7 +39,9 @@ const SystemMonitoring = React.memo(function SystemMonitoring() {
         setError(null);
       }
     } catch (error) {
-      console.warn('Failed to fetch system metrics:', error);
+      logger.warn('Failed to fetch system metrics', {
+        error: error.message,
+      });
       if (isMountedRef.current) {
         setError(error.message);
       }
@@ -64,7 +69,10 @@ const SystemMonitoring = React.memo(function SystemMonitoring() {
           fetchMetrics();
         }, 5000);
       } catch (error) {
-        console.error('Failed to start system monitoring:', error);
+        logger.error('Failed to start system monitoring', {
+          error: error.message,
+          stack: error.stack,
+        });
         if (isMountedRef.current) {
           setIsMonitoring(false);
           setError(error.message);
@@ -73,7 +81,9 @@ const SystemMonitoring = React.memo(function SystemMonitoring() {
     };
 
     // Add slight delay to ensure API is ready
-    timeoutId = setTimeout(startMonitoring, 100);
+    // Use constant for monitoring start delay (100ms)
+    const MONITORING_START_DELAY_MS = 100; // Could be moved to shared constants
+    timeoutId = setTimeout(startMonitoring, MONITORING_START_DELAY_MS);
 
     // Cleanup function
     return () => {

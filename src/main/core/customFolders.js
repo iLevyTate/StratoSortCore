@@ -2,6 +2,7 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
+logger.setContext('CustomFolders');
 
 function getCustomFoldersPath() {
   const userDataPath = app.getPath('userData');

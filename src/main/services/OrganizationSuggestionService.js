@@ -89,12 +89,16 @@ class OrganizationSuggestionService {
     this.saveThrottleMs = 5000; // Throttle saves to max once per 5 seconds
 
     // Load persisted patterns on initialization
-    this.loadUserPatterns().catch((error) => {
-      logger.warn(
-        '[OrganizationSuggestionService] Failed to load user patterns:',
-        error,
-      );
-    });
+    (async () => {
+      try {
+        await this.loadUserPatterns();
+      } catch (error) {
+        logger.warn('Failed to load user patterns', {
+          error: error.message,
+          stack: error.stack,
+        });
+      }
+    })();
   }
 
   /**
@@ -1760,17 +1764,24 @@ Return JSON: {
         // HIGH PRIORITY FIX #2: Check iteration limit
         iterationCount++;
         if (iterationCount > MAX_ITERATIONS) {
-          console.warn(
-            `[OrganizationSuggestionService] findOverlappingFolders exceeded ${MAX_ITERATIONS} iterations, stopping early. ` +
-              `Processed ${i} of ${smartFolders.length} folders.`,
+          logger.warn(
+            'findOverlappingFolders exceeded max iterations, stopping early',
+            {
+              maxIterations: MAX_ITERATIONS,
+              processed: i,
+              totalFolders: smartFolders.length,
+            },
           );
           return overlaps;
         }
 
         // Also check if we've found too many overlaps
         if (overlaps.length >= MAX_OVERLAPS) {
-          console.warn(
-            `[OrganizationSuggestionService] Found ${MAX_OVERLAPS} overlaps, stopping early to prevent memory issues.`,
+          logger.warn(
+            'Found max overlaps, stopping early to prevent memory issues',
+            {
+              maxOverlaps: MAX_OVERLAPS,
+            },
           );
           return overlaps;
         }

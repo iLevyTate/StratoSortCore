@@ -6,6 +6,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../../shared/logger');
+logger.setContext('AsyncFileOps');
 
 /**
  * Check if a file or directory exists asynchronously

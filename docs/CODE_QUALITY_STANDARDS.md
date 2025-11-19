@@ -114,6 +114,8 @@ const folderMatchScore = calculateSimilarity();
 
 ## Error Handling Standards
 
+**See `docs/ERROR_HANDLING_GUIDE.md` for comprehensive error handling patterns and decision tree.**
+
 ### Use Centralized Error Utilities
 
 ```javascript
@@ -517,6 +519,24 @@ function determineAction(type, status, user) {
 ```
 
 ## Import Organization
+
+### Import Path Standards
+
+**Standard:** Use consistent relative paths based on file location.
+
+**Main Process (CommonJS):**
+
+- From `src/main/`: `require('../shared/logger')`
+- From `src/main/services/`, `src/main/utils/`, etc.: `require('../../shared/logger')`
+
+**Renderer Process (ES6):**
+
+- From `src/renderer/`: `import { logger } from '../shared/logger'`
+- From `src/renderer/components/`, `src/renderer/phases/`: `import { logger } from '../../shared/logger'`
+- From `src/renderer/utils/`, `src/renderer/contexts/`: `import { logger } from '../shared/logger'`
+- From `src/renderer/components/ui/`, `src/renderer/components/organize/`: `import { logger } from '../../../shared/logger'`
+
+See `docs/IMPORT_PATH_STANDARDS.md` for complete documentation.
 
 ### Import Order
 

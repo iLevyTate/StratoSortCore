@@ -1,6 +1,7 @@
 const { getOllama, getOllamaEmbeddingModel } = require('../ollamaUtils');
 const crypto = require('crypto');
 const { logger } = require('../../shared/logger');
+logger.setContext('FolderMatchingService');
 const EmbeddingCache = require('./EmbeddingCache');
 
 class FolderMatchingService {
@@ -149,15 +150,12 @@ class FolderMatchingService {
         vectorLength: vector.length,
       });
     } catch (error) {
-      logger.error(
-        '[FolderMatchingService] Failed to upsert file embedding:',
-        {
-          fileId,
-          filePath: fileMeta.path,
-          error: error.message,
-          errorStack: error.stack,
-        },
-      );
+      logger.error('[FolderMatchingService] Failed to upsert file embedding:', {
+        fileId,
+        filePath: fileMeta.path,
+        error: error.message,
+        errorStack: error.stack,
+      });
       throw error;
     }
   }
@@ -196,15 +194,12 @@ class FolderMatchingService {
 
       return results;
     } catch (error) {
-      logger.error(
-        '[FolderMatchingService] Failed to match file to folders:',
-        {
-          fileId,
-          topK,
-          error: error.message,
-          errorStack: error.stack,
-        },
-      );
+      logger.error('[FolderMatchingService] Failed to match file to folders:', {
+        fileId,
+        topK,
+        error: error.message,
+        errorStack: error.stack,
+      });
       return [];
     }
   }

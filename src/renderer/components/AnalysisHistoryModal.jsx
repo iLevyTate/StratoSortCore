@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
 import Button from './ui/Button';
 import Input from './ui/Input';
+
+logger.setContext('AnalysisHistoryModal');
 
 function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   const { addNotification } = useNotification();
@@ -209,7 +212,10 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           searchHistory().catch((error) => {
-                            console.error('Search failed:', error);
+                            logger.error('Search failed', {
+                              error: error.message,
+                              stack: error.stack,
+                            });
                           });
                         }
                       }}

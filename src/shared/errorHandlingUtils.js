@@ -5,6 +5,8 @@
 
 const { logger } = require('./logger');
 
+logger.setContext('ErrorHandlingUtils');
+
 /**
  * Standard error response structure
  * @typedef {Object} ErrorResponse

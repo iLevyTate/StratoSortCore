@@ -1,4 +1,7 @@
 const path = require('path');
+const { logger } = require('../../shared/logger');
+
+logger.setContext('FileAnalysisService');
 
 class FileAnalysisService {
   constructor(ollamaService = null) {
@@ -36,18 +39,16 @@ class FileAnalysisService {
   }
 
   async analyzeDocument(filePath, smartFolders = []) {
-    void smartFolders;
-    const { logger } = require('../../shared/logger');
-    logger.info(`[DOC] Analyzing document file`, { path: filePath });
+    const {
+      analyzeDocumentFile,
+    } = require('../analysis/ollamaDocumentAnalysis');
+    return await analyzeDocumentFile(filePath, smartFolders);
   }
 
-  async analyzeImage(filePath) {
-    const { logger } = require('../../shared/logger');
-    logger.info('[IMAGE] analyzeImage placeholder called', { path: filePath });
-    // ... logic from ollamaImageAnalysis.js ...
+  async analyzeImage(filePath, smartFolders = []) {
+    const { analyzeImageFile } = require('../analysis/ollamaImageAnalysis');
+    return await analyzeImageFile(filePath, smartFolders);
   }
-
-  // ... (private helper methods)
 }
 
 module.exports = { FileAnalysisService };

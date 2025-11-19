@@ -35,6 +35,12 @@ const TIMEOUTS = {
   SERVICE_STARTUP: 30000,
   DATABASE_INIT: 15000,
   MODEL_LOAD: 60000,
+
+  // Short delays for rate limiting/throttling
+  DELAY_SHORT: 250, // 250ms - for rate limiting operations
+  DELAY_MEDIUM: 500, // 500ms - for medium delays
+  DELAY_BATCH: 100, // 100ms - for batch processing delays
+  DELAY_NOTIFICATION: 1500, // 1.5 seconds - for notification display
 };
 
 /**

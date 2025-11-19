@@ -1,8 +1,12 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { logger } from './shared/logger';
 import App from './App.js';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
 import './tailwind.css';
+
+// Set logger context for renderer entry point
+logger.setContext('Renderer');
 
 // Enable smooth scrolling globally
 if (typeof window !== 'undefined') {
@@ -52,10 +56,9 @@ if (typeof window !== 'undefined') {
 // Wait for DOM to be ready before initializing React
 function initializeApp() {
   try {
-    // LOW PRIORITY FIX (LOW-2): Wrap initialization logs in development check
+    // Debug logging in development mode
     if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.log('[RENDERER] Initializing React application...');
+      logger.debug('Initializing React application');
     }
 
     // Find the root container
@@ -66,10 +69,9 @@ function initializeApp() {
       );
     }
 
-    // LOW PRIORITY FIX (LOW-2): Wrap initialization logs in development check
+    // Debug logging in development mode
     if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.log('[RENDERER] Root container found, creating React root...');
+      logger.debug('Root container found, creating React root');
     }
 
     // Create React root
@@ -90,13 +92,15 @@ function initializeApp() {
       if (initialLoading) initialLoading.remove();
     });
 
-    // LOW PRIORITY FIX (LOW-2): Wrap initialization logs in development check
+    // Debug logging in development mode
     if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.log('[RENDERER] React application initialized successfully');
+      logger.debug('React application initialized successfully');
     }
   } catch (error) {
-    console.error('[RENDERER] Failed to initialize React application:', error);
+    logger.error('Failed to initialize React application', {
+      error: error.message,
+      stack: error.stack,
+    });
 
     // Show error message in the initial loading screen
     const initialLoading = document.getElementById('initial-loading');

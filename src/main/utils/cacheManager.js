@@ -4,6 +4,7 @@
  */
 
 const { logger } = require('../../shared/logger');
+logger.setContext('CacheManager');
 
 /**
  * Creates an LRU (Least Recently Used) cache
