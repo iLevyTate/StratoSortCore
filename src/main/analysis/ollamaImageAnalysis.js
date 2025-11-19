@@ -171,12 +171,16 @@ Analyze this image:`;
           : [];
 
         // Ensure confidence is a reasonable number
+        // MEDIUM PRIORITY FIX (MED-10): Use fixed default instead of random value
         if (
           !parsedJson.confidence ||
           parsedJson.confidence < 60 ||
           parsedJson.confidence > 100
         ) {
-          parsedJson.confidence = Math.floor(Math.random() * 30) + 70; // 70-100%
+          parsedJson.confidence = 75; // Fixed default when Ollama returns invalid confidence
+          logger.debug(
+            '[IMAGE-ANALYSIS] Invalid confidence from Ollama, using default: 75',
+          );
         }
 
         return {
@@ -446,11 +450,39 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     logger.debug(`Base64 length`, { chars: imageBase64.length });
 
     // Analyze with Ollama
-    const analysis = await analyzeImageWithOllama(
-      imageBase64,
-      fileName,
-      smartFolders,
-    );
+    let analysis;
+    try {
+      analysis = await analyzeImageWithOllama(
+        imageBase64,
+        fileName,
+        smartFolders,
+      );
+    } catch (error) {
+      logger.error('[IMAGE] Error calling analyzeImageWithOllama', {
+        error: error.message,
+        filePath,
+      });
+      // Fallback to filename-based analysis
+      const intelligentCategory = getIntelligentImageCategory(
+        fileName,
+        fileExtension,
+      );
+      const intelligentKeywords = getIntelligentImageKeywords(
+        fileName,
+        fileExtension,
+      );
+      return {
+        purpose: `Image (fallback - analysis error)`,
+        project: fileName.replace(fileExtension, ''),
+        category: intelligentCategory,
+        date: new Date().toISOString().split('T')[0],
+        keywords: intelligentKeywords,
+        confidence: 55,
+        suggestedName: safeSuggestedName(fileName, fileExtension),
+        extractionMethod: 'filename_fallback',
+        error: error.message,
+      };
+    }
 
     // Semantic folder refinement using embeddings based on image JSON fields
     try {
@@ -503,8 +535,8 @@ async function analyzeImageFile(filePath, smartFolders = []) {
                 '[IMAGE] FolderMatcher initialization error:',
                 initError.message,
               );
-              // Don't continue if initialization failed
-              return;
+              // Continue with analysis even if folder matching initialization failed
+              // The analysis result is still valid without semantic folder refinement
             }
           }
 
@@ -550,9 +582,20 @@ async function analyzeImageFile(filePath, smartFolders = []) {
           try {
             // Validate summary is non-empty before upserting
             if (summary && summary.trim().length > 0) {
+              // CRITICAL FIX: Ensure ChromaDB is initialized
+              const chromaDbService = require('../services/ChromaDBService').getInstance();
+              if (chromaDbService) {
+                await chromaDbService.initialize();
+              }
+
               await folderMatcher.upsertFileEmbedding(fileId, summary, {
                 path: filePath,
               });
+
+              // CRITICAL FIX: Add delay to ensure write consistency before querying
+              // ChromaDB has retry logic with delays of 50ms, 100ms, 200ms
+              // We wait slightly longer than the max retry delay to ensure consistency
+              await new Promise((resolve) => setTimeout(resolve, 250));
 
               const candidates = await folderMatcher.matchFileToFolders(
                 fileId,
@@ -594,6 +637,36 @@ async function analyzeImageFile(filePath, smartFolders = []) {
         stack: error?.stack,
         filePath,
       });
+    }
+
+    // Ensure analysis is defined before checking properties
+    if (!analysis) {
+      logger.warn('[IMAGE] analyzeImageWithOllama returned undefined', {
+        filePath,
+      });
+      const intelligentCategory = getIntelligentImageCategory(
+        fileName,
+        fileExtension,
+      );
+      const intelligentKeywords = getIntelligentImageKeywords(
+        fileName,
+        fileExtension,
+      );
+      const result = {
+        purpose: 'Image analyzed with fallback method.',
+        project: fileName.replace(fileExtension, ''),
+        date: new Date().toISOString().split('T')[0],
+        category: intelligentCategory,
+        keywords: intelligentKeywords,
+        confidence: 60,
+        error: 'Ollama image analysis returned undefined',
+      };
+      try {
+        setImageCache(signature, result);
+      } catch {
+        // Non-fatal if caching fails
+      }
+      return result;
     }
 
     if (analysis && !analysis.error) {

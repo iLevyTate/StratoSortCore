@@ -9,6 +9,156 @@ try {
   z = null;
 }
 
+/**
+ * HIGH PRIORITY FIX (HIGH-14): Security validation for imported settings
+ * Prevents prototype pollution, command injection, and data exfiltration
+ * @param {object} settings - Imported settings object to validate
+ * @param {object} logger - Logger instance
+ * @returns {object} - Sanitized settings object
+ * @throws {Error} - If validation fails
+ */
+function validateImportedSettings(settings, logger) {
+  if (!settings || typeof settings !== 'object') {
+    throw new Error('Invalid settings: must be an object');
+  }
+
+  // Whitelist of allowed settings keys
+  const ALLOWED_SETTINGS_KEYS = new Set([
+    'ollamaHost',
+    'textModel',
+    'visionModel',
+    'embeddingModel',
+    'launchOnStartup',
+    'autoOrganize',
+    'backgroundMode',
+    'theme',
+    'language',
+    'loggingLevel',
+    'cacheSize',
+    'maxBatchSize',
+    'autoUpdateCheck',
+    'telemetryEnabled',
+  ]);
+
+  // Regex patterns for validation
+  const URL_REGEX = /^https?:\/\/[\w\-]+(\.[\w\-]+)*(:\d+)?$/;
+  const MODEL_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:]*[a-zA-Z0-9]$/;
+
+  // Check for prototype pollution attempts
+  const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
+  for (const key of dangerousKeys) {
+    if (key in settings) {
+      throw new Error(
+        `Security: Prototype pollution attempt detected (${key})`,
+      );
+    }
+  }
+
+  // Sanitize settings using whitelist approach
+  const sanitized = {};
+  let ignoredCount = 0;
+
+  for (const [key, value] of Object.entries(settings)) {
+    // Skip unknown keys
+    if (!ALLOWED_SETTINGS_KEYS.has(key)) {
+      logger.warn(`[SETTINGS-IMPORT] Ignoring unknown key: ${key}`);
+      ignoredCount++;
+      continue;
+    }
+
+    // Validate value based on key type
+    switch (key) {
+      case 'ollamaHost':
+        if (typeof value !== 'string' || !URL_REGEX.test(value)) {
+          throw new Error(`Invalid ${key}: must be a valid URL`);
+        }
+        // Block potentially dangerous localhost redirects
+        if (
+          value.includes('0.0.0.0') ||
+          value.includes('[::]') ||
+          value.includes('[::1]')
+        ) {
+          logger.warn(
+            `[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${value}`,
+          );
+          throw new Error(
+            `Invalid ${key}: potentially unsafe URL pattern detected`,
+          );
+        }
+        break;
+
+      case 'textModel':
+      case 'visionModel':
+      case 'embeddingModel':
+        if (typeof value !== 'string' || !MODEL_REGEX.test(value)) {
+          throw new Error(
+            `Invalid ${key}: must be alphanumeric with hyphens, underscores, dots, @, or colons`,
+          );
+        }
+        if (value.length > 100) {
+          throw new Error(`Invalid ${key}: name too long (max 100 chars)`);
+        }
+        break;
+
+      case 'launchOnStartup':
+      case 'autoOrganize':
+      case 'backgroundMode':
+      case 'autoUpdateCheck':
+      case 'telemetryEnabled':
+        if (typeof value !== 'boolean') {
+          throw new Error(`Invalid ${key}: must be boolean`);
+        }
+        break;
+
+      case 'theme':
+        if (typeof value !== 'string' || !['light', 'dark', 'auto'].includes(value)) {
+          throw new Error(`Invalid ${key}: must be 'light', 'dark', or 'auto'`);
+        }
+        break;
+
+      case 'language':
+        if (typeof value !== 'string' || value.length > 10) {
+          throw new Error(`Invalid ${key}: must be a valid language code`);
+        }
+        break;
+
+      case 'loggingLevel':
+        if (
+          typeof value !== 'string' ||
+          !['error', 'warn', 'info', 'debug'].includes(value)
+        ) {
+          throw new Error(
+            `Invalid ${key}: must be 'error', 'warn', 'info', or 'debug'`,
+          );
+        }
+        break;
+
+      case 'cacheSize':
+      case 'maxBatchSize':
+        if (!Number.isInteger(value) || value < 0 || value > 100000) {
+          throw new Error(`Invalid ${key}: must be integer between 0 and 100000`);
+        }
+        break;
+
+      default:
+        // For any other settings, ensure they're primitive types
+        if (typeof value === 'object' && value !== null) {
+          throw new Error(`Invalid ${key}: nested objects not allowed`);
+        }
+    }
+
+    sanitized[key] = value;
+  }
+
+  if (ignoredCount > 0) {
+    logger.info(
+      `[SETTINGS-IMPORT] Ignored ${ignoredCount} unknown setting(s)`,
+    );
+  }
+
+  return sanitized;
+}
+
 function registerSettingsIpc({
   ipcMain,
   IPC_CHANNELS,
@@ -324,15 +474,19 @@ function registerSettingsIpc({
         }
 
         // Validate import data structure
-        if (!importData.settings) {
-          throw new Error('Invalid settings file: missing settings object');
+        if (!importData.settings || typeof importData.settings !== 'object') {
+          throw new Error('Invalid settings file: missing or invalid settings object');
         }
 
-        // Extract settings and validate
-        const settings = importData.settings;
+        // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
+        // Prevents prototype pollution, command injection, and data exfiltration
+        const sanitizedSettings = validateImportedSettings(
+          importData.settings,
+          logger,
+        );
 
-        // Save imported settings
-        const saveResult = await settingsService.save(settings);
+        // Save sanitized settings
+        const saveResult = await settingsService.save(sanitizedSettings);
         const merged = saveResult.settings || saveResult;
         const validationWarnings = saveResult.validationWarnings || [];
 

@@ -15,43 +15,73 @@ function registerEmbeddingsIpc({
   const chromaDbService = getChromaDB();
   const folderMatcher = new FolderMatchingService(chromaDbService);
 
-  // Initialize ChromaDB and migrate existing data on startup
-  (async () => {
-    try {
-      await chromaDbService.initialize();
+  // CRITICAL FIX: Track initialization state to prevent race conditions
+  let initializationPromise = null;
+  let isInitialized = false;
 
-      // Fixed: Initialize FolderMatchingService after ChromaDB is ready
-      folderMatcher.initialize();
+  /**
+   * Ensures services are initialized before IPC handlers execute
+   * @returns {Promise<void>}
+   */
+  async function ensureInitialized() {
+    if (isInitialized) return;
+    if (initializationPromise) return initializationPromise;
 
-      // Attempt to migrate existing JSONL data if present
-      const { app } = require('electron');
-      const basePath = path.join(app.getPath('userData'), 'embeddings');
-      const filesPath = path.join(basePath, 'file-embeddings.jsonl');
-      const foldersPath = path.join(basePath, 'folder-embeddings.jsonl');
+    initializationPromise = (async () => {
+      try {
+        logger.info('[SEMANTIC] Starting initialization...');
 
-      const filesMigrated = await chromaDbService.migrateFromJsonl(
-        filesPath,
-        'file',
-      );
-      const foldersMigrated = await chromaDbService.migrateFromJsonl(
-        foldersPath,
-        'folder',
-      );
+        // Initialize ChromaDB first
+        await chromaDbService.initialize();
 
-      if (filesMigrated > 0 || foldersMigrated > 0) {
-        logger.info('[ChromaDB] Migration complete', {
-          files: filesMigrated,
-          folders: foldersMigrated,
-        });
+        // CRITICAL FIX: MUST await FolderMatchingService initialization
+        await folderMatcher.initialize();
+
+        // Attempt to migrate existing JSONL data if present
+        const { app } = require('electron');
+        const basePath = path.join(app.getPath('userData'), 'embeddings');
+        const filesPath = path.join(basePath, 'file-embeddings.jsonl');
+        const foldersPath = path.join(basePath, 'folder-embeddings.jsonl');
+
+        const filesMigrated = await chromaDbService.migrateFromJsonl(
+          filesPath,
+          'file',
+        );
+        const foldersMigrated = await chromaDbService.migrateFromJsonl(
+          foldersPath,
+          'folder',
+        );
+
+        if (filesMigrated > 0 || foldersMigrated > 0) {
+          logger.info('[SEMANTIC] Migration complete', {
+            files: filesMigrated,
+            folders: foldersMigrated,
+          });
+        }
+
+        logger.info('[SEMANTIC] Initialization complete');
+        isInitialized = true;
+      } catch (error) {
+        logger.error('[SEMANTIC] Initialization failed:', error);
+        initializationPromise = null; // Allow retry on next call
+        throw error;
       }
-    } catch (error) {
-      logger.error('[ChromaDB] Initialization/migration failed:', error);
-    }
-  })();
+    })();
+
+    return initializationPromise;
+  }
+
+  // Start initialization immediately (but don't block IPC registration)
+  ensureInitialized().catch((error) => {
+    logger.error('[SEMANTIC] Background initialization failed:', error);
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
     withErrorLogging(logger, async () => {
+      // CRITICAL FIX: Wait for initialization before executing
+      await ensureInitialized();
+
       try {
         const smartFolders = getCustomFolders().filter((f) => f && f.name);
         await chromaDbService.resetFolders();
@@ -105,6 +135,9 @@ function registerEmbeddingsIpc({
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
     withErrorLogging(logger, async () => {
+      // CRITICAL FIX: Wait for initialization before executing
+      await ensureInitialized();
+
       try {
         const serviceIntegration =
           getServiceIntegration && getServiceIntegration();
@@ -238,6 +271,9 @@ function registerEmbeddingsIpc({
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE,
     withErrorLogging(logger, async () => {
+      // CRITICAL FIX: Wait for initialization before executing
+      await ensureInitialized();
+
       try {
         await chromaDbService.resetAll();
         return { success: true };
@@ -251,6 +287,9 @@ function registerEmbeddingsIpc({
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.GET_STATS,
     withErrorLogging(logger, async () => {
+      // CRITICAL FIX: Wait for initialization before executing
+      await ensureInitialized();
+
       try {
         const stats = await chromaDbService.getStats();
         return { success: true, ...stats };
@@ -264,16 +303,53 @@ function registerEmbeddingsIpc({
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR,
     withErrorLogging(logger, async (event, { fileId, topK = 10 }) => {
+      // CRITICAL FIX: Wait for initialization before executing
+      await ensureInitialized();
+
+      // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
+      const QUERY_TIMEOUT = 30000; // 30 seconds
+      const MAX_TOP_K = 100; // Limit result count
+
       try {
         if (!fileId) {
           return { success: false, error: 'File ID is required' };
         }
 
-        const similarFiles = await folderMatcher.findSimilarFiles(fileId, topK);
+        // Validate topK parameter
+        if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
+          return {
+            success: false,
+            error: `topK must be between 1 and ${MAX_TOP_K}`,
+          };
+        }
+
+        // Create timeout promise
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(
+            () => reject(new Error('Query timeout exceeded')),
+            QUERY_TIMEOUT,
+          );
+        });
+
+        // Race query against timeout
+        const similarFiles = await Promise.race([
+          folderMatcher.findSimilarFiles(fileId, topK),
+          timeoutPromise,
+        ]);
+
         return { success: true, results: similarFiles };
       } catch (e) {
-        logger.error('[EMBEDDINGS] Find similar failed:', e);
-        return { success: false, error: e.message };
+        logger.error('[EMBEDDINGS] Find similar failed:', {
+          fileId,
+          topK,
+          error: e.message,
+          timeout: e.message.includes('timeout'),
+        });
+        return {
+          success: false,
+          error: e.message,
+          timeout: e.message.includes('timeout'),
+        };
       }
     }),
   );

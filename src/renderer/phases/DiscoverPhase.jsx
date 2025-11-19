@@ -970,16 +970,20 @@ function DiscoverPhase() {
     async (files) => {
       if (!files || files.length === 0) return;
 
-      console.log('[ANALYSIS] analyzeFiles called with:', {
-        filesCount: files.length,
-        isAnalyzing,
-        analysisProgress,
-        hasLastActivity: !!analysisProgress.lastActivity,
-        timeSinceActivity: analysisProgress.lastActivity
-          ? Date.now() - analysisProgress.lastActivity
-          : 'N/A',
-        lockStatus: analysisLockRef.current,
-      });
+      // LOW PRIORITY FIX (LOW-2): Wrap verbose debug logs in development check
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[ANALYSIS] analyzeFiles called with:', {
+          filesCount: files.length,
+          isAnalyzing,
+          analysisProgress,
+          hasLastActivity: !!analysisProgress.lastActivity,
+          timeSinceActivity: analysisProgress.lastActivity
+            ? Date.now() - analysisProgress.lastActivity
+            : 'N/A',
+          lockStatus: analysisLockRef.current,
+        });
+      }
 
       // Fixed: True atomic lock acquisition using IIFE closure to prevent race conditions
       // This ensures check-and-set happens in a single atomic operation
@@ -1066,10 +1070,14 @@ function DiscoverPhase() {
       actions.setPhaseData('analysisProgress', initialProgress);
       actions.setPhaseData('currentAnalysisFile', '');
 
-      console.log(
-        '[ANALYSIS] Started analysis with progress:',
-        initialProgress,
-      );
+      // LOW PRIORITY FIX (LOW-2): Wrap verbose debug logs in development check
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[ANALYSIS] Started analysis with progress:',
+          initialProgress,
+        );
+      }
 
       // Set up progress heartbeat to prevent stuck states
       // Fixed: Store in ref for cleanup on unmount

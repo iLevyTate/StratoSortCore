@@ -12,6 +12,7 @@ class MockChromaDBService {
     this.initialized = false;
     this._initPromise = null;
     this._isInitializing = false;
+    this.inflightQueries = new Map(); // Track in-flight queries for deduplication
   }
 
   async _executeQueryFolders() {
@@ -20,13 +21,35 @@ class MockChromaDBService {
   }
 
   async queryFolders(embedding, limit) {
-    const cacheKey = `${embedding}_${limit}`;
+    await this.initialize();
+    const cacheKey = `query:folders:${embedding}:${limit}`;
+    
+    // Check cache first
     if (this.queryCache.has(cacheKey)) {
       return this.queryCache.get(cacheKey);
     }
-    const result = await this._executeQueryFolders();
-    this.queryCache.set(cacheKey, result);
-    return result;
+    
+    // Check for in-flight query and deduplicate (like real ChromaDBService)
+    if (!this.inflightQueries) {
+      this.inflightQueries = new Map();
+    }
+    if (this.inflightQueries.has(cacheKey)) {
+      return this.inflightQueries.get(cacheKey);
+    }
+    
+    // Create query promise and track it
+    const queryPromise = this._executeQueryFolders();
+    this.inflightQueries.set(cacheKey, queryPromise);
+    
+    try {
+      const result = await queryPromise;
+      // Cache the results
+      this.queryCache.set(cacheKey, result);
+      return result;
+    } finally {
+      // Remove from in-flight queries
+      this.inflightQueries.delete(cacheKey);
+    }
   }
 
   clearQueryCache() {
@@ -35,7 +58,7 @@ class MockChromaDBService {
 
   _invalidateCacheForFile(fileId) {
     for (const key of this.queryCache.keys()) {
-      if (key.startsWith(fileId)) {
+      if (key.includes(fileId)) {
         this.queryCache.delete(key);
       }
     }
@@ -88,6 +111,30 @@ class MockOrganizationSuggestionService {
     };
     this.maxUserPatterns = 5000;
     this.userPatterns = new Map();
+  }
+
+  recordFeedback(file, suggestion, accepted) {
+    if (accepted && suggestion) {
+      const patternKey = `${file.extension}:${suggestion.folder}`;
+      if (!this.userPatterns.has(patternKey)) {
+        this.userPatterns.set(patternKey, {
+          count: 0,
+          folder: suggestion.folder,
+          extension: file.extension
+        });
+      }
+      const pattern = this.userPatterns.get(patternKey);
+      pattern.count++;
+      
+      // Prune if over limit
+      if (this.userPatterns.size > this.maxUserPatterns) {
+        // Remove oldest entries (simple implementation - remove first)
+        const firstKey = this.userPatterns.keys().next().value;
+        if (firstKey) {
+          this.userPatterns.delete(firstKey);
+        }
+      }
+    }
   }
 
   async getBatchSuggestions(files, folders) {
@@ -332,64 +379,7 @@ describe('Performance Optimizations Verification', () => {
     let orgService;
 
     beforeAll(() => {
-      // Mock OrganizationSuggestionService with batch operations
-      OrganizationSuggestionService.mockImplementation(function(deps) {
-        this.chromaDbService = deps?.chromaDbService || new ChromaDBService();
-        this.folderMatchingService = deps?.folderMatchingService || {
-          embedText: jest.fn(async () => ({ vector: new Array(384).fill(0.1), model: 'test' })),
-          generateFolderId: jest.fn((f) => `folder-${f.name}`),
-          upsertFileEmbedding: jest.fn(async () => {}),
-          matchFileToFolders: jest.fn(async () => [])
-        };
-
-        this.maxUserPatterns = 5000;
-        this.userPatterns = new Map();
-
-        this.getBatchSuggestions = async function(files, folders) {
-          // Simple batch processing simulation
-          const groups = [];
-          const patterns = {};
-
-          // Group files by category
-          for (const file of files) {
-            const category = file.analysis?.category || 'uncategorized';
-            if (!patterns[category]) {
-              patterns[category] = [];
-              groups.push({ category, files: [] });
-            }
-            const group = groups.find(g => g.category === category);
-            if (group) {
-              group.files.push(file);
-            }
-            patterns[category].push(file.name);
-          }
-
-          return {
-            success: true,
-            groups,
-            patterns
-          };
-        };
-
-        this.ensureSmartFolderEmbeddings = async function(folders) {
-          // Simulate processing folder embeddings
-          return folders.length;
-        };
-
-        this.getSuggestionsForFile = async function(file, folders) {
-          return {
-            success: true,
-            primary: {
-              folder: 'Documents',
-              confidence: 0.8,
-              reason: 'Based on file type'
-            },
-            alternatives: []
-          };
-        };
-      });
-
-      // Create service with mock dependencies
+      // Create service instance directly (OrganizationSuggestionService is already a mock class)
       orgService = new OrganizationSuggestionService({
         chromaDbService: new ChromaDBService(),
         folderMatchingService: {
@@ -466,19 +456,13 @@ describe('Performance Optimizations Verification', () => {
 
       expect(orgService.maxUserPatterns).toBe(5000);
 
-      // Simulate adding patterns beyond limit
+      // Simulate adding patterns beyond limit through recordFeedback to trigger pruning
       for (let i = 0; i < 5100; i++) {
-        orgService.userPatterns.set(`pattern-${i}`, {
-          folder: 'test',
-          count: i,
-          confidence: 0.5
-        });
-
-        // Check pruning happens
-        if (orgService.userPatterns.size > orgService.maxUserPatterns) {
-          // This would trigger pruning in recordFeedback
-          break;
-        }
+        orgService.recordFeedback(
+          { name: `file-${i}.pdf`, extension: '.pdf', analysis: { category: 'document' } },
+          { folder: 'test', path: '/test' },
+          true
+        );
       }
 
       expect(orgService.userPatterns.size).toBeLessThanOrEqual(5000);

@@ -1,4 +1,5 @@
 const { logger } = require('../../shared/logger');
+const { Ollama } = require('ollama'); // MEDIUM PRIORITY FIX (MED-10): Import Ollama for temporary instances
 const {
   getOllama,
   getOllamaModel,
@@ -70,16 +71,21 @@ class OllamaService {
 
   /**
    * Test connection to Ollama server
+   * MEDIUM PRIORITY FIX (MED-10): Create temporary instance to actually test specified host
    */
   async testConnection(hostUrl) {
     try {
-      const ollama = getOllama();
       const testHost = hostUrl || getOllamaHost();
 
+      // Create a temporary Ollama instance with the test host
+      // This ensures we're actually testing the specified host, not the current one
+      const testOllama = new Ollama({ host: testHost });
+
       // Try to list models as a connection test
-      const response = await ollama.list();
+      const response = await testOllama.list();
       const modelCount = response?.models?.length || 0;
 
+      logger.info(`[OllamaService] Connection test successful for ${testHost}`);
       return {
         success: true,
         ollamaHealth: {
@@ -172,6 +178,25 @@ class OllamaService {
   async pullModels(modelNames) {
     if (!Array.isArray(modelNames) || modelNames.length === 0) {
       return { success: false, error: 'No models specified', results: [] };
+    }
+
+    // LOW PRIORITY FIX (LOW-10): Validate model names before pulling
+    const invalidModels = modelNames.filter((name) => {
+      if (typeof name !== 'string' || !name.trim()) return true;
+      // Valid Ollama model names: alphanumeric, hyphens, underscores, dots, colons (for tags)
+      // Reject path traversal and invalid characters
+      return !/^[a-zA-Z0-9._-]+(?::[a-zA-Z0-9._-]+)?$/.test(name.trim());
+    });
+
+    if (invalidModels.length > 0) {
+      logger.warn('[OllamaService] Invalid model names rejected', {
+        invalidModels,
+      });
+      return {
+        success: false,
+        error: `Invalid model name(s): ${invalidModels.join(', ')}`,
+        results: [],
+      };
     }
 
     const results = [];

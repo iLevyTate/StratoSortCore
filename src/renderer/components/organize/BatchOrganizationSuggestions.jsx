@@ -269,7 +269,10 @@ function BatchOrganizationSuggestions({
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            onClick={() => console.log('Preview organization')}
+            onClick={() => {
+              // LOW PRIORITY FIX (LOW-2): Remove console.log placeholder
+              // TODO: Implement preview functionality
+            }}
           >
             Preview Changes
           </Button>

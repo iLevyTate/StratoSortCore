@@ -57,11 +57,8 @@ export default function TabContainer() {
 
   const ActiveComponent = TABS.find((tab) => tab.id === activeTab)?.component;
 
-  console.log('[TabContainer] Rendering with activeTab:', activeTab);
-  console.log(
-    '[TabContainer] ActiveComponent:',
-    ActiveComponent?.name || 'undefined',
-  );
+  // LOW PRIORITY FIX (LOW-2): Remove console.log in production
+  // Debug logging removed - use React DevTools for component debugging
 
   return (
     <div className="h-screen flex flex-col bg-base-200" data-theme="stratosort">

@@ -30,6 +30,7 @@ describe('FolderMatchingService', () => {
   beforeEach(() => {
     // Setup mock ChromaDB Service
     mockChromaDBService = {
+      initialize: jest.fn().mockResolvedValue(undefined),
       upsertFolder: jest.fn().mockResolvedValue({ success: true }),
       upsertFile: jest.fn().mockResolvedValue({ success: true }),
       queryFolders: jest.fn().mockResolvedValue([]),

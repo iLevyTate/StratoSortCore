@@ -3,7 +3,7 @@
  * Verifies that all Ollama API calls have proper retry behavior
  */
 
-const { jest } = require('@jest/globals');
+// jest is provided globally by Jest, no need to import
 const {
   withOllamaRetry,
   fetchWithRetry,
@@ -15,7 +15,8 @@ const {
 describe('Ollama API Retry Logic', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.useFakeTimers();
+    // Use modern fake timers
+    jest.useFakeTimers({ legacyFakeTimers: false });
   });
 
   afterEach(() => {
@@ -95,14 +96,14 @@ describe('Ollama API Retry Logic', () => {
         initialDelay: 1000,
       });
 
-      // Fast-forward first retry delay
-      jest.advanceTimersByTime(1000);
+      // Fast-forward all timers
+      await jest.runAllTimersAsync();
 
       const result = await promise;
 
       expect(result).toEqual({ success: true });
       expect(mockApiCall).toHaveBeenCalledTimes(2);
-    });
+    }, 10000);
 
     it('should apply exponential backoff', async () => {
       const mockApiCall = jest.fn()
@@ -118,22 +119,19 @@ describe('Ollama API Retry Logic', () => {
         maxDelay: 4000,
       });
 
-      // First retry after 1000ms
-      jest.advanceTimersByTime(1000);
-      // Second retry after 2000ms
-      jest.advanceTimersByTime(2000);
-      // Third retry after 4000ms (capped at maxDelay)
-      jest.advanceTimersByTime(4000);
+      // Fast-forward all timers
+      await jest.runAllTimersAsync();
 
       const result = await promise;
 
       expect(result).toEqual({ success: true });
       expect(mockApiCall).toHaveBeenCalledTimes(4);
-    });
+    }, 10000);
 
     it('should fail after max retries exhausted', async () => {
-      const mockApiCall = jest.fn()
-        .mockRejectedValue(new Error('Network error'));
+      const mockApiCall = jest.fn().mockImplementation(() => {
+        return Promise.reject(new Error('Network error'));
+      });
 
       const promise = withOllamaRetry(mockApiCall, {
         operation: 'Test operation',
@@ -141,12 +139,15 @@ describe('Ollama API Retry Logic', () => {
         initialDelay: 100,
       });
 
-      // Advance timers for all retries
-      jest.advanceTimersByTime(10000);
+      // Fast-forward all timers to allow retries to complete
+      await jest.runAllTimersAsync();
 
+      // Use expect().rejects to properly catch the rejection
       await expect(promise).rejects.toThrow('Network error');
+      
+      // Should be called initial + maxRetries times
       expect(mockApiCall).toHaveBeenCalledTimes(3); // initial + 2 retries
-    });
+    }, 10000);
 
     it('should not retry non-retryable errors', async () => {
       const validationError = new Error('Validation failed');
@@ -175,12 +176,13 @@ describe('Ollama API Retry Logic', () => {
         onRetry,
       });
 
-      jest.advanceTimersByTime(100);
+      // Advance timers to trigger retry
+      await jest.runAllTimersAsync();
 
       await promise;
 
       expect(onRetry).toHaveBeenCalledWith(1, expect.any(Object));
-    });
+    }, 10000);
   });
 
   describe('fetchWithRetry', () => {
@@ -206,20 +208,23 @@ describe('Ollama API Retry Logic', () => {
         initialDelay: 100,
       });
 
-      jest.advanceTimersByTime(100);
+      // Advance timers to trigger retry
+      await jest.runAllTimersAsync();
 
       const response = await promise;
 
       expect(response.ok).toBe(true);
       expect(global.fetch).toHaveBeenCalledTimes(2);
-    });
+    }, 10000);
 
     it('should throw on non-200 response', async () => {
-      global.fetch.mockResolvedValue({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        text: async () => '{"error": "Server error"}',
+      global.fetch.mockImplementation(() => {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          text: async () => '{"error": "Server error"}',
+        });
       });
 
       const promise = fetchWithRetry('http://localhost:11434/api/test', {}, {
@@ -227,11 +232,14 @@ describe('Ollama API Retry Logic', () => {
         initialDelay: 100,
       });
 
-      jest.advanceTimersByTime(10000);
+      // Advance timers to trigger retries
+      await jest.runAllTimersAsync();
 
+      // Use expect().rejects to properly catch the rejection
       await expect(promise).rejects.toThrow('HTTP 500');
+      
       expect(global.fetch).toHaveBeenCalledTimes(3); // initial + 2 retries
-    });
+    }, 10000);
   });
 
   describe('generateWithRetry', () => {
@@ -248,13 +256,14 @@ describe('Ollama API Retry Logic', () => {
         { maxRetries: 2, initialDelay: 100 }
       );
 
-      jest.advanceTimersByTime(100);
+      // Advance timers to trigger retry
+      await jest.runAllTimersAsync();
 
       const result = await promise;
 
       expect(result.response).toBe('{"result": "success"}');
       expect(mockClient.generate).toHaveBeenCalledTimes(2);
-    });
+    }, 10000);
   });
 
   describe('axiosWithRetry', () => {
@@ -274,13 +283,14 @@ describe('Ollama API Retry Logic', () => {
         initialDelay: 100,
       });
 
-      jest.advanceTimersByTime(100);
+      // Advance timers to trigger retry
+      await jest.runAllTimersAsync();
 
       const result = await promise;
 
       expect(result.status).toBe(200);
       expect(mockAxiosCall).toHaveBeenCalledTimes(2);
-    });
+    }, 10000);
   });
 });
 
@@ -300,9 +310,7 @@ describe('Integration Tests', () => {
     });
 
     // Advance through all retry delays
-    jest.advanceTimersByTime(500);  // First retry
-    jest.advanceTimersByTime(1000); // Second retry
-    jest.advanceTimersByTime(2000); // Third retry
+    await jest.runAllTimersAsync();
 
     const result = await promise;
 
@@ -314,7 +322,7 @@ describe('Integration Tests', () => {
     const delays = [];
     const mockApiCall = jest.fn().mockImplementation(() => {
       delays.push(Date.now());
-      throw new Error('Network error');
+      return Promise.reject(new Error('Network error'));
     });
 
     const promise = withOllamaRetry(mockApiCall, {
@@ -325,14 +333,12 @@ describe('Integration Tests', () => {
     });
 
     // Advance through all retries
-    for (let i = 0; i < 6; i++) {
-      jest.advanceTimersByTime(3000);
-    }
+    await jest.runAllTimersAsync();
 
     await expect(promise).rejects.toThrow('Network error');
 
     // Verify delays don't exceed maxDelay
     // Initial call is immediate, then 1000, 2000, 3000 (capped), 3000, 3000
     expect(mockApiCall).toHaveBeenCalledTimes(6);
-  });
+  }, 15000);
 });

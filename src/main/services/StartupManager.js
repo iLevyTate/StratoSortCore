@@ -1,9 +1,10 @@
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { logger } = require('../../shared/logger');
 const axios = require('axios');
 const { axiosWithRetry } = require('../utils/ollamaApiRetry');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs'); // Sync version for simple operations
 const { app } = require('electron');
 const {
   hasPythonModuleAsync,
@@ -97,6 +98,21 @@ class StartupManager {
   }
 
   /**
+   * Helper to wrap promises with timeout
+   */
+  _withTimeout(promise, timeoutMs, operation) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        ),
+      ),
+    ]);
+  }
+
+  /**
    * Pre-flight checks before starting services
    */
   async runPreflightChecks() {
@@ -111,18 +127,27 @@ class StartupManager {
       logger.debug(`[PREFLIGHT] Data directory path: ${userDataPath}`);
 
       try {
-        await fs.access(userDataPath);
+        await this._withTimeout(
+          fs.access(userDataPath),
+          5000,
+          'Directory access check',
+        );
         logger.debug('[PREFLIGHT] Data directory exists');
       } catch {
         logger.debug('[PREFLIGHT] Data directory does not exist, creating...');
-        await fs.mkdir(userDataPath, { recursive: true });
+        await this._withTimeout(
+          fs.mkdir(userDataPath, { recursive: true }),
+          5000,
+          'Directory creation',
+        );
         logger.debug('[PREFLIGHT] Data directory created');
       }
 
       const testFile = path.join(userDataPath, '.write-test');
       logger.debug(`[PREFLIGHT] Testing write access with file: ${testFile}`);
-      await fs.writeFile(testFile, 'test');
-      await fs.unlink(testFile);
+      // Use sync fs for simple write test to avoid hanging on Windows
+      fsSync.writeFileSync(testFile, 'test');
+      fsSync.unlinkSync(testFile);
       logger.debug('[PREFLIGHT] Data directory write test passed');
       checks.push({ name: 'Data Directory', status: 'ok' });
     } catch (error) {
@@ -263,27 +288,34 @@ class StartupManager {
   }
 
   /**
-   * Check if Python is installed
+   * Check if Python is installed (using sync spawn to avoid hanging on Windows)
    */
   async checkPythonInstallation() {
     logger.debug('[PREFLIGHT] Checking Python installation...');
 
     const pythonCommands =
       process.platform === 'win32'
-        ? ['py -3', 'python3', 'python']
-        : ['python3', 'python'];
+        ? [
+            { cmd: 'py', args: ['-3', '--version'] },
+            { cmd: 'python3', args: ['--version'] },
+            { cmd: 'python', args: ['--version'] },
+          ]
+        : [
+            { cmd: 'python3', args: ['--version'] },
+            { cmd: 'python', args: ['--version'] },
+          ];
 
-    for (const cmd of pythonCommands) {
+    for (const { cmd, args } of pythonCommands) {
       try {
-        logger.debug(`[PREFLIGHT] Trying Python command: ${cmd}`);
-        const result = await asyncSpawn(cmd, ['--version'], {
-          timeout: 3000, // Reduced timeout for faster checks
+        logger.debug(`[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`);
+        const result = spawnSync(cmd, args, {
+          timeout: 3000,
           windowsHide: true,
           shell: process.platform === 'win32',
         });
 
         if (result.status === 0) {
-          const version = (result.stdout + result.stderr).trim();
+          const version = (result.stdout + result.stderr).toString().trim();
           logger.debug(`[PREFLIGHT] Python found: ${cmd} - ${version}`);
           return { installed: true, version };
         } else {
@@ -299,20 +331,20 @@ class StartupManager {
   }
 
   /**
-   * Check if Ollama is installed
+   * Check if Ollama is installed (using sync spawn to avoid hanging on Windows)
    */
   async checkOllamaInstallation() {
     logger.debug('[PREFLIGHT] Checking Ollama installation...');
 
     try {
-      const result = await asyncSpawn('ollama', ['--version'], {
-        timeout: 3000, // Reduced timeout for faster checks
+      const result = spawnSync('ollama', ['--version'], {
+        timeout: 3000,
         windowsHide: true,
         shell: process.platform === 'win32',
       });
 
       if (result.status === 0) {
-        const version = (result.stdout + result.stderr).trim();
+        const version = (result.stdout + result.stderr).toString().trim();
         logger.debug(`[PREFLIGHT] Ollama found: ${version}`);
         return { installed: true, version };
       } else {
@@ -328,10 +360,8 @@ class StartupManager {
   /**
    * Check if a port is available
    */
-  // FIXED Bug #28: Add default timeout constant for all axios calls
+  // LOW PRIORITY FIX (LOW-3): Removed duplicate constant, using class-level DEFAULT_AXIOS_TIMEOUT
   async isPortAvailable(host, port) {
-    const DEFAULT_AXIOS_TIMEOUT = 5000; // 5 second default timeout
-
     try {
       // Note: We don't use retry here as we're checking if port is free
       // A single attempt is sufficient for port checking
@@ -341,17 +371,33 @@ class StartupManager {
       // If we get here, something is already running on the port
       return false;
     } catch (error) {
-      // Only specific errors indicate port is available
-      if (error.code === 'ECONNREFUSED') {
-        // Port is definitely available
-        return true;
-      }
-      if (error.code === 'ETIMEDOUT') {
-        // Timeout likely means port is available but no response
+      // MEDIUM PRIORITY FIX (MED-4): Enhanced error code handling for port availability
+      // Errors that definitively indicate port is available
+      const PORT_AVAILABLE_ERRORS = new Set([
+        'ECONNREFUSED', // Connection refused - nothing listening
+        'ETIMEDOUT', // Timeout - likely available but no response
+        'ECONNRESET', // Connection reset - port available
+        'EHOSTUNREACH', // Host unreachable - port not in use
+        'ENETUNREACH', // Network unreachable - port not in use
+      ]);
+
+      if (PORT_AVAILABLE_ERRORS.has(error.code)) {
+        logger.debug(
+          `[PREFLIGHT] Port ${host}:${port} appears available (${error.code})`,
+        );
         return true;
       }
 
-      // For other errors (network issues, DNS failures, firewall blocks, etc.)
+      // Axios-specific error responses (server returned an error response)
+      // If we got an HTTP error response, something IS running on that port
+      if (error.response) {
+        logger.debug(
+          `[PREFLIGHT] Port ${host}:${port} in use (HTTP ${error.response.status})`,
+        );
+        return false;
+      }
+
+      // For other errors (DNS failures, firewall blocks, certificate errors, etc.)
       // we cannot be certain, so assume port is NOT available (conservative approach)
       logger.warn(
         `[PREFLIGHT] Port check inconclusive for ${host}:${port}: ${error.code || error.message}`,
@@ -1155,6 +1201,148 @@ class StartupManager {
   async checkServicesHealth() {
     logger.debug('[HEALTH] Checking service health...');
 
+    // HIGH PRIORITY FIX (HIGH-4): Circuit breaker recovery mechanism
+    // Allow recovery attempts after a cooldown period (10 minutes)
+    const CIRCUIT_BREAKER_RECOVERY_WINDOW = 10 * 60 * 1000; // 10 minutes
+
+    // HIGH PRIORITY FIX (HIGH-4): Enhanced circuit breaker recovery with exponential backoff
+    if (
+      this.serviceStatus.chromadb.circuitBreakerTripped &&
+      this.serviceStatus.chromadb.circuitBreakerTrippedAt
+    ) {
+      const trippedTime = new Date(
+        this.serviceStatus.chromadb.circuitBreakerTrippedAt,
+      ).getTime();
+      const now = Date.now();
+
+      // Initialize recovery attempt counter
+      if (!this.serviceStatus.chromadb.recoveryAttempts) {
+        this.serviceStatus.chromadb.recoveryAttempts = 0;
+      }
+
+      // HIGH PRIORITY FIX (HIGH-4): Implement exponential backoff
+      const attemptCount = this.serviceStatus.chromadb.recoveryAttempts;
+      const maxAttempts = 5; // Maximum recovery attempts before giving up
+      const backoffMultiplier = Math.pow(2, attemptCount); // Exponential: 1, 2, 4, 8, 16
+      const adjustedRecoveryWindow =
+        CIRCUIT_BREAKER_RECOVERY_WINDOW * backoffMultiplier;
+
+      if (now - trippedTime >= adjustedRecoveryWindow) {
+        if (attemptCount >= maxAttempts) {
+          logger.error(
+            `[HEALTH] ChromaDB exceeded maximum recovery attempts (${maxAttempts}). Service permanently disabled.`,
+          );
+          this.serviceStatus.chromadb.status = 'permanently_failed';
+          return; // Stop trying
+        }
+
+        logger.info(
+          `[HEALTH] ChromaDB circuit breaker recovery attempt ${attemptCount + 1}/${maxAttempts} (backoff: ${adjustedRecoveryWindow / 1000}s)...`,
+        );
+
+        // Attempt restart
+        try {
+          await this.startChromaDB();
+
+          // HIGH PRIORITY FIX (HIGH-4): Verify service is actually healthy before resetting circuit breaker
+          const isHealthy = await this.checkChromaDBHealth();
+
+          if (isHealthy) {
+            // Reset circuit breaker ONLY if service is healthy
+            logger.info(
+              '[HEALTH] ✅ ChromaDB circuit breaker recovery successful - service is healthy',
+            );
+            this.serviceStatus.chromadb.circuitBreakerTripped = false;
+            this.serviceStatus.chromadb.circuitBreakerTrippedAt = null;
+            this.serviceStatus.chromadb.restartCount = 0;
+            this.serviceStatus.chromadb.consecutiveFailures = 0;
+            this.serviceStatus.chromadb.recoveryAttempts = 0;
+          } else {
+            throw new Error('Service started but health check failed');
+          }
+        } catch (error) {
+          logger.warn(
+            `[HEALTH] ChromaDB circuit breaker recovery attempt ${attemptCount + 1} failed: ${error.message}`,
+          );
+          // Increment recovery attempts for exponential backoff
+          this.serviceStatus.chromadb.recoveryAttempts = attemptCount + 1;
+          // Update tripped time for next backoff calculation
+          this.serviceStatus.chromadb.circuitBreakerTrippedAt =
+            new Date().toISOString();
+        }
+      }
+    }
+
+    // HIGH PRIORITY FIX (HIGH-4): Enhanced circuit breaker recovery for Ollama with exponential backoff
+    if (
+      this.serviceStatus.ollama.circuitBreakerTripped &&
+      this.serviceStatus.ollama.circuitBreakerTrippedAt
+    ) {
+      const trippedTime = new Date(
+        this.serviceStatus.ollama.circuitBreakerTrippedAt,
+      ).getTime();
+      const now = Date.now();
+
+      // Initialize recovery attempt counter
+      if (!this.serviceStatus.ollama.recoveryAttempts) {
+        this.serviceStatus.ollama.recoveryAttempts = 0;
+      }
+
+      // HIGH PRIORITY FIX (HIGH-4): Implement exponential backoff
+      const attemptCount = this.serviceStatus.ollama.recoveryAttempts;
+      const maxAttempts = 5; // Maximum recovery attempts before giving up
+      const backoffMultiplier = Math.pow(2, attemptCount); // Exponential: 1, 2, 4, 8, 16
+      const adjustedRecoveryWindow =
+        CIRCUIT_BREAKER_RECOVERY_WINDOW * backoffMultiplier;
+
+      if (now - trippedTime >= adjustedRecoveryWindow) {
+        if (attemptCount >= maxAttempts) {
+          logger.error(
+            `[HEALTH] Ollama exceeded maximum recovery attempts (${maxAttempts}). Service permanently disabled.`,
+          );
+          this.serviceStatus.ollama.status = 'permanently_failed';
+          return; // Stop trying
+        }
+
+        logger.info(
+          `[HEALTH] Ollama circuit breaker recovery attempt ${attemptCount + 1}/${maxAttempts} (backoff: ${adjustedRecoveryWindow / 1000}s)...`,
+        );
+
+        // Attempt restart
+        const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+        try {
+          const url = new URL(baseUrl);
+          await this.startOllama(url.hostname, parseInt(url.port || '11434'));
+
+          // HIGH PRIORITY FIX (HIGH-4): Verify service is actually healthy before resetting circuit breaker
+          const isHealthy = await this.checkOllamaHealth();
+
+          if (isHealthy) {
+            // Reset circuit breaker ONLY if service is healthy
+            logger.info(
+              '[HEALTH] ✅ Ollama circuit breaker recovery successful - service is healthy',
+            );
+            this.serviceStatus.ollama.circuitBreakerTripped = false;
+            this.serviceStatus.ollama.circuitBreakerTrippedAt = null;
+            this.serviceStatus.ollama.restartCount = 0;
+            this.serviceStatus.ollama.consecutiveFailures = 0;
+            this.serviceStatus.ollama.recoveryAttempts = 0;
+          } else {
+            throw new Error('Service started but health check failed');
+          }
+        } catch (error) {
+          logger.warn(
+            `[HEALTH] Ollama circuit breaker recovery attempt ${attemptCount + 1} failed: ${error.message}`,
+          );
+          // Increment recovery attempts for exponential backoff
+          this.serviceStatus.ollama.recoveryAttempts = attemptCount + 1;
+          // Update tripped time for next backoff calculation
+          this.serviceStatus.ollama.circuitBreakerTrippedAt =
+            new Date().toISOString();
+        }
+      }
+    }
+
     // Check ChromaDB
     if (this.serviceStatus.chromadb.status === 'running') {
       try {
@@ -1223,7 +1411,7 @@ class StartupManager {
       try {
         const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
         const response = await axiosWithRetry(
-          () => axios.get(`${baseUrl}/api/tags`, { timeout: 5000 }),
+          () => axios.get(`${baseUrl}/api/tags`, { timeout: 10000 }), // Increased from 5000ms to 10000ms to prevent false timeout failures
           {
             operation: 'Ollama service health check',
             maxRetries: 3,

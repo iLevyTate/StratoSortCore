@@ -16,15 +16,25 @@ const UndoRedoContext = createContext();
 function useSimpleNotifications() {
   return {
     showSuccess: (title, description) => {
-      console.log(`✅ ${title}: ${description}`);
+      // LOW PRIORITY FIX (LOW-2): Remove console.log in production
+      // Keep console.error for errors, but remove info/success logs
       // Could integrate with window.electronAPI for toast notifications if available
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log(`✅ ${title}: ${description}`);
+      }
     },
     showError: (title, description) => {
+      // eslint-disable-next-line no-console
       console.error(`❌ ${title}: ${description}`);
       // Could integrate with window.electronAPI for toast notifications if available
     },
     showInfo: (title, description) => {
-      console.log(`ℹ️ ${title}: ${description}`);
+      // LOW PRIORITY FIX (LOW-2): Remove console.log in production
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log(`ℹ️ ${title}: ${description}`);
+      }
       // Could integrate with window.electronAPI for toast notifications if available
     },
   };

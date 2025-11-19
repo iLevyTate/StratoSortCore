@@ -55,6 +55,7 @@ junit.xml
 *.tmp
 *.temp
 .cache/
+.webpack-cache/
 repomix-output.xml
 nul
 

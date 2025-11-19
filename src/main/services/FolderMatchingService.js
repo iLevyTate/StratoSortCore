@@ -79,6 +79,13 @@ class FolderMatchingService {
 
   async upsertFolderEmbedding(folder) {
     try {
+      // CRITICAL FIX: Ensure ChromaDB is initialized before upserting
+      if (!this.chromaDbService) {
+        throw new Error('ChromaDB service not available');
+      }
+
+      await this.chromaDbService.initialize();
+
       const folderText = [folder.name, folder.description]
         .filter(Boolean)
         .join(' - ');
@@ -106,7 +113,12 @@ class FolderMatchingService {
     } catch (error) {
       logger.error(
         '[FolderMatchingService] Failed to upsert folder embedding:',
-        error,
+        {
+          folderId: folder.id,
+          folderName: folder.name,
+          error: error.message,
+          errorStack: error.stack,
+        },
       );
       throw error;
     }
@@ -114,6 +126,13 @@ class FolderMatchingService {
 
   async upsertFileEmbedding(fileId, contentSummary, fileMeta = {}) {
     try {
+      // CRITICAL FIX: Ensure ChromaDB is initialized before upserting
+      if (!this.chromaDbService) {
+        throw new Error('ChromaDB service not available');
+      }
+
+      await this.chromaDbService.initialize();
+
       const { vector, model } = await this.embedText(contentSummary || '');
 
       await this.chromaDbService.upsertFile({
@@ -127,11 +146,17 @@ class FolderMatchingService {
       logger.debug('[FolderMatchingService] Upserted file embedding', {
         id: fileId,
         path: fileMeta.path,
+        vectorLength: vector.length,
       });
     } catch (error) {
       logger.error(
         '[FolderMatchingService] Failed to upsert file embedding:',
-        error,
+        {
+          fileId,
+          filePath: fileMeta.path,
+          error: error.message,
+          errorStack: error.stack,
+        },
       );
       throw error;
     }
@@ -139,12 +164,46 @@ class FolderMatchingService {
 
   async matchFileToFolders(fileId, topK = 5) {
     try {
+      // CRITICAL FIX: Ensure ChromaDB is initialized before querying
+      if (!this.chromaDbService) {
+        logger.error('[FolderMatchingService] ChromaDB service not available');
+        return [];
+      }
+
+      // Ensure ChromaDB is initialized
+      await this.chromaDbService.initialize();
+
+      logger.debug('[FolderMatchingService] Querying folder matches', {
+        fileId,
+        topK,
+      });
+
       const results = await this.chromaDbService.queryFolders(fileId, topK);
+
+      if (!Array.isArray(results)) {
+        logger.warn('[FolderMatchingService] Invalid results format', {
+          fileId,
+          resultsType: typeof results,
+        });
+        return [];
+      }
+
+      logger.debug('[FolderMatchingService] Folder matching results', {
+        fileId,
+        resultCount: results.length,
+        topScore: results[0]?.score,
+      });
+
       return results;
     } catch (error) {
       logger.error(
         '[FolderMatchingService] Failed to match file to folders:',
-        error,
+        {
+          fileId,
+          topK,
+          error: error.message,
+          errorStack: error.stack,
+        },
       );
       return [];
     }

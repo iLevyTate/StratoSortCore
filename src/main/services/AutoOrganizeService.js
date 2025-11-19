@@ -3,6 +3,9 @@ const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
 
+// LOW PRIORITY FIX (LOW-8): Make batch size configurable via constant
+const DEFAULT_BATCH_SIZE = 10; // Default number of files to process per batch
+
 /**
  * AutoOrganizeService - Handles automatic file organization
  * Uses the suggestion system behind the scenes for better accuracy
@@ -37,7 +40,7 @@ class AutoOrganizeService {
       confidenceThreshold = this.thresholds.autoApprove,
       defaultLocation = 'Documents',
       preserveNames = false,
-      batchSize = 10, // Process files in batches of 10
+      batchSize = DEFAULT_BATCH_SIZE, // LOW PRIORITY FIX (LOW-8): Use configurable constant
     } = options;
 
     logger.info('[AutoOrganize] Starting automatic organization', {
@@ -141,6 +144,36 @@ class AutoOrganizeService {
             },
             results,
           );
+
+          // Check if any files from the batch weren't processed
+          // This can happen if batch results don't include all files
+          const processedFileNames = new Set();
+          for (const group of batchSuggestions.groups) {
+            for (const fileWithSuggestion of group.files) {
+              processedFileNames.add(fileWithSuggestion.name);
+            }
+          }
+
+          // Process any unprocessed files individually as fallback
+          const unprocessedFiles = batch.filter(
+            (f) => !processedFileNames.has(f.name),
+          );
+          if (unprocessedFiles.length > 0) {
+            logger.debug(
+              '[AutoOrganize] Some files not in batch results, processing individually',
+              { count: unprocessedFiles.length },
+            );
+            await this._processFilesIndividually(
+              unprocessedFiles,
+              smartFolders,
+              {
+                confidenceThreshold,
+                defaultLocation,
+                preserveNames,
+              },
+              results,
+            );
+          }
         } catch (error) {
           logger.error('[AutoOrganize] Batch processing failed', {
             batchIndex: batchIndex + 1,
@@ -315,7 +348,7 @@ class AutoOrganizeService {
             file,
             destination: fallbackDestination,
             confidence: 0.2,
-            method: 'individual-suggestion-error-fallback',
+            method: 'suggestion-error-fallback',
           });
 
           results.operations.push({
@@ -338,7 +371,7 @@ class AutoOrganizeService {
             file,
             destination: fallbackDestination,
             confidence: 0.3,
-            method: 'individual-fallback',
+            method: 'fallback',
           });
 
           results.operations.push({
@@ -367,7 +400,7 @@ class AutoOrganizeService {
             suggestion: primary,
             destination,
             confidence,
-            method: 'individual-automatic',
+            method: 'automatic',
           });
 
           results.operations.push({
@@ -411,7 +444,7 @@ class AutoOrganizeService {
             file,
             destination: fallbackDestination,
             confidence,
-            method: 'individual-low-confidence-fallback',
+            method: 'low-confidence-fallback',
           });
 
           results.operations.push({
@@ -492,7 +525,7 @@ class AutoOrganizeService {
         file,
         destination,
         confidence: 0.1,
-        method: 'no-analysis-default-batch',
+        method: 'no-analysis-default',
       });
 
       results.operations.push({

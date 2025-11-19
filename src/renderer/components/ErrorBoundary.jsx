@@ -28,11 +28,10 @@ class ErrorBoundary extends React.Component {
   }
 
   handleReset() {
+    // MEDIUM PRIORITY FIX (MED-2): Remove window.confirm usage
+    // Reset error state to attempt recovery without full reload
+    // User can use "Reload App" button if recovery doesn't work
     this.setState({ hasError: false, error: null });
-    // Optionally reload the window for a fresh start
-    if (window.confirm('Would you like to reload the application?')) {
-      window.location.reload();
-    }
   }
 
   render() {

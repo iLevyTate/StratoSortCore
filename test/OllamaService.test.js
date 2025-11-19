@@ -31,8 +31,23 @@ jest.mock('../src/main/ollamaUtils', () => ({
   setOllamaEmbeddingModel: jest.fn().mockResolvedValue(true),
 }));
 
+// Mock Ollama constructor
+jest.mock('ollama', () => {
+  const mockOllamaInstance = {
+    list: jest.fn(),
+    pull: jest.fn(),
+    embeddings: jest.fn(),
+    generate: jest.fn(),
+  };
+
+  return {
+    Ollama: jest.fn().mockImplementation(() => mockOllamaInstance),
+  };
+});
+
 describe('OllamaService', () => {
   let mockOllama;
+  let MockOllama;
   const {
     loadOllamaConfig,
     saveOllamaConfig,
@@ -60,6 +75,10 @@ describe('OllamaService', () => {
     };
 
     getOllama.mockReturnValue(mockOllama);
+
+    // Get the mocked Ollama constructor and make it return our mock instance
+    MockOllama = require('ollama').Ollama;
+    MockOllama.mockReturnValue(mockOllama);
   });
 
   afterEach(() => {
@@ -174,6 +193,7 @@ describe('OllamaService', () => {
       expect(result.modelCount).toBe(2);
       expect(result.ollamaHealth.modelCount).toBe(2);
       expect(result.ollamaHealth.host).toBe('http://localhost:11434');
+      expect(MockOllama).toHaveBeenCalled();
       expect(mockOllama.list).toHaveBeenCalled();
     });
 
@@ -185,6 +205,7 @@ describe('OllamaService', () => {
 
       expect(result.success).toBe(true);
       expect(result.ollamaHealth.host).toBe(customHost);
+      expect(MockOllama).toHaveBeenCalledWith({ host: customHost });
     });
 
     test('should handle connection failure', async () => {

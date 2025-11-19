@@ -29,7 +29,22 @@ async function asyncSpawn(command, args = [], options = {}) {
     let timeoutId = null;
 
     try {
-      const child = spawn(command, args, spawnOptions);
+      let child;
+      try {
+        child = spawn(command, args, spawnOptions);
+      } catch (spawnError) {
+        // spawn() itself failed (command not found, etc.)
+        if (!resolved) {
+          resolved = true;
+          resolve({
+            status: null,
+            stdout: '',
+            stderr: '',
+            error: spawnError,
+          });
+        }
+        return;
+      }
 
       // Set up timeout
       if (timeout) {

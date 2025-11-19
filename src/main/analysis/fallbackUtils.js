@@ -62,7 +62,9 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
         bestMatch = folder.name;
       }
     }
-    if (bestScore >= 5) return bestMatch;
+    // HIGH PRIORITY FIX (HIGH-6): Only return bestMatch if it's not null
+    // This ensures we never return null and fall through to pattern matching
+    if (bestScore >= 5 && bestMatch) return bestMatch;
   }
 
   const patterns = {

@@ -17,14 +17,39 @@ import {
 function phaseReducer(state, action) {
   switch (action.type) {
     case 'ADVANCE_PHASE': {
+      // MEDIUM PRIORITY FIX (MED-1): Validate payload structure
+      if (!action.payload || typeof action.payload !== 'object') {
+        console.error(
+          '[PHASE] Invalid payload in ADVANCE_PHASE action:',
+          action.payload,
+        );
+        return state;
+      }
+
       const { targetPhase, data = {} } = action.payload;
+
+      // Validate targetPhase
+      if (!targetPhase || typeof targetPhase !== 'string') {
+        console.error(
+          '[PHASE] Invalid or missing targetPhase in ADVANCE_PHASE action:',
+          targetPhase,
+        );
+        return state;
+      }
+
+      // Validate data is an object
+      if (data !== null && typeof data !== 'object') {
+        console.error('[PHASE] Invalid data in ADVANCE_PHASE action:', data);
+        return state;
+      }
+
       const allowedTransitions = PHASE_TRANSITIONS[state.currentPhase] || [];
       if (
         targetPhase !== state.currentPhase &&
         !allowedTransitions.includes(targetPhase)
       ) {
         console.warn(
-          `Invalid transition from ${state.currentPhase} to ${targetPhase}`,
+          `[PHASE] Invalid transition from ${state.currentPhase} to ${targetPhase}`,
         );
         return state;
       }
@@ -35,6 +60,23 @@ function phaseReducer(state, action) {
       };
     }
     case 'SET_PHASE_DATA':
+      // MEDIUM PRIORITY FIX (MED-1): Validate payload structure
+      if (!action.payload || typeof action.payload !== 'object') {
+        console.error(
+          '[PHASE] Invalid payload in SET_PHASE_DATA action:',
+          action.payload,
+        );
+        return state;
+      }
+
+      if (!action.payload.key || typeof action.payload.key !== 'string') {
+        console.error(
+          '[PHASE] Invalid or missing key in SET_PHASE_DATA action:',
+          action.payload.key,
+        );
+        return state;
+      }
+
       return {
         ...state,
         phaseData: {
@@ -43,14 +85,47 @@ function phaseReducer(state, action) {
         },
       };
     case 'SET_LOADING':
+      // MEDIUM PRIORITY FIX (MED-1): Validate payload
+      if (
+        !action.payload ||
+        typeof action.payload.isLoading !== 'boolean'
+      ) {
+        console.error(
+          '[PHASE] Invalid isLoading in SET_LOADING action:',
+          action.payload,
+        );
+        return state;
+      }
       return { ...state, isLoading: action.payload.isLoading };
+
     case 'TOGGLE_SETTINGS':
       return { ...state, showSettings: !state.showSettings };
+
     case 'RESTORE_STATE':
+      // MEDIUM PRIORITY FIX (MED-1): Validate payload
+      if (!action.payload || typeof action.payload !== 'object') {
+        console.error(
+          '[PHASE] Invalid payload in RESTORE_STATE action:',
+          action.payload,
+        );
+        return state;
+      }
+
+      if (
+        !action.payload.currentPhase ||
+        typeof action.payload.currentPhase !== 'string'
+      ) {
+        console.error(
+          '[PHASE] Invalid currentPhase in RESTORE_STATE action:',
+          action.payload.currentPhase,
+        );
+        return state;
+      }
+
       return {
         ...state,
         currentPhase: action.payload.currentPhase,
-        phaseData: action.payload.phaseData,
+        phaseData: action.payload.phaseData || state.phaseData,
       };
     case 'RESET_WORKFLOW':
       return {
@@ -236,13 +311,28 @@ export function PhaseProvider({ children }) {
     [advancePhase, setPhaseData, setLoading, toggleSettings, resetWorkflow],
   );
 
+  // HIGH PRIORITY FIX (HIGH-1): Optimize memoization by destructuring state
+  // This prevents unnecessary re-renders by depending on specific state values
+  const contextValue = useMemo(() => {
+    const getCurrentMetadata = () => PHASE_METADATA[state.currentPhase];
+    return {
+      currentPhase: state.currentPhase,
+      phaseData: state.phaseData,
+      isLoading: state.isLoading,
+      showSettings: state.showSettings,
+      actions,
+      getCurrentMetadata,
+    };
+  }, [
+    state.currentPhase,
+    state.phaseData,
+    state.isLoading,
+    state.showSettings,
+    actions,
+  ]);
+
   return (
-    <PhaseContext.Provider
-      value={useMemo(() => {
-        const getCurrentMetadata = () => PHASE_METADATA[state.currentPhase];
-        return { ...state, actions, getCurrentMetadata };
-      }, [state, actions])}
-    >
+    <PhaseContext.Provider value={contextValue}>
       {children}
     </PhaseContext.Provider>
   );

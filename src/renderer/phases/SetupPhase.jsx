@@ -67,10 +67,15 @@ function SetupPhase() {
 
   const loadSmartFolders = async () => {
     try {
-      console.log('[SetupPhase] Loading smart folders...');
+      // LOW PRIORITY FIX (LOW-2): Wrap debug logs in development check
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[SetupPhase] Loading smart folders...');
+      }
 
       // Check if electronAPI is available
       if (!window.electronAPI || !window.electronAPI.smartFolders) {
+        // eslint-disable-next-line no-console
         console.error('[SetupPhase] electronAPI.smartFolders not available');
         showError(
           'Electron API not available. Please restart the application.',
@@ -79,13 +84,18 @@ function SetupPhase() {
       }
 
       const folders = await window.electronAPI.smartFolders.get();
-      console.log(
-        '[SetupPhase] Loaded smart folders:',
-        folders?.length || 0,
-        folders,
-      );
+      // LOW PRIORITY FIX (LOW-2): Wrap debug logs in development check
+      if (process.env.NODE_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[SetupPhase] Loaded smart folders:',
+          folders?.length || 0,
+          folders,
+        );
+      }
 
       if (!Array.isArray(folders)) {
+        // eslint-disable-next-line no-console
         console.warn('[SetupPhase] Received non-array response:', folders);
         setSmartFolders([]);
         return;
@@ -94,13 +104,18 @@ function SetupPhase() {
       setSmartFolders(folders);
       actions.setPhaseData('smartFolders', folders);
 
-      if (folders.length > 0) {
-        console.log(
-          '[SetupPhase] Smart folders loaded successfully:',
-          folders.length,
-        );
-      } else {
-        console.log('[SetupPhase] No smart folders found (using defaults)');
+      // LOW PRIORITY FIX (LOW-2): Wrap debug logs in development check
+      if (process.env.NODE_ENV === 'development') {
+        if (folders.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(
+            '[SetupPhase] Smart folders loaded successfully:',
+            folders.length,
+          );
+        } else {
+          // eslint-disable-next-line no-console
+          console.log('[SetupPhase] No smart folders found (using defaults)');
+        }
       }
     } catch (error) {
       console.error('[SetupPhase] Failed to load smart folders:', error);

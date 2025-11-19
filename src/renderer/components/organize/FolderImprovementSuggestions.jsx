@@ -197,9 +197,10 @@ function FolderImprovementSuggestions({
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() =>
-                              console.log('Edit folder:', folder.name)
-                            }
+                            onClick={() => {
+                              // LOW PRIORITY FIX (LOW-2): Remove console.log placeholder
+                              // TODO: Implement edit folder functionality
+                            }}
                           >
                             Edit
                           </Button>
@@ -207,9 +208,10 @@ function FolderImprovementSuggestions({
                             size="sm"
                             variant="ghost"
                             className="text-red-600 hover:bg-red-50"
-                            onClick={() =>
-                              console.log('Remove folder:', folder.name)
-                            }
+                            onClick={() => {
+                              // LOW PRIORITY FIX (LOW-2): Remove console.log placeholder
+                              // TODO: Implement remove folder functionality
+                            }}
                           >
                             Remove
                           </Button>
@@ -285,7 +287,10 @@ function FolderImprovementSuggestions({
       <div className="flex gap-2 justify-end pt-4 border-t">
         <Button
           variant="secondary"
-          onClick={() => console.log('Export report')}
+          onClick={() => {
+            // LOW PRIORITY FIX (LOW-2): Remove console.log placeholder
+            // TODO: Implement export report functionality
+          }}
         >
           Export Report
         </Button>

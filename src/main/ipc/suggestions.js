@@ -168,6 +168,18 @@ function registerSuggestionsIpc({
       try {
         logger.info('[SUGGESTIONS] Getting organization strategies');
 
+        // HIGH PRIORITY FIX (HIGH-13): Check if suggestion service is available
+        if (!suggestionService) {
+          logger.warn(
+            '[SUGGESTIONS] Cannot get strategies - service not available',
+          );
+          return {
+            success: false,
+            error: 'Suggestion service is not available',
+            strategies: [],
+          };
+        }
+
         return {
           success: true,
           strategies: Object.entries(suggestionService.strategies).map(
@@ -198,6 +210,18 @@ function registerSuggestionsIpc({
           strategy: strategyId,
           fileCount: files.length,
         });
+
+        // HIGH PRIORITY FIX (HIGH-13): Check if suggestion service is available
+        if (!suggestionService) {
+          logger.warn(
+            '[SUGGESTIONS] Cannot apply strategy - service not available',
+          );
+          return {
+            success: false,
+            error: 'Suggestion service is not available',
+            results: [],
+          };
+        }
 
         const strategy = suggestionService.strategies[strategyId];
         if (!strategy) {

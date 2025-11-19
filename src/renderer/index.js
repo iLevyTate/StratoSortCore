@@ -52,7 +52,11 @@ if (typeof window !== 'undefined') {
 // Wait for DOM to be ready before initializing React
 function initializeApp() {
   try {
-    console.log('[RENDERER] Initializing React application...');
+    // LOW PRIORITY FIX (LOW-2): Wrap initialization logs in development check
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.log('[RENDERER] Initializing React application...');
+    }
 
     // Find the root container
     const container = document.getElementById('root');
@@ -62,7 +66,11 @@ function initializeApp() {
       );
     }
 
-    console.log('[RENDERER] Root container found, creating React root...');
+    // LOW PRIORITY FIX (LOW-2): Wrap initialization logs in development check
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.log('[RENDERER] Root container found, creating React root...');
+    }
 
     // Create React root
     const root = createRoot(container);
@@ -82,7 +90,11 @@ function initializeApp() {
       if (initialLoading) initialLoading.remove();
     });
 
-    console.log('[RENDERER] React application initialized successfully');
+    // LOW PRIORITY FIX (LOW-2): Wrap initialization logs in development check
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.log('[RENDERER] React application initialized successfully');
+    }
   } catch (error) {
     console.error('[RENDERER] Failed to initialize React application:', error);
 

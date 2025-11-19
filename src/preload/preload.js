@@ -174,6 +174,19 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'app:update',
   'startup-progress',
   'startup-error',
+  'menu-action',
+  'settings-changed-external',
+  'operation-error',
+  'operation-complete',
+  'operation-failed',
+];
+
+// Allowed send channels (for ipcRenderer.send, not invoke)
+// These are fire-and-forget messages that don't need handlers
+const ALLOWED_SEND_CHANNELS = [
+  'renderer-error-report', // Error reporting from renderer to main
+  'startup-continue', // Startup flow control
+  'startup-quit', // Startup flow control
 ];
 
 // Flatten allowed send channels for validation
@@ -440,15 +453,21 @@ class SecureIPCManager {
       return false;
     }
 
-    // Windows path: C:\ or C:/
+    // MEDIUM PRIORITY FIX (MED-6): Enhanced Unicode and space support for path detection
+    // Windows path: C:\ or C:/ (drive letter can be any letter)
     if (/^[A-Za-z]:[\\/]/.test(str)) return true;
 
     // Unix absolute path: starts with /
-    // But be more strict - must look like a real path with alphanumeric after the slash
-    if (/^\/[A-Za-z0-9]/.test(str)) return true;
+    // Support Unicode characters and spaces in path names
+    // Match any non-null character after the slash (Unicode-safe)
+    if (/^\/[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
+
+    // UNC paths: \\server\share or //server/share
+    if (/^[\\/]{2}[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
 
     // Relative path with typical file extensions
-    if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-/]+\.[A-Za-z0-9]+$/.test(str)) {
+    // Support Unicode letters, numbers, combining marks, spaces
+    if (/^[\p{L}\p{N}\p{M}\s_.-]+\/[\p{L}\p{N}\p{M}\s_.\/-]+\.[\p{L}\p{N}]+$/u.test(str)) {
       return true;
     }
 
@@ -656,22 +675,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
 
         // 3. Block access to system directories (basic protection)
+        // MEDIUM PRIORITY FIX (MED-7): More nuanced system path blocking
         // Check with both separator types for Windows/Unix compatibility
         const dangerousPaths = [
           '/etc',
           '/sys',
           '/proc',
+          '/dev',
+          '/boot',
           'C:/Windows/System32',
           'C:\\Windows\\System32',
           'C:/Windows/SysWOW64',
           'C:\\Windows\\SysWOW64',
-          '/System',
+          'C:/Windows/Boot',
+          'C:\\Windows\\Boot',
+          'C:/Windows/WinSxS',
+          'C:\\Windows\\WinSxS',
+          '/System/Library/CoreServices',
           '/Library/System',
+          '/private/etc',
+          '/private/var/root',
         ];
 
-        const isDangerous = dangerousPaths.some((dangerous) =>
-          filePath.toLowerCase().startsWith(dangerous.toLowerCase()),
+        // User-accessible Windows subdirectories (explicitly allowed)
+        const allowedWindowsPaths = [
+          'C:/Windows/Temp',
+          'C:\\Windows\\Temp',
+          'C:/Windows/Fonts',
+          'C:\\Windows\\Fonts',
+          'C:/Windows/Downloaded Program Files',
+          'C:\\Windows\\Downloaded Program Files',
+        ];
+
+        const normalizedPath = filePath.toLowerCase();
+        const isExplicitlyAllowed = allowedWindowsPaths.some((allowed) =>
+          normalizedPath.startsWith(allowed.toLowerCase()),
         );
+
+        // Only block if it's dangerous AND not explicitly allowed
+        const isDangerous =
+          !isExplicitlyAllowed &&
+          dangerousPaths.some((dangerous) =>
+            normalizedPath.startsWith(dangerous.toLowerCase()),
+          );
 
         if (isDangerous) {
           throw new Error(
@@ -788,6 +834,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFiles: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
+    getStats: () =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
+    findSimilar: (fileId, topK = 10) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR, {
+        fileId,
+        topK,
+      }),
   },
 
   // Organization Suggestions
@@ -913,6 +966,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onStartupProgress: (callback) =>
       secureIPC.safeOn('startup-progress', callback),
     onStartupError: (callback) => secureIPC.safeOn('startup-error', callback),
+    onSystemMetrics: (callback) =>
+      secureIPC.safeOn('system-metrics', callback),
+    onMenuAction: (callback) => secureIPC.safeOn('menu-action', callback),
+    onSettingsChanged: (callback) =>
+      secureIPC.safeOn('settings-changed-external', callback),
+    onOperationError: (callback) =>
+      secureIPC.safeOn('operation-error', callback),
+    onOperationComplete: (callback) =>
+      secureIPC.safeOn('operation-complete', callback),
+    onOperationFailed: (callback) =>
+      secureIPC.safeOn('operation-failed', callback),
+    // Send error report to main process (uses send, not invoke)
+    sendError: (errorData) => {
+      try {
+        // Validate error data structure
+        if (
+          !errorData ||
+          typeof errorData !== 'object' ||
+          !errorData.message
+        ) {
+          log.warn('[events.sendError] Invalid error data structure');
+          return;
+        }
+        // Validate channel is allowed
+        const channel = 'renderer-error-report';
+        if (!ALLOWED_SEND_CHANNELS.includes(channel)) {
+          log.warn(`[events.sendError] Blocked send to unauthorized channel: ${channel}`);
+          return;
+        }
+        // Send error report to main process
+        // This uses send instead of invoke since it's fire-and-forget
+        ipcRenderer.send(channel, errorData);
+      } catch (error) {
+        log.error('[events.sendError] Failed to send error report:', error);
+      }
+    },
   },
 
   // Settings
@@ -949,9 +1038,8 @@ contextBridge.exposeInMainWorld('electron', {
       return secureIPC.safeOn(channel, callback);
     },
     send: (channel, ...args) => {
-      // Allow specific startup-related send channels
-      const allowedSendChannels = ['startup-continue', 'startup-quit'];
-      if (allowedSendChannels.includes(channel)) {
+      // Use centralized allowed send channels list
+      if (ALLOWED_SEND_CHANNELS.includes(channel)) {
         ipcRenderer.send(channel, ...args);
       } else {
         log.warn(`Attempted to send on disallowed channel: ${channel}`);

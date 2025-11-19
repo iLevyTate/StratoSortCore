@@ -294,15 +294,31 @@ try {
   );
 }
 
+// MEDIUM PRIORITY FIX (MED-2): Time-based sliding window for GPU failure tracking
 let gpuFailureCount = 0;
+let lastGpuFailureTime = 0;
+const GPU_FAILURE_RESET_WINDOW = 60 * 60 * 1000; // Reset counter after 1 hour of stability
+
 const gpuProcessHandler = (event, details) => {
   if (details?.type === 'GPU') {
+    const now = Date.now();
+
+    // Reset counter if last failure was more than 1 hour ago
+    if (now - lastGpuFailureTime > GPU_FAILURE_RESET_WINDOW) {
+      gpuFailureCount = 0;
+      logger.debug('[GPU] Failure counter reset after stability window');
+    }
+
     gpuFailureCount += 1;
+    lastGpuFailureTime = now;
+
     logger.error('[GPU] Process exited', {
       reason: details?.reason,
       exitCode: details?.exitCode,
       crashCount: gpuFailureCount,
+      lastFailure: new Date(lastGpuFailureTime).toISOString(),
     });
+
     if (
       gpuFailureCount >= 2 &&
       process.env.STRATOSORT_FORCE_SOFTWARE_GPU !== '1'
@@ -632,13 +648,16 @@ function createWindow() {
   mainWindow.on('close', closeHandler);
 
   const closedHandler = () => {
-    // Remove all event listeners before nulling reference
+    // CRITICAL FIX: Enhanced cleanup with proper error handling and null checks
     if (windowEventHandlers.size > 0) {
       for (const [event, handler] of windowEventHandlers) {
         try {
-          mainWindow.removeListener(event, handler);
+          // Check if window still exists and is not destroyed before removing listener
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.removeListener(event, handler);
+          }
         } catch (e) {
-          // Window already destroyed
+          logger.error(`[WINDOW] Failed to remove ${event} listener:`, e);
         }
       }
       windowEventHandlers.clear();
@@ -647,6 +666,14 @@ function createWindow() {
   };
   windowEventHandlers.set('closed', closedHandler);
   mainWindow.on('closed', closedHandler);
+
+  // CRITICAL FIX: Also register cleanup on 'destroy' event to catch cases where window
+  // is destroyed without triggering 'closed' event
+  const destroyHandler = () => {
+    logger.warn('[WINDOW] Window destroyed - forcing cleanup');
+    closedHandler();
+  };
+  mainWindow.once('destroy', destroyHandler);
 }
 
 function updateDownloadWatcher(settings) {
@@ -669,7 +696,14 @@ function updateDownloadWatcher(settings) {
 }
 
 function handleSettingsChanged(settings) {
-  currentSettings = settings || {};
+  // MEDIUM PRIORITY FIX (MED-1): Validate settings structure before use
+  if (!settings || typeof settings !== 'object') {
+    logger.warn('[SETTINGS] Invalid settings received, using defaults');
+    currentSettings = {};
+    return;
+  }
+
+  currentSettings = settings;
   updateDownloadWatcher(settings);
   try {
     updateTrayMenu();
@@ -868,12 +902,54 @@ app.whenReady().then(async () => {
     }
 
     // Load custom folders
-    customFolders = await loadCustomFolders();
-    logger.info(
-      '[STARTUP] Loaded custom folders:',
-      customFolders.length,
-      'folders',
-    );
+    // MEDIUM PRIORITY FIX (MED-3): Validate custom folders structure
+    try {
+      const loadedFolders = await loadCustomFolders();
+
+      // Validate loaded data
+      if (!Array.isArray(loadedFolders)) {
+        logger.warn(
+          '[STARTUP] Invalid custom folders data (not an array), using empty array',
+        );
+        customFolders = [];
+      } else {
+        // Filter out invalid folder entries
+        customFolders = loadedFolders.filter((folder) => {
+          if (!folder || typeof folder !== 'object') {
+            logger.warn('[STARTUP] Skipping invalid folder entry (not an object)');
+            return false;
+          }
+          if (!folder.id || typeof folder.id !== 'string') {
+            logger.warn('[STARTUP] Skipping folder without valid id:', folder);
+            return false;
+          }
+          if (!folder.name || typeof folder.name !== 'string') {
+            logger.warn('[STARTUP] Skipping folder without valid name:', folder);
+            return false;
+          }
+          if (!folder.path || typeof folder.path !== 'string') {
+            logger.warn('[STARTUP] Skipping folder without valid path:', folder);
+            return false;
+          }
+          return true;
+        });
+
+        if (customFolders.length !== loadedFolders.length) {
+          logger.warn(
+            `[STARTUP] Filtered out ${loadedFolders.length - customFolders.length} invalid folder entries`,
+          );
+        }
+      }
+
+      logger.info(
+        '[STARTUP] Loaded custom folders:',
+        customFolders.length,
+        'folders',
+      );
+    } catch (error) {
+      logger.error('[STARTUP] Failed to load custom folders:', error.message);
+      customFolders = [];
+    }
 
     // Ensure default "Uncategorized" folder exists
     // CRITICAL FIX: Add null checks with optional chaining to prevent NULL dereference
@@ -1036,21 +1112,42 @@ app.whenReady().then(async () => {
     // Create application menu with theme
     createApplicationMenu();
 
-    // Fixed: Give IPC handlers a moment to fully register before verification
-    // Some handlers may have async initialization
-    await new Promise((resolve) => setImmediate(resolve));
+    // Register IPC event listeners (not handlers) for renderer-to-main communication
+    ipcMain.on('renderer-error-report', (event, errorData) => {
+      try {
+        logger.error('[RENDERER ERROR]', {
+          message: errorData?.message || 'Unknown error',
+          stack: errorData?.stack,
+          componentStack: errorData?.componentStack,
+          type: errorData?.type || 'unknown',
+          timestamp: errorData?.timestamp || new Date().toISOString(),
+        });
+      } catch (err) {
+        logger.error('[RENDERER ERROR] Failed to process error report:', err);
+      }
+    });
+
+    // HIGH PRIORITY FIX (HIGH-1): Removed unreliable setImmediate delay
+    // The verifyIpcHandlersRegistered() function has robust retry logic with
+    // exponential backoff and timeout, so no pre-delay is needed
 
     // VERIFY all critical IPC handlers are registered before creating the window
     // This prevents race conditions where the renderer tries to call IPC methods before they're ready
+    logger.info('[STARTUP] Verifying IPC handlers are registered...');
     const handlersReady = await verifyIpcHandlersRegistered();
+
     if (!handlersReady) {
-      logger.warn(
-        '[STARTUP] Some IPC handlers not registered, continuing in degraded mode',
+      logger.error(
+        '[STARTUP] ⚠️ CRITICAL: Some IPC handlers not registered after verification timeout',
+      );
+      logger.error(
+        '[STARTUP] App may not function correctly. Consider increasing timeout or checking handler registration logic.',
       );
       // Don't throw - allow app to start in degraded mode
       // The handlers may register later or may be optional
+      // This prevents complete app failure, but user will see errors for missing functionality
     } else {
-      logger.info('[STARTUP] All IPC handlers verified and ready');
+      logger.info('[STARTUP] ✅ All critical IPC handlers verified and ready');
     }
 
     createWindow();
@@ -1268,15 +1365,24 @@ logger.info(
 logger.info('[UI] Modern UI loaded with GPU acceleration');
 
 // App lifecycle
-app.on('before-quit', async () => {
+app.on('before-quit', async (event) => {
   isQuitting = true;
 
-  // Clean up all intervals first
-  if (metricsInterval) {
-    clearInterval(metricsInterval);
-    metricsInterval = null;
-    logger.info('[CLEANUP] Metrics interval cleared');
-  }
+  // HIGH PRIORITY FIX (HIGH-2): Add hard timeout for all cleanup operations
+  // Prevents hanging on shutdown and ensures app quits even if cleanup fails
+  const CLEANUP_TIMEOUT = 5000; // 5 seconds max for all cleanup
+  const cleanupStartTime = Date.now();
+
+  logger.info('[SHUTDOWN] Starting cleanup with 5-second timeout...');
+
+  // Wrap ALL cleanup in a timeout promise
+  const cleanupPromise = (async () => {
+    // Clean up all intervals first
+    if (metricsInterval) {
+      clearInterval(metricsInterval);
+      metricsInterval = null;
+      logger.info('[CLEANUP] Metrics interval cleared');
+    }
 
   // Clean up download watcher
   if (downloadWatcher) {
@@ -1482,24 +1588,54 @@ app.on('before-quit', async () => {
     // Silently ignore destroy errors on quit
   }
 
-  // Post-shutdown verification: Verify all resources are released
-  const shutdownTimeout = 10000; // 10 seconds max for shutdown
+    // Post-shutdown verification: Verify all resources are released
+    const shutdownTimeout = 10000; // 10 seconds max for shutdown
+
+    try {
+      await Promise.race([
+        verifyShutdownCleanup(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Shutdown verification timeout')),
+            shutdownTimeout,
+          ),
+        ),
+      ]);
+    } catch (error) {
+      logger.warn(
+        '[SHUTDOWN-VERIFY] Verification failed or timed out:',
+        error.message,
+      );
+    }
+  })(); // Close cleanup promise wrapper
+
+  // HIGH PRIORITY FIX (HIGH-2): Race cleanup against timeout
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(
+      () => reject(new Error('Cleanup timeout exceeded')),
+      CLEANUP_TIMEOUT,
+    ),
+  );
 
   try {
-    await Promise.race([
-      verifyShutdownCleanup(),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error('Shutdown verification timeout')),
-          shutdownTimeout,
-        ),
-      ),
-    ]);
+    await Promise.race([cleanupPromise, timeoutPromise]);
+    const elapsed = Date.now() - cleanupStartTime;
+    logger.info(`[SHUTDOWN] ✅ Cleanup completed successfully in ${elapsed}ms`);
   } catch (error) {
-    logger.warn(
-      '[SHUTDOWN-VERIFY] Verification failed or timed out:',
-      error.message,
-    );
+    const elapsed = Date.now() - cleanupStartTime;
+    if (error.message === 'Cleanup timeout exceeded') {
+      logger.error(
+        `[SHUTDOWN] ⚠️ Cleanup timed out after ${elapsed}ms (max: ${CLEANUP_TIMEOUT}ms)`,
+      );
+      logger.error(
+        '[SHUTDOWN] Forcing app quit to prevent hanging. Some resources may not be properly released.',
+      );
+    } else {
+      logger.error(
+        `[SHUTDOWN] Cleanup failed after ${elapsed}ms:`,
+        error.message,
+      );
+    }
   }
 });
 

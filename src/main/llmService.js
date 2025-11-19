@@ -8,6 +8,7 @@ const {
 
 /**
  * Test if Ollama is available and the model is working
+ * MEDIUM PRIORITY FIX (MED-11): Added stream: false to prevent hanging
  */
 async function testOllamaConnection() {
   try {
@@ -17,6 +18,7 @@ async function testOllamaConnection() {
       model,
       prompt: 'Hello',
       options: { num_predict: 1 },
+      stream: false, // Prevent waiting for stream that never completes
     });
     return { success: true, model };
   } catch (error) {

@@ -39,6 +39,9 @@ function getCacheKey(textContent, model, smartFolders) {
       : textContent;
 
   const hasher = crypto.createHash('sha1');
+  // MEDIUM PRIORITY FIX (MED-12): Include original length to prevent hash collision
+  // Files with same first 50KB but different total length should have different keys
+  hasher.update(`${textContent?.length || 0}:`);
   hasher.update(truncatedText || '');
   hasher.update('|');
   hasher.update(String(model || ''));

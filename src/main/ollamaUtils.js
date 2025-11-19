@@ -15,6 +15,7 @@ const getOllamaConfigPath = () => {
 
 let ollamaInstance = null;
 let ollamaHost = 'http://127.0.0.1:11434';
+let ollamaInstanceHost = null; // MEDIUM PRIORITY FIX (MED-13): Track host used to create instance
 // Selected models persisted in userData config
 let selectedTextModel = null;
 let selectedVisionModel = null;
@@ -22,6 +23,15 @@ let selectedEmbeddingModel = null;
 
 // Function to initialize or get the Ollama instance
 function getOllama() {
+  // MEDIUM PRIORITY FIX (MED-13): Invalidate instance if host has changed
+  if (ollamaInstance && ollamaInstanceHost !== ollamaHost) {
+    logger.info(
+      `[OLLAMA] Host changed from ${ollamaInstanceHost} to ${ollamaHost}, recreating instance`,
+    );
+    ollamaInstance = null;
+    ollamaInstanceHost = null;
+  }
+
   if (!ollamaInstance) {
     // Host is configurable via environment variables or saved config
     // Reuse a single client and enable keep-alive where supported
@@ -46,6 +56,8 @@ function getOllama() {
     } catch {
       ollamaInstance = new Ollama({ host: ollamaHost });
     }
+    // MEDIUM PRIORITY FIX (MED-13): Remember the host used for this instance
+    ollamaInstanceHost = ollamaHost;
   }
   return ollamaInstance;
 }

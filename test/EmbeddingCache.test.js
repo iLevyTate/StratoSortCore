@@ -510,6 +510,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     }));
 
     mockChromaDB = {
+      initialize: jest.fn().mockResolvedValue(undefined),
       upsertFolder: jest.fn().mockResolvedValue(),
       upsertFile: jest.fn().mockResolvedValue(),
       queryFolders: jest.fn().mockResolvedValue([]),

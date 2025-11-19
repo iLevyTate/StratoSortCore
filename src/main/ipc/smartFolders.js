@@ -1,10 +1,85 @@
 const path = require('path');
 const fs = require('fs').promises;
+const { app } = require('electron');
 const { getOllama: getOllamaClient } = require('../ollamaUtils');
 const {
   enhanceSmartFolderWithLLM,
 } = require('../services/SmartFoldersLLMService');
 const { withErrorLogging } = require('./withErrorLogging');
+
+/**
+ * CRITICAL SECURITY FIX: Sanitize and validate folder paths to prevent path traversal attacks
+ * @param {string} inputPath - User-provided path to validate
+ * @returns {string} - Sanitized, validated path
+ * @throws {Error} - If path is invalid or violates security constraints
+ */
+function sanitizeFolderPath(inputPath) {
+  if (!inputPath || typeof inputPath !== 'string') {
+    throw new Error('Invalid path: must be non-empty string');
+  }
+
+  // Normalize and resolve path
+  const normalized = path.normalize(path.resolve(inputPath));
+
+  // Check for null bytes (path injection attack)
+  if (normalized.includes('\0')) {
+    throw new Error('Invalid path: contains null bytes');
+  }
+
+  // Define allowed base paths (user directories only)
+  const ALLOWED_BASE_PATHS = [
+    app.getPath('userData'), // App data directory
+    app.getPath('documents'), // User documents
+    app.getPath('downloads'), // Downloads
+    app.getPath('desktop'), // Desktop
+    app.getPath('pictures'), // Pictures
+    app.getPath('videos'), // Videos
+    app.getPath('music'), // Music
+    app.getPath('home'), // Home directory
+  ];
+
+  // Check if path is within allowed directories
+  const isAllowed = ALLOWED_BASE_PATHS.some((basePath) => {
+    const normalizedBase = path.normalize(path.resolve(basePath));
+    return (
+      normalized.startsWith(normalizedBase + path.sep) ||
+      normalized === normalizedBase
+    );
+  });
+
+  if (!isAllowed) {
+    throw new Error(
+      'Invalid path: must be within allowed directories (Documents, Downloads, Desktop, Pictures, Videos, Music, or Home)',
+    );
+  }
+
+  // Block access to system directories
+  const dangerousPaths = [
+    '/etc',
+    '/sys',
+    '/proc',
+    '/dev',
+    '/boot',
+    'C:\\Windows',
+    'C:\\Program Files',
+    'C:\\Program Files (x86)',
+    '/System',
+    '/Library/System',
+    '/private/etc',
+    '/private/var',
+  ];
+
+  const normalizedLower = normalized.toLowerCase();
+  const isDangerous = dangerousPaths.some((dangerous) =>
+    normalizedLower.startsWith(dangerous.toLowerCase()),
+  );
+
+  if (isDangerous) {
+    throw new Error('Invalid path: access to system directories not allowed');
+  }
+
+  return normalized;
+}
 
 function registerSmartFoldersIpc({
   ipcMain,
@@ -373,7 +448,8 @@ function registerSmartFoldersIpc({
         }
         if (updatedFolder.path) {
           try {
-            const normalizedPath = path.resolve(updatedFolder.path.trim());
+            // CRITICAL SECURITY FIX: Sanitize path before any operations
+            const normalizedPath = sanitizeFolderPath(updatedFolder.path);
             const parentDir = path.dirname(normalizedPath);
             const parentStats = await fs.stat(parentDir);
             if (!parentStats.isDirectory()) {
@@ -564,10 +640,23 @@ function registerSmartFoldersIpc({
           };
 
         const customFolders = getCustomFolders();
+
+        // CRITICAL SECURITY FIX: Sanitize path before any operations
+        let normalizedPath;
+        try {
+          normalizedPath = sanitizeFolderPath(folder.path);
+        } catch (securityError) {
+          return {
+            success: false,
+            error: securityError.message,
+            errorCode: 'SECURITY_PATH_VIOLATION',
+          };
+        }
+
         const existingFolder = customFolders.find(
           (f) =>
             f.name.toLowerCase() === folder.name.trim().toLowerCase() ||
-            path.resolve(f.path) === path.resolve(folder.path.trim()),
+            f.path === normalizedPath,
         );
         if (existingFolder)
           return {
@@ -575,8 +664,6 @@ function registerSmartFoldersIpc({
             error: `A smart folder with name "${existingFolder.name}" or path "${existingFolder.path}" already exists`,
             errorCode: 'FOLDER_ALREADY_EXISTS',
           };
-
-        const normalizedPath = path.resolve(folder.path.trim());
         const parentDir = path.dirname(normalizedPath);
         try {
           const parentStats = await fs.stat(parentDir);
@@ -728,9 +815,21 @@ function registerSmartFoldersIpc({
     IPC_CHANNELS.SMART_FOLDERS.SCAN_STRUCTURE,
     withErrorLogging(logger, async (event, rootPath) => {
       try {
-        logger.info('[FOLDER-SCAN] Scanning folder structure:', rootPath);
+        // CRITICAL SECURITY FIX: Sanitize path to prevent directory traversal
+        let sanitizedPath;
+        try {
+          sanitizedPath = sanitizeFolderPath(rootPath);
+        } catch (securityError) {
+          return {
+            success: false,
+            error: securityError.message,
+            errorCode: 'SECURITY_PATH_VIOLATION',
+          };
+        }
+
+        logger.info('[FOLDER-SCAN] Scanning folder structure:', sanitizedPath);
         // Reuse existing scanner (shallow aggregation is done in renderer today)
-        const items = await scanDirectory(rootPath);
+        const items = await scanDirectory(sanitizedPath);
         // Flatten file-like items with basic filtering similar to prior inline implementation
         const flatten = (nodes) => {
           const out = [];

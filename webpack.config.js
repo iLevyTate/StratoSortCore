@@ -125,6 +125,15 @@ module.exports = (env, argv) => {
           },
         },
 
+    // Performance optimizations
+    cache: {
+      type: 'filesystem',
+      buildDependencies: {
+        config: [__filename],
+      },
+      cacheDirectory: path.resolve(__dirname, '.webpack-cache'),
+    },
+
     // Optimization
     optimization: {
       minimize: isProduction,

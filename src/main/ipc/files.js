@@ -16,6 +16,12 @@ try {
   z = null;
 }
 
+// CRITICAL SECURITY FIX: Resource limits to prevent DOS attacks (CRIT-8)
+const MAX_BATCH_SIZE = 1000; // Maximum operations per batch
+const MAX_CONCURRENT_OPERATIONS = 5; // Prevent CPU exhaustion
+const OPERATION_TIMEOUT = 30000; // 30 seconds per operation
+const MAX_TOTAL_BATCH_TIME = 600000; // 10 minutes max for entire batch
+
 // Helper function to compute file checksum for verification
 async function computeFileChecksum(filePath) {
   const hash = crypto.createHash('sha256');
@@ -401,6 +407,39 @@ function registerFilesIpc({
                   message: `Deleted ${operation.source}`,
                 };
               case 'batch_organize': {
+                // CRITICAL SECURITY FIX: Validate batch size to prevent DOS (CRIT-8)
+                if (
+                  !operation.operations ||
+                  !Array.isArray(operation.operations)
+                ) {
+                  return {
+                    success: false,
+                    error: 'Invalid batch: operations must be an array',
+                    errorCode: 'INVALID_BATCH',
+                  };
+                }
+
+                if (operation.operations.length === 0) {
+                  return {
+                    success: false,
+                    error: 'Invalid batch: no operations provided',
+                    errorCode: 'EMPTY_BATCH',
+                  };
+                }
+
+                if (operation.operations.length > MAX_BATCH_SIZE) {
+                  logger.warn(
+                    `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`,
+                  );
+                  return {
+                    success: false,
+                    error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
+                    errorCode: 'BATCH_TOO_LARGE',
+                    maxAllowed: MAX_BATCH_SIZE,
+                    provided: operation.operations.length,
+                  };
+                }
+
                 // CRITICAL FIX (BUG #3): Transaction-like rollback mechanism for batch operations
                 // Previous code had no rollback on partial failures, leaving files scattered
                 // Now we track all completed operations and can rollback on critical failures
@@ -409,6 +448,7 @@ function registerFilesIpc({
                 let successCount = 0;
                 let failCount = 0;
                 const batchId = `batch_${Date.now()}`;
+                const batchStartTime = Date.now(); // CRITICAL FIX: Track batch time
                 let shouldRollback = false;
                 let rollbackReason = null;
 
@@ -421,10 +461,21 @@ function registerFilesIpc({
                     );
 
                   logger.info(
-                    `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files`,
+                    `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files (max: ${MAX_BATCH_SIZE})`,
                   );
 
+                  // CRITICAL FIX: Add timeout protection in operation loop
                   for (let i = 0; i < batch.operations.length; i += 1) {
+                    // Check global batch timeout
+                    if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
+                      logger.error(
+                        `[FILE-OPS] Batch ${batchId} exceeded maximum time limit`,
+                      );
+                      throw new Error(
+                        `Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`,
+                      );
+                    }
+
                     const op = batch.operations[i];
                     if (op.status === 'done') {
                       results.push({
@@ -973,6 +1024,39 @@ function registerFilesIpc({
                   message: `Deleted ${operation.source}`,
                 };
               case 'batch_organize': {
+                // CRITICAL SECURITY FIX: Validate batch size to prevent DOS (CRIT-8)
+                if (
+                  !operation.operations ||
+                  !Array.isArray(operation.operations)
+                ) {
+                  return {
+                    success: false,
+                    error: 'Invalid batch: operations must be an array',
+                    errorCode: 'INVALID_BATCH',
+                  };
+                }
+
+                if (operation.operations.length === 0) {
+                  return {
+                    success: false,
+                    error: 'Invalid batch: no operations provided',
+                    errorCode: 'EMPTY_BATCH',
+                  };
+                }
+
+                if (operation.operations.length > MAX_BATCH_SIZE) {
+                  logger.warn(
+                    `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`,
+                  );
+                  return {
+                    success: false,
+                    error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
+                    errorCode: 'BATCH_TOO_LARGE',
+                    maxAllowed: MAX_BATCH_SIZE,
+                    provided: operation.operations.length,
+                  };
+                }
+
                 // CRITICAL FIX (BUG #3): Transaction-like rollback mechanism for batch operations
                 // Previous code had no rollback on partial failures, leaving files scattered
                 // Now we track all completed operations and can rollback on critical failures
@@ -981,6 +1065,7 @@ function registerFilesIpc({
                 let successCount = 0;
                 let failCount = 0;
                 const batchId = `batch_${Date.now()}`;
+                const batchStartTime = Date.now(); // CRITICAL FIX: Track batch time
                 let shouldRollback = false;
                 let rollbackReason = null;
 
@@ -993,10 +1078,21 @@ function registerFilesIpc({
                     );
 
                   logger.info(
-                    `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files`,
+                    `[FILE-OPS] Starting batch operation ${batchId} with ${batch.operations.length} files (max: ${MAX_BATCH_SIZE})`,
                   );
 
+                  // CRITICAL FIX: Add timeout protection in operation loop
                   for (let i = 0; i < batch.operations.length; i += 1) {
+                    // Check global batch timeout
+                    if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
+                      logger.error(
+                        `[FILE-OPS] Batch ${batchId} exceeded maximum time limit`,
+                      );
+                      throw new Error(
+                        `Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`,
+                      );
+                    }
+
                     const op = batch.operations[i];
                     if (op.status === 'done') {
                       results.push({
