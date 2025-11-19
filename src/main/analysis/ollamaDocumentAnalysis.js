@@ -394,39 +394,87 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
 
       // Attempt semantic folder refinement
       try {
-        // Fixed: Initialize FolderMatchingService on first use
-        if (folderMatcher && !folderMatcher.embeddingCache.initialized) {
-          folderMatcher.initialize();
-        }
-
-        // Ensure folder embeddings exist
-        if (smartFolders && smartFolders.length > 0) {
-          await Promise.all(
-            smartFolders.map((f) => folderMatcher.upsertFolderEmbedding(f)),
-          );
-        }
-        // Create a file id for embedding lookup using path hash-like identifier
-        const fileId = `file:${filePath}`;
-        const summaryForEmbedding = [
-          analysis.project,
-          analysis.purpose,
-          (analysis.keywords || []).join(' '),
-          extractedText.slice(0, 2000),
-        ]
-          .filter(Boolean)
-          .join('\n');
-        await folderMatcher.upsertFileEmbedding(fileId, summaryForEmbedding, {
-          path: filePath,
-        });
-        const candidates = await folderMatcher.matchFileToFolders(fileId, 5);
-        if (Array.isArray(candidates) && candidates.length > 0) {
-          const top = candidates[0];
-          if (top.score >= 0.55) {
-            analysis.category = top.name; // refine to closest folder name
+        // CRITICAL FIX: Ensure ChromaDB is initialized before folder matching
+        if (!chromaDbService) {
+          logger.warn('[DocumentAnalysis] ChromaDB service not available, skipping folder matching');
+        } else {
+          // CRITICAL FIX: Initialize ChromaDB service first
+          await chromaDbService.initialize();
+          
+          // Fixed: Initialize FolderMatchingService on first use
+          if (folderMatcher && !folderMatcher.embeddingCache?.initialized) {
+            folderMatcher.initialize();
+            logger.debug('[DocumentAnalysis] FolderMatchingService initialized');
           }
-          analysis.folderMatchCandidates = candidates;
+
+          // Ensure folder embeddings exist
+          if (smartFolders && smartFolders.length > 0) {
+            logger.debug('[DocumentAnalysis] Upserting folder embeddings', {
+              folderCount: smartFolders.length,
+            });
+            await Promise.all(
+              smartFolders.map((f) => folderMatcher.upsertFolderEmbedding(f)),
+            );
+          }
+          
+          // Create a file id for embedding lookup using path hash-like identifier
+          const fileId = `file:${filePath}`;
+          const summaryForEmbedding = [
+            analysis.project,
+            analysis.purpose,
+            (analysis.keywords || []).join(' '),
+            extractedText.slice(0, 2000),
+          ]
+            .filter(Boolean)
+            .join('\n');
+          
+          logger.debug('[DocumentAnalysis] Upserting file embedding for folder matching', {
+            fileId,
+            summaryLength: summaryForEmbedding.length,
+          });
+          
+          await folderMatcher.upsertFileEmbedding(fileId, summaryForEmbedding, {
+            path: filePath,
+          });
+          
+          // CRITICAL FIX: Add delay to ensure write consistency before querying
+          // ChromaDB has retry logic with delays of 50ms, 100ms, 200ms
+          // We wait slightly longer than the max retry delay to ensure consistency
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          
+          logger.debug('[DocumentAnalysis] Querying folder matches', { fileId });
+          const candidates = await folderMatcher.matchFileToFolders(fileId, 5);
+          
+          if (Array.isArray(candidates) && candidates.length > 0) {
+            logger.debug('[DocumentAnalysis] Folder matching results', {
+              fileId,
+              candidateCount: candidates.length,
+              topScore: candidates[0]?.score,
+              topFolder: candidates[0]?.name,
+            });
+            
+            const top = candidates[0];
+            if (top && top.score >= 0.55) {
+              logger.info('[DocumentAnalysis] Refining category based on folder match', {
+                originalCategory: analysis.category,
+                newCategory: top.name,
+                score: top.score,
+              });
+              analysis.category = top.name; // refine to closest folder name
+            }
+            analysis.folderMatchCandidates = candidates;
+          } else {
+            logger.debug('[DocumentAnalysis] No folder matches found', { fileId });
+          }
         }
       } catch (e) {
+        // CRITICAL FIX: Log errors instead of silently swallowing them
+        logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
+          error: e.message,
+          errorStack: e.stack,
+          filePath,
+          fileName,
+        });
         // Non-fatal; continue without refinement
       }
 

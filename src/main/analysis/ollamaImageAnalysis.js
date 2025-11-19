@@ -550,9 +550,20 @@ async function analyzeImageFile(filePath, smartFolders = []) {
           try {
             // Validate summary is non-empty before upserting
             if (summary && summary.trim().length > 0) {
+              // CRITICAL FIX: Ensure ChromaDB is initialized
+              const chromaDbService = require('../services/ChromaDBService').getInstance();
+              if (chromaDbService) {
+                await chromaDbService.initialize();
+              }
+
               await folderMatcher.upsertFileEmbedding(fileId, summary, {
                 path: filePath,
               });
+
+              // CRITICAL FIX: Add delay to ensure write consistency before querying
+              // ChromaDB has retry logic with delays of 50ms, 100ms, 200ms
+              // We wait slightly longer than the max retry delay to ensure consistency
+              await new Promise((resolve) => setTimeout(resolve, 250));
 
               const candidates = await folderMatcher.matchFileToFolders(
                 fileId,
