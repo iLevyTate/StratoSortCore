@@ -836,6 +836,16 @@ function OrganizePhase() {
     setSelectedFiles(new Set());
   }, [selectedFiles, unprocessedFiles, addNotification, handleOrganizeFiles]);
 
+  const hasOrganizeContent =
+    unprocessedFiles.length > 0 || processedFiles.length > 0;
+
+  const controlsGridClassName = [
+    'grid gap-6 desktop-grid-2 flex-shrink-0',
+    hasOrganizeContent
+      ? 'max-h-[45vh] 2xl:max-h-[50vh] overflow-y-auto pr-2 modern-scrollbar'
+      : 'overflow-y-auto modern-scrollbar',
+  ].join(' ');
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
       <div className="container-responsive flex flex-col h-full gap-6 py-6 overflow-hidden">
@@ -862,7 +872,7 @@ function OrganizePhase() {
         {/* Main Content */}
         <div className="flex-1 min-h-0 flex flex-col gap-6 overflow-hidden">
           {/* Controls Grid */}
-          <div className="grid gap-6 desktop-grid-2 flex-shrink-0 max-h-[40%] overflow-y-auto pr-2 modern-scrollbar">
+          <div className={controlsGridClassName}>
             {smartFolders.length > 0 && (
               <Collapsible
                 title="📁 Target Smart Folders"
@@ -957,9 +967,9 @@ function OrganizePhase() {
               defaultOpen
               persistKey="organize-ready-list"
               className="glass-panel h-full flex flex-col"
-              contentClassName="flex-1 overflow-hidden relative flex flex-col"
+              contentClassName="flex-1 overflow-hidden flex flex-col"
             >
-              <div className="absolute inset-0 overflow-y-auto p-6 modern-scrollbar">
+              <div className="flex-1 overflow-y-auto p-6 modern-scrollbar">
                 {unprocessedFiles.length === 0 ? (
                   <div className="text-center py-21">
                     <div className="text-4xl mb-13">

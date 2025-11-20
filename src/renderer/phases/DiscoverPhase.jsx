@@ -1594,6 +1594,13 @@ function DiscoverPhase() {
     addNotification('Analysis queue cleared', 'info', 2000, 'queue-management');
   }, [actions, addNotification]);
 
+  const controlsGridClassName = [
+    'grid gap-6 desktop-grid-2 flex-shrink-0',
+    analysisResults.length > 0
+      ? 'max-h-[45vh] 2xl:max-h-[50vh] overflow-y-auto pr-2 modern-scrollbar'
+      : 'overflow-y-auto modern-scrollbar',
+  ].join(' ');
+
   return (
     <div className="h-full w-full flex flex-col overflow-hidden">
       <div className="container-responsive flex flex-col h-full gap-6 py-6 overflow-hidden">
@@ -1659,13 +1666,7 @@ function DiscoverPhase() {
 
         <div className="flex-1 min-h-0 flex flex-col gap-6 overflow-hidden">
           {/* Controls Grid */}
-          <div
-            className={`grid gap-6 desktop-grid-2 flex-shrink-0 ${
-              analysisResults.length > 0
-                ? 'max-h-[40%] overflow-y-auto pr-2 modern-scrollbar'
-                : 'overflow-y-auto modern-scrollbar'
-            }`}
-          >
+          <div className={controlsGridClassName}>
             <Collapsible
               title="Naming Settings"
               defaultOpen
@@ -1829,9 +1830,9 @@ function DiscoverPhase() {
                 defaultOpen
                 persistKey="discover-results"
                 className="glass-panel h-full flex flex-col"
-                contentClassName="flex-1 overflow-hidden relative flex flex-col"
+                contentClassName="flex-1 overflow-hidden flex flex-col"
               >
-                <div className="absolute inset-0 overflow-y-auto p-6 modern-scrollbar">
+                <div className="flex-1 overflow-y-auto p-6 modern-scrollbar">
                   <AnalysisResultsList
                     results={analysisResults}
                     onFileAction={handleFileAction}

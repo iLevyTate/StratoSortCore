@@ -1,12 +1,28 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { Logger, LOG_LEVELS } = require('../shared/logger');
 
-// Use structured logging for preload script
-const logPrefix = '[PRELOAD]';
+const preloadLogger = new Logger();
+preloadLogger.setContext('Preload');
+preloadLogger.setLevel(
+  process?.env?.NODE_ENV === 'development' ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO,
+);
+
 const log = {
-  info: (message) => console.log(`${logPrefix} ${message}`),
-  warn: (message) => console.warn(`${logPrefix} ${message}`),
-  error: (message, error) =>
-    console.error(`${logPrefix} ${message}`, error || ''),
+  info: (message, data) => preloadLogger.info(message, data),
+  warn: (message, data) => preloadLogger.warn(message, data),
+  error: (message, error) => {
+    let errorPayload = error;
+    if (error instanceof Error) {
+      errorPayload = {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      };
+    } else if (typeof error === 'string') {
+      errorPayload = { detail: error };
+    }
+    preloadLogger.error(message, errorPayload);
+  },
 };
 
 log.info('Secure preload script loaded');
