@@ -207,7 +207,7 @@ export const LazyLoadingSpinner = ({ message = 'Loading...' }) => (
     aria-label={message}
   >
     <div className="text-center">
-      <div className="animate-spin w-13 h-13 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
+      <div className="animate-spin w-13 h-13 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
       <p className="text-system-gray-700">{message}</p>
       <span className="sr-only">{message}</span>
     </div>
@@ -226,7 +226,7 @@ export const ModalLoadingOverlay = ({ message = 'Loading...' }) => (
     aria-label={message}
   >
     <div className="bg-white rounded-lg shadow-xl p-21 text-center">
-      <div className="animate-spin w-13 h-13 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
+      <div className="animate-spin w-13 h-13 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
       <p className="text-system-gray-700">{message}</p>
       <span className="sr-only">{message}</span>
     </div>

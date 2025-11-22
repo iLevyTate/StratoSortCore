@@ -1,11 +1,13 @@
 const fs = require('fs').promises;
-const pdf = require('pdf-parse');
-const sharp = require('sharp');
-const tesseract = require('node-tesseract-ocr');
-const mammoth = require('mammoth');
-const officeParser = require('officeparser');
-const XLSX = require('xlsx-populate');
-const AdmZip = require('adm-zip');
+
+// Lazy loaded modules
+// const pdf = require('pdf-parse');
+// const sharp = require('sharp');
+// const tesseract = require('node-tesseract-ocr');
+// const mammoth = require('mammoth');
+// const officeParser = require('officeparser');
+// const XLSX = require('xlsx-populate');
+// const AdmZip = require('adm-zip');
 
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
@@ -55,6 +57,7 @@ function truncateText(text) {
 }
 
 async function extractTextFromPdf(filePath, fileName) {
+  const pdf = require('pdf-parse');
   // Fixed: Check file size before loading into memory
   await checkFileSize(filePath, fileName);
 
@@ -80,6 +83,8 @@ async function extractTextFromPdf(filePath, fileName) {
 }
 
 async function ocrPdfIfNeeded(filePath) {
+  const sharp = require('sharp');
+  const tesseract = require('node-tesseract-ocr');
   let pdfBuffer = null;
   let rasterPng = null;
   try {
@@ -118,6 +123,7 @@ async function ocrPdfIfNeeded(filePath) {
 }
 
 async function extractTextFromDoc(filePath) {
+  const mammoth = require('mammoth');
   try {
     const result = await mammoth.extractRawText({ path: filePath });
     return result.value || '';
@@ -127,6 +133,7 @@ async function extractTextFromDoc(filePath) {
 }
 
 async function extractTextFromDocx(filePath) {
+  const mammoth = require('mammoth');
   // Fixed: Check file size before reading
   await checkFileSize(filePath, filePath);
 
@@ -139,6 +146,8 @@ async function extractTextFromDocx(filePath) {
 }
 
 async function extractTextFromXlsx(filePath) {
+  const XLSX = require('xlsx-populate');
+  const officeParser = require('officeparser');
   // Fixed: Check file size before loading workbook
   await checkFileSize(filePath, filePath);
 
@@ -339,6 +348,8 @@ async function extractTextFromXlsx(filePath) {
 }
 
 async function extractTextFromPptx(filePath) {
+  const officeParser = require('officeparser');
+  const AdmZip = require('adm-zip');
   // Fixed: Check file size before reading
   await checkFileSize(filePath, filePath);
 
@@ -485,6 +496,7 @@ function extractPlainTextFromHtml(html) {
 
 // Generic ODF extractor: reads content.xml from ZIP and strips tags
 async function extractTextFromOdfZip(filePath) {
+  const AdmZip = require('adm-zip');
   const zip = new AdmZip(filePath);
   const entry = zip.getEntry('content.xml');
   if (!entry) return '';
@@ -493,6 +505,7 @@ async function extractTextFromOdfZip(filePath) {
 }
 
 async function extractTextFromEpub(filePath) {
+  const AdmZip = require('adm-zip');
   // Fixed: Check file size before processing
   await checkFileSize(filePath, filePath);
 
@@ -551,6 +564,7 @@ async function extractTextFromEml(filePath) {
 }
 
 async function extractTextFromMsg(filePath) {
+  const officeParser = require('officeparser');
   // Best-effort using officeparser; if unavailable, return empty string
   try {
     const result = await officeParser.parseOfficeAsync(filePath);
@@ -568,6 +582,7 @@ async function extractTextFromKml(filePath) {
 }
 
 async function extractTextFromKmz(filePath) {
+  const AdmZip = require('adm-zip');
   const zip = new AdmZip(filePath);
   const kmlEntry =
     zip.getEntry('doc.kml') ||
@@ -578,6 +593,7 @@ async function extractTextFromKmz(filePath) {
 }
 
 async function extractTextFromXls(filePath) {
+  const officeParser = require('officeparser');
   try {
     const result = await officeParser.parseOfficeAsync(filePath);
     const text =
@@ -590,6 +606,7 @@ async function extractTextFromXls(filePath) {
 }
 
 async function extractTextFromPpt(filePath) {
+  const officeParser = require('officeparser');
   try {
     const result = await officeParser.parseOfficeAsync(filePath);
     const text =

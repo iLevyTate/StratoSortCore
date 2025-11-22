@@ -1,4 +1,5 @@
 # StratoSort Comprehensive Code Audit Report
+
 **Generated**: 2025-01-18
 **Auditor**: Claude (Sonnet 4.5)
 **Scope**: Full codebase line-by-line review
@@ -44,6 +45,7 @@ This comprehensive audit examined **every line** of the StratoSort codebase to i
 ### Issues Found
 
 #### CRITICAL #1: Potential Memory Leak in Window Event Handlers
+
 **Lines**: 586-650
 **Type**: Memory Leak | Critical
 **Description**: Window event handlers are created and stored in a `Map` but cleanup only happens in the `closed` event. If the window is destroyed without triggering `closed`, handlers may leak.
@@ -57,6 +59,7 @@ windowEventHandlers.set('minimize', minimizeHandler);
 
 **Impact**: Memory accumulation over repeated window creation/destruction cycles
 **Suggested Fix**:
+
 ```javascript
 // Add try-catch around cleanup and verify handler removal
 const closedHandler = () => {
@@ -77,6 +80,7 @@ const closedHandler = () => {
 ```
 
 #### HIGH #1: Race Condition in IPC Handler Registration
+
 **Lines**: 1054-1069
 **Type**: Race Condition | High
 **Description**: Despite verification logic, there's still a window where renderer could call IPC before handlers are fully registered. The `setImmediate` delay (line 1056) is not guaranteed to be sufficient.
@@ -91,6 +95,7 @@ const handlersReady = await verifyIpcHandlersRegistered();
 **Dependencies**: Affects all IPC handlers
 
 #### HIGH #2: Incomplete Cleanup in before-quit Handler
+
 **Lines**: 1286-1519
 **Type**: Resource Leak | High
 **Description**: The `before-quit` handler attempts async cleanup but doesn't guarantee completion before app quits. Some cleanup operations (like `execSync` calls) could hang on Windows.
@@ -107,6 +112,7 @@ app.on('before-quit', async () => {
 **Suggested Fix**: Add hard timeout (e.g., 5 seconds) for all cleanup operations
 
 #### MEDIUM #1: Settings Changed Handler Not Defensive
+
 **Lines**: 671-679
 **Type**: Null Reference | Medium
 **Description**: `handleSettingsChanged` doesn't validate settings structure before accessing properties
@@ -127,6 +133,7 @@ function handleSettingsChanged(settings) {
 **Suggested Fix**: Add validation: `if (!settings || typeof settings !== 'object') return;`
 
 #### MEDIUM #2: GPU Failure Counter Never Resets
+
 **Lines**: 297-321
 **Type**: Logic Bug | Medium
 **Description**: `gpuFailureCount` increments but never resets, potentially causing false warnings on long-running sessions
@@ -145,24 +152,31 @@ const gpuProcessHandler = (event, details) => {
 **Suggested Fix**: Reset counter after successful recovery or implement time-based sliding window
 
 #### MEDIUM #3: Custom Folders Load Lacks Validation
+
 **Lines**: 871-944
 **Type**: Data Validation | Medium
 **Description**: Loaded custom folders aren't validated for structure integrity. Corrupted data could crash the app.
 
 ```javascript
 customFolders = await loadCustomFolders(); // No validation of returned structure
-logger.info('[STARTUP] Loaded custom folders:', customFolders.length, 'folders');
+logger.info(
+  '[STARTUP] Loaded custom folders:',
+  customFolders.length,
+  'folders',
+);
 ```
 
 **Impact**: Crash if customFolders.json is corrupted
 **Suggested Fix**: Add schema validation with fallback to defaults
 
 #### LOW #1: Hardcoded Timeout Values
+
 **Lines**: 852-853, 1169, 1501
 **Type**: Code Quality | Low
 **Description**: Multiple hardcoded timeout values scattered throughout the file make tuning difficult
 
 **Locations**:
+
 - Line 852: `30000` (startup timeout)
 - Line 1169: `500` (resume timeout)
 - Line 1501: `10000` (shutdown timeout)
@@ -170,6 +184,7 @@ logger.info('[STARTUP] Loaded custom folders:', customFolders.length, 'folders')
 **Suggested Fix**: Move to configuration constants at top of file
 
 #### LOW #2: Inconsistent Error Handling Style
+
 **Lines**: Various
 **Type**: Code Quality | Low
 **Description**: Some functions use try-catch, others use .catch(), creating inconsistent error handling patterns
@@ -188,11 +203,13 @@ logger.info('[STARTUP] Loaded custom folders:', customFolders.length, 'folders')
 ### Issues Found
 
 #### HIGH #3: Health Check Timeout Race Condition (FIXED)
+
 **Lines**: 1124-1182
 **Type**: Race Condition | High → FIXED ✅
 **Description**: Previous version had race condition in health monitoring. Now fixed with timeout protection and reset mechanism.
 
 **Fix Applied** (lines 1132-1148):
+
 ```javascript
 // CRITICAL FIX: Reset flag if health check has been stuck for too long
 if (
@@ -200,7 +217,7 @@ if (
   Date.now() - this.healthCheckStartedAt > healthCheckTimeout
 ) {
   logger.error(
-    `[HEALTH] Health check stuck for ${(Date.now() - this.healthCheckStartedAt) / 1000}s, force resetting flag`
+    `[HEALTH] Health check stuck for ${(Date.now() - this.healthCheckStartedAt) / 1000}s, force resetting flag`,
   );
   this.healthCheckInProgress = false;
   this.healthCheckStartedAt = null;
@@ -210,6 +227,7 @@ if (
 **Status**: ✅ Resolved
 
 #### HIGH #4: Circuit Breaker May Permanently Disable Critical Services
+
 **Lines**: 1217-1228, 1284-1295
 **Type**: Design Issue | High
 **Description**: Circuit breaker permanently disables services after 5 consecutive failures, but doesn't provide recovery mechanism
@@ -225,6 +243,7 @@ if (restartCount >= this.config.circuitBreakerThreshold) {
 **Suggested Fix**: Add manual reset capability or time-based recovery attempts
 
 #### MEDIUM #4: Port Availability Check Assumptions
+
 **Lines**: 364-393
 **Type**: Logic Bug | Medium
 **Description**: `isPortAvailable` assumes `ECONNREFUSED` means port is available, but other errors return `false` (conservative). This is inconsistent.
@@ -247,6 +266,7 @@ async isPortAvailable(host, port) {
 **Suggested Fix**: Add more specific error code handling
 
 #### MEDIUM #5: Shutdown Process Null Checks Are Verbose
+
 **Lines**: 1394-1591
 **Type**: Code Quality | Medium
 **Description**: `shutdownProcess` has extensive null checking (good!) but it's overly verbose and defensive
@@ -256,6 +276,7 @@ async isPortAvailable(host, port) {
 **Suggested Fix**: Extract null-safe helper methods
 
 #### LOW #3: Default Axios Timeout Defined Twice
+
 **Lines**: 14-15, 365
 **Type**: Code Duplication | Low
 **Description**: `DEFAULT_AXIOS_TIMEOUT` constant defined twice
@@ -282,11 +303,13 @@ async isPortAvailable(host, port) {
 ### Issues Found
 
 #### CRITICAL #2: HTML Sanitization Too Aggressive for File Paths
+
 **Lines**: 383-390, 483-532
 **Type**: Data Corruption | Critical → FIXED ✅
 **Description**: Previously, HTML sanitization was breaking file paths. Now fixed with file path detection.
 
 **Fix Applied** (lines 385-390):
+
 ```javascript
 sanitizeObject(obj, isFilePath = false) {
   if (typeof obj === 'string') {
@@ -304,11 +327,13 @@ sanitizeObject(obj, isFilePath = false) {
 **Status**: ✅ Resolved
 
 #### HIGH #5: Rate Limiter Memory Leak Prevention
+
 **Lines**: 209-246
 **Type**: Memory Leak → FIXED ✅
 **Description**: Rate limiter was accumulating entries. Now fixed with automatic cleanup.
 
 **Fix Applied** (lines 225-236):
+
 ```javascript
 // Fixed: Cleanup old rate limit entries to prevent memory leak
 if (this.rateLimiter.size > 100) {
@@ -325,6 +350,7 @@ if (this.rateLimiter.size > 100) {
 **Status**: ✅ Resolved
 
 #### MEDIUM #6: File Path Detection Could Be More Robust
+
 **Lines**: 447-477
 **Type**: Edge Case | Medium
 **Description**: `looksLikeFilePath` heuristic might fail for unusual but valid paths (e.g., paths with spaces, Unicode characters)
@@ -343,6 +369,7 @@ looksLikeFilePath(str) {
 **Suggested Fix**: Add Unicode support and space handling
 
 #### MEDIUM #7: Dangerous Path Blocking May Be Too Restrictive
+
 **Lines**: 673-693
 **Type**: Usability | Medium
 **Description**: File analysis blocks system directories, but users might have legitimate files in `C:\Windows` subfolders
@@ -362,6 +389,7 @@ if (isDangerous) {
 **Suggested Fix**: Allow read-only access with user confirmation dialog
 
 #### LOW #4: IPC Channel Constants Duplicated
+
 **Lines**: 14-142
 **Type**: Code Duplication | Low
 **Description**: IPC_CHANNELS object is copied from `src/shared/constants.js`. Must be kept in sync manually.
@@ -377,6 +405,7 @@ const IPC_CHANNELS = { ... }; // 128 lines of duplication
 **Suggested Fix**: Generate preload constants at build time from shared source
 
 #### LOW #5: Legacy Compatibility Layer Logs Warnings
+
 **Lines**: 993-1016
 **Type**: Code Quality | Low
 **Description**: Legacy `electron.ipcRenderer` API logs warnings but doesn't deprecate functionality
@@ -385,7 +414,9 @@ const IPC_CHANNELS = { ... }; // 128 lines of duplication
 contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
     invoke: (channel, ...args) => {
-      log.warn('Using deprecated electron.ipcRenderer.invoke - migrate to window.electronAPI');
+      log.warn(
+        'Using deprecated electron.ipcRenderer.invoke - migrate to window.electronAPI',
+      );
       return secureIPC.safeInvoke(channel, ...args);
     },
   },
@@ -406,12 +437,17 @@ contextBridge.exposeInMainWorld('electron', {
 ### Issues Found
 
 #### HIGH #6: Null Safety Issues in Category Detection
+
 **Lines**: 86-107, 110-128, 327-349, 488-507
 **Type**: Null Reference | High
 **Description**: `getIntelligentCategory` can return `null` or `undefined`, but code doesn't consistently handle this. Added defensive checks but pattern is repeated.
 
 ```javascript
-const intelligentCategory = getIntelligentCategory(fileName, fileExtension, smartFolders);
+const intelligentCategory = getIntelligentCategory(
+  fileName,
+  fileExtension,
+  smartFolders,
+);
 // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
 const safeCategory = intelligentCategory || 'document';
 ```
@@ -421,6 +457,7 @@ const safeCategory = intelligentCategory || 'document';
 **Dependencies**: fallbackUtils.js
 
 #### MEDIUM #8: Dual Logger Import Confusion
+
 **Lines**: 66, 139
 **Type**: Code Quality | Medium
 **Description**: Two different logger instances imported - `appLogger` (line 8) and then inline `require('../../shared/logger')` (line 139)
@@ -437,6 +474,7 @@ const { logger } = require('../../shared/logger'); // Line 139 - DIFFERENT logge
 **Suggested Fix**: Use single logger instance throughout the file
 
 #### MEDIUM #9: FolderMatchingService Initialization Without Error Handling
+
 **Lines**: 378-412
 **Type**: Silent Failure | Medium
 **Description**: FolderMatchingService initialization and embedding operations wrapped in try-catch but errors are silently swallowed
@@ -457,6 +495,7 @@ try {
 **Suggested Fix**: Log errors with appropriate level (warn/debug)
 
 #### LOW #6: Cache Eviction is FIFO, Not LRU
+
 **Lines**: 48-55
 **Type**: Performance | Low
 **Description**: Cache uses `Map.keys().next().value` to evict, which is FIFO (First In, First Out) not LRU (Least Recently Used)
@@ -482,11 +521,13 @@ if (fileAnalysisCache.size > CACHE_CONFIG.MAX_FILE_CACHE) {
 ### Issues Found (Most Already Fixed)
 
 #### CRITICAL #3: TOCTOU Race Condition (FIXED)
+
 **Lines**: 319-364
 **Type**: Race Condition | Critical → FIXED ✅
 **Description**: Time-of-check-time-of-use (TOCTOU) vulnerability where file could be deleted between `stat()` and `readFile()` calls. NOW FIXED with proper error handling.
 
 **Fix Applied**:
+
 ```javascript
 // CRITICAL FIX: Wrap readFile in try-catch to handle TOCTOU race condition
 let imageBuffer;
@@ -509,11 +550,13 @@ try {
 **Status**: ✅ Resolved
 
 #### HIGH #7: Comprehensive Null Validation for FolderMatcher (FIXED)
+
 **Lines**: 488-524
 **Type**: Null Reference → FIXED ✅
 **Description**: Duck typing validation to check that FolderMatcher has all required methods, not just that it's truthy.
 
 **Fix Applied**:
+
 ```javascript
 // BUG FIX #8: Duck typing validation - check that all required methods exist
 const hasRequiredMethods =
@@ -532,12 +575,17 @@ if (!hasRequiredMethods) {
 **Status**: ✅ Resolved
 
 #### MEDIUM #10: Random Confidence Score Generation
+
 **Lines**: 174-180
 **Type**: Logic Bug | Medium → QUESTIONABLE ❓
 **Description**: If Ollama returns invalid confidence, code generates **random** confidence between 70-100%
 
 ```javascript
-if (!parsedJson.confidence || parsedJson.confidence < 60 || parsedJson.confidence > 100) {
+if (
+  !parsedJson.confidence ||
+  parsedJson.confidence < 60 ||
+  parsedJson.confidence > 100
+) {
   parsedJson.confidence = Math.floor(Math.random() * 30) + 70; // 70-100% RANDOM!
 }
 ```
@@ -547,6 +595,7 @@ if (!parsedJson.confidence || parsedJson.confidence < 60 || parsedJson.confidenc
 **Dependencies**: Could affect user trust in analysis results
 
 #### LOW #7: Singleton Pattern for Services
+
 **Lines**: 24-26, 486-497
 **Type**: Design Pattern | Low
 **Description**: Uses module-level singletons for ChromaDB and FolderMatcher to avoid reloading, but this makes testing harder
@@ -565,11 +614,13 @@ if (!parsedJson.confidence || parsedJson.confidence < 60 || parsedJson.confidenc
 ### Issues Found (Most Already Fixed)
 
 #### CRITICAL #4: Race Condition in Initialization (FIXED)
+
 **Lines**: 242-328
 **Type**: Race Condition | Critical → FIXED ✅
 **Description**: Multiple concurrent calls to `initialize()` could cause race conditions. NOW FIXED with atomic flag + promise reference pattern.
 
 **Fix Applied**:
+
 ```javascript
 // BUG FIX #6: Atomic flag + promise reference for race condition prevention
 if (this._isInitializing) {
@@ -590,11 +641,13 @@ this._initPromise = (async () => { ... })();
 **Status**: ✅ Resolved
 
 #### HIGH #8: Environment Variable Validation (FIXED)
+
 **Lines**: 53-140
 **Type**: Security | High → FIXED ✅
 **Description**: Environment variables for ChromaDB connection were not validated. NOW FIXED with comprehensive validation.
 
 **Fix Applied**:
+
 ```javascript
 // FIXED Bug #40: Validate and sanitize environment variables
 const envUrl = process.env.CHROMA_SERVER_URL;
@@ -609,12 +662,16 @@ if (envUrl) {
 
     // Validate port (1-65535)
     if (isNaN(port) || port < MIN_PORT_NUMBER || port > MAX_PORT_NUMBER) {
-      throw new Error(`Invalid port number ${port}. Must be between 1 and 65535.`);
+      throw new Error(
+        `Invalid port number ${port}. Must be between 1 and 65535.`,
+      );
     }
 
     // Hostname validation with RFC 1123 regex
   } catch (error) {
-    logger.warn('[ChromaDB] Invalid CHROMA_SERVER_URL, falling back to defaults');
+    logger.warn(
+      '[ChromaDB] Invalid CHROMA_SERVER_URL, falling back to defaults',
+    );
   }
 }
 ```
@@ -622,22 +679,26 @@ if (envUrl) {
 **Status**: ✅ Resolved
 
 #### HIGH #9: Health Check Robustness (FIXED)
+
 **Lines**: 156-240
 **Type**: Reliability | High → FIXED ✅
 **Description**: Health check now tries multiple endpoints for ChromaDB version compatibility.
 
 **Fix Applied**:
+
 ```javascript
 // Try multiple endpoints for compatibility with different ChromaDB versions
 const endpoints = [
   '/api/v2/heartbeat', // v2 endpoint (current version)
   '/api/v1/heartbeat', // v1 endpoint (ChromaDB 1.0.x)
-  '/api/v1',           // Some versions just have this
+  '/api/v1', // Some versions just have this
 ];
 
 for (const endpoint of endpoints) {
   try {
-    const response = await axios.get(`${baseUrl}${endpoint}`, { timeout: 2000 });
+    const response = await axios.get(`${baseUrl}${endpoint}`, {
+      timeout: 2000,
+    });
     if (response.status === 200) {
       // Validate response data
       return true;
@@ -651,11 +712,13 @@ for (const endpoint of endpoints) {
 **Status**: ✅ Resolved
 
 #### MEDIUM #11: Skipped Items in Batch Upsert Not Returned
+
 **Lines**: 462-500
 **Type**: API Design | Medium → FIXED ✅
 **Description**: `batchUpsertFolders` now returns array of skipped items for better error tracking.
 
 **Fix Applied**:
+
 ```javascript
 // CRITICAL FIX: Return array of skipped items for better error tracking
 const skipped = [];
@@ -676,11 +739,13 @@ return { count: ids.length, skipped };
 **Status**: ✅ Resolved
 
 #### MEDIUM #12: Magic Numbers Replaced with Named Constants (FIXED)
+
 **Lines**: 8-21
 **Type**: Code Quality | Medium → FIXED ✅
 **Description**: Previously had magic numbers like `120000`, `200`, etc. NOW FIXED with named constants.
 
 **Fix Applied**:
+
 ```javascript
 // FIXED Bug #26: Named constants for magic numbers
 const QUERY_CACHE_TTL_MS = 120000; // 2 minutes
@@ -704,26 +769,27 @@ const DEFAULT_SERVER_PORT = 8000;
 ### Issues Found
 
 #### MEDIUM #13: Non-Blocking Feedback Recording
+
 **Lines**: 267-280
 **Type**: Error Handling | Medium → FIXED ✅
 **Description**: Feedback recording now has proper error handling and doesn't block batch processing.
 
 **Fix Applied**:
+
 ```javascript
 // CRITICAL FIX #3a: Record feedback with proper error handling
-this.suggestionService
-  .recordFeedback(file, suggestion, true)
-  .catch((err) => {
-    logger.warn('[AutoOrganize] Failed to record feedback (non-critical):', {
-      file: file.path,
-      error: err.message,
-    });
+this.suggestionService.recordFeedback(file, suggestion, true).catch((err) => {
+  logger.warn('[AutoOrganize] Failed to record feedback (non-critical):', {
+    file: file.path,
+    error: err.message,
   });
+});
 ```
 
 **Status**: ✅ Resolved
 
 #### LOW #8: Batch Size Hardcoded
+
 **Lines**: 40
 **Type**: Configuration | Low
 **Description**: Default batch size of 10 is hardcoded, should be configurable
@@ -746,11 +812,13 @@ const { batchSize = 10 } = options; // Hardcoded default
 ### Issues Found (Most Already Fixed)
 
 #### CRITICAL #5: Infinite Loop Prevention (FIXED)
+
 **Lines**: 157-190
 **Type**: Infinite Loop | Critical → FIXED ✅
 **Description**: Pruning loop could run forever if single action exceeded memory limit. NOW FIXED with escape condition.
 
 **Fix Applied**:
+
 ```javascript
 // BUG FIX #7: Prevent infinite loop when single action exceeds memory limit
 let pruneIterations = 0;
@@ -758,7 +826,8 @@ const maxPruneIterations = this.maxActions + 10; // Safety margin
 
 while (
   this.actions.length > 1 && // Must have more than 1 to remove
-  (this.actions.length > this.maxActions || this.currentMemoryEstimate > maxMemoryBytes) &&
+  (this.actions.length > this.maxActions ||
+    this.currentMemoryEstimate > maxMemoryBytes) &&
   pruneIterations < maxPruneIterations // ESCAPE CONDITION
 ) {
   const removedAction = this.actions.shift();
@@ -771,15 +840,19 @@ while (
 **Status**: ✅ Resolved
 
 #### HIGH #10: Single Oversized Action Handling (FIXED)
+
 **Lines**: 192-235
 **Type**: Memory Management | High → FIXED ✅
 **Description**: If a single action exceeds memory limit, it's now truncated instead of causing unbounded memory growth.
 
 **Fix Applied**:
+
 ```javascript
 // BUG FIX #7: Handle single oversized action
 if (this.currentMemoryEstimate > maxMemoryBytes && this.actions.length === 1) {
-  logger.warn(`[UndoRedoService] Single action exceeds memory limit, truncating data`);
+  logger.warn(
+    `[UndoRedoService] Single action exceeds memory limit, truncating data`,
+  );
 
   // Truncate the action's data to prevent unbounded memory growth
   largeAction.data = {
@@ -796,15 +869,19 @@ if (this.currentMemoryEstimate > maxMemoryBytes && this.actions.length === 1) {
 **Status**: ✅ Resolved
 
 #### MEDIUM #14: Memory Estimate Desync Protection (FIXED)
+
 **Lines**: 237-243
 **Type**: Data Integrity | Medium → FIXED ✅
 **Description**: Added protection against memory estimate getting out of sync with actual actions array.
 
 **Fix Applied**:
+
 ```javascript
 // EDGE CASE: If we somehow have 0 actions but non-zero memory estimate, reset
 if (this.actions.length === 0 && this.currentMemoryEstimate !== 0) {
-  logger.warn('[UndoRedoService] Memory estimate desync detected, resetting to 0');
+  logger.warn(
+    '[UndoRedoService] Memory estimate desync detected, resetting to 0',
+  );
   this.currentMemoryEstimate = 0;
 }
 ```
@@ -812,6 +889,7 @@ if (this.actions.length === 0 && this.currentMemoryEstimate !== 0) {
 **Status**: ✅ Resolved
 
 #### MEDIUM #15: Configurable Limits
+
 **Lines**: 11-14
 **Type**: Design | Medium → FIXED ✅
 **Description**: Service now accepts configurable limits for max actions, memory, and batch size.
@@ -829,6 +907,7 @@ if (this.actions.length === 0 && this.currentMemoryEstimate !== 0) {
 ### Second-Pass Audit Summary
 
 The second-pass audit focused on components not fully reviewed in the first pass, including:
+
 - All IPC handler files (`src/main/ipc/*.js`)
 - Service initialization sequences
 - Utility functions and shared code
@@ -837,6 +916,7 @@ The second-pass audit focused on components not fully reviewed in the first pass
 - Build configuration and webpack setup
 
 **Key Discoveries:**
+
 - **3 Critical Security Vulnerabilities** requiring immediate patching
 - **7 High-Priority Resource Management Issues** (memory/timer leaks)
 - **10 Medium Issues** affecting reliability and performance
@@ -852,6 +932,7 @@ The second-pass audit focused on components not fully reviewed in the first pass
 ### Critical Security Issues
 
 #### CRITICAL #6: Race Condition in Semantic IPC Initialization
+
 **File**: `src/main/ipc/semantic.js`
 **Lines**: 19-50
 **Type**: Race Condition | Critical
@@ -860,29 +941,35 @@ The second-pass audit focused on components not fully reviewed in the first pass
 **Description**: The semantic IPC handler initializes ChromaDB and FolderMatchingService in a fire-and-forget IIFE without proper initialization sequencing. IPC handlers can be called before services are ready, leading to crashes or data corruption.
 
 **Vulnerable Code**:
+
 ```javascript
 // Lines 19-50 - PROBLEMATIC INITIALIZATION
 (async () => {
   try {
     await chromaDbService.initialize();
-    folderMatcher.initialize();  // NO AWAIT! Runs in background
-    const filesMigrated = await chromaDbService.migrateFromJsonl(filesPath, 'file');
+    folderMatcher.initialize(); // NO AWAIT! Runs in background
+    const filesMigrated = await chromaDbService.migrateFromJsonl(
+      filesPath,
+      'file',
+    );
     // Migration continues while handlers are already registered
   } catch (error) {
     logger.error('[ChromaDB] Initialization/migration failed:', error);
   }
-})();  // Fire-and-forget - no waiting mechanism
+})(); // Fire-and-forget - no waiting mechanism
 
 // IPC handlers registered immediately below - may execute BEFORE initialization!
-ipcMain.handle(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
+ipcMain.handle(
+  IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
   withErrorLogging(logger, async () => {
     // chromaDbService might not be initialized yet!
     await folderMatcher.rebuildFolderEmbeddings();
-  })
+  }),
 );
 ```
 
 **Impact**:
+
 - **Data Corruption**: IPC calls execute before ChromaDB initialized, corrupting vector database
 - **Application Crashes**: Null reference errors when accessing uninitialized services
 - **Unhandled Promise Rejections**: Initialization failures not properly caught
@@ -890,12 +977,14 @@ ipcMain.handle(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
 - **User Data Loss**: Failed migrations leave data in inconsistent state
 
 **Exploitation Scenario**:
+
 1. User starts app
 2. Renderer immediately calls embedding rebuild
 3. ChromaDB not yet initialized → crash
 4. On restart, partial migration leaves corrupt data
 
 **Suggested Fix**:
+
 ```javascript
 let initializationPromise = null;
 let isInitialized = false;
@@ -907,21 +996,27 @@ async function ensureInitialized() {
   initializationPromise = (async () => {
     try {
       await chromaDbService.initialize();
-      await folderMatcher.initialize();  // MUST await
+      await folderMatcher.initialize(); // MUST await
 
       // Perform migration
-      const filesMigrated = await chromaDbService.migrateFromJsonl(filesPath, 'file');
-      const foldersMigrated = await chromaDbService.migrateFromJsonl(foldersPath, 'folder');
+      const filesMigrated = await chromaDbService.migrateFromJsonl(
+        filesPath,
+        'file',
+      );
+      const foldersMigrated = await chromaDbService.migrateFromJsonl(
+        foldersPath,
+        'folder',
+      );
 
       logger.info('[SEMANTIC] Initialization complete', {
         filesMigrated,
-        foldersMigrated
+        foldersMigrated,
       });
 
       isInitialized = true;
     } catch (error) {
       logger.error('[SEMANTIC] Initialization failed:', error);
-      initializationPromise = null;  // Allow retry
+      initializationPromise = null; // Allow retry
       throw error;
     }
   })();
@@ -930,12 +1025,13 @@ async function ensureInitialized() {
 }
 
 // Add initialization check to ALL IPC handlers
-ipcMain.handle(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
+ipcMain.handle(
+  IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
   withErrorLogging(logger, async () => {
-    await ensureInitialized();  // WAIT for initialization
+    await ensureInitialized(); // WAIT for initialization
     await folderMatcher.rebuildFolderEmbeddings();
     return { success: true };
-  })
+  }),
 );
 ```
 
@@ -945,6 +1041,7 @@ ipcMain.handle(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
 ---
 
 #### CRITICAL #7: Path Traversal Vulnerability in Smart Folder Handlers
+
 **File**: `src/main/ipc/smartFolders.js`
 **Lines**: 92-189, 526-723
 **Type**: Security | Path Traversal | Critical
@@ -953,11 +1050,13 @@ ipcMain.handle(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
 **Description**: Multiple IPC handlers accept user-provided paths without proper sanitization, allowing directory traversal attacks to access files outside the application directory.
 
 **Vulnerable Handlers**:
+
 1. **SMART_FOLDERS.ADD** (lines 526-723)
 2. **SMART_FOLDERS.EDIT** (lines 328-451)
 3. **SMART_FOLDERS.SCAN_STRUCTURE** (lines 92-189)
 
 **Vulnerable Code**:
+
 ```javascript
 // Line 579 - INSUFFICIENT VALIDATION
 ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
@@ -972,7 +1071,7 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
   customFolders.push({
     id: folder.id,
     name: folder.name,
-    path: normalizedPath,  // Path traversal successful!
+    path: normalizedPath, // Path traversal successful!
     description: folder.description,
   });
 });
@@ -981,6 +1080,7 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
 **Attack Scenarios**:
 
 **Scenario 1: Data Exfiltration**
+
 ```javascript
 // Attacker adds "smart folder" pointing to sensitive directory
 {
@@ -994,6 +1094,7 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
 ```
 
 **Scenario 2: Arbitrary File Creation**
+
 ```javascript
 // Attacker creates folder in system directory
 {
@@ -1006,14 +1107,16 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
 ```
 
 **Scenario 3: Directory Traversal via Scan**
+
 ```javascript
 // Attacker scans entire filesystem
-await window.electronAPI.smartFolders.scanStructure("C:\\");
+await window.electronAPI.smartFolders.scanStructure('C:\\');
 // Returns complete filesystem structure
 // Exposes sensitive file locations
 ```
 
 **Impact**:
+
 - **🔴 Critical**: Arbitrary file system access
 - **🔴 Critical**: Data exfiltration (read sensitive files)
 - **🔴 Critical**: Arbitrary directory creation
@@ -1021,17 +1124,18 @@ await window.electronAPI.smartFolders.scanStructure("C:\\");
 - **High**: Potential privilege escalation vector
 
 **Suggested Fix**:
+
 ```javascript
 const { app } = require('electron');
 
 // Define allowed base paths
 const ALLOWED_BASE_PATHS = [
-  app.getPath('userData'),    // App data directory
-  app.getPath('documents'),   // User documents
-  app.getPath('downloads'),   // Downloads
-  app.getPath('desktop'),     // Desktop
-  app.getPath('pictures'),    // Pictures
-  app.getPath('videos'),      // Videos
+  app.getPath('userData'), // App data directory
+  app.getPath('documents'), // User documents
+  app.getPath('downloads'), // Downloads
+  app.getPath('desktop'), // Desktop
+  app.getPath('pictures'), // Pictures
+  app.getPath('videos'), // Videos
 ];
 
 function sanitizeFolderPath(inputPath) {
@@ -1048,15 +1152,17 @@ function sanitizeFolderPath(inputPath) {
   }
 
   // Check if path is within allowed directories
-  const isAllowed = ALLOWED_BASE_PATHS.some(basePath => {
+  const isAllowed = ALLOWED_BASE_PATHS.some((basePath) => {
     const normalizedBase = path.normalize(path.resolve(basePath));
-    return normalized.startsWith(normalizedBase + path.sep) ||
-           normalized === normalizedBase;
+    return (
+      normalized.startsWith(normalizedBase + path.sep) ||
+      normalized === normalizedBase
+    );
   });
 
   if (!isAllowed) {
     throw new Error(
-      'Invalid path: must be within allowed directories (Documents, Downloads, etc.)'
+      'Invalid path: must be within allowed directories (Documents, Downloads, etc.)',
     );
   }
 
@@ -1071,9 +1177,11 @@ function sanitizeFolderPath(inputPath) {
     '/Library/System',
   ];
 
-  if (dangerousPaths.some(dangerous =>
-    normalized.toLowerCase().startsWith(dangerous.toLowerCase())
-  )) {
+  if (
+    dangerousPaths.some((dangerous) =>
+      normalized.toLowerCase().startsWith(dangerous.toLowerCase()),
+    )
+  ) {
     throw new Error('Invalid path: access to system directories not allowed');
   }
 
@@ -1097,7 +1205,7 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
     customFolders.push({
       id: folder.id,
       name: folder.name,
-      path: sanitizedPath,  // Sanitized path
+      path: sanitizedPath, // Sanitized path
       description: folder.description || '',
     });
 
@@ -1119,6 +1227,7 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
 ---
 
 #### CRITICAL #8: Uncontrolled Resource Allocation in Batch Operations
+
 **File**: `src/main/ipc/files.js`
 **Lines**: 403-922
 **Type**: Security | DoS | Resource Exhaustion | Critical
@@ -1127,6 +1236,7 @@ ipcMain.handle(IPC_CHANNELS.SMART_FOLDERS.ADD, async (event, folder) => {
 **Description**: The batch organize operation lacks resource limits, allowing denial-of-service attacks through memory/CPU exhaustion by submitting extremely large batches.
 
 **Vulnerable Code**:
+
 ```javascript
 // Lines 403-427 - NO RESOURCE LIMITS
 case 'batch_organize': {
@@ -1159,14 +1269,15 @@ case 'batch_organize': {
 **Attack Scenarios**:
 
 **Scenario 1: Memory Exhaustion**
+
 ```javascript
 // Attacker sends batch with 1 million operations
 const attackBatch = {
   operations: Array(1000000).fill({
     type: 'move',
     source: '/fake/path/file.txt',
-    destination: '/another/fake/path/file.txt'
-  })
+    destination: '/another/fake/path/file.txt',
+  }),
 };
 
 await window.electronAPI.files.performOperation(attackBatch);
@@ -1175,14 +1286,15 @@ await window.electronAPI.files.performOperation(attackBatch);
 ```
 
 **Scenario 2: CPU Starvation**
+
 ```javascript
 // Attacker sends batch with CPU-intensive operations
 const attackBatch = {
   operations: Array(100000).fill({
     type: 'copy',
     source: '/large/file/1GB.zip',
-    destination: '/tmp/copy1GB.zip'
-  })
+    destination: '/tmp/copy1GB.zip',
+  }),
 };
 // Result: 100,000 concurrent file copies
 // CPU at 100%, disk I/O saturated
@@ -1190,20 +1302,22 @@ const attackBatch = {
 ```
 
 **Scenario 3: Disk Space Exhaustion**
+
 ```javascript
 // Attacker repeatedly copies large files
 const attackBatch = {
   operations: Array(10000).fill({
     type: 'copy',
     source: '/path/to/1GB/file.dat',
-    destination: '/tmp/copy_' + Math.random() + '.dat'
-  })
+    destination: '/tmp/copy_' + Math.random() + '.dat',
+  }),
 };
 // Result: 10TB of disk copies
 // Disk full → system failure
 ```
 
 **Impact**:
+
 - **🔴 Critical**: Complete application freeze/crash
 - **🔴 Critical**: System-wide resource exhaustion
 - **High**: Denial of service for all users
@@ -1211,6 +1325,7 @@ const attackBatch = {
 - **Medium**: System instability requiring reboot
 
 **Suggested Fix**:
+
 ```javascript
 const MAX_BATCH_SIZE = 1000;  // Reasonable limit
 const MAX_CONCURRENT_OPERATIONS = 5;  // Prevent CPU exhaustion
@@ -1310,6 +1425,7 @@ case 'batch_organize': {
 ### High Priority Security Issues
 
 #### HIGH #11: Missing Timeout in Embedding IPC Queries
+
 **File**: `src/main/ipc/semantic.js`
 **Lines**: 264-278
 **Type**: Resource Leak | High
@@ -1318,6 +1434,7 @@ case 'batch_organize': {
 **Description**: The `FIND_SIMILAR` IPC handler has no timeout protection, allowing long-running queries to hang indefinitely and exhaust resources.
 
 **Vulnerable Code**:
+
 ```javascript
 ipcMain.handle(
   IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR,
@@ -1331,12 +1448,14 @@ ipcMain.handle(
 ```
 
 **Impact**:
+
 - UI becomes unresponsive waiting for query
 - Memory leaks from abandoned queries
 - Multiple hung queries exhaust connection pool
 - Poor user experience
 
 **Suggested Fix**:
+
 ```javascript
 const QUERY_TIMEOUT = 30000; // 30 seconds
 const MAX_TOP_K = 100; // Limit result count
@@ -1354,7 +1473,10 @@ ipcMain.handle(
 
     // Create timeout promise
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
+      setTimeout(
+        () => reject(new Error('Query timeout exceeded')),
+        QUERY_TIMEOUT,
+      );
     });
 
     // Race query against timeout
@@ -1386,6 +1508,7 @@ ipcMain.handle(
 ---
 
 #### HIGH #12: Memory Leak in ModelManager Timer Handling
+
 **File**: `src/main/services/ModelManager.js`
 **Lines**: 92-127, 144-165, 339-410
 **Type**: Memory Leak | High
@@ -1394,6 +1517,7 @@ ipcMain.handle(
 **Description**: Multiple timers (intervals and timeouts) are created but not properly cleared in all code paths, leading to memory leaks that accumulate over long-running sessions.
 
 **Vulnerable Code Patterns**:
+
 ```javascript
 // Pattern 1: Interval without cleanup (lines 94-102)
 async waitForInitialization() {
@@ -1439,12 +1563,14 @@ async discoverModels() {
 ```
 
 **Impact**:
+
 - **High**: Memory leaks accumulate over time
 - **High**: Process may not exit cleanly (intervals keep it alive)
 - **Medium**: Performance degradation in long-running sessions
 - **Medium**: Unexpected timer callbacks after operations complete
 
 **Suggested Fix**:
+
 ```javascript
 async waitForInitialization() {
   let checkInterval = null;
@@ -1528,6 +1654,7 @@ async discoverModels() {
 ---
 
 #### HIGH #13: Uncaught Promise Rejection in Suggestions Service
+
 **File**: `src/main/ipc/suggestions.js`
 **Lines**: 13-28, 172-189
 **Type**: Null Reference | High
@@ -1536,6 +1663,7 @@ async discoverModels() {
 **Description**: The suggestion service can fail to initialize, but some IPC handlers don't check for null before accessing service methods, causing application crashes.
 
 **Vulnerable Code**:
+
 ```javascript
 // Initialization (lines 13-28)
 let suggestionService = null;
@@ -1568,17 +1696,21 @@ ipcMain.handle(
 ```
 
 **Impact**:
+
 - **High**: Application crash when accessing null service
 - **High**: Inconsistent behavior (some handlers handle null, others don't)
 - **Medium**: Poor user experience with cryptic error messages
 - **Medium**: Service appears available but calls fail
 
 **Suggested Fix**:
+
 ```javascript
 // Add null check helper
 function ensureServiceAvailable(service, serviceName) {
   if (!service) {
-    throw new Error(`${serviceName} is not available. The service failed to initialize.`);
+    throw new Error(
+      `${serviceName} is not available. The service failed to initialize.`,
+    );
   }
   return service;
 }
@@ -1602,7 +1734,7 @@ ipcMain.handle(
       return {
         success: false,
         error: error.message,
-        strategies: [],  // Provide empty fallback
+        strategies: [], // Provide empty fallback
       };
     }
   }),
@@ -1628,6 +1760,7 @@ function withServiceCheck(service, serviceName, handler) {
 ---
 
 #### HIGH #14: Settings Import Vulnerability - Arbitrary Configuration Injection
+
 **File**: `src/main/ipc/settings.js`
 **Lines**: 288-387
 **Type**: Security | Injection | High
@@ -1636,6 +1769,7 @@ function withServiceCheck(service, serviceName, handler) {
 **Description**: The settings import function doesn't validate imported JSON structure or content, allowing injection of malicious configuration values that could lead to prototype pollution, command injection, or data exfiltration.
 
 **Vulnerable Code**:
+
 ```javascript
 // Lines 332-337 - NO VALIDATION
 ipcMain.handle('import-settings', async (event, importPath) => {
@@ -1653,6 +1787,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 **Attack Scenarios**:
 
 **1. Prototype Pollution**:
+
 ```json
 {
   "version": "1.0.0",
@@ -1671,6 +1806,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 ```
 
 **2. Command Injection via Model Names**:
+
 ```json
 {
   "settings": {
@@ -1681,6 +1817,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 ```
 
 **3. Data Exfiltration via API Endpoint**:
+
 ```json
 {
   "settings": {
@@ -1691,12 +1828,14 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 ```
 
 **Impact**:
+
 - **High**: Prototype pollution allows privilege escalation
 - **High**: Malicious API endpoints enable data exfiltration
 - **High**: Configuration corruption prevents app functionality
 - **Medium**: Command injection through model names
 
 **Suggested Fix**:
+
 ```javascript
 const ALLOWED_SETTINGS_KEYS = new Set([
   'ollamaHost',
@@ -1723,7 +1862,9 @@ function validateImportedSettings(settings) {
   const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
   for (const key of dangerousKeys) {
     if (key in settings) {
-      throw new Error(`Security: Prototype pollution attempt detected (${key})`);
+      throw new Error(
+        `Security: Prototype pollution attempt detected (${key})`,
+      );
     }
   }
 
@@ -1745,7 +1886,9 @@ function validateImportedSettings(settings) {
         // Additional security: block localhost redirection attacks
         if (value.includes('localhost') || value.includes('127.0.0.1')) {
           // Only allow if explicitly configured
-          logger.warn(`[SETTINGS] Localhost URL in imported settings: ${value}`);
+          logger.warn(
+            `[SETTINGS] Localhost URL in imported settings: ${value}`,
+          );
         }
         break;
 
@@ -1816,7 +1959,9 @@ ipcMain.handle('import-settings', async (event, importPath) => {
       success: true,
       settings: saveResult.settings,
       imported: Object.keys(sanitizedSettings).length,
-      ignored: Object.keys(importData.settings).length - Object.keys(sanitizedSettings).length,
+      ignored:
+        Object.keys(importData.settings).length -
+        Object.keys(sanitizedSettings).length,
     };
   } catch (error) {
     logger.error('[SETTINGS] Import failed:', error);
@@ -1837,6 +1982,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 **Status**: Not Started ⏸️
 
 ### To Review:
+
 - Phase components (Welcome, Setup, Discover, Organize, Complete)
 - Context providers
 - Custom hooks
@@ -1849,6 +1995,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 **Status**: Not Started ⏸️
 
 ### To Review:
+
 - ChromaDB integration
 - Embedding generation
 - Query optimization
@@ -1860,6 +2007,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 **Status**: Not Started ⏸️
 
 ### To Review:
+
 - `src/main/utils/asyncSpawnUtils.js`
 - `src/main/utils/ollamaApiRetry.js`
 - `src/shared/pathSanitization.js`
@@ -1869,64 +2017,67 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 
 ## Complete Summary Table of Issues
 
-| ID | Component | Type | Severity | Status | Line(s) | File |
-|----|-----------|------|----------|--------|---------|------|
-| **CRITICAL ISSUES** |
-| CRIT-1 | Window Events | Memory Leak | Critical | ⚠️ Open | 586-650 | simple-main.js |
-| CRIT-2 | Path Sanitization | Data Corruption | Critical | ✅ Fixed | 383-532 | preload.js |
-| CRIT-3 | File I/O | TOCTOU Race | Critical | ✅ Fixed | 319-364 | ollamaImageAnalysis.js |
-| CRIT-4 | Initialization | Race Condition | Critical | ✅ Fixed | 242-328 | ChromaDBService.js |
-| CRIT-5 | Memory Management | Infinite Loop | Critical | ✅ Fixed | 157-190 | UndoRedoService.js |
-| **HIGH PRIORITY ISSUES** |
-| HIGH-1 | IPC Registration | Race Condition | High | ⚠️ Open | 1054-1069 | simple-main.js |
-| HIGH-2 | Cleanup | Resource Leak | High | ⚠️ Open | 1286-1519 | simple-main.js |
-| HIGH-3 | Health Check | Race Condition | High | ✅ Fixed | 1124-1182 | StartupManager.js |
-| HIGH-4 | Circuit Breaker | Design Issue | High | ⚠️ Open | 1217-1295 | StartupManager.js |
-| HIGH-5 | Rate Limiter | Memory Leak | High | ✅ Fixed | 209-246 | preload.js |
-| HIGH-6 | Category Detection | Null Reference | High | ⚠️ Open | 86-507 | ollamaDocumentAnalysis.js |
-| HIGH-7 | Service Validation | Null Reference | High | ✅ Fixed | 488-524 | ollamaImageAnalysis.js |
-| HIGH-8 | Environment Vars | Security | High | ✅ Fixed | 53-140 | ChromaDBService.js |
-| HIGH-9 | Health Check | Reliability | High | ✅ Fixed | 156-240 | ChromaDBService.js |
-| HIGH-10 | Memory Management | Oversized Action | High | ✅ Fixed | 192-235 | UndoRedoService.js |
+| ID                         | Component          | Type             | Severity | Status   | Line(s)   | File                      |
+| -------------------------- | ------------------ | ---------------- | -------- | -------- | --------- | ------------------------- |
+| **CRITICAL ISSUES**        |
+| CRIT-1                     | Window Events      | Memory Leak      | Critical | ⚠️ Open  | 586-650   | simple-main.js            |
+| CRIT-2                     | Path Sanitization  | Data Corruption  | Critical | ✅ Fixed | 383-532   | preload.js                |
+| CRIT-3                     | File I/O           | TOCTOU Race      | Critical | ✅ Fixed | 319-364   | ollamaImageAnalysis.js    |
+| CRIT-4                     | Initialization     | Race Condition   | Critical | ✅ Fixed | 242-328   | ChromaDBService.js        |
+| CRIT-5                     | Memory Management  | Infinite Loop    | Critical | ✅ Fixed | 157-190   | UndoRedoService.js        |
+| **HIGH PRIORITY ISSUES**   |
+| HIGH-1                     | IPC Registration   | Race Condition   | High     | ⚠️ Open  | 1054-1069 | simple-main.js            |
+| HIGH-2                     | Cleanup            | Resource Leak    | High     | ⚠️ Open  | 1286-1519 | simple-main.js            |
+| HIGH-3                     | Health Check       | Race Condition   | High     | ✅ Fixed | 1124-1182 | StartupManager.js         |
+| HIGH-4                     | Circuit Breaker    | Design Issue     | High     | ⚠️ Open  | 1217-1295 | StartupManager.js         |
+| HIGH-5                     | Rate Limiter       | Memory Leak      | High     | ✅ Fixed | 209-246   | preload.js                |
+| HIGH-6                     | Category Detection | Null Reference   | High     | ⚠️ Open  | 86-507    | ollamaDocumentAnalysis.js |
+| HIGH-7                     | Service Validation | Null Reference   | High     | ✅ Fixed | 488-524   | ollamaImageAnalysis.js    |
+| HIGH-8                     | Environment Vars   | Security         | High     | ✅ Fixed | 53-140    | ChromaDBService.js        |
+| HIGH-9                     | Health Check       | Reliability      | High     | ✅ Fixed | 156-240   | ChromaDBService.js        |
+| HIGH-10                    | Memory Management  | Oversized Action | High     | ✅ Fixed | 192-235   | UndoRedoService.js        |
 | **MEDIUM PRIORITY ISSUES** |
-| MED-1 | Settings | Null Reference | Medium | ⚠️ Open | 671-679 | simple-main.js |
-| MED-2 | GPU Counter | Logic Bug | Medium | ⚠️ Open | 297-321 | simple-main.js |
-| MED-3 | Data Validation | Data Integrity | Medium | ⚠️ Open | 871-944 | simple-main.js |
-| MED-4 | Port Check | Logic Bug | Medium | ⚠️ Open | 364-393 | StartupManager.js |
-| MED-5 | Shutdown | Code Quality | Medium | ⚠️ Open | 1394-1591 | StartupManager.js |
-| MED-6 | Path Detection | Edge Case | Medium | ⚠️ Open | 447-477 | preload.js |
-| MED-7 | System Paths | Usability | Medium | ⚠️ Open | 673-693 | preload.js |
-| MED-8 | Logging | Code Quality | Medium | ⚠️ Open | 66, 139 | ollamaDocumentAnalysis.js |
-| MED-9 | Error Handling | Silent Failure | Medium | ⚠️ Open | 378-412 | ollamaDocumentAnalysis.js |
-| MED-10 | Confidence Score | Logic Bug | Medium | ⚠️ Open | 174-180 | ollamaImageAnalysis.js |
-| MED-11 | Batch Upsert | API Design | Medium | ✅ Fixed | 462-500 | ChromaDBService.js |
-| MED-12 | Magic Numbers | Code Quality | Medium | ✅ Fixed | 8-21 | ChromaDBService.js |
-| MED-13 | Feedback Recording | Error Handling | Medium | ✅ Fixed | 267-280 | AutoOrganizeService.js |
-| MED-14 | Memory Tracking | Data Integrity | Medium | ✅ Fixed | 237-243 | UndoRedoService.js |
-| MED-15 | Configuration | Design | Medium | ✅ Fixed | 11-14 | UndoRedoService.js |
-| **LOW PRIORITY ISSUES** |
-| LOW-1 | Timeouts | Code Quality | Low | ⚠️ Open | Various | simple-main.js |
-| LOW-2 | Error Handling | Code Quality | Low | ⚠️ Open | Various | simple-main.js |
-| LOW-3 | Constants | Code Duplication | Low | ⚠️ Open | 14, 365 | StartupManager.js |
-| LOW-4 | IPC Channels | Code Duplication | Low | ⚠️ Open | 14-142 | preload.js |
-| LOW-5 | Legacy API | Code Quality | Low | ⚠️ Open | 993-1016 | preload.js |
-| LOW-6 | Cache Eviction | Performance | Low | ⚠️ Open | 48-55 | ollamaDocumentAnalysis.js |
-| LOW-7 | Singleton Pattern | Design | Low | ⚠️ Open | 24-26 | ollamaImageAnalysis.js |
-| LOW-8 | Batch Size | Configuration | Low | ⚠️ Open | 40 | AutoOrganizeService.js |
+| MED-1                      | Settings           | Null Reference   | Medium   | ⚠️ Open  | 671-679   | simple-main.js            |
+| MED-2                      | GPU Counter        | Logic Bug        | Medium   | ⚠️ Open  | 297-321   | simple-main.js            |
+| MED-3                      | Data Validation    | Data Integrity   | Medium   | ⚠️ Open  | 871-944   | simple-main.js            |
+| MED-4                      | Port Check         | Logic Bug        | Medium   | ⚠️ Open  | 364-393   | StartupManager.js         |
+| MED-5                      | Shutdown           | Code Quality     | Medium   | ⚠️ Open  | 1394-1591 | StartupManager.js         |
+| MED-6                      | Path Detection     | Edge Case        | Medium   | ⚠️ Open  | 447-477   | preload.js                |
+| MED-7                      | System Paths       | Usability        | Medium   | ⚠️ Open  | 673-693   | preload.js                |
+| MED-8                      | Logging            | Code Quality     | Medium   | ⚠️ Open  | 66, 139   | ollamaDocumentAnalysis.js |
+| MED-9                      | Error Handling     | Silent Failure   | Medium   | ⚠️ Open  | 378-412   | ollamaDocumentAnalysis.js |
+| MED-10                     | Confidence Score   | Logic Bug        | Medium   | ⚠️ Open  | 174-180   | ollamaImageAnalysis.js    |
+| MED-11                     | Batch Upsert       | API Design       | Medium   | ✅ Fixed | 462-500   | ChromaDBService.js        |
+| MED-12                     | Magic Numbers      | Code Quality     | Medium   | ✅ Fixed | 8-21      | ChromaDBService.js        |
+| MED-13                     | Feedback Recording | Error Handling   | Medium   | ✅ Fixed | 267-280   | AutoOrganizeService.js    |
+| MED-14                     | Memory Tracking    | Data Integrity   | Medium   | ✅ Fixed | 237-243   | UndoRedoService.js        |
+| MED-15                     | Configuration      | Design           | Medium   | ✅ Fixed | 11-14     | UndoRedoService.js        |
+| **LOW PRIORITY ISSUES**    |
+| LOW-1                      | Timeouts           | Code Quality     | Low      | ⚠️ Open  | Various   | simple-main.js            |
+| LOW-2                      | Error Handling     | Code Quality     | Low      | ⚠️ Open  | Various   | simple-main.js            |
+| LOW-3                      | Constants          | Code Duplication | Low      | ⚠️ Open  | 14, 365   | StartupManager.js         |
+| LOW-4                      | IPC Channels       | Code Duplication | Low      | ⚠️ Open  | 14-142    | preload.js                |
+| LOW-5                      | Legacy API         | Code Quality     | Low      | ⚠️ Open  | 993-1016  | preload.js                |
+| LOW-6                      | Cache Eviction     | Performance      | Low      | ⚠️ Open  | 48-55     | ollamaDocumentAnalysis.js |
+| LOW-7                      | Singleton Pattern  | Design           | Low      | ⚠️ Open  | 24-26     | ollamaImageAnalysis.js    |
+| LOW-8                      | Batch Size         | Configuration    | Low      | ⚠️ Open  | 40        | AutoOrganizeService.js    |
 
 ---
 
 ## Risk Assessment
 
 ### Critical Risks
+
 1. **Memory Leaks** (CRIT-1): Could cause performance degradation over long sessions
 2. **IPC Race Conditions** (HIGH-1): Could cause startup failures and user frustration
 
 ### High Risks
+
 1. **Resource Cleanup** (HIGH-2): Zombie processes consuming system resources
 2. **Service Recovery** (HIGH-4): Services stuck in failed state requiring restart
 
 ### Medium Risks
+
 1. **Data Validation** (MED-3): Corrupted config files could crash the app
 2. **Edge Cases** (MED-6, MED-7): International users might encounter path issues
 
@@ -1948,16 +2099,19 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 ## Recommendations
 
 ### Immediate (P0 - Critical)
+
 1. Fix window event handler memory leak (CRIT-1)
 2. Add timeout protection to all cleanup operations (HIGH-2)
 3. Implement proper IPC registration barrier (HIGH-1)
 
 ### Short-term (P1 - High Priority)
+
 1. Add circuit breaker recovery mechanism (HIGH-4)
 2. Validate custom folders schema (MED-3)
 3. Improve error handling consistency (LOW-2)
 
 ### Long-term (P2 - Medium Priority)
+
 1. Refactor shutdown process for clarity (MED-5)
 2. Enhance file path detection (MED-6)
 3. Remove code duplication (LOW-3, LOW-4)
@@ -1971,6 +2125,7 @@ ipcMain.handle('import-settings', async (event, importPath) => {
 Based on the audit, here's the status of core advertised features:
 
 ### ✅ Fully Implemented and Working
+
 1. **AI-Powered File Analysis** - Ollama integration working with fallback mechanisms
 2. **Smart Naming** - Descriptive filename generation from content analysis
 3. **Automated Organization** - Batch processing with confidence thresholds
@@ -1980,10 +2135,12 @@ Based on the audit, here's the status of core advertised features:
 7. **OCR/Text Recognition** - OCR integration for images and PDFs
 
 ### ⚠️ Working with Known Issues
+
 1. **Crash Recovery** - Implemented but cleanup on app quit could be more robust (HIGH-2)
 2. **Background Processing** - Circuit breaker may permanently disable services (HIGH-4)
 
 ### 📝 Missing/Incomplete Features
+
 1. **None identified** - All advertised features are implemented
 
 ---
@@ -1991,6 +2148,7 @@ Based on the audit, here's the status of core advertised features:
 ## Security Assessment
 
 ### ✅ Security Measures in Place
+
 1. **Path Sanitization** - Comprehensive validation against directory traversal (FIXED)
 2. **IPC Channel Validation** - Whitelist-based approach with rate limiting
 3. **HTML Sanitization** - Protection against XSS (with file path awareness)
@@ -1999,6 +2157,7 @@ Based on the audit, here's the status of core advertised features:
 6. **Local-Only Processing** - No data transmitted externally
 
 ### ⚠️ Security Considerations
+
 1. **System Directory Access** - May be too restrictive for legitimate use cases (MED-7)
 2. **Command Injection** - No issues found, but should remain vigilant with child processes
 
@@ -2013,6 +2172,7 @@ Based on the audit, here's the status of core advertised features:
 ### Issues Found
 
 #### MEDIUM #10: Connection Test Doesn't Use Specified Host
+
 **Lines**: 74-104
 **Type**: Bug | Medium
 **Description**: `testConnection` accepts a `hostUrl` parameter but doesn't actually use it when testing. It just tests the current configured host.
@@ -2031,6 +2191,7 @@ async testConnection(hostUrl) {
 **Dependencies**: ollamaUtils.js
 
 #### LOW #9: Missing Timeout Handling
+
 **Lines**: 204-254
 **Type**: Robustness | Low
 **Description**: API methods (`generateEmbedding`, `analyzeText`, `analyzeImage`) have no timeout protection
@@ -2039,6 +2200,7 @@ async testConnection(hostUrl) {
 **Suggested Fix**: Add timeout wrapper like documentLlm.js uses (line 210-223)
 
 #### LOW #10: No Model Name Validation in pullModels
+
 **Lines**: 172-199
 **Type**: Input Validation | Low
 **Description**: Accepts arbitrary model names without validation
@@ -2067,6 +2229,7 @@ async pullModels(modelNames) {
 ### Issues Found
 
 #### MEDIUM #11: Connection Test Missing stream: false
+
 **Lines**: 12-26
 **Type**: Potential Hang | Medium
 **Description**: `testOllamaConnection` doesn't set `stream: false`, may wait for stream that never completes
@@ -2088,6 +2251,7 @@ async function testOllamaConnection() {
 **Suggested Fix**: Add `stream: false` parameter
 
 #### LOW #11: Aggressive Directory Simplification
+
 **Lines**: 55-76
 **Type**: Data Loss | Low
 **Description**: `simplifyDirectoryStructure` truncates at depth 3, may lose important structure info
@@ -2101,6 +2265,7 @@ function simplifyDirectoryStructure(structure, maxDepth = 3, currentDepth = 0) {
 **Suggested Fix**: Make maxDepth configurable or increase default to 4-5
 
 #### LOW #12: Fragile Text Response Parser
+
 **Lines**: 160-199
 **Type**: Robustness | Low
 **Description**: `parseTextResponse` uses simple string matching, may miss valid suggestions
@@ -2119,6 +2284,7 @@ function simplifyDirectoryStructure(structure, maxDepth = 3, currentDepth = 0) {
 ### Issues Found
 
 #### MEDIUM #12: Cache Key Hash Collision Risk
+
 **Lines**: 33-57
 **Type**: Cache Integrity | Medium
 **Description**: `getCacheKey` truncates text to 50KB before hashing, but doesn't include truncation flag in key
@@ -2146,6 +2312,7 @@ hasher.update(truncatedText || '');
 **Dependencies**: Analysis cache system
 
 #### LOW #13: Timer unref() Compatibility
+
 **Lines**: 217-222
 **Type**: Node.js Compatibility | Low
 **Description**: `timer.unref()` wrapped in try-catch but may fail silently in older Node versions
@@ -2182,13 +2349,15 @@ try {
 ### Issues Found
 
 #### MEDIUM #13: Host Change Doesn't Invalidate Instance
+
 **Lines**: 24-51, 116-160
 **Type**: Stale State | Medium
 **Description**: If host changes externally, `getOllama()` returns stale instance until `setOllamaHost()` called
 
 ```javascript
 function getOllama() {
-  if (!ollamaInstance) { // Only creates if null
+  if (!ollamaInstance) {
+    // Only creates if null
     // ...create with ollamaHost
   }
   return ollamaInstance; // Returns old instance even if ollamaHost changed
@@ -2213,6 +2382,7 @@ function getOllama() {
 ```
 
 #### LOW #14: Inconsistent Agent Usage in loadConfig
+
 **Lines**: 213
 **Type**: Performance | Low
 **Description**: `loadOllamaConfig` line 213 creates Ollama without keepAlive agent, unlike `getOllama()`
@@ -2232,6 +2402,7 @@ ollamaInstance = new Ollama({ host: ollamaHost, fetch: ... }); // With agent
 **Suggested Fix**: Extract instance creation to helper function
 
 #### LOW #15: Auto-Model-Selection Race Condition
+
 **Lines**: 222-255
 **Type**: Race Condition | Low
 **Description**: `loadOllamaConfig` auto-selects model asynchronously, could race with app initialization
@@ -2262,6 +2433,7 @@ async function loadOllamaConfig() {
 ### Review Summary
 
 Simple utility module with single function `normalizeAnalysisResult`:
+
 - **Clean implementation** - Proper null checks
 - **Good defaults** - Sensible fallback values
 - **Type safety** - Validates all field types
@@ -2274,6 +2446,7 @@ Simple utility module with single function `normalizeAnalysisResult`:
 ## Performance Analysis
 
 ### ✅ Optimizations in Place
+
 1. **Caching** - Multi-layer caching (file analysis, image analysis, query results)
 2. **Batch Processing** - Efficient batch operations for large file sets
 3. **Deduplication** - LLM call deduplication to reduce API overhead
@@ -2281,6 +2454,7 @@ Simple utility module with single function `normalizeAnalysisResult`:
 5. **Connection Pooling** - Reused ChromaDB and Ollama connections
 
 ### ⚠️ Performance Concerns
+
 1. **Cache Eviction** - FIFO instead of LRU may reduce efficiency (LOW-6)
 2. **Batch Size** - Hardcoded defaults not tunable (LOW-8)
 3. **GPU Failure Counter** - Never resets, could affect long-running sessions (MED-2)
@@ -2290,6 +2464,7 @@ Simple utility module with single function `normalizeAnalysisResult`:
 ## Code Quality Assessment
 
 ### ✅ Good Practices Observed
+
 1. **Structured Logging** - Comprehensive logging with context
 2. **Error Handling** - Graceful degradation with fallback mechanisms
 3. **Named Constants** - Magic numbers replaced with named constants (FIXED)
@@ -2297,6 +2472,7 @@ Simple utility module with single function `normalizeAnalysisResult`:
 5. **Documentation** - Well-commented code with JSDoc
 
 ### ⚠️ Areas for Improvement
+
 1. **Code Duplication** - IPC channels duplicated between preload and shared (LOW-4)
 2. **Inconsistent Logging** - Multiple logger instances in same file (MED-8)
 3. **Silent Failures** - Some errors swallowed without logging (MED-9)
@@ -2309,11 +2485,13 @@ Simple utility module with single function `normalizeAnalysisResult`:
 **Status**: Not fully audited (would require dedicated review of test/ directory)
 
 **Files Identified**:
+
 - 40+ test files in `test/` directory
 - Coverage includes: analysis, services, integration, edge cases
 - Test framework: Jest (30.2.0)
 
 **Recommendation**: Conduct dedicated test coverage audit to verify:
+
 - Critical paths covered
 - Edge cases tested
 - Mock strategies appropriate
@@ -2324,6 +2502,7 @@ Simple utility module with single function `normalizeAnalysisResult`:
 ## Architecture Assessment
 
 ### ✅ Strengths
+
 1. **Clean Separation** - Clear boundaries between main, renderer, and services
 2. **Service Layer** - Well-defined business logic services
 3. **Error Boundaries** - Multiple layers of error handling
@@ -2331,6 +2510,7 @@ Simple utility module with single function `normalizeAnalysisResult`:
 5. **Dependency Injection** - Services use DI pattern
 
 ### ⚠️ Architectural Concerns
+
 1. **Singleton Services** - Module-level singletons make testing harder (LOW-7)
 2. **Tight Coupling** - Some services directly instantiate dependencies
 3. **Race Conditions** - IPC registration timing still has edge cases (HIGH-1)

@@ -3,6 +3,7 @@ const { ChromaClient } = require('chromadb');
 const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
+const { withRetry } = require('../../shared/errorHandlingUtils');
 logger.setContext('ChromaDBService');
 const { sanitizeMetadata } = require('../../shared/pathSanitization');
 
@@ -479,50 +480,58 @@ class ChromaDBService {
   async upsertFolder(folder) {
     await this.initialize();
 
-    try {
-      if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
-        throw new Error('Invalid folder data: missing id or vector');
-      }
-
-      // Fixed: Sanitize folder metadata
-      const metadata = {
-        name: folder.name || '',
-        description: folder.description || '',
-        path: folder.path || '',
-        model: folder.model || '',
-        updatedAt: folder.updatedAt || new Date().toISOString(),
-      };
-
-      const sanitized = sanitizeMetadata(metadata);
-
-      // ChromaDB expects embeddings as arrays
-      await this.folderCollection.upsert({
-        ids: [folder.id],
-        embeddings: [folder.vector],
-        metadatas: [sanitized],
-        documents: [folder.name || folder.id], // Store name as document for reference
-      });
-
-      // Invalidate query cache entries that might reference this folder
-      this._invalidateCacheForFolder();
-
-      logger.debug('[ChromaDB] Upserted folder embedding', {
-        id: folder.id,
-        name: folder.name,
-      });
-    } catch (error) {
-      // ERROR CONTEXT FIX #11: Enhanced error logging with operation context
-      logger.error('[ChromaDB] Failed to upsert folder with context:', {
-        operation: 'upsert-folder',
-        folderId: folder.id,
-        folderName: folder.name,
-        folderPath: folder.path,
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        errorStack: error.stack,
-      });
-      throw error;
+    if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
+      throw new Error('Invalid folder data: missing id or vector');
     }
+
+    return withRetry(
+      async () => {
+        try {
+          // Fixed: Sanitize folder metadata
+          const metadata = {
+            name: folder.name || '',
+            description: folder.description || '',
+            path: folder.path || '',
+            model: folder.model || '',
+            updatedAt: folder.updatedAt || new Date().toISOString(),
+          };
+
+          const sanitized = sanitizeMetadata(metadata);
+
+          // ChromaDB expects embeddings as arrays
+          await this.folderCollection.upsert({
+            ids: [folder.id],
+            embeddings: [folder.vector],
+            metadatas: [sanitized],
+            documents: [folder.name || folder.id], // Store name as document for reference
+          });
+
+          // Invalidate query cache entries that might reference this folder
+          this._invalidateCacheForFolder();
+
+          logger.debug('[ChromaDB] Upserted folder embedding', {
+            id: folder.id,
+            name: folder.name,
+          });
+        } catch (error) {
+          // ERROR CONTEXT FIX #11: Enhanced error logging with operation context
+          logger.error('[ChromaDB] Failed to upsert folder with context:', {
+            operation: 'upsert-folder',
+            folderId: folder.id,
+            folderName: folder.name,
+            folderPath: folder.path,
+            timestamp: new Date().toISOString(),
+            error: error.message,
+            errorStack: error.stack,
+          });
+          throw error;
+        }
+      },
+      {
+        maxRetries: 3,
+        initialDelay: 500,
+      },
+    )();
   }
 
   /**
@@ -537,81 +546,89 @@ class ChromaDBService {
       return { count: 0, skipped: [] };
     }
 
-    const ids = [];
-    const embeddings = [];
-    const metadatas = [];
-    const documents = [];
-    // CRITICAL FIX: Return array of skipped items for better error tracking
-    const skipped = [];
+    return withRetry(
+      async () => {
+        const ids = [];
+        const embeddings = [];
+        const metadatas = [];
+        const documents = [];
+        // CRITICAL FIX: Return array of skipped items for better error tracking
+        const skipped = [];
 
-    try {
-      for (const folder of folders) {
-        if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
-          logger.warn('[ChromaDB] Skipping invalid folder in batch', {
-            id: folder.id,
-            name: folder.name,
-            reason: !folder.id
-              ? 'missing_id'
-              : !folder.vector
-                ? 'missing_vector'
-                : 'invalid_vector_type',
-          });
-          skipped.push({
-            folder: { id: folder.id, name: folder.name },
-            reason: !folder.id
-              ? 'missing_id'
-              : !folder.vector
-                ? 'missing_vector'
-                : 'invalid_vector_type',
-          });
-          continue;
+        try {
+          for (const folder of folders) {
+            if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
+              logger.warn('[ChromaDB] Skipping invalid folder in batch', {
+                id: folder.id,
+                name: folder.name,
+                reason: !folder.id
+                  ? 'missing_id'
+                  : !folder.vector
+                    ? 'missing_vector'
+                    : 'invalid_vector_type',
+              });
+              skipped.push({
+                folder: { id: folder.id, name: folder.name },
+                reason: !folder.id
+                  ? 'missing_id'
+                  : !folder.vector
+                    ? 'missing_vector'
+                    : 'invalid_vector_type',
+              });
+              continue;
+            }
+
+            const metadata = {
+              name: folder.name || '',
+              description: folder.description || '',
+              path: folder.path || '',
+              model: folder.model || '',
+              updatedAt: folder.updatedAt || new Date().toISOString(),
+            };
+
+            ids.push(folder.id);
+            embeddings.push(folder.vector);
+            metadatas.push(sanitizeMetadata(metadata));
+            documents.push(folder.name || folder.id);
+          }
+
+          if (ids.length > 0) {
+            await this.folderCollection.upsert({
+              ids,
+              embeddings,
+              metadatas,
+              documents,
+            });
+
+            // Invalidate cache for all affected folders
+            this._invalidateCacheForFolder();
+
+            logger.info('[ChromaDB] Batch upserted folder embeddings', {
+              count: ids.length,
+              skipped: skipped.length,
+            });
+          }
+
+          return { count: ids.length, skipped };
+        } catch (error) {
+          // ERROR CONTEXT FIX #11: Enhanced error logging with batch context
+          logger.error(
+            '[ChromaDB] Failed to batch upsert folders with context:',
+            {
+              operation: 'batch-upsert-folders',
+              totalFolders: folders.length,
+              successfulCount: ids.length,
+              skippedCount: skipped.length,
+              timestamp: new Date().toISOString(),
+              error: error.message,
+              errorStack: error.stack,
+            },
+          );
+          throw error;
         }
-
-        const metadata = {
-          name: folder.name || '',
-          description: folder.description || '',
-          path: folder.path || '',
-          model: folder.model || '',
-          updatedAt: folder.updatedAt || new Date().toISOString(),
-        };
-
-        ids.push(folder.id);
-        embeddings.push(folder.vector);
-        metadatas.push(sanitizeMetadata(metadata));
-        documents.push(folder.name || folder.id);
-      }
-
-      if (ids.length > 0) {
-        await this.folderCollection.upsert({
-          ids,
-          embeddings,
-          metadatas,
-          documents,
-        });
-
-        // Invalidate cache for all affected folders
-        this._invalidateCacheForFolder();
-
-        logger.info('[ChromaDB] Batch upserted folder embeddings', {
-          count: ids.length,
-          skipped: skipped.length,
-        });
-      }
-
-      return { count: ids.length, skipped };
-    } catch (error) {
-      // ERROR CONTEXT FIX #11: Enhanced error logging with batch context
-      logger.error('[ChromaDB] Failed to batch upsert folders with context:', {
-        operation: 'batch-upsert-folders',
-        totalFolders: folders.length,
-        successfulCount: ids.length,
-        skippedCount: skipped.length,
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        errorStack: error.stack,
-      });
-      throw error;
-    }
+      },
+      { maxRetries: 3, initialDelay: 500 },
+    )();
   }
 
   /**
@@ -621,50 +638,58 @@ class ChromaDBService {
   async upsertFile(file) {
     await this.initialize();
 
-    try {
-      if (!file.id || !file.vector || !Array.isArray(file.vector)) {
-        throw new Error('Invalid file data: missing id or vector');
-      }
-
-      // Fixed: Sanitize metadata to prevent injection and bloat
-      const baseMetadata = {
-        path: file.meta?.path || '',
-        name: file.meta?.name || '',
-        model: file.model || '',
-        updatedAt: file.updatedAt || new Date().toISOString(),
-      };
-
-      // Merge with sanitized additional metadata (filters dangerous fields)
-      const sanitized = sanitizeMetadata({ ...baseMetadata, ...file.meta });
-
-      // ChromaDB expects embeddings as arrays
-      await this.fileCollection.upsert({
-        ids: [file.id],
-        embeddings: [file.vector],
-        metadatas: [sanitized],
-        documents: [sanitized.path || file.id], // Store sanitized path as document
-      });
-
-      // Invalidate query cache entries that might reference this file
-      this._invalidateCacheForFile(file.id);
-
-      logger.debug('[ChromaDB] Upserted file embedding', {
-        id: file.id,
-        path: sanitized.path,
-      });
-    } catch (error) {
-      // ERROR CONTEXT FIX #11: Enhanced error logging with file context
-      logger.error('[ChromaDB] Failed to upsert file with context:', {
-        operation: 'upsert-file',
-        fileId: file.id,
-        filePath: file.meta?.path,
-        fileName: file.meta?.name,
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        errorStack: error.stack,
-      });
-      throw error;
+    if (!file.id || !file.vector || !Array.isArray(file.vector)) {
+      throw new Error('Invalid file data: missing id or vector');
     }
+
+    return withRetry(
+      async () => {
+        try {
+          // Fixed: Sanitize metadata to prevent injection and bloat
+          const baseMetadata = {
+            path: file.meta?.path || '',
+            name: file.meta?.name || '',
+            model: file.model || '',
+            updatedAt: file.updatedAt || new Date().toISOString(),
+          };
+
+          // Merge with sanitized additional metadata (filters dangerous fields)
+          const sanitized = sanitizeMetadata({
+            ...baseMetadata,
+            ...file.meta,
+          });
+
+          // ChromaDB expects embeddings as arrays
+          await this.fileCollection.upsert({
+            ids: [file.id],
+            embeddings: [file.vector],
+            metadatas: [sanitized],
+            documents: [sanitized.path || file.id], // Store sanitized path as document
+          });
+
+          // Invalidate query cache entries that might reference this file
+          this._invalidateCacheForFile(file.id);
+
+          logger.debug('[ChromaDB] Upserted file embedding', {
+            id: file.id,
+            path: sanitized.path,
+          });
+        } catch (error) {
+          // ERROR CONTEXT FIX #11: Enhanced error logging with file context
+          logger.error('[ChromaDB] Failed to upsert file with context:', {
+            operation: 'upsert-file',
+            fileId: file.id,
+            filePath: file.meta?.path,
+            fileName: file.meta?.name,
+            timestamp: new Date().toISOString(),
+            error: error.message,
+            errorStack: error.stack,
+          });
+          throw error;
+        }
+      },
+      { maxRetries: 3, initialDelay: 500 },
+    )();
   }
 
   /**
@@ -679,64 +704,75 @@ class ChromaDBService {
       return 0;
     }
 
-    const ids = [];
-    const embeddings = [];
-    const metadatas = [];
-    const documents = [];
+    return withRetry(
+      async () => {
+        const ids = [];
+        const embeddings = [];
+        const metadatas = [];
+        const documents = [];
 
-    try {
-      for (const file of files) {
-        if (!file.id || !file.vector || !Array.isArray(file.vector)) {
-          logger.warn('[ChromaDB] Skipping invalid file in batch', {
-            id: file.id,
-          });
-          continue;
+        try {
+          for (const file of files) {
+            if (!file.id || !file.vector || !Array.isArray(file.vector)) {
+              logger.warn('[ChromaDB] Skipping invalid file in batch', {
+                id: file.id,
+              });
+              continue;
+            }
+
+            const baseMetadata = {
+              path: file.meta?.path || '',
+              name: file.meta?.name || '',
+              model: file.model || '',
+              updatedAt: file.updatedAt || new Date().toISOString(),
+            };
+
+            const sanitized = sanitizeMetadata({
+              ...baseMetadata,
+              ...file.meta,
+            });
+
+            ids.push(file.id);
+            embeddings.push(file.vector);
+            metadatas.push(sanitized);
+            documents.push(sanitized.path || file.id);
+          }
+
+          if (ids.length > 0) {
+            await this.fileCollection.upsert({
+              ids,
+              embeddings,
+              metadatas,
+              documents,
+            });
+
+            // Invalidate cache for all affected files
+            ids.forEach((id) => this._invalidateCacheForFile(id));
+
+            logger.info('[ChromaDB] Batch upserted file embeddings', {
+              count: ids.length,
+            });
+          }
+
+          return ids.length;
+        } catch (error) {
+          // ERROR CONTEXT FIX #11: Enhanced error logging with batch context
+          logger.error(
+            '[ChromaDB] Failed to batch upsert files with context:',
+            {
+              operation: 'batch-upsert-files',
+              totalFiles: files.length,
+              successfulCount: ids.length,
+              timestamp: new Date().toISOString(),
+              error: error.message,
+              errorStack: error.stack,
+            },
+          );
+          throw error;
         }
-
-        const baseMetadata = {
-          path: file.meta?.path || '',
-          name: file.meta?.name || '',
-          model: file.model || '',
-          updatedAt: file.updatedAt || new Date().toISOString(),
-        };
-
-        const sanitized = sanitizeMetadata({ ...baseMetadata, ...file.meta });
-
-        ids.push(file.id);
-        embeddings.push(file.vector);
-        metadatas.push(sanitized);
-        documents.push(sanitized.path || file.id);
-      }
-
-      if (ids.length > 0) {
-        await this.fileCollection.upsert({
-          ids,
-          embeddings,
-          metadatas,
-          documents,
-        });
-
-        // Invalidate cache for all affected files
-        ids.forEach((id) => this._invalidateCacheForFile(id));
-
-        logger.info('[ChromaDB] Batch upserted file embeddings', {
-          count: ids.length,
-        });
-      }
-
-      return ids.length;
-    } catch (error) {
-      // ERROR CONTEXT FIX #11: Enhanced error logging with batch context
-      logger.error('[ChromaDB] Failed to batch upsert files with context:', {
-        operation: 'batch-upsert-files',
-        totalFiles: files.length,
-        successfulCount: ids.length,
-        timestamp: new Date().toISOString(),
-        error: error.message,
-        errorStack: error.stack,
-      });
-      throw error;
-    }
+      },
+      { maxRetries: 3, initialDelay: 500 },
+    )();
   }
 
   /**

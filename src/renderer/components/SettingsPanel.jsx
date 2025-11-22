@@ -382,13 +382,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl xl:max-w-4xl 2xl:max-w-5xl w-full mx-21 max-h-[85vh] overflow-y-auto modern-scrollbar">
-        <div className="p-21 border-b border-system-gray-200">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl xl:max-w-4xl 2xl:max-w-5xl w-full mx-4 max-h-[85vh] overflow-y-auto modern-scrollbar">
+        <div className="p-6 border-b border-system-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-system-gray-900">
               ⚙️ Settings
             </h2>
-            <div className="flex items-center gap-8">
+            <div className="flex items-center gap-3">
               <Button
                 onClick={() => {
                   try {
@@ -434,7 +434,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
               <Button
                 onClick={handleToggleSettings}
                 variant="ghost"
-                className="text-system-gray-500 hover:text-system-gray-700 p-5"
+                className="text-system-gray-500 hover:text-system-gray-700 p-2"
                 aria-label="Close settings"
                 title="Close settings"
               >
@@ -444,18 +444,18 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="p-21 space-y-21">
+        <div className="p-6 space-y-6">
           <Collapsible
             title="🤖 AI Configuration"
             defaultOpen
             persistKey="settings-ai"
           >
-            <div className="space-y-13">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                <label className="block text-sm font-medium text-system-gray-700 mb-2">
                   Ollama Host URL
                 </label>
-                <div className="flex gap-8">
+                <div className="flex gap-3">
                   <Input
                     type="text"
                     value={settings.ollamaHost}
@@ -478,7 +478,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-8">
+              <div className="flex items-center gap-3">
                 <Button
                   onClick={loadOllamaModels}
                   variant="secondary"
@@ -512,8 +512,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 )}
               </div>
               {showAllModels && (
-                <div className="mt-8 p-8 bg-system-gray-50 rounded border border-system-gray-200 text-xs">
-                  <div className="mb-5 font-medium text-system-gray-700">
+                <div className="mt-4 p-4 bg-system-gray-50 rounded border border-system-gray-200 text-xs">
+                  <div className="mb-2 font-medium text-system-gray-700">
                     All models from Ollama:
                   </div>
                   {ollamaModelLists.all.length === 0 ? (
@@ -521,7 +521,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                       No models returned
                     </div>
                   ) : (
-                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {ollamaModelLists.all.map((m) => (
                         <li key={m} className="font-mono">
                           {m}
@@ -531,9 +531,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   )}
                 </div>
               )}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-13">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
                     Text Model
                   </label>
                   <Select
@@ -553,7 +553,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   </Select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
                     Vision Model
                   </label>
                   <Select
@@ -573,7 +573,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   </Select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
                     Embedding Model
                   </label>
                   <Select
@@ -593,12 +593,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   </Select>
                 </div>
               </div>
-              <div className="border-t border-system-gray-200 pt-13 mt-13 space-y-13">
+              <div className="border-t border-system-gray-200 pt-6 mt-6 space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
                     Add Model
                   </label>
-                  <div className="flex gap-8">
+                  <div className="flex gap-3">
                     <Input
                       type="text"
                       value={newModel}
@@ -618,10 +618,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
                     Delete Model
                   </label>
-                  <div className="flex gap-8">
+                  <div className="flex gap-3">
                     <Select
                       value={modelToDelete}
                       onChange={(e) => setModelToDelete(e.target.value)}
@@ -648,16 +648,16 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-13">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
                     Smart Folder Embeddings
                   </label>
-                  <p className="text-xs text-system-gray-500 mb-8">
+                  <p className="text-xs text-system-gray-500 mb-4">
                     Rebuild embeddings for all smart folders to improve semantic
                     matching after you edit folder names or descriptions.
                   </p>
-                  <div className="flex gap-8">
+                  <div className="flex gap-3">
                     <Button
                       onClick={async () => {
                         try {
@@ -723,9 +723,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen
             persistKey="settings-performance"
           >
-            <div className="space-y-13">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                <label className="block text-sm font-medium text-system-gray-700 mb-2">
                   Max Concurrent Analysis ({settings.maxConcurrentAnalysis})
                 </label>
                 <input
@@ -758,12 +758,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen
             persistKey="settings-defaults"
           >
-            <div className="space-y-13">
+            <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                <label className="block text-sm font-medium text-system-gray-700 mb-2">
                   Default Smart Folder Location
                 </label>
-                <div className="flex gap-8">
+                <div className="flex gap-3">
                   <Input
                     type="text"
                     value={settings.defaultSmartFolderLocation}
@@ -807,7 +807,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen
             persistKey="settings-app"
           >
-            <div className="space-y-13">
+            <div className="space-y-6">
               <div className="flex items-center">
                 <input
                   type="checkbox"
@@ -819,7 +819,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                       launchOnStartup: e.target.checked,
                     }))
                   }
-                  className="mr-8"
+                  className="mr-3"
                 />
                 <label
                   htmlFor="launchOnStartup"
@@ -836,12 +836,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen={false}
             persistKey="settings-api"
           >
-            <div className="p-13 bg-system-gray-50 rounded-lg">
+            <div className="p-4 bg-system-gray-50 rounded-lg">
               <Button
                 onClick={runAPITests}
                 disabled={isTestingApi}
                 variant="primary"
-                className="text-sm mb-8 w-full"
+                className="text-sm mb-4 w-full"
               >
                 {isTestingApi ? 'Testing APIs...' : 'Test All APIs'}
               </Button>
@@ -861,7 +861,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="p-21 border-t border-system-gray-200 flex justify-end gap-13">
+        <div className="p-6 border-t border-system-gray-200 flex justify-end gap-4">
           <Button onClick={handleToggleSettings} variant="secondary">
             Cancel
           </Button>

@@ -35,6 +35,13 @@ const {
 } = require('./fallbackUtils');
 const { getInstance: getChromaDB } = require('../services/ChromaDBService');
 const FolderMatchingService = require('../services/FolderMatchingService');
+const embeddingQueue = require('./EmbeddingQueue');
+const crypto = require('crypto');
+const { globalDeduplicator } = require('../utils/llmOptimization');
+const {
+  SUPPORTED_AUDIO_EXTENSIONS,
+  SUPPORTED_VIDEO_EXTENSIONS,
+} = require('../../shared/constants');
 
 // Cache configuration constants
 const CACHE_CONFIG = {
@@ -65,13 +72,6 @@ const folderMatcher = new FolderMatchingService(chromaDbService);
 // Set logger context for this module
 logger.setContext('DocumentAnalysis');
 
-// Batch embedding queue for efficient database operations
-const BATCH_SIZE = 50;
-const embeddingQueue = [];
-let flushTimer = null;
-const FLUSH_DELAY_MS = 500; // Flush queue after 500ms of inactivity
-let isFlushing = false; // Mutex to prevent concurrent flushes
-
 /**
  * Analyzes a document file using AI or fallback methods
  * @param {string} filePath - Path to the document file
@@ -82,6 +82,35 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   logger.info('Analyzing document file', { path: filePath });
   const fileExtension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
+
+  // FAST SEMANTIC LABELING (Short-circuit)
+  // Skip AI analysis for audio/video and use extension-based fallback immediately
+  if (
+    (SUPPORTED_AUDIO_EXTENSIONS || []).includes(fileExtension) ||
+    (SUPPORTED_VIDEO_EXTENSIONS || []).includes(fileExtension)
+  ) {
+    const type = (SUPPORTED_AUDIO_EXTENSIONS || []).includes(fileExtension)
+      ? 'audio'
+      : 'video';
+    const intelligentCategory = getIntelligentCategory(
+      fileName,
+      fileExtension,
+      smartFolders,
+    );
+    const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
+    const safeCategory = intelligentCategory || type;
+
+    return {
+      purpose: `${type.charAt(0).toUpperCase() + type.slice(1)} file`,
+      project: fileName.replace(fileExtension, ''),
+      category: safeCategory,
+      date: new Date().toISOString().split('T')[0],
+      keywords: intelligentKeywords,
+      confidence: 80, // High confidence for known types
+      suggestedName: safeSuggestedName(fileName, fileExtension),
+      extractionMethod: 'extension_short_circuit',
+    };
+  }
 
   // Pre-flight checks for AI-first operation (graceful fallback if Ollama unavailable)
   try {
@@ -393,10 +422,24 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         preview: extractedText.substring(0, 200),
       });
 
-      const analysis = await analyzeTextWithOllama(
-        extractedText,
+      // Backend Caching & Deduplication:
+      // Generate a content hash to prevent duplicate AI processing
+      const modelName = 'llama3'; // Default or fetch from config if possible, but tough to get async here without overhead
+      const contentHash = crypto
+        .createHash('md5')
+        .update(extractedText)
+        .update(modelName)
+        .digest('hex');
+
+      const deduplicationKey = globalDeduplicator.generateKey({
+        contentHash,
         fileName,
-        smartFolders,
+        task: 'analyzeTextWithOllama',
+      });
+
+      const analysis = await globalDeduplicator.deduplicate(
+        deduplicationKey,
+        () => analyzeTextWithOllama(extractedText, fileName, smartFolders),
       );
 
       // Attempt semantic folder refinement
@@ -464,21 +507,13 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           );
 
           // Queue embedding for batch persistence (decoupled from matching)
-          embeddingQueue.push({
+          embeddingQueue.enqueue({
             id: fileId,
             vector,
             model,
             meta: { path: filePath, name: fileName },
             updatedAt: new Date().toISOString(),
           });
-
-          // Flush queue if it reaches batch size
-          if (embeddingQueue.length >= BATCH_SIZE) {
-            await flushEmbeddingQueue();
-          } else {
-            // Schedule delayed flush if not already scheduled
-            scheduleDelayedFlush();
-          }
 
           if (Array.isArray(candidates) && candidates.length > 0) {
             logger.debug('[DocumentAnalysis] Folder matching results', {
@@ -688,110 +723,10 @@ function deriveKeywordsFromFilenames(names) {
 // Fallback helpers removed; sourced from fallbackUtils
 
 /**
- * Flush the embedding queue by batch upserting all queued embeddings
- * @private
- */
-async function flushEmbeddingQueue() {
-  // Prevent concurrent flushes
-  if (isFlushing) {
-    logger.debug('[DocumentAnalysis] Flush already in progress, skipping');
-    return;
-  }
-
-  if (embeddingQueue.length === 0) {
-    return;
-  }
-
-  // Set mutex flag
-  isFlushing = true;
-
-  try {
-    // Clear any pending flush timer
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
-    }
-
-    // Copy queue and clear it immediately to prevent concurrent modifications
-    const queueCopy = [...embeddingQueue];
-    embeddingQueue.length = 0;
-
-    if (queueCopy.length === 0) {
-      return;
-    }
-
-    logger.debug('[DocumentAnalysis] Flushing embedding queue', {
-      count: queueCopy.length,
-    });
-
-    // Get ChromaDB service (instance)
-    const chromaDbService =
-      require('../services/ChromaDBService').getInstance();
-
-    // Ensure ChromaDB is initialized
-    await chromaDbService.initialize();
-
-    // Connection recovery: Check if database is online before flushing
-    if (!chromaDbService.isOnline) {
-      logger.warn('[DocumentAnalysis] Database offline, pausing flush', {
-        queueSize: queueCopy.length,
-      });
-      // Re-queue items at the front to preserve order (mostly)
-      embeddingQueue.unshift(...queueCopy);
-
-      // Schedule retry with longer delay
-      setTimeout(() => {
-        flushEmbeddingQueue().catch((err) => {
-          logger.error('[DocumentAnalysis] Error in retry flush:', err.message);
-        });
-      }, 5000); // Retry in 5 seconds
-
-      return;
-    }
-
-    // Batch upsert all pre-calculated embeddings
-    // The queue now contains full embedding objects { id, vector, model, meta, updatedAt }
-    await chromaDbService.batchUpsertFiles(queueCopy);
-
-    logger.info('[DocumentAnalysis] Batch upserted file embeddings', {
-      count: queueCopy.length,
-    });
-  } catch (error) {
-    logger.error('[DocumentAnalysis] Failed to flush embedding queue', {
-      error: error.message,
-    });
-    // Re-queue failed items could be complex if the error is permanent,
-    // but for now we'll log and drop to avoid blocking.
-  } finally {
-    // Always clear mutex flag
-    isFlushing = false;
-  }
-}
-
-/**
- * Schedule a delayed flush of the embedding queue
- * @private
- */
-function scheduleDelayedFlush() {
-  if (flushTimer) {
-    return; // Already scheduled
-  }
-
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    flushEmbeddingQueue().catch((error) => {
-      logger.error('[DocumentAnalysis] Error in delayed flush', {
-        error: error.message,
-      });
-    });
-  }, FLUSH_DELAY_MS);
-}
-
-/**
  * Force flush the embedding queue (useful for cleanup or end of batch)
  */
 async function flushAllEmbeddings() {
-  await flushEmbeddingQueue();
+  await embeddingQueue.flush();
 }
 
 module.exports = {

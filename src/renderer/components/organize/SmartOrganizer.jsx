@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../../shared/logger';
+import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 import OrganizationSuggestions from './OrganizationSuggestions';
 import BatchOrganizationSuggestions from './BatchOrganizationSuggestions';
@@ -21,6 +22,7 @@ function SmartOrganizer({
   onOrganize,
   onCancel,
 }) {
+  const { addNotification } = useNotification();
   const [currentStep, setCurrentStep] = useState('analyze');
   const [suggestions, setSuggestions] = useState({});
   const [batchSuggestions, setBatchSuggestions] = useState(null);
@@ -292,7 +294,10 @@ function SmartOrganizer({
                     variant="secondary"
                     className="mt-2"
                     onClick={() => {
-                      // TODO: Implement show improvements functionality
+                      addNotification(
+                        'Detailed improvements view coming soon',
+                        'info',
+                      );
                     }}
                   >
                     View Improvements
@@ -323,7 +328,7 @@ function SmartOrganizer({
                   setCurrentStep('preview');
                 }}
                 onCustomizeGroup={() => {
-                  // TODO: Implement customize group functionality
+                  addNotification('Group customization coming soon', 'info');
                 }}
                 onRejectAll={onCancel}
               />

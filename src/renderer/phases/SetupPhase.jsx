@@ -382,284 +382,287 @@ function SetupPhase() {
   };
 
   return (
-    <div className="container-responsive gap-6 py-6 flex flex-col">
-      <div className="text-center space-y-4 flex-shrink-0">
-        <h1 className="heading-primary">
-          ⚙️ Configure <span className="text-gradient">Smart Folders</span>
-        </h1>
-        <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
-          Define trusted destinations so the AI can organize every discovery
-          with confidence.
-        </p>
-        <div className="flex items-center justify-center gap-6 text-xs text-system-gray-500">
-          <button
-            className="hover:text-system-gray-800 underline"
-            onClick={() => {
-              try {
-                const keys = ['setup-current-folders', 'setup-add-folder'];
-                keys.forEach((k) =>
-                  window.localStorage.setItem(`collapsible:${k}`, 'true'),
-                );
-                window.dispatchEvent(new Event('storage'));
-              } catch {
-                // Non-fatal if localStorage fails
-              }
-            }}
-          >
-            Expand all
-          </button>
-          <span className="text-system-gray-300">•</span>
-          <button
-            className="hover:text-system-gray-800 underline"
-            onClick={() => {
-              try {
-                const keys = ['setup-current-folders', 'setup-add-folder'];
-                keys.forEach((k) =>
-                  window.localStorage.setItem(`collapsible:${k}`, 'false'),
-                );
-                window.dispatchEvent(new Event('storage'));
-              } catch {
-                // Non-fatal if localStorage fails
-              }
-            }}
-          >
-            Collapse all
-          </button>
+    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
+      <div className="container-responsive gap-6 py-6 flex flex-col min-h-min">
+        <div className="text-center space-y-4 flex-shrink-0">
+          <h1 className="heading-primary">
+            ⚙️ Configure <span className="text-gradient">Smart Folders</span>
+          </h1>
+          <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
+            Define trusted destinations so the AI can organize every discovery
+            with confidence.
+          </p>
+          <div className="flex items-center justify-center gap-6 text-xs text-system-gray-500">
+            <button
+              className="hover:text-system-gray-800 underline"
+              onClick={() => {
+                try {
+                  const keys = ['setup-current-folders', 'setup-add-folder'];
+                  keys.forEach((k) =>
+                    window.localStorage.setItem(`collapsible:${k}`, 'true'),
+                  );
+                  window.dispatchEvent(new Event('storage'));
+                } catch {
+                  // Non-fatal if localStorage fails
+                }
+              }}
+            >
+              Expand all
+            </button>
+            <span className="text-system-gray-300">•</span>
+            <button
+              className="hover:text-system-gray-800 underline"
+              onClick={() => {
+                try {
+                  const keys = ['setup-current-folders', 'setup-add-folder'];
+                  keys.forEach((k) =>
+                    window.localStorage.setItem(`collapsible:${k}`, 'false'),
+                  );
+                  window.dispatchEvent(new Event('storage'));
+                } catch {
+                  // Non-fatal if localStorage fails
+                }
+              }}
+            >
+              Collapse all
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col gap-6">
-        <Collapsible
-          className="glass-panel"
-          title="📁 Current Smart Folders"
-          actions={
-            smartFolders.length > 0 ? (
-              <Button
-                onClick={async () => {
-                  try {
-                    const res =
-                      await window.electronAPI.embeddings.rebuildFolders();
-                    if (res?.success) {
-                      showSuccess(
-                        `🧠 Rebuilt ${res.folders || 0} folder embeddings`,
-                      );
-                    } else {
-                      showError(
-                        `Failed to rebuild embeddings: ${res?.error || 'Unknown error'}`,
-                      );
+        <div className="flex flex-col gap-6">
+          <Collapsible
+            className="glass-panel"
+            title="📁 Current Smart Folders"
+            actions={
+              smartFolders.length > 0 ? (
+                <Button
+                  onClick={async () => {
+                    try {
+                      const res =
+                        await window.electronAPI.embeddings.rebuildFolders();
+                      if (res?.success) {
+                        showSuccess(
+                          `🧠 Rebuilt ${res.folders || 0} folder embeddings`,
+                        );
+                      } else {
+                        showError(
+                          `Failed to rebuild embeddings: ${res?.error || 'Unknown error'}`,
+                        );
+                      }
+                    } catch (e) {
+                      showError(`Failed: ${e.message}`);
                     }
-                  } catch (e) {
-                    showError(`Failed: ${e.message}`);
-                  }
-                }}
-                variant="primary"
-                className="text-sm"
-                title="Rebuild all smart folder embeddings"
-              >
-                🧠 Rebuild Embeddings
-              </Button>
-            ) : null
-          }
-          defaultOpen
-          persistKey="setup-current-folders"
-          contentClassName="p-8"
-        >
-          {isLoading ? (
-            <SmartFolderSkeleton count={3} />
-          ) : smartFolders.length === 0 ? (
-            <div className="text-center py-21">
-              <div
-                className="text-4xl mb-8 opacity-50"
-                role="img"
-                aria-label="empty folder"
-              >
-                📂
+                  }}
+                  variant="primary"
+                  className="text-sm"
+                  title="Rebuild all smart folder embeddings"
+                >
+                  🧠 Rebuild Embeddings
+                </Button>
+              ) : null
+            }
+            defaultOpen
+            persistKey="setup-current-folders"
+            contentClassName="p-8"
+          >
+            {isLoading ? (
+              <SmartFolderSkeleton count={3} />
+            ) : smartFolders.length === 0 ? (
+              <div className="text-center py-21">
+                <div
+                  className="text-4xl mb-8 opacity-50"
+                  role="img"
+                  aria-label="empty folder"
+                >
+                  📂
+                </div>
+                <p className="text-muted italic">
+                  No smart folders configured yet.
+                </p>
               </div>
-              <p className="text-muted italic">
-                No smart folders configured yet.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {smartFolders.map((folder, index) => (
-                <SmartFolderItem
-                  key={folder.id}
-                  folder={folder}
-                  index={index}
-                  editingFolder={editingFolder}
-                  setEditingFolder={setEditingFolder}
-                  isSavingEdit={isSavingEdit}
-                  isDeleting={isDeletingFolder === folder.id}
-                  onSaveEdit={handleSaveEdit}
-                  onCancelEdit={handleCancelEdit}
-                  onEditStart={handleEditFolder}
-                  onDeleteFolder={handleDeleteFolder}
-                  onCreateDirectory={createSingleFolder}
-                  onOpenFolder={handleOpenFolder}
-                  addNotification={addNotification}
-                />
-              ))}
-            </div>
-          )}
-        </Collapsible>
+            ) : (
+              <div className="space-y-8">
+                {smartFolders.map((folder, index) => (
+                  <SmartFolderItem
+                    key={folder.id}
+                    folder={folder}
+                    index={index}
+                    editingFolder={editingFolder}
+                    setEditingFolder={setEditingFolder}
+                    isSavingEdit={isSavingEdit}
+                    isDeleting={isDeletingFolder === folder.id}
+                    onSaveEdit={handleSaveEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onEditStart={handleEditFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                    onCreateDirectory={createSingleFolder}
+                    onOpenFolder={handleOpenFolder}
+                    addNotification={addNotification}
+                  />
+                ))}
+              </div>
+            )}
+          </Collapsible>
 
-        <Collapsible
-          title="Add New Smart Folder"
-          defaultOpen={false}
-          persistKey="setup-add-folder"
-          className="glass-panel"
-        >
-          <div className="space-y-13">
-            <div>
-              <label className="block text-sm font-medium text-system-gray-700 mb-5">
-                Folder Name
-              </label>
-              <Input
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === 'Enter' &&
-                    newFolderName.trim() &&
-                    !isAddingFolder
-                  ) {
-                    handleAddFolder();
-                  }
-                }}
-                placeholder="e.g., Documents, Photos, Projects"
-                className="w-full"
-                aria-describedby="folder-name-help"
-              />
-              <div
-                id="folder-name-help"
-                className="text-xs text-system-gray-500 mt-3"
-              >
-                Enter a descriptive name for your smart folder. Press Enter to
-                add the folder.
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-system-gray-700 mb-5">
-                Target Path (optional)
-              </label>
-              <div className="flex gap-8 flex-col sm:flex-row">
+          <Collapsible
+            title="Add New Smart Folder"
+            defaultOpen={false}
+            persistKey="setup-add-folder"
+            className="glass-panel"
+          >
+            <div className="space-y-13">
+              <div>
+                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  Folder Name
+                </label>
                 <Input
                   type="text"
-                  value={newFolderPath}
-                  onChange={(e) => setNewFolderPath(e.target.value)}
-                  placeholder="e.g., Documents/Work, Pictures/Family"
-                  className="flex-1"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === 'Enter' &&
+                      newFolderName.trim() &&
+                      !isAddingFolder
+                    ) {
+                      handleAddFolder();
+                    }
+                  }}
+                  placeholder="e.g., Documents, Photos, Projects"
+                  className="w-full"
+                  aria-describedby="folder-name-help"
                 />
-                <Button
-                  onClick={handleBrowseFolder}
-                  variant="secondary"
-                  title="Browse for folder"
-                  className="w-full sm:w-auto"
+                <div
+                  id="folder-name-help"
+                  className="text-xs text-system-gray-500 mt-3"
                 >
-                  📁 Browse
-                </Button>
+                  Enter a descriptive name for your smart folder. Press Enter to
+                  add the folder.
+                </div>
               </div>
-              <p className="text-xs text-system-gray-500 mt-3">
-                Leave empty to use default {defaultLocation}/
-                {newFolderName || 'FolderName'}
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-system-gray-700 mb-5">
-                Description{' '}
-                <span className="text-stratosort-blue font-semibold">
-                  (Important for AI)
-                </span>
-              </label>
-              <Textarea
-                value={newFolderDescription}
-                onChange={(e) => setNewFolderDescription(e.target.value)}
-                placeholder="Describe what types of files should go in this folder. E.g., 'Work documents, contracts, and business correspondence' or 'Family photos from vacations and special events'"
-                className="w-full"
-                rows={4}
-                aria-describedby="description-help"
-              />
-              <div
-                id="description-help"
-                className="text-xs text-system-gray-500 mt-3"
+              <div>
+                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  Target Path (optional)
+                </label>
+                <div className="flex gap-8 flex-col sm:flex-row">
+                  <Input
+                    type="text"
+                    value={newFolderPath}
+                    onChange={(e) => setNewFolderPath(e.target.value)}
+                    placeholder="e.g., Documents/Work, Pictures/Family"
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={handleBrowseFolder}
+                    variant="secondary"
+                    title="Browse for folder"
+                    className="w-full sm:w-auto"
+                  >
+                    📁 Browse
+                  </Button>
+                </div>
+                <p className="text-xs text-system-gray-500 mt-3">
+                  Leave empty to use default {defaultLocation}/
+                  {newFolderName || 'FolderName'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                  Description{' '}
+                  <span className="text-stratosort-blue font-semibold">
+                    (Important for AI)
+                  </span>
+                </label>
+                <Textarea
+                  value={newFolderDescription}
+                  onChange={(e) => setNewFolderDescription(e.target.value)}
+                  placeholder="Describe what types of files should go in this folder. E.g., 'Work documents, contracts, and business correspondence' or 'Family photos from vacations and special events'"
+                  className="w-full"
+                  rows={4}
+                  aria-describedby="description-help"
+                />
+                <div
+                  id="description-help"
+                  className="text-xs text-system-gray-500 mt-3"
+                >
+                  💡 <strong>Tip:</strong> The more specific your description,
+                  the better the AI will organize your files. Include file
+                  types, content themes, and use cases.
+                </div>
+              </div>
+              <Button
+                onClick={handleAddFolder}
+                disabled={!newFolderName.trim() || isAddingFolder}
+                variant="primary"
+                className="w-full sm:w-auto"
+                aria-label={
+                  isAddingFolder ? 'Adding folder...' : 'Add smart folder'
+                }
               >
-                💡 <strong>Tip:</strong> The more specific your description, the
-                better the AI will organize your files. Include file types,
-                content themes, and use cases.
-              </div>
+                {isAddingFolder ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full inline-block mr-2"></div>
+                    Adding...
+                  </>
+                ) : (
+                  <>➕ Add Smart Folder</>
+                )}
+              </Button>
             </div>
-            <Button
-              onClick={handleAddFolder}
-              disabled={!newFolderName.trim() || isAddingFolder}
-              variant="primary"
-              className="w-full sm:w-auto"
-              aria-label={
-                isAddingFolder ? 'Adding folder...' : 'Add smart folder'
+          </Collapsible>
+        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
+          <Button
+            onClick={() => actions.advancePhase(PHASES.WELCOME)}
+            variant="secondary"
+            className="w-full sm:w-auto"
+          >
+            ← Back to Welcome
+          </Button>
+          <Button
+            onClick={async () => {
+              // Reload folders to ensure we have latest data
+              const reloadedFolders =
+                await window.electronAPI.smartFolders.get();
+              const currentFolders = Array.isArray(reloadedFolders)
+                ? reloadedFolders
+                : [];
+
+              if (currentFolders.length === 0) {
+                showWarning(
+                  'Please add at least one smart folder before continuing. Smart folders help the AI organize your files effectively.',
+                );
+              } else {
+                // Fixed: Update phase data synchronously BEFORE advancing to prevent race condition
+                // This ensures Discover phase has access to latest folder data
+                actions.setPhaseData('smartFolders', currentFolders);
+
+                // Update local state (async, but not critical for phase transition)
+                setSmartFolders(currentFolders);
+
+                // Small delay to ensure context update propagates
+                await new Promise((resolve) => setTimeout(resolve, 50));
+
+                // Now safe to advance - Discover phase will have fresh folder data
+                actions.advancePhase(PHASES.DISCOVER);
               }
-            >
-              {isAddingFolder ? (
-                <>
-                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full inline-block mr-2"></div>
-                  Adding...
-                </>
-              ) : (
-                <>➕ Add Smart Folder</>
-              )}
-            </Button>
-          </div>
-        </Collapsible>
+            }}
+            variant="primary"
+            className="w-full sm:w-auto"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full inline-block mr-2"></div>
+                Loading...
+              </>
+            ) : (
+              <>Continue to File Discovery →</>
+            )}
+          </Button>
+        </div>
+
+        <ConfirmDialog />
       </div>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
-        <Button
-          onClick={() => actions.advancePhase(PHASES.WELCOME)}
-          variant="secondary"
-          className="w-full sm:w-auto"
-        >
-          ← Back to Welcome
-        </Button>
-        <Button
-          onClick={async () => {
-            // Reload folders to ensure we have latest data
-            const reloadedFolders = await window.electronAPI.smartFolders.get();
-            const currentFolders = Array.isArray(reloadedFolders)
-              ? reloadedFolders
-              : [];
-
-            if (currentFolders.length === 0) {
-              showWarning(
-                'Please add at least one smart folder before continuing. Smart folders help the AI organize your files effectively.',
-              );
-            } else {
-              // Fixed: Update phase data synchronously BEFORE advancing to prevent race condition
-              // This ensures Discover phase has access to latest folder data
-              actions.setPhaseData('smartFolders', currentFolders);
-
-              // Update local state (async, but not critical for phase transition)
-              setSmartFolders(currentFolders);
-
-              // Small delay to ensure context update propagates
-              await new Promise((resolve) => setTimeout(resolve, 50));
-
-              // Now safe to advance - Discover phase will have fresh folder data
-              actions.advancePhase(PHASES.DISCOVER);
-            }
-          }}
-          variant="primary"
-          className="w-full sm:w-auto"
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
-              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full inline-block mr-2"></div>
-              Loading...
-            </>
-          ) : (
-            <>Continue to File Discovery →</>
-          )}
-        </Button>
-      </div>
-
-      <ConfirmDialog />
     </div>
   );
 }

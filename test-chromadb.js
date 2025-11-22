@@ -4,7 +4,10 @@
  */
 
 const { spawn } = require('child_process');
-const { asyncSpawn, findPythonLauncherAsync } = require('./src/main/utils/asyncSpawnUtils');
+const {
+  asyncSpawn,
+  findPythonLauncherAsync,
+} = require('./src/main/utils/asyncSpawnUtils');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,7 +22,9 @@ async function main() {
 
   if (!pythonLauncher) {
     console.log('   ✗ Python not found!');
-    console.log('   Please install Python 3 from https://www.python.org/downloads/');
+    console.log(
+      '   Please install Python 3 from https://www.python.org/downloads/',
+    );
     process.exit(1);
   }
 
@@ -31,12 +36,14 @@ async function main() {
       stdio: 'pipe',
       windowsHide: true,
       timeout: 2000,
-    }
+    },
   );
 
   if (versionCheck.status === 0) {
     const version = versionCheck.stdout.trim() || versionCheck.stderr.trim();
-    console.log(`   ✓ Found Python: ${version} (using ${pythonLauncher.command})`);
+    console.log(
+      `   ✓ Found Python: ${version} (using ${pythonLauncher.command})`,
+    );
   }
 
   // Test 2: Check ChromaDB module
@@ -52,7 +59,7 @@ async function main() {
       stdio: 'pipe',
       windowsHide: true,
       timeout: 5000,
-    }
+    },
   );
 
   if (checkModule.status === 0) {
@@ -69,7 +76,11 @@ async function main() {
 
   // Test 3: Try to start ChromaDB server
   console.log('\n3. Testing ChromaDB server startup...');
-  const dbPath = path.join(process.env.APPDATA || '.', 'stratosort', 'chromadb-test');
+  const dbPath = path.join(
+    process.env.APPDATA || '.',
+    'stratosort',
+    'chromadb-test',
+  );
   const host = '127.0.0.1';
   const port = 8001; // Use different port to avoid conflicts
 
@@ -99,7 +110,7 @@ async function main() {
     {
       stdio: 'pipe',
       windowsHide: true,
-    }
+    },
   );
 
   let serverStarted = false;
@@ -107,7 +118,10 @@ async function main() {
 
   chromaProcess.stdout?.on('data', (data) => {
     const output = data.toString();
-    if (output.includes('Application startup complete') || output.includes('Uvicorn running')) {
+    if (
+      output.includes('Application startup complete') ||
+      output.includes('Uvicorn running')
+    ) {
       serverStarted = true;
     }
   });
@@ -134,7 +148,7 @@ async function main() {
         console.log('   ✗ ChromaDB server failed to start within 10 seconds');
         if (errorMessages.length > 0) {
           console.log('\n   Error messages:');
-          errorMessages.forEach(msg => console.log(`   ${msg.trim()}`));
+          errorMessages.forEach((msg) => console.log(`   ${msg.trim()}`));
         }
       }
 

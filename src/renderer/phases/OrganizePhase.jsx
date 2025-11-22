@@ -836,19 +836,9 @@ function OrganizePhase() {
     setSelectedFiles(new Set());
   }, [selectedFiles, unprocessedFiles, addNotification, handleOrganizeFiles]);
 
-  const hasOrganizeContent =
-    unprocessedFiles.length > 0 || processedFiles.length > 0;
-
-  const controlsGridClassName = [
-    'grid gap-6 desktop-grid-2 flex-shrink-0',
-    hasOrganizeContent
-      ? 'max-h-[45vh] 2xl:max-h-[50vh] overflow-y-auto pr-2 modern-scrollbar'
-      : 'overflow-y-auto modern-scrollbar',
-  ].join(' ');
-
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden">
-      <div className="container-responsive flex flex-col h-full gap-6 py-6 overflow-hidden">
+    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
+      <div className="container-responsive gap-6 py-6 flex flex-col min-h-min">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
           <div className="space-y-3">
@@ -870,169 +860,160 @@ function OrganizePhase() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 min-h-0 flex flex-col gap-6 overflow-hidden">
-          {/* Controls Grid */}
-          <div className={controlsGridClassName}>
-            {smartFolders.length > 0 && (
-              <Collapsible
-                title="📁 Target Smart Folders"
-                defaultOpen={false}
-                persistKey="organize-target-folders"
-                contentClassName="p-8"
-                className="glass-panel"
-              >
-                <TargetFolderList
-                  folders={smartFolders}
-                  defaultLocation={defaultLocation}
-                />
-              </Collapsible>
-            )}
-            {(unprocessedFiles.length > 0 || processedFiles.length > 0) && (
-              <Collapsible
-                title="📊 File Status Overview"
-                defaultOpen
-                persistKey="organize-status"
-                className="glass-panel"
-              >
-                <StatusOverview
-                  unprocessedCount={unprocessedFiles.length}
-                  processedCount={processedFiles.length}
-                  failedCount={
-                    analysisResults.filter((f) => !f.analysis).length
-                  }
-                />
-              </Collapsible>
-            )}
-            {unprocessedFiles.length > 0 && (
-              <Collapsible
-                title="Bulk Operations"
-                defaultOpen
-                persistKey="organize-bulk"
-                className="glass-panel"
-              >
-                <BulkOperations
-                  total={unprocessedFiles.length}
-                  selectedCount={selectedFiles.size}
-                  onSelectAll={selectAllFiles}
-                  onApproveSelected={approveSelectedFiles}
-                  bulkEditMode={bulkEditMode}
-                  setBulkEditMode={setBulkEditMode}
-                  bulkCategory={bulkCategory}
-                  setBulkCategory={setBulkCategory}
-                  onApplyBulkCategory={applyBulkCategoryChange}
-                  smartFolders={smartFolders}
-                />
-              </Collapsible>
-            )}
-            {processedFiles.length > 0 && (
-              <Collapsible
-                title="✅ Previously Organized Files"
-                defaultOpen={false}
-                persistKey="organize-history"
-                contentClassName="p-8"
-                className="glass-panel"
-              >
-                <div className="space-y-5">
-                  {processedFiles.map((file, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-8 bg-green-50 rounded-lg border border-green-200"
-                    >
-                      <div className="flex items-center gap-8">
-                        <span className="text-green-600">✅</span>
-                        <div>
-                          <div className="text-sm font-medium text-system-gray-900">
-                            {file.originalName} → {file.newName}
-                          </div>
-                          <div className="text-xs text-system-gray-500">
-                            Moved to {file.smartFolder} •{' '}
-                            {new Date(file.organizedAt).toLocaleDateString()}
-                          </div>
+        <div className="flex flex-col gap-6">
+          {smartFolders.length > 0 && (
+            <Collapsible
+              title="📁 Target Smart Folders"
+              defaultOpen={false}
+              persistKey="organize-target-folders"
+              contentClassName="p-8"
+              className="glass-panel"
+            >
+              <TargetFolderList
+                folders={smartFolders}
+                defaultLocation={defaultLocation}
+              />
+            </Collapsible>
+          )}
+          {(unprocessedFiles.length > 0 || processedFiles.length > 0) && (
+            <Collapsible
+              title="📊 File Status Overview"
+              defaultOpen
+              persistKey="organize-status"
+              className="glass-panel"
+            >
+              <StatusOverview
+                unprocessedCount={unprocessedFiles.length}
+                processedCount={processedFiles.length}
+                failedCount={analysisResults.filter((f) => !f.analysis).length}
+              />
+            </Collapsible>
+          )}
+          {unprocessedFiles.length > 0 && (
+            <Collapsible
+              title="Bulk Operations"
+              defaultOpen
+              persistKey="organize-bulk"
+              className="glass-panel"
+            >
+              <BulkOperations
+                total={unprocessedFiles.length}
+                selectedCount={selectedFiles.size}
+                onSelectAll={selectAllFiles}
+                onApproveSelected={approveSelectedFiles}
+                bulkEditMode={bulkEditMode}
+                setBulkEditMode={setBulkEditMode}
+                bulkCategory={bulkCategory}
+                setBulkCategory={setBulkCategory}
+                onApplyBulkCategory={applyBulkCategoryChange}
+                smartFolders={smartFolders}
+              />
+            </Collapsible>
+          )}
+          {processedFiles.length > 0 && (
+            <Collapsible
+              title="✅ Previously Organized Files"
+              defaultOpen={false}
+              persistKey="organize-history"
+              contentClassName="p-8"
+              className="glass-panel"
+            >
+              <div className="space-y-5">
+                {processedFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-8 bg-green-50 rounded-lg border border-green-200"
+                  >
+                    <div className="flex items-center gap-8">
+                      <span className="text-green-600">✅</span>
+                      <div>
+                        <div className="text-sm font-medium text-system-gray-900">
+                          {file.originalName} → {file.newName}
+                        </div>
+                        <div className="text-xs text-system-gray-500">
+                          Moved to {file.smartFolder} •{' '}
+                          {new Date(file.organizedAt).toLocaleDateString()}
                         </div>
                       </div>
-                      <div className="text-xs text-green-600 font-medium">
-                        Organized
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </Collapsible>
-            )}
-          </div>
-
-          {/* Files Ready - Filling */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <Collapsible
-              title="Files Ready for Organization"
-              defaultOpen
-              persistKey="organize-ready-list"
-              className="glass-panel h-full flex flex-col"
-              contentClassName="flex-1 overflow-hidden flex flex-col"
-            >
-              <div className="flex-1 overflow-y-auto p-6 modern-scrollbar">
-                {unprocessedFiles.length === 0 ? (
-                  <div className="text-center py-21">
-                    <div className="text-4xl mb-13">
-                      {processedFiles.length > 0 ? '✅' : '📭'}
+                    <div className="text-xs text-green-600 font-medium">
+                      Organized
                     </div>
-                    <p className="text-system-gray-500 italic">
-                      {processedFiles.length > 0
-                        ? 'All files have been organized! Check the results below.'
-                        : 'No files ready for organization yet.'}
-                    </p>
-                    {processedFiles.length === 0 && (
-                      <Button
-                        onClick={() => actions.advancePhase(PHASES.DISCOVER)}
-                        variant="primary"
-                        className="mt-13"
-                      >
-                        ← Go Back to Select Files
-                      </Button>
-                    )}
                   </div>
-                ) : (
-                  <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-                    {unprocessedFiles.map((file, index) => {
-                      const fileWithEdits = getFileWithEdits(file, index);
-                      const currentCategory =
-                        editingFiles[index]?.category ||
-                        fileWithEdits.analysis?.category;
-                      const smartFolder =
-                        findSmartFolderForCategory(currentCategory);
-                      const isSelected = selectedFiles.has(index);
-                      const stateDisplay = getFileStateDisplay(
-                        file.path,
-                        !!file.analysis,
-                      );
-                      const destination = smartFolder
-                        ? smartFolder.path ||
-                          `${defaultLocation}/${smartFolder.name}`
-                        : 'No matching folder';
-                      return (
-                        <ReadyFileItem
-                          key={index}
-                          file={fileWithEdits}
-                          index={index}
-                          isSelected={isSelected}
-                          onToggleSelected={toggleFileSelection}
-                          stateDisplay={stateDisplay}
-                          smartFolders={smartFolders}
-                          editing={editingFiles[index]}
-                          onEdit={handleEditFile}
-                          destination={destination}
-                          category={currentCategory}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
+                ))}
               </div>
             </Collapsible>
-          </div>
+          )}
 
-          {/* Action Area - Fixed Bottom of Content */}
+          {/* Files Ready */}
+          <Collapsible
+            title="Files Ready for Organization"
+            defaultOpen
+            persistKey="organize-ready-list"
+            className="glass-panel"
+            contentClassName="p-6"
+          >
+            {unprocessedFiles.length === 0 ? (
+              <div className="text-center py-21">
+                <div className="text-4xl mb-13">
+                  {processedFiles.length > 0 ? '✅' : '📭'}
+                </div>
+                <p className="text-system-gray-500 italic">
+                  {processedFiles.length > 0
+                    ? 'All files have been organized! Check the results below.'
+                    : 'No files ready for organization yet.'}
+                </p>
+                {processedFiles.length === 0 && (
+                  <Button
+                    onClick={() => actions.advancePhase(PHASES.DISCOVER)}
+                    variant="primary"
+                    className="mt-13"
+                  >
+                    ← Go Back to Select Files
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+                {unprocessedFiles.map((file, index) => {
+                  const fileWithEdits = getFileWithEdits(file, index);
+                  const currentCategory =
+                    editingFiles[index]?.category ||
+                    fileWithEdits.analysis?.category;
+                  const smartFolder =
+                    findSmartFolderForCategory(currentCategory);
+                  const isSelected = selectedFiles.has(index);
+                  const stateDisplay = getFileStateDisplay(
+                    file.path,
+                    !!file.analysis,
+                  );
+                  const destination = smartFolder
+                    ? smartFolder.path ||
+                      `${defaultLocation}/${smartFolder.name}`
+                    : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
+                  return (
+                    <ReadyFileItem
+                      key={index}
+                      file={fileWithEdits}
+                      index={index}
+                      isSelected={isSelected}
+                      onToggleSelected={toggleFileSelection}
+                      stateDisplay={stateDisplay}
+                      smartFolders={smartFolders}
+                      editing={editingFiles[index]}
+                      onEdit={handleEditFile}
+                      destination={destination}
+                      category={currentCategory}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </Collapsible>
+
+          {/* Action Area */}
           {unprocessedFiles.length > 0 && (
-            <div className="flex-shrink-0 glass-panel p-6">
+            <div className="glass-panel p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-system-gray-600 font-medium">
@@ -1081,7 +1062,11 @@ function OrganizePhase() {
           <Button
             onClick={() => actions.advancePhase(PHASES.COMPLETE)}
             disabled={processedFiles.length === 0 || isOrganizing}
-            className={`w-full sm:w-auto ${processedFiles.length === 0 || isOrganizing ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`w-full sm:w-auto ${
+              processedFiles.length === 0 || isOrganizing
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            }`}
           >
             View Results →
           </Button>

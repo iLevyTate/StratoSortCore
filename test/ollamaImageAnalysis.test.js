@@ -134,9 +134,9 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
         size: 50000,
         mtimeMs: 1234567890,
       });
-      jest.spyOn(fs, 'readFile').mockResolvedValue(
-        Buffer.from('mock image data')
-      );
+      jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValue(Buffer.from('mock image data'));
 
       // Mock Ollama response
       mockOllamaClient.generate.mockResolvedValue({
@@ -210,9 +210,9 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
         size: 50000,
         mtimeMs: 1234567890,
       });
-      jest.spyOn(fs, 'readFile').mockResolvedValue(
-        Buffer.from('mock image data')
-      );
+      jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValue(Buffer.from('mock image data'));
 
       mockOllamaClient.generate.mockResolvedValue({
         response: 'Not valid JSON',
@@ -222,7 +222,9 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
 
       // Debug: Check if result is undefined
       if (!result) {
-        throw new Error(`Result is undefined. Mock was called: ${mockOllamaClient.generate.mock.calls.length} times`);
+        throw new Error(
+          `Result is undefined. Mock was called: ${mockOllamaClient.generate.mock.calls.length} times`,
+        );
       }
 
       // When JSON parsing fails, it should return an error result
@@ -236,9 +238,9 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
 
   describe('extractTextFromImage', () => {
     test('should extract text from image', async () => {
-      jest.spyOn(fs, 'readFile').mockResolvedValue(
-        Buffer.from('mock image data')
-      );
+      jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValue(Buffer.from('mock image data'));
 
       mockOllamaClient.generate.mockResolvedValue({
         response: 'Sample text from image',
@@ -250,9 +252,9 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
     });
 
     test('should return null when no text found', async () => {
-      jest.spyOn(fs, 'readFile').mockResolvedValue(
-        Buffer.from('mock image data')
-      );
+      jest
+        .spyOn(fs, 'readFile')
+        .mockResolvedValue(Buffer.from('mock image data'));
 
       mockOllamaClient.generate.mockResolvedValue({
         response: 'NO_TEXT_FOUND',

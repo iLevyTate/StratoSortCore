@@ -6,9 +6,10 @@ const SelectionControls = memo(function SelectionControls({
   onSelectFiles,
   onSelectFolder,
   isScanning,
+  className = '',
 }) {
   return (
-    <div className="flex items-center gap-8 flex-wrap">
+    <div className={`flex items-center gap-4 flex-wrap ${className}`}>
       <Button onClick={onSelectFiles} variant="primary" disabled={isScanning}>
         Select Files
       </Button>
@@ -27,6 +28,7 @@ SelectionControls.propTypes = {
   onSelectFiles: PropTypes.func.isRequired,
   onSelectFolder: PropTypes.func.isRequired,
   isScanning: PropTypes.bool,
+  className: PropTypes.string,
 };
 
 export default SelectionControls;

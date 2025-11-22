@@ -33,17 +33,17 @@ function ReadyFileItem({
 
   return (
     <div
-      className={`border rounded-lg p-13 transition-all duration-200 ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'}`}
+      className={`border rounded-lg p-4 transition-all duration-200 ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'}`}
     >
-      <div className="flex items-start gap-13">
+      <div className="flex items-start gap-4">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={handleToggle}
-          className="form-checkbox mt-3"
+          className="form-checkbox mt-1"
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-8 mb-5">
+          <div className="flex items-center gap-3 mb-3">
             <div className="text-2xl">📄</div>
             <div className="flex-1 min-w-0">
               <div className="font-medium text-system-gray-900 break-words">
@@ -59,26 +59,26 @@ function ReadyFileItem({
           </div>
           {analysis ? (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+              <div className="grid grid-cols-1 gap-3 mb-3">
                 <div>
-                  <label className="block text-xs font-medium text-system-gray-700 mb-2">
+                  <label className="block text-xs font-medium text-system-gray-700 mb-1">
                     Suggested Name
                   </label>
                   <Input
                     type="text"
                     value={suggestedName}
                     onChange={handleEditName}
-                    className="text-sm"
+                    className="text-sm w-full"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-system-gray-700 mb-2">
+                  <label className="block text-xs font-medium text-system-gray-700 mb-1">
                     Category
                   </label>
                   <Select
                     value={category}
                     onChange={handleEditCategory}
-                    className="text-sm"
+                    className="text-sm w-full"
                   >
                     {smartFolders.map((folder) => (
                       <option key={folder.id} value={folder.name}>
@@ -89,10 +89,10 @@ function ReadyFileItem({
                 </div>
               </div>
               {destination && (
-                <div className="text-sm text-system-gray-600">
+                <div className="text-sm text-system-gray-600 mt-2">
                   <strong>Destination:</strong>{' '}
                   <span
-                    className="text-stratosort-blue break-words"
+                    className="text-stratosort-blue break-words block mt-1"
                     style={{
                       overflowWrap: 'break-word',
                       wordBreak: 'break-word',
@@ -104,18 +104,18 @@ function ReadyFileItem({
               )}
             </>
           ) : (
-            <div className="text-sm text-system-red-600 mt-3">
+            <div className="text-sm text-system-red-600 mt-2">
               Analysis failed - will be skipped
             </div>
           )}
         </div>
         <div
-          className={`text-sm font-medium flex items-center gap-3 ${stateDisplay.color}`}
+          className={`text-sm font-medium flex items-center gap-2 ${stateDisplay.color}`}
         >
           <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
             {stateDisplay.icon}
           </span>
-          <span>{stateDisplay.label}</span>
+          <span className="hidden sm:inline">{stateDisplay.label}</span>
         </div>
       </div>
     </div>

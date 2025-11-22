@@ -10,7 +10,7 @@ global.app = {
   getPath: (type) => {
     if (type === 'userData') return process.env.APPDATA || '.';
     return '.';
-  }
+  },
 };
 
 const { StartupManager } = require('./src/main/services/StartupManager');
@@ -82,7 +82,8 @@ async function measureStartupResponsiveness() {
     // Analyze responsiveness
     console.log('\n========================================');
     console.log('Responsiveness Analysis:');
-    const avgResponseTime = responseChecks.reduce((a, b) => a + b, 0) / responseChecks.length;
+    const avgResponseTime =
+      responseChecks.reduce((a, b) => a + b, 0) / responseChecks.length;
     const maxResponseTime = Math.max(...responseChecks);
 
     console.log(`  Average event loop delay: ${avgResponseTime.toFixed(2)}ms`);
@@ -96,7 +97,6 @@ async function measureStartupResponsiveness() {
       console.log('\n⚠ WARNING: Some operations may still be blocking.');
       console.log('The UI might experience freezing during startup.');
     }
-
   } catch (error) {
     clearInterval(checkInterval);
     console.error('Test failed:', error);

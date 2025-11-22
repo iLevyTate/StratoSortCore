@@ -21,6 +21,7 @@ const {
 } = require('./fallbackUtils');
 const { getInstance: getChromaDB } = require('../services/ChromaDBService');
 const FolderMatchingService = require('../services/FolderMatchingService');
+const embeddingQueue = require('./EmbeddingQueue');
 const { logger } = require('../../shared/logger');
 logger.setContext('OllamaImageAnalysis');
 let chromaDbSingleton = null;
@@ -37,13 +38,6 @@ function setImageCache(signature, value) {
     imageAnalysisCache.delete(first);
   }
 }
-
-// Batch embedding queue for efficient database operations
-const BATCH_SIZE = 50;
-const embeddingQueue = [];
-let flushTimer = null;
-const FLUSH_DELAY_MS = 500; // Flush queue after 500ms of inactivity
-let isFlushing = false; // Mutex to prevent concurrent flushes
 
 // App configuration for image analysis - Optimized for speed
 const AppConfig = {
@@ -385,6 +379,9 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     // Preprocess image for vision model compatibility
     // - Convert unsupported formats (svg, tiff, bmp, gif, webp) to PNG
     // - Downscale very large images to avoid model failures
+    // - Extract EXIF date if available
+    let exifDate = null;
+
     try {
       const needsFormatConversion = [
         '.svg',
@@ -399,8 +396,25 @@ async function analyzeImageFile(filePath, smartFolders = []) {
       let meta = null;
       try {
         meta = await sharp(imageBuffer).metadata();
-      } catch {
+        if (meta && meta.exif) {
+          // Parse EXIF date (DateTimeOriginal or CreateDate)
+          const exif = require('exif-reader')(meta.exif);
+          if (exif && (exif.exif || exif.image)) {
+            const dateStr =
+              exif.exif?.DateTimeOriginal || exif.image?.ModifyDate;
+            if (dateStr) {
+              // EXIF date format is usually "YYYY:MM:DD HH:MM:SS"
+              const parts = dateStr.split(' ')[0].replace(/:/g, '-');
+              if (parts.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                exifDate = parts;
+                logger.debug(`[IMAGE] Extracted EXIF date: ${exifDate}`);
+              }
+            }
+          }
+        }
+      } catch (exifErr) {
         // Non-fatal if metadata extraction fails
+        // exif-reader might not be installed or fail, just ignore
       }
 
       const maxDimension = 1536; // smaller to speed up vision model
@@ -466,6 +480,14 @@ async function analyzeImageFile(filePath, smartFolders = []) {
         fileName,
         smartFolders,
       );
+
+      // Merge EXIF date if available and Ollama didn't return a valid date (or override it?)
+      // The plan says "populate the date field without asking LLM".
+      // We'll trust EXIF over LLM hallucination if EXIF is present.
+      if (exifDate) {
+        if (!analysis) analysis = {};
+        analysis.date = exifDate;
+      }
     } catch (error) {
       logger.error('[IMAGE] Error calling analyzeImageWithOllama', {
         error: error.message,
@@ -615,21 +637,13 @@ async function analyzeImageFile(filePath, smartFolders = []) {
               );
 
               // Queue embedding for batch persistence
-              embeddingQueue.push({
+              embeddingQueue.enqueue({
                 id: fileId,
                 vector,
                 model,
                 meta: { path: filePath },
                 updatedAt: new Date().toISOString(),
               });
-
-              // Flush queue if it reaches batch size
-              if (embeddingQueue.length >= BATCH_SIZE) {
-                await flushEmbeddingQueue();
-              } else {
-                // Schedule delayed flush if not already scheduled
-                scheduleDelayedFlush();
-              }
 
               // Validate candidates structure before accessing
               if (Array.isArray(candidates) && candidates.length > 0) {
@@ -816,112 +830,10 @@ async function extractTextFromImage(filePath) {
 // Fallback image helpers sourced from fallbackUtils
 
 /**
- * Flush the embedding queue by batch upserting all queued embeddings
- * @private
- */
-async function flushEmbeddingQueue() {
-  // Prevent concurrent flushes
-  if (isFlushing) {
-    logger.debug('[IMAGE] Flush already in progress, skipping');
-    return;
-  }
-
-  if (embeddingQueue.length === 0) {
-    return;
-  }
-
-  // Set mutex flag
-  isFlushing = true;
-
-  try {
-    // Clear any pending flush timer
-    if (flushTimer) {
-      clearTimeout(flushTimer);
-      flushTimer = null;
-    }
-
-    // Copy queue and clear it immediately to prevent concurrent modifications
-    const queueCopy = [...embeddingQueue];
-    embeddingQueue.length = 0;
-
-    if (queueCopy.length === 0) {
-      return;
-    }
-
-    logger.debug('[IMAGE] Flushing embedding queue', {
-      count: queueCopy.length,
-    });
-
-    // Get ChromaDB service
-    const chromaDbService =
-      chromaDbSingleton || (chromaDbSingleton = getChromaDB());
-    if (!chromaDbService) {
-      logger.warn('[IMAGE] ChromaDB service not available for batch upsert');
-      return;
-    }
-
-    // Ensure ChromaDB is initialized
-    await chromaDbService.initialize();
-
-    // Connection recovery: Check if database is online before flushing
-    if (!chromaDbService.isOnline) {
-      logger.warn('[IMAGE] Database offline, pausing flush', {
-        queueSize: queueCopy.length,
-      });
-      // Re-queue items at the front
-      embeddingQueue.unshift(...queueCopy);
-
-      // Schedule retry with longer delay
-      setTimeout(() => {
-        flushEmbeddingQueue().catch((err) => {
-          logger.error('[IMAGE] Error in retry flush:', err.message);
-        });
-      }, 5000); // Retry in 5 seconds
-
-      return;
-    }
-
-    // Batch upsert all pre-calculated embeddings
-    await chromaDbService.batchUpsertFiles(queueCopy);
-
-    logger.info('[IMAGE] Batch upserted file embeddings', {
-      count: queueCopy.length,
-    });
-  } catch (error) {
-    logger.error('[IMAGE] Failed to flush embedding queue', {
-      error: error.message,
-    });
-    // Re-queue failed items for retry (optional - could also just log and continue)
-  } finally {
-    // Always clear mutex flag
-    isFlushing = false;
-  }
-}
-
-/**
- * Schedule a delayed flush of the embedding queue
- * @private
- */
-function scheduleDelayedFlush() {
-  if (flushTimer) {
-    return; // Already scheduled
-  }
-
-  flushTimer = setTimeout(() => {
-    flushTimer = null;
-    flushEmbeddingQueue().catch((error) => {
-      logger.error('[IMAGE] Error in delayed flush', {
-        error: error.message,
-      });
-    });
-  }, FLUSH_DELAY_MS);
-}
-
-/**
  * Force flush the embedding queue (useful for cleanup or end of batch)
  */
 async function flushAllEmbeddings() {
-  await flushEmbeddingQueue();
+  await embeddingQueue.flush();
 }
 
 module.exports = {

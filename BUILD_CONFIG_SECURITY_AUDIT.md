@@ -17,10 +17,12 @@ The audit identified critical command injection vulnerabilities in setup scripts
 ## Critical Issues (Fix Immediately)
 
 ### CRITICAL-1: Command Injection Vulnerability in setup-ollama-windows.ps1
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\scripts\setup-ollama-windows.ps1`
 **Lines:** 84-85, 506
 
 **Issue:** The PowerShell script downloads and executes an installer from the internet without verification:
+
 ```powershell
 # Line 84-85: No signature or hash verification
 $webClient = New-Object System.Net.WebClient
@@ -33,11 +35,13 @@ $installCmd = 'curl -fsSL https://ollama.com/install.sh | sh'
 **Severity:** CRITICAL - Allows arbitrary code execution if attacker controls DNS/network or compromises ollama.com
 
 **Attack Scenario:**
+
 1. Attacker performs MitM attack or DNS poisoning
 2. Substitutes malicious installer/script
 3. Script executes malware with user privileges
 
 **Remediation:**
+
 ```powershell
 # Add SHA256 verification
 $OLLAMA_INSTALLER_HASH = "INSERT_EXPECTED_SHA256_HERE"
@@ -54,6 +58,7 @@ if ($actualHash -ne $OLLAMA_INSTALLER_HASH) {
 ```
 
 For Linux installation, download and verify before piping to sh:
+
 ```bash
 curl -fsSL https://ollama.com/install.sh -o /tmp/install.sh
 # Verify hash or signature
@@ -64,39 +69,46 @@ sh /tmp/install.sh
 ---
 
 ### CRITICAL-2: Command Injection in setup-ollama.js
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\setup-ollama.js`
 **Lines:** 146-150, 196-202
 
 **Issue:** HTTPS module used without certificate validation, and spawning child processes with shell:true:
+
 ```javascript
 // Line 146-150: No TLS verification
 const request = (url.protocol === 'https:' ? https : require('http')).get(
   url,
-  (res) => { resolve(res.statusCode === 200); }
+  (res) => {
+    resolve(res.statusCode === 200);
+  },
 );
 
 // Line 196-202: shell:true enables command injection
 const ollamaProcess = spawn('ollama', ['serve'], {
   detached: true,
   stdio: 'ignore',
-  shell: process.platform === 'win32',  // DANGEROUS
+  shell: process.platform === 'win32', // DANGEROUS
 });
 ```
 
 **Severity:** CRITICAL - MitM attacks possible, shell injection risk
 
 **Remediation:**
+
 ```javascript
 // Add TLS verification
 const https = require('https');
 const options = {
-  rejectUnauthorized: true,  // Enforce certificate validation
-  timeout: 2000
+  rejectUnauthorized: true, // Enforce certificate validation
+  timeout: 2000,
 };
 
-https.get(url, options, (res) => {
-  resolve(res.statusCode === 200);
-}).on('error', () => resolve(false));
+https
+  .get(url, options, (res) => {
+    resolve(res.statusCode === 200);
+  })
+  .on('error', () => resolve(false));
 
 // Avoid shell:true - use explicit path
 const ollamaPath = which.sync('ollama', { nothrow: true });
@@ -108,7 +120,7 @@ if (!ollamaPath) {
 const ollamaProcess = spawn(ollamaPath, ['serve'], {
   detached: true,
   stdio: 'ignore',
-  shell: false,  // SAFER
+  shell: false, // SAFER
 });
 ```
 
@@ -117,10 +129,12 @@ const ollamaProcess = spawn(ollamaPath, ['serve'], {
 ## High Severity Issues
 
 ### HIGH-1: npm Dependency Vulnerabilities
+
 **Location:** package.json dependencies
 **Detected by:** npm audit
 
 **Vulnerabilities Found:**
+
 1. **glob** (High): Command injection via -c/--cmd flag (GHSA-5j98-mcp5-4vw2)
    - Affected versions: 10.3.7-10.4.5, 11.0.0-11.0.3
    - CVSS Score: 7.5
@@ -134,6 +148,7 @@ const ollamaProcess = spawn(ollamaPath, ['serve'], {
 **Impact:** Although these are dev dependencies, they could be exploited during build process.
 
 **Remediation:**
+
 ```bash
 # Update vulnerable packages
 npm audit fix
@@ -148,25 +163,28 @@ npm audit
 ---
 
 ### HIGH-2: Missing Content Security Policy in Production
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\webpack.config.js`
 **Lines:** 112-126
 
 **Issue:** CSP is only configured for dev server, not for production builds:
+
 ```javascript
 // Line 112-126: CSP only in devServer
 devServer: isProduction
   ? undefined
   : {
       headers: {
-        'Content-Security-Policy': "default-src 'self'; ..."
-      }
-    }
+        'Content-Security-Policy': "default-src 'self'; ...",
+      },
+    };
 ```
 
 **Severity:** HIGH - XSS attacks possible in production builds
 
 **Remediation:**
 Add CSP meta tag to HTML template or use HtmlWebpackPlugin to inject:
+
 ```javascript
 new HtmlWebpackPlugin({
   template: './src/renderer/index.html',
@@ -185,10 +203,12 @@ new HtmlWebpackPlugin({
 ---
 
 ### HIGH-3: Webpack Source Maps Disabled in Production
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\webpack.config.js`
 **Line:** 109
 
 **Issue:**
+
 ```javascript
 devtool: isProduction ? false : 'source-map',
 ```
@@ -198,6 +218,7 @@ devtool: isProduction ? false : 'source-map',
 **Analysis:** This is actually a security-positive configuration (preventing source code leakage), but it's a double-edged sword. Consider alternatives:
 
 **Recommendation:**
+
 ```javascript
 // Use hidden source maps for production
 devtool: isProduction ? 'hidden-source-map' : 'source-map',
@@ -230,11 +251,13 @@ Store source maps internally, don't ship them with the app. Upload to error trac
 ---
 
 ### HIGH-4: No Subresource Integrity (SRI) for External Resources
+
 **Location:** Webpack configuration
 
 **Issue:** No SRI hashes for any bundled resources. While this is an Electron app (primarily local resources), any remote resources loaded should have integrity checks.
 
 **Remediation:**
+
 ```javascript
 // Install webpack-subresource-integrity
 npm install --save-dev webpack-subresource-integrity
@@ -258,10 +281,12 @@ module.exports = {
 ---
 
 ### HIGH-5: Insecure File Operations in generate-icons.js
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\scripts\generate-icons.js`
 **Lines:** 213-214, 248
 
 **Issue:** Path traversal vulnerability and arbitrary module execution:
+
 ```javascript
 // Line 213-214: User-controlled process.cwd() used in path
 const projectRoot = process.cwd();
@@ -274,10 +299,16 @@ require('./generate-nsis-assets');
 **Severity:** HIGH - If an attacker can control working directory or file system, arbitrary code execution is possible
 
 **Remediation:**
+
 ```javascript
 // Use __dirname instead of process.cwd()
 const projectRoot = __dirname;
-const sourceLogo = path.join(projectRoot, '..', 'assets', 'stratosort-logo.png');
+const sourceLogo = path.join(
+  projectRoot,
+  '..',
+  'assets',
+  'stratosort-logo.png',
+);
 
 // Validate path doesn't escape project directory
 const resolvedPath = path.resolve(sourceLogo);
@@ -297,15 +328,18 @@ nsisAssets.generateAssets();
 ## Medium Severity Issues
 
 ### MEDIUM-1: Missing Webpack Security Headers
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\webpack.config.js`
 
 **Issue:** Dev server missing critical security headers:
+
 - X-Content-Type-Options
 - X-Frame-Options
 - X-XSS-Protection
 - Referrer-Policy
 
 **Remediation:**
+
 ```javascript
 devServer: {
   headers: {
@@ -322,10 +356,12 @@ devServer: {
 ---
 
 ### MEDIUM-2: Overly Permissive CSP for WebSockets
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\webpack.config.js`
 **Line:** 124
 
 **Issue:**
+
 ```javascript
 connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 ws://localhost:*
 ```
@@ -333,6 +369,7 @@ connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 ws://localhost:
 The `ws://localhost:*` allows connections to ANY port on localhost.
 
 **Remediation:**
+
 ```javascript
 // Be specific about WebSocket port
 'connect-src': "'self' http://localhost:11434 http://127.0.0.1:11434 ws://localhost:3000"
@@ -341,9 +378,11 @@ The `ws://localhost:*` allows connections to ANY port on localhost.
 ---
 
 ### MEDIUM-3: Unvalidated Environment Variables
+
 **Location:** Multiple files (setup-ollama.js, webpack.config.js)
 
 **Issue:** Environment variables used without validation:
+
 ```javascript
 // setup-ollama.js line 38
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
@@ -355,6 +394,7 @@ const ollamaHost = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 **Severity:** MEDIUM - URL injection possible if attacker controls environment
 
 **Remediation:**
+
 ```javascript
 function validateOllamaHost(host) {
   const defaultHost = 'http://127.0.0.1:11434';
@@ -385,10 +425,12 @@ const OLLAMA_HOST = validateOllamaHost(process.env.OLLAMA_HOST);
 ---
 
 ### MEDIUM-4: Shell Execution Vulnerability in generate-icons.js
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\scripts\generate-icons.js`
 **Line:** 115
 
 **Issue:**
+
 ```javascript
 execSync(`iconutil -c icns -o "${icnsPath}" "${iconsetDir}"`);
 ```
@@ -396,35 +438,39 @@ execSync(`iconutil -c icns -o "${icnsPath}" "${iconsetDir}"`);
 **Severity:** MEDIUM - Command injection if paths contain special characters
 
 **Remediation:**
+
 ```javascript
 const { execFileSync } = require('child_process');
 
 // Use execFileSync with array arguments (safer)
 execFileSync('iconutil', ['-c', 'icns', '-o', icnsPath, iconsetDir], {
-  stdio: 'inherit'
+  stdio: 'inherit',
 });
 ```
 
 ---
 
 ### MEDIUM-5: Insecure Defaults in electron-builder.json
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\electron-builder.json`
 
 **Issues:**
+
 1. **Line 66:** `allowElevation: true` - Permits UAC bypass attempts
 2. **Line 76:** `hardenedRuntime: true` but **Line 77:** `gatekeeperAssess: false` - Disables macOS security checks
 3. **No code signing configured** - Builds will be flagged as untrusted
 
 **Remediation:**
+
 ```json
 {
   "nsis": {
-    "allowElevation": false,  // Only allow if truly necessary
+    "allowElevation": false, // Only allow if truly necessary
     "requestExecutionLevel": "user"
   },
   "mac": {
     "hardenedRuntime": true,
-    "gatekeeperAssess": true,  // Enable Gatekeeper
+    "gatekeeperAssess": true, // Enable Gatekeeper
     "electronLanguages": ["en"],
     "identity": "Developer ID Application: Your Name (TEAM_ID)",
     "entitlements": "assets/entitlements.mac.plist",
@@ -441,18 +487,21 @@ execFileSync('iconutil', ['-c', 'icns', '-o', icnsPath, iconsetDir], {
 ---
 
 ### MEDIUM-6: Missing Input Validation in startup-check.js
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\startup-check.js`
 **Lines:** 51-66
 
 **Issue:** Injecting user-controlled URL into shell command:
+
 ```javascript
 // Line 51-58: URL from env var used in PowerShell
-`try { (Invoke-WebRequest -Uri "${ollamaHost}/api/tags" -UseBasicParsing).StatusCode } catch { 0 }`
+`try { (Invoke-WebRequest -Uri "${ollamaHost}/api/tags" -UseBasicParsing).StatusCode } catch { 0 }`;
 ```
 
 **Severity:** MEDIUM - PowerShell command injection possible
 
 **Remediation:**
+
 ```javascript
 // Validate URL before use
 function validateUrl(url) {
@@ -468,7 +517,7 @@ function validateUrl(url) {
 }
 
 const ollamaHost = validateUrl(
-  process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'
+  process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
 );
 
 // Use proper escaping
@@ -478,6 +527,7 @@ const escapedUrl = ollamaHost.replace(/["'$`]/g, '\\$&');
 ---
 
 ### MEDIUM-7: Potential Prototype Pollution in tailwind.config.js
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\tailwind.config.js`
 
 **Issue:** Large safelist with dynamically generated class names could be exploited if user input controls class names anywhere in the app.
@@ -485,6 +535,7 @@ const escapedUrl = ollamaHost.replace(/["'$`]/g, '\\$&');
 **Severity:** MEDIUM - Potential XSS if class names come from untrusted sources
 
 **Remediation:**
+
 - Minimize safelist to only truly dynamic classes
 - Never use user input to generate class names
 - Use allowlist patterns instead of explicit class names:
@@ -492,11 +543,12 @@ const escapedUrl = ollamaHost.replace(/["'$`]/g, '\\$&');
 ```javascript
 safelist: [
   {
-    pattern: /^(btn|badge|alert)-(primary|secondary|success|warning|error|info)$/,
+    pattern:
+      /^(btn|badge|alert)-(primary|secondary|success|warning|error|info)$/,
     variants: ['hover', 'focus', 'active'],
   },
   // Instead of listing 100+ individual classes
-]
+];
 ```
 
 ---
@@ -504,15 +556,18 @@ safelist: [
 ## Low Severity Issues
 
 ### LOW-1: Development Dependencies in Production Bundle
+
 **Location:** package.json
 
 **Issue:** Some packages like `electron-debug` appear in dependencies but should be devDependencies.
 
 **Check:** Review if these are actually needed at runtime:
-- @types/* packages should be in devDependencies
+
+- @types/\* packages should be in devDependencies
 - Testing libraries should be in devDependencies
 
 **Remediation:**
+
 ```bash
 npm install --save-dev @types/node @types/react @types/react-dom
 ```
@@ -520,15 +575,18 @@ npm install --save-dev @types/node @types/react @types/react-dom
 ---
 
 ### LOW-2: Missing Error Handling in generate-nsis-assets.js
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\scripts\generate-nsis-assets.js`
 **Line:** 54
 
 **Issue:**
+
 ```javascript
 process.exit(0); // Always exits with success even on error
 ```
 
 **Remediation:**
+
 ```javascript
 main().catch((err) => {
   console.error('[nsis-assets] Error generating assets', err);
@@ -541,6 +599,7 @@ main().catch((err) => {
 ---
 
 ### LOW-3: Hardcoded Credentials Risk
+
 **Location:** .gitignore
 
 **Good:** .env files are properly ignored
@@ -548,6 +607,7 @@ main().catch((err) => {
 
 **Remediation:**
 Create `.env.example`:
+
 ```bash
 # Ollama Configuration
 OLLAMA_HOST=http://127.0.0.1:11434
@@ -566,19 +626,24 @@ WEBPACK_DEV_SERVER=false
 ---
 
 ### LOW-4: Babel Configuration Missing Security Options
+
 **Location:** `C:\Users\benja\Downloads\StratoSort-1.0.0\StratoSort-1.0.0\babel.config.js`
 
 **Issue:** Very basic configuration, missing security-related transforms
 
 **Remediation:**
+
 ```javascript
 module.exports = {
   presets: [
-    ['@babel/preset-env', {
-      targets: { node: 'current' },
-      modules: 'auto',
-      bugfixes: true  // Enable latest fixes
-    }],
+    [
+      '@babel/preset-env',
+      {
+        targets: { node: 'current' },
+        modules: 'auto',
+        bugfixes: true, // Enable latest fixes
+      },
+    ],
     '@babel/preset-react',
     '@babel/preset-typescript',
   ],
@@ -588,10 +653,7 @@ module.exports = {
   ],
   env: {
     production: {
-      plugins: [
-        'transform-remove-console',
-        'transform-remove-debugger',
-      ],
+      plugins: ['transform-remove-console', 'transform-remove-debugger'],
     },
   },
 };
@@ -664,22 +726,26 @@ module.exports = {
 ### Automated Tools to Integrate
 
 1. **npm audit** - Run in CI/CD:
+
    ```bash
    npm audit --production --audit-level=moderate
    ```
 
 2. **Snyk** - Comprehensive vulnerability scanning:
+
    ```bash
    npx snyk test
    npx snyk monitor
    ```
 
 3. **ESLint Security Plugin**:
+
    ```bash
    npm install --save-dev eslint-plugin-security
    ```
 
    Add to .eslintrc.js:
+
    ```javascript
    {
      "plugins": ["security"],
@@ -688,6 +754,7 @@ module.exports = {
    ```
 
 4. **Electron Security Checklist**:
+
    ```bash
    npm install --save-dev @doyensec/electronegativity
    npx electronegativity -i .
@@ -703,21 +770,21 @@ module.exports = {
 
 ## File-by-File Summary
 
-| File | Critical | High | Medium | Low | Status |
-|------|----------|------|--------|-----|--------|
-| webpack.config.js | 0 | 2 | 2 | 0 | NEEDS WORK |
-| setup-ollama-windows.ps1 | 1 | 0 | 0 | 0 | CRITICAL |
-| setup-ollama.js | 1 | 0 | 1 | 0 | CRITICAL |
-| generate-icons.js | 0 | 1 | 1 | 0 | NEEDS WORK |
-| electron-builder.json | 0 | 0 | 1 | 0 | NEEDS WORK |
-| package.json | 0 | 1 | 0 | 1 | NEEDS WORK |
-| startup-check.js | 0 | 0 | 1 | 0 | NEEDS WORK |
-| babel.config.js | 0 | 0 | 0 | 1 | OK |
-| .eslintrc.js | 0 | 0 | 0 | 0 | OK |
-| tailwind.config.js | 0 | 0 | 1 | 0 | OK |
-| postcss.config.js | 0 | 0 | 0 | 0 | OK |
-| generate-nsis-assets.js | 0 | 0 | 0 | 1 | OK |
-| build/installer.nsh | 0 | 0 | 0 | 0 | OK |
+| File                     | Critical | High | Medium | Low | Status     |
+| ------------------------ | -------- | ---- | ------ | --- | ---------- |
+| webpack.config.js        | 0        | 2    | 2      | 0   | NEEDS WORK |
+| setup-ollama-windows.ps1 | 1        | 0    | 0      | 0   | CRITICAL   |
+| setup-ollama.js          | 1        | 0    | 1      | 0   | CRITICAL   |
+| generate-icons.js        | 0        | 1    | 1      | 0   | NEEDS WORK |
+| electron-builder.json    | 0        | 0    | 1      | 0   | NEEDS WORK |
+| package.json             | 0        | 1    | 0      | 1   | NEEDS WORK |
+| startup-check.js         | 0        | 0    | 1      | 0   | NEEDS WORK |
+| babel.config.js          | 0        | 0    | 0      | 1   | OK         |
+| .eslintrc.js             | 0        | 0    | 0      | 0   | OK         |
+| tailwind.config.js       | 0        | 0    | 1      | 0   | OK         |
+| postcss.config.js        | 0        | 0    | 0      | 0   | OK         |
+| generate-nsis-assets.js  | 0        | 0    | 0      | 1   | OK         |
+| build/installer.nsh      | 0        | 0    | 0      | 0   | OK         |
 
 ---
 
@@ -752,6 +819,7 @@ The StratoSort build configuration has a **moderate security posture** with seve
 **Overall Risk Level:** HIGH
 
 **Recommended Actions:**
+
 1. Implement all CRITICAL fixes immediately
 2. Set up automated security scanning in CI/CD
 3. Establish a regular security review cadence (monthly npm audit)
@@ -761,6 +829,7 @@ The StratoSort build configuration has a **moderate security posture** with seve
 ---
 
 **Auditor Notes:** This audit focused on static analysis of configuration files and build scripts. A full security audit should also include:
+
 - Runtime analysis of the Electron app
 - Review of main/renderer process security
 - IPC communication security

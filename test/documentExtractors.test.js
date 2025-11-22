@@ -279,11 +279,13 @@ describe('documentExtractors', () => {
       // FIX: Test that we handle arrays, objects, and scalar values
       const mockSheet = {
         usedRange: jest.fn().mockReturnValue({
-          value: jest.fn().mockReturnValue([
-            ['Array', 'Row'],
-            { columnA: 'Object', columnB: 'Row' },
-            'Scalar Row',
-          ]),
+          value: jest
+            .fn()
+            .mockReturnValue([
+              ['Array', 'Row'],
+              { columnA: 'Object', columnB: 'Row' },
+              'Scalar Row',
+            ]),
         }),
       };
 
@@ -627,7 +629,9 @@ Body content only.`;
         getData: jest
           .fn()
           .mockReturnValue(
-            Buffer.from('<office:document-content>Content</office:document-content>'),
+            Buffer.from(
+              '<office:document-content>Content</office:document-content>',
+            ),
           ),
       };
 

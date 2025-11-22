@@ -7,6 +7,7 @@
 ## Executive Summary
 
 Fixed critical bugs in Office document extraction that were causing:
+
 - **Excel (.xlsx) crashes:** "Cannot read properties of undefined (reading 'children')"
 - **PowerPoint (.pptx) failures:** "Unknown analysis error"
 
@@ -22,6 +23,7 @@ The root causes were insufficient null/undefined checking and inadequate error h
 
 **Root Cause:**
 The code assumed that `usedRange.value()` would always return a valid 2D array structure, but in some cases it could return:
+
 - `null` or `undefined`
 - A scalar value instead of an array
 - A 2D array where some rows are objects instead of arrays
@@ -30,12 +32,14 @@ The code assumed that `usedRange.value()` would always return a valid 2D array s
 When rows weren't arrays, the code would skip processing but wouldn't properly validate the data structure before accessing methods.
 
 **Original Code Issues:**
+
 ```javascript
-const values = usedRange.value();  // Could be null, undefined, scalar, or mixed structure
+const values = usedRange.value(); // Could be null, undefined, scalar, or mixed structure
 if (Array.isArray(values)) {
   for (let i = 0; i < rowsToProcess; i++) {
     const row = values[i];
-    if (Array.isArray(row)) {  // Only handles array rows, silently skips others
+    if (Array.isArray(row)) {
+      // Only handles array rows, silently skips others
       // Process row
     }
   }
@@ -55,6 +59,7 @@ Implemented comprehensive null/undefined checking and support for multiple data 
 5. **Wrap in try-catch** for outer error context
 
 **Code Changes:**
+
 ```javascript
 for (const sheet of sheets) {
   try {
@@ -119,6 +124,7 @@ for (const sheet of sheets) {
 
 **Root Cause:**
 The `officeParser.parseOfficeAsync()` function can return various data structures:
+
 - Simple string: `"presentation text"`
 - Object with `.text` property: `{ text: "presentation text" }`
 - Array of slides: `["slide 1", { text: "slide 2" }, ...]`
@@ -128,11 +134,13 @@ The `officeParser.parseOfficeAsync()` function can return various data structure
 The original code only handled strings and objects with a `.text` property, silently failing on other structures and not providing detailed error messages.
 
 **Original Code Issues:**
+
 ```javascript
 const result = await officeParser.parseOfficeAsync(filePath);
-const text = typeof result === 'string' ? result : (result && result.text) || '';
+const text =
+  typeof result === 'string' ? result : (result && result.text) || '';
 if (!text || text.trim().length === 0)
-  throw new Error('No text content in PPTX');  // Vague error message
+  throw new Error('No text content in PPTX'); // Vague error message
 ```
 
 **The Fix:**
@@ -146,6 +154,7 @@ Implemented multi-format parser result handling with proper validation:
 6. **Provide detailed error messages** with result type information
 
 **Code Changes:**
+
 ```javascript
 try {
   const result = await officeParser.parseOfficeAsync(filePath);
@@ -212,6 +221,7 @@ try {
 ### Issue 3: Legacy Office Formats - XLS and PPT
 
 **Files:** `src/main/analysis/documentExtractors.js`
+
 - `extractTextFromXls()` function (lines 446-487)
 - `extractTextFromPpt()` function (lines 489-531)
 
@@ -228,6 +238,7 @@ Applied the same multi-format handling pattern as PPTX, with file size checking 
 Updated and added comprehensive tests in `test/documentExtractors.test.js`:
 
 ### XLSX Tests:
+
 1. ✅ Extract text from XLSX with various data types
 2. ✅ Limit rows to prevent memory exhaustion (10,000 row limit)
 3. ✅ Handle null usedRange
@@ -235,6 +246,7 @@ Updated and added comprehensive tests in `test/documentExtractors.test.js`:
 5. ✅ Handle mixed row data structures (arrays, objects, scalars)
 
 ### PPTX Tests:
+
 1. ✅ Extract text from PPTX (string result)
 2. ✅ Handle object response with `.text` property
 3. ✅ Handle empty PPTX with error
@@ -242,6 +254,7 @@ Updated and added comprehensive tests in `test/documentExtractors.test.js`:
 5. ✅ Handle object with `.content` property
 
 **Test Results:**
+
 ```
 Test Suites: 1 passed, 1 total
 Tests:       10 passed (XLSX: 5, PPTX: 5)
@@ -253,18 +266,21 @@ Time:        2.232 s
 ## Impact Analysis
 
 ### What Gets Fixed:
+
 - Excel files with mixed data structures will now extract correctly
 - PowerPoint files with various parser response formats will extract correctly
 - Legacy Excel (.xls) and PowerPoint (.ppt) files get better error handling
 - Corrupted or malformed files now provide meaningful error messages
 
 ### Backward Compatibility:
+
 - ✅ Fully backward compatible
 - ✅ Existing valid documents continue to work
 - ✅ Error messages are now more descriptive but still caught by same error handlers
 - ✅ All existing tests remain passing
 
 ### Performance:
+
 - ✅ No performance regression
 - ✅ Row limit (10,000) prevents memory exhaustion for large spreadsheets
 - ✅ Early break on text length limit maintains original behavior
@@ -274,6 +290,7 @@ Time:        2.232 s
 ## Error Message Improvements
 
 ### Before:
+
 ```
 [ERROR] [DocumentAnalysis] Error extracting office content {
   fileName: 'SCAN_Defense_Standard (1).pptx',
@@ -287,6 +304,7 @@ Time:        2.232 s
 ```
 
 ### After:
+
 ```
 [WARN] [XLSX] Error processing sheet
 [ERROR] XLSX_EXTRACTION_ERROR: Excel file may be corrupted or have no readable content
@@ -320,6 +338,7 @@ Time:        2.232 s
 To verify these fixes:
 
 1. Run the test suite:
+
    ```bash
    npm test -- test/documentExtractors.test.js
    ```
@@ -347,6 +366,7 @@ To verify these fixes:
 ## Summary
 
 These fixes address the root causes of Office document extraction failures by implementing:
+
 - Comprehensive null/undefined checking
 - Support for multiple parser result formats
 - Better error messages and propagation

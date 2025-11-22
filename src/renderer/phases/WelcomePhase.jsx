@@ -7,95 +7,99 @@ function WelcomePhase() {
   const { actions } = usePhase();
 
   return (
-    <section className="container-responsive gap-10 text-center py-8 flex flex-col">
-      <header className="space-y-4">
-        <p className="text-sm font-medium uppercase tracking-[0.3em] text-system-gray-400">
-          Intelligent file orchestration
-        </p>
-        <h1 id="welcome-heading" className="heading-primary" aria-level="1">
-          <span
-            className="animate-float inline-block"
-            role="img"
-            aria-label="rocket"
-          >
-            🚀
-          </span>{' '}
-          Welcome to <span className="text-gradient">StratoSort</span>
-        </h1>
-        <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
-          Let our local AI co-pilot study your workspace, understand every file,
-          and deliver calm, glassy organization in minutes.
-        </p>
-      </header>
-
-      <div
-        className="mx-auto flex w-full max-w-xl flex-col gap-4 rounded-2xl bg-white/80 p-6 shadow-lg"
-        role="navigation"
-        aria-label="Primary actions"
-      >
-        <Button
-          onClick={() => actions.advancePhase(PHASES.DISCOVER)}
-          variant="primary"
-          className="w-full justify-center text-base"
-          aria-describedby="organize-help"
-        >
-          🗂️ Organize files now
-        </Button>
-        <p id="organize-help" className="text-xs text-system-gray-500">
-          Start scanning immediately with smart defaults.
-        </p>
-        <Button
-          onClick={() => actions.advancePhase(PHASES.SETUP)}
-          variant="secondary"
-          className="w-full justify-center text-base"
-          aria-describedby="setup-help"
-        >
-          ⚙️ Configure smart folders
-        </Button>
-        <p id="setup-help" className="text-xs text-system-gray-500">
-          Curate destinations and automation thresholds first.
-        </p>
-      </div>
-
-      <div className="section-card">
-        <h3 className="heading-tertiary text-center">How StratoSort flows:</h3>
-        <div className="grid gap-6 text-sm text-system-gray-600 sm:grid-cols-3">
-          {[
-            {
-              icon: '🔍',
-              title: 'Discover',
-              copy: 'Drop folders, run system scans, or watch Downloads automatically.',
-            },
-            {
-              icon: '🧠',
-              title: 'Analyze',
-              copy: 'Local AI reads file contents, context, and prior choices.',
-            },
-            {
-              icon: '📂',
-              title: 'Organize',
-              copy: 'Approve suggestions, rename intelligently, undo instantly.',
-            },
-          ].map((item, idx) => (
-            <div
-              key={item.title}
-              className="rounded-2xl border border-border-soft/60 bg-white/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
+      <section className="container-responsive gap-10 text-center py-8 pb-24 flex flex-col min-h-min">
+        <header className="space-y-4">
+          <p className="text-sm font-medium uppercase tracking-[0.3em] text-system-gray-400">
+            Intelligent file orchestration
+          </p>
+          <h1 id="welcome-heading" className="heading-primary" aria-level="1">
+            <span
+              className="animate-float inline-block"
+              role="img"
+              aria-label="rocket"
             >
-              <div
-                className="mb-4 text-3xl animate-bounce-subtle"
-                style={{ animationDelay: `${idx * 120}ms` }}
-              >
-                {item.icon}
-              </div>
-              <p className="text-base font-semibold text-system-gray-800">
-                {item.title}
-              </p>
-              <p className="text-muted mt-1">{item.copy}</p>
-            </div>
-          ))}
+              🚀
+            </span>{' '}
+            Welcome to <span className="text-gradient">StratoSort</span>
+          </h1>
+          <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
+            Let our local AI co-pilot study your workspace, understand every
+            file, and deliver calm, glassy organization in minutes.
+          </p>
+        </header>
+
+        <div
+          className="mx-auto flex w-full max-w-xl flex-col gap-4 rounded-2xl bg-white/80 p-6 shadow-lg"
+          role="navigation"
+          aria-label="Primary actions"
+        >
+          <Button
+            onClick={() => actions.advancePhase(PHASES.DISCOVER)}
+            variant="primary"
+            className="w-full justify-center text-base"
+            aria-describedby="organize-help"
+          >
+            🗂️ Organize files now
+          </Button>
+          <p id="organize-help" className="text-xs text-system-gray-500">
+            Start scanning immediately with smart defaults.
+          </p>
+          <Button
+            onClick={() => actions.advancePhase(PHASES.SETUP)}
+            variant="secondary"
+            className="w-full justify-center text-base"
+            aria-describedby="setup-help"
+          >
+            ⚙️ Configure smart folders
+          </Button>
+          <p id="setup-help" className="text-xs text-system-gray-500">
+            Curate destinations and automation thresholds first.
+          </p>
         </div>
-      </div>
-    </section>
+
+        <div className="section-card">
+          <h3 className="heading-tertiary text-center">
+            How StratoSort flows:
+          </h3>
+          <div className="grid gap-6 text-sm text-system-gray-600 sm:grid-cols-3">
+            {[
+              {
+                icon: '🔍',
+                title: 'Discover',
+                copy: 'Drop folders, run system scans, or watch Downloads automatically.',
+              },
+              {
+                icon: '🧠',
+                title: 'Analyze',
+                copy: 'Local AI reads file contents, context, and prior choices.',
+              },
+              {
+                icon: '📂',
+                title: 'Organize',
+                copy: 'Approve suggestions, rename intelligently, undo instantly.',
+              },
+            ].map((item, idx) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-border-soft/60 bg-white/80 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div
+                  className="mb-4 text-3xl animate-bounce-subtle"
+                  style={{ animationDelay: `${idx * 120}ms` }}
+                >
+                  {item.icon}
+                </div>
+                <p className="text-base font-semibold text-system-gray-800">
+                  {item.title}
+                </p>
+                <p className="text-muted mt-1">{item.copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 

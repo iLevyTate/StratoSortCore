@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 
 function BatchOrganizationSuggestions({
@@ -8,6 +9,7 @@ function BatchOrganizationSuggestions({
   onCustomizeGroup,
   onRejectAll,
 }) {
+  const { addNotification } = useNotification();
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [selectedStrategy, setSelectedStrategy] = useState(null);
 
@@ -270,7 +272,7 @@ function BatchOrganizationSuggestions({
           <Button
             variant="secondary"
             onClick={() => {
-              // TODO: Implement preview functionality
+              addNotification('Preview feature coming soon', 'info');
             }}
           >
             Preview Changes

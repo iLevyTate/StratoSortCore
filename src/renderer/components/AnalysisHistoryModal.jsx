@@ -106,47 +106,47 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-21 max-h-[90vh] overflow-hidden">
-        <div className="p-21 border-b border-system-gray-200">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden">
+        <div className="p-6 border-b border-system-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-system-gray-900">
               📊 Analysis History & Statistics
             </h2>
             <button
               onClick={onClose}
-              className="text-system-gray-500 hover:text-system-gray-700"
+              className="text-system-gray-500 hover:text-system-gray-700 p-2"
             >
               ✕
             </button>
           </div>
-          <div className="flex mt-13 border-b border-system-gray-200">
+          <div className="flex mt-4 border-b border-system-gray-200">
             <button
               onClick={() => setSelectedTab('statistics')}
-              className={`px-13 py-8 text-sm font-medium border-b-2 ${selectedTab === 'statistics' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${selectedTab === 'statistics' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
             >
               📈 Statistics
             </button>
             <button
               onClick={() => setSelectedTab('history')}
-              className={`px-13 py-8 text-sm font-medium border-b-2 ${selectedTab === 'history' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
+              className={`px-4 py-2 text-sm font-medium border-b-2 ${selectedTab === 'history' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
             >
               📋 History
             </button>
           </div>
         </div>
-        <div className="p-21 overflow-y-auto max-h-[70vh] modern-scrollbar">
+        <div className="p-6 overflow-y-auto max-h-[70vh] modern-scrollbar">
           {isLoading ? (
-            <div className="text-center py-21">
-              <div className="animate-spin w-21 h-21 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
+            <div className="text-center py-12">
+              <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-4"></div>
               <p>Loading analysis data...</p>
             </div>
           ) : (
             <>
               {selectedTab === 'statistics' && analysisStats && (
-                <div className="space-y-21">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-13">
-                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-21 text-center">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-6 text-center">
                       <div className="text-2xl font-bold text-stratosort-blue">
                         {analysisStats.totalFiles || 0}
                       </div>
@@ -154,7 +154,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                         Total Files
                       </div>
                     </div>
-                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-21 text-center">
+                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-6 text-center">
                       <div className="text-2xl font-bold text-green-600">
                         {Math.round(analysisStats.averageConfidence || 0)}%
                       </div>
@@ -162,7 +162,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                         Avg Confidence
                       </div>
                     </div>
-                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-21 text-center">
+                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-6 text-center">
                       <div className="text-2xl font-bold text-purple-600">
                         {analysisStats.categoriesCount || 0}
                       </div>
@@ -170,7 +170,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                         Categories
                       </div>
                     </div>
-                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-21 text-center">
+                    <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-6 text-center">
                       <div className="text-2xl font-bold text-orange-600">
                         {Math.round(analysisStats.averageProcessingTime || 0)}ms
                       </div>
@@ -179,9 +179,9 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       </div>
                     </div>
                   </div>
-                  <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-21">
-                    <h3 className="font-semibold mb-8">📤 Export Options</h3>
-                    <div className="flex gap-8">
+                  <div className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-6">
+                    <h3 className="font-semibold mb-4">📤 Export Options</h3>
+                    <div className="flex gap-4">
                       <Button
                         onClick={() => exportHistory('json')}
                         variant="outline"
@@ -201,8 +201,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                 </div>
               )}
               {selectedTab === 'history' && (
-                <div className="space-y-13">
-                  <div className="flex gap-8">
+                <div className="space-y-6">
+                  <div className="flex gap-4">
                     <Input
                       type="text"
                       value={searchQuery}
@@ -227,24 +227,24 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       Reset
                     </Button>
                   </div>
-                  <div className="space-y-8 max-h-[50vh] overflow-y-auto modern-scrollbar">
+                  <div className="space-y-4 max-h-[50vh] overflow-y-auto modern-scrollbar">
                     {historyData.map((entry, index) => (
                       <div
                         key={index}
-                        className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-21"
+                        className="bg-surface-primary rounded-xl border border-border-light shadow-sm p-4"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="font-medium text-system-gray-900">
                               {entry.fileName || 'Unknown File'}
                             </div>
-                            <div className="text-sm text-system-gray-600 mt-3">
+                            <div className="text-sm text-system-gray-600 mt-1">
                               <span className="text-stratosort-blue">
                                 {getDestinationLabel(entry)}
                               </span>
                               {(entry?.analysis?.confidence ||
                                 entry?.confidence) && (
-                                <span className="ml-8">
+                                <span className="ml-4">
                                   Confidence:{' '}
                                   {entry?.analysis?.confidence ??
                                     entry?.confidence}
@@ -253,13 +253,13 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                               )}
                             </div>
                             {entry.keywords && entry.keywords.length > 0 && (
-                              <div className="flex flex-wrap gap-3 mt-5">
+                              <div className="flex flex-wrap gap-2 mt-2">
                                 {entry.keywords
                                   .slice(0, 5)
                                   .map((keyword, i) => (
                                     <span
                                       key={i}
-                                      className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-3 py-1 rounded-full"
+                                      className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
                                     >
                                       {keyword}
                                     </span>
@@ -269,13 +269,13 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                             {!entry.keywords &&
                               entry?.analysis?.tags &&
                               entry.analysis.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-3 mt-5">
+                                <div className="flex flex-wrap gap-2 mt-2">
                                   {entry.analysis.tags
                                     .slice(0, 5)
                                     .map((tag, i) => (
                                       <span
                                         key={i}
-                                        className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-3 py-1 rounded-full"
+                                        className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
                                       >
                                         {tag}
                                       </span>
@@ -292,7 +292,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       </div>
                     ))}
                     {historyData.length === 0 && (
-                      <div className="text-center py-21 text-system-gray-500">
+                      <div className="text-center py-12 text-system-gray-500">
                         No analysis history found
                       </div>
                     )}

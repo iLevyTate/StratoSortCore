@@ -193,7 +193,10 @@ class OrganizationSuggestionService {
   /**
    * Get organization suggestions for a single file
    */
-  async getSuggestionsForFile(file, smartFolders = []) {
+  async getSuggestionsForFile(file, smartFolders = [], options = {}) {
+    const { includeStructureAnalysis = true, includeAlternatives = true } =
+      options;
+
     // Validate inputs (Bug #4 fix - Enhanced)
     if (!file || typeof file !== 'object') {
       throw new Error('Invalid file object: file must be an object');
@@ -361,16 +364,18 @@ class OrganizationSuggestionService {
         }
       }
 
-      // Get folder improvement recommendations
-      const folderImprovements = await this.analyzeFolderStructure(
-        smartFolders,
-        [file],
-      );
+      // Get folder improvement recommendations (optional)
+      let folderImprovements = [];
+      if (includeStructureAnalysis) {
+        folderImprovements = await this.analyzeFolderStructure(smartFolders, [
+          file,
+        ]);
+      }
 
       return {
         success: true,
         primary: rankedSuggestions[0] || null,
-        alternatives: rankedSuggestions.slice(1, 5),
+        alternatives: includeAlternatives ? rankedSuggestions.slice(1, 5) : [],
         strategies: this.getApplicableStrategies(file),
         confidence: this.calculateConfidence(rankedSuggestions[0]),
         explanation: this.generateExplanation(rankedSuggestions[0], file),
@@ -392,7 +397,7 @@ class OrganizationSuggestionService {
   /**
    * Get suggestions for batch organization (Optimized with parallel processing)
    */
-  async getBatchSuggestions(files, smartFolders = []) {
+  async getBatchSuggestions(files, smartFolders = [], options = {}) {
     try {
       // Analyze files for common patterns
       const patterns = this.analyzeFilePatterns(files);
@@ -417,6 +422,7 @@ class OrganizationSuggestionService {
           const suggestion = await this.getSuggestionsForFile(
             file,
             smartFolders,
+            options,
           );
           return { file, suggestion };
         },

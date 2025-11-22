@@ -370,3 +370,12 @@ logger.trace('Test trace message', { test: true });
 logger.setLevel('WARN');
 // Only ERROR and WARN should appear
 ```
+
+---
+
+## Completion Note (November 2025)
+
+The migration guide is now fully implemented.
+
+- **TabContainer.js**: File removed in refactor.
+- **Status**: All high/medium priority migrations are complete.

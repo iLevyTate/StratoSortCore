@@ -14,6 +14,7 @@ const {
   loadOllamaConfig,
   saveOllamaConfig,
 } = require('../ollamaUtils');
+const { withOllamaRetry } = require('../utils/ollamaApiRetry');
 
 /**
  * Centralized service for Ollama operations
@@ -228,84 +229,103 @@ class OllamaService {
    * Generate embeddings for text
    */
   async generateEmbedding(text, options = {}) {
-    try {
-      const ollama = getOllama();
-      const model = options.model || getOllamaEmbeddingModel();
+    return withOllamaRetry(
+      async () => {
+        const ollama = getOllama();
+        const model = options.model || getOllamaEmbeddingModel();
 
-      const response = await ollama.embeddings({
-        model,
-        prompt: text,
-        options: options.ollamaOptions || {},
-      });
+        const response = await ollama.embeddings({
+          model,
+          prompt: text,
+          options: options.ollamaOptions || {},
+        });
 
-      return {
-        success: true,
-        embedding: response.embedding,
-      };
-    } catch (error) {
+        return {
+          success: true,
+          embedding: response.embedding,
+        };
+      },
+      {
+        operation: 'generateEmbedding',
+        maxRetries: 3,
+      },
+    ).catch((error) => {
+      // Final error handling after retries exhausted
       logger.error('[OllamaService] Failed to generate embedding:', error);
       return {
         success: false,
         error: error.message,
       };
-    }
+    });
   }
 
   /**
    * Analyze text with LLM
    */
   async analyzeText(prompt, options = {}) {
-    try {
-      const ollama = getOllama();
-      const model = options.model || getOllamaModel();
+    return withOllamaRetry(
+      async () => {
+        const ollama = getOllama();
+        const model = options.model || getOllamaModel();
 
-      const response = await ollama.generate({
-        model,
-        prompt,
-        options: options.ollamaOptions || {},
-        stream: false,
-      });
+        const response = await ollama.generate({
+          model,
+          prompt,
+          options: options.ollamaOptions || {},
+          stream: false,
+        });
 
-      return {
-        success: true,
-        response: response.response,
-      };
-    } catch (error) {
+        return {
+          success: true,
+          response: response.response,
+        };
+      },
+      {
+        operation: 'analyzeText',
+        maxRetries: 3,
+      },
+    ).catch((error) => {
       logger.error('[OllamaService] Failed to analyze text:', error);
       return {
         success: false,
         error: error.message,
       };
-    }
+    });
   }
 
   /**
    * Analyze image with vision model
    */
   async analyzeImage(prompt, imageBase64, options = {}) {
-    try {
-      const ollama = getOllama();
-      const model = options.model || getOllamaVisionModel();
+    return withOllamaRetry(
+      async () => {
+        const ollama = getOllama();
+        const model = options.model || getOllamaVisionModel();
 
-      const response = await ollama.generate({
-        model,
-        prompt,
-        images: [imageBase64],
-        options: options.ollamaOptions || {},
-        stream: false,
-      });
+        const response = await ollama.generate({
+          model,
+          prompt,
+          images: [imageBase64],
+          options: options.ollamaOptions || {},
+          stream: false,
+        });
 
-      return {
-        success: true,
-        response: response.response,
-      };
-    } catch (error) {
+        return {
+          success: true,
+          response: response.response,
+        };
+      },
+      {
+        operation: 'analyzeImage',
+        maxRetries: 3,
+      },
+    ).catch((error) => {
       logger.error('[OllamaService] Failed to analyze image:', error);
       return {
         success: false,
         error: error.message,
       };
-    }
+    });
   }
 }
 

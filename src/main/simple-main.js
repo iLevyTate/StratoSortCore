@@ -71,16 +71,8 @@ let eventListeners = [];
 let childProcessListeners = [];
 let globalProcessListeners = [];
 
-// Legacy function - replaced by StartupManager
-// This function is no longer used but kept for backward compatibility
-// All startup logic has been moved to StartupManager service
-// eslint-disable-next-line no-unused-vars
-async function ensureChromaDbRunning() {
-  logger.warn(
-    '[ChromaDB] ensureChromaDbRunning is deprecated - using StartupManager instead',
-  );
-  // Function body removed - all startup logic now handled by StartupManager
-}
+// Legacy functions removed: ensureChromaDbRunning, ensureOllamaRunning
+// All startup logic is now handled by StartupManager and ServiceIntegration
 
 /**
  * Verify that all critical IPC handlers are registered
@@ -142,7 +134,7 @@ async function verifyIpcHandlersRegistered() {
   ];
 
   const maxRetries = 10;
-  const maxTimeout = 5000; // 5 seconds maximum
+  const maxTimeout = 2000; // Reduced to 2 seconds to prevent startup hang
   const initialDelay = 50; // Start with 50ms
   const maxDelay = 500; // Cap at 500ms
   const startTime = Date.now();
@@ -247,17 +239,6 @@ async function verifyIpcHandlersRegistered() {
     `[IPC-VERIFY] ❌ Failed to register all handlers after ${maxRetries} attempts. Missing: ${checkResult.missing.join(', ')}`,
   );
   return false;
-}
-
-// Legacy function - replaced by StartupManager
-// This function is no longer used but kept for backward compatibility
-// All startup logic has been moved to StartupManager service
-// eslint-disable-next-line no-unused-vars
-async function ensureOllamaRunning() {
-  logger.warn(
-    '[Ollama] ensureOllamaRunning is deprecated - using StartupManager instead',
-  );
-  // Function body removed - all startup logic now handled by StartupManager
 }
 
 // ===== GPU PREFERENCES (Windows rendering stability) =====
@@ -675,6 +656,15 @@ function createWindow() {
     closedHandler();
   };
   mainWindow.once('destroy', destroyHandler);
+
+  // Register global cleanup to ensure listeners are removed on app quit
+  // even if window is hidden (background mode)
+  eventListeners.push(() => {
+    if (windowEventHandlers.size > 0) {
+      logger.debug('[CLEANUP] Forcing window listener cleanup on app quit');
+      closedHandler();
+    }
+  });
 }
 
 function updateDownloadWatcher(settings) {
@@ -797,85 +787,8 @@ app.whenReady().then(async () => {
     // Get the startup manager instance
     const startupManager = getStartupManager();
 
-    // Check for first run (check if we've set up before)
-    const setupMarker = path.join(
-      app.getPath('userData'),
-      'ollama-setup-complete.marker',
-    );
-    let isFirstRun = false;
-    try {
-      await fs.access(setupMarker);
-    } catch {
-      isFirstRun = true;
-    }
-
-    if (isFirstRun) {
-      logger.info('[STARTUP] First run detected - will check Ollama setup');
-
-      // Check if installation marker exists (from installer)
-      const installerMarker = path.join(
-        app.getPath('exe'),
-        '..',
-        'first-run.marker',
-      );
-      try {
-        await fs.access(installerMarker);
-        try {
-          await fs.unlink(installerMarker);
-        } catch (e) {
-          logger.debug(
-            '[STARTUP] Could not remove installer marker:',
-            e.message,
-          );
-        }
-      } catch {
-        // Installer marker doesn't exist, no action needed
-      }
-
-      // Run Ollama setup check
-      const setupScript = path.join(__dirname, '../../setup-ollama.js');
-      try {
-        await fs.access(setupScript);
-        const {
-          isOllamaInstalled,
-          getInstalledModels,
-          installEssentialModels,
-        } = require(setupScript);
-
-        // Check if Ollama is installed and has models
-        if (await isOllamaInstalled()) {
-          const models = await getInstalledModels();
-          if (models.length === 0) {
-            logger.info(
-              '[STARTUP] No AI models found, installing essential models...',
-            );
-            try {
-              await installEssentialModels();
-              logger.info('[STARTUP] AI models installed successfully');
-            } catch (e) {
-              logger.warn(
-                '[STARTUP] Could not install AI models automatically:',
-                e.message,
-              );
-            }
-          }
-        } else {
-          logger.warn(
-            '[STARTUP] Ollama not installed - AI features will be limited',
-          );
-          // Could show a dialog here prompting user to install Ollama
-        }
-      } catch {
-        // Setup script doesn't exist, skip setup check
-      }
-
-      // Mark setup as complete
-      try {
-        await fs.writeFile(setupMarker, new Date().toISOString());
-      } catch (e) {
-        logger.debug('[STARTUP] Could not create setup marker:', e.message);
-      }
-    }
+    // Check for first run moved to background task after window creation
+    // to prevent blocking startup
 
     // Run the new startup manager sequence with timeout
     let startupResult;
@@ -1162,6 +1075,109 @@ app.whenReady().then(async () => {
 
     createWindow();
     handleSettingsChanged(initialSettings);
+
+    // Run first-time setup in background (non-blocking)
+    (async () => {
+      try {
+        const setupMarker = path.join(
+          app.getPath('userData'),
+          'ollama-setup-complete.marker',
+        );
+        let isFirstRun = false;
+        try {
+          await fs.access(setupMarker);
+        } catch {
+          isFirstRun = true;
+        }
+
+        if (isFirstRun) {
+          logger.info(
+            '[STARTUP] First run detected - will check Ollama setup (background)',
+          );
+
+          // Check if installation marker exists (from installer)
+          const installerMarker = path.join(
+            app.getPath('exe'),
+            '..',
+            'first-run.marker',
+          );
+          try {
+            await fs.access(installerMarker);
+            try {
+              await fs.unlink(installerMarker);
+            } catch (e) {
+              logger.debug(
+                '[STARTUP] Could not remove installer marker:',
+                e.message,
+              );
+            }
+          } catch {
+            // Installer marker doesn't exist, no action needed
+          }
+
+          // Run Ollama setup check
+          const setupScript = path.join(__dirname, '../../setup-ollama.js');
+          try {
+            await fs.access(setupScript);
+            const {
+              isOllamaInstalled,
+              getInstalledModels,
+              installEssentialModels,
+            } = require(setupScript);
+
+            // Check if Ollama is installed and has models
+            if (await isOllamaInstalled()) {
+              const models = await getInstalledModels();
+              if (models.length === 0) {
+                logger.info(
+                  '[STARTUP] No AI models found, installing essential models...',
+                );
+
+                // Notify UI about model installation
+                const win = BrowserWindow.getAllWindows()[0];
+                if (win) {
+                  win.webContents.send('operation-progress', {
+                    type: 'info',
+                    message: 'Installing AI models in background...',
+                  });
+                }
+
+                try {
+                  await installEssentialModels();
+                  logger.info('[STARTUP] AI models installed successfully');
+                  if (win) {
+                    win.webContents.send('operation-progress', {
+                      type: 'success',
+                      message: 'AI models installed successfully',
+                    });
+                  }
+                } catch (e) {
+                  logger.warn(
+                    '[STARTUP] Could not install AI models automatically:',
+                    e.message,
+                  );
+                }
+              }
+            } else {
+              logger.warn(
+                '[STARTUP] Ollama not installed - AI features will be limited',
+              );
+            }
+          } catch (err) {
+            logger.warn('[STARTUP] Setup script error:', err.message);
+          }
+
+          // Mark setup as complete
+          try {
+            await fs.writeFile(setupMarker, new Date().toISOString());
+          } catch (e) {
+            logger.debug('[STARTUP] Could not create setup marker:', e.message);
+          }
+        }
+      } catch (error) {
+        logger.error('[STARTUP] Background setup failed:', error);
+      }
+    })();
 
     // Start periodic system metrics broadcast to renderer
     try {

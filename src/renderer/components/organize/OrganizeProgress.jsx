@@ -79,7 +79,7 @@ function OrganizeProgress({
       {/* Animated header */}
       <div className="flex items-center justify-center gap-8 text-stratosort-blue mb-8">
         <div className="relative w-21 h-21">
-          <div className="absolute inset-0 animate-spin rounded-full border-3 border-stratosort-blue/30 border-t-stratosort-blue"></div>
+          <div className="absolute inset-0 animate-spin rounded-full border-4 border-stratosort-blue/30 border-t-stratosort-blue"></div>
           <div className="absolute inset-2 rounded-full bg-stratosort-blue/5 flex items-center justify-center">
             <span className="text-lg">📂</span>
           </div>

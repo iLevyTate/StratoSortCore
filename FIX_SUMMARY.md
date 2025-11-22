@@ -3,7 +3,9 @@
 ## What Was Broken
 
 ### Bug 1: Excel (.xlsx) Crashes
+
 **Error Message:**
+
 ```
 [ERROR] [DocumentAnalysis] Error extracting office content {
   fileName: 'draft_updated_colored_legend (1).xlsx',
@@ -12,6 +14,7 @@
 ```
 
 **Root Cause:** When processing Excel files, the code didn't validate data structures returned by the XLSX library. Some rows could be:
+
 - Objects instead of arrays
 - Scalar values instead of arrays
 - Null or undefined
@@ -21,7 +24,9 @@ The code tried to call `.filter()` on non-array rows without checking their type
 ---
 
 ### Bug 2: PowerPoint (.pptx) Unknown Errors
+
 **Error Message:**
+
 ```
 [ERROR] [DocumentAnalysis] Error extracting office content {
   fileName: 'SCAN_Defense_Standard (1).pptx',
@@ -30,6 +35,7 @@ The code tried to call `.filter()` on non-array rows without checking their type
 ```
 
 **Root Cause:** The `officeparser` library can return various formats:
+
 - String: `"text"`
 - Object with `.text`: `{ text: "..." }`
 - Object with `.content`: `{ content: "..." }`
@@ -44,6 +50,7 @@ The code only checked for strings and `.text` property, failing silently on othe
 ### Fix 1: Comprehensive XLSX Validation (lines 140-247)
 
 **Changes Made:**
+
 1. Validate `usedRange` exists before using it
 2. Validate `values` is an object before treating as data
 3. Handle mixed row types:
@@ -54,6 +61,7 @@ The code only checked for strings and `.text` property, failing silently on othe
 5. Add outer try-catch for detailed error reporting
 
 **Key Code Block:**
+
 ```javascript
 // Before: Only handled Array.isArray(row)
 // After: Handles arrays, objects, and scalars
@@ -67,6 +75,7 @@ if (Array.isArray(row)) {
 ```
 
 **Impact:**
+
 - Excel files with mixed data types now extract correctly
 - Bad sheets don't prevent processing of good sheets
 - Better error messages
@@ -76,6 +85,7 @@ if (Array.isArray(row)) {
 ### Fix 2: Multi-Format PPTX Parser Handling (lines 249-312)
 
 **Changes Made:**
+
 1. Check if result is string (direct use)
 2. Check object for `.text` property
 3. Check object for `.content` property
@@ -85,6 +95,7 @@ if (Array.isArray(row)) {
 7. Wrap in try-catch for detailed error messages
 
 **Key Code Block:**
+
 ```javascript
 // Before: Only checked for string or result.text
 // After: Multi-format support
@@ -106,6 +117,7 @@ if (typeof result === 'string') {
 ```
 
 **Impact:**
+
 - PowerPoint files with various parser responses work
 - Better error messages indicate what went wrong
 - Fallback to filename-based analysis if extraction fails
@@ -115,6 +127,7 @@ if (typeof result === 'string') {
 ### Fix 3: Legacy Format Consistency (lines 446-531)
 
 Applied same improvements to `.xls` (Excel) and `.ppt` (PowerPoint) older formats:
+
 - File size validation before processing
 - Multi-format parser result handling
 - Proper error propagation for file size limits
@@ -124,10 +137,12 @@ Applied same improvements to `.xls` (Excel) and `.ppt` (PowerPoint) older format
 ## Testing
 
 ### Tests Added
+
 - 5 new XLSX tests (null handling, mixed types, edge cases)
 - 3 new PPTX tests (array response, content property, error handling)
 
 ### Test Results
+
 ```
 Test Suites: 1 passed
 Tests:       46 passed (all)
@@ -141,6 +156,7 @@ All existing tests continue to pass - fully backward compatible.
 ## Files Changed
 
 ### Source Files
+
 1. **`src/main/analysis/documentExtractors.js`**
    - `extractTextFromXlsx()` - 107 lines (was 58, expanded for robustness)
    - `extractTextFromPptx()` - 63 lines (was 12, expanded for robustness)
@@ -148,12 +164,14 @@ All existing tests continue to pass - fully backward compatible.
    - `extractTextFromPpt()` - 42 lines (was 9, added validation)
 
 ### Test Files
+
 1. **`test/documentExtractors.test.js`**
    - Updated 2 existing tests
    - Added 8 new tests
    - All 46 tests passing
 
 ### Documentation
+
 1. **`OFFICE_EXTRACTION_BUG_FIXES.md`** - Detailed technical report
 2. **`FIX_SUMMARY.md`** - This file
 
@@ -174,12 +192,14 @@ All existing tests continue to pass - fully backward compatible.
 ## Before vs After
 
 ### Before
+
 - Excel crashes on certain file structures
 - PowerPoint silently fails with vague errors
 - Error messages don't help diagnose issues
 - Extraction method: Hope for the best
 
 ### After
+
 - Excel handles arrays, objects, and scalars
 - PowerPoint handles multiple parser response formats
 - Error messages indicate exactly what went wrong
@@ -189,13 +209,13 @@ All existing tests continue to pass - fully backward compatible.
 
 ## Error Message Improvements
 
-| Scenario | Before | After |
-|----------|--------|-------|
-| XLSX with null usedRange | Silent failure/crash | "No text content in XLSX" |
-| XLSX with mixed row types | Crash on object row | "Header1 Header2\nValue1 Value2\n..." |
-| PPTX with array result | Silent failure | "Slide 1 content\nSlide 2 content\n..." |
-| Corrupted PPTX | "Unknown analysis error" | "PPTX_EXTRACTION_ERROR: PowerPoint file may be corrupted or in unsupported format" |
-| File too large | Process starts then fails | "FILE_TOO_LARGE: File exceeds 100MB limit" |
+| Scenario                  | Before                    | After                                                                              |
+| ------------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| XLSX with null usedRange  | Silent failure/crash      | "No text content in XLSX"                                                          |
+| XLSX with mixed row types | Crash on object row       | "Header1 Header2\nValue1 Value2\n..."                                              |
+| PPTX with array result    | Silent failure            | "Slide 1 content\nSlide 2 content\n..."                                            |
+| Corrupted PPTX            | "Unknown analysis error"  | "PPTX_EXTRACTION_ERROR: PowerPoint file may be corrupted or in unsupported format" |
+| File too large            | Process starts then fails | "FILE_TOO_LARGE: File exceeds 100MB limit"                                         |
 
 ---
 
@@ -242,6 +262,7 @@ Both bugs stemmed from **insufficient defensive programming**:
 ## Conclusion
 
 These fixes address the root causes of Office document extraction failures through:
+
 1. Comprehensive null/undefined checking
 2. Support for multiple parser result formats
 3. Better error messages and propagation

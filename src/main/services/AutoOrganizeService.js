@@ -33,6 +33,32 @@ class AutoOrganizeService {
   }
 
   /**
+   * Sanitize file object for IPC transmission
+   * Removes large data and circular references
+   */
+  _sanitizeFile(file) {
+    if (!file) return null;
+
+    // Create a clean lightweight copy
+    return {
+      name: file.name,
+      path: file.path,
+      size: file.size,
+      extension: file.extension,
+      type: file.type,
+      // Only include essential analysis data if present
+      analysis: file.analysis
+        ? {
+            category: file.analysis.category,
+            suggestedName: file.analysis.suggestedName,
+            confidence: file.analysis.confidence,
+            summary: file.analysis.summary,
+          }
+        : null,
+    };
+  }
+
+  /**
    * Automatically organize files based on their analysis
    * Uses batched suggestions for improved performance
    */
@@ -106,10 +132,15 @@ class AutoOrganizeService {
 
         try {
           // Get batch suggestions - this is the key optimization
+          // OPTIMIZATION: Disable deep structure analysis and alternatives for batch processing to prevent recursion/overflow
           const batchSuggestions =
             await this.suggestionService.getBatchSuggestions(
               batch,
               smartFolders,
+              {
+                includeStructureAnalysis: false,
+                includeAlternatives: false,
+              },
             );
 
           if (
@@ -255,7 +286,7 @@ class AutoOrganizeService {
           );
 
           results.organized.push({
-            file,
+            file: this._sanitizeFile(file),
             suggestion,
             destination,
             confidence,
@@ -285,7 +316,7 @@ class AutoOrganizeService {
         } else if (confidence >= this.thresholds.requireReview) {
           // Medium confidence - needs review
           results.needsReview.push({
-            file,
+            file: this._sanitizeFile(file),
             suggestion,
             alternatives: fileWithSuggestion.alternatives,
             confidence,
@@ -300,7 +331,7 @@ class AutoOrganizeService {
           );
 
           results.organized.push({
-            file,
+            file: this._sanitizeFile(file),
             destination: fallbackDestination,
             confidence,
             method: 'batch-low-confidence-fallback',
@@ -346,7 +377,7 @@ class AutoOrganizeService {
           );
 
           results.organized.push({
-            file,
+            file: this._sanitizeFile(file),
             destination: fallbackDestination,
             confidence: 0.2,
             method: 'suggestion-error-fallback',
@@ -369,7 +400,7 @@ class AutoOrganizeService {
           );
 
           results.organized.push({
-            file,
+            file: this._sanitizeFile(file),
             destination: fallbackDestination,
             confidence: 0.3,
             method: 'fallback',
@@ -397,7 +428,7 @@ class AutoOrganizeService {
           );
 
           results.organized.push({
-            file,
+            file: this._sanitizeFile(file),
             suggestion: primary,
             destination,
             confidence,
@@ -427,7 +458,7 @@ class AutoOrganizeService {
         } else if (confidence >= this.thresholds.requireReview) {
           // Medium confidence - needs review
           results.needsReview.push({
-            file,
+            file: this._sanitizeFile(file),
             suggestion: primary,
             alternatives: suggestion.alternatives,
             confidence,
@@ -442,7 +473,7 @@ class AutoOrganizeService {
           );
 
           results.organized.push({
-            file,
+            file: this._sanitizeFile(file),
             destination: fallbackDestination,
             confidence,
             method: 'low-confidence-fallback',
@@ -472,7 +503,7 @@ class AutoOrganizeService {
         );
 
         results.failed.push({
-          file,
+          file: this._sanitizeFile(file),
           reason: error.message,
           filePath: file.path,
           timestamp: fileErrorDetails.timestamp,
@@ -507,7 +538,7 @@ class AutoOrganizeService {
         // Could not create default folder, mark all files as failed
         for (const file of files) {
           results.failed.push({
-            file,
+            file: this._sanitizeFile(file),
             reason: 'No analysis available and failed to create default folder',
           });
         }
@@ -523,7 +554,7 @@ class AutoOrganizeService {
       );
 
       results.organized.push({
-        file,
+        file: this._sanitizeFile(file),
         destination,
         confidence: 0.1,
         method: 'no-analysis-default',

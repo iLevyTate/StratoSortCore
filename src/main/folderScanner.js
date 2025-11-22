@@ -17,13 +17,13 @@ async function scanDirectory(
   dirPath,
   ignorePatterns = DEFAULT_IGNORE_PATTERNS,
 ) {
-  const items = [];
   try {
     const dirents = await fs.readdir(dirPath, { withFileTypes: true });
 
-    for (const dirent of dirents) {
+    // Parallelize scanning of directory entries
+    const promises = dirents.map(async (dirent) => {
       if (dirent.isSymbolicLink()) {
-        continue;
+        return null;
       }
       const itemName = dirent.name;
       const itemPath = path.join(dirPath, itemName);
@@ -38,23 +38,34 @@ async function scanDirectory(
           return itemName === pattern;
         })
       ) {
-        continue;
+        return null;
       }
 
-      const stats = await fs.stat(itemPath);
-      const itemInfo = {
-        name: itemName,
-        path: itemPath,
-        type: dirent.isDirectory() ? 'folder' : 'file',
-        size: stats.size,
-        modified: stats.mtime,
-      };
+      try {
+        const stats = await fs.stat(itemPath);
+        const itemInfo = {
+          name: itemName,
+          path: itemPath,
+          type: dirent.isDirectory() ? 'folder' : 'file',
+          size: stats.size,
+          modified: stats.mtime,
+        };
 
-      if (dirent.isDirectory()) {
-        itemInfo.children = await scanDirectory(itemPath, ignorePatterns);
+        if (dirent.isDirectory()) {
+          itemInfo.children = await scanDirectory(itemPath, ignorePatterns);
+        }
+        return itemInfo;
+      } catch (statError) {
+        logger.warn('Error stating file during scan', {
+          path: itemPath,
+          error: statError.message,
+        });
+        return null;
       }
-      items.push(itemInfo);
-    }
+    });
+
+    const results = await Promise.all(promises);
+    return results.filter((item) => item !== null);
   } catch (error) {
     logger.error('Error scanning directory', {
       dirPath,
@@ -77,7 +88,6 @@ async function scanDirectory(
     // For other errors, you might want to propagate them
     throw error;
   }
-  return items;
 }
 
 module.exports = { scanDirectory, DEFAULT_IGNORE_PATTERNS };

@@ -1041,31 +1041,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 });
 
-// Legacy compatibility layer (deprecated but maintained for migration)
-contextBridge.exposeInMainWorld('electron', {
-  ipcRenderer: {
-    invoke: (channel, ...args) => {
-      log.warn(
-        'Using deprecated electron.ipcRenderer.invoke - migrate to window.electronAPI',
-      );
-      return secureIPC.safeInvoke(channel, ...args);
-    },
-    on: (channel, callback) => {
-      log.warn(
-        'Using deprecated electron.ipcRenderer.on - migrate to window.electronAPI.events',
-      );
-      return secureIPC.safeOn(channel, callback);
-    },
-    send: (channel, ...args) => {
-      // Use centralized allowed send channels list
-      if (ALLOWED_SEND_CHANNELS.includes(channel)) {
-        ipcRenderer.send(channel, ...args);
-      } else {
-        log.warn(`Attempted to send on disallowed channel: ${channel}`);
-      }
-    },
-  },
-});
+// Legacy compatibility layer removed - use window.electronAPI instead
 
 log.info('Secure context bridge exposed with structured API');
 

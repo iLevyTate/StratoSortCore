@@ -4,6 +4,7 @@ import { useKeyboardShortcuts } from '../hooks';
 import { usePhase } from '../contexts/PhaseContext';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
 import { LazyLoadingSpinner, ModalLoadingOverlay } from './LoadingSkeleton';
+import { logger } from '../../shared/logger';
 
 const WelcomePhase = lazy(() => import('../phases/WelcomePhase'));
 const SetupPhase = lazy(() => import('../phases/SetupPhase'));
@@ -16,15 +17,15 @@ import { PHASES } from '../../shared/constants';
 const pageVariants = {
   initial: {
     opacity: 0,
-    x: '-100vw',
+    y: 20,
   },
   in: {
     opacity: 1,
-    x: 0,
+    y: 0,
   },
   out: {
     opacity: 0,
-    x: '100vw',
+    y: -20,
   },
 };
 
@@ -37,6 +38,11 @@ const pageTransition = {
 function PhaseRenderer() {
   const { currentPhase, showSettings } = usePhase();
   useKeyboardShortcuts();
+
+  // Debug logging to track phase rendering
+  React.useEffect(() => {
+    logger.debug('[PhaseRenderer] Rendering phase:', currentPhase);
+  }, [currentPhase]);
 
   // Fixed: Wrap each phase with PhaseErrorBoundary for isolated error handling
   const renderCurrentPhase = () => {

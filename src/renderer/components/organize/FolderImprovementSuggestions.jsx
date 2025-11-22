@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 
 function FolderImprovementSuggestions({
@@ -9,6 +10,7 @@ function FolderImprovementSuggestions({
   onCreateFolder,
   onMergeFolders,
 }) {
+  const { addNotification } = useNotification();
   const [expandedSections, setExpandedSections] = useState(new Set());
 
   const toggleSection = (type) => {
@@ -198,7 +200,10 @@ function FolderImprovementSuggestions({
                             size="sm"
                             variant="ghost"
                             onClick={() => {
-                              // TODO: Implement edit folder functionality
+                              addNotification(
+                                'Folder editing will be available in a future update',
+                                'info',
+                              );
                             }}
                           >
                             Edit
@@ -208,7 +213,10 @@ function FolderImprovementSuggestions({
                             variant="ghost"
                             className="text-red-600 hover:bg-red-50"
                             onClick={() => {
-                              // TODO: Implement remove folder functionality
+                              addNotification(
+                                'Folder removal will be available in a future update',
+                                'info',
+                              );
                             }}
                           >
                             Remove
@@ -286,7 +294,10 @@ function FolderImprovementSuggestions({
         <Button
           variant="secondary"
           onClick={() => {
-            // TODO: Implement export report functionality
+            addNotification(
+              'Report export will be available in a future update',
+              'info',
+            );
           }}
         >
           Export Report

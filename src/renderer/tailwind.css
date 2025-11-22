@@ -353,17 +353,21 @@
 
   .modern-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: #cbd5e1 transparent;
+    scrollbar-color: #94a3b8 transparent;
   }
   .modern-scrollbar::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
+    height: 8px;
   }
   .modern-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+    background: rgba(0, 0, 0, 0.05);
   }
   .modern-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #e2e8f0, #cbd5e1);
-    border-radius: 999px;
+    background: #94a3b8;
+    border-radius: 4px;
+  }
+  .modern-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
   }
 
   /* Desktop-specific grid utilities */

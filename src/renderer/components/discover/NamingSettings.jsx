@@ -31,11 +31,11 @@ const NamingSettings = memo(function NamingSettings({
   );
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
       <div>
         <label
           htmlFor="naming-convention"
-          className="block text-xs font-medium text-system-gray-700 mb-2"
+          className="block text-sm font-medium text-system-gray-700 mb-2"
         >
           Convention
         </label>
@@ -55,7 +55,7 @@ const NamingSettings = memo(function NamingSettings({
       <div>
         <label
           htmlFor="date-format"
-          className="block text-xs font-medium text-system-gray-700 mb-2"
+          className="block text-sm font-medium text-system-gray-700 mb-2"
         >
           Date format
         </label>
@@ -74,7 +74,7 @@ const NamingSettings = memo(function NamingSettings({
       <div>
         <label
           htmlFor="case-convention"
-          className="block text-xs font-medium text-system-gray-700 mb-2"
+          className="block text-sm font-medium text-system-gray-700 mb-2"
         >
           Case
         </label>
@@ -95,7 +95,7 @@ const NamingSettings = memo(function NamingSettings({
       <div>
         <label
           htmlFor="separator"
-          className="block text-xs font-medium text-system-gray-700 mb-2"
+          className="block text-sm font-medium text-system-gray-700 mb-2"
         >
           Separator
         </label>
