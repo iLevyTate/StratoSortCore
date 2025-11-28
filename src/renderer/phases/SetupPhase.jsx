@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setSmartFolders as setSmartFoldersAction } from '../store/slices/filesSlice';
+import { setPhase } from '../store/slices/uiSlice';
+import { fetchDocumentsPath } from '../store/slices/systemSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog } from '../hooks';
 import { Collapsible, Button, Input, Textarea } from '../components/ui';
@@ -12,7 +15,17 @@ import { SmartFolderItem } from '../components/setup';
 logger.setContext('SetupPhase');
 
 function SetupPhase() {
-  const { actions } = usePhase();
+  const dispatch = useAppDispatch();
+  const documentsPathFromStore = useAppSelector(
+    (state) => state.system.documentsPath,
+  );
+  const actions = {
+    setPhaseData: (key, value) => {
+      if (key === 'smartFolders') dispatch(setSmartFoldersAction(value));
+    },
+    advancePhase: (phase) => dispatch(setPhase(phase)),
+  };
+
   const { showConfirm, ConfirmDialog } = useConfirmDialog();
   const { showSuccess, showError, showWarning, showInfo, addNotification } =
     useNotification();
@@ -56,16 +69,23 @@ function SetupPhase() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [editingFolder]);
 
+  // Update defaultLocation when Redux store gets the path
+  useEffect(() => {
+    if (documentsPathFromStore && defaultLocation === 'Documents') {
+      setDefaultLocation(documentsPathFromStore);
+    }
+  }, [documentsPathFromStore, defaultLocation]);
+
   const loadDefaultLocation = async () => {
     try {
       const settings = await window.electronAPI.settings.get();
       if (settings?.defaultSmartFolderLocation) {
         setDefaultLocation(settings.defaultSmartFolderLocation);
+      } else if (documentsPathFromStore) {
+        setDefaultLocation(documentsPathFromStore);
       } else {
-        const documentsPath = await window.electronAPI.files.getDocumentsPath();
-        if (documentsPath) {
-          setDefaultLocation(documentsPath);
-        }
+        // Fetch via Redux thunk (will be cached)
+        dispatch(fetchDocumentsPath());
       }
     } catch (error) {
       logger.error('Failed to load default location', {
@@ -143,31 +163,21 @@ function SetupPhase() {
         targetPath = newFolderPath.trim();
       } else {
         let resolvedDefaultLocation = defaultLocation;
+        // Use cached documents path from Redux if defaultLocation isn't absolute
         if (
           !/^[A-Za-z]:[\\/]/.test(resolvedDefaultLocation) &&
           !resolvedDefaultLocation.startsWith('/')
         ) {
-          try {
-            const documentsPath =
-              await window.electronAPI.files.getDocumentsPath();
-            if (documentsPath) {
-              resolvedDefaultLocation = documentsPath;
-            }
-          } catch {
-            // Non-fatal if documents path fails
+          if (documentsPathFromStore) {
+            resolvedDefaultLocation = documentsPathFromStore;
           }
         }
         targetPath = `${resolvedDefaultLocation}/${newFolderName.trim()}`;
       }
+      // Use cached documents path if targetPath isn't absolute
       if (!/^[A-Za-z]:[\\/]/.test(targetPath) && !targetPath.startsWith('/')) {
-        try {
-          const documentsPath =
-            await window.electronAPI.files.getDocumentsPath();
-          if (documentsPath) {
-            targetPath = `${documentsPath}/${targetPath}`;
-          }
-        } catch {
-          // Non-fatal if documents path fails
+        if (documentsPathFromStore) {
+          targetPath = `${documentsPathFromStore}/${targetPath}`;
         }
       }
 

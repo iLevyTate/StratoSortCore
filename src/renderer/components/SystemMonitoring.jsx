@@ -1,15 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { logger } from '../../shared/logger';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { updateMetrics } from '../store/slices/systemSlice';
+// ComponentErrorBoundary removed as it was unused
 
 logger.setContext('SystemMonitoring');
 
 const SystemMonitoring = React.memo(function SystemMonitoring() {
-  const [systemMetrics, setSystemMetrics] = useState({
-    uptime: 0,
-    cpu: 0,
-    memory: { used: 0, total: 0 },
-    disk: { used: 0, total: 0 },
-  });
+  const dispatch = useAppDispatch();
+  const systemMetrics = useAppSelector((state) => state.system.metrics);
+
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [error, setError] = useState(null);
   const intervalRef = useRef(null);
@@ -27,15 +27,8 @@ const SystemMonitoring = React.memo(function SystemMonitoring() {
       const metrics = await window.electronAPI.system.getMetrics();
 
       // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setSystemMetrics(
-          metrics || {
-            uptime: 0,
-            cpu: 0,
-            memory: { used: 0, total: 0 },
-            disk: { used: 0, total: 0 },
-          },
-        );
+      if (isMountedRef.current && metrics) {
+        dispatch(updateMetrics(metrics));
         setError(null);
       }
     } catch (error) {
@@ -46,7 +39,7 @@ const SystemMonitoring = React.memo(function SystemMonitoring() {
         setError(error.message);
       }
     }
-  }, []);
+  }, [dispatch]);
 
   useEffect(() => {
     isMountedRef.current = true;

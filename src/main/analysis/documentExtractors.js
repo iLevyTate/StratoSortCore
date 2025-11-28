@@ -1,17 +1,42 @@
 const fs = require('fs').promises;
 
-// Lazy loaded modules
-// const pdf = require('pdf-parse');
-// const sharp = require('sharp');
-// const tesseract = require('node-tesseract-ocr');
-// const mammoth = require('mammoth');
-// const officeParser = require('officeparser');
-// const XLSX = require('xlsx-populate');
-// const AdmZip = require('adm-zip');
-
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
 logger.setContext('DocumentExtractors');
+
+// Pre-compiled regex patterns for performance (compiled once at module load)
+const REGEX_PATTERNS = {
+  // RTF patterns
+  rtfHexEscape: /\\'([0-9a-fA-F]{2})/g,
+  rtfBraces: /[{}]/g,
+  rtfControlWords: /\\[a-zA-Z]+-?\d* ?/g,
+
+  // HTML patterns
+  scriptTags: /<script[\s\S]*?<\/script>/gi,
+  styleTags: /<style[\s\S]*?<\/style>/gi,
+  htmlTags: /<[^>]+>/g,
+
+  // Entity patterns
+  nbspEntity: /&nbsp;/g,
+  ampEntity: /&amp;/g,
+  ltEntity: /&lt;/g,
+  gtEntity: /&gt;/g,
+  quotEntity: /&quot;/g,
+  aposEntity: /&#39;|&apos;/g,
+
+  // Whitespace patterns
+  whitespace: /\s+/g,
+  doubleNewline: /\r?\n\r?\n/,
+
+  // Email header patterns
+  subjectHeader: /^Subject:\s*(.*)$/im,
+  fromHeader: /^From:\s*(.*)$/im,
+  toHeader: /^To:\s*(.*)$/im,
+
+  // JSON cleanup for PPTX fallback
+  // eslint-disable-next-line no-useless-escape
+  jsonPunctuation: /[{}":,\[\]]/g,
+};
 
 // Memory management constants
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB max file size
@@ -93,6 +118,12 @@ async function ocrPdfIfNeeded(filePath) {
     // OCR has stricter limits due to image processing overhead
     if (stats.size > 50 * 1024 * 1024) {
       // 50MB limit for OCR
+      // FIX: Log the skip reason instead of silently returning
+      logger.info('[OCR] Skipping OCR - file exceeds 50MB limit', {
+        filePath,
+        fileSize: stats.size,
+        maxSize: 50 * 1024 * 1024,
+      });
       return '';
     }
 
@@ -113,7 +144,13 @@ async function ocrPdfIfNeeded(filePath) {
       ocrText && ocrText.trim().length > 0 ? truncateText(ocrText) : '';
     rasterPng = null;
     return result;
-  } catch {
+  } catch (error) {
+    // FIX: Log error details instead of silently returning empty string
+    logger.warn('[OCR] OCR processing failed', {
+      filePath,
+      error: error.message,
+      errorCode: error.code,
+    });
     return '';
   } finally {
     // Explicit cleanup
@@ -374,9 +411,8 @@ async function extractTextFromPptx(filePath) {
       if (!text && Object.keys(result).length > 0) {
         try {
           text = JSON.stringify(result)
-            // eslint-disable-next-line no-useless-escape
-            .replace(/[{}":,\[\]]/g, ' ')
-            .replace(/\s+/g, ' ')
+            .replace(REGEX_PATTERNS.jsonPunctuation, ' ')
+            .replace(REGEX_PATTERNS.whitespace, ' ')
             .trim();
         } catch {
           // If stringification fails, try extracting values
@@ -457,17 +493,17 @@ async function extractTextFromPptx(filePath) {
 
 function extractPlainTextFromRtf(rtf) {
   try {
-    const decoded = rtf.replace(/\\'([0-9a-fA-F]{2})/g, (_, hex) => {
+    const decoded = rtf.replace(REGEX_PATTERNS.rtfHexEscape, (_, hex) => {
       try {
         return String.fromCharCode(parseInt(hex, 16));
       } catch {
         return '';
       }
     });
-    const noGroups = decoded.replace(/[{}]/g, '');
+    const noGroups = decoded.replace(REGEX_PATTERNS.rtfBraces, '');
     // Fixed: RTF control words start with backslash, not bracket
-    const noControls = noGroups.replace(/\\[a-zA-Z]+-?\d* ?/g, '');
-    return noControls.replace(/\s+/g, ' ').trim();
+    const noControls = noGroups.replace(REGEX_PATTERNS.rtfControlWords, '');
+    return noControls.replace(REGEX_PATTERNS.whitespace, ' ').trim();
   } catch {
     return rtf;
   }
@@ -475,20 +511,17 @@ function extractPlainTextFromRtf(rtf) {
 
 function extractPlainTextFromHtml(html) {
   try {
-    const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-    const withoutStyles = withoutScripts.replace(
-      /<style[\s\S]*?<\/style>/gi,
-      '',
-    );
-    const withoutTags = withoutStyles.replace(/<[^>]+>/g, ' ');
+    const withoutScripts = html.replace(REGEX_PATTERNS.scriptTags, '');
+    const withoutStyles = withoutScripts.replace(REGEX_PATTERNS.styleTags, '');
+    const withoutTags = withoutStyles.replace(REGEX_PATTERNS.htmlTags, ' ');
     const entitiesDecoded = withoutTags
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;|&apos;/g, "'");
-    return entitiesDecoded.replace(/\s+/g, ' ').trim();
+      .replace(REGEX_PATTERNS.nbspEntity, ' ')
+      .replace(REGEX_PATTERNS.ampEntity, '&')
+      .replace(REGEX_PATTERNS.ltEntity, '<')
+      .replace(REGEX_PATTERNS.gtEntity, '>')
+      .replace(REGEX_PATTERNS.quotEntity, '"')
+      .replace(REGEX_PATTERNS.aposEntity, "'");
+    return entitiesDecoded.replace(REGEX_PATTERNS.whitespace, ' ').trim();
   } catch {
     return html;
   }
@@ -533,8 +566,11 @@ async function extractTextFromEpub(filePath) {
             text = truncateText(text);
             break;
           }
-        } catch {
-          // Silently ignore corrupt entries in archive
+        } catch (error) {
+          // Expected: Skip corrupt entries in archive
+          logger.debug('Skipping corrupt archive entry', {
+            error: error.message,
+          });
         }
       }
     }
@@ -552,12 +588,12 @@ async function extractTextFromEml(filePath) {
   await checkFileSize(filePath, filePath);
 
   const raw = await fs.readFile(filePath, 'utf8');
-  const parts = raw.split(/\r?\n\r?\n/);
+  const parts = raw.split(REGEX_PATTERNS.doubleNewline);
   const headers = parts[0] || '';
   const body = parts.slice(1).join('\n\n');
-  const subject = (headers.match(/^Subject:\s*(.*)$/im) || [])[1] || '';
-  const from = (headers.match(/^From:\s*(.*)$/im) || [])[1] || '';
-  const to = (headers.match(/^To:\s*(.*)$/im) || [])[1] || '';
+  const subject = (headers.match(REGEX_PATTERNS.subjectHeader) || [])[1] || '';
+  const from = (headers.match(REGEX_PATTERNS.fromHeader) || [])[1] || '';
+  const to = (headers.match(REGEX_PATTERNS.toHeader) || [])[1] || '';
 
   // Fixed: Truncate result to prevent memory issues
   return truncateText([subject, from, to, body].filter(Boolean).join('\n'));

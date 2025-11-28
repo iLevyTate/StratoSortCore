@@ -2,7 +2,12 @@ const { logger } = require('../../shared/logger');
 logger.setContext('AutoOrganizeService');
 const path = require('path');
 const fs = require('fs').promises;
+const crypto = require('crypto');
 const { app } = require('electron');
+
+// Helper to generate secure random IDs
+const generateSecureId = (prefix) =>
+  `${prefix}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
 
 // LOW PRIORITY FIX (LOW-8): Make batch size configurable via constant
 const DEFAULT_BATCH_SIZE = 10; // Default number of files to process per batch
@@ -491,7 +496,7 @@ class AutoOrganizeService {
           fileName: file.name,
           filePath: file.path,
           fileSize: file.size,
-          batchId: `organize-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          batchId: generateSecureId('organize'),
           timestamp: new Date().toISOString(),
           error: error.message,
           errorStack: error.stack,
@@ -824,7 +829,7 @@ class AutoOrganizeService {
               const errorDetails = {
                 filePath: file.path,
                 fileName: file.name || path.basename(file.path),
-                batchId: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                batchId: generateSecureId('batch'),
                 timestamp: new Date().toISOString(),
                 error: fileError.message,
                 errorStack: fileError.stack,
@@ -879,7 +884,7 @@ class AutoOrganizeService {
           folder: group.folder,
           folderPath: group.path,
           fileCount: group.files ? group.files.length : 0,
-          batchId: `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          batchId: generateSecureId('batch'),
           timestamp: new Date().toISOString(),
           error: groupError.message,
           errorStack: groupError.stack,

@@ -164,11 +164,19 @@ class ChromaDBService {
       clearInterval(this.healthCheckInterval);
     }
 
-    // Initial check
-    this.checkHealth().catch(() => {});
+    // Initial check with debug logging for failures
+    this.checkHealth().catch((err) => {
+      logger.debug('[ChromaDB] Initial health check failed', {
+        error: err.message,
+      });
+    });
 
     this.healthCheckInterval = setInterval(() => {
-      this.checkHealth().catch(() => {});
+      this.checkHealth().catch((err) => {
+        logger.debug('[ChromaDB] Periodic health check failed', {
+          error: err.message,
+        });
+      });
     }, this.HEALTH_CHECK_INTERVAL_MS);
 
     // Unref to allow process to exit
@@ -434,7 +442,8 @@ class ChromaDBService {
         // This ordering ensures no window where both are false
         this.initialized = true;
         this.isOnline = true; // Assume online after successful init
-        this.startHealthCheck(); // Start monitoring
+        // Note: Health monitoring is handled by StartupManager at 120s intervals
+        // to avoid duplicate health checks (was causing 5x more checks than needed)
 
         // Memory barrier - ensure initialized is set before clearing lock
         process.nextTick(() => {
@@ -1391,23 +1400,31 @@ class ChromaDBService {
         nResults: topK,
       });
 
-      if (!results.ids || results.ids[0].length === 0) {
+      if (!results.ids || !results.ids[0] || results.ids[0].length === 0) {
         return [];
       }
 
+      // Validate result arrays exist and have matching lengths
+      const ids = results.ids[0];
+      const distances = results.distances?.[0] || [];
+      const metadatas = results.metadatas?.[0] || [];
+      const documents = results.documents?.[0] || [];
+
       const matches = [];
-      for (let i = 0; i < results.ids[0].length; i++) {
-        const distance = results.distances[0][i];
-        const metadata = results.metadatas[0][i];
+      for (let i = 0; i < ids.length; i++) {
+        // Bounds checking: only access if index is valid for each array
+        const distance = i < distances.length ? distances[i] : 1;
+        const metadata = i < metadatas.length ? metadatas[i] : {};
+        const document = i < documents.length ? documents[i] : '';
 
         // Convert distance to similarity score
         const score = Math.max(0, 1 - distance / 2);
 
         matches.push({
-          id: results.ids[0][i],
+          id: ids[i],
           score,
           metadata,
-          document: results.documents[0][i],
+          document,
         });
       }
 
@@ -1429,13 +1446,20 @@ class ChromaDBService {
       const result = await this.folderCollection.get({});
 
       const folders = [];
-      if (result.ids) {
+      if (result.ids && result.ids.length > 0) {
+        // Extract arrays with fallback to empty arrays for bounds safety
+        const metadatas = result.metadatas || [];
+        const embeddings = result.embeddings || [];
+
         for (let i = 0; i < result.ids.length; i++) {
+          const metadata = i < metadatas.length ? metadatas[i] : {};
+          const vector = i < embeddings.length ? embeddings[i] : null;
+
           folders.push({
             id: result.ids[i],
-            name: result.metadatas[i]?.name || result.ids[i],
-            vector: result.embeddings[i],
-            metadata: result.metadatas[i],
+            name: metadata?.name || result.ids[i],
+            vector,
+            metadata,
           });
         }
       }

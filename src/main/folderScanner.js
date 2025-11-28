@@ -48,7 +48,7 @@ async function scanDirectory(
           path: itemPath,
           type: dirent.isDirectory() ? 'folder' : 'file',
           size: stats.size,
-          modified: stats.mtime,
+          modified: stats.mtime ? stats.mtime.toISOString() : null,
         };
 
         if (dirent.isDirectory()) {

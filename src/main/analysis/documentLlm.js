@@ -54,8 +54,11 @@ function getCacheKey(textContent, model, smartFolders) {
           .join(',')
       : '';
     hasher.update(foldersKey);
-  } catch {
-    // Silently ignore errors in key generation
+  } catch (error) {
+    // Expected: Continue with partial key if folder data is malformed
+    logger.debug('Error generating cache key from folder data', {
+      error: error.message,
+    });
   }
   return hasher.digest('hex');
 }
@@ -221,7 +224,7 @@ ${truncated}`;
         try {
           t.unref();
         } catch {
-          // Silently ignore errors if timer is already cleared
+          // Expected: unref() may fail on non-Node timers or if already cleared
         }
       }),
     ]);

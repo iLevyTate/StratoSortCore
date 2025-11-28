@@ -99,8 +99,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       if (entry?.organization?.smartFolder)
         return entry.organization.smartFolder;
       if (entry?.analysis?.category) return entry.analysis.category;
-    } catch {
-      // Silently ignore errors in label generation
+    } catch (error) {
+      logger.debug('Error generating category label', { error: error.message });
     }
     return 'Uncategorized';
   };

@@ -6,7 +6,8 @@ import {
   PHASE_METADATA,
 } from '../../shared/constants';
 import { logger } from '../../shared/logger';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { setPhase, toggleSettings } from '../store/slices/uiSlice';
 import UpdateIndicator from './UpdateIndicator';
 
 // Set logger context for this component
@@ -107,7 +108,13 @@ SettingsIcon.propTypes = {
 };
 
 function NavigationBar() {
-  const { currentPhase, actions } = usePhase();
+  const dispatch = useAppDispatch();
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
+  const actions = {
+    advancePhase: (phase) => dispatch(setPhase(phase)),
+    toggleSettings: () => dispatch(toggleSettings()),
+  };
+
   const [isScrolled, setIsScrolled] = useState(false);
   const [hoveredTab, setHoveredTab] = useState(null);
 

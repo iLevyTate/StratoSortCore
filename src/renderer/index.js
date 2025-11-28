@@ -1,9 +1,19 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { Provider } from 'react-redux';
 import { logger } from '../shared/logger';
+import store from './store';
+import { fetchDocumentsPath } from './store/slices/systemSlice';
+import { fetchSmartFolders } from './store/slices/filesSlice';
+import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
 import './tailwind.css';
+
+// Fetch commonly-used data early so it's cached before components need it
+store.dispatch(fetchDocumentsPath());
+store.dispatch(fetchSmartFolders());
+store.dispatch(fetchSettings());
 
 // Set logger context for renderer entry point
 logger.setContext('Renderer');
@@ -33,13 +43,8 @@ if (typeof window !== 'undefined') {
 
   document.addEventListener('click', clickHandler);
 
-  // Add cleanup on page unload to prevent dangling references
-  window.addEventListener('beforeunload', () => {
-    document.removeEventListener('click', clickHandler);
-  });
-
   // Handle visibility changes to clean up references during minimize/restore
-  document.addEventListener('visibilitychange', () => {
+  const visibilityHandler = () => {
     if (document.hidden) {
       // Clear any pending animations or timers when window is hidden
       if (typeof cancelAnimationFrame !== 'undefined') {
@@ -50,6 +55,13 @@ if (typeof window !== 'undefined') {
         }
       }
     }
+  };
+  document.addEventListener('visibilitychange', visibilityHandler);
+
+  // Add cleanup on page unload to prevent dangling references
+  window.addEventListener('beforeunload', () => {
+    document.removeEventListener('click', clickHandler);
+    document.removeEventListener('visibilitychange', visibilityHandler);
   });
 }
 
@@ -81,7 +93,9 @@ function initializeApp() {
     root.render(
       <React.StrictMode>
         <GlobalErrorBoundary>
-          <App />
+          <Provider store={store}>
+            <App />
+          </Provider>
         </GlobalErrorBoundary>
       </React.StrictMode>,
     );
@@ -103,19 +117,48 @@ function initializeApp() {
     });
 
     // Show error message in the initial loading screen
+    // Security: Use textContent for error message to prevent XSS
     const initialLoading = document.getElementById('initial-loading');
     if (initialLoading) {
-      initialLoading.innerHTML = `
-        <section style="text-align: center; max-width: 400px; color: #EF4444;">
-          <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
-          <h1 style="color: #EF4444; margin: 0; font-size: 24px; font-weight: 600;">Failed to Load</h1>
-          <p style="color: #64748B; margin: 8px 0 0 0; font-size: 14px;">React application failed to initialize</p>
-          <details style="margin-top: 16px; text-align: left;">
-            <summary style="cursor: pointer; color: #64748B;">Error Details</summary>
-            <pre style="background: #F1F5F9; padding: 8px; border-radius: 4px; margin-top: 8px; font-size: 12px; overflow: auto;">${error.message}</pre>
-          </details>
-        </section>
-      `;
+      const section = document.createElement('section');
+      section.style.cssText =
+        'text-align: center; max-width: 400px; color: #EF4444;';
+
+      const icon = document.createElement('div');
+      icon.style.cssText = 'font-size: 48px; margin-bottom: 16px;';
+      icon.textContent = '⚠️';
+
+      const heading = document.createElement('h1');
+      heading.style.cssText =
+        'color: #EF4444; margin: 0; font-size: 24px; font-weight: 600;';
+      heading.textContent = 'Failed to Load';
+
+      const description = document.createElement('p');
+      description.style.cssText =
+        'color: #64748B; margin: 8px 0 0 0; font-size: 14px;';
+      description.textContent = 'React application failed to initialize';
+
+      const details = document.createElement('details');
+      details.style.cssText = 'margin-top: 16px; text-align: left;';
+
+      const summary = document.createElement('summary');
+      summary.style.cssText = 'cursor: pointer; color: #64748B;';
+      summary.textContent = 'Error Details';
+
+      const pre = document.createElement('pre');
+      pre.style.cssText =
+        'background: #F1F5F9; padding: 8px; border-radius: 4px; margin-top: 8px; font-size: 12px; overflow: auto;';
+      pre.textContent = error.message; // Safe: textContent escapes HTML
+
+      details.appendChild(summary);
+      details.appendChild(pre);
+      section.appendChild(icon);
+      section.appendChild(heading);
+      section.appendChild(description);
+      section.appendChild(details);
+
+      initialLoading.innerHTML = '';
+      initialLoading.appendChild(section);
     }
   }
 }

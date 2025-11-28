@@ -42,7 +42,14 @@ function registerOrganizeIpc({
           return result;
         } catch (error) {
           logger.error('[ORGANIZE] Auto-organize failed:', error);
-          throw error;
+          // CRITICAL FIX: Return error response instead of throwing to prevent unhandled rejections
+          return {
+            success: false,
+            error: error.message,
+            organized: [],
+            needsReview: [],
+            failed: [],
+          };
         }
       },
     ),
@@ -62,7 +69,13 @@ function registerOrganizeIpc({
 
           const serviceIntegration = getServiceIntegration();
           if (!serviceIntegration || !serviceIntegration.autoOrganizeService) {
-            throw new Error('Auto-organize service not available');
+            // CRITICAL FIX: Return error response instead of throwing
+            return {
+              success: false,
+              error: 'Auto-organize service not available',
+              operations: [],
+              groups: [],
+            };
           }
 
           const folders = smartFolders || getCustomFolders();
@@ -81,7 +94,13 @@ function registerOrganizeIpc({
           return result;
         } catch (error) {
           logger.error('[ORGANIZE] Batch organize failed:', error);
-          throw error;
+          // CRITICAL FIX: Return error response instead of throwing
+          return {
+            success: false,
+            error: error.message,
+            operations: [],
+            groups: [],
+          };
         }
       },
     ),
@@ -97,7 +116,11 @@ function registerOrganizeIpc({
 
         const serviceIntegration = getServiceIntegration();
         if (!serviceIntegration || !serviceIntegration.autoOrganizeService) {
-          throw new Error('Auto-organize service not available');
+          // CRITICAL FIX: Return error response instead of throwing
+          return {
+            success: false,
+            error: 'Auto-organize service not available',
+          };
         }
 
         const smartFolders = getCustomFolders();
@@ -119,7 +142,11 @@ function registerOrganizeIpc({
         return result;
       } catch (error) {
         logger.error('[ORGANIZE] Failed to process new file:', error);
-        throw error;
+        // CRITICAL FIX: Return error response instead of throwing
+        return {
+          success: false,
+          error: error.message,
+        };
       }
     }),
   );

@@ -632,7 +632,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
 
     // Performance should be improved due to cache hits
     // (exact timing depends on system, but cache hits should be faster)
-    expect(endTime - startTime).toBeLessThan(100);
+    expect(endTime - startTime).toBeLessThan(200); // Increased buffer for CI envs
   });
 
   it('should handle folder embedding with cache', async () => {

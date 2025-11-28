@@ -173,13 +173,12 @@ describe('ProgressTracker', () => {
       expect(() => trackerNoWeb.update(25)).not.toThrow();
     });
 
-    test('updates lastUpdate timestamp', () => {
+    test('updates lastUpdate timestamp', async () => {
       const before = tracker.lastUpdate;
       // Wait a tiny bit to ensure timestamp changes
-      setTimeout(() => {
-        tracker.update(25);
-        expect(tracker.lastUpdate).toBeGreaterThan(before);
-      }, 10);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      tracker.update(25);
+      expect(tracker.lastUpdate).toBeGreaterThan(before);
     });
 
     test('includes elapsed time', () => {

@@ -252,19 +252,6 @@ class AtomicFileOperations {
     );
   }
 
-  // Note: Following code continues with the original atomicCopy implementation
-  async atomicCopy_legacy(source, destination) {
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-
-    if (await this.fileExists(destination)) {
-      const uniqueDestination = await this.generateUniqueFilename(destination);
-      destination = uniqueDestination;
-    }
-
-    await fs.copyFile(source, destination);
-    return destination;
-  }
-
   /**
    * Atomic create operation
    */

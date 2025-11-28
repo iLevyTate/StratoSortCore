@@ -75,11 +75,10 @@ describe('documentExtractors', () => {
     test('should throw error for file exceeding size limit', async () => {
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 200 * 1024 * 1024 }); // 200MB
 
-      // IMPROVED BEHAVIOR: FileProcessingError provides detailed error messages
-      // with specific file size information instead of generic error codes
+      // FileProcessingError with FILE_TOO_LARGE code produces a structured error message
       await expect(
         extractTextFromPdf(mockFilePath, mockFileName),
-      ).rejects.toThrow('Unknown analysis error');
+      ).rejects.toThrow('File size exceeds processing limits');
     });
 
     test('should truncate very long text', async () => {
@@ -169,11 +168,9 @@ describe('documentExtractors', () => {
     test('should check file size before reading', async () => {
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 150 * 1024 * 1024 });
 
-      // IMPROVED BEHAVIOR: File size validation now happens before processing
-      // to prevent memory issues. Error code FILE_TOO_LARGE is thrown but needs
-      // to be added to AnalysisError message mapping (currently returns 'Unknown analysis error')
+      // FileProcessingError with FILE_TOO_LARGE code produces a structured error message
       await expect(extractTextFromDocx(mockFilePath)).rejects.toThrow(
-        'Unknown analysis error',
+        'File size exceeds processing limits',
       );
     });
   });

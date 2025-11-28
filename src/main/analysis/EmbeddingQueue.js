@@ -2,7 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
-const { getInstance: getChromaDB } = require('../services/ChromaDBService');
+const ChromaDBService = require('../services/ChromaDBService');
 
 logger.setContext('EmbeddingQueue');
 
@@ -18,6 +18,11 @@ class EmbeddingQueue {
     this.flushTimer = null;
     this.isFlushing = false;
     this.initialized = false;
+    // FIX: Add max queue size to prevent unbounded memory growth
+    this.MAX_QUEUE_SIZE = 10000;
+    // FIX: Add max retry count to prevent infinite retry loops
+    this.MAX_RETRY_COUNT = 10;
+    this.retryCount = 0;
   }
 
   /**
@@ -81,6 +86,14 @@ class EmbeddingQueue {
     // Ensure initialized
     if (!this.initialized) {
       await this.initialize();
+    }
+
+    // FIX: Enforce max queue size to prevent unbounded memory growth
+    if (this.queue.length >= this.MAX_QUEUE_SIZE) {
+      logger.warn(
+        `[EmbeddingQueue] Queue size limit reached (${this.MAX_QUEUE_SIZE}), dropping oldest item`,
+      );
+      this.queue.shift(); // Remove oldest item
     }
 
     this.queue.push(item);
@@ -166,38 +179,96 @@ class EmbeddingQueue {
     try {
       logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
 
-      const chromaDbService = getChromaDB();
+      const chromaDbService = ChromaDBService.getInstance();
       await chromaDbService.initialize();
 
       if (!chromaDbService.isOnline) {
-        logger.warn('[EmbeddingQueue] Database offline, requeuing items');
+        // FIX: Implement exponential backoff and max retry count to prevent infinite loops
+        this.retryCount++;
+
+        if (this.retryCount >= this.MAX_RETRY_COUNT) {
+          logger.error(
+            `[EmbeddingQueue] Database offline after ${this.MAX_RETRY_COUNT} retries, dropping batch of ${batch.length} items`,
+          );
+          // Don't requeue - items are lost but we prevent infinite loop
+          // They may still be on disk from persistence
+          this.retryCount = 0;
+          return;
+        }
+
+        logger.warn(
+          `[EmbeddingQueue] Database offline, requeuing items (retry ${this.retryCount}/${this.MAX_RETRY_COUNT})`,
+        );
         // Put items back at the front
         this.queue.unshift(...batch);
         // Don't persist yet, keep old file (which contains the batch)
 
-        // Retry later
-        setTimeout(() => this.scheduleFlush(), 5000);
+        // FIX: Exponential backoff: 5s, 10s, 20s, 40s, etc. up to 5 minutes max
+        const backoffDelay = Math.min(
+          5000 * Math.pow(2, this.retryCount - 1),
+          300000,
+        );
+        logger.info(`[EmbeddingQueue] Retry in ${backoffDelay / 1000}s`);
+        setTimeout(() => this.scheduleFlush(), backoffDelay);
         return;
       }
+
+      // Reset retry count on successful online status
+      this.retryCount = 0;
 
       const fileItems = batch.filter((i) => !i.id.startsWith('folder:'));
       const folderItems = batch.filter((i) => i.id.startsWith('folder:'));
 
       if (fileItems.length > 0) {
-        await chromaDbService.batchUpsertFiles(fileItems);
+        // batchUpsertFiles will be implemented in ChromaDBService
+        if (typeof chromaDbService.batchUpsertFiles === 'function') {
+          await chromaDbService.batchUpsertFiles(fileItems);
+        } else {
+          // Fallback if batch method not yet available - use upsertFile
+          logger.warn(
+            '[EmbeddingQueue] batchUpsertFiles not implemented, processing sequentially',
+          );
+          for (const item of fileItems) {
+            await chromaDbService.upsertFile({
+              id: item.id,
+              vector: item.vector,
+              meta: item.meta,
+              model: item.model,
+              updatedAt: item.updatedAt,
+            });
+          }
+        }
       }
 
       if (folderItems.length > 0) {
-        // Adapt to batchUpsertFolders structure
-        const formattedFolders = folderItems.map((item) => ({
-          id: item.id,
-          vector: item.vector,
-          name: item.meta?.name || item.id,
-          path: item.meta?.path,
-          model: item.model,
-          updatedAt: item.updatedAt,
-        }));
-        await chromaDbService.batchUpsertFolders(formattedFolders);
+        // batchUpsertFolders will be implemented in ChromaDBService
+        if (typeof chromaDbService.batchUpsertFolders === 'function') {
+          // Adapt to batchUpsertFolders structure
+          const formattedFolders = folderItems.map((item) => ({
+            id: item.id,
+            vector: item.vector,
+            name: item.meta?.name || item.id,
+            path: item.meta?.path,
+            model: item.model,
+            updatedAt: item.updatedAt,
+          }));
+          await chromaDbService.batchUpsertFolders(formattedFolders);
+        } else {
+          // Fallback - use upsertFolder instead of non-existent addFolderEmbedding
+          logger.warn(
+            '[EmbeddingQueue] batchUpsertFolders not implemented, processing sequentially',
+          );
+          for (const item of folderItems) {
+            await chromaDbService.upsertFolder({
+              id: item.id,
+              vector: item.vector,
+              name: item.meta?.name || item.id,
+              path: item.meta?.path,
+              model: item.model,
+              updatedAt: item.updatedAt,
+            });
+          }
+        }
       }
 
       logger.info('[EmbeddingQueue] Successfully flushed batch', {
@@ -214,9 +285,6 @@ class EmbeddingQueue {
       this.queue.unshift(...batch);
 
       // We don't persist here because disk likely still has them (we didn't persist "empty").
-      // If we did persist intermediate state (empty), we'd need to re-persist here.
-      // Since we didn't call persistQueue() after clearing this.queue, disk is stale (contains batch).
-      // Which is what we want if we failed.
     } finally {
       this.isFlushing = false;
     }

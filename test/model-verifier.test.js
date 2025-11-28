@@ -3,10 +3,14 @@ jest.mock('../src/main/services/PerformanceService', () => ({
 }));
 
 let mockOllamaInstance;
-jest.mock('ollama', () => ({
-  Ollama: jest.fn(),
+
+// Mock ollamaUtils to return our mock instance
+jest.mock('../src/main/ollamaUtils', () => ({
+  getOllama: jest.fn(),
+  getOllamaHost: jest.fn(() => 'http://127.0.0.1:11434'),
 }));
-const { Ollama } = require('ollama');
+
+const { getOllama } = require('../src/main/ollamaUtils');
 const ModelVerifier = require('../src/main/services/ModelVerifier');
 const { DEFAULT_AI_MODELS } = require('../src/shared/constants');
 
@@ -17,7 +21,7 @@ describe('ModelVerifier', () => {
       generate: jest.fn(),
       embeddings: jest.fn(),
     };
-    Ollama.mockImplementation(() => mockOllamaInstance);
+    getOllama.mockReturnValue(mockOllamaInstance);
   });
 
   test('verifyEssentialModels reports missing models', async () => {

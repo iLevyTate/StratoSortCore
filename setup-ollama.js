@@ -65,20 +65,6 @@ async function run(cmd, args = [], opts = {}) {
   return res.status === 0;
 }
 
-// eslint-disable-next-line no-unused-vars
-async function check(cmd, args = [], opts = {}) {
-  const res = await asyncSpawn(cmd, args, {
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-    ...opts,
-  });
-  return {
-    ok: res.status === 0,
-    stdout: (res.stdout || '').toString().trim(),
-    stderr: (res.stderr || '').toString().trim(),
-  };
-}
-
 // Async check with timeout to prevent hanging
 async function checkAsync(cmd, args = [], timeoutMs = 5000) {
   return new Promise((resolve) => {

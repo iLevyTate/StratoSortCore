@@ -128,6 +128,7 @@ describe('AutoOrganizeService - Batch Processing', () => {
       expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledWith(
         files,
         smartFolders,
+        { includeAlternatives: false, includeStructureAnalysis: false },
       );
 
       // Individual suggestions may be called for unprocessed files
@@ -336,6 +337,7 @@ describe('AutoOrganizeService - Batch Processing', () => {
       expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledWith(
         [files[0], files[2]], // Only files with analysis
         smartFolders,
+        { includeAlternatives: false, includeStructureAnalysis: false },
       );
 
       // All files should be organized (may include fallback suggestions)

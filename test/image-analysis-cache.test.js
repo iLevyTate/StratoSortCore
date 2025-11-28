@@ -28,11 +28,15 @@ describe('per-file analysis cache (image)', () => {
       }),
     }));
 
+    const mockClient = { generate: generateMock };
     jest.doMock(
       '../src/main/ollamaUtils',
       () => ({
-        getOllamaClient: async () => ({ generate: generateMock }),
+        getOllama: () => mockClient,
+        getOllamaClient: async () => mockClient,
         getOllamaVisionModel: () => 'mock-vision',
+        getOllamaEmbeddingModel: () => 'mock-embed',
+        getOllamaHost: () => 'http://127.0.0.1:11434',
         loadOllamaConfig: async () => ({ selectedVisionModel: 'mock-vision' }),
       }),
       { virtual: false },

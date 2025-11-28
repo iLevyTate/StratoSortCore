@@ -23,11 +23,15 @@ const MAX_BATCH_SIZE = 1000; // Maximum operations per batch
 const MAX_TOTAL_BATCH_TIME = 600000; // 10 minutes max for entire batch
 
 // Helper function to compute file checksum for verification
+// Uses streaming to handle large files without loading entire file into memory
 async function computeFileChecksum(filePath) {
-  const hash = crypto.createHash('sha256');
-  const fileBuffer = await fs.readFile(filePath);
-  hash.update(fileBuffer);
-  return hash.digest('hex');
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = require('fs').createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
 }
 
 /**
@@ -559,8 +563,44 @@ async function handleBatchOrganize({
       // Rollback in reverse order (LIFO - Last In First Out)
       for (const completedOp of [...completedOperations].reverse()) {
         try {
-          // Move file back to original source location
-          await fs.rename(completedOp.destination, completedOp.source);
+          // FIX: Handle cross-device rollback - use copy+delete like the forward operation
+          try {
+            // Try atomic rename first
+            await fs.rename(completedOp.destination, completedOp.source);
+          } catch (renameError) {
+            if (renameError.code === 'EXDEV') {
+              // Cross-device rollback: copy back and delete
+              logger.info(
+                `[FILE-OPS] Cross-device rollback detected, using copy+delete for: ${completedOp.destination}`,
+              );
+
+              // Ensure source directory exists
+              const sourceDir = path.dirname(completedOp.source);
+              await fs.mkdir(sourceDir, { recursive: true });
+
+              // Copy back to original location
+              await fs.copyFile(completedOp.destination, completedOp.source);
+
+              // Verify copy succeeded
+              const [srcStats, destStats] = await Promise.all([
+                fs.stat(completedOp.source),
+                fs.stat(completedOp.destination),
+              ]);
+
+              if (srcStats.size !== destStats.size) {
+                // Remove incomplete copy
+                await fs.unlink(completedOp.source).catch(() => {});
+                throw new Error(
+                  'Rollback copy verification failed - size mismatch',
+                );
+              }
+
+              // Delete from destination
+              await fs.unlink(completedOp.destination);
+            } else {
+              throw renameError;
+            }
+          }
           rollbackSuccessCount++;
           rollbackResults.push({
             success: true,
@@ -927,8 +967,8 @@ function registerFilesIpc({
               size: stats.size,
               isDirectory: stats.isDirectory(),
               isFile: stats.isFile(),
-              modified: stats.mtime,
-              created: stats.birthtime,
+              modified: stats.mtime ? stats.mtime.toISOString() : null,
+              created: stats.birthtime ? stats.birthtime.toISOString() : null,
             };
           } catch (error) {
             logger.error('Failed to get file stats:', error);
@@ -942,8 +982,8 @@ function registerFilesIpc({
               size: stats.size,
               isDirectory: stats.isDirectory(),
               isFile: stats.isFile(),
-              modified: stats.mtime,
-              created: stats.birthtime,
+              modified: stats.mtime ? stats.mtime.toISOString() : null,
+              created: stats.birthtime ? stats.birthtime.toISOString() : null,
             };
           } catch (error) {
             logger.error('Failed to get file stats:', error);

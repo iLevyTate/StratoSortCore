@@ -50,28 +50,23 @@ module.exports = (env, argv) => {
     },
     resolve: {
       extensions: ['.js', '.jsx'],
-      fallback: isProduction
-        ? {
-            // In prod, drop most Node polyfills for smaller bundle
-            fs: false,
-            child_process: false,
-            worker_threads: false,
-          }
-        : {
-            path: require.resolve('path-browserify'),
-            os: require.resolve('os-browserify/browser'),
-            crypto: require.resolve('crypto-browserify'),
-            buffer: require.resolve('buffer'),
-            process: require.resolve('process/browser'),
-            stream: require.resolve('stream-browserify'),
-            util: require.resolve('util'),
-            url: require.resolve('url'),
-            querystring: require.resolve('querystring-es3'),
-            assert: require.resolve('assert'),
-            fs: false,
-            child_process: false,
-            worker_threads: false,
-          },
+      // FIX: Use consistent fallbacks for both dev and prod to avoid module resolution issues
+      // Redux Toolkit and other modern libraries require process polyfill
+      fallback: {
+        path: require.resolve('path-browserify'),
+        os: require.resolve('os-browserify/browser'),
+        crypto: require.resolve('crypto-browserify'),
+        buffer: require.resolve('buffer'),
+        process: require.resolve('process/browser'),
+        stream: require.resolve('stream-browserify'),
+        util: require.resolve('util'),
+        url: require.resolve('url'),
+        querystring: require.resolve('querystring-es3'),
+        assert: require.resolve('assert'),
+        fs: false,
+        child_process: false,
+        worker_threads: false,
+      },
     },
     externals: {
       electron: 'require("electron")',
@@ -89,8 +84,9 @@ module.exports = (env, argv) => {
         ),
         global: 'globalThis',
       }),
+      // FIX: Use resolved path for process polyfill to avoid module resolution issues
       new webpack.ProvidePlugin({
-        process: 'process/browser',
+        process: require.resolve('process/browser'),
         Buffer: ['buffer', 'Buffer'],
       }),
       // Always extract CSS to separate file for consistent loading
@@ -137,6 +133,8 @@ module.exports = (env, argv) => {
     // Optimization
     optimization: {
       minimize: isProduction,
+      // FIX: Disable module concatenation for Redux Toolkit to avoid ESM resolution issues
+      concatenateModules: !isProduction,
 
       moduleIds: 'deterministic',
       chunkIds: 'deterministic',

@@ -205,6 +205,10 @@ function registerSmartFoldersIpc({
             scored.push({ folder, score });
           }
           scored.sort((a, b) => b.score - a.score);
+          // Bounds check: ensure scored array is not empty
+          if (scored.length === 0) {
+            throw new Error('No folder scores computed');
+          }
           const best = scored[0];
           return {
             success: true,
@@ -224,10 +228,12 @@ function registerSmartFoldersIpc({
               options: { ...genPerf, temperature: 0.1, num_predict: 200 },
             });
             const parsed = JSON.parse(resp.response);
-            const idx = Math.max(
-              1,
-              Math.min(smartFolders.length, parseInt(parsed.index, 10)),
-            );
+            const parsedIdx = parseInt(parsed.index, 10);
+            // Validate parsed index is a valid number
+            if (isNaN(parsedIdx) || parsedIdx < 1) {
+              throw new Error('Invalid folder index from LLM response');
+            }
+            const idx = Math.max(1, Math.min(smartFolders.length, parsedIdx));
             return {
               success: true,
               folder: smartFolders[idx - 1],
@@ -881,5 +887,8 @@ function cosineSimilarity(a, b) {
     na += a[i] * a[i];
     nb += b[i] * b[i];
   }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  // Prevent division by zero for zero vectors
+  const denominator = Math.sqrt(na) * Math.sqrt(nb);
+  if (denominator === 0) return 0;
+  return dot / denominator;
 }

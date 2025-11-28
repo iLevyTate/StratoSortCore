@@ -108,6 +108,18 @@ function registerAnalysisIpc({
               );
             }
 
+            // FIX: Mark analysis complete on success (not just cleanup analyzing state)
+            try {
+              await serviceIntegration?.processingState?.markAnalysisComplete?.(
+                filePath,
+              );
+            } catch (completeError) {
+              logger.debug(
+                '[IPC-ANALYSIS] Failed to mark analysis complete:',
+                completeError.message,
+              );
+            }
+
             return result;
           } catch (error) {
             // ERROR CONTEXT FIX #11: Enhanced error logging with full context
@@ -353,6 +365,18 @@ function registerAnalysisIpc({
               logger.warn(
                 '[ANALYSIS-HISTORY] Failed to record image analysis:',
                 historyError.message,
+              );
+            }
+
+            // FIX: Mark analysis complete on success
+            try {
+              await serviceIntegration?.processingState?.markAnalysisComplete?.(
+                filePath,
+              );
+            } catch (completeError) {
+              logger.debug(
+                '[IPC-IMAGE-ANALYSIS] Failed to mark analysis complete:',
+                completeError.message,
               );
             }
 

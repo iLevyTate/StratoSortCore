@@ -1,0 +1,103 @@
+import { createSlice } from '@reduxjs/toolkit';
+
+const initialState = {
+  isAnalyzing: false,
+  currentAnalysisFile: '',
+  analysisProgress: {
+    current: 0,
+    total: 0,
+    lastActivity: 0,
+  },
+  results: [], // Analysis results
+  stats: null, // Historical stats
+};
+
+const analysisSlice = createSlice({
+  name: 'analysis',
+  initialState,
+  reducers: {
+    startAnalysis: (state, action) => {
+      state.isAnalyzing = true;
+      state.analysisProgress = {
+        current: 0,
+        total: action.payload?.total || 0,
+        lastActivity: Date.now(),
+      };
+      // Optionally clear previous results if new batch
+      if (action.payload?.clearPrevious) {
+        state.results = [];
+      }
+    },
+    updateProgress: (state, action) => {
+      state.analysisProgress = {
+        ...state.analysisProgress,
+        ...action.payload,
+        lastActivity: Date.now(),
+      };
+      if (action.payload.currentFile) {
+        state.currentAnalysisFile = action.payload.currentFile;
+      }
+    },
+    analysisSuccess: (state, action) => {
+      // payload: { file, analysis }
+      const { file, analysis } = action.payload;
+      // Update or add result
+      const index = state.results.findIndex((r) => r.path === file.path);
+      const result = {
+        ...file,
+        analysis,
+        status: 'analyzed',
+        analyzedAt: new Date().toISOString(),
+      };
+
+      if (index >= 0) {
+        state.results[index] = result;
+      } else {
+        state.results.push(result);
+      }
+    },
+    analysisFailure: (state, action) => {
+      const { file, error } = action.payload;
+      const index = state.results.findIndex((r) => r.path === file.path);
+      const result = {
+        ...file,
+        analysis: null,
+        error: error,
+        status: 'failed',
+        analyzedAt: new Date().toISOString(),
+      };
+
+      if (index >= 0) {
+        state.results[index] = result;
+      } else {
+        state.results.push(result);
+      }
+    },
+    stopAnalysis: (state) => {
+      state.isAnalyzing = false;
+      state.currentAnalysisFile = '';
+    },
+    setAnalysisResults: (state, action) => {
+      state.results = action.payload;
+    },
+    setAnalysisStats: (state, action) => {
+      state.stats = action.payload;
+    },
+    resetAnalysisState: () => {
+      return initialState;
+    },
+  },
+});
+
+export const {
+  startAnalysis,
+  updateProgress,
+  analysisSuccess,
+  analysisFailure,
+  stopAnalysis,
+  setAnalysisResults,
+  setAnalysisStats,
+  resetAnalysisState,
+} = analysisSlice.actions;
+
+export default analysisSlice.reducer;

@@ -327,54 +327,57 @@ describe('Ollama API Retry Logic', () => {
       expect(mockAxiosCall).toHaveBeenCalledTimes(2);
     }, 10000);
   });
-});
+  describe('Integration Tests', () => {
+    it('should handle complex retry scenario with multiple failures', async () => {
+      const mockApiCall = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Connection refused'))
+        .mockRejectedValueOnce(new Error('Request timeout'))
+        .mockRejectedValueOnce({ status: 503, message: 'Service unavailable' })
+        .mockResolvedValueOnce({ success: true });
 
-describe('Integration Tests', () => {
-  it('should handle complex retry scenario with multiple failures', async () => {
-    const mockApiCall = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('Connection refused'))
-      .mockRejectedValueOnce(new Error('Request timeout'))
-      .mockRejectedValueOnce({ status: 503, message: 'Service unavailable' })
-      .mockResolvedValueOnce({ success: true });
+      const promise = withOllamaRetry(mockApiCall, {
+        operation: 'Complex test',
+        maxRetries: 3,
+        initialDelay: 500,
+        maxDelay: 4000,
+      });
 
-    const promise = withOllamaRetry(mockApiCall, {
-      operation: 'Complex test',
-      maxRetries: 3,
-      initialDelay: 500,
-      maxDelay: 4000,
+      // Advance through all retry delays
+      await jest.runAllTimersAsync();
+
+      const result = await promise;
+
+      expect(result).toEqual({ success: true });
+      expect(mockApiCall).toHaveBeenCalledTimes(4);
     });
 
-    // Advance through all retry delays
-    await jest.runAllTimersAsync();
+    it('should respect maxDelay cap', async () => {
+      const delays = [];
+      const mockApiCall = jest.fn().mockImplementation(() => {
+        delays.push(Date.now());
+        return Promise.reject(new Error('Network error'));
+      });
 
-    const result = await promise;
+      const promise = withOllamaRetry(mockApiCall, {
+        operation: 'Delay cap test',
+        maxRetries: 5,
+        initialDelay: 1000,
+        maxDelay: 3000,
+      });
 
-    expect(result).toEqual({ success: true });
-    expect(mockApiCall).toHaveBeenCalledTimes(4);
+      // Create assertion promise BEFORE advancing timers to avoid unhandled rejection
+      // eslint-disable-next-line jest/valid-expect
+      const assertionPromise = expect(promise).rejects.toThrow('Network error');
+
+      // Advance through all retries
+      await jest.runAllTimersAsync();
+
+      await assertionPromise;
+
+      // Verify delays don't exceed maxDelay
+      // Initial call is immediate, then 1000, 2000, 3000 (capped), 3000, 3000
+      expect(mockApiCall).toHaveBeenCalledTimes(6);
+    }, 15000);
   });
-
-  it('should respect maxDelay cap', async () => {
-    const delays = [];
-    const mockApiCall = jest.fn().mockImplementation(() => {
-      delays.push(Date.now());
-      return Promise.reject(new Error('Network error'));
-    });
-
-    const promise = withOllamaRetry(mockApiCall, {
-      operation: 'Delay cap test',
-      maxRetries: 5,
-      initialDelay: 1000,
-      maxDelay: 3000,
-    });
-
-    // Advance through all retries
-    await jest.runAllTimersAsync();
-
-    await expect(promise).rejects.toThrow('Network error');
-
-    // Verify delays don't exceed maxDelay
-    // Initial call is immediate, then 1000, 2000, 3000 (capped), 3000, 3000
-    expect(mockApiCall).toHaveBeenCalledTimes(6);
-  }, 15000);
 });

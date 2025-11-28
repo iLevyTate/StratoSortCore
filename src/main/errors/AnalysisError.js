@@ -28,7 +28,7 @@ class AnalysisError extends Error {
       MODEL_VERIFICATION_FAILED: 'Failed to verify AI model availability',
       DEPENDENCY_MISSING: `Required dependency missing: ${this.metadata.dependency}`,
       FILE_TYPE_UNSUPPORTED: `Unsupported file type: ${this.metadata.fileType}`,
-      FILE_SIZE_EXCEEDED: 'File size exceeds processing limits',
+      FILE_TOO_LARGE: 'File size exceeds processing limits',
     };
 
     return messages[this.code] || 'Unknown analysis error';
@@ -53,7 +53,7 @@ class AnalysisError extends Error {
         'AI model verification failed. Please check your Ollama installation.',
       DEPENDENCY_MISSING: `System component missing: ${this.metadata.dependency}. Please reinstall the application.`,
       FILE_TYPE_UNSUPPORTED: `File type "${this.metadata.fileType}" is not supported for AI analysis.`,
-      FILE_SIZE_EXCEEDED:
+      FILE_TOO_LARGE:
         'File is too large for processing. Please use a smaller file.',
     };
 
@@ -80,6 +80,10 @@ class AnalysisError extends Error {
       FILE_TYPE_UNSUPPORTED: [
         'Convert file to supported format',
         'Check supported file types in documentation',
+      ],
+      FILE_TOO_LARGE: [
+        'Use smaller files',
+        'Increase file size limit in settings',
       ],
     };
 

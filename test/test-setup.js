@@ -75,44 +75,6 @@ beforeEach(() => {
   vol.mkdirSync(MOCK_TMP_DIR, { recursive: true });
 });
 
-// Test file system simulation
-// DEPRECATED: global.testFileSystem is no longer used. Use require('fs') instead.
-global.testFileSystem = {
-  files: new Map(),
-  directories: new Set(),
-
-  writeFile: jest.fn((path, content) => {
-    global.testFileSystem.files.set(path, content);
-    return Promise.resolve();
-  }),
-
-  readFile: jest.fn((path) => {
-    const content = global.testFileSystem.files.get(path);
-    if (content === undefined) {
-      return Promise.reject(new Error(`File not found: ${path}`));
-    }
-    return Promise.resolve(content);
-  }),
-
-  mkdir: jest.fn((path) => {
-    global.testFileSystem.directories.add(path);
-    return Promise.resolve();
-  }),
-
-  exists: jest.fn((path) => {
-    return (
-      global.testFileSystem.files.has(path) ||
-      global.testFileSystem.directories.has(path)
-    );
-  }),
-
-  clear: () => {
-    vol.reset();
-    global.testFileSystem.files.clear();
-    global.testFileSystem.directories.clear();
-  },
-};
-
 // Mock performance monitoring
 global.performance = {
   mark: jest.fn(),
@@ -239,7 +201,6 @@ beforeEach(() => {
   global.processingQueue = [];
   global.stateListeners = [];
   global.progressListeners = [];
-  // global.testFileSystem.clear(); // This is now handled by vol.reset()
 
   // Reset mock services to default behavior
   mockOllamaService.analyze.mockResolvedValue({

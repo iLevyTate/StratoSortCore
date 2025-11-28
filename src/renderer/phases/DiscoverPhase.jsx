@@ -3,12 +3,27 @@ import React, {
   useRef,
   useState,
   useCallback,
+  useMemo,
   Suspense,
   lazy,
 } from 'react';
 import { PHASES, RENDERER_LIMITS } from '../../shared/constants';
 import { logger } from '../../shared/logger';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import {
+  setSelectedFiles as setSelectedFilesAction,
+  updateFileState as updateFileStateAction,
+  setFileStates as setFileStatesAction,
+  setNamingConvention as setNamingConventionAction,
+} from '../store/slices/filesSlice';
+import {
+  startAnalysis as startAnalysisAction,
+  updateProgress as updateProgressAction,
+  stopAnalysis as stopAnalysisAction,
+  setAnalysisResults as setAnalysisResultsAction,
+  resetAnalysisState as resetAnalysisStateAction,
+} from '../store/slices/analysisSlice';
+import { setPhase } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog, useDragAndDrop } from '../hooks';
 import { Button } from '../components/ui';
@@ -28,27 +43,138 @@ import {
 logger.setContext('DiscoverPhase');
 
 function DiscoverPhase() {
-  const { actions, phaseData } = usePhase();
+  const dispatch = useAppDispatch();
+  const selectedFiles = useAppSelector((state) => state.files.selectedFiles);
+  const analysisResults = useAppSelector((state) => state.analysis.results);
+  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
+  const analysisProgress = useAppSelector(
+    (state) => state.analysis.analysisProgress,
+  );
+  const currentAnalysisFile = useAppSelector(
+    (state) => state.analysis.currentAnalysisFile,
+  );
+  const fileStates = useAppSelector((state) => state.files.fileStates);
+
+  const namingConventionState = useAppSelector(
+    (state) => state.files.namingConvention,
+  );
+  const namingConvention = namingConventionState.convention;
+  const dateFormat = namingConventionState.dateFormat;
+  const caseConvention = namingConventionState.caseConvention;
+  const separator = namingConventionState.separator;
+
   const { addNotification } = useNotification();
   const { showConfirm, ConfirmDialog } = useConfirmDialog();
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [analysisResults, setAnalysisResults] = useState([]);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Local UI state
   const [isScanning, setIsScanning] = useState(false);
-  const [currentAnalysisFile, setCurrentAnalysisFile] = useState('');
-  const [analysisProgress, setAnalysisProgress] = useState({
-    current: 0,
-    total: 0,
-  });
   const [showAnalysisHistory, setShowAnalysisHistory] = useState(false);
   const [analysisStats, setAnalysisStats] = useState(null);
 
-  const [namingConvention, setNamingConvention] = useState('subject-date');
-  const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
-  const [caseConvention, setCaseConvention] = useState('kebab-case');
-  const [separator, setSeparator] = useState('-');
+  // Redux action wrappers to maintain compatibility with existing code structure
+  const setSelectedFiles = useCallback(
+    (files) => {
+      // Handle functional update if passed (not common but possible)
+      if (typeof files === 'function') {
+        // This is risky if files depends on prev state which we don't have inside here easily without thunk
+        // But usually in this file it's direct array
+        dispatch(setSelectedFilesAction(files(selectedFiles)));
+      } else {
+        dispatch(setSelectedFilesAction(files));
+      }
+    },
+    [dispatch, selectedFiles],
+  );
 
-  const [fileStates, setFileStates] = useState({});
+  const setAnalysisResults = useCallback(
+    (results) => {
+      if (typeof results === 'function') {
+        dispatch(setAnalysisResultsAction(results(analysisResults)));
+      } else {
+        dispatch(setAnalysisResultsAction(results));
+      }
+    },
+    [dispatch, analysisResults],
+  );
+
+  const setIsAnalyzing = useCallback(
+    (val) => {
+      if (val)
+        dispatch(startAnalysisAction({ total: analysisProgress.total })); // Keep total?
+      else dispatch(stopAnalysisAction());
+    },
+    [dispatch, analysisProgress],
+  );
+
+  const setAnalysisProgress = useCallback(
+    (val) => dispatch(updateProgressAction(val)),
+    [dispatch],
+  );
+  const setCurrentAnalysisFile = useCallback(
+    (val) => dispatch(updateProgressAction({ currentFile: val })),
+    [dispatch],
+  );
+
+  const setNamingConvention = useCallback(
+    (val) => dispatch(setNamingConventionAction({ convention: val })),
+    [dispatch],
+  );
+  const setDateFormat = useCallback(
+    (val) => dispatch(setNamingConventionAction({ dateFormat: val })),
+    [dispatch],
+  );
+  const setCaseConvention = useCallback(
+    (val) => dispatch(setNamingConventionAction({ caseConvention: val })),
+    [dispatch],
+  );
+  const setSeparator = useCallback(
+    (val) => dispatch(setNamingConventionAction({ separator: val })),
+    [dispatch],
+  );
+
+  // Mocking setFileStates - this one is heavily used with functional updates
+  // We'll try to rely on updateFileState for single updates, and for bulk, we might need a new action
+  // But for now, let's stub it or handle it if possible.
+  // Actually, we should replace usages.
+  const setFileStates = useCallback(
+    (val) => {
+      if (typeof val === 'function') {
+        // We don't have easy access to prev state here in callback without thunk
+        // But usually usage is setFileStates(prev => ...).
+        // For now, just log warning if function used, or try to support if we can get state.
+        // We do have 'fileStates' from selector!
+        dispatch(setFileStatesAction(val(fileStates)));
+      } else {
+        dispatch(setFileStatesAction(val));
+      }
+    },
+    [dispatch, fileStates],
+  );
+
+  // Compatibility objects
+  const phaseData = {
+    selectedFiles,
+    analysisResults,
+    isAnalyzing,
+    analysisProgress,
+    currentAnalysisFile,
+    fileStates,
+    namingConvention: namingConventionState,
+  };
+
+  const actions = {
+    setPhaseData: (key, value) => {
+      if (key === 'isAnalyzing') setIsAnalyzing(value);
+      if (key === 'analysisProgress') setAnalysisProgress(value);
+      if (key === 'currentAnalysisFile') setCurrentAnalysisFile(value);
+      if (key === 'selectedFiles') setSelectedFiles(value);
+      if (key === 'analysisResults') setAnalysisResults(value);
+      if (key === 'namingConvention')
+        dispatch(setNamingConventionAction(value));
+      // fileStates ignored for now
+    },
+    advancePhase: (phase) => dispatch(setPhase(phase)),
+  };
   const hasResumedRef = useRef(false);
   const analysisLockRef = useRef(false); // Add analysis lock to prevent multiple simultaneous calls
   const [globalAnalysisActive, setGlobalAnalysisActive] = useState(false); // Global analysis state
@@ -58,68 +184,47 @@ function DiscoverPhase() {
   // Bug #35: Add AbortController for progress cancellation
   const abortControllerRef = useRef(null); // Store AbortController for cancellation support
 
-  // CRITICAL FIX: Initial state restoration effect - runs only once on mount
-  // This prevents infinite loops from phaseData updates
-  useEffect(() => {
-    const persistedResults = phaseData.analysisResults || [];
-    const persistedFiles = phaseData.selectedFiles || [];
-    const persistedStates = phaseData.fileStates || {};
-    const persistedNaming = phaseData.namingConvention || {};
-    const persistedIsAnalyzing = !!phaseData.isAnalyzing;
-    const persistedProgress = phaseData.analysisProgress || {
-      current: 0,
-      total: 0,
-    };
-    const persistedCurrent = phaseData.currentAnalysisFile || '';
+  // Memoized computed values to avoid repeated filter operations in render
+  const successfulAnalysisCount = useMemo(
+    () => analysisResults.filter((r) => r.analysis).length,
+    [analysisResults],
+  );
+  const failedAnalysisCount = useMemo(
+    () => analysisResults.filter((r) => r.error).length,
+    [analysisResults],
+  );
+  const readyAnalysisCount = useMemo(
+    () => analysisResults.filter((r) => r.analysis && !r.error).length,
+    [analysisResults],
+  );
+  const readySelectedFilesCount = useMemo(
+    () =>
+      selectedFiles.filter((f) => fileStates[f.path]?.state === 'ready').length,
+    [selectedFiles, fileStates],
+  );
 
-    // Restore persisted state regardless of whether results exist yet
-    setSelectedFiles(persistedFiles);
-    setFileStates(persistedStates);
-    setNamingConvention(persistedNaming.convention || 'subject-date');
-    setDateFormat(persistedNaming.dateFormat || 'YYYY-MM-DD');
-    setCaseConvention(persistedNaming.caseConvention || 'kebab-case');
-    setSeparator(persistedNaming.separator || '-');
-    if (persistedResults.length > 0) setAnalysisResults(persistedResults);
-    if (persistedIsAnalyzing) {
-      // Check if analysis state is actually valid (not stuck)
-      const lastActivity = persistedProgress.lastActivity || Date.now();
+  // Check for stuck analysis on mount
+  useEffect(() => {
+    if (isAnalyzing) {
+      const lastActivity = analysisProgress.lastActivity || Date.now();
       const timeSinceActivity = Date.now() - lastActivity;
       const isStuck = timeSinceActivity > 2 * 60 * 1000; // 2 minutes
 
       if (isStuck) {
         logger.info('Detected stuck analysis state on mount, resetting');
-        // Don't restore stuck analysis state
-        actions.setPhaseData('isAnalyzing', false);
-        actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
-        actions.setPhaseData('currentAnalysisFile', '');
-
-        // Clear any stuck localStorage state
-        try {
-          localStorage.removeItem('stratosort_workflow_state');
-        } catch {
-          // Non-fatal if localStorage fails
-        }
-      } else {
-        // Analysis state is valid, restore it
-        setIsAnalyzing(true);
-        setAnalysisProgress(persistedProgress);
-        setCurrentAnalysisFile(persistedCurrent);
+        dispatch(resetAnalysisStateAction());
+        dispatch(updateProgressAction({ current: 0, total: 0 }));
       }
     }
-    // CRITICAL FIX: Only run on mount, not on every phaseData change
-    // This prevents infinite loops and stale closures
-  }, []);
+  }, []); // Run once on mount
 
   // Fixed: Consolidated analysis resume logic - extracted reset function
   const resetAnalysisState = useCallback(
     (reason) => {
       logger.info('Resetting analysis state', { reason });
-      actions.setPhaseData('isAnalyzing', false);
-      actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
-      actions.setPhaseData('currentAnalysisFile', '');
-      setIsAnalyzing(false);
-      setAnalysisProgress({ current: 0, total: 0 });
-      setCurrentAnalysisFile('');
+      dispatch(stopAnalysisAction());
+      dispatch(updateProgressAction({ current: 0, total: 0, currentFile: '' }));
+      dispatch(resetAnalysisStateAction()); // Optional full reset
 
       // Clear any stuck localStorage state
       try {
@@ -128,7 +233,7 @@ function DiscoverPhase() {
         // Non-fatal if localStorage fails
       }
     },
-    [actions],
+    [dispatch],
   );
 
   // Separate effect: Resume analysis on mount if needed
@@ -240,36 +345,15 @@ function DiscoverPhase() {
 
   const updateFileState = useCallback(
     (filePath, state, metadata = {}) => {
-      try {
-        setFileStates((prev) => {
-          if (!prev || typeof prev !== 'object') prev = {};
-          let newStates = { ...prev };
-          const entries = Object.entries(newStates);
-          if (entries.length > 100) {
-            const sortedEntries = entries.sort(
-              (a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp),
-            );
-            newStates = Object.fromEntries(sortedEntries.slice(0, 100));
-          }
-          newStates[filePath] = {
-            state,
-            timestamp: new Date().toISOString(),
-            ...metadata,
-          };
-          return newStates;
-        });
-      } catch {
-        // Fallback for unexpected state corruption
-        setFileStates({
-          [filePath]: {
-            state,
-            timestamp: new Date().toISOString(),
-            ...metadata,
-          },
-        });
-      }
+      dispatch(
+        updateFileStateAction({
+          path: filePath,
+          state,
+          metadata,
+        }),
+      );
     },
-    [setFileStates],
+    [dispatch],
   );
 
   const getFileState = useCallback(
@@ -1101,12 +1185,18 @@ function DiscoverPhase() {
       // Set up progress heartbeat to prevent stuck states
       // Fixed: Store in ref for cleanup on unmount
       // Fixed: Do NOT update lastActivity in heartbeat - only update on real progress
+      // FIX: Use refs to avoid stale closure issues - the interval callback captures values at creation time
+      const analysisProgressRef = { current: initialProgress };
+      const isAnalyzingRef = { current: true };
+
       heartbeatIntervalRef.current = setInterval(() => {
-        if (isAnalyzing) {
+        // FIX: Read from refs instead of captured closure values
+        if (isAnalyzingRef.current) {
           const currentProgress = {
-            current: analysisProgress.current,
-            total: analysisProgress.total,
-            lastActivity: analysisProgress.lastActivity || Date.now(), // Keep existing lastActivity
+            current: analysisProgressRef.current.current,
+            total: analysisProgressRef.current.total,
+            lastActivity:
+              analysisProgressRef.current.lastActivity || Date.now(),
           };
 
           // Validate progress before updating
@@ -1687,6 +1777,11 @@ function DiscoverPhase() {
                   <>
                     <button
                       onClick={() => {
+                        // CRITICAL FIX: Actually abort the analysis via AbortController
+                        if (abortControllerRef.current) {
+                          abortControllerRef.current.abort();
+                          logger.info('Analysis aborted by user');
+                        }
                         setIsAnalyzing(false);
                         setCurrentAnalysisFile('');
                         setAnalysisProgress({ current: 0, total: 0 });
@@ -1733,8 +1828,8 @@ function DiscoverPhase() {
                   Analysis Results
                 </h3>
                 <div className="text-xs text-system-gray-400">
-                  {analysisResults.filter((r) => r.analysis).length} successful,{' '}
-                  {analysisResults.filter((r) => r.error).length} failed
+                  {successfulAnalysisCount} successful, {failedAnalysisCount}{' '}
+                  failed
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-0 modern-scrollbar bg-white/20">
@@ -1768,10 +1863,7 @@ function DiscoverPhase() {
                 );
                 return;
               }
-              const readyCount = analysisResults.filter(
-                (r) => r.analysis && !r.error,
-              ).length;
-              if (readyCount === 0) {
+              if (readyAnalysisCount === 0) {
                 addNotification(
                   analysisResults.length > 0
                     ? 'All files failed analysis'
@@ -1787,9 +1879,7 @@ function DiscoverPhase() {
             className="w-full sm:w-auto shadow-lg shadow-blue-500/20"
             disabled={
               isAnalyzing ||
-              (analysisResults.length === 0 &&
-                selectedFiles.filter((f) => getFileState(f.path) === 'ready')
-                  .length === 0)
+              (analysisResults.length === 0 && readySelectedFilesCount === 0)
             }
           >
             Continue to Organize →

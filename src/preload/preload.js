@@ -282,9 +282,11 @@ class SecureIPCManager {
         `Secure invoke: ${channel}${sanitizedArgs.length > 0 ? ' [with args]' : ''}`,
       );
 
-      // Add retry logic for handler not registered errors (reduced to 2 attempts as fallback)
+      // Add retry logic for handler not registered errors
+      // 5 attempts with exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms (total ~3.1s)
+      const MAX_RETRIES = 5;
       let lastError;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
           const result = await ipcRenderer.invoke(channel, ...sanitizedArgs);
           // Result validation
@@ -297,10 +299,10 @@ class SecureIPCManager {
             error.message.includes('No handler registered')
           ) {
             log.warn(
-              `Handler not ready for ${channel}, attempt ${attempt + 1}/2`,
+              `Handler not ready for ${channel}, attempt ${attempt + 1}/${MAX_RETRIES}`,
             );
             // Wait before retrying (exponential backoff)
-            // Base delay: 100ms, doubles with each attempt (100ms, 200ms)
+            // Base delay: 100ms, doubles with each attempt
             const RETRY_BASE_DELAY_MS = 100;
             await new Promise((resolve) =>
               setTimeout(resolve, RETRY_BASE_DELAY_MS * Math.pow(2, attempt)),
@@ -769,7 +771,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
           'svg',
           'tiff',
         ];
-        // const audioExts = ['mp3', 'wav', 'flac', 'ogg', 'aac', 'm4a']; // REMOVED - audio analysis disabled
 
         if (imageExts.includes(ext)) {
           return secureIPC.safeInvoke(

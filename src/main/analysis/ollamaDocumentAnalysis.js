@@ -703,8 +703,12 @@ function deriveKeywordsFromFilenames(names) {
   const exts = {};
   const tokens = new Set();
   names.forEach((n) => {
-    const b = n.split('/').pop();
-    const e = (b.includes('.') ? b.split('.').pop() : '').toLowerCase();
+    const parts = n.split('/');
+    const b = parts.length > 0 ? parts[parts.length - 1] : '';
+    if (!b) return; // Skip empty filenames
+    const extParts = b.split('.');
+    const e =
+      extParts.length > 1 ? extParts[extParts.length - 1].toLowerCase() : '';
     if (e) exts[e] = (exts[e] || 0) + 1;
     b.replace(/[^a-zA-Z0-9]+/g, ' ')
       .toLowerCase()

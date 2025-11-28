@@ -1,12 +1,32 @@
 import React from 'react';
 import { PHASES } from '../../shared/constants';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { setPhase, resetUi } from '../store/slices/uiSlice';
+import { resetFilesState } from '../store/slices/filesSlice';
+import { resetAnalysisState } from '../store/slices/analysisSlice';
 import Collapsible from '../components/ui/Collapsible';
 import Button from '../components/ui/Button';
 
 function CompletePhase() {
-  const { actions, phaseData } = usePhase();
-  const organizedFiles = phaseData.organizedFiles || [];
+  const dispatch = useAppDispatch();
+  const organizedFiles =
+    useAppSelector((state) => state.files.organizedFiles) || [];
+
+  const actions = {
+    advancePhase: (phase) => dispatch(setPhase(phase)),
+    resetWorkflow: () => {
+      dispatch(resetUi());
+      dispatch(resetFilesState());
+      dispatch(resetAnalysisState());
+      // Clear persistence
+      try {
+        localStorage.removeItem('stratosort_workflow_state');
+        localStorage.removeItem('stratosort_redux_state');
+      } catch {
+        // Ignore cleanup errors
+      }
+    },
+  };
 
   return (
     <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">

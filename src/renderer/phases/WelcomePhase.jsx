@@ -1,10 +1,14 @@
 import React from 'react';
 import { PHASES } from '../../shared/constants';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppDispatch } from '../store/hooks';
+import { setPhase } from '../store/slices/uiSlice';
 import Button from '../components/ui/Button';
 
 function WelcomePhase() {
-  const { actions } = usePhase();
+  const dispatch = useAppDispatch();
+  const actions = {
+    advancePhase: (phase) => dispatch(setPhase(phase)),
+  };
 
   return (
     <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">

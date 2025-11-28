@@ -21,6 +21,16 @@ jest.mock('ollama', () => ({
   })),
 }));
 
+// Mock ollamaUtils - getOllamaHost returns null so constructor param is used
+let mockOllamaHost = null;
+jest.mock('../src/main/ollamaUtils', () => ({
+  getOllama: jest.fn(() => ({
+    list: jest.fn(),
+    generate: jest.fn(),
+  })),
+  getOllamaHost: jest.fn(() => mockOllamaHost),
+}));
+
 // Mock PerformanceService
 jest.mock('../src/main/services/PerformanceService', () => ({
   buildOllamaOptions: jest.fn().mockResolvedValue({
@@ -142,9 +152,9 @@ describe('ModelManager', () => {
     test('handles Ollama connection failure', async () => {
       mockOllamaClient.list.mockRejectedValue(new Error('Connection refused'));
 
-      const result = await modelManager.discoverModels();
-
-      expect(result).toEqual([]);
+      await expect(modelManager.discoverModels()).rejects.toThrow(
+        'Connection refused',
+      );
       expect(modelManager.availableModels).toEqual([]);
     });
 
@@ -779,12 +789,9 @@ describe('ModelManager', () => {
 
       const status = await modelManager.getHealthStatus();
 
-      // BUG: discoverModels() swallows errors and returns [], so getHealthStatus()
-      // always returns connected:true even when Ollama is unreachable
-      // Expected behavior: connected should be false when list() fails
-      expect(status.connected).toBe(true); // Should be false!
+      expect(status.connected).toBe(false);
       expect(status.modelsAvailable).toBe(0);
-      // status.error is not set because the exception is caught in discoverModels
+      expect(status.error).toBe('Connection failed');
     });
 
     test('detects when selected model is not working', async () => {

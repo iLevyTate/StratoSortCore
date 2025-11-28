@@ -3,16 +3,17 @@
  * Ensures required Ollama models are available before analysis
  */
 
-const { Ollama } = require('ollama');
 const { logger } = require('../../shared/logger');
 logger.setContext('ModelVerifier');
 const { DEFAULT_AI_MODELS } = require('../../shared/constants');
 const { fetchWithRetry } = require('../utils/ollamaApiRetry');
+const { getOllama } = require('../ollamaUtils');
 
 class ModelVerifier {
   constructor() {
     this.ollamaHost = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
-    this.ollama = new Ollama({ host: this.ollamaHost });
+    // Use shared Ollama instance to avoid multiple HTTP connection pools
+    this.ollama = getOllama();
     this.essentialModels = [
       DEFAULT_AI_MODELS.TEXT_ANALYSIS, // llama3.2:latest (2GB)
       DEFAULT_AI_MODELS.IMAGE_ANALYSIS, // llava:latest (4.7GB)
@@ -131,14 +132,7 @@ class ModelVerifier {
       }
     }
 
-    // Special check for Whisper models (optional while audio disabled)
-    // const whisperVariants = [
-    //   'whisper',
-    //   'whisper:base',
-    //   'whisper:small',
-    //   'whisper:medium',
-    //   'whisper:large',
-    // ];
+    // Special check for Whisper models (optional)
     const hasWhisper = installedModelNames.some((installed) =>
       installed.startsWith('whisper'),
     );

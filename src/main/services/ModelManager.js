@@ -3,17 +3,18 @@
  * Ensures the application works with ANY available Ollama model
  */
 
-const { Ollama } = require('ollama');
 const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../../shared/logger');
+const { getOllama, getOllamaHost } = require('../ollamaUtils');
 logger.setContext('ModelManager');
 
 class ModelManager {
   constructor(host = 'http://127.0.0.1:11434') {
-    this.ollamaClient = new Ollama({ host });
-    this.host = host;
+    // Use shared Ollama instance to avoid multiple HTTP connection pools
+    this.ollamaClient = getOllama();
+    this.host = getOllamaHost() || host;
     this.availableModels = [];
     this.selectedModel = null;
     this.modelCapabilities = new Map();
@@ -225,7 +226,7 @@ class ModelManager {
         error: error.message,
       });
       this.availableModels = [];
-      return [];
+      throw error;
     }
   }
 
@@ -428,10 +429,7 @@ class ModelManager {
       return null;
     }
 
-    // For now, return the selected model for all tasks
-    // In the future, we could have task-specific model selection
-    // const capabilities = this.modelCapabilities.get(this.selectedModel);
-
+    // Return selected model for all tasks (task-specific selection may be added later)
     switch (task) {
       case 'vision':
       case 'image':

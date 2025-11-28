@@ -7,7 +7,8 @@ import React, {
 } from 'react';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppDispatch } from '../store/hooks';
+import { toggleSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
 import Input from './ui/Input';
@@ -20,7 +21,10 @@ import BackgroundModeSection from './settings/BackgroundModeSection';
 logger.setContext('SettingsPanel');
 
 const SettingsPanel = React.memo(function SettingsPanel() {
-  const { actions } = usePhase();
+  const dispatch = useAppDispatch();
+  const actions = {
+    toggleSettings: () => dispatch(toggleSettings()),
+  };
   const { addNotification } = useNotification();
 
   // Memoize the toggleSettings function to avoid unnecessary re-renders
@@ -120,6 +124,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, []);
 
   // After settings are loaded the first time, automatically check Ollama health
+  // Note: ref prevents re-execution, but deps ensure correct values are captured
   useEffect(() => {
     if (!settingsLoaded) return;
     if (didAutoHealthCheckRef.current) return;
@@ -141,7 +146,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         });
       }
     })();
-  }, [settingsLoaded]);
+  }, [settingsLoaded, settings.ollamaHost, loadOllamaModels]);
 
   const loadSettings = useCallback(async () => {
     try {

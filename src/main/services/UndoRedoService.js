@@ -1,8 +1,13 @@
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
 logger.setContext('UndoRedoService');
+
+// Helper to generate secure random IDs
+const generateSecureId = () =>
+  `${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}`;
 
 class UndoRedoService {
   constructor(options = {}) {
@@ -485,10 +490,10 @@ class UndoRedoService {
     const backupDir = path.join(this.userDataPath, 'undo-backups');
     await this.ensureParentDirectory(path.join(backupDir, 'dummy'));
 
-    // Create unique backup filename with timestamp and random component
+    // Create unique backup filename with timestamp and secure random component
     const originalName = path.basename(filePath);
     const timestamp = Date.now();
-    const randomId = Math.random().toString(36).substring(2, 10);
+    const randomId = crypto.randomBytes(4).toString('hex');
     const backupName = `${timestamp}_${randomId}_${originalName}`;
     const backupPath = path.join(backupDir, backupName);
 
@@ -622,7 +627,7 @@ class UndoRedoService {
   }
 
   generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    return generateSecureId();
   }
 
   getActionHistory(limit = 10) {

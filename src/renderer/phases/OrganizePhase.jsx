@@ -7,7 +7,14 @@ import React, {
 } from 'react';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import {
+  setSmartFolders as setSmartFoldersAction,
+  setOrganizedFiles as setOrganizedFilesAction,
+  setFileStates as setFileStatesAction,
+} from '../store/slices/filesSlice';
+import { setPhase } from '../store/slices/uiSlice';
+import { fetchDocumentsPath } from '../store/slices/systemSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { Collapsible, Button } from '../components/ui';
 import {
@@ -25,10 +32,17 @@ const { debounce } = require('../utils/performance');
 logger.setContext('OrganizePhase');
 
 function OrganizePhase() {
-  const { actions, phaseData } = usePhase();
+  const dispatch = useAppDispatch();
+  const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
+  const analysisResults = useAppSelector((state) => state.analysis.results);
+  const smartFolders = useAppSelector((state) => state.files.smartFolders);
+  const fileStates = useAppSelector((state) => state.files.fileStates);
+  const documentsPath = useAppSelector((state) => state.system.documentsPath);
+
   const { addNotification } = useNotification();
   const { executeAction } = useUndoRedo();
-  const [organizedFiles, setOrganizedFiles] = useState([]);
+
+  // Local UI state
   const [isOrganizing, setIsOrganizing] = useState(false);
   const [batchProgress, setBatchProgress] = useState({
     current: 0,
@@ -37,21 +51,49 @@ function OrganizePhase() {
   });
   const [organizePreview, setOrganizePreview] = useState([]);
   const [editingFiles, setEditingFiles] = useState({});
-  const [selectedFiles, setSelectedFiles] = useState(new Set());
+  const [selectedFiles, setSelectedFiles] = useState(new Set()); // This is local set of IDs for bulk ops, unrelated to filesSlice.selectedFiles? Check usage.
+  // filesSlice.selectedFiles is array of file objects. This is Set of IDs. Probably fine to keep local.
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
-  const [defaultLocation, setDefaultLocation] = useState('Documents');
-
-  const [fileStates, setFileStates] = useState({});
+  const defaultLocation = documentsPath || 'Documents';
   const [processedFileIds, setProcessedFileIds] = useState(new Set());
 
-  const analysisResults =
-    phaseData.analysisResults && Array.isArray(phaseData.analysisResults)
-      ? phaseData.analysisResults
-      : [];
-  const smartFolders = phaseData.smartFolders || [];
+  // Helpers
+  const setOrganizedFiles = useCallback(
+    (files) => dispatch(setOrganizedFilesAction(files)),
+    [dispatch],
+  );
+  const setFileStates = useCallback(
+    (states) => {
+      // Handle functional update if passed
+      if (typeof states === 'function') {
+        dispatch(setFileStatesAction(states(fileStates)));
+      } else {
+        dispatch(setFileStatesAction(states));
+      }
+    },
+    [dispatch, fileStates],
+  );
+
+  // Compatibility
+  const phaseData = {
+    analysisResults,
+    smartFolders,
+    organizedFiles,
+    fileStates,
+  };
+
+  const actions = {
+    setPhaseData: (key, value) => {
+      if (key === 'smartFolders') dispatch(setSmartFoldersAction(value));
+      if (key === 'organizedFiles') setOrganizedFiles(value);
+      if (key === 'fileStates') setFileStates(value);
+    },
+    advancePhase: (phase) => dispatch(setPhase(phase)),
+  };
 
   // Ensure smart folders are available even if user skipped Setup
+  // Note: Empty deps is intentional - we only want to check once on mount
   useEffect(() => {
     const loadSmartFoldersIfMissing = async () => {
       try {
@@ -75,19 +117,14 @@ function OrganizePhase() {
     loadSmartFoldersIfMissing();
   }, []);
 
+  // Fetch documents path via Redux thunk (cached)
   useEffect(() => {
-    // Resolve a real default destination base (Documents folder) from main process
-    (async () => {
-      try {
-        const docsPath = await window.electronAPI?.files?.getDocumentsPath?.();
-        if (docsPath && typeof docsPath === 'string') {
-          setDefaultLocation(docsPath);
-        }
-      } catch {
-        // Non-fatal if docs path fails to load
-      }
-    })();
+    if (!documentsPath) {
+      dispatch(fetchDocumentsPath());
+    }
+  }, [dispatch, documentsPath]);
 
+  useEffect(() => {
     const loadPersistedData = () => {
       const persistedStates = phaseData.fileStates || {};
       setFileStates(persistedStates);
@@ -358,6 +395,20 @@ function OrganizePhase() {
     [organizedFiles, processedFileIds],
   );
 
+  // Memoized computed values to avoid repeated filter operations in render
+  const failedCount = useMemo(
+    () =>
+      Array.isArray(analysisResults)
+        ? analysisResults.filter((f) => !f.analysis).length
+        : 0,
+    [analysisResults],
+  );
+
+  const readyFilesCount = useMemo(
+    () => unprocessedFiles.filter((f) => f.analysis).length,
+    [unprocessedFiles],
+  );
+
   // Fixed: Enhanced cache invalidation and optimized matching
   const findSmartFolderForCategory = useMemo(() => {
     const folderCache = new Map();
@@ -426,11 +477,9 @@ function OrganizePhase() {
     };
   }, [
     smartFolders,
-    // Fixed: Use deep comparison of folder properties to invalidate cache when folders change
-    // This prevents stale cache when folder names/paths are edited
-    JSON.stringify(
-      smartFolders.map((f) => ({ id: f?.id, name: f?.name, path: f?.path })),
-    ),
+    // FIX: Removed JSON.stringify from dependencies - it was causing re-computation on every render
+    // The smartFolders array reference already changes when contents change (Redux immutability)
+    // If more granular cache invalidation is needed, use a separate useMemo to compute a stable key
   ]);
 
   const handleEditFile = useCallback((fileIndex, field, value) => {
@@ -499,8 +548,8 @@ function OrganizePhase() {
   // Use ref to store debounced function to maintain identity across renders
   const debouncedBulkCategoryChangeRef = useRef(null);
 
-  // Initialize debounced function only once
-  if (!debouncedBulkCategoryChangeRef.current) {
+  // FIX: Initialize debounced function in useEffect and clean up on unmount
+  useEffect(() => {
     debouncedBulkCategoryChangeRef.current = debounce(
       (category, selected, edits, notify) => {
         if (!category) return;
@@ -517,7 +566,15 @@ function OrganizePhase() {
       },
       300,
     ); // 300ms debounce delay
-  }
+
+    // FIX: Cleanup debounced function on unmount to prevent memory leaks
+    return () => {
+      if (debouncedBulkCategoryChangeRef.current) {
+        debouncedBulkCategoryChangeRef.current.cancel?.();
+        debouncedBulkCategoryChangeRef.current = null;
+      }
+    };
+  }, []); // Empty deps - initialize once
 
   const applyBulkCategoryChange = useCallback(() => {
     if (!bulkCategory) return;
@@ -885,7 +942,7 @@ function OrganizePhase() {
               <StatusOverview
                 unprocessedCount={unprocessedFiles.length}
                 processedCount={processedFiles.length}
-                failedCount={analysisResults.filter((f) => !f.analysis).length}
+                failedCount={failedCount}
               />
             </Collapsible>
           )}
@@ -919,9 +976,12 @@ function OrganizePhase() {
               className="glass-panel"
             >
               <div className="space-y-5">
-                {processedFiles.map((file, index) => (
+                {processedFiles.map((file) => (
                   <div
-                    key={index}
+                    key={
+                      file.originalPath ||
+                      `${file.originalName}-${file.organizedAt}`
+                    }
                     className="flex items-center justify-between p-8 bg-green-50 rounded-lg border border-green-200"
                   >
                     <div className="flex items-center gap-8">
@@ -993,7 +1053,7 @@ function OrganizePhase() {
                     : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
                   return (
                     <ReadyFileItem
-                      key={index}
+                      key={file.path}
                       file={fileWithEdits}
                       index={index}
                       isSelected={isSelected}
@@ -1017,8 +1077,7 @@ function OrganizePhase() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-system-gray-600 font-medium">
-                    Ready to move{' '}
-                    {unprocessedFiles.filter((f) => f.analysis).length} files
+                    Ready to move {readyFilesCount} files
                   </p>
                   <p className="text-xs text-system-gray-500">
                     You can undo this operation if needed
@@ -1037,9 +1096,7 @@ function OrganizePhase() {
                     onClick={handleOrganizeFiles}
                     variant="success"
                     className="text-lg px-8 py-4"
-                    disabled={
-                      unprocessedFiles.filter((f) => f.analysis).length === 0
-                    }
+                    disabled={readyFilesCount === 0}
                   >
                     ✨ Organize Files Now
                   </Button>

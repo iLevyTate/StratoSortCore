@@ -1,4 +1,4 @@
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const { logger } = require('../../shared/logger');
 logger.setContext('StartupManager');
 const axios = require('axios');
@@ -6,7 +6,10 @@ const { axiosWithRetry } = require('../utils/ollamaApiRetry');
 const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
-const { hasPythonModuleAsync } = require('../utils/asyncSpawnUtils');
+const {
+  hasPythonModuleAsync,
+  asyncSpawn,
+} = require('../utils/asyncSpawnUtils');
 
 // FIXED Bug #28: Named constant for axios timeout
 const DEFAULT_AXIOS_TIMEOUT = 5000; // 5 seconds
@@ -281,7 +284,7 @@ class StartupManager {
   }
 
   /**
-   * Check if Python is installed (using sync spawn to avoid hanging on Windows)
+   * Check if Python is installed (using async spawn to prevent UI blocking)
    */
   async checkPythonInstallation() {
     logger.debug('[PREFLIGHT] Checking Python installation...');
@@ -303,7 +306,7 @@ class StartupManager {
         logger.debug(
           `[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`,
         );
-        const result = spawnSync(cmd, args, {
+        const result = await asyncSpawn(cmd, args, {
           timeout: 3000,
           windowsHide: true,
           shell: process.platform === 'win32',
@@ -326,13 +329,13 @@ class StartupManager {
   }
 
   /**
-   * Check if Ollama is installed (using sync spawn to avoid hanging on Windows)
+   * Check if Ollama is installed (using async spawn to prevent UI blocking)
    */
   async checkOllamaInstallation() {
     logger.debug('[PREFLIGHT] Checking Ollama installation...');
 
     try {
-      const result = spawnSync('ollama', ['--version'], {
+      const result = await asyncSpawn('ollama', ['--version'], {
         timeout: 3000,
         windowsHide: true,
         shell: process.platform === 'win32',
@@ -1211,6 +1214,54 @@ class StartupManager {
   }
 
   /**
+   * Check ChromaDB health
+   * @returns {Promise<boolean>} True if ChromaDB is healthy
+   */
+  async checkChromaDBHealth() {
+    try {
+      const baseUrl =
+        process.env.CHROMA_SERVER_URL ||
+        `${process.env.CHROMA_SERVER_PROTOCOL || 'http'}://${process.env.CHROMA_SERVER_HOST || '127.0.0.1'}:${process.env.CHROMA_SERVER_PORT || 8000}`;
+
+      const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await axios.get(`${baseUrl}${endpoint}`, {
+            timeout: 2000,
+          });
+          if (response.status === 200) {
+            return true;
+          }
+        } catch {
+          // Try next endpoint
+        }
+      }
+      return false;
+    } catch (error) {
+      logger.debug('[HEALTH] ChromaDB health check failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Check Ollama health
+   * @returns {Promise<boolean>} True if Ollama is healthy
+   */
+  async checkOllamaHealth() {
+    try {
+      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+      const response = await axios.get(`${baseUrl}/api/tags`, {
+        timeout: 2000,
+      });
+      return response.status === 200;
+    } catch (error) {
+      logger.debug('[HEALTH] Ollama health check failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
    * Check health of all services
    */
   async checkServicesHealth() {
@@ -1676,8 +1727,10 @@ class StartupManager {
 
             logger.warn(`[STARTUP] Force killing ${serviceName}...`);
             try {
+              // CRITICAL FIX: Use global process.platform, not the child process parameter
               // Force kill on Windows requires different approach
-              if (process.platform === 'win32' && process.pid) {
+              const isWindows = require('os').platform() === 'win32';
+              if (isWindows && process.pid) {
                 const { spawn } = require('child_process');
                 spawn(
                   'taskkill',

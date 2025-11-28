@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useKeyboardShortcuts } from '../hooks';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppSelector } from '../store/hooks';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
 import { LazyLoadingSpinner, ModalLoadingOverlay } from './LoadingSkeleton';
 import { logger } from '../../shared/logger';
@@ -36,7 +36,8 @@ const pageTransition = {
 };
 
 function PhaseRenderer() {
-  const { currentPhase, showSettings } = usePhase();
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
+  const showSettings = useAppSelector((state) => state.ui.showSettings);
   useKeyboardShortcuts();
 
   // Debug logging to track phase rendering

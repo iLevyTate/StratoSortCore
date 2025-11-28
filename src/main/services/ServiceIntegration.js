@@ -31,23 +31,38 @@ class ServiceIntegration {
     this.processingState = new ProcessingStateService();
 
     // Initialize ChromaDB and folder matching
+    // CRITICAL FIX: Add null check for ChromaDB service
     this.chromaDbService = getChromaDB();
+    if (!this.chromaDbService) {
+      logger.warn(
+        '[ServiceIntegration] ChromaDB service is null, some features will be unavailable',
+      );
+    }
+
     this.folderMatchingService = new FolderMatchingService(
       this.chromaDbService,
     );
 
     // Initialize suggestion service
+    // CRITICAL FIX: Add null check for settings service
     const { getService: getSettingsService } = require('./SettingsService');
+    const settingsService = getSettingsService();
+    if (!settingsService) {
+      logger.warn(
+        '[ServiceIntegration] Settings service is null, using defaults',
+      );
+    }
+
     this.suggestionService = new OrganizationSuggestionService({
       chromaDbService: this.chromaDbService,
       folderMatchingService: this.folderMatchingService,
-      settingsService: getSettingsService(),
+      settingsService: settingsService,
     });
 
     // Initialize auto-organize service
     this.autoOrganizeService = new AutoOrganizeService({
       suggestionService: this.suggestionService,
-      settingsService: getSettingsService(),
+      settingsService: settingsService,
       folderMatchingService: this.folderMatchingService,
       undoRedoService: this.undoRedo,
     });

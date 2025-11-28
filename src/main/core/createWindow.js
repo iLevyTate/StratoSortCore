@@ -3,17 +3,18 @@ const path = require('path');
 const { logger } = require('../../shared/logger');
 logger.setContext('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
+const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
 
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = isDevelopment();
 
 function createMainWindow() {
-  logger.debug('[DEBUG] Creating new window...');
+  logger.debug('Creating new window');
 
   // Ensure AppUserModelID for Windows integration (notifications, jump list)
   try {
     app.setAppUserModelId('com.stratosort.app');
   } catch (error) {
-    logger.debug('[WINDOW] Failed to set AppUserModelId:', error.message);
+    logger.debug('Failed to set AppUserModelId', { error: error.message });
   }
 
   // Restore previous window position/size
@@ -60,7 +61,7 @@ function createMainWindow() {
     autoHideMenuBar: false, // Keep menu bar visible
   });
 
-  logger.debug('[DEBUG] BrowserWindow created');
+  logger.debug('BrowserWindow created');
 
   // Manage window state with cleanup tracking
   mainWindowState.manage(win);
@@ -77,7 +78,7 @@ function createMainWindow() {
   // CRITICAL FIX: Add longer delay and webContents readiness check to prevent Mojo errors
   // Wait for webContents to be fully ready before loading content
   const loadContent = () => {
-    const useDevServer = isDev && process.env.USE_DEV_SERVER === 'true';
+    const useDevServer = isDev && getEnvBool('USE_DEV_SERVER');
     if (useDevServer) {
       win.loadURL('http://localhost:3000').catch((error) => {
         logger.info('Development server not available:', error.message);
@@ -91,7 +92,7 @@ function createMainWindow() {
           win.loadFile(path.join(__dirname, '../../renderer/index.html'));
         });
       });
-      if (process.env.FORCE_DEV_TOOLS === 'true') {
+      if (getEnvBool('FORCE_DEV_TOOLS')) {
         win.webContents.openDevTools();
       }
     } else {
@@ -123,7 +124,7 @@ function createMainWindow() {
         ollamaHost = configured;
       }
     } catch (error) {
-      logger.debug('[WINDOW] Failed to get Ollama host:', error.message);
+      logger.debug('Failed to get Ollama host', { error: error.message });
     }
     let wsHost = '';
     try {
@@ -131,7 +132,7 @@ function createMainWindow() {
       wsHost =
         url.protocol === 'https:' ? `wss://${url.host}` : `ws://${url.host}`;
     } catch (error) {
-      logger.debug('[WINDOW] Failed to parse Ollama host URL:', error.message);
+      logger.debug('Failed to parse Ollama host URL', { error: error.message });
       wsHost = '';
     }
 
@@ -145,6 +146,8 @@ function createMainWindow() {
         ...details.responseHeaders,
         'Content-Security-Policy': [csp],
         'X-Content-Type-Options': ['nosniff'],
+        'X-Frame-Options': ['DENY'], // Prevent clickjacking
+        'X-XSS-Protection': ['1; mode=block'], // Legacy XSS protection
         'Referrer-Policy': ['no-referrer'],
         // COOP/COEP can break some integrations; set COOP only
         'Cross-Origin-Opener-Policy': ['same-origin'],
@@ -169,8 +172,8 @@ function createMainWindow() {
         setTimeout(() => {
           if (!win.isDestroyed()) {
             win.focus();
-            logger.info('✅ StratoSort window ready and focused');
-            logger.debug('[DEBUG] Window state:', {
+            logger.info('StratoSort window ready and focused');
+            logger.debug('Window state', {
               isVisible: win.isVisible(),
               isFocused: win.isFocused(),
               isMinimized: win.isMinimized(),
@@ -186,29 +189,32 @@ function createMainWindow() {
   });
 
   // Block navigation attempts within the app (e.g., dropped links or external redirects)
-  win.webContents.on('will-navigate', (event) => {
+  win.webContents.on('will-navigate', (event, url) => {
     try {
       // Always prevent in-app navigations; open externally only if explicitly allowed elsewhere
       event.preventDefault();
-    } catch {
-      // Silently ignore errors
+      logger.debug('Blocked navigation attempt', { url });
+    } catch (error) {
+      logger.debug('Error blocking navigation', { error: error.message });
     }
   });
 
   // Disallow embedding arbitrary webviews
   win.webContents.on('will-attach-webview', (event) => {
     event.preventDefault();
+    logger.warn('Blocked webview attachment attempt');
   });
 
   // Deny all permission requests by default (camera, mic, etc.)
   try {
     win.webContents.session.setPermissionRequestHandler(
-      (_wc, _permission, callback) => {
+      (_wc, permission, callback) => {
+        logger.debug('Denied permission request', { permission });
         callback(false);
       },
     );
-  } catch {
-    // Silently ignore errors
+  } catch (error) {
+    logger.debug('Failed to set permission handler', { error: error.message });
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {

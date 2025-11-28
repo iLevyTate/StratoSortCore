@@ -4,6 +4,19 @@ import { logger } from '../../shared/logger';
 
 logger.setContext('Toast');
 
+// Secure random ID generator using Web Crypto API
+const generateSecureId = () => {
+  const array = new Uint8Array(4);
+  crypto.getRandomValues(array);
+  return (
+    Date.now() +
+    parseInt(
+      Array.from(array, (b) => b.toString(16).padStart(2, '0')).join(''),
+      16,
+    )
+  );
+};
+
 const Toast = ({
   message,
   severity = 'info',
@@ -15,12 +28,18 @@ const Toast = ({
 
   useEffect(() => {
     if (show && duration > 0) {
+      let animationTimer = null;
       const timer = setTimeout(() => {
         setIsVisible(false);
-        setTimeout(() => onClose?.(), 300); // Allow animation to complete
+        // Schedule onClose after animation completes
+        animationTimer = setTimeout(() => onClose?.(), 300);
       }, duration);
 
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        // Clean up nested animation timeout if it exists
+        if (animationTimer) clearTimeout(animationTimer);
+      };
     }
   }, [show, duration, onClose]);
 
@@ -294,7 +313,7 @@ export const useToast = () => {
     duration = 3000,
     groupKey = null,
   ) => {
-    const id = Date.now() + Math.random();
+    const id = generateSecureId();
     const now = Date.now();
 
     setToasts((prev) => {

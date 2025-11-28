@@ -154,8 +154,32 @@ function registerAllIpc({
 
     logger.info('[IPC] Suggestions and organize handlers registered');
   } else {
+    // FIX: Register fallback handlers even when services are unavailable
+    // This prevents "No handler registered" errors in the renderer
     logger.error(
-      '[IPC] getServiceIntegration not provided, cannot register suggestions/organize handlers',
+      '[IPC] getServiceIntegration not provided, registering fallback handlers',
+    );
+
+    // Register fallback suggestions handlers
+    registerSuggestionsIpc({
+      ipcMain,
+      IPC_CHANNELS,
+      chromaDbService: null,
+      folderMatchingService: null,
+      settingsService: null,
+      getCustomFolders: () => [],
+    });
+
+    // Register fallback organize handlers
+    registerOrganizeIpc({
+      ipcMain,
+      IPC_CHANNELS,
+      getServiceIntegration: () => null,
+      getCustomFolders: () => [],
+    });
+
+    logger.warn(
+      '[IPC] Fallback handlers registered - functionality will be limited',
     );
   }
 }

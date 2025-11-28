@@ -17,12 +17,26 @@ class FolderMatchingService {
   /**
    * Initialize the service and its resources
    * Should be called after construction and successful service setup
+   * FIX: Made thread-safe with initialization lock to prevent race conditions
    */
   initialize() {
+    // FIX: Use synchronous lock check to prevent multiple concurrent initializations
+    if (this._initializing) {
+      logger.debug(
+        '[FolderMatchingService] Initialization already in progress, skipping',
+      );
+      return;
+    }
+
     // Fixed: Initialize the embedding cache after construction to prevent orphaned intervals
     if (this.embeddingCache && !this.embeddingCache.initialized) {
-      this.embeddingCache.initialize();
-      logger.info('[FolderMatchingService] Initialized successfully');
+      this._initializing = true;
+      try {
+        this.embeddingCache.initialize();
+        logger.info('[FolderMatchingService] Initialized successfully');
+      } finally {
+        this._initializing = false;
+      }
     }
   }
 
@@ -72,10 +86,11 @@ class FolderMatchingService {
 
   /**
    * Generate a unique ID for a folder based on its properties
+   * Note: Using SHA256 instead of MD5 for better collision resistance
    */
   generateFolderId(folder) {
     const uniqueString = `${folder.name}|${folder.path || ''}|${folder.description || ''}`;
-    return `folder:${crypto.createHash('md5').update(uniqueString).digest('hex')}`;
+    return `folder:${crypto.createHash('sha256').update(uniqueString).digest('hex').substring(0, 32)}`;
   }
 
   async upsertFolderEmbedding(folder) {

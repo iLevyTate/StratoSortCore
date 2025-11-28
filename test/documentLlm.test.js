@@ -348,22 +348,8 @@ describe('documentLlm', () => {
       expect(result).toBeTruthy();
     });
 
-    // eslint-disable-next-line jest/no-disabled-tests
-    test.skip('should handle timeout', async () => {
-      // Note: Skipped due to timing complexity in test environment
-      mockOllamaClient.generate.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(() => resolve({ response: '{}' }), 100000);
-          }),
-      );
-
-      const result = await analyzeTextWithOllama('test', 'test.txt', []);
-
-      // Timeout should result in error
-      expect(result.error).toBeDefined();
-      expect(result.error).toContain('timed out');
-    }, 65000); // Test timeout slightly higher than LLM timeout
+    // NOTE: Timeout test removed - timing complexity requires fake timers implementation
+    // If timeout testing is needed, implement with jest.useFakeTimers() approach
 
     test('should ensure keywords array exists', async () => {
       const testCases = [

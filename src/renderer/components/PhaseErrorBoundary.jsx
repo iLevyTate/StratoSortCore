@@ -1,7 +1,10 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppDispatch } from '../store/hooks';
+import { resetUi } from '../store/slices/uiSlice';
+import { resetFilesState } from '../store/slices/filesSlice';
+import { resetAnalysisState } from '../store/slices/analysisSlice';
 
 logger.setContext('PhaseErrorBoundary');
 
@@ -12,7 +15,8 @@ logger.setContext('PhaseErrorBoundary');
 class PhaseErrorBoundaryClass extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    // CRITICAL FIX: Add resetKey to force remount of children on retry
+    this.state = { hasError: false, error: null, errorInfo: null, resetKey: 0 };
     this.handleReset = this.handleReset.bind(this);
     this.handleNavigateHome = this.handleNavigateHome.bind(this);
   }
@@ -37,7 +41,14 @@ class PhaseErrorBoundaryClass extends React.Component {
   }
 
   handleReset() {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+    // CRITICAL FIX: Increment resetKey to force remount of children
+    // This ensures the error doesn't immediately reappear due to stale component state
+    this.setState((prevState) => ({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      resetKey: prevState.resetKey + 1,
+    }));
   }
 
   handleNavigateHome() {
@@ -131,7 +142,13 @@ class PhaseErrorBoundaryClass extends React.Component {
       );
     }
 
-    return this.props.children;
+    // CRITICAL FIX: Use resetKey as key to force remount when "Try Again" is clicked
+    // This ensures the child component is fully remounted with fresh state
+    return (
+      <React.Fragment key={this.state.resetKey}>
+        {this.props.children}
+      </React.Fragment>
+    );
   }
 }
 
@@ -146,12 +163,13 @@ PhaseErrorBoundaryClass.propTypes = {
  * Wrapper component that provides access to phase navigation
  */
 function PhaseErrorBoundary({ children, phaseName }) {
-  const { actions } = usePhase();
+  const dispatch = useAppDispatch();
 
   const handleNavigateHome = () => {
-    // Fixed: Use resetWorkflow instead of non-existent goToPhase
-    // This resets all state and returns to WELCOME phase
-    actions.resetWorkflow();
+    // Fixed: Use resetWorkflow logic
+    dispatch(resetUi());
+    dispatch(resetFilesState());
+    dispatch(resetAnalysisState());
   };
 
   const handleError = (error, errorInfo, phase) => {

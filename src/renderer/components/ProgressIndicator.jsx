@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { logger } from '../../shared/logger';
-import { PHASES } from '../../shared/constants';
-import { usePhase } from '../contexts/PhaseContext';
+import { PHASES, PHASE_METADATA } from '../../shared/constants';
+import { useAppSelector } from '../store/hooks';
 
 logger.setContext('ProgressIndicator');
 
 function ProgressIndicator() {
-  const { currentPhase, getCurrentMetadata } = usePhase();
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const [showPhaseMenu, setShowPhaseMenu] = useState(false);
-  const metadata = getCurrentMetadata();
+  const metadata = PHASE_METADATA[currentPhase] || {
+    title: 'Unknown',
+    icon: '?',
+    progress: 0,
+  };
   const phases = Object.values(PHASES);
   const currentIndex = phases.indexOf(currentPhase);
 

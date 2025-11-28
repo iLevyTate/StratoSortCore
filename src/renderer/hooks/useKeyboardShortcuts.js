@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { logger } from '../../shared/logger';
-import { usePhase } from '../contexts/PhaseContext';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { toggleSettings, setPhase } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import {
   PHASES,
@@ -11,8 +12,29 @@ import {
 logger.setContext('useKeyboardShortcuts');
 
 export function useKeyboardShortcuts() {
-  const { actions, currentPhase, showSettings } = usePhase();
+  const dispatch = useAppDispatch();
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
+  const showSettings = useAppSelector((state) => state.ui.showSettings);
   const { addNotification } = useNotification();
+
+  // CRITICAL FIX: Memoize actions to prevent event listener re-attachment on every render
+  const handleToggleSettings = useCallback(
+    () => dispatch(toggleSettings()),
+    [dispatch],
+  );
+  const handleAdvancePhase = useCallback(
+    (phase) => dispatch(setPhase(phase)),
+    [dispatch],
+  );
+
+  // CRITICAL FIX: Use useMemo for stable actions object reference
+  const actions = useMemo(
+    () => ({
+      toggleSettings: handleToggleSettings,
+      advancePhase: handleAdvancePhase,
+    }),
+    [handleToggleSettings, handleAdvancePhase],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event) => {

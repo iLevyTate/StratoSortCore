@@ -15,7 +15,8 @@ const isDev = process.env.NODE_ENV === 'development';
 const { logger } = require('../shared/logger');
 logger.setContext('Main');
 
-// Import error handling system (not needed directly in this file)
+// Import error handling system
+const errorHandler = require('./errors/ErrorHandler');
 
 const { scanDirectory } = require('./folderScanner');
 const {
@@ -784,6 +785,23 @@ if (!gotTheLock) {
 // Initialize services after app is ready
 app.whenReady().then(async () => {
   try {
+    // Initialize error handler and logging
+    await errorHandler.initialize();
+
+    // Enable file logging in development for easier debugging
+    if (isDev) {
+      const logPath = path.join(
+        app.getPath('userData'),
+        'logs',
+        `dev-${new Date().toISOString().split('T')[0]}.log`,
+      );
+      logger.enableFileLogging(logPath);
+      logger.info('File logging enabled', { logPath });
+    }
+
+    // Clean up old log files (keep last 7 days)
+    await errorHandler.cleanupLogs(7);
+
     // Get the startup manager instance
     const startupManager = getStartupManager();
 

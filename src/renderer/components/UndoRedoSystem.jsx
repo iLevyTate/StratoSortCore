@@ -13,6 +13,13 @@ import { ConfirmModal } from './Modal';
 // Set logger context for this component
 logger.setContext('UndoRedoSystem');
 
+// Secure random ID generator using Web Crypto API
+const generateSecureId = () => {
+  const array = new Uint8Array(6);
+  crypto.getRandomValues(array);
+  return `action-${Date.now()}-${Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+};
+
 // Undo/Redo Context
 const UndoRedoContext = createContext();
 
@@ -106,7 +113,7 @@ class UndoStack {
     // Add new action
     this.stack.push({
       ...action,
-      id: `action-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: generateSecureId(),
       timestamp: new Date().toISOString(),
     });
 
