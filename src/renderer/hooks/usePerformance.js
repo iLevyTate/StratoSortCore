@@ -272,18 +272,29 @@ export function useLazyLoad(onVisible, options = {}) {
   const [ref, isIntersecting] = useIntersectionObserver(options);
 
   useEffect(() => {
+    // CRITICAL FIX: Track mounted state to prevent state updates after unmount
+    let isMounted = true;
+
     if (isIntersecting && !hasLoaded && !isLoading) {
       setIsLoading(true);
 
       Promise.resolve(onVisible())
         .then(() => {
-          setHasLoaded(true);
-          setIsLoading(false);
+          if (isMounted) {
+            setHasLoaded(true);
+            setIsLoading(false);
+          }
         })
         .catch(() => {
-          setIsLoading(false);
+          if (isMounted) {
+            setIsLoading(false);
+          }
         });
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [isIntersecting, hasLoaded, isLoading, onVisible]);
 
   return {

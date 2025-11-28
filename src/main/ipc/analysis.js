@@ -5,7 +5,12 @@ const { safeGet, safeFilePath, ensureArray } = require('../utils/safeAccess');
 let z;
 try {
   z = require('zod');
-} catch {
+} catch (error) {
+  // Zod is optional - validation will fall back to manual checks
+  // Log at debug level for troubleshooting module loading issues
+  if (typeof console !== 'undefined') {
+    console.debug('[IPC-ANALYSIS] Zod not available:', error.message);
+  }
   z = null;
 }
 

@@ -14,7 +14,9 @@ logger.setContext('IPC:Files');
 let z;
 try {
   z = require('zod');
-} catch {
+} catch (error) {
+  // Zod is optional - validation will fall back to manual checks
+  logger.debug('[IPC-FILES] Zod not available:', error.message);
   z = null;
 }
 

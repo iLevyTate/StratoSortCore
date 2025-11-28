@@ -1,21 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
 
 logger.setContext('Toast');
 
-// Secure random ID generator using Web Crypto API
-const generateSecureId = () => {
-  const array = new Uint8Array(4);
-  crypto.getRandomValues(array);
-  return (
-    Date.now() +
-    parseInt(
-      Array.from(array, (b) => b.toString(16).padStart(2, '0')).join(''),
-      16,
-    )
-  );
-};
+// Simple ID counter - crypto API is overkill for toast IDs
+let toastIdCounter = 0;
+const generateSecureId = () => Date.now() + ++toastIdCounter;
 
 const Toast = ({
   message,
@@ -25,20 +16,24 @@ const Toast = ({
   show = true,
 }) => {
   const [isVisible, setIsVisible] = useState(show);
+  // CRITICAL FIX: Use ref to track animation timer so cleanup can always access current value
+  const animationTimerRef = useRef(null);
 
   useEffect(() => {
     if (show && duration > 0) {
-      let animationTimer = null;
       const timer = setTimeout(() => {
         setIsVisible(false);
         // Schedule onClose after animation completes
-        animationTimer = setTimeout(() => onClose?.(), 300);
+        animationTimerRef.current = setTimeout(() => onClose?.(), 300);
       }, duration);
 
       return () => {
         clearTimeout(timer);
-        // Clean up nested animation timeout if it exists
-        if (animationTimer) clearTimeout(animationTimer);
+        // Clean up nested animation timeout using ref (always has current value)
+        if (animationTimerRef.current) {
+          clearTimeout(animationTimerRef.current);
+          animationTimerRef.current = null;
+        }
       };
     }
   }, [show, duration, onClose]);
