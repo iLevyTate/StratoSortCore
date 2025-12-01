@@ -774,20 +774,17 @@ class SettingsService {
       this.invalidateCache();
 
       // Reload settings from disk
-      const newSettings = await this.load();
+      await this.load();
       logger.debug('[SettingsService] Settings reloaded from external change');
 
       // Notify renderer process of settings change
       this._notifySettingsChanged();
-
-      return newSettings;
     } catch (error) {
       logger.error('[SettingsService] Failed to handle external file change', {
         error: error.message,
       });
       // Invalidate cache anyway to prevent stale data
       this.invalidateCache();
-      return null;
     }
   }
 
