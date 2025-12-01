@@ -396,7 +396,9 @@ function createHandler({
 }
 
 /**
- * Register multiple IPC handlers with consistent patterns
+ * Register multiple IPC handlers with consistent patterns.
+ * Uses the IPC registry for targeted cleanup during shutdown.
+ *
  * @param {Object} options - Configuration options
  * @param {Object} options.ipcMain - Electron ipcMain instance
  * @param {Object} options.logger - Logger instance
@@ -420,13 +422,16 @@ function createHandler({
  * });
  */
 function registerHandlers({ ipcMain, logger, handlers, context = 'IPC' }) {
+  const { registerHandler } = require('../core/ipcRegistry');
+
   for (const [channel, config] of Object.entries(handlers)) {
     const handler = createHandler({
       logger,
       context,
       ...config,
     });
-    ipcMain.handle(channel, handler);
+    // CRITICAL FIX: Use registry for targeted cleanup instead of direct ipcMain.handle
+    registerHandler(ipcMain, channel, handler);
   }
 }
 

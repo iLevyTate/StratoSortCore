@@ -45,7 +45,7 @@ const { analyzeImageFile } = require('./analysis/ollamaImageAnalysis');
 const tesseract = require('node-tesseract-ocr');
 const fs = require('fs').promises;
 const path = require('path');
-const { isWindows, isMacOS } = require('../shared/platformUtils');
+const { isWindows } = require('../shared/platformUtils');
 
 // Extracted core modules
 const {
@@ -80,9 +80,16 @@ let eventListeners = [];
 let childProcessListeners = [];
 let globalProcessListeners = [];
 
-// Legacy functions removed: ensureChromaDbRunning, ensureOllamaRunning
-// All startup logic is now handled by StartupManager and ServiceIntegration
-// verifyIpcHandlersRegistered is now imported from ./core/ipcVerification
+// HIGH-3 FIX: Track background setup status for visibility
+let backgroundSetupStatus = {
+  complete: false,
+  error: null,
+  startedAt: null,
+  completedAt: null,
+};
+
+// NOTE: Startup logic is handled by StartupManager and ServiceIntegration
+// IPC verification is handled by ./core/ipcVerification
 
 // ===== GPU PREFERENCES (Windows rendering stability) =====
 // GPU configuration is now handled by ./core/gpuConfig
@@ -108,132 +115,21 @@ const createMainWindow = require('./core/createWindow');
 // createApplicationMenu is imported and called with getMainWindow callback
 
 function createWindow() {
-  logger.debug('[DEBUG] createWindow() called');
+  logger.debug('[WINDOW] createWindow() called');
+
+  // HIGH-2 FIX: Use event-driven window state manager instead of nested setTimeout
+  const { restoreWindow, ensureWindowOnScreen } = require('./core/windowState');
+
   if (mainWindow && !mainWindow.isDestroyed()) {
-    logger.debug('[DEBUG] Window already exists, restoring state...');
+    logger.debug('[WINDOW] Window already exists, restoring state...');
 
-    // Prevent dangling pointer issues by deferring state changes
-    // Use setImmediate to ensure Chromium's message loop is ready
-    setImmediate(() => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-
-      try {
-        // Window state machine: Handle states in proper order
-        // State priority: fullscreen > minimized > maximized > hidden > normal
-
-        // 1. Fullscreen state - preserve and focus
-        if (mainWindow.isFullScreen()) {
-          logger.debug('[WINDOW] Window is fullscreen, focusing');
-          mainWindow.focus();
-          return;
-        }
-
-        // 2. Minimized state - must restore before showing
-        // restore() brings window back from taskbar/dock and makes it visible
-        if (mainWindow.isMinimized()) {
-          logger.debug('[WINDOW] Window is minimized, restoring...');
-
-          // Defer restore to next tick to avoid Chromium message pump issues
-          setTimeout(() => {
-            if (!mainWindow || mainWindow.isDestroyed()) return;
-
-            mainWindow.restore();
-
-            // Give Chromium time to process the restore
-            setTimeout(() => {
-              if (!mainWindow || mainWindow.isDestroyed()) return;
-
-              // restore() should make window visible, but verify
-              if (!mainWindow.isVisible()) {
-                logger.debug(
-                  '[WINDOW] Window still not visible after restore, showing...',
-                );
-                mainWindow.show();
-              }
-
-              // After restore, window might be maximized, so check that next
-              if (mainWindow.isMaximized()) {
-                logger.debug('[WINDOW] Window is maximized after restore');
-              }
-
-              mainWindow.focus();
-            }, 50);
-          }, 0);
-          return;
-        }
-
-        // 3. Maximized state (but not minimized) - show if hidden, preserve maximized
-        if (mainWindow.isMaximized()) {
-          logger.debug('[WINDOW] Window is maximized');
-          if (!mainWindow.isVisible()) {
-            logger.debug('[WINDOW] Maximized window is hidden, showing it');
-            mainWindow.show();
-          }
-          mainWindow.focus();
-          return;
-        }
-
-        // 4. Hidden state (not minimized, not maximized) - just show
-        if (!mainWindow.isVisible()) {
-          logger.debug('[WINDOW] Window is hidden, showing it');
-          mainWindow.show();
-          mainWindow.focus();
-          return;
-        }
-
-        // 5. Normal visible state - just focus
-        logger.debug('[WINDOW] Window is visible, focusing');
-        mainWindow.focus();
-      } catch (error) {
-        logger.error('[WINDOW] Error during window state restoration:', error);
-      }
+    // Use event-driven restoration (replaces complex setTimeout chain)
+    restoreWindow(mainWindow).catch((error) => {
+      logger.error('[WINDOW] Error during window state restoration:', error);
     });
 
-    // 6. Ensure window is on screen (handle multi-monitor issues)
-    // Only check if window is actually visible and not minimized
-    if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-      try {
-        const bounds = mainWindow.getBounds();
-        const { screen } = require('electron');
-        const displays = screen.getAllDisplays();
-
-        // Check if window center is visible on any display
-        const windowCenter = {
-          x: bounds.x + bounds.width / 2,
-          y: bounds.y + bounds.height / 2,
-        };
-
-        const isOnScreen = displays.some((display) => {
-          const { x, y, width, height } = display.bounds;
-          return (
-            windowCenter.x >= x &&
-            windowCenter.x <= x + width &&
-            windowCenter.y >= y &&
-            windowCenter.y <= y + height
-          );
-        });
-
-        if (!isOnScreen) {
-          logger.warn(
-            '[WINDOW] Window was off-screen, centering on primary display',
-          );
-          mainWindow.center();
-        }
-      } catch (error) {
-        logger.debug('[WINDOW] Could not check screen bounds:', error.message);
-      }
-    }
-
-    // 7. On Windows, force window to foreground after state restoration
-    if (isWindows && mainWindow.isVisible()) {
-      // Use setAlwaysOnTop trick to bring window to front
-      mainWindow.setAlwaysOnTop(true);
-      setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setAlwaysOnTop(false);
-        }
-      }, 100);
-    }
+    // Ensure window is on screen (handle multi-monitor issues)
+    ensureWindowOnScreen(mainWindow);
 
     return;
   }
@@ -375,42 +271,17 @@ if (!gotTheLock) {
 } else {
   const secondInstanceHandler = () => {
     // Someone tried to run a second instance, restore and focus our window
+    // HIGH-2 FIX: Use event-driven window state manager
+    const { restoreWindow } = require('./core/windowState');
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       logger.debug(
         '[SECOND-INSTANCE] Restoring window for second instance attempt',
       );
 
-      // Handle fullscreen state
-      if (mainWindow.isFullScreen()) {
-        mainWindow.focus();
-        return;
-      }
-
-      // Handle maximized state
-      if (mainWindow.isMaximized()) {
-        if (!mainWindow.isVisible()) mainWindow.show();
-        mainWindow.focus();
-        return;
-      }
-
-      // Restore if minimized
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-
-      // Show if hidden
-      if (!mainWindow.isVisible()) {
-        mainWindow.show();
-      }
-
-      // Focus and bring to front
-      mainWindow.focus();
-
-      // Windows-specific foreground forcing
-      if (isWindows) {
-        mainWindow.setAlwaysOnTop(true);
-        mainWindow.setAlwaysOnTop(false);
-      }
+      restoreWindow(mainWindow).catch((error) => {
+        logger.error('[SECOND-INSTANCE] Error restoring window:', error);
+      });
     } else {
       // No window exists, create one
       createWindow();
@@ -620,10 +491,33 @@ app.whenReady().then(async () => {
       logger.info('[STARTUP] Default folder already exists, skipping creation');
     }
 
-    // Initialize service integration
+    // Initialize service integration with timeout (HIGH-4 FIX)
     serviceIntegration = new ServiceIntegration();
-    await serviceIntegration.initialize();
-    logger.info('[MAIN] Service integration initialized successfully');
+    try {
+      const { TIMEOUTS } = require('../shared/performanceConstants');
+      const initPromise = serviceIntegration.initialize();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(
+            new Error(
+              'Service integration initialization timeout after 30 seconds',
+            ),
+          );
+        }, TIMEOUTS.SERVICE_STARTUP);
+      });
+
+      await Promise.race([initPromise, timeoutPromise]);
+      logger.info('[MAIN] Service integration initialized successfully');
+    } catch (error) {
+      logger.error('[MAIN] Service integration initialization failed:', {
+        message: error?.message || 'Unknown error',
+        stack: error?.stack,
+      });
+      logger.warn(
+        '[MAIN] Continuing in degraded mode without full service integration',
+      );
+      // Don't throw - allow app to continue in degraded mode
+    }
 
     // Initialize settings service
     settingsService = getSettingsService();
@@ -765,7 +659,10 @@ app.whenReady().then(async () => {
     handleSettingsChanged(initialSettings);
 
     // Run first-time setup in background (non-blocking)
+    // HIGH-3 FIX: Track status for visibility and error reporting
     (async () => {
+      backgroundSetupStatus.startedAt = new Date().toISOString();
+
       try {
         const setupMarker = path.join(
           app.getPath('userData'),
@@ -865,8 +762,32 @@ app.whenReady().then(async () => {
             logger.debug('[STARTUP] Could not create setup marker:', e.message);
           }
         }
+
+        // HIGH-3 FIX: Mark background setup as complete
+        backgroundSetupStatus.complete = true;
+        backgroundSetupStatus.completedAt = new Date().toISOString();
+        logger.info('[STARTUP] Background setup completed successfully');
       } catch (error) {
+        // HIGH-3 FIX: Track error and notify renderer
+        backgroundSetupStatus.error = error.message;
+        backgroundSetupStatus.completedAt = new Date().toISOString();
         logger.error('[STARTUP] Background setup failed:', error);
+
+        // Notify renderer of degraded state if window exists
+        try {
+          const win = BrowserWindow.getAllWindows()[0];
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('startup-degraded', {
+              reason: error.message,
+              component: 'background-setup',
+            });
+          }
+        } catch (notifyError) {
+          logger.debug(
+            '[STARTUP] Could not notify renderer of error:',
+            notifyError.message,
+          );
+        }
       }
     })();
 
@@ -978,7 +899,7 @@ app.whenReady().then(async () => {
     // Fire-and-forget resume of incomplete batches shortly after window is ready
     const resumeTimeout = setTimeout(() => {
       try {
-        const getMainWindow = () => mainWindow;
+        // Note: getMainWindow is already defined at line 566 and in scope here
         resumeIncompleteBatches(serviceIntegration, logger, getMainWindow);
       } catch (e) {
         logger.warn(
@@ -993,13 +914,14 @@ app.whenReady().then(async () => {
       logger.warn('[RESUME] Failed to unref timeout:', error.message);
     }
 
-    // Load Ollama config and apply any saved selections
-    const cfg = await loadOllamaConfig();
-    if (cfg.selectedTextModel) await setOllamaModel(cfg.selectedTextModel);
-    if (cfg.selectedVisionModel)
-      await setOllamaVisionModel(cfg.selectedVisionModel);
-    if (cfg.selectedEmbeddingModel)
-      await setOllamaEmbeddingModel(cfg.selectedEmbeddingModel);
+    // Load Ollama config and apply any saved selections (LOW-3: renamed cfg to ollamaConfig)
+    const ollamaConfig = await loadOllamaConfig();
+    if (ollamaConfig.selectedTextModel)
+      await setOllamaModel(ollamaConfig.selectedTextModel);
+    if (ollamaConfig.selectedVisionModel)
+      await setOllamaVisionModel(ollamaConfig.selectedVisionModel);
+    if (ollamaConfig.selectedEmbeddingModel)
+      await setOllamaEmbeddingModel(ollamaConfig.selectedEmbeddingModel);
     logger.info('[STARTUP] Ollama configuration loaded');
 
     // Install React DevTools in development (opt-in to avoid noisy warnings)
@@ -1192,10 +1114,13 @@ app.on('before-quit', async () => {
     }
     eventListeners = [];
 
-    // Clean up IPC listeners
+    // Clean up IPC listeners (CRITICAL FIX: use targeted cleanup via registry)
     try {
-      ipcMain.removeAllListeners();
-      logger.info('[CLEANUP] All IPC listeners removed');
+      const { removeAllRegistered } = require('./core/ipcRegistry');
+      const stats = removeAllRegistered(ipcMain);
+      logger.info(
+        `[CLEANUP] IPC cleanup: ${stats.handlers} handlers, ${stats.listeners} listeners removed`,
+      );
     } catch (error) {
       logger.error('[CLEANUP] Failed to remove IPC listeners:', error);
     }
@@ -1213,98 +1138,41 @@ app.on('before-quit', async () => {
     }
 
     // Legacy chromaDbProcess cleanup (fallback if StartupManager didn't handle it)
+    // Uses async killProcess from platformBehavior to avoid blocking main thread
     if (chromaDbProcess) {
-      logger.info(
-        `[ChromaDB] Stopping ChromaDB server process (PID: ${
-          chromaDbProcess.pid
-        })`,
-      );
+      const pid = chromaDbProcess.pid;
+      logger.info(`[ChromaDB] Stopping ChromaDB server process (PID: ${pid})`);
+
       try {
-        // Remove all listeners first
+        // Remove listeners before killing to avoid spurious error events
         chromaDbProcess.removeAllListeners();
 
-        // Fixed: Use synchronous kill to ensure completion before continuing
-        if (isWindows) {
-          // On Windows, use async taskkill with force flag to avoid blocking
-          const { asyncSpawn } = require('./utils/asyncSpawnUtils');
-          const result = await asyncSpawn(
-            'taskkill',
-            ['/pid', chromaDbProcess.pid, '/f', '/t'],
-            {
-              windowsHide: true,
-              timeout: 5000, // 5 second timeout for taskkill
-              encoding: 'utf8',
-            },
-          );
+        // Use async platform-aware process killing (no blocking execSync)
+        const {
+          killProcess,
+          isProcessRunning,
+        } = require('./core/platformBehavior');
+        const result = await killProcess(pid);
 
-          if (result.status === 0) {
-            logger.info(
-              '[ChromaDB] ✓ Process terminated successfully (taskkill)',
-            );
-          } else if (result.error) {
-            logger.error('[ChromaDB] Taskkill error:', result.error.message);
-          } else {
-            logger.warn('[ChromaDB] Taskkill exited with code:', result.status);
-            if (result.stderr) {
-              logger.warn('[ChromaDB] Taskkill stderr:', result.stderr.trim());
-            }
-          }
+        if (result.success) {
+          logger.info('[ChromaDB] Process terminated successfully');
         } else {
-          // On Unix-like systems, use synchronous kill commands
-          const { execSync } = require('child_process');
-          try {
-            // Try SIGTERM first for graceful shutdown
-            execSync(`kill -TERM -${chromaDbProcess.pid}`, { timeout: 100 });
-            logger.info('[ChromaDB] Sent SIGTERM to process group');
-
-            // Synchronous sleep for 2 seconds using shell command
-            try {
-              execSync('sleep 2', { timeout: 3000 });
-            } catch (e) {
-              // Timeout or error is fine, continue
-            }
-
-            // Force kill if still alive
-            try {
-              execSync(`kill -KILL -${chromaDbProcess.pid}`, { timeout: 100 });
-              logger.info('[ChromaDB] Sent SIGKILL to process group');
-            } catch (killError) {
-              // Process already dead, this is fine
-              logger.info('[ChromaDB] Process already terminated');
-            }
-          } catch (termError) {
-            // ESRCH means process not found, which is fine
-            logger.info('[ChromaDB] Process already terminated or not found');
-          }
+          logger.warn(
+            '[ChromaDB] Process kill may have failed:',
+            result.error?.message,
+          );
         }
 
-        // Synchronous sleep for cleanup
-        const { execSync } = require('child_process');
-        try {
-          if (isWindows) {
-            execSync('timeout /t 1 /nobreak', {
-              timeout: 2000,
-              windowsHide: true,
-            });
-          } else {
-            execSync('sleep 0.5', { timeout: 1000 });
-          }
-        } catch (e) {
-          // Timeout is fine
-        }
+        // Brief async wait then verify (replaces blocking sleep)
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
         // Verify process is actually terminated
-        try {
-          process.kill(chromaDbProcess.pid, 0); // Signal 0 just checks if process exists
+        if (isProcessRunning(pid)) {
           logger.warn(
-            '[ChromaDB] ⚠️ Process may still be running after kill attempt!',
+            '[ChromaDB] Process may still be running after kill attempt!',
           );
-        } catch (e) {
-          if (e.code === 'ESRCH') {
-            logger.info('[ChromaDB] ✓ Process confirmed terminated');
-          } else {
-            logger.warn('[ChromaDB] Process check error:', e.message);
-          }
+        } else {
+          logger.info('[ChromaDB] Process confirmed terminated');
         }
       } catch (e) {
         logger.error('[ChromaDB] Error stopping ChromaDB process:', e);
@@ -1472,7 +1340,9 @@ async function verifyShutdownCleanup() {
 }
 
 const windowAllClosedHandler = () => {
-  if (!isMacOS) {
+  // Use platform abstraction instead of direct isMacOS check
+  const { shouldQuitOnAllWindowsClosed } = require('./core/platformBehavior');
+  if (shouldQuitOnAllWindowsClosed()) {
     app.quit();
   }
 };
