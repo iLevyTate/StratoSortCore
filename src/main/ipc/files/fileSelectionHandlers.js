@@ -122,6 +122,106 @@ function registerFileSelectionHandlers({
 }) {
   const log = handlerLogger || logger;
   const supportedExts = getSupportedExtensions();
+  const { app } = require('electron');
+
+  // Select directory handler
+  ipcMain.handle(
+    IPC_CHANNELS.FILES.SELECT_DIRECTORY,
+    withErrorLogging(log, async () => {
+      log.debug('[FILE-SELECTION] Select directory handler called');
+      const mainWindow = getMainWindow();
+
+      try {
+        const result = await dialog.showOpenDialog(mainWindow || null, {
+          properties: ['openDirectory', 'createDirectory'],
+          title: 'Select Folder',
+          buttonLabel: 'Select Folder',
+        });
+
+        if (result.canceled || !result.filePaths.length) {
+          return { success: false, path: null };
+        }
+
+        return { success: true, path: result.filePaths[0] };
+      } catch (error) {
+        log.error('[FILE-SELECTION] Error selecting directory:', error);
+        return { success: false, error: error.message, path: null };
+      }
+    }),
+  );
+
+  // Get documents path handler
+  ipcMain.handle(
+    IPC_CHANNELS.FILES.GET_DOCUMENTS_PATH,
+    withErrorLogging(log, async () => {
+      log.debug('[FILE-SELECTION] Get documents path handler called');
+      try {
+        const documentsPath = app.getPath('documents');
+        return { success: true, path: documentsPath };
+      } catch (error) {
+        log.error('[FILE-SELECTION] Error getting documents path:', error);
+        return { success: false, error: error.message, path: null };
+      }
+    }),
+  );
+
+  // Get file stats handler
+  ipcMain.handle(
+    IPC_CHANNELS.FILES.GET_FILE_STATS,
+    withErrorLogging(log, async (_event, filePath) => {
+      log.debug(
+        '[FILE-SELECTION] Get file stats handler called for:',
+        filePath,
+      );
+      try {
+        if (!filePath || typeof filePath !== 'string') {
+          return { success: false, error: 'Invalid file path', stats: null };
+        }
+        const stats = await fs.stat(filePath);
+        return {
+          success: true,
+          stats: {
+            size: stats.size,
+            isFile: stats.isFile(),
+            isDirectory: stats.isDirectory(),
+            created: stats.birthtime,
+            modified: stats.mtime,
+            accessed: stats.atime,
+          },
+        };
+      } catch (error) {
+        log.error('[FILE-SELECTION] Error getting file stats:', error);
+        return { success: false, error: error.message, stats: null };
+      }
+    }),
+  );
+
+  // Get files in directory handler
+  ipcMain.handle(
+    IPC_CHANNELS.FILES.GET_FILES_IN_DIRECTORY,
+    withErrorLogging(log, async (_event, dirPath) => {
+      log.debug(
+        '[FILE-SELECTION] Get files in directory handler called for:',
+        dirPath,
+      );
+      try {
+        if (!dirPath || typeof dirPath !== 'string') {
+          return { success: false, error: 'Invalid directory path', files: [] };
+        }
+        const items = await fs.readdir(dirPath, { withFileTypes: true });
+        const files = items
+          .filter((item) => item.isFile())
+          .map((item) => ({
+            name: item.name,
+            path: path.join(dirPath, item.name),
+          }));
+        return { success: true, files };
+      } catch (error) {
+        log.error('[FILE-SELECTION] Error getting files in directory:', error);
+        return { success: false, error: error.message, files: [] };
+      }
+    }),
+  );
 
   // Select files handler
   ipcMain.handle(

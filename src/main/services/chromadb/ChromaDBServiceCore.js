@@ -568,6 +568,46 @@ class ChromaDBServiceCore extends EventEmitter {
           logger.error('[ChromaDB] Error during cleanup:', cleanupError);
         }
 
+        // Check for tenant/database corruption errors and attempt recovery
+        const errorMsg = error.message || '';
+        const isTenantError =
+          errorMsg.includes('tenant') ||
+          errorMsg.includes('default_tenant') ||
+          errorMsg.includes('ChromaServerError');
+
+        if (isTenantError && !this._recoveryAttempted) {
+          this._recoveryAttempted = true;
+          logger.warn(
+            '[ChromaDB] Detected tenant/database error, attempting recovery by resetting data...',
+          );
+
+          try {
+            // Delete the corrupt database directory
+            const fsSync = require('fs');
+            if (fsSync.existsSync(this.dbPath)) {
+              await fs.rm(this.dbPath, { recursive: true, force: true });
+              logger.info('[ChromaDB] Deleted corrupt database directory');
+            }
+
+            // Recreate the directory
+            await this.ensureDbDirectory();
+
+            // Note: The ChromaDB server needs to be restarted to pick up the new database
+            // For now, just log and let the next startup attempt succeed
+            logger.warn(
+              '[ChromaDB] Database reset complete. ChromaDB server may need restart.',
+            );
+            logger.warn(
+              '[ChromaDB] Please restart the application for changes to take effect.',
+            );
+          } catch (recoveryError) {
+            logger.error(
+              '[ChromaDB] Recovery attempt failed:',
+              recoveryError.message,
+            );
+          }
+        }
+
         throw new Error(`Failed to initialize ChromaDB: ${error.message}`);
       }
     })();
