@@ -9,6 +9,7 @@ const {
 const { buildOllamaOptions } = require('../services/PerformanceService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
+const { extractAndParseJSON } = require('../utils/jsonRepair');
 const {
   AI_DEFAULTS,
   SUPPORTED_IMAGE_EXTENSIONS,
@@ -154,7 +155,16 @@ Analyze this image:`;
 
     if (response.response) {
       try {
-        const parsedJson = JSON.parse(response.response);
+        // CRITICAL FIX: Use robust JSON extraction with repair for malformed LLM responses
+        const parsedJson = extractAndParseJSON(response.response, null);
+
+        if (!parsedJson || typeof parsedJson !== 'object') {
+          logger.warn('[IMAGE-ANALYSIS] JSON extraction failed', {
+            responseLength: response.response.length,
+            responsePreview: response.response.substring(0, 500),
+          });
+          throw new Error('Failed to parse image analysis JSON from Ollama');
+        }
 
         // Validate and structure the date
         if (parsedJson.date) {

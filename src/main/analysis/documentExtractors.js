@@ -163,29 +163,63 @@ async function extractContentStreaming(filePath) {
 
 async function extractTextFromPdf(filePath, fileName) {
   const pdfModule = require('pdf-parse');
-  // Handle both old (function) and new (object with PDFParse function) export formats
-  // pdf-parse 2.x exports an object with PDFParse as a callable function (NOT a constructor)
-  const pdfParseFn =
-    typeof pdfModule === 'function'
-      ? pdfModule
-      : pdfModule.PDFParse || pdfModule.default;
   // Fixed: Check file size before loading into memory
   await checkFileSize(filePath, fileName);
 
   let dataBuffer = null;
   try {
     dataBuffer = await fs.readFile(filePath);
-    // pdf-parse 2.x: PDFParse is a function that returns a promise, NOT a constructor
-    const pdfData = await pdfParseFn(dataBuffer);
 
-    if (!pdfData.text || pdfData.text.trim().length === 0) {
+    let pdfText = '';
+
+    // pdf-parse 2.x uses PDFParse class with load() and getText() methods
+    if (pdfModule.PDFParse && typeof pdfModule.PDFParse === 'function') {
+      let parser = null;
+      try {
+        parser = new pdfModule.PDFParse({ data: dataBuffer });
+        await parser.load();
+        const textResult = await parser.getText();
+
+        // getText() returns object with 'text' property (combined text from all pages)
+        if (textResult && textResult.text) {
+          pdfText = textResult.text.trim();
+        }
+      } catch (v2Error) {
+        logger.warn(
+          '[PDF] pdf-parse 2.x extraction failed, error:',
+          v2Error.message,
+        );
+        throw v2Error;
+      } finally {
+        // Always destroy parser to free memory (required by v2 API)
+        if (parser && typeof parser.destroy === 'function') {
+          try {
+            await parser.destroy();
+          } catch (destroyError) {
+            logger.debug('[PDF] Parser destroy error:', destroyError.message);
+          }
+        }
+      }
+    } else if (typeof pdfModule === 'function') {
+      // pdf-parse 1.x uses direct function call
+      const pdfData = await pdfModule(dataBuffer);
+      pdfText = pdfData.text || '';
+    } else if (pdfModule.default && typeof pdfModule.default === 'function') {
+      // ESM default export fallback
+      const pdfData = await pdfModule.default(dataBuffer);
+      pdfText = pdfData.text || '';
+    } else {
+      throw new Error('Unable to determine pdf-parse API version');
+    }
+
+    if (!pdfText || pdfText.trim().length === 0) {
       throw new FileProcessingError('PDF_NO_TEXT_CONTENT', fileName, {
         suggestion: 'PDF may be image-based or corrupted',
       });
     }
 
     // Fixed: Truncate text to prevent memory issues and clean up buffer
-    const result = truncateText(pdfData.text);
+    const result = truncateText(pdfText);
     dataBuffer = null; // Explicit cleanup to help GC
     return result;
   } finally {

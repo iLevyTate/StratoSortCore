@@ -1,6 +1,7 @@
 const { logger } = require('../../shared/logger');
 logger.setContext('SmartFoldersLLMService');
 const { fetchWithRetry } = require('../utils/ollamaApiRetry');
+const { extractAndParseJSON } = require('../utils/jsonRepair');
 
 async function enhanceSmartFolderWithLLM(
   folderData,
@@ -79,11 +80,17 @@ Please provide a JSON response with the following enhancements:
     if (response.ok) {
       try {
         const data = await response.json();
-        const enhancement = JSON.parse(data.response);
+        // Use robust JSON extraction with repair for malformed LLM responses
+        const enhancement = extractAndParseJSON(data.response, null);
         if (enhancement && typeof enhancement === 'object') {
           logger.info('[LLM-ENHANCEMENT] Successfully enhanced smart folder');
           return enhancement;
         }
+        logger.warn('[LLM-ENHANCEMENT] Failed to parse LLM response', {
+          responseLength: data.response?.length || 0,
+          responsePreview: data.response?.substring(0, 300) || 'empty',
+        });
+        return { error: 'Invalid JSON response from LLM' };
       } catch (parseError) {
         logger.error('[LLM-ENHANCEMENT] Failed to parse response:', parseError);
         return { error: 'Invalid JSON response from LLM' };

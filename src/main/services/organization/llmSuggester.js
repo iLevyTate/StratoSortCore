@@ -11,6 +11,7 @@ const { logger } = require('../../../shared/logger');
 const { getOllama, getOllamaModel } = require('../../ollamaUtils');
 const { buildOllamaOptions } = require('../PerformanceService');
 const { globalDeduplicator } = require('../../utils/llmOptimization');
+const { extractAndParseJSON } = require('../../utils/jsonRepair');
 
 logger.setContext('Organization:LLMSuggester');
 
@@ -96,21 +97,18 @@ Return JSON: {
       return [];
     }
 
-    // Parse JSON response
-    let parsed;
-    try {
-      parsed = JSON.parse(responseText);
-    } catch (parseError) {
-      logger.warn(
-        '[LLMSuggester] Failed to parse JSON response:',
-        parseError.message,
-        'Raw:',
-        responseText.slice(0, 500),
-      );
+    // Parse JSON response with robust extraction and repair
+    const parsed = extractAndParseJSON(responseText, null);
+
+    if (!parsed) {
+      logger.warn('[LLMSuggester] Failed to parse JSON response', {
+        responseLength: responseText.length,
+        responsePreview: responseText.slice(0, 500),
+      });
       return [];
     }
 
-    if (!parsed || !Array.isArray(parsed.suggestions)) {
+    if (!Array.isArray(parsed.suggestions)) {
       logger.warn('[LLMSuggester] Response missing suggestions array');
       return [];
     }

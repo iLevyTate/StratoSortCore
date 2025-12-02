@@ -22,7 +22,11 @@ const getColumnCount = (containerWidth) => {
 /**
  * Virtualized row component that renders multiple file items per row
  */
-const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data }) {
+const VirtualizedFileRow = memo(function VirtualizedFileRow({
+  index,
+  style,
+  data,
+}) {
   const {
     files,
     columnsPerRow,
@@ -46,14 +50,17 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
 
     const file = files[fileIndex];
     const fileWithEdits = getFileWithEdits(file, fileIndex);
-    const currentCategory =
+    const rawCategory =
       editingFiles[fileIndex]?.category || fileWithEdits.analysis?.category;
-    const smartFolder = findSmartFolderForCategory(currentCategory);
+    const smartFolder = findSmartFolderForCategory(rawCategory);
+    // CRITICAL FIX: Use the matched smart folder's actual name for the Select value
+    // This ensures case-insensitive matching between analysis category and dropdown options
+    const currentCategory = smartFolder?.name || rawCategory;
     const isSelected = selectedFiles.has(fileIndex);
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
     const destination = smartFolder
       ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
-      : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
+      : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
 
     rowItems.push(
       <div key={file.path} className="flex-1 min-w-0 p-2">
@@ -69,14 +76,14 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
           destination={destination}
           category={currentCategory}
         />
-      </div>
+      </div>,
     );
   }
 
   // Fill remaining space if row is incomplete
   while (rowItems.length < columnsPerRow) {
     rowItems.push(
-      <div key={`empty-${rowItems.length}`} className="flex-1 min-w-0 p-2" />
+      <div key={`empty-${rowItems.length}`} className="flex-1 min-w-0 p-2" />,
     );
   }
 
@@ -153,7 +160,7 @@ function VirtualizedFileGrid({
       handleEditFile,
       smartFolders,
       defaultLocation,
-    ]
+    ],
   );
 
   // Calculate optimal list height
@@ -188,14 +195,17 @@ function VirtualizedFileGrid({
     <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);
-        const currentCategory =
+        const rawCategory =
           editingFiles[index]?.category || fileWithEdits.analysis?.category;
-        const smartFolder = findSmartFolderForCategory(currentCategory);
+        const smartFolder = findSmartFolderForCategory(rawCategory);
+        // CRITICAL FIX: Use the matched smart folder's actual name for the Select value
+        // This ensures case-insensitive matching between analysis category and dropdown options
+        const currentCategory = smartFolder?.name || rawCategory;
         const isSelected = selectedFiles.has(index);
         const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
         const destination = smartFolder
           ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
-          : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
+          : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
         return (
           <ReadyFileItem
             key={file.path}

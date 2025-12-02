@@ -6,6 +6,7 @@ const {
 const { buildOllamaOptions } = require('../services/PerformanceService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
+const { extractAndParseJSON } = require('../utils/jsonRepair');
 const crypto = require('crypto');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { logger } = require('../../shared/logger');
@@ -231,12 +232,17 @@ ${truncated}`;
 
     if (response.response) {
       try {
-        // CRITICAL FIX: Wrap JSON.parse in try-catch with comprehensive validation
-        let parsedJson;
-        try {
-          parsedJson = JSON.parse(response.response);
-        } catch (parseError) {
-          logger.warn('[documentLlm] JSON parse error:', parseError.message);
+        // CRITICAL FIX: Use robust JSON extraction with repair for malformed LLM responses
+        const parsedJson = extractAndParseJSON(response.response, null);
+
+        if (!parsedJson) {
+          logger.warn('[documentLlm] JSON extraction failed', {
+            responseLength: response.response.length,
+            responsePreview: response.response.substring(0, 500),
+            responseEnd: response.response.substring(
+              Math.max(0, response.response.length - 200),
+            ),
+          });
           return {
             error: 'Failed to parse document analysis JSON from Ollama.',
             keywords: [],
@@ -245,7 +251,7 @@ ${truncated}`;
         }
 
         // CRITICAL FIX: Validate schema to prevent crashes from malformed responses
-        if (!parsedJson || typeof parsedJson !== 'object') {
+        if (typeof parsedJson !== 'object') {
           logger.warn('[documentLlm] Invalid response: not an object');
           return {
             error: 'Invalid document analysis response structure.',

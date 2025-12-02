@@ -188,9 +188,17 @@ export function useFileHandlers({
         if (newFiles.length === 0) return;
 
         // Update file states for new files
-        newFiles.forEach((filePath) => updateFileState(filePath, 'pending'));
+        // newFiles contains {path, name} objects from API response
+        newFiles.forEach((file) => {
+          const filePath = typeof file === 'string' ? file : file.path;
+          updateFileState(filePath, 'pending');
+        });
 
-        const fileObjects = await getBatchFileStats(newFiles);
+        // Extract paths for getBatchFileStats which expects string array
+        const filePaths = newFiles.map((f) =>
+          typeof f === 'string' ? f : f.path,
+        );
+        const fileObjects = await getBatchFileStats(filePaths);
         const enhancedFiles = fileObjects.map((file) => ({
           ...file,
           source: 'file_selection',

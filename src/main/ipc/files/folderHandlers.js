@@ -22,6 +22,83 @@ logger.setContext('IPC:Files:Folders');
  * @param {Object} params.shell - Electron shell module
  */
 function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
+  // Create folder directly
+  ipcMain.handle(
+    IPC_CHANNELS.FILES.CREATE_FOLDER_DIRECT,
+    withErrorLogging(logger, async (event, fullPath) => {
+      try {
+        if (!fullPath || typeof fullPath !== 'string') {
+          return {
+            success: false,
+            error: 'Invalid folder path provided',
+            errorCode: 'INVALID_PATH',
+          };
+        }
+
+        const normalizedPath = path.resolve(fullPath);
+
+        // Check if folder already exists
+        try {
+          const stats = await fs.stat(normalizedPath);
+          if (stats.isDirectory()) {
+            return {
+              success: true,
+              message: 'Folder already exists',
+              path: normalizedPath,
+              alreadyExisted: true,
+            };
+          } else {
+            return {
+              success: false,
+              error: 'A file with this name already exists',
+              errorCode: 'FILE_EXISTS',
+            };
+          }
+        } catch (statError) {
+          // ENOENT means folder doesn't exist, which is expected
+          if (statError.code !== 'ENOENT') {
+            throw statError;
+          }
+        }
+
+        // Create the folder recursively
+        await fs.mkdir(normalizedPath, { recursive: true });
+        logger.info('[FILE-OPS] Created folder:', normalizedPath);
+
+        return {
+          success: true,
+          message: 'Folder created successfully',
+          path: normalizedPath,
+          alreadyExisted: false,
+        };
+      } catch (error) {
+        logger.error('[FILE-OPS] Error creating folder:', error);
+
+        let userMessage = 'Failed to create folder';
+        let errorCode = 'CREATE_FAILED';
+
+        if (error.code === 'EACCES' || error.code === 'EPERM') {
+          errorCode = 'PERMISSION_DENIED';
+          userMessage = 'Permission denied - cannot create folder here';
+        } else if (error.code === 'ENOSPC') {
+          errorCode = 'NO_SPACE';
+          userMessage = 'Insufficient disk space';
+        } else if (error.code === 'ENAMETOOLONG') {
+          errorCode = 'NAME_TOO_LONG';
+          userMessage = 'Folder path is too long';
+        }
+
+        return {
+          success: false,
+          error: userMessage,
+          errorCode,
+          details: error.message,
+          systemError: error.code,
+        };
+      }
+    }),
+  );
+
   // Open folder in file explorer
   ipcMain.handle(
     IPC_CHANNELS.FILES.OPEN_FOLDER,

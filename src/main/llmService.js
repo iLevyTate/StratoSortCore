@@ -6,6 +6,7 @@ const {
   getOllamaModel,
   setOllamaModel,
 } = require('./ollamaUtils');
+const { extractAndParseJSON } = require('./utils/jsonRepair');
 
 /**
  * Test if Ollama is available and the model is working
@@ -122,14 +123,15 @@ async function getOrganizationSuggestions(directoryStructure) {
       throw new Error('Empty response from LLM');
     }
 
-    // Parse the JSON response
+    // Parse the JSON response with robust extraction and repair
     let suggestions;
-    try {
-      const parsedResponse = JSON.parse(response.response);
+    const parsedResponse = extractAndParseJSON(response.response, null);
+    if (parsedResponse) {
       suggestions = parsedResponse.suggestions || parsedResponse;
-    } catch (parseError) {
+    } else {
       logger.warn('Failed to parse LLM JSON response, using text parsing', {
-        error: parseError.message,
+        responseLength: response.response.length,
+        responsePreview: response.response.substring(0, 300),
       });
       suggestions = parseTextResponse(response.response);
     }

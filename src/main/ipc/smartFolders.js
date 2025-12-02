@@ -6,6 +6,7 @@ const {
   enhanceSmartFolderWithLLM,
 } = require('../services/SmartFoldersLLMService');
 const { withErrorLogging } = require('./withErrorLogging');
+const { extractAndParseJSON } = require('../utils/jsonRepair');
 
 // Import centralized security configuration
 const {
@@ -216,7 +217,11 @@ function registerSmartFoldersIpc({
               format: 'json',
               options: { ...genPerf, temperature: 0.1, num_predict: 200 },
             });
-            const parsed = JSON.parse(resp.response);
+            // Use robust JSON extraction with repair for malformed LLM responses
+            const parsed = extractAndParseJSON(resp.response, null);
+            if (!parsed) {
+              throw new Error('Failed to parse LLM JSON response');
+            }
             const parsedIdx = parseInt(parsed.index, 10);
             // Validate parsed index is a valid number
             if (isNaN(parsedIdx) || parsedIdx < 1) {
