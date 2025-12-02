@@ -51,13 +51,14 @@ function sanitizePath(filePath) {
     }
   }
 
-  // 4. Check for path traversal attempts before normalization
+  // 4. Normalize the path first (resolves .., ., etc.)
+  normalized = path.normalize(normalized);
+
+  // 5. Check for path traversal attempts AFTER normalization
+  // This catches any remaining .. that weren't resolved
   if (normalized.includes('..')) {
     throw new Error('Invalid path: path traversal detected');
   }
-
-  // 5. Normalize the path (resolves .., ., etc.)
-  normalized = path.normalize(normalized);
 
   // 6. Validate path depth to prevent deep nesting attacks
   const pathParts = normalized

@@ -62,7 +62,25 @@ async function atomicWriteFile(filePath, data, options = {}) {
       ? JSON.stringify(data, null, 2)
       : JSON.stringify(data);
     await fs.writeFile(tempPath, content, 'utf8');
-    await fs.rename(tempPath, filePath);
+    // Retry rename on Windows EPERM errors (file handle race condition)
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await fs.rename(tempPath, filePath);
+        lastError = null;
+        break;
+      } catch (renameError) {
+        lastError = renameError;
+        if (renameError.code === 'EPERM' && attempt < 2) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 50 * (attempt + 1)),
+          );
+          continue;
+        }
+        throw renameError;
+      }
+    }
+    if (lastError) throw lastError;
   } catch (writeError) {
     try {
       await fs.unlink(tempPath);

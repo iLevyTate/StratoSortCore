@@ -26,6 +26,14 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
     callbackRef.current = onSettingsChanged;
   }, [onSettingsChanged]);
 
+  // Memoize watchKeys to prevent infinite re-subscription loops when array is passed inline
+  // We serialize the array to create a stable string key for comparison
+  const watchKeysKey = watchKeys ? JSON.stringify([...watchKeys].sort()) : null;
+  const watchKeysRef = useRef(watchKeys);
+  useEffect(() => {
+    watchKeysRef.current = watchKeys;
+  }, [watchKeysKey, watchKeys]);
+
   useEffect(() => {
     // FIX: Return empty cleanup function for consistent return
     if (!enabled) return () => {};
@@ -33,11 +41,12 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
     const handleSettingsChanged = (newSettings) => {
       try {
         // If watching specific keys, filter to only those changes
-        if (watchKeys && Array.isArray(watchKeys)) {
+        const currentWatchKeys = watchKeysRef.current;
+        if (currentWatchKeys && Array.isArray(currentWatchKeys)) {
           const relevantChanges = {};
           let hasRelevantChange = false;
 
-          watchKeys.forEach((key) => {
+          currentWatchKeys.forEach((key) => {
             if (key in newSettings) {
               relevantChanges[key] = newSettings[key];
               hasRelevantChange = true;
@@ -78,7 +87,7 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
         }
       }
     };
-  }, [enabled, watchKeys]);
+  }, [enabled, watchKeysKey]);
 }
 
 /**

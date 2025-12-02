@@ -541,7 +541,25 @@ class OfflineQueue extends EventEmitter {
       const tempPath = `${this.config.persistPath}.tmp.${Date.now()}`;
       try {
         await fs.writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
-        await fs.rename(tempPath, this.config.persistPath);
+        // Retry rename on Windows EPERM errors (file handle race condition)
+        let lastError;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await fs.rename(tempPath, this.config.persistPath);
+            lastError = null;
+            break;
+          } catch (renameError) {
+            lastError = renameError;
+            if (renameError.code === 'EPERM' && attempt < 2) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, 50 * (attempt + 1)),
+              );
+              continue;
+            }
+            throw renameError;
+          }
+        }
+        if (lastError) throw lastError;
       } catch (writeError) {
         // Clean up temp file on failure
         try {

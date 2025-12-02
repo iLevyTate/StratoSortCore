@@ -185,10 +185,8 @@ function registerAnalysisIpc({
                   getServiceIntegration && getServiceIntegration();
                 // Only clean up if the state exists and wasn't already marked as error/complete
                 const currentState =
-                  await serviceIntegration?.processingState?.getState?.(
-                    filePath,
-                  );
-                if (currentState === 'analyzing') {
+                  serviceIntegration?.processingState?.getState?.(filePath);
+                if (currentState === 'in_progress') {
                   // State is still analyzing, clean it up
                   await serviceIntegration?.processingState?.clearState?.(
                     filePath,
@@ -447,10 +445,8 @@ function registerAnalysisIpc({
                   getServiceIntegration && getServiceIntegration();
                 // Only clean up if the state exists and wasn't already marked as error/complete
                 const currentState =
-                  await serviceIntegration?.processingState?.getState?.(
-                    filePath,
-                  );
-                if (currentState === 'analyzing') {
+                  serviceIntegration?.processingState?.getState?.(filePath);
+                if (currentState === 'in_progress') {
                   // State is still analyzing, clean it up
                   await serviceIntegration?.processingState?.clearState?.(
                     filePath,
@@ -593,10 +589,8 @@ function registerAnalysisIpc({
                   getServiceIntegration && getServiceIntegration();
                 // Only clean up if the state exists and wasn't already marked as error/complete
                 const currentState =
-                  await serviceIntegration?.processingState?.getState?.(
-                    filePath,
-                  );
-                if (currentState === 'analyzing') {
+                  serviceIntegration?.processingState?.getState?.(filePath);
+                if (currentState === 'in_progress') {
                   // State is still analyzing, clean it up
                   await serviceIntegration?.processingState?.clearState?.(
                     filePath,

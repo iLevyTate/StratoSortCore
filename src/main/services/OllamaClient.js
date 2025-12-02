@@ -400,12 +400,13 @@ class OllamaClient {
    * @returns {Promise<boolean>}
    */
   async _performHealthCheck() {
+    let timer = null;
     try {
       const { getOllama } = require('../ollamaUtils');
       const ollama = getOllama();
 
       const timeoutPromise = new Promise((_, reject) => {
-        const timer = setTimeout(
+        timer = setTimeout(
           () => reject(new Error('Health check timeout')),
           this.config.healthCheckTimeout,
         );
@@ -438,6 +439,9 @@ class OllamaClient {
 
       this.lastHealthCheck = Date.now();
       return false;
+    } finally {
+      // Clear timeout to prevent memory leak
+      if (timer) clearTimeout(timer);
     }
   }
 

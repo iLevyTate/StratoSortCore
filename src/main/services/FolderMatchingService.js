@@ -116,27 +116,36 @@ class FolderMatchingService {
   /**
    * Initialize the service and its resources
    * Should be called after construction and successful service setup
-   * FIX: Made thread-safe with initialization lock to prevent race conditions
+   * FIX: Made thread-safe with initialization promise to prevent race conditions
+   * @returns {Promise<void>} Resolves when initialization is complete
    */
   initialize() {
-    // FIX: Use synchronous lock check to prevent multiple concurrent initializations
-    if (this._initializing) {
-      logger.debug(
-        '[FolderMatchingService] Initialization already in progress, skipping',
-      );
-      return;
+    // FIX: Return existing initialization promise if already in progress
+    if (this._initPromise) {
+      return this._initPromise;
+    }
+
+    // Already initialized
+    if (this.embeddingCache?.initialized) {
+      return Promise.resolve();
     }
 
     // Fixed: Initialize the embedding cache after construction to prevent orphaned intervals
     if (this.embeddingCache && !this.embeddingCache.initialized) {
+      this._initPromise = Promise.resolve().then(() => {
+        try {
+          this.embeddingCache.initialize();
+          logger.info('[FolderMatchingService] Initialized successfully');
+        } finally {
+          // Keep the promise but mark initialization complete
+          this._initializing = false;
+        }
+      });
       this._initializing = true;
-      try {
-        this.embeddingCache.initialize();
-        logger.info('[FolderMatchingService] Initialized successfully');
-      } finally {
-        this._initializing = false;
-      }
+      return this._initPromise;
     }
+
+    return Promise.resolve();
   }
 
   async embedText(text) {

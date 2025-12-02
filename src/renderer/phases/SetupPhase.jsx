@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -44,10 +44,12 @@ function SetupPhase() {
   const [isAddingFolder, setIsAddingFolder] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeletingFolder, setIsDeletingFolder] = useState(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     const initializeSetup = async () => {
-      setIsLoading(true);
+      if (isMountedRef.current) setIsLoading(true);
       try {
         await Promise.all([loadSmartFolders(), loadDefaultLocation()]);
       } catch (error) {
@@ -55,12 +57,15 @@ function SetupPhase() {
           error: error.message,
           stack: error.stack,
         });
-        showError('Failed to load setup data');
+        if (isMountedRef.current) showError('Failed to load setup data');
       } finally {
-        setIsLoading(false);
+        if (isMountedRef.current) setIsLoading(false);
       }
     };
     initializeSetup();
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {

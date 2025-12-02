@@ -1,7 +1,8 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 import PropTypes from 'prop-types';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
+import AnalysisDetails from '../AnalysisDetails';
 
 function ReadyFileItem({
   file,
@@ -30,6 +31,8 @@ function ReadyFileItem({
     (e) => onEdit(index, 'category', e.target.value),
     [onEdit, index],
   );
+  const [showDetails, setShowDetails] = useState(false);
+  const toggleDetails = useCallback(() => setShowDetails((prev) => !prev), []);
 
   // Extract file path for tooltip
   const filePath = file.path || '';
@@ -95,6 +98,26 @@ function ReadyFileItem({
                     ))}
                   </Select>
                 </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-system-gray-100">
+                <button
+                  type="button"
+                  onClick={toggleDetails}
+                  className="text-xs text-system-gray-500 hover:text-system-gray-700 flex items-center gap-1 mb-2"
+                >
+                  <span
+                    className={`transition-transform ${showDetails ? 'rotate-90' : ''}`}
+                  >
+                    ▶
+                  </span>
+                  {showDetails ? 'Hide details' : 'Show details'}
+                </button>
+                {showDetails && (
+                  <AnalysisDetails
+                    analysis={analysis}
+                    options={{ showName: false, showCategory: false }}
+                  />
+                )}
               </div>
               {destination && (
                 <div className="text-sm text-system-gray-600 mt-2 overflow-hidden">

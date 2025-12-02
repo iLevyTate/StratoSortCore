@@ -95,7 +95,24 @@ class ProcessingStateService {
     const tempPath = `${this.statePath}.tmp.${Date.now()}`;
     try {
       await fs.writeFile(tempPath, JSON.stringify(this.state, null, 2));
-      await fs.rename(tempPath, this.statePath);
+      // Retry rename on Windows EPERM errors (file handle race condition)
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await fs.rename(tempPath, this.statePath);
+          return; // Success
+        } catch (renameError) {
+          lastError = renameError;
+          if (renameError.code === 'EPERM' && attempt < 2) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 50 * (attempt + 1)),
+            );
+            continue;
+          }
+          throw renameError;
+        }
+      }
+      throw lastError;
     } catch (error) {
       // Clean up temp file on failure
       try {
@@ -113,35 +130,17 @@ class ProcessingStateService {
   async saveState() {
     const previousLock = this._writeLock;
 
-    // Create the actual save operation as a separate promise
-    // so we can return its result to the caller
-    let saveOperation;
-
-    // Chain continues regardless of previous failures
-    this._writeLock = previousLock
-      .catch(() => {
-        // Previous save failed - log but don't block current save
-      })
-      .then(() => {
-        saveOperation = this._saveStateInternal();
-        return saveOperation;
-      })
-      .then(() => {
-        // Success - chain continues
-      })
-      .catch((error) => {
-        logger.error('[ProcessingStateService] Save failed', {
-          error: error?.message,
-        });
-        // Don't re-throw - keep chain alive for next operation
-        // The actual error is returned via saveOperation below
-      });
-
-    // Wait for previous lock, then return actual save result
+    // Wait for previous lock to complete (ignore its errors)
     await previousLock.catch(() => {});
 
+    // Create save operation and update the lock chain
+    const savePromise = this._saveStateInternal();
+    this._writeLock = savePromise.catch(() => {
+      // Swallow error to keep chain alive for next operation
+    });
+
     try {
-      return await this._saveStateInternal();
+      return await savePromise;
     } catch (error) {
       logger.error('[ProcessingStateService] Save failed', {
         error: error?.message,
@@ -196,6 +195,31 @@ class ProcessingStateService {
     return Object.entries(this.state.analysis.jobs)
       .filter(([, j]) => j.status === 'in_progress' || j.status === 'pending')
       .map(([filePath, j]) => ({ filePath, ...j }));
+  }
+
+  /**
+   * Get the current state of an analysis job
+   * @param {string} filePath - Path to the file
+   * @returns {string|null} The status ('pending', 'in_progress', 'done', 'failed') or null if not found
+   */
+  getState(filePath) {
+    if (!this.state || !this.state.analysis.jobs[filePath]) {
+      return null;
+    }
+    return this.state.analysis.jobs[filePath].status;
+  }
+
+  /**
+   * Clear/remove an analysis job from tracking
+   * @param {string} filePath - Path to the file
+   */
+  async clearState(filePath) {
+    await this.initialize();
+    if (this.state.analysis.jobs[filePath]) {
+      delete this.state.analysis.jobs[filePath];
+      this.state.analysis.lastUpdated = new Date().toISOString();
+      await this.saveState();
+    }
   }
 
   // ===== Organize batch tracking =====

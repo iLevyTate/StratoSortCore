@@ -50,6 +50,30 @@ export function useAnalysis({
   const analysisTimeoutRef = useRef(null);
   const abortControllerRef = useRef(null);
 
+  // Refs to track current state values (prevents stale closures in callbacks)
+  const isAnalyzingRef = useRef(isAnalyzing);
+  const globalAnalysisActiveRef = useRef(globalAnalysisActive);
+  const analysisResultsRef = useRef(analysisResults);
+  const fileStatesRef = useRef(fileStates);
+  const analysisProgressRef = useRef(analysisProgress);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    isAnalyzingRef.current = isAnalyzing;
+  }, [isAnalyzing]);
+  useEffect(() => {
+    globalAnalysisActiveRef.current = globalAnalysisActive;
+  }, [globalAnalysisActive]);
+  useEffect(() => {
+    analysisResultsRef.current = analysisResults;
+  }, [analysisResults]);
+  useEffect(() => {
+    fileStatesRef.current = fileStates;
+  }, [fileStates]);
+  useEffect(() => {
+    analysisProgressRef.current = analysisProgress;
+  }, [analysisProgress]);
+
   /**
    * Reset analysis state
    */
@@ -86,9 +110,13 @@ export function useAnalysis({
     async (files) => {
       if (!files || files.length === 0) return;
 
-      // Atomic lock acquisition
+      // Atomic lock acquisition (use refs to avoid stale closures)
       const lockAcquired = (() => {
-        if (analysisLockRef.current || globalAnalysisActive || isAnalyzing) {
+        if (
+          analysisLockRef.current ||
+          globalAnalysisActiveRef.current ||
+          isAnalyzingRef.current
+        ) {
           return false;
         }
         analysisLockRef.current = true;
@@ -458,11 +486,8 @@ export function useAnalysis({
       actions,
       generatePreviewName,
       namingSettings,
-      isAnalyzing,
-      analysisProgress,
-      analysisResults,
-      fileStates,
-      globalAnalysisActive,
+      // Note: isAnalyzing, analysisProgress, analysisResults, fileStates, globalAnalysisActive
+      // are accessed via refs to prevent stale closure issues during analysis
       resetAnalysisState,
     ],
   );

@@ -129,8 +129,25 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
         return { success: false, error: fsError };
       }
 
-      // Atomic rename
-      await fs.rename(tempPath, filePath);
+      // Atomic rename with retry for Windows EPERM errors
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await fs.rename(tempPath, filePath);
+          lastError = null;
+          break;
+        } catch (renameError) {
+          lastError = renameError;
+          if (renameError.code === 'EPERM' && attempt < 2) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 50 * (attempt + 1)),
+            );
+            continue;
+          }
+          throw renameError;
+        }
+      }
+      if (lastError) throw lastError;
     } catch (writeError) {
       // Clean up temp file on failure
       try {

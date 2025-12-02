@@ -97,8 +97,11 @@ async function processItemsInParallel({
   };
 
   const releaseSlot = () => {
-    activeCount--;
-    if (waitQueue.length > 0) {
+    // FIX: Add bounds checking to prevent activeCount from going negative
+    if (activeCount > 0) {
+      activeCount--;
+    }
+    if (waitQueue.length > 0 && activeCount < concurrency) {
       activeCount++;
       waitQueue.shift()();
     }

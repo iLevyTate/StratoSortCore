@@ -15,10 +15,16 @@ function normalizeOllamaUrl(hostUrl, defaultUrl = 'http://127.0.0.1:11434') {
 
   if (url && typeof url === 'string') {
     url = url.trim();
-    // Remove any existing protocol to prevent double-protocol
-    url = url.replace(/^https?:\/\//i, '');
-    // Add http:// if no protocol specified
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+
+    // Check if URL already has a protocol
+    const hasHttps = url.toLowerCase().startsWith('https://');
+    const hasHttp = url.toLowerCase().startsWith('http://');
+
+    if (hasHttps || hasHttp) {
+      // Remove duplicate protocols (e.g., http://http://...)
+      url = url.replace(/^(https?:\/\/)+/i, hasHttps ? 'https://' : 'http://');
+    } else {
+      // No protocol specified, add http://
       url = `http://${url}`;
     }
   }

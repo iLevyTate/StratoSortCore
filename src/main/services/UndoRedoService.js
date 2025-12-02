@@ -53,6 +53,14 @@ class UndoRedoService {
       await this.loadActions();
       this.initialized = true;
       logger.info('[UndoRedoService] Initialized successfully');
+
+      // FIX: Automatically cleanup orphaned backups on startup
+      this.cleanupOldBackups().catch((error) => {
+        logger.warn(
+          '[UndoRedoService] Startup backup cleanup failed:',
+          error.message,
+        );
+      });
     } catch (error) {
       logger.error('[UndoRedoService] Failed to initialize', {
         error: error.message,
@@ -111,7 +119,25 @@ class UndoRedoService {
     const tempPath = `${this.actionsPath}.tmp.${Date.now()}`;
     try {
       await fs.writeFile(tempPath, JSON.stringify(data, null, 2));
-      await fs.rename(tempPath, this.actionsPath);
+      // Retry rename on Windows EPERM errors (file handle race condition)
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await fs.rename(tempPath, this.actionsPath);
+          lastError = null;
+          break;
+        } catch (renameError) {
+          lastError = renameError;
+          if (renameError.code === 'EPERM' && attempt < 2) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 50 * (attempt + 1)),
+            );
+            continue;
+          }
+          throw renameError;
+        }
+      }
+      if (lastError) throw lastError;
     } catch (error) {
       try {
         await fs.unlink(tempPath);

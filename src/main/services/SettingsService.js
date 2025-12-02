@@ -274,11 +274,12 @@ class SettingsService {
       this._mutexAcquiredAt = Date.now();
 
       // Execute the function and ensure mutex is always released
+      let operationTimeoutId = null;
       try {
         // Add timeout to the actual operation as well
         const operationPromise = fn();
         const operationTimeout = new Promise((_, reject) => {
-          setTimeout(() => {
+          operationTimeoutId = setTimeout(() => {
             reject(
               new Error(
                 `Operation timeout: Function did not complete within ${this._mutexTimeoutMs}ms. ` +
@@ -291,6 +292,8 @@ class SettingsService {
         const result = await Promise.race([operationPromise, operationTimeout]);
         return result;
       } finally {
+        // CRITICAL: Clear timeout to prevent memory leak
+        if (operationTimeoutId) clearTimeout(operationTimeoutId);
         // CRITICAL: Always resolve mutex, even on error or timeout
         // This ensures the next operation can proceed even if this one fails
         this._mutexAcquiredAt = null;

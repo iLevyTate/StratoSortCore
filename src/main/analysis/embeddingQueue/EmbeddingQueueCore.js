@@ -592,6 +592,11 @@ class EmbeddingQueue {
       this.flushTimer = null;
     }
 
+    // FIX: Clear progress tracker callbacks to prevent memory leak
+    if (this._progressTracker?.clear) {
+      this._progressTracker.clear();
+    }
+
     await this.persistQueue();
     await this._failedItemHandler.persistAll();
 
