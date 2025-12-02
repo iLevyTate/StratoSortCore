@@ -849,8 +849,19 @@ async function flushAllEmbeddings() {
   await embeddingQueue.flush();
 }
 
+/**
+ * Reset module singletons and caches
+ * Useful for hot reload, testing, or reconnecting to services
+ */
+function resetSingletons() {
+  chromaDbSingleton = null;
+  folderMatcherSingleton = null;
+  imageAnalysisCache.clear();
+}
+
 module.exports = {
   analyzeImageFile,
   extractTextFromImage,
   flushAllEmbeddings,
+  resetSingletons,
 };

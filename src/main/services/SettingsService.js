@@ -581,18 +581,20 @@ class SettingsService {
       const backups = await this.listBackups();
 
       // Bug #36: Add Number.MAX_SAFE_INTEGER check before timestamp comparisons
-      // Validate all timestamps are within safe integer range
-      for (const backup of backups) {
+      // Filter out backups with unsafe timestamps to prevent comparison issues
+      const safeBackups = backups.filter((backup) => {
         if (backup._parsedTime && !Number.isSafeInteger(backup._parsedTime)) {
           logger.warn(
             `[SettingsService] Backup ${backup.filename} has unsafe timestamp: ${backup._parsedTime}. Skipping for safety.`,
           );
+          return false;
         }
-      }
+        return true;
+      });
 
       // Keep only the most recent backups
-      if (backups.length > this.maxBackups) {
-        const backupsToDelete = backups.slice(this.maxBackups);
+      if (safeBackups.length > this.maxBackups) {
+        const backupsToDelete = safeBackups.slice(this.maxBackups);
 
         for (const backup of backupsToDelete) {
           try {

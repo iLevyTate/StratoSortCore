@@ -124,6 +124,19 @@ async function extractContentStreaming(filePath) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let totalLength = 0;
+    let resolved = false;
+
+    const safeResolve = (value) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(value);
+    };
+
+    const safeReject = (error) => {
+      if (resolved) return;
+      resolved = true;
+      reject(error);
+    };
 
     const stream = createReadStream(filePath, {
       encoding: 'utf8',
@@ -143,10 +156,10 @@ async function extractContentStreaming(filePath) {
     });
 
     stream.on('end', () => {
-      resolve(chunks.join(''));
+      safeResolve(chunks.join(''));
     });
 
-    stream.on('error', reject);
+    stream.on('error', safeReject);
 
     stream.on('close', () => {
       // Handle early termination
@@ -156,7 +169,7 @@ async function extractContentStreaming(filePath) {
           maxLength: MAX_CONTENT_LENGTH,
         });
       }
-      resolve(chunks.join(''));
+      safeResolve(chunks.join(''));
     });
   });
 }
