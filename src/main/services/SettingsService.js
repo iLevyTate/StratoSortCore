@@ -41,6 +41,7 @@ class SettingsService {
     this._maxWatcherRestarts = 10; // Maximum 10 restart attempts
     this._watcherRestartWindow = 60000; // 1 minute window
     this._watcherRestartWindowStart = Date.now();
+    this._restartTimer = null; // FIX: Track restart timer to prevent unbounded timers
 
     // Start file watching
     this._startFileWatcher();
@@ -674,8 +675,13 @@ class SettingsService {
           error: error.message,
         });
         // CRITICAL FIX: Check restart limit before attempting to restart
+        // FIX: Clear any existing restart timer to prevent unbounded timers
+        if (this._restartTimer) {
+          clearTimeout(this._restartTimer);
+        }
         // Attempt to restart watcher after a delay
-        setTimeout(() => {
+        this._restartTimer = setTimeout(() => {
+          this._restartTimer = null;
           this._restartFileWatcher();
         }, 5000);
       });
@@ -745,6 +751,12 @@ class SettingsService {
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
+    }
+
+    // FIX: Clear restart timer to prevent orphaned timers
+    if (this._restartTimer) {
+      clearTimeout(this._restartTimer);
+      this._restartTimer = null;
     }
   }
 

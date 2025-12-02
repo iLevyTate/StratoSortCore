@@ -143,15 +143,17 @@ function registerOllamaIpc({
             };
           } catch (error) {
             logger.error('[IPC] Ollama connection test failed:', error);
+            // FIX: Use consistent fallback host value
+            const fallbackHost = hostUrl || 'http://127.0.0.1:11434';
             systemAnalytics.ollamaHealth = {
               status: 'unhealthy',
-              host: hostUrl || 'http://localhost:11434',
+              host: fallbackHost,
               error: error.message,
               lastCheck: Date.now(),
             };
             return {
               success: false,
-              host: hostUrl || 'http://127.0.0.1:11434',
+              host: fallbackHost,
               error: error.message,
               ollamaHealth: systemAnalytics.ollamaHealth,
             };
@@ -179,15 +181,17 @@ function registerOllamaIpc({
             };
           } catch (error) {
             logger.error('[IPC] Ollama connection test failed:', error);
+            // FIX: Use consistent fallback host value
+            const fallbackHost = hostUrl || 'http://127.0.0.1:11434';
             systemAnalytics.ollamaHealth = {
               status: 'unhealthy',
-              host: hostUrl || 'http://localhost:11434',
+              host: fallbackHost,
               error: error.message,
               lastCheck: Date.now(),
             };
             return {
               success: false,
-              host: hostUrl || 'http://127.0.0.1:11434',
+              host: fallbackHost,
               error: error.message,
               ollamaHealth: systemAnalytics.ollamaHealth,
             };

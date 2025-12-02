@@ -137,7 +137,8 @@ function _setupEventForwarding(
         });
       }
     } catch (error) {
-      logger.debug('[CHROMADB-IPC] Failed to send status update', {
+      // FIX: Log at warn level for better visibility of IPC communication issues
+      logger.warn('[CHROMADB-IPC] Failed to send status update', {
         error: error.message,
       });
     }

@@ -321,6 +321,8 @@ function createHealthMonitor({
     healthCheckState.inProgress = true;
     healthCheckState.startedAt = healthCheckStartTime;
 
+    // FIX: Store timeout ID so we can clear it after the race completes
+    let timeoutId = null;
     try {
       const healthCheckPromise = checkServicesHealth(
         serviceStatus,
@@ -331,7 +333,7 @@ function createHealthMonitor({
       );
 
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           reject(
             new Error(`Health check timeout after ${healthCheckTimeout}ms`),
           );
@@ -342,6 +344,10 @@ function createHealthMonitor({
     } catch (error) {
       logger.error('[HEALTH] Health check failed:', error.message);
     } finally {
+      // FIX: Clear timeout to prevent memory leak
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       healthCheckState.inProgress = false;
       healthCheckState.startedAt = null;
     }

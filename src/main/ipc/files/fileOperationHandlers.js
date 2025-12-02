@@ -76,6 +76,23 @@ function createPerformOperationHandler({
   getMainWindow,
 }) {
   return async (event, operation) => {
+    // FIX: Validate operation object before processing
+    if (!operation || typeof operation !== 'object') {
+      return {
+        success: false,
+        error: 'Invalid operation: expected an object',
+        errorCode: 'INVALID_OPERATION',
+      };
+    }
+
+    if (!operation.type || typeof operation.type !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid operation: missing or invalid type',
+        errorCode: 'INVALID_OPERATION_TYPE',
+      };
+    }
+
     try {
       log.info('[FILE-OPS] Performing operation:', {
         type: operation.type,

@@ -68,15 +68,21 @@ function SetupPhase() {
     };
   }, []);
 
+  // FIX: Use ref to avoid re-adding listener on every editingFolder change
+  const editingFolderRef = useRef(editingFolder);
+  useEffect(() => {
+    editingFolderRef.current = editingFolder;
+  }, [editingFolder]);
+
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && editingFolder) {
+      if (event.key === 'Escape' && editingFolderRef.current) {
         setEditingFolder(null);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [editingFolder]);
+  }, []); // Empty deps - listener added once
 
   // Update defaultLocation when Redux store gets the path
   useEffect(() => {

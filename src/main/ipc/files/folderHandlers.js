@@ -156,6 +156,15 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
   ipcMain.handle(
     IPC_CHANNELS.FILES.DELETE_FOLDER,
     withErrorLogging(logger, async (event, fullPath) => {
+      // FIX: Add null check for fullPath parameter
+      if (!fullPath || typeof fullPath !== 'string') {
+        return {
+          success: false,
+          error: 'Invalid folder path provided',
+          errorCode: 'INVALID_PATH',
+        };
+      }
+
       try {
         const normalizedPath = path.resolve(fullPath);
 

@@ -136,7 +136,8 @@ function registerSmartFoldersIpc({
         return foldersWithStatus;
       } catch (error) {
         logger.error('[SMART-FOLDERS] Error in GET handler:', error);
-        throw error;
+        // FIX: Return error response instead of throwing
+        return { success: false, error: error.message, folders: [] };
       }
     }),
   );
