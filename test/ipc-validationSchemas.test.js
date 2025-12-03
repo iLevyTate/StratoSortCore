@@ -1,0 +1,331 @@
+/**
+ * Tests for IPC Validation Schemas
+ * Tests Zod schema validation for IPC input data
+ */
+
+describe('IPC Validation Schemas', () => {
+  let schemas;
+  let z;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.resetModules();
+
+    const module = require('../src/main/ipc/validationSchemas');
+    schemas = module.schemas;
+    z = module.z;
+  });
+
+  // Skip tests if zod is not available
+  const testIfZod = z ? test : test.skip;
+
+  describe('filePath schema', () => {
+    testIfZod('accepts valid file path', () => {
+      const result = schemas.filePath.safeParse('/path/to/file.pdf');
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects empty string', () => {
+      const result = schemas.filePath.safeParse('');
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('settings schema', () => {
+    testIfZod('accepts valid settings', () => {
+      const result = schemas.settings.safeParse({
+        theme: 'dark',
+        language: 'en',
+        launchOnStartup: true,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('accepts partial settings', () => {
+      const result = schemas.settings.safeParse({
+        theme: 'light',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects invalid theme', () => {
+      const result = schemas.settings.safeParse({
+        theme: 'invalid-theme',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('accepts valid logging levels', () => {
+      for (const level of ['error', 'warn', 'info', 'debug']) {
+        const result = schemas.settings.safeParse({ loggingLevel: level });
+        expect(result.success).toBe(true);
+      }
+    });
+
+    testIfZod('validates ollamaHost as URL or empty', () => {
+      expect(
+        schemas.settings.safeParse({
+          ollamaHost: 'http://localhost:11434',
+        }).success,
+      ).toBe(true);
+      expect(schemas.settings.safeParse({ ollamaHost: '' }).success).toBe(true);
+    });
+
+    testIfZod('validates model name format', () => {
+      expect(
+        schemas.settings.safeParse({ textModel: 'llama2:7b' }).success,
+      ).toBe(true);
+      expect(
+        schemas.settings.safeParse({ textModel: 'model@latest' }).success,
+      ).toBe(true);
+    });
+  });
+
+  describe('smartFolder schema', () => {
+    testIfZod('accepts valid smart folder', () => {
+      const result = schemas.smartFolder.safeParse({
+        name: 'Documents',
+        path: '/home/user/Documents',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('accepts smart folder with all fields', () => {
+      const result = schemas.smartFolder.safeParse({
+        id: 'folder-1',
+        name: 'Documents',
+        path: '/home/user/Documents',
+        description: 'Important documents',
+        keywords: ['important', 'docs'],
+        category: 'personal',
+        isDefault: false,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects empty name', () => {
+      const result = schemas.smartFolder.safeParse({
+        name: '',
+        path: '/path',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('rejects empty path', () => {
+      const result = schemas.smartFolder.safeParse({
+        name: 'Folder',
+        path: '',
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('batchOrganize schema', () => {
+    testIfZod('accepts valid batch operations', () => {
+      const result = schemas.batchOrganize.safeParse({
+        operations: [
+          { source: '/src/file1.pdf', destination: '/dest/file1.pdf' },
+          { source: '/src/file2.pdf', destination: '/dest/file2.pdf' },
+        ],
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects empty operations array', () => {
+      const result = schemas.batchOrganize.safeParse({
+        operations: [],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('rejects operations with empty source', () => {
+      const result = schemas.batchOrganize.safeParse({
+        operations: [{ source: '', destination: '/dest/file.pdf' }],
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('pagination schema', () => {
+    testIfZod('accepts valid pagination', () => {
+      const result = schemas.pagination.safeParse({
+        limit: 50,
+        offset: 10,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects negative offset', () => {
+      const result = schemas.pagination.safeParse({
+        offset: -1,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('rejects limit above maximum', () => {
+      const result = schemas.pagination.safeParse({
+        limit: 2000,
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('searchQuery schema', () => {
+    testIfZod('accepts valid search query', () => {
+      const result = schemas.searchQuery.safeParse({
+        query: 'test search',
+        limit: 20,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('accepts query with all option', () => {
+      const result = schemas.searchQuery.safeParse({
+        all: true,
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('analysisFile schema', () => {
+    testIfZod('accepts valid analysis file', () => {
+      const result = schemas.analysisFile.safeParse({
+        path: '/path/to/file.pdf',
+        name: 'file.pdf',
+        size: 1024,
+        type: 'application/pdf',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('accepts minimal analysis file', () => {
+      const result = schemas.analysisFile.safeParse({
+        path: '/path/to/file.pdf',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects missing path', () => {
+      const result = schemas.analysisFile.safeParse({
+        name: 'file.pdf',
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('feedback schema', () => {
+    testIfZod('accepts valid feedback', () => {
+      const result = schemas.feedback.safeParse({
+        file: { path: '/path/to/file.pdf' },
+        suggestion: { folder: 'Documents', confidence: 0.9 },
+        accepted: true,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('requires accepted boolean', () => {
+      const result = schemas.feedback.safeParse({
+        file: { path: '/path/to/file.pdf' },
+        suggestion: { folder: 'Documents' },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('findSimilar schema', () => {
+    testIfZod('accepts valid input', () => {
+      const result = schemas.findSimilar.safeParse({
+        fileId: 'file-123',
+        topK: 5,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('applies default topK', () => {
+      const result = schemas.findSimilar.safeParse({
+        fileId: 'file-123',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data.topK).toBe(10);
+    });
+
+    testIfZod('rejects missing fileId', () => {
+      const result = schemas.findSimilar.safeParse({
+        topK: 5,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('rejects topK above max', () => {
+      const result = schemas.findSimilar.safeParse({
+        fileId: 'file-123',
+        topK: 200,
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('ollamaHost schema', () => {
+    testIfZod('accepts valid URL', () => {
+      const result = schemas.ollamaHost.safeParse('http://localhost:11434');
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('accepts empty string', () => {
+      const result = schemas.ollamaHost.safeParse('');
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('accepts undefined', () => {
+      const result = schemas.ollamaHost.safeParse(undefined);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('thresholds schema', () => {
+    testIfZod('accepts valid thresholds', () => {
+      const result = schemas.thresholds.safeParse({
+        thresholds: {
+          autoApprove: 0.9,
+          review: 0.5,
+          reject: 0.2,
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    testIfZod('rejects threshold above 1', () => {
+      const result = schemas.thresholds.safeParse({
+        thresholds: {
+          autoApprove: 1.5,
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('rejects negative threshold', () => {
+      const result = schemas.thresholds.safeParse({
+        thresholds: {
+          reject: -0.1,
+        },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('module exports without zod', () => {
+    test('exports null schemas when zod is not available', () => {
+      // Force zod not to be available
+      jest.resetModules();
+      jest.doMock('zod', () => {
+        throw new Error('Module not found');
+      });
+
+      // Re-require the module
+      const moduleWithoutZod = require('../src/main/ipc/validationSchemas');
+
+      expect(moduleWithoutZod.z).toBeNull();
+      expect(moduleWithoutZod.schemas).toBeNull();
+    });
+  });
+});

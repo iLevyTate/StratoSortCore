@@ -140,8 +140,9 @@ describe('ChromaDBService Batch Operations', () => {
       { id: 'file2', vector: [0.2, 0.2], meta: { path: '/p2', name: 'f2' } },
     ];
 
-    const count = await chromaDbService.batchUpsertFiles(files);
-    expect(count).toBe(2);
+    const result = await chromaDbService.batchUpsertFiles(files);
+    expect(result.count).toBe(2);
+    expect(result.queued).toBe(false);
 
     const stats = await chromaDbService.getStats();
     expect(stats.files).toBe(2);

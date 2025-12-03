@@ -475,31 +475,32 @@ describe('FolderMatchingService', () => {
   });
 
   describe('initialize and shutdown', () => {
-    test('should initialize successfully', () => {
+    test('should initialize successfully', async () => {
       const newService = new FolderMatchingService(mockChromaDBService);
       expect(newService.embeddingCache.initialized).toBe(false);
 
-      newService.initialize();
+      // initialize() now returns a Promise
+      await newService.initialize();
       expect(newService.embeddingCache.initialized).toBe(true);
 
       newService.shutdown();
     });
 
-    test('should not re-initialize if already initialized', () => {
+    test('should not re-initialize if already initialized', async () => {
       const newService = new FolderMatchingService(mockChromaDBService);
-      newService.initialize();
+      await newService.initialize();
       const cache1 = newService.embeddingCache;
 
-      newService.initialize();
+      await newService.initialize();
       const cache2 = newService.embeddingCache;
 
       expect(cache1).toBe(cache2);
       newService.shutdown();
     });
 
-    test('should shutdown cleanly', () => {
+    test('should shutdown cleanly', async () => {
       const newService = new FolderMatchingService(mockChromaDBService);
-      newService.initialize();
+      await newService.initialize();
 
       expect(() => newService.shutdown()).not.toThrow();
       expect(newService.embeddingCache.cleanupInterval).toBeNull();
