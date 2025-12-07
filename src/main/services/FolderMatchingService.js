@@ -88,6 +88,7 @@ class FolderMatchingService {
     this.chromaDbService = chromaDbService;
     this.ollama = null;
     this.modelName = '';
+    this._upsertedFolderIds = new Set();
 
     // Initialize embedding cache - use injected or create new
     this.embeddingCache =
@@ -171,10 +172,18 @@ class FolderMatchingService {
         prompt: text || '',
       });
 
-      const result = { vector: response.embedding, model };
+      let vector = Array.isArray(response.embedding) ? response.embedding : [];
+      const expectedDim = getEmbeddingDimension(model);
+      if (vector.length < expectedDim) {
+        vector = vector.concat(new Array(expectedDim - vector.length).fill(0));
+      } else if (vector.length > expectedDim) {
+        vector = vector.slice(0, expectedDim);
+      }
+
+      const result = { vector, model };
 
       // Store in cache for future use
-      this.embeddingCache.set(text, model, response.embedding);
+      this.embeddingCache.set(text, model, vector);
 
       const duration = Date.now() - startTime;
       logger.debug(
@@ -226,6 +235,13 @@ class FolderMatchingService {
 
       const { vector, model } = await this.embedText(folderText);
       const folderId = folder.id || this.generateFolderId(folder);
+      if (this._upsertedFolderIds.has(folderId)) {
+        logger.debug(
+          '[FolderMatchingService] Skipping duplicate folder upsert',
+          { id: folderId, name: folder.name },
+        );
+        return null;
+      }
 
       const payload = {
         id: folderId,
@@ -242,6 +258,7 @@ class FolderMatchingService {
         id: folderId,
         name: folder.name,
       });
+      this._upsertedFolderIds.add(folderId);
 
       return payload;
     } catch (error) {
@@ -292,12 +309,17 @@ class FolderMatchingService {
           .filter(Boolean)
           .join(' - ');
         const model = getOllamaEmbeddingModel();
+        const folderId = folder.id || this.generateFolderId(folder);
+
+        if (this._upsertedFolderIds.has(folderId)) {
+          skipped.push({ folder, error: 'already_upserted_this_session' });
+          continue;
+        }
 
         // Check embedding cache first
         const cachedResult = this.embeddingCache.get(folderText, model);
 
         if (cachedResult) {
-          const folderId = folder.id || this.generateFolderId(folder);
           cachedPayloads.push({
             id: folderId,
             name: folder.name,
@@ -307,6 +329,7 @@ class FolderMatchingService {
             model: cachedResult.model,
             updatedAt: new Date().toISOString(),
           });
+          this._upsertedFolderIds.add(folderId);
         } else {
           uncachedFolders.push(folder);
         }
@@ -368,6 +391,7 @@ class FolderMatchingService {
               model: result.model,
               updatedAt: new Date().toISOString(),
             });
+            this._upsertedFolderIds.add(result.id);
           }
         }
 
@@ -795,11 +819,12 @@ class FolderMatchingService {
   /**
    * Shutdown service and cleanup resources
    * Should be called when the application is closing
+   * @returns {Promise<void>}
    */
-  shutdown() {
+  async shutdown() {
     if (this.embeddingCache) {
       logger.info('[FolderMatchingService] Shutting down embedding cache');
-      this.embeddingCache.shutdown();
+      await this.embeddingCache.shutdown();
     }
   }
 }

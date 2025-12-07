@@ -14,12 +14,16 @@ const Select = memo(
     },
     ref,
   ) {
-    const id = rest.id || `select-${useId()}`;
+    // Always call useId unconditionally to follow React hooks rules
+    const generatedId = useId();
+    const id = rest.id || `select-${generatedId}`;
     const errorId = `${id}-error`;
 
     const classes = useMemo(() => {
       const invalidClass =
-        invalid || error ? 'border-system-red focus:ring-system-red/20' : '';
+        invalid || error
+          ? 'border-stratosort-danger focus:ring-stratosort-danger/15'
+          : '';
       return `form-input-enhanced ${invalidClass} ${className}`.trim();
     }, [invalid, error, className]);
 

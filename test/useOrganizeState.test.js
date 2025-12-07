@@ -24,14 +24,25 @@ jest.mock('../src/renderer/store/hooks', () => ({
 
 // Mock slices
 jest.mock('../src/renderer/store/slices/filesSlice', () => ({
-  setSmartFolders: jest.fn((payload) => ({ type: 'files/setSmartFolders', payload })),
-  setOrganizedFiles: jest.fn((payload) => ({ type: 'files/setOrganizedFiles', payload })),
-  setFileStates: jest.fn((payload) => ({ type: 'files/setFileStates', payload })),
+  setSmartFolders: jest.fn((payload) => ({
+    type: 'files/setSmartFolders',
+    payload,
+  })),
+  setOrganizedFiles: jest.fn((payload) => ({
+    type: 'files/setOrganizedFiles',
+    payload,
+  })),
+  setFileStates: jest.fn((payload) => ({
+    type: 'files/setFileStates',
+    payload,
+  })),
 }));
 
 jest.mock('../src/renderer/store/selectors', () => ({
-  selectFilesWithAnalysis: jest.fn((state) => state?.files?.selectedFiles || []),
-  selectFileStats: jest.fn((state) => ({ total: 0, ready: 0, failed: 0 })),
+  selectFilesWithAnalysis: jest.fn(
+    (state) => state?.files?.selectedFiles || [],
+  ),
+  selectFileStats: jest.fn(() => ({ total: 0, ready: 0, failed: 0 })),
 }));
 
 jest.mock('../src/renderer/store/slices/uiSlice', () => ({
@@ -52,7 +63,6 @@ const mockElectronAPI = {
 
 describe('useOrganizeState', () => {
   let useOrganizeState;
-  let useLoadInitialData;
   let mockDispatch;
   let mockUseAppSelector;
   let mockUseAppDispatch;
@@ -60,7 +70,9 @@ describe('useOrganizeState', () => {
   const defaultState = {
     files: {
       organizedFiles: [],
-      selectedFiles: [{ path: '/test.txt', analysis: { category: 'documents' } }],
+      selectedFiles: [
+        { path: '/test.txt', analysis: { category: 'documents' } },
+      ],
       smartFolders: [{ name: 'Documents', path: '/Documents' }],
       fileStates: { '/test.txt': { state: 'ready' } },
     },
@@ -97,7 +109,6 @@ describe('useOrganizeState', () => {
 
     const module = require('../src/renderer/phases/organize/useOrganizeState');
     useOrganizeState = module.useOrganizeState;
-    useLoadInitialData = module.useLoadInitialData;
   });
 
   describe('state selectors', () => {
@@ -110,13 +121,17 @@ describe('useOrganizeState', () => {
     test('returns smartFolders from state', () => {
       const { result } = renderHook(() => useOrganizeState());
 
-      expect(result.current.smartFolders).toEqual(defaultState.files.smartFolders);
+      expect(result.current.smartFolders).toEqual(
+        defaultState.files.smartFolders,
+      );
     });
 
     test('returns analysisResults from state', () => {
       const { result } = renderHook(() => useOrganizeState());
 
-      expect(result.current.analysisResults).toEqual(defaultState.analysis.results);
+      expect(result.current.analysisResults).toEqual(
+        defaultState.analysis.results,
+      );
     });
 
     test('returns fileStates from state', () => {
@@ -269,7 +284,7 @@ describe('useOrganizeState', () => {
 
       expect(result.current.smartFoldersRef).toBeDefined();
       expect(result.current.smartFoldersRef.current).toEqual(
-        defaultState.files.smartFolders
+        defaultState.files.smartFolders,
       );
     });
 
@@ -283,7 +298,8 @@ describe('useOrganizeState', () => {
 
   describe('failedCount', () => {
     test('returns failed count from fileStats', () => {
-      const selectFileStats = require('../src/renderer/store/selectors').selectFileStats;
+      const selectFileStats =
+        require('../src/renderer/store/selectors').selectFileStats;
       selectFileStats.mockReturnValue({ total: 10, ready: 8, failed: 2 });
 
       const { result } = renderHook(() => useOrganizeState());
@@ -305,10 +321,12 @@ describe('useLoadInitialData', () => {
     mockAddNotification = jest.fn();
     mockDispatch = jest.fn();
 
-    const mockUseAppSelector = require('../src/renderer/store/hooks').useAppSelector;
+    const mockUseAppSelector =
+      require('../src/renderer/store/hooks').useAppSelector;
     mockUseAppSelector.mockReturnValue(null);
 
-    useLoadInitialData = require('../src/renderer/phases/organize/useOrganizeState').useLoadInitialData;
+    useLoadInitialData =
+      require('../src/renderer/phases/organize/useOrganizeState').useLoadInitialData;
   });
 
   test('loads smart folders if missing', async () => {
@@ -320,7 +338,7 @@ describe('useLoadInitialData', () => {
     ]);
 
     renderHook(() =>
-      useLoadInitialData({ smartFoldersRef, dispatchRef }, mockAddNotification)
+      useLoadInitialData({ smartFoldersRef, dispatchRef }, mockAddNotification),
     );
 
     await act(async () => {
@@ -331,16 +349,18 @@ describe('useLoadInitialData', () => {
     expect(mockDispatch).toHaveBeenCalled();
     expect(mockAddNotification).toHaveBeenCalledWith(
       'Loaded 1 smart folder',
-      'info'
+      'info',
     );
   });
 
   test('does not load if smart folders exist', async () => {
-    const smartFoldersRef = { current: [{ name: 'Existing', path: '/Existing' }] };
+    const smartFoldersRef = {
+      current: [{ name: 'Existing', path: '/Existing' }],
+    };
     const dispatchRef = { current: mockDispatch };
 
     renderHook(() =>
-      useLoadInitialData({ smartFoldersRef, dispatchRef }, mockAddNotification)
+      useLoadInitialData({ smartFoldersRef, dispatchRef }, mockAddNotification),
     );
 
     await act(async () => {
@@ -354,10 +374,12 @@ describe('useLoadInitialData', () => {
     const smartFoldersRef = { current: [] };
     const dispatchRef = { current: mockDispatch };
 
-    window.electronAPI.smartFolders.get.mockRejectedValue(new Error('Load error'));
+    window.electronAPI.smartFolders.get.mockRejectedValue(
+      new Error('Load error'),
+    );
 
     renderHook(() =>
-      useLoadInitialData({ smartFoldersRef, dispatchRef }, mockAddNotification)
+      useLoadInitialData({ smartFoldersRef, dispatchRef }, mockAddNotification),
     );
 
     await act(async () => {

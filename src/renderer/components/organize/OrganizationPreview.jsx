@@ -32,13 +32,27 @@ function OrganizationPreview({
 
     files.forEach((file, index) => {
       // FIX: Add bounds check for array access
-      const suggestion = (Array.isArray(suggestions) && index < suggestions.length)
-        ? suggestions[index]
-        : suggestions.primary;
+      const suggestion =
+        Array.isArray(suggestions) && index < suggestions.length
+          ? suggestions[index]
+          : suggestions.primary;
       if (!suggestion) return;
 
       const folderPath = suggestion.path || suggestion.folder;
-      const newName = suggestion.suggestedName || file.name;
+      let newName = suggestion.suggestedName || file.name;
+
+      // Ensure the original file extension is preserved
+      const originalExt =
+        file.name.lastIndexOf('.') > 0
+          ? file.name.slice(file.name.lastIndexOf('.'))
+          : '';
+      const currentExt =
+        newName.lastIndexOf('.') > 0
+          ? newName.slice(newName.lastIndexOf('.'))
+          : '';
+      if (originalExt && !currentExt) {
+        newName = newName + originalExt;
+      }
 
       if (!tree[folderPath]) {
         tree[folderPath] = {
@@ -204,7 +218,11 @@ function OrganizationPreview({
                     {/* FIX: Use stable file path as key instead of array index */}
                     {folder.files.map((fileInfo) => (
                       <div
-                        key={fileInfo.original?.path || fileInfo.original?.name || fileInfo.newName}
+                        key={
+                          fileInfo.original?.path ||
+                          fileInfo.original?.name ||
+                          fileInfo.newName
+                        }
                         className="flex items-center justify-between text-sm py-1"
                       >
                         <div className="flex items-center gap-2">

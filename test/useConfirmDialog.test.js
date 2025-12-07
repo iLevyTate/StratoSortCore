@@ -4,8 +4,13 @@
  */
 
 import React from 'react';
-import { renderHook, act } from '@testing-library/react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import {
+  renderHook,
+  act,
+  render,
+  screen,
+  fireEvent,
+} from '@testing-library/react';
 
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
@@ -20,14 +25,26 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock Modal component with testable buttons
 jest.mock('../src/renderer/components/Modal', () => ({
-  ConfirmModal: ({ isOpen, onConfirm, onClose, title, confirmText, cancelText, variant }) => {
+  ConfirmModal: ({
+    isOpen,
+    onConfirm,
+    onClose,
+    title,
+    confirmText,
+    cancelText,
+    variant,
+  }) => {
     if (!isOpen) return null;
     return (
       <div data-testid="confirm-modal">
         <h2>{title}</h2>
         <span data-testid="variant">{variant}</span>
-        <button data-testid="confirm-btn" onClick={onConfirm}>{confirmText}</button>
-        <button data-testid="cancel-btn" onClick={onClose}>{cancelText}</button>
+        <button data-testid="confirm-btn" onClick={onConfirm}>
+          {confirmText}
+        </button>
+        <button data-testid="cancel-btn" onClick={onClose}>
+          {cancelText}
+        </button>
       </div>
     );
   },
@@ -78,7 +95,7 @@ describe('useConfirmDialog', () => {
 
     // Dialog component should not be null now
     const DialogComponent = result.current.ConfirmDialog;
-    const { container } = render(<DialogComponent />);
+    render(<DialogComponent />);
 
     expect(screen.getByTestId('confirm-modal')).toBeDefined();
   });

@@ -32,6 +32,7 @@ let folderMatcherSingleton = null;
 // In-memory cache for image analysis keyed by path|size|mtimeMs
 const imageAnalysisCache = new Map();
 const MAX_IMAGE_CACHE = 300;
+const IMAGE_SIGNATURE_VERSION = 'v2';
 function setImageCache(signature, value) {
   if (!signature) return;
   imageAnalysisCache.set(signature, value);
@@ -259,6 +260,13 @@ async function analyzeImageFile(filePath, smartFolders = []) {
   logger.info(`Analyzing image file`, { path: filePath });
   const fileExtension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
+  const smartFolderSig = Array.isArray(smartFolders)
+    ? smartFolders
+        .map((f) => f?.name || '')
+        .filter(Boolean)
+        .sort()
+        .join('|')
+    : '';
 
   // Check if file extension is supported (include SVG by rasterizing via sharp)
   const supportedExtensions = SUPPORTED_IMAGE_EXTENSIONS;
@@ -268,9 +276,9 @@ async function analyzeImageFile(filePath, smartFolders = []) {
       category: 'unsupported',
       keywords: [],
       confidence: 0,
-      suggestedName: fileName
-        .replace(fileExtension, '')
-        .replace(/[^a-zA-Z0-9_-]/g, '_'),
+      suggestedName:
+        fileName.replace(fileExtension, '').replace(/[^a-zA-Z0-9_-]/g, '_') +
+        fileExtension,
     };
   }
 
@@ -335,6 +343,18 @@ async function analyzeImageFile(filePath, smartFolders = []) {
   }
 
   try {
+    // Resolve vision model for cache signatures
+    let visionModelName = AppConfig.ai.imageAnalysis.defaultModel;
+    try {
+      const cfgModel = await loadOllamaConfig();
+      visionModelName =
+        getOllamaVisionModel() ||
+        cfgModel.selectedVisionModel ||
+        AppConfig.ai.imageAnalysis.defaultModel;
+    } catch {
+      visionModelName = AppConfig.ai.imageAnalysis.defaultModel;
+    }
+
     // First, check if file exists and has content
     let stats;
     try {
@@ -384,7 +404,7 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     }
 
     // Cache quick path: signature based on file stats
-    const signature = `${filePath}|${stats.size}|${stats.mtimeMs}`;
+    const signature = `${IMAGE_SIGNATURE_VERSION}|${visionModelName}|${smartFolderSig}|${filePath}|${stats.size}|${stats.mtimeMs}`;
     if (imageAnalysisCache.has(signature)) {
       return imageAnalysisCache.get(signature);
     }
@@ -738,13 +758,20 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     }
 
     if (analysis && !analysis.error) {
+      // Ensure the original file extension is preserved in suggestedName
+      let finalSuggestedName = analysis.suggestedName;
+      if (finalSuggestedName && fileExtension) {
+        const suggestedExt = path.extname(finalSuggestedName);
+        if (!suggestedExt) {
+          finalSuggestedName = finalSuggestedName + fileExtension;
+        }
+      }
       const normalized = normalizeAnalysisResult(
         {
           ...analysis,
           content_type: analysis.content_type || 'unknown',
           suggestedName:
-            analysis.suggestedName ||
-            safeSuggestedName(fileName, fileExtension),
+            finalSuggestedName || safeSuggestedName(fileName, fileExtension),
         },
         { category: 'image', keywords: [] },
       );

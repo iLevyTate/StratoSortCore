@@ -118,7 +118,9 @@ describe('StartupManagerCore', () => {
 
   describe('hasPythonModule', () => {
     test('checks for python module', async () => {
-      const { hasPythonModuleAsync } = require('../src/main/utils/asyncSpawnUtils');
+      const {
+        hasPythonModuleAsync,
+      } = require('../src/main/utils/asyncSpawnUtils');
 
       const result = await manager.hasPythonModule('chromadb');
 
@@ -147,7 +149,9 @@ describe('StartupManagerCore', () => {
       const callback = jest.fn();
       manager.setProgressCallback(callback);
 
-      manager.reportProgress('services', 'Starting services', 50, { detail: 'test' });
+      manager.reportProgress('services', 'Starting services', 50, {
+        detail: 'test',
+      });
 
       expect(callback).toHaveBeenCalledWith({
         phase: 'services',
@@ -170,7 +174,9 @@ describe('StartupManagerCore', () => {
 
   describe('runPreflightChecks', () => {
     test('delegates to preflightChecks module', async () => {
-      const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
+      const {
+        runPreflightChecks,
+      } = require('../src/main/services/startup/preflightChecks');
 
       await manager.runPreflightChecks();
 
@@ -180,11 +186,14 @@ describe('StartupManagerCore', () => {
 
   describe('isPortAvailable', () => {
     test('checks port availability', async () => {
-      const { isPortAvailable } = require('../src/main/services/startup/preflightChecks');
+      const {
+        isPortAvailable,
+      } = require('../src/main/services/startup/preflightChecks');
 
       const result = await manager.isPortAvailable('localhost', 8000);
 
       expect(isPortAvailable).toHaveBeenCalledWith('localhost', 8000);
+      expect(result).toBe(true);
     });
   });
 
@@ -306,7 +315,10 @@ describe('StartupManagerCore', () => {
 
   describe('startChromaDB', () => {
     test('starts ChromaDB service', async () => {
-      const { startChromaDB, isChromaDBRunning } = require('../src/main/services/startup/chromaService');
+      const {
+        startChromaDB,
+        isChromaDBRunning,
+      } = require('../src/main/services/startup/chromaService');
       startChromaDB.mockResolvedValue({ success: true });
       isChromaDBRunning.mockResolvedValue(true);
 
@@ -316,8 +328,13 @@ describe('StartupManagerCore', () => {
     });
 
     test('handles disabled ChromaDB', async () => {
-      const { startChromaDB } = require('../src/main/services/startup/chromaService');
-      startChromaDB.mockResolvedValue({ disabled: true, reason: 'Missing dependency' });
+      const {
+        startChromaDB,
+      } = require('../src/main/services/startup/chromaService');
+      startChromaDB.mockResolvedValue({
+        disabled: true,
+        reason: 'Missing dependency',
+      });
 
       const result = await manager.startChromaDB();
 
@@ -325,8 +342,13 @@ describe('StartupManagerCore', () => {
     });
 
     test('sets dependency missing flag', async () => {
-      const { startChromaDB } = require('../src/main/services/startup/chromaService');
-      startChromaDB.mockResolvedValue({ setDependencyMissing: true, disabled: true });
+      const {
+        startChromaDB,
+      } = require('../src/main/services/startup/chromaService');
+      startChromaDB.mockResolvedValue({
+        setDependencyMissing: true,
+        disabled: true,
+      });
 
       await manager.startChromaDB();
 
@@ -336,7 +358,10 @@ describe('StartupManagerCore', () => {
 
   describe('startOllama', () => {
     test('starts Ollama service', async () => {
-      const { startOllama, isOllamaRunning } = require('../src/main/services/startup/ollamaService');
+      const {
+        startOllama,
+        isOllamaRunning,
+      } = require('../src/main/services/startup/ollamaService');
       startOllama.mockResolvedValue({ success: true });
       isOllamaRunning.mockResolvedValue(true);
 
@@ -348,8 +373,14 @@ describe('StartupManagerCore', () => {
 
   describe('initializeServices', () => {
     test('initializes both services in parallel', async () => {
-      const { startChromaDB, isChromaDBRunning } = require('../src/main/services/startup/chromaService');
-      const { startOllama, isOllamaRunning } = require('../src/main/services/startup/ollamaService');
+      const {
+        startChromaDB,
+        isChromaDBRunning,
+      } = require('../src/main/services/startup/chromaService');
+      const {
+        startOllama,
+        isOllamaRunning,
+      } = require('../src/main/services/startup/ollamaService');
 
       startChromaDB.mockResolvedValue({ success: true });
       isChromaDBRunning.mockResolvedValue(true);
@@ -372,8 +403,14 @@ describe('StartupManagerCore', () => {
     });
 
     test('handles partial failures', async () => {
-      const { startChromaDB, isChromaDBRunning } = require('../src/main/services/startup/chromaService');
-      const { startOllama, isOllamaRunning } = require('../src/main/services/startup/ollamaService');
+      const {
+        startChromaDB,
+        isChromaDBRunning,
+      } = require('../src/main/services/startup/chromaService');
+      const {
+        startOllama,
+        isOllamaRunning,
+      } = require('../src/main/services/startup/ollamaService');
 
       startChromaDB.mockResolvedValue({ success: true });
       isChromaDBRunning.mockResolvedValue(true);
@@ -389,8 +426,14 @@ describe('StartupManagerCore', () => {
 
   describe('startup', () => {
     beforeEach(() => {
-      const { startChromaDB, isChromaDBRunning } = require('../src/main/services/startup/chromaService');
-      const { startOllama, isOllamaRunning } = require('../src/main/services/startup/ollamaService');
+      const {
+        startChromaDB,
+        isChromaDBRunning,
+      } = require('../src/main/services/startup/chromaService');
+      const {
+        startOllama,
+        isOllamaRunning,
+      } = require('../src/main/services/startup/ollamaService');
 
       startChromaDB.mockResolvedValue({ success: true });
       isChromaDBRunning.mockResolvedValue(true);
@@ -413,7 +456,9 @@ describe('StartupManagerCore', () => {
     test('starts health monitoring on success', async () => {
       jest.useRealTimers();
 
-      const { createHealthMonitor } = require('../src/main/services/startup/healthMonitoring');
+      const {
+        createHealthMonitor,
+      } = require('../src/main/services/startup/healthMonitoring');
 
       await manager.startup();
 
@@ -425,7 +470,9 @@ describe('StartupManagerCore', () => {
     test('handles startup timeout', async () => {
       manager.config.startupTimeout = 10;
 
-      const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
+      const {
+        runPreflightChecks,
+      } = require('../src/main/services/startup/preflightChecks');
       runPreflightChecks.mockImplementation(
         () => new Promise((resolve) => setTimeout(resolve, 100)),
       );
@@ -438,7 +485,9 @@ describe('StartupManagerCore', () => {
     });
 
     test('enables graceful degradation on failure', async () => {
-      const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
+      const {
+        runPreflightChecks,
+      } = require('../src/main/services/startup/preflightChecks');
       runPreflightChecks.mockRejectedValue(new Error('Preflight failed'));
 
       jest.useRealTimers();
@@ -468,13 +517,17 @@ describe('StartupManagerCore', () => {
 
       await manager.enableGracefulDegradation();
 
-      expect(global.degradedMode.limitations).toContain('Semantic search disabled');
+      expect(global.degradedMode.limitations).toContain(
+        'Semantic search disabled',
+      );
     });
   });
 
   describe('startHealthMonitoring', () => {
     test('creates health monitor', () => {
-      const { createHealthMonitor } = require('../src/main/services/startup/healthMonitoring');
+      const {
+        createHealthMonitor,
+      } = require('../src/main/services/startup/healthMonitoring');
 
       manager.startHealthMonitoring();
 
@@ -495,7 +548,9 @@ describe('StartupManagerCore', () => {
 
   describe('checkChromaDBHealth', () => {
     test('delegates to chromaService', async () => {
-      const { checkChromaDBHealth } = require('../src/main/services/startup/chromaService');
+      const {
+        checkChromaDBHealth,
+      } = require('../src/main/services/startup/chromaService');
 
       await manager.checkChromaDBHealth();
 
@@ -505,7 +560,9 @@ describe('StartupManagerCore', () => {
 
   describe('checkOllamaHealth', () => {
     test('delegates to ollamaService', async () => {
-      const { checkOllamaHealth } = require('../src/main/services/startup/ollamaService');
+      const {
+        checkOllamaHealth,
+      } = require('../src/main/services/startup/ollamaService');
 
       await manager.checkOllamaHealth();
 
@@ -538,7 +595,9 @@ describe('StartupManagerCore', () => {
 
   describe('shutdown', () => {
     test('delegates to shutdown handler', async () => {
-      const { shutdown } = require('../src/main/services/startup/shutdownHandler');
+      const {
+        shutdown,
+      } = require('../src/main/services/startup/shutdownHandler');
 
       await manager.shutdown();
 

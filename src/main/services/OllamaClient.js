@@ -937,14 +937,18 @@ function getInstance(options = {}) {
 
 /**
  * Reset the singleton (for testing)
+ * @returns {Promise<void>}
  */
-function resetInstance() {
+async function resetInstance() {
   if (instance) {
-    instance.shutdown().catch((e) => {
+    const oldInstance = instance;
+    instance = null; // Clear reference first to prevent reuse during shutdown
+    try {
+      await oldInstance.shutdown();
+    } catch (e) {
       logger.warn('[OllamaClient] Error during reset shutdown:', e.message);
-    });
+    }
   }
-  instance = null;
 }
 
 module.exports = {

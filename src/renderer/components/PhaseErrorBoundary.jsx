@@ -63,7 +63,7 @@ class PhaseErrorBoundaryClass extends React.Component {
       return (
         <div className="container-responsive py-12">
           <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-lg border border-border-light p-8">
+            <div className="bg-white rounded-xl shadow-lg border border-border-soft p-8">
               <div className="flex items-start gap-4 mb-6">
                 <div className="flex-shrink-0">
                   <div className="inline-flex items-center justify-center w-12 h-12 bg-system-red/10 rounded-lg">
@@ -108,7 +108,7 @@ class PhaseErrorBoundaryClass extends React.Component {
                       <summary className="cursor-pointer text-xs text-system-gray-500 hover:text-system-gray-700">
                         Show stack trace
                       </summary>
-                      <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-60 p-2 bg-white rounded border border-border-light">
+                      <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-60 p-2 bg-white rounded border border-border-soft">
                         {this.state.error.stack}
                       </pre>
                     </details>

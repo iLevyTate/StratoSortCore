@@ -39,13 +39,17 @@ function createInstance(options = {}) {
 
 /**
  * Reset the singleton instance (primarily for testing)
+ * @returns {Promise<void>}
  */
-function resetInstance() {
+async function resetInstance() {
   if (instance) {
-    instance.shutdown().catch((err) => {
+    const oldInstance = instance;
+    instance = null; // Clear reference first to prevent reuse during shutdown
+    try {
+      await oldInstance.shutdown();
+    } catch (err) {
       logger.warn('[StartupManager] Error during reset shutdown:', err.message);
-    });
-    instance = null;
+    }
   }
 }
 

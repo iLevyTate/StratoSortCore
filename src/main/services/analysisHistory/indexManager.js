@@ -65,7 +65,11 @@ function getSizeRange(size) {
  */
 function updateIndexes(index, entry) {
   const timestamp = new Date().toISOString();
-  index.updatedAt = timestamp;
+  // Ensure updatedAt always moves forward, even when called twice within the same ms
+  index.updatedAt =
+    timestamp === index.updatedAt
+      ? new Date(Date.now() + 1).toISOString()
+      : timestamp;
 
   // File hash index
   index.fileHashes[entry.fileHash] = entry.id;

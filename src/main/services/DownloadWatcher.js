@@ -664,9 +664,14 @@ class DownloadWatcher {
 
       const baseName = path.basename(filePath);
       const extname = path.extname(baseName);
-      const newName = result.suggestedName
-        ? `${result.suggestedName}${extname}`
-        : baseName;
+      // Only add extension if suggestedName doesn't already have it
+      let newName = baseName;
+      if (result.suggestedName) {
+        const suggestedExt = path.extname(result.suggestedName);
+        newName = suggestedExt
+          ? result.suggestedName
+          : `${result.suggestedName}${extname}`;
+      }
       const destPath = path.join(destFolder.path, newName);
 
       // Move file with cross-device and conflict handling

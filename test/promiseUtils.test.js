@@ -188,7 +188,10 @@ describe('promiseUtils', () => {
     test('immediately invokes operation with retry logic', async () => {
       const operation = jest.fn().mockResolvedValue('result');
 
-      const result = await retry(operation, { maxRetries: 3, initialDelay: 10 });
+      const result = await retry(operation, {
+        maxRetries: 3,
+        initialDelay: 10,
+      });
 
       expect(result).toBe('result');
       expect(operation).toHaveBeenCalledTimes(1);
@@ -318,6 +321,7 @@ describe('promiseUtils', () => {
       const result = debounced.flush();
 
       expect(fn).toHaveBeenCalledTimes(1);
+      expect(result).toBe('result');
     });
 
     test('leading option executes immediately', () => {
@@ -396,7 +400,9 @@ describe('promiseUtils', () => {
 
     test('maintains order of results', async () => {
       const items = ['a', 'b', 'c'];
-      const fn = jest.fn().mockImplementation((item) => Promise.resolve(item.toUpperCase()));
+      const fn = jest
+        .fn()
+        .mockImplementation((item) => Promise.resolve(item.toUpperCase()));
 
       const results = await batchProcess(items, fn, 2);
 

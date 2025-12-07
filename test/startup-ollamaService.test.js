@@ -85,7 +85,7 @@ describe('ollamaService', () => {
 
       expect(axios.get).toHaveBeenCalledWith(
         'http://127.0.0.1:11434/api/tags',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -102,7 +102,7 @@ describe('ollamaService', () => {
 
       expect(freshAxios.get).toHaveBeenCalledWith(
         'http://custom:8080/api/tags',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -121,7 +121,7 @@ describe('ollamaService', () => {
 
       expect(axios.get).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({ timeout: 2000 })
+        expect.objectContaining({ timeout: 2000 }),
       );
     });
   });
@@ -154,7 +154,7 @@ describe('ollamaService', () => {
           maxRetries: 2,
           initialDelay: 500,
           maxDelay: 2000,
-        })
+        }),
       );
     });
   });
@@ -186,10 +186,14 @@ describe('ollamaService', () => {
 
       const result = await promise;
 
-      expect(spawn).toHaveBeenCalledWith('ollama', ['serve'], {
-        detached: false,
-        stdio: 'pipe',
-      });
+      expect(spawn).toHaveBeenCalledWith(
+        'ollama',
+        ['serve'],
+        expect.objectContaining({
+          detached: false,
+          stdio: 'pipe',
+        }),
+      );
       expect(result.process).toBeDefined();
     });
 
@@ -227,7 +231,7 @@ describe('ollamaService', () => {
 
       expect(mockProcess.stdout.on).toHaveBeenCalledWith(
         'data',
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -251,7 +255,7 @@ describe('ollamaService', () => {
 
       expect(mockProcess.stderr.on).toHaveBeenCalledWith(
         'data',
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -311,9 +315,7 @@ describe('ollamaService', () => {
       // Wait for async flow to reach spawn and attach handlers
       await jest.advanceTimersByTimeAsync(0);
 
-      stderrHandler(
-        Buffer.from('bind: Only one usage of each socket address')
-      );
+      stderrHandler(Buffer.from('bind: Only one usage of each socket address'));
 
       await jest.advanceTimersByTimeAsync(200);
 
@@ -371,7 +373,10 @@ describe('ollamaService', () => {
 
       await promise;
 
-      expect(mockProcess.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockProcess.on).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function),
+      );
     });
 
     test('throws on startup error', async () => {

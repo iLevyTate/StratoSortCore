@@ -23,6 +23,7 @@ out/
 # Editor directories and files
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *~

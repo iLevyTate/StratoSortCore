@@ -73,15 +73,19 @@ function createInstance(options = {}) {
  *
  * This clears the singleton instance, allowing a fresh one to be created
  * on the next getInstance() call. Should be called with caution in production.
+ * @returns {Promise<void>}
  */
-function resetInstance() {
+async function resetInstance() {
   if (instance) {
-    if (typeof instance.cleanup === 'function') {
-      instance.cleanup().catch((err) => {
+    const oldInstance = instance;
+    instance = null; // Clear reference first to prevent reuse during cleanup
+    if (typeof oldInstance.cleanup === 'function') {
+      try {
+        await oldInstance.cleanup();
+      } catch (err) {
         logger.warn('[ChromaDB] Error during reset cleanup:', err.message);
-      });
+      }
     }
-    instance = null;
   }
 }
 

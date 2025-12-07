@@ -54,6 +54,78 @@ describe('documentLlm', () => {
   });
 
   describe('analyzeTextWithOllama', () => {
+    test('should bust cache when model changes', async () => {
+      const textContent = `model-change-${Date.now()}`;
+      const fileName = 'model-change.txt';
+
+      mockOllamaClient.generate.mockResolvedValue({
+        response: JSON.stringify({
+          project: 'First',
+          purpose: 'First run',
+          category: 'cat1',
+          keywords: ['one'],
+          confidence: 80,
+        }),
+      });
+
+      getOllamaModel
+        .mockReturnValueOnce('model-a')
+        .mockReturnValueOnce('model-b');
+
+      await analyzeTextWithOllama(textContent, fileName, []);
+      await analyzeTextWithOllama(textContent, fileName, []);
+
+      expect(mockOllamaClient.generate).toHaveBeenCalledTimes(2);
+      expect(mockOllamaClient.generate.mock.calls[0][0].model).toBe('model-a');
+      expect(mockOllamaClient.generate.mock.calls[1][0].model).toBe('model-b');
+    });
+
+    test('should bust cache when smart folder set changes', async () => {
+      const textContent = `folder-change-${Date.now()}`;
+      const fileName = 'folder-change.txt';
+      getOllamaModel.mockReturnValue('model-cache');
+
+      mockOllamaClient.generate.mockResolvedValue({
+        response: JSON.stringify({
+          project: 'FolderRun',
+          purpose: 'Folder change',
+          category: 'cat',
+          keywords: ['kw'],
+          confidence: 82,
+        }),
+      });
+
+      await analyzeTextWithOllama(textContent, fileName, [
+        { name: 'A', description: 'first' },
+      ]);
+      await analyzeTextWithOllama(textContent, fileName, [
+        { name: 'B', description: 'second' },
+      ]);
+
+      expect(mockOllamaClient.generate).toHaveBeenCalledTimes(2);
+      const prompts = mockOllamaClient.generate.mock.calls.map(
+        (c) => c[0].prompt,
+      );
+      expect(prompts[0]).toContain('A');
+      expect(prompts[1]).toContain('B');
+    });
+
+    test('should include chunk metadata for long content', async () => {
+      const longText = 'chunk '.repeat(3000); // ensures multiple chunks with overlap
+      mockOllamaClient.generate.mockResolvedValue({
+        response: JSON.stringify({
+          keywords: ['test'],
+          confidence: 77,
+        }),
+      });
+
+      await analyzeTextWithOllama(longText, 'chunks.txt', []);
+
+      const prompt = mockOllamaClient.generate.mock.calls[0][0].prompt;
+      expect(prompt).toMatch(/chunk\(s\)/i);
+      expect(prompt).toMatch(/\d+\s+chunk\(s\)/i);
+    });
+
     test('should analyze text and return structured result', async () => {
       const textContent =
         'This is a financial invoice for Q1 2024. Amount: $1,000';

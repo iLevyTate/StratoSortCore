@@ -2,6 +2,16 @@ const { Ollama } = require('ollama');
 const { withErrorLogging, withValidation } = require('./withErrorLogging');
 let z;
 
+function isValidOllamaUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  return OLLAMA_URL_PATTERN.test(url.trim());
+}
+
+// URL pattern that properly matches IP addresses and hostnames
+// Matches: http://127.0.0.1:11434, https://localhost:11434, http://ollama.local:11434
+const OLLAMA_URL_PATTERN =
+  /^https?:\/\/([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(:\d{1,5})?(\/.*)?$|^https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d{1,5})?(\/.*)?$|^https?:\/\/localhost(:\d{1,5})?(\/.*)?$/;
+
 /**
  * Normalize a URL for Ollama server connection
  * Handles missing protocol, extra whitespace, and double-protocol issues
@@ -116,8 +126,13 @@ function registerOllamaIpc({
     }),
   );
 
+  // Use custom regex for URL validation that properly handles IP addresses
   const hostSchema = z
-    ? z.string().url().or(z.string().length(0)).optional()
+    ? z
+        .string()
+        .regex(OLLAMA_URL_PATTERN, 'Invalid Ollama URL format')
+        .or(z.string().length(0))
+        .optional()
     : null;
   const testConnectionHandler =
     z && hostSchema
@@ -163,6 +178,9 @@ function registerOllamaIpc({
           try {
             // DUP-1: Use shared URL normalization utility
             const testUrl = normalizeOllamaUrl(hostUrl);
+            if (!isValidOllamaUrl(testUrl)) {
+              throw new Error('Invalid Ollama URL format');
+            }
 
             const testOllama = new Ollama({ host: testUrl });
             const response = await testOllama.list();

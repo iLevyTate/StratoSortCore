@@ -24,10 +24,13 @@ jest.mock('../src/shared/promiseUtils', () => ({
         fn(...args);
       } else {
         clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          lastCall = Date.now();
-          fn(...args);
-        }, delay - (now - lastCall));
+        timeoutId = setTimeout(
+          () => {
+            lastCall = Date.now();
+            fn(...args);
+          },
+          delay - (now - lastCall),
+        );
       }
     };
     throttled.cancel = () => clearTimeout(timeoutId);
@@ -358,7 +361,7 @@ describe('performance utilities', () => {
 
     test('does not process empty batch', () => {
       const processFn = jest.fn().mockResolvedValue(undefined);
-      const processor = batchProcessor(processFn, 100);
+      batchProcessor(processFn, 100);
 
       jest.advanceTimersByTime(100);
 

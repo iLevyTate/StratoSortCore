@@ -4,6 +4,7 @@
  */
 
 const { DEFAULT_SETTINGS } = require('./defaultSettings');
+const { PROTOTYPE_POLLUTION_KEYS } = require('./securityConfig');
 
 /**
  * Validation rules for settings
@@ -227,8 +228,25 @@ function validateSettings(settings) {
     return { valid: false, errors, warnings };
   }
 
+  // Explicitly detect prototype-pollution keys even if they are not enumerable
+  // Always warn when caller-supplied object exposes prototype-pollution keys
+  const hasUnsafeProto = '__proto__' in settings;
+  const hasUnsafeCtor =
+    Object.prototype.hasOwnProperty.call(settings, 'constructor') &&
+    settings.constructor !== Object;
+  const hasUnsafePrototype = Object.prototype.hasOwnProperty.call(
+    settings,
+    'prototype',
+  );
+  if (hasUnsafeProto) warnings.push('Rejected unsafe key: __proto__');
+  if (hasUnsafeCtor) warnings.push('Rejected unsafe key: constructor');
+  if (hasUnsafePrototype) warnings.push('Rejected unsafe key: prototype');
+
   // Validate each setting against its rule
   for (const [key, value] of Object.entries(settings)) {
+    if (PROTOTYPE_POLLUTION_KEYS.includes(key)) {
+      continue;
+    }
     const rule = VALIDATION_RULES[key];
 
     if (!rule) {
@@ -287,9 +305,14 @@ function sanitizeSettings(settings) {
     return {};
   }
 
-  const sanitized = {};
+  const sanitized = Object.create(null);
 
   for (const [key, value] of Object.entries(settings)) {
+    // Prevent prototype pollution
+    if (PROTOTYPE_POLLUTION_KEYS.includes(key)) {
+      continue;
+    }
+
     const rule = VALIDATION_RULES[key];
 
     // Keep unknown settings (might be for future use)
@@ -315,7 +338,9 @@ function sanitizeSettings(settings) {
     // Invalid values are dropped (will use defaults)
   }
 
-  return sanitized;
+  // Ensure polluted keys are absent/undefined on the sanitized object
+  const finalSanitized = Object.assign(Object.create(null), sanitized);
+  return finalSanitized;
 }
 
 /**

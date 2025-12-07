@@ -1,5 +1,17 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 
+// Normalize the documents path returned from IPC to a plain string.
+// Some IPC implementations return { success, path }, while others return the
+// string path directly. We only want to store the path string in Redux.
+const normalizeDocumentsPath = (value) => {
+  if (!value) return 'Documents';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && typeof value.path === 'string') {
+    return value.path;
+  }
+  return 'Documents';
+};
+
 // Thunk to fetch documents path (only once)
 export const fetchDocumentsPath = createAsyncThunk(
   'system/fetchDocumentsPath',
@@ -10,7 +22,7 @@ export const fetchDocumentsPath = createAsyncThunk(
       return system.documentsPath;
     }
     const path = await window.electronAPI?.files?.getDocumentsPath?.();
-    return path || 'Documents';
+    return normalizeDocumentsPath(path);
   },
 );
 
@@ -60,7 +72,7 @@ const systemSlice = createSlice({
       state.notifications = [];
     },
     setDocumentsPath: (state, action) => {
-      state.documentsPath = action.payload;
+      state.documentsPath = normalizeDocumentsPath(action.payload);
     },
   },
   extraReducers: (builder) => {

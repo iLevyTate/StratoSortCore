@@ -130,14 +130,18 @@ async function setOllamaHost(host) {
     if (typeof host === 'string' && host.trim()) {
       let normalizedHost = host.trim();
 
-      // Fixed: Normalize URL - ensure it has protocol but don't double it
-      // Remove any existing protocol
-      normalizedHost = normalizedHost.replace(/^https?:\/\//i, '');
-      // Add http:// if no protocol specified (default to http)
-      if (
-        !normalizedHost.startsWith('http://') &&
-        !normalizedHost.startsWith('https://')
-      ) {
+      // Normalize URL - preserve https if specified, default to http
+      const hasHttps = normalizedHost.toLowerCase().startsWith('https://');
+      const hasHttp = normalizedHost.toLowerCase().startsWith('http://');
+
+      if (hasHttps || hasHttp) {
+        // Remove duplicate protocols (e.g., http://http://...)
+        normalizedHost = normalizedHost.replace(
+          /^(https?:\/\/)+/i,
+          hasHttps ? 'https://' : 'http://',
+        );
+      } else {
+        // No protocol specified, add http://
         normalizedHost = `http://${normalizedHost}`;
       }
 
@@ -162,6 +166,8 @@ async function setOllamaHost(host) {
       } catch {
         ollamaInstance = new Ollama({ host: ollamaHost });
       }
+      // Track the host used to create the instance to avoid redundant recreation
+      ollamaInstanceHost = ollamaHost;
       const current = await loadOllamaConfig();
       await saveOllamaConfig({ ...current, host: ollamaHost });
       logger.info(`[OLLAMA] Host set to: ${ollamaHost}`);
@@ -223,6 +229,7 @@ async function loadOllamaConfig() {
     if (config.host) {
       ollamaHost = config.host;
       ollamaInstance = new Ollama({ host: ollamaHost });
+      ollamaInstanceHost = ollamaHost;
       logger.info(`[OLLAMA] Loaded host: ${ollamaHost}`);
     }
     return config;

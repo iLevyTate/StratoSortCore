@@ -1,16 +1,20 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { List } from 'react-window';
+import { FixedSizeList as List } from 'react-window';
 
 // FIX: Implement virtualization for large processed file lists to prevent UI lag
 const ITEM_HEIGHT = 80; // Height of each processed file item
-const LIST_HEIGHT = 400; // Max visible area height
+const LIST_HEIGHT = 400; // Max visible area height (soft cap)
 const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
 
 /**
  * Individual processed file row component
  */
-const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) {
+const ProcessedFileRow = memo(function ProcessedFileRow({
+  index,
+  style,
+  data,
+}) {
   const { files } = data;
   const file = files[index];
 
@@ -18,9 +22,9 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) 
 
   return (
     <div style={style} className="px-2 py-1">
-      <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200 h-full">
+      <div className="list-row flex items-center justify-between p-4 h-full">
         <div className="flex items-center gap-4">
-          <span className="text-green-600">OK</span>
+          <span className="status-chip success">OK</span>
           <div>
             <div className="text-sm font-medium text-system-gray-900">
               {file.originalName} -&gt; {file.newName}
@@ -31,7 +35,9 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) 
             </div>
           </div>
         </div>
-        <div className="text-xs text-green-600 font-medium">Organized</div>
+        <div className="text-xs text-stratosort-success font-semibold">
+          Organized
+        </div>
       </div>
     </div>
   );
@@ -57,18 +63,24 @@ function VirtualizedProcessedFiles({ files }) {
     () => ({
       files,
     }),
-    [files]
+    [files],
   );
 
   // Calculate optimal list height
   const listHeight = useMemo(() => {
-    const calculatedHeight = Math.min(files.length * ITEM_HEIGHT, LIST_HEIGHT);
+    const viewportHeight =
+      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const maxHeight = Math.min(
+      LIST_HEIGHT,
+      Math.max(260, Math.round(viewportHeight * 0.5)),
+    );
+    const calculatedHeight = Math.min(files.length * ITEM_HEIGHT, maxHeight);
     return Math.max(calculatedHeight, ITEM_HEIGHT);
   }, [files.length]);
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full">
+      <div className="w-full max-h-[55vh] overflow-hidden">
         <div className="text-xs text-system-gray-500 mb-2">
           Showing {files.length} organized files (virtualized for performance)
         </div>
@@ -89,16 +101,14 @@ function VirtualizedProcessedFiles({ files }) {
 
   // For smaller lists, render normally without virtualization overhead
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {files.map((file) => (
         <div
-          key={
-            file.originalPath || `${file.originalName}-${file.organizedAt}`
-          }
-          className="flex items-center justify-between p-8 bg-green-50 rounded-lg border border-green-200"
+          key={file.originalPath || `${file.originalName}-${file.organizedAt}`}
+          className="list-row flex items-center justify-between p-4"
         >
-          <div className="flex items-center gap-8">
-            <span className="text-green-600">OK</span>
+          <div className="flex items-center gap-4">
+            <span className="status-chip success">OK</span>
             <div>
               <div className="text-sm font-medium text-system-gray-900">
                 {file.originalName} -&gt; {file.newName}
@@ -109,7 +119,9 @@ function VirtualizedProcessedFiles({ files }) {
               </div>
             </div>
           </div>
-          <div className="text-xs text-green-600 font-medium">Organized</div>
+          <div className="text-xs text-stratosort-success font-semibold">
+            Organized
+          </div>
         </div>
       ))}
     </div>
@@ -124,7 +136,7 @@ VirtualizedProcessedFiles.propTypes = {
       newName: PropTypes.string,
       smartFolder: PropTypes.string,
       organizedAt: PropTypes.string,
-    })
+    }),
   ).isRequired,
 };
 

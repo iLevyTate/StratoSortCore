@@ -224,7 +224,7 @@ function NavigationBar() {
   return (
     <div className={navShellClasses} style={{ WebkitAppRegion: 'drag' }}>
       <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gradient-primary-start/30 to-transparent" />
-      <div className="relative flex h-[var(--app-nav-height)] items-center justify-between px-5 md:px-8 lg:px-10 xl:px-12">
+      <div className="relative flex h-[var(--app-nav-height)] items-center justify-between px-4 md:px-6 lg:px-8 xl:px-10">
         <div
           className="flex items-center gap-3 select-none"
           style={{ WebkitAppRegion: 'no-drag' }}
@@ -250,7 +250,8 @@ function NavigationBar() {
             const metadata = PHASE_METADATA[phase];
             const allowedTransitions = PHASE_TRANSITIONS[currentPhase] || [];
             // Check if transition is allowed AND no blocking operations are in progress
-            const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
+            const isBlockedByOperation =
+              isOrganizing || isAnalyzing || isLoading;
             const canNavigate =
               (allowedTransitions.includes(phase) || phase === currentPhase) &&
               !isBlockedByOperation;
@@ -270,9 +271,9 @@ function NavigationBar() {
                 className={[
                   'relative flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-all duration-200',
                   isActive
-                    ? 'bg-white text-stratosort-blue border-border-soft shadow-sm'
+                    ? 'bg-white/95 text-stratosort-blue border-border-soft shadow-sm'
                     : canNavigate
-                      ? 'text-system-gray-500 border-transparent hover:border-border-soft hover:text-system-gray-900 hover:bg-white/80'
+                      ? 'text-system-gray-600 border-border-soft/40 hover:border-border-soft hover:text-system-gray-900 hover:bg-white/80 shadow-xs'
                       : 'text-system-gray-400/70 border-transparent cursor-not-allowed',
                 ].join(' ')}
                 aria-label={metadata.title}
@@ -320,7 +321,7 @@ function NavigationBar() {
                 )}
                 <span className="font-medium">{label}</span>
                 {isActive && !showSpinner && (
-                  <span className="absolute -bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-gradient-primary-start" />
+                  <span className="absolute -bottom-1 left-1/2 h-1.5 w-5 -translate-x-1/2 rounded-full bg-gradient-primary-start/80" />
                 )}
               </button>
             );
@@ -331,7 +332,7 @@ function NavigationBar() {
           className="flex items-center gap-2"
           style={{ WebkitAppRegion: 'no-drag' }}
         >
-          <div className="inline-flex items-center gap-2 rounded-full border border-stratosort-success/30 bg-stratosort-success/10 px-3 py-1 text-xs font-medium text-stratosort-success">
+          <div className="status-chip success">
             <span className="h-2 w-2 rounded-full bg-stratosort-success animate-pulse" />
             Connected
           </div>

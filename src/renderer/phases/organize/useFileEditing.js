@@ -189,7 +189,8 @@ export function useBulkOperations({
         debouncedBulkCategoryChangeRef.current = null;
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Cleanup only - state setters are stable from useState
 
   const applyBulkCategoryChange = useCallback(() => {
     if (!bulkCategory) return;

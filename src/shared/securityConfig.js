@@ -62,7 +62,16 @@ const RESERVED_WINDOWS_NAMES = new Set([
  */
 const DANGEROUS_PATHS = {
   // Unix/Linux system directories
-  unix: ['/etc', '/sys', '/proc', '/dev', '/boot', '/sbin', '/bin', '/usr/sbin'],
+  unix: [
+    '/etc',
+    '/sys',
+    '/proc',
+    '/dev',
+    '/boot',
+    '/sbin',
+    '/bin',
+    '/usr/sbin',
+  ],
   // Windows system directories
   windows: [
     'C:\\Windows',
@@ -160,8 +169,9 @@ const SETTINGS_VALIDATION = {
 
   // Regex patterns for string validation
   patterns: {
-    // URL pattern for Ollama host
-    url: /^https?:\/\/[\w.-]+(:\d+)?$/,
+    // URL pattern for Ollama host - properly matches IP addresses and hostnames
+    // Matches: http://127.0.0.1:11434, https://localhost:11434, http://ollama.local:11434
+    url: /^https?:\/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?)(:\d{1,5})?(\/.*)?$/,
     // Model name pattern (alphanumeric with some special chars)
     modelName: /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*[a-zA-Z0-9]$/,
   },

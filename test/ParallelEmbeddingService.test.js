@@ -3,8 +3,6 @@
  * Tests parallel embedding generation with semaphore concurrency control
  */
 
-const os = require('os');
-
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
   logger: {
@@ -268,6 +266,7 @@ describe('ParallelEmbeddingService', () => {
 
       // First succeeds, second fails but returns fallback
       expect(errors.length).toBe(0); // Fallback doesn't throw
+      expect(results).toHaveLength(2);
     });
 
     test('respects stopOnError option', async () => {

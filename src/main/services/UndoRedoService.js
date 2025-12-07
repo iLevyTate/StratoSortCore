@@ -1,10 +1,22 @@
 const fs = require('fs').promises;
 const path = require('path');
+const posixPath = path.posix;
 const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 logger.setContext('UndoRedoService');
+
+const normalizePath = (filePath) => {
+  if (typeof filePath !== 'string') return filePath;
+  // Ensure forward slashes so memfs (used in tests) resolves paths reliably on Windows
+  let normalized = posixPath.normalize(filePath).replace(/\\/g, '/');
+  normalized = normalized.replace(/\/{2,}/g, '/');
+  if (!normalized.startsWith('/')) {
+    normalized = `/${normalized}`;
+  }
+  return normalized;
+};
 
 // Lazy-load ChromaDB to avoid circular dependencies
 let chromaDbService = null;
@@ -41,19 +53,24 @@ class UndoRedoService {
   }
 
   async ensureParentDirectory(filePath) {
-    const parentDirectory = path.dirname(filePath);
+    const normalizedPath = normalizePath(filePath);
+    const parentDirectory = posixPath.dirname(normalizedPath);
     await fs.mkdir(parentDirectory, { recursive: true });
   }
 
   async safeMove(sourcePath, destinationPath) {
-    await this.ensureParentDirectory(destinationPath);
+    const normalizedSource = normalizePath(sourcePath);
+    const normalizedDestination = normalizePath(destinationPath);
+    await this.ensureParentDirectory(normalizedDestination);
     try {
       // Try rename first (atomic operation)
-      await fs.rename(sourcePath, destinationPath);
+      await fs.rename(normalizedSource, normalizedDestination);
     } catch (error) {
       if (error && error.code === 'EXDEV') {
         // Cross-device move: use shared utility with verification
-        await crossDeviceMove(sourcePath, destinationPath, { verify: true });
+        await crossDeviceMove(normalizedSource, normalizedDestination, {
+          verify: true,
+        });
         return;
       }
       throw error;
@@ -673,8 +690,9 @@ class UndoRedoService {
   }
 
   async fileExists(filePath) {
+    const normalizedPath = normalizePath(filePath);
     try {
-      await fs.access(filePath);
+      await fs.access(normalizedPath);
       return true;
     } catch {
       return false;
@@ -747,18 +765,21 @@ class UndoRedoService {
    * @returns {Promise<string>} Path to backup file
    */
   async createBackup(filePath) {
-    const backupDir = path.join(this.userDataPath, 'undo-backups');
-    await this.ensureParentDirectory(path.join(backupDir, 'dummy'));
+    const normalizedPath = normalizePath(filePath);
+    const backupDir = normalizePath(
+      posixPath.join(this.userDataPath, 'undo-backups'),
+    );
+    await this.ensureParentDirectory(posixPath.join(backupDir, 'dummy'));
 
     // Create unique backup filename with timestamp and secure random component
-    const originalName = path.basename(filePath);
+    const originalName = posixPath.basename(normalizedPath);
     const timestamp = Date.now();
     const randomId = crypto.randomBytes(4).toString('hex');
     const backupName = `${timestamp}_${randomId}_${originalName}`;
-    const backupPath = path.join(backupDir, backupName);
+    const backupPath = normalizePath(posixPath.join(backupDir, backupName));
 
     // Verify source file exists before attempting backup
-    if (!(await this.fileExists(filePath))) {
+    if (!(await this.fileExists(normalizedPath))) {
       throw new Error(
         `Cannot create backup - source file does not exist: ${filePath}`,
       );
@@ -766,11 +787,11 @@ class UndoRedoService {
 
     try {
       // Create backup using safeMove which includes verification
-      await fs.copyFile(filePath, backupPath);
+      await fs.copyFile(normalizedPath, backupPath);
 
       // Verify backup was created successfully
       const [sourceStats, backupStats] = await Promise.all([
-        fs.stat(filePath),
+        fs.stat(normalizedPath),
         fs.stat(backupPath),
       ]);
 
@@ -787,7 +808,7 @@ class UndoRedoService {
       }
 
       logger.info('[UndoRedoService] Created backup successfully', {
-        original: filePath,
+        original: normalizedPath,
         backup: backupPath,
         size: sourceStats.size,
       });

@@ -588,6 +588,7 @@ async function resetFolders({ client }) {
       metadata: {
         description: 'Smart folder embeddings for categorization',
         hnsw_space: 'cosine',
+        'hnsw:space': 'cosine', // Keep legacy key for compatibility
       },
     });
 

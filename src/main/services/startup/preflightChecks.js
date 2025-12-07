@@ -274,7 +274,7 @@ async function runPreflightChecks({ reportProgress, errors }) {
 
     checks.push({
       name: 'Port Availability',
-      status: chromaPortAvailable || ollamaPortAvailable ? 'ok' : 'warn',
+      status: chromaPortAvailable && ollamaPortAvailable ? 'ok' : 'warn',
       details: {
         chromaPort,
         ollamaPort,
@@ -282,6 +282,14 @@ async function runPreflightChecks({ reportProgress, errors }) {
         ollamaPortAvailable,
       },
     });
+
+    if (!chromaPortAvailable || !ollamaPortAvailable) {
+      errors.push({
+        check: 'port-availability',
+        error: `Port conflicts detected: chroma(${chromaPortAvailable ? 'free' : 'in use'}), ollama(${ollamaPortAvailable ? 'free' : 'in use'})`,
+        critical: false,
+      });
+    }
   } catch (error) {
     logger.error('[PREFLIGHT] Port availability check threw error:', error);
     checks.push({

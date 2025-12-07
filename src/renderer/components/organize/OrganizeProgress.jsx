@@ -22,7 +22,8 @@ function OrganizeProgress({
       return;
     }
     if (!startedAt) setStartedAt(Date.now());
-  }, [isOrganizing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOrganizing]); // startedAt excluded - effect sets it, including would cause loops
 
   // Smooth, informative visual progress when real percent is unavailable
   useEffect(() => {
@@ -60,6 +61,7 @@ function OrganizeProgress({
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     return `${m}m ${s}s remaining`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     startedAt,
     hasTotals,
@@ -67,6 +69,7 @@ function OrganizeProgress({
     batchProgress.current,
     batchProgress.total,
   ]);
+  // batchProgress props are read for computation; lint incorrectly flags object properties
 
   if (!isOrganizing) return null;
 

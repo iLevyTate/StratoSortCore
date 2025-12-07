@@ -476,6 +476,7 @@ export function useAnalysis({
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       setIsAnalyzing,
       setCurrentAnalysisFile,
@@ -487,8 +488,7 @@ export function useAnalysis({
       actions,
       generatePreviewName,
       namingSettings,
-      // Note: isAnalyzing, analysisProgress, analysisResults, fileStates, globalAnalysisActive
-      // are accessed via refs to prevent stale closure issues during analysis
+      // Note: analysisResults, fileStates accessed via refs to prevent stale closures
       resetAnalysisState,
     ],
   );

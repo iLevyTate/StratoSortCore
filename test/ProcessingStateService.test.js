@@ -91,11 +91,13 @@ describe('ProcessingStateService', () => {
     });
 
     test('only initializes once', async () => {
-      mockFs.readFile.mockResolvedValue(JSON.stringify({
-        schemaVersion: '1.0.0',
-        analysis: { jobs: {} },
-        organize: { batches: {} },
-      }));
+      mockFs.readFile.mockResolvedValue(
+        JSON.stringify({
+          schemaVersion: '1.0.0',
+          analysis: { jobs: {} },
+          organize: { batches: {} },
+        }),
+      );
 
       await service.initialize();
       await service.initialize();
@@ -104,16 +106,15 @@ describe('ProcessingStateService', () => {
     });
 
     test('handles concurrent initialization', async () => {
-      mockFs.readFile.mockResolvedValue(JSON.stringify({
-        schemaVersion: '1.0.0',
-        analysis: { jobs: {} },
-        organize: { batches: {} },
-      }));
+      mockFs.readFile.mockResolvedValue(
+        JSON.stringify({
+          schemaVersion: '1.0.0',
+          analysis: { jobs: {} },
+          organize: { batches: {} },
+        }),
+      );
 
-      const [result1, result2] = await Promise.all([
-        service.initialize(),
-        service.initialize(),
-      ]);
+      await Promise.all([service.initialize(), service.initialize()]);
 
       expect(mockFs.readFile).toHaveBeenCalledTimes(1);
     });
@@ -134,10 +135,12 @@ describe('ProcessingStateService', () => {
     });
 
     test('adds schema version if missing', async () => {
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({
-        analysis: { jobs: {} },
-        organize: { batches: {} },
-      }));
+      mockFs.readFile.mockResolvedValueOnce(
+        JSON.stringify({
+          analysis: { jobs: {} },
+          organize: { batches: {} },
+        }),
+      );
 
       await service.loadState();
 
@@ -210,8 +213,12 @@ describe('ProcessingStateService', () => {
       test('creates in_progress job', async () => {
         await service.markAnalysisStart('/test/file.pdf');
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe('in_progress');
-        expect(service.state.analysis.jobs['/test/file.pdf'].startedAt).toBeDefined();
+        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe(
+          'in_progress',
+        );
+        expect(
+          service.state.analysis.jobs['/test/file.pdf'].startedAt,
+        ).toBeDefined();
       });
     });
 
@@ -220,8 +227,12 @@ describe('ProcessingStateService', () => {
         await service.markAnalysisStart('/test/file.pdf');
         await service.markAnalysisComplete('/test/file.pdf');
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe('done');
-        expect(service.state.analysis.jobs['/test/file.pdf'].completedAt).toBeDefined();
+        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe(
+          'done',
+        );
+        expect(
+          service.state.analysis.jobs['/test/file.pdf'].completedAt,
+        ).toBeDefined();
       });
     });
 
@@ -230,15 +241,21 @@ describe('ProcessingStateService', () => {
         await service.markAnalysisStart('/test/file.pdf');
         await service.markAnalysisError('/test/file.pdf', 'Analysis failed');
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe('failed');
-        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe('Analysis failed');
+        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe(
+          'failed',
+        );
+        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe(
+          'Analysis failed',
+        );
       });
 
       test('uses default error message', async () => {
         await service.markAnalysisStart('/test/file.pdf');
         await service.markAnalysisError('/test/file.pdf', null);
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe('Unknown analysis error');
+        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe(
+          'Unknown analysis error',
+        );
       });
     });
 
@@ -310,7 +327,10 @@ describe('ProcessingStateService', () => {
           { source: '/src/file2', destination: '/dest/file2' },
         ];
 
-        const batch = await service.createOrLoadOrganizeBatch('batch1', operations);
+        const batch = await service.createOrLoadOrganizeBatch(
+          'batch1',
+          operations,
+        );
 
         expect(batch.id).toBe('batch1');
         expect(batch.operations).toHaveLength(2);
@@ -318,7 +338,9 @@ describe('ProcessingStateService', () => {
       });
 
       test('returns existing batch', async () => {
-        const operations = [{ source: '/src/file1', destination: '/dest/file1' }];
+        const operations = [
+          { source: '/src/file1', destination: '/dest/file1' },
+        ];
 
         await service.createOrLoadOrganizeBatch('batch1', operations);
         const batch = await service.createOrLoadOrganizeBatch('batch1', []);
@@ -335,7 +357,9 @@ describe('ProcessingStateService', () => {
 
         await service.markOrganizeOpStarted('batch1', 0);
 
-        expect(service.state.organize.batches['batch1'].operations[0].status).toBe('in_progress');
+        expect(
+          service.state.organize.batches['batch1'].operations[0].status,
+        ).toBe('in_progress');
       });
 
       test('handles missing batch', async () => {
@@ -352,7 +376,9 @@ describe('ProcessingStateService', () => {
 
         await service.markOrganizeOpDone('batch1', 0);
 
-        expect(service.state.organize.batches['batch1'].operations[0].status).toBe('done');
+        expect(
+          service.state.organize.batches['batch1'].operations[0].status,
+        ).toBe('done');
       });
 
       test('updates operation with new data', async () => {
@@ -360,9 +386,13 @@ describe('ProcessingStateService', () => {
           { source: '/src', destination: '/dest' },
         ]);
 
-        await service.markOrganizeOpDone('batch1', 0, { newDestination: '/new/dest' });
+        await service.markOrganizeOpDone('batch1', 0, {
+          newDestination: '/new/dest',
+        });
 
-        expect(service.state.organize.batches['batch1'].operations[0].newDestination).toBe('/new/dest');
+        expect(
+          service.state.organize.batches['batch1'].operations[0].newDestination,
+        ).toBe('/new/dest');
       });
     });
 
@@ -386,7 +416,9 @@ describe('ProcessingStateService', () => {
 
         await service.completeOrganizeBatch('batch1');
 
-        expect(service.state.organize.batches['batch1'].completedAt).toBeDefined();
+        expect(
+          service.state.organize.batches['batch1'].completedAt,
+        ).toBeDefined();
       });
     });
 

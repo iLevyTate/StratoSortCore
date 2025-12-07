@@ -3,8 +3,6 @@
  * Tests parallel file analysis, concurrency control, and embedding integration
  */
 
-const os = require('os');
-
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
   logger: {
@@ -86,36 +84,40 @@ describe('BatchAnalysisService', () => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    analyzeDocumentFile = require('../src/main/analysis/ollamaDocumentAnalysis').analyzeDocumentFile;
-    analyzeImageFile = require('../src/main/analysis/ollamaImageAnalysis').analyzeImageFile;
+    analyzeDocumentFile =
+      require('../src/main/analysis/ollamaDocumentAnalysis').analyzeDocumentFile;
+    analyzeImageFile =
+      require('../src/main/analysis/ollamaImageAnalysis').analyzeImageFile;
     BatchAnalysisService = require('../src/main/services/BatchAnalysisService');
 
     // Reset mock implementations
-    mockBatchProcessor.processBatch.mockImplementation(async (items, processor, options) => {
-      const results = [];
-      const errors = [];
-      let successful = 0;
+    mockBatchProcessor.processBatch.mockImplementation(
+      async (items, processor, options) => {
+        const results = [];
+        const errors = [];
+        let successful = 0;
 
-      for (let i = 0; i < items.length; i++) {
-        try {
-          const result = await processor(items[i], i);
-          results.push(result);
-          if (result.success) successful++;
-        } catch (error) {
-          errors.push({ item: items[i], error });
+        for (let i = 0; i < items.length; i++) {
+          try {
+            const result = await processor(items[i], i);
+            results.push(result);
+            if (result.success) successful++;
+          } catch (error) {
+            errors.push({ item: items[i], error });
+          }
+
+          if (options.onProgress) {
+            options.onProgress({
+              completed: i + 1,
+              total: items.length,
+              percent: ((i + 1) / items.length) * 100,
+            });
+          }
         }
 
-        if (options.onProgress) {
-          options.onProgress({
-            completed: i + 1,
-            total: items.length,
-            percent: ((i + 1) / items.length) * 100,
-          });
-        }
-      }
-
-      return { results, errors, successful };
-    });
+        return { results, errors, successful };
+      },
+    );
 
     analyzeDocumentFile.mockResolvedValue({
       category: 'document',
@@ -221,25 +223,31 @@ describe('BatchAnalysisService', () => {
 
     test('handles analysis errors gracefully', async () => {
       // The mock processor catches errors and marks them as failed results
-      mockBatchProcessor.processBatch.mockImplementation(async (items, processor) => {
-        const results = [];
-        const errors = [];
-        let successful = 0;
+      mockBatchProcessor.processBatch.mockImplementation(
+        async (items, processor) => {
+          const results = [];
+          const errors = [];
+          let successful = 0;
 
-        for (let i = 0; i < items.length; i++) {
-          try {
-            const result = await processor(items[i], i);
-            results.push(result);
-            if (result.success) successful++;
-            else errors.push({ item: items[i], error: result.error });
-          } catch (error) {
-            results.push({ filePath: items[i], success: false, error: error.message });
-            errors.push({ item: items[i], error });
+          for (let i = 0; i < items.length; i++) {
+            try {
+              const result = await processor(items[i], i);
+              results.push(result);
+              if (result.success) successful++;
+              else errors.push({ item: items[i], error: result.error });
+            } catch (error) {
+              results.push({
+                filePath: items[i],
+                success: false,
+                error: error.message,
+              });
+              errors.push({ item: items[i], error });
+            }
           }
-        }
 
-        return { results, errors, successful };
-      });
+          return { results, errors, successful };
+        },
+      );
 
       analyzeDocumentFile
         .mockRejectedValueOnce(new Error('Analysis failed'))
@@ -251,7 +259,7 @@ describe('BatchAnalysisService', () => {
 
       expect(result.total).toBe(2);
       // Check that at least one file failed
-      const failedResults = result.results.filter(r => !r.success);
+      const failedResults = result.results.filter((r) => !r.success);
       expect(failedResults.length).toBeGreaterThan(0);
     });
 
@@ -281,8 +289,12 @@ describe('BatchAnalysisService', () => {
     });
 
     test('flushes embeddings after analysis', async () => {
-      const { flushAllEmbeddings: flushDoc } = require('../src/main/analysis/ollamaDocumentAnalysis');
-      const { flushAllEmbeddings: flushImage } = require('../src/main/analysis/ollamaImageAnalysis');
+      const {
+        flushAllEmbeddings: flushDoc,
+      } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      const {
+        flushAllEmbeddings: flushImage,
+      } = require('../src/main/analysis/ollamaImageAnalysis');
 
       const files = ['/path/to/doc.pdf'];
 
@@ -310,7 +322,9 @@ describe('BatchAnalysisService', () => {
 
       await service.analyzeFiles(files, [], { onEmbeddingProgress });
 
-      expect(mockEmbeddingQueue.onProgress).toHaveBeenCalledWith(onEmbeddingProgress);
+      expect(mockEmbeddingQueue.onProgress).toHaveBeenCalledWith(
+        onEmbeddingProgress,
+      );
     });
   });
 

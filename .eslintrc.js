@@ -17,8 +17,10 @@ module.exports = {
     ecmaVersion: 2022,
     sourceType: 'module',
   },
-  plugins: ['react', 'jest'],
+  plugins: ['react', 'jest', 'react-hooks'],
   rules: {
+    'react-hooks/rules-of-hooks': 'error',
+    'react-hooks/exhaustive-deps': 'warn',
     'react/react-in-jsx-scope': 'off',
     // TD-9: Warn on console usage (except in logger.js itself)
     'no-console': ['warn', { allow: ['warn', 'error'] }],
@@ -31,9 +33,15 @@ module.exports = {
     // Ensure consistent returns in functions
     'consistent-return': 'warn',
     // Prevent unused expressions
-    'no-unused-expressions': ['error', { allowShortCircuit: true, allowTernary: true }],
+    'no-unused-expressions': [
+      'error',
+      { allowShortCircuit: true, allowTernary: true },
+    ],
     // Warn on TODO/FIXME comments to track tech debt
-    'no-warning-comments': ['warn', { terms: ['fixme', 'xxx', 'hack'], location: 'start' }],
+    'no-warning-comments': [
+      'warn',
+      { terms: ['fixme', 'xxx', 'hack'], location: 'start' },
+    ],
   },
   settings: {
     react: {
@@ -52,15 +60,18 @@ module.exports = {
           'error',
           {
             selector: 'ImportDeclaration',
-            message: 'Use require() instead of ES6 imports in main process files.',
+            message:
+              'Use require() instead of ES6 imports in main process files.',
           },
           {
             selector: 'ExportNamedDeclaration',
-            message: 'Use module.exports instead of ES6 exports in main process files.',
+            message:
+              'Use module.exports instead of ES6 exports in main process files.',
           },
           {
             selector: 'ExportDefaultDeclaration',
-            message: 'Use module.exports instead of ES6 exports in main process files.',
+            message:
+              'Use module.exports instead of ES6 exports in main process files.',
           },
         ],
       },
@@ -80,11 +91,13 @@ module.exports = {
           },
           {
             selector: 'ExportNamedDeclaration',
-            message: 'Use module.exports instead of ES6 exports in utility files.',
+            message:
+              'Use module.exports instead of ES6 exports in utility files.',
           },
           {
             selector: 'ExportDefaultDeclaration',
-            message: 'Use module.exports instead of ES6 exports in utility files.',
+            message:
+              'Use module.exports instead of ES6 exports in utility files.',
           },
         ],
       },
@@ -104,13 +117,24 @@ module.exports = {
           },
           {
             selector: 'ExportNamedDeclaration',
-            message: 'Use module.exports instead of ES6 exports in shared files.',
+            message:
+              'Use module.exports instead of ES6 exports in shared files.',
           },
           {
             selector: 'ExportDefaultDeclaration',
-            message: 'Use module.exports instead of ES6 exports in shared files.',
+            message:
+              'Use module.exports instead of ES6 exports in shared files.',
           },
         ],
+      },
+    },
+    {
+      // Relax certain strict rules for test files while keeping signal
+      files: ['test/**/*.js'],
+      rules: {
+        'jest/no-conditional-expect': 'warn',
+        'jest/no-standalone-expect': 'warn',
+        'react/prop-types': 'off',
       },
     },
   ],

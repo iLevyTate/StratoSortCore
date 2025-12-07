@@ -13,11 +13,15 @@ const Textarea = forwardRef(function Textarea(
   },
   ref,
 ) {
-  const id = rest.id || `textarea-${useId()}`;
+  // Always call useId unconditionally to follow React hooks rules
+  const generatedId = useId();
+  const id = rest.id || `textarea-${generatedId}`;
   const errorId = `${id}-error`;
 
   const invalidClass =
-    invalid || error ? 'border-system-red focus:ring-system-red/20' : '';
+    invalid || error
+      ? 'border-stratosort-danger focus:ring-stratosort-danger/15'
+      : '';
   const autoExpandClass = autoExpand ? 'auto-expand' : '';
   const classes =
     `form-textarea-enhanced ${invalidClass} ${autoExpandClass} ${className}`.trim();

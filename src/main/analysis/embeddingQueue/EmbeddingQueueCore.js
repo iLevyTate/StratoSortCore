@@ -251,16 +251,26 @@ class EmbeddingQueue {
       this.criticalWarningLogged = false;
     }
 
-    // Enforce max queue size
+    // Enforce max queue size with backpressure instead of dropping data
     if (this.queue.length >= this.MAX_QUEUE_SIZE) {
-      const dropCount = Math.max(1, Math.floor(this.MAX_QUEUE_SIZE * 0.05));
-      const droppedItems = this.queue.splice(0, dropCount);
-      logger.warn(
-        `[EmbeddingQueue] Queue full, dropped ${dropCount} oldest items`,
-        { droppedIds: droppedItems.map((i) => i.id).slice(0, 5) },
+      const capacityPercent = Math.round(
+        (this.queue.length / this.MAX_QUEUE_SIZE) * 100,
       );
+      logger.error(
+        `[EmbeddingQueue] Queue full (${capacityPercent}% capacity) - diverting item to failed queue (backpressure)`,
+        { id: item.id },
+      );
+      this._failedItemHandler.trackFailedItem(item, 'queue_overflow');
+      await this.persistQueue().catch((err) =>
+        logger.warn(
+          '[EmbeddingQueue] Failed to persist after overflow backpressure:',
+          err.message,
+        ),
+      );
+      result.success = false;
+      result.reason = 'queue_overflow';
       result.warnings.push('queue_overflow');
-      result.droppedCount = dropCount;
+      return result;
     }
 
     this.queue.push(item);

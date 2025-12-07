@@ -572,7 +572,7 @@ class ChromaDBServiceCore extends EventEmitter {
             metadata: {
               description:
                 'Document and image file embeddings for semantic search',
-              hnsw_space: 'cosine',
+              'hnsw:space': 'cosine',
             },
           }),
           CHROMADB_INIT_TIMEOUT_MS,
@@ -584,7 +584,7 @@ class ChromaDBServiceCore extends EventEmitter {
             name: 'folder_embeddings',
             metadata: {
               description: 'Smart folder embeddings for categorization',
-              hnsw_space: 'cosine',
+              'hnsw:space': 'cosine',
             },
           }),
           CHROMADB_INIT_TIMEOUT_MS,

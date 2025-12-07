@@ -3,6 +3,9 @@ import PropTypes from 'prop-types';
 import Select from '../ui/Select';
 import Input from '../ui/Input';
 
+// Characters that could break file paths - used for separator validation
+const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
+
 const NamingSettings = memo(function NamingSettings({
   namingConvention,
   setNamingConvention,
@@ -26,7 +29,6 @@ const NamingSettings = memo(function NamingSettings({
     [setCaseConvention],
   );
   // FIX #19: Validate separator against unsafe characters that could break file paths
-  const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
   const handleSeparatorChange = useCallback(
     (e) => {
       const value = e.target.value;
@@ -40,7 +42,7 @@ const NamingSettings = memo(function NamingSettings({
   );
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
       <div>
         <label
           htmlFor="naming-convention"
@@ -114,7 +116,12 @@ const NamingSettings = memo(function NamingSettings({
           onChange={handleSeparatorChange}
           placeholder="-"
           aria-label="Separator character"
+          aria-describedby="separator-hint"
         />
+        <p id="separator-hint" className="mt-2 text-xs text-system-gray-500">
+          Use letters, numbers, dash or underscore. Avoid / \\ : * ? &quot; &lt;
+          &gt; |.
+        </p>
       </div>
     </div>
   );

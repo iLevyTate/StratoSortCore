@@ -132,6 +132,7 @@ Process multiple files efficiently:
 
 - Node.js 18+ and npm 8+
 - Git
+- Tesseract OCR installed and on PATH (required for PDF/image OCR fallback)
 
 #### Setup
 

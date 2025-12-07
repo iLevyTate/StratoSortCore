@@ -4,9 +4,14 @@ const {
   SUPPORTED_TEXT_EXTENSIONS,
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_ARCHIVE_EXTENSIONS,
+  SUPPORTED_AUDIO_EXTENSIONS,
+  SUPPORTED_VIDEO_EXTENSIONS,
+  AI_DEFAULTS,
 } = require('../../shared/constants');
 const { TRUNCATION } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
+const { getOllamaModel, loadOllamaConfig } = require('../ollamaUtils');
+const { AppConfig } = require('./documentLlm');
 
 // Enforce required dependency for AI-first operation
 const {
@@ -14,6 +19,7 @@ const {
   ocrPdfIfNeeded,
   extractTextFromDoc,
   extractTextFromDocx,
+  extractTextFromCsv,
   extractTextFromXlsx,
   extractTextFromPptx,
   extractTextFromXls,
@@ -25,6 +31,7 @@ const {
   extractTextFromKml,
   extractTextFromKmz,
   extractPlainTextFromRtf,
+  extractPlainTextFromXml,
   extractPlainTextFromHtml,
 } = require('./documentExtractors');
 const { analyzeTextWithOllama } = require('./documentLlm');
@@ -39,17 +46,13 @@ const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const crypto = require('crypto');
 const { globalDeduplicator } = require('../utils/llmOptimization');
-const {
-  SUPPORTED_AUDIO_EXTENSIONS,
-  SUPPORTED_VIDEO_EXTENSIONS,
-} = require('../../shared/constants');
-
 // Cache configuration constants
 const CACHE_CONFIG = {
   MAX_FILE_CACHE: 500, // Maximum number of files to cache in memory
   FALLBACK_CONFIDENCE: 65, // Confidence score for fallback analysis
   DEFAULT_CONFIDENCE: 85, // Default confidence for successful analysis
 };
+const ANALYSIS_SIGNATURE_VERSION = 'v2';
 
 // Folder matching configuration constants
 const FOLDER_MATCHING_CONFIG = {
@@ -91,6 +94,29 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   logger.info('Analyzing document file', { path: filePath });
   const fileExtension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
+  const smartFolderSig = Array.isArray(smartFolders)
+    ? smartFolders
+        .map((f) => f?.name || '')
+        .filter(Boolean)
+        .sort()
+        .join('|')
+    : '';
+
+  // Determine model in advance for cache signatures and deduplication
+  const defaultTextModel =
+    AppConfig?.ai?.textAnalysis?.defaultModel || AI_DEFAULTS.TEXT.MODEL;
+
+  let modelName = defaultTextModel;
+  try {
+    const cfg = await loadOllamaConfig();
+    modelName =
+      getOllamaModel() ||
+      cfg.selectedTextModel ||
+      cfg.selectedModel ||
+      defaultTextModel;
+  } catch {
+    modelName = defaultTextModel;
+  }
 
   // FAST SEMANTIC LABELING (Short-circuit)
   // Skip AI analysis for audio/video and use extension-based fallback immediately
@@ -178,7 +204,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   let fileSignature = null;
   try {
     const stats = await fs.stat(filePath);
-    fileSignature = `${filePath}|${stats.size}|${stats.mtimeMs}`;
+    fileSignature = `${ANALYSIS_SIGNATURE_VERSION}|${modelName}|${smartFolderSig}|${filePath}|${stats.size}|${stats.mtimeMs}`;
     if (fileAnalysisCache.has(fileSignature)) {
       return fileAnalysisCache.get(fileSignature);
     }
@@ -233,16 +259,17 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       try {
         if (fileExtension === '.doc') {
           extractedText = await extractTextFromDoc(filePath);
+        } else if (fileExtension === '.csv') {
+          extractedText = await extractTextFromCsv(filePath);
+        } else if (fileExtension === '.xml') {
+          const raw = await fs.readFile(filePath, 'utf8');
+          extractedText = extractPlainTextFromXml(raw);
         } else {
           // Regular text file reading with basic format-aware cleanup
           const raw = await fs.readFile(filePath, 'utf8');
           if (fileExtension === '.rtf') {
             extractedText = extractPlainTextFromRtf(raw);
-          } else if (
-            fileExtension === '.html' ||
-            fileExtension === '.htm' ||
-            fileExtension === '.xml'
-          ) {
+          } else if (fileExtension === '.html' || fileExtension === '.htm') {
             extractedText = extractPlainTextFromHtml(raw);
           } else {
             extractedText = raw;
@@ -439,7 +466,6 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
 
       // Backend Caching & Deduplication:
       // Generate a content hash to prevent duplicate AI processing
-      const modelName = 'llama3'; // Default or fetch from config if possible, but tough to get async here without overhead
       const contentHash = crypto
         .createHash('md5')
         .update(extractedText)
@@ -450,6 +476,10 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         contentHash,
         fileName,
         task: 'analyzeTextWithOllama',
+        model: modelName,
+        folders: Array.isArray(smartFolders)
+          ? smartFolders.map((f) => f?.name || '').join(',')
+          : '',
       });
 
       const analysis = await globalDeduplicator.deduplicate(

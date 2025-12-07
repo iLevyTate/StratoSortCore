@@ -57,7 +57,9 @@ const mockCollection = {
   add: jest.fn().mockResolvedValue(undefined),
   upsert: jest.fn().mockResolvedValue(undefined),
   delete: jest.fn().mockResolvedValue(undefined),
-  query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
+  query: jest
+    .fn()
+    .mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
   get: jest.fn().mockResolvedValue({ ids: [], metadatas: [] }),
   count: jest.fn().mockResolvedValue(0),
 };
@@ -154,7 +156,9 @@ jest.mock('../src/main/services/chromadb/fileOperations', () => ({
 // Mock folder operations
 jest.mock('../src/main/services/chromadb/folderOperations', () => ({
   directUpsertFolder: jest.fn().mockResolvedValue({ success: true }),
-  directBatchUpsertFolders: jest.fn().mockResolvedValue({ count: 3, skipped: [] }),
+  directBatchUpsertFolders: jest
+    .fn()
+    .mockResolvedValue({ count: 3, skipped: [] }),
   queryFoldersByEmbedding: jest.fn().mockResolvedValue([]),
   executeQueryFolders: jest.fn().mockResolvedValue([]),
   batchQueryFolders: jest.fn().mockResolvedValue(new Map()),
@@ -199,7 +203,9 @@ describe('ChromaDBServiceCore', () => {
     });
 
     test('initializes query cache', () => {
-      const { ChromaQueryCache } = require('../src/main/services/chromadb/ChromaQueryCache');
+      const {
+        ChromaQueryCache,
+      } = require('../src/main/services/chromadb/ChromaQueryCache');
       expect(ChromaQueryCache).toHaveBeenCalled();
     });
 
@@ -243,10 +249,7 @@ describe('ChromaDBServiceCore', () => {
 
     test('handles concurrent initialization calls', async () => {
       // Both concurrent calls should complete without error
-      const [result1, result2] = await Promise.all([
-        service.initialize(),
-        service.initialize(),
-      ]);
+      await Promise.all([service.initialize(), service.initialize()]);
 
       // Service should be initialized after both complete
       expect(service.initialized).toBe(true);
@@ -255,7 +258,9 @@ describe('ChromaDBServiceCore', () => {
     test('skips if already initialized and healthy', async () => {
       await service.initialize();
 
-      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      const {
+        checkHealthViaHttp,
+      } = require('../src/main/services/chromadb/ChromaHealthChecker');
       checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
 
       await service.initialize();
@@ -267,7 +272,9 @@ describe('ChromaDBServiceCore', () => {
 
   describe('checkHealth', () => {
     test('returns true when healthy', async () => {
-      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      const {
+        checkHealthViaHttp,
+      } = require('../src/main/services/chromadb/ChromaHealthChecker');
       checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
 
       const result = await service.checkHealth();
@@ -277,7 +284,10 @@ describe('ChromaDBServiceCore', () => {
     });
 
     test('returns false when unhealthy', async () => {
-      const { checkHealthViaHttp, checkHealthViaClient } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      const {
+        checkHealthViaHttp,
+        checkHealthViaClient,
+      } = require('../src/main/services/chromadb/ChromaHealthChecker');
       checkHealthViaHttp.mockResolvedValueOnce({ healthy: false });
       checkHealthViaClient.mockResolvedValueOnce(false);
 
@@ -353,7 +363,9 @@ describe('ChromaDBServiceCore', () => {
     test('deletes file embedding', async () => {
       await service.initialize();
 
-      const { deleteFileEmbedding } = require('../src/main/services/chromadb/fileOperations');
+      const {
+        deleteFileEmbedding,
+      } = require('../src/main/services/chromadb/fileOperations');
 
       await service.deleteFileEmbedding('file-1');
 
@@ -365,7 +377,10 @@ describe('ChromaDBServiceCore', () => {
     test('batch deletes file embeddings', async () => {
       await service.initialize();
 
-      const result = await service.batchDeleteFileEmbeddings(['file-1', 'file-2']);
+      const result = await service.batchDeleteFileEmbeddings([
+        'file-1',
+        'file-2',
+      ]);
 
       expect(result.count).toBe(3);
     });
@@ -432,8 +447,12 @@ describe('ChromaDBServiceCore', () => {
     test('queries folders for file', async () => {
       await service.initialize();
 
-      const { executeQueryFolders } = require('../src/main/services/chromadb/folderOperations');
-      executeQueryFolders.mockResolvedValueOnce([{ id: 'folder-1', score: 0.9 }]);
+      const {
+        executeQueryFolders,
+      } = require('../src/main/services/chromadb/folderOperations');
+      executeQueryFolders.mockResolvedValueOnce([
+        { id: 'folder-1', score: 0.9 },
+      ]);
 
       const results = await service.queryFolders('file-1', 5);
 
@@ -453,7 +472,9 @@ describe('ChromaDBServiceCore', () => {
     test('deduplicates concurrent queries', async () => {
       await service.initialize();
 
-      const { executeQueryFolders } = require('../src/main/services/chromadb/folderOperations');
+      const {
+        executeQueryFolders,
+      } = require('../src/main/services/chromadb/folderOperations');
 
       // Track how many times executeQueryFolders is called
       let callCount = 0;
@@ -470,6 +491,7 @@ describe('ChromaDBServiceCore', () => {
 
       // Both should return same results
       expect(result1).toEqual(result2);
+      expect(callCount).toBe(1);
       // The function was only called once due to cache hit on second call
       // (first call populates cache, second call hits cache)
     });
@@ -479,12 +501,15 @@ describe('ChromaDBServiceCore', () => {
     test('queries folders by embedding vector', async () => {
       await service.initialize();
 
-      const { queryFoldersByEmbedding } = require('../src/main/services/chromadb/folderOperations');
+      const {
+        queryFoldersByEmbedding,
+      } = require('../src/main/services/chromadb/folderOperations');
       queryFoldersByEmbedding.mockResolvedValueOnce([{ id: 'folder-1' }]);
 
       const results = await service.queryFoldersByEmbedding([0.1, 0.2], 5);
 
       expect(queryFoldersByEmbedding).toHaveBeenCalled();
+      expect(results).toEqual([{ id: 'folder-1' }]);
     });
   });
 
@@ -492,8 +517,13 @@ describe('ChromaDBServiceCore', () => {
     test('gets all folders', async () => {
       await service.initialize();
 
-      const { getAllFolders } = require('../src/main/services/chromadb/folderOperations');
-      getAllFolders.mockResolvedValueOnce([{ id: 'folder-1' }, { id: 'folder-2' }]);
+      const {
+        getAllFolders,
+      } = require('../src/main/services/chromadb/folderOperations');
+      getAllFolders.mockResolvedValueOnce([
+        { id: 'folder-1' },
+        { id: 'folder-2' },
+      ]);
 
       const results = await service.getAllFolders();
 
@@ -505,7 +535,9 @@ describe('ChromaDBServiceCore', () => {
     test('queries similar files', async () => {
       await service.initialize();
 
-      const { querySimilarFiles } = require('../src/main/services/chromadb/fileOperations');
+      const {
+        querySimilarFiles,
+      } = require('../src/main/services/chromadb/fileOperations');
       querySimilarFiles.mockResolvedValueOnce([{ id: 'similar-1' }]);
 
       const results = await service.querySimilarFiles([0.1, 0.2], 10);
@@ -518,11 +550,11 @@ describe('ChromaDBServiceCore', () => {
     test('updates file paths', async () => {
       await service.initialize();
 
-      const pathUpdates = [
-        { id: 'file-1', newPath: '/new/path.pdf' },
-      ];
+      const pathUpdates = [{ id: 'file-1', newPath: '/new/path.pdf' }];
 
-      const { updateFilePaths } = require('../src/main/services/chromadb/fileOperations');
+      const {
+        updateFilePaths,
+      } = require('../src/main/services/chromadb/fileOperations');
 
       await service.updateFilePaths(pathUpdates);
 
@@ -534,7 +566,9 @@ describe('ChromaDBServiceCore', () => {
     test('resets file collection', async () => {
       await service.initialize();
 
-      const { resetFiles } = require('../src/main/services/chromadb/fileOperations');
+      const {
+        resetFiles,
+      } = require('../src/main/services/chromadb/fileOperations');
 
       await service.resetFiles();
 
@@ -546,7 +580,9 @@ describe('ChromaDBServiceCore', () => {
     test('resets folder collection', async () => {
       await service.initialize();
 
-      const { resetFolders } = require('../src/main/services/chromadb/folderOperations');
+      const {
+        resetFolders,
+      } = require('../src/main/services/chromadb/folderOperations');
 
       await service.resetFolders();
 
@@ -558,8 +594,12 @@ describe('ChromaDBServiceCore', () => {
     test('resets both collections', async () => {
       await service.initialize();
 
-      const { resetFiles } = require('../src/main/services/chromadb/fileOperations');
-      const { resetFolders } = require('../src/main/services/chromadb/folderOperations');
+      const {
+        resetFiles,
+      } = require('../src/main/services/chromadb/fileOperations');
+      const {
+        resetFolders,
+      } = require('../src/main/services/chromadb/folderOperations');
 
       await service.resetAll();
 

@@ -3,11 +3,6 @@
  * Tests Ollama client management and model configuration
  */
 
-const path = require('path');
-const os = require('os');
-
-// Mock electron - use inline value since jest.mock cannot reference outer scope
-const mockTmpDir = '/tmp/mock-electron';
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn().mockReturnValue('/tmp/mock-electron'),
@@ -155,11 +150,13 @@ describe('ollamaUtils', () => {
 
   describe('loadOllamaConfig', () => {
     test('loads config from file', async () => {
-      fs.readFile.mockResolvedValue(JSON.stringify({
-        selectedTextModel: 'llama3',
-        selectedVisionModel: 'llava',
-        host: 'http://localhost:11434',
-      }));
+      fs.readFile.mockResolvedValue(
+        JSON.stringify({
+          selectedTextModel: 'llama3',
+          selectedVisionModel: 'llava',
+          host: 'http://localhost:11434',
+        }),
+      );
 
       const config = await ollamaUtils.loadOllamaConfig();
 
@@ -184,9 +181,11 @@ describe('ollamaUtils', () => {
     });
 
     test('supports legacy selectedModel key', async () => {
-      fs.readFile.mockResolvedValue(JSON.stringify({
-        selectedModel: 'llama2',
-      }));
+      fs.readFile.mockResolvedValue(
+        JSON.stringify({
+          selectedModel: 'llama2',
+        }),
+      );
 
       await ollamaUtils.loadOllamaConfig();
 
@@ -225,9 +224,7 @@ describe('ollamaUtils', () => {
     test('retries rename on EPERM error', async () => {
       const epermError = new Error('EPERM');
       epermError.code = 'EPERM';
-      fs.rename
-        .mockRejectedValueOnce(epermError)
-        .mockResolvedValue();
+      fs.rename.mockRejectedValueOnce(epermError).mockResolvedValue();
 
       await ollamaUtils.saveOllamaConfig({});
 

@@ -3,8 +3,6 @@
  * Tests the removeByFilePath functionality and queue operations
  */
 
-const path = require('path');
-
 // Mock electron app
 jest.mock('electron', () => ({
   app: {

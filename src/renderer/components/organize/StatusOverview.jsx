@@ -7,24 +7,30 @@ const StatusOverview = memo(function StatusOverview({
   failedCount = 0,
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-13">
-      <div className="text-center p-13 bg-stratosort-blue/10 rounded-lg border border-stratosort-blue/20">
-        <div className="text-2xl font-bold text-stratosort-blue">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="surface-card text-center p-4">
+        <div className="text-xs font-semibold text-stratosort-blue/80 mb-1 uppercase tracking-wide">
+          Ready to Organize
+        </div>
+        <div className="text-xl font-bold text-stratosort-blue">
           {unprocessedCount}
         </div>
-        <div className="text-sm text-system-blue">Ready to Organize</div>
       </div>
-      <div className="text-center p-13 bg-stratosort-success/10 rounded-lg border border-stratosort-success/20">
-        <div className="text-2xl font-bold text-stratosort-success">
+      <div className="surface-card text-center p-4">
+        <div className="text-xs font-semibold text-stratosort-success/90 mb-1 uppercase tracking-wide">
+          Already Organized
+        </div>
+        <div className="text-xl font-bold text-stratosort-success">
           {processedCount}
         </div>
-        <div className="text-sm text-system-green">Already Organized</div>
       </div>
-      <div className="text-center p-13 bg-system-gray-100 rounded-lg border border-system-gray-200">
-        <div className="text-2xl font-bold text-system-gray-600">
+      <div className="surface-card text-center p-4">
+        <div className="text-xs font-semibold text-system-gray-600 mb-1 uppercase tracking-wide">
+          Failed Analysis
+        </div>
+        <div className="text-xl font-bold text-system-gray-700">
           {failedCount}
         </div>
-        <div className="text-sm text-system-gray-700">Failed Analysis</div>
       </div>
     </div>
   );

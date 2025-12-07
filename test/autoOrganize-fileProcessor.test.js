@@ -3,8 +3,6 @@
  * Tests individual file processing and new file monitoring
  */
 
-const path = require('path');
-
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
   logger: {
@@ -98,7 +96,12 @@ describe('AutoOrganize File Processor', () => {
       const defaultLocation = '/docs';
       const results = { organized: [], failed: [], operations: [] };
 
-      await processFilesWithoutAnalysis(files, smartFolders, defaultLocation, results);
+      await processFilesWithoutAnalysis(
+        files,
+        smartFolders,
+        defaultLocation,
+        results,
+      );
 
       expect(results.organized).toHaveLength(2);
       expect(results.organized[0].method).toBe('no-analysis-default');
@@ -107,11 +110,13 @@ describe('AutoOrganize File Processor', () => {
 
     test('uses existing default folder', async () => {
       const files = [{ name: 'file.txt', path: '/src/file.txt' }];
-      const smartFolders = [{
-        name: 'Uncategorized',
-        path: '/docs/Uncategorized',
-        isDefault: true,
-      }];
+      const smartFolders = [
+        {
+          name: 'Uncategorized',
+          path: '/docs/Uncategorized',
+          isDefault: true,
+        },
+      ];
       const results = { organized: [], failed: [], operations: [] };
 
       await processFilesWithoutAnalysis(files, smartFolders, '/docs', results);
@@ -137,14 +142,21 @@ describe('AutoOrganize File Processor', () => {
 
   describe('processFilesIndividually', () => {
     test('processes files with high confidence suggestions', async () => {
-      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
+      ];
       const smartFolders = [];
       const options = {
         confidenceThreshold: 0.7,
         defaultLocation: '/docs',
         preserveNames: true,
       };
-      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processFilesIndividually(
@@ -170,9 +182,16 @@ describe('AutoOrganize File Processor', () => {
         explanation: 'Medium confidence match',
       });
 
-      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
+      ];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
-      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processFilesIndividually(
@@ -195,9 +214,16 @@ describe('AutoOrganize File Processor', () => {
         confidence: 0.3,
       });
 
-      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
+      ];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
-      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processFilesIndividually(
@@ -219,9 +245,16 @@ describe('AutoOrganize File Processor', () => {
         primary: null,
       });
 
-      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
+      ];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
-      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processFilesIndividually(
@@ -242,9 +275,16 @@ describe('AutoOrganize File Processor', () => {
         new Error('Suggestion failed'),
       );
 
-      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
+      ];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
-      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processFilesIndividually(
@@ -263,13 +303,22 @@ describe('AutoOrganize File Processor', () => {
     test('handles processing errors with sync throw', async () => {
       // Mock getSuggestionsForFile to throw synchronously in a way that's caught by the outer try-catch
       const badSuggestionService = {
-        getSuggestionsForFile: jest.fn().mockRejectedValue(new Error('Suggestion failed')),
+        getSuggestionsForFile: jest
+          .fn()
+          .mockRejectedValue(new Error('Suggestion failed')),
         recordFeedback: jest.fn().mockResolvedValue(undefined),
       };
 
-      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
+      ];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
-      const results = { organized: [], needsReview: [], failed: [], operations: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        failed: [],
+        operations: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processFilesIndividually(
@@ -363,7 +412,9 @@ describe('AutoOrganize File Processor', () => {
     });
 
     test('returns null on analysis error', async () => {
-      const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      const {
+        analyzeDocumentFile,
+      } = require('../src/main/analysis/ollamaDocumentAnalysis');
       analyzeDocumentFile.mockResolvedValueOnce({ error: 'Analysis failed' });
 
       const result = await processNewFile(
@@ -381,7 +432,9 @@ describe('AutoOrganize File Processor', () => {
     });
 
     test('handles image files', async () => {
-      const { analyzeImageFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      const {
+        analyzeImageFile,
+      } = require('../src/main/analysis/ollamaDocumentAnalysis');
       analyzeImageFile.mockResolvedValueOnce({
         category: 'Photos',
         confidence: 0.9,

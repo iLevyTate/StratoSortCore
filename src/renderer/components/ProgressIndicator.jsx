@@ -62,7 +62,7 @@ function ProgressIndicator() {
   };
 
   return (
-    <div className="bg-surface-secondary/50 border-b border-border-light px-21 py-8 backdrop-blur-sm">
+    <div className="bg-surface-muted/70 border-b border-border-soft px-21 py-8 backdrop-blur-sm">
       <div className="container-enhanced">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-8">

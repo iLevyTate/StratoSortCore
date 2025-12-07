@@ -1,6 +1,5 @@
 /**
- * Tests for Settings Validation
- * Ensures proper validation of user settings and configurable limits
+ * @jest-environment node
  */
 
 const {
@@ -11,6 +10,28 @@ const {
   getDefaultValue,
   getConfigurableLimits,
 } = require('../src/shared/settingsValidation');
+
+describe('settingsValidation security', () => {
+  test('rejects prototype-pollution keys via warnings', () => {
+    const input = { __proto__: 'oops', theme: 'dark' };
+    const result = validateSettings(input);
+
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('unsafe key')]),
+    );
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('sanitizeSettings drops prototype-pollution keys', () => {
+    const input = { constructor: 'bad', theme: 'light', maxBatchSize: 10 };
+    const sanitized = sanitizeSettings(input);
+
+    expect(sanitized.constructor).toBeUndefined();
+    expect(sanitized.theme).toBe('light');
+    expect(sanitized.maxBatchSize).toBe(10);
+  });
+});
 
 describe('Settings Validation', () => {
   describe('VALIDATION_RULES', () => {

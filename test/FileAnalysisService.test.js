@@ -106,7 +106,9 @@ describe('FileAnalysisService', () => {
     test('routes image files to analyzeImage', async () => {
       const result = await service.analyze('/path/to/image.jpg');
 
-      const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
+      const {
+        analyzeImageFile,
+      } = require('../src/main/analysis/ollamaImageAnalysis');
       expect(analyzeImageFile).toHaveBeenCalledWith('/path/to/image.jpg', []);
       expect(result.category).toBe('images');
     });
@@ -114,44 +116,52 @@ describe('FileAnalysisService', () => {
     test('routes document files to analyzeDocument', async () => {
       const result = await service.analyze('/path/to/document.pdf');
 
-      const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
-      expect(analyzeDocumentFile).toHaveBeenCalledWith('/path/to/document.pdf', []);
+      const {
+        analyzeDocumentFile,
+      } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      expect(analyzeDocumentFile).toHaveBeenCalledWith(
+        '/path/to/document.pdf',
+        [],
+      );
       expect(result.category).toBe('documents');
     });
 
     test.each([
-      ['.jpg', 'images'],
-      ['.jpeg', 'images'],
-      ['.png', 'images'],
-      ['.gif', 'images'],
-      ['.bmp', 'images'],
-      ['.webp', 'images'],
-      ['.svg', 'images'],
-      ['.tiff', 'images'],
-    ])('recognizes %s as image extension', async (ext, expectedCategory) => {
+      ['.jpg'],
+      ['.jpeg'],
+      ['.png'],
+      ['.gif'],
+      ['.bmp'],
+      ['.webp'],
+      ['.svg'],
+      ['.tiff'],
+    ])('recognizes %s as image extension', async (ext) => {
       await service.analyze(`/path/to/file${ext}`);
 
-      const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
+      const {
+        analyzeImageFile,
+      } = require('../src/main/analysis/ollamaImageAnalysis');
       expect(analyzeImageFile).toHaveBeenCalled();
     });
 
-    test.each([
-      ['.pdf'],
-      ['.doc'],
-      ['.docx'],
-      ['.txt'],
-      ['.md'],
-    ])('recognizes %s as document extension', async (ext) => {
-      await service.analyze(`/path/to/file${ext}`);
+    test.each([['.pdf'], ['.doc'], ['.docx'], ['.txt'], ['.md']])(
+      'recognizes %s as document extension',
+      async (ext) => {
+        await service.analyze(`/path/to/file${ext}`);
 
-      const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
-      expect(analyzeDocumentFile).toHaveBeenCalled();
-    });
+        const {
+          analyzeDocumentFile,
+        } = require('../src/main/analysis/ollamaDocumentAnalysis');
+        expect(analyzeDocumentFile).toHaveBeenCalled();
+      },
+    );
 
     test('handles uppercase extensions', async () => {
       await service.analyze('/path/to/IMAGE.JPG');
 
-      const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
+      const {
+        analyzeImageFile,
+      } = require('../src/main/analysis/ollamaImageAnalysis');
       expect(analyzeImageFile).toHaveBeenCalled();
     });
   });
@@ -168,8 +178,13 @@ describe('FileAnalysisService', () => {
 
       await service.analyzeDocument('/path/to/doc.pdf', folders);
 
-      const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
-      expect(analyzeDocumentFile).toHaveBeenCalledWith('/path/to/doc.pdf', folders);
+      const {
+        analyzeDocumentFile,
+      } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      expect(analyzeDocumentFile).toHaveBeenCalledWith(
+        '/path/to/doc.pdf',
+        folders,
+      );
     });
   });
 
@@ -185,8 +200,13 @@ describe('FileAnalysisService', () => {
 
       await service.analyzeImage('/path/to/image.png', folders);
 
-      const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
-      expect(analyzeImageFile).toHaveBeenCalledWith('/path/to/image.png', folders);
+      const {
+        analyzeImageFile,
+      } = require('../src/main/analysis/ollamaImageAnalysis');
+      expect(analyzeImageFile).toHaveBeenCalledWith(
+        '/path/to/image.png',
+        folders,
+      );
     });
   });
 });

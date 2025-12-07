@@ -21,6 +21,9 @@ const SUPPORTED_EXTENSIONS = [
   '.pdf',
   '.doc',
   '.docx',
+  '.csv',
+  '.json',
+  '.xml',
   '.xls',
   '.xlsx',
   '.ppt',
@@ -384,8 +387,24 @@ export function useFileHandlers({
       const newFiles = filterNewFiles(files, selectedFiles);
       if (newFiles.length === 0) return;
 
+      // Enforce path presence for dropped items
+      const withPath = newFiles.filter((file) => {
+        const pathValue = typeof file === 'string' ? file : file.path;
+        return typeof pathValue === 'string' && pathValue.trim().length > 0;
+      });
+      const droppedMissingPath = newFiles.length - withPath.length;
+      if (droppedMissingPath > 0) {
+        addNotification(
+          `Skipped ${droppedMissingPath} item${droppedMissingPath > 1 ? 's' : ''} with no path`,
+          'warning',
+          2500,
+          'drop-missing-path',
+        );
+      }
+      if (withPath.length === 0) return;
+
       // Ensure extension property is set
-      const enhancedFiles = newFiles.map((file) => {
+      const enhancedFiles = withPath.map((file) => {
         let extension = file.extension;
         if (!extension) {
           const fileName = file.name || extractFileName(file.path || '');

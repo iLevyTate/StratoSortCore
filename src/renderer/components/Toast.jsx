@@ -58,14 +58,14 @@ const Toast = ({
   const getSeverityClasses = () => {
     switch (severity) {
       case 'success':
-        return 'toast-success border-system-green bg-system-green/10 text-system-green';
+        return 'border-stratosort-success/50 bg-stratosort-success/10 text-stratosort-success';
       case 'error':
-        return 'toast-error border-system-red bg-system-red/10 text-system-red';
+        return 'border-stratosort-danger/50 bg-stratosort-danger/10 text-stratosort-danger';
       case 'warning':
-        return 'toast-warning border-yellow-500 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/90 dark:text-yellow-200';
+        return 'border-stratosort-warning/50 bg-stratosort-warning/10 text-stratosort-warning';
       case 'info':
       default:
-        return 'toast-info border-stratosort-blue bg-stratosort-blue/10 text-stratosort-blue';
+        return 'border-stratosort-blue/45 bg-stratosort-blue/10 text-stratosort-blue';
     }
   };
 
@@ -187,17 +187,17 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
 
   const containerStyle = () => {
     const base = { position: 'fixed', zIndex: 1000 };
-    // Account for footer height (~60px) plus safe spacing
-    const bottomOffset = '80px';
+    // Account for footer height plus safe spacing (customizable via CSS var)
+    const bottomOffset = 'var(--toast-offset, 80px)';
     switch (position) {
       case 'top-right':
         return { ...base, top: '21px', right: '21px' };
       case 'top-left':
         return { ...base, top: '21px', left: '21px' };
       case 'bottom-left':
-        return { ...base, bottom: bottomOffset, left: '21px' };
+        return { ...base, bottom: `calc(${bottomOffset})`, left: '21px' };
       default:
-        return { ...base, bottom: bottomOffset, right: '21px' };
+        return { ...base, bottom: `calc(${bottomOffset})`, right: '21px' };
     }
   };
 

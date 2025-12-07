@@ -2,6 +2,12 @@ const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
 
+jest.mock('fast-xml-parser', () => ({
+  XMLParser: jest.fn(() => ({
+    parse: jest.fn(() => ({})),
+  })),
+}));
+
 describe('per-file analysis cache (document)', () => {
   afterEach(() => {
     jest.resetModules();
@@ -24,6 +30,13 @@ describe('per-file analysis cache (document)', () => {
       '../src/main/analysis/documentLlm',
       () => ({
         analyzeTextWithOllama: analyzeSpy,
+        AppConfig: {
+          ai: {
+            textAnalysis: {
+              defaultModel: 'mock-model',
+            },
+          },
+        },
       }),
       { virtual: false },
     );

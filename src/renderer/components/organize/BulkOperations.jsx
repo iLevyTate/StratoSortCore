@@ -16,19 +16,19 @@ function BulkOperations({
   smartFolders,
 }) {
   return (
-    <div className="flex items-center justify-between flex-wrap gap-8">
-      <div className="flex items-center gap-13">
+    <div className="surface-quiet flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-center gap-3 flex-wrap">
         <input
           type="checkbox"
           checked={selectedCount === total && total > 0}
           onChange={onSelectAll}
-          className="form-checkbox"
+          className="form-checkbox accent-stratosort-blue"
         />
         <span className="text-sm font-medium">
           {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
         </span>
         {selectedCount > 0 && (
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button
               onClick={onApproveSelected}
               variant="primary"
@@ -47,7 +47,7 @@ function BulkOperations({
         )}
       </div>
       {bulkEditMode && (
-        <div className="flex items-center gap-5 flex-wrap">
+        <div className="flex items-center gap-4 flex-wrap">
           <Select
             value={bulkCategory}
             onChange={(e) => setBulkCategory(e.target.value)}

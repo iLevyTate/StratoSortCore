@@ -113,8 +113,8 @@ const SystemMonitoring = React.memo(function SystemMonitoring() {
       // and React will unmount the state anyway. Calling setState during cleanup can cause warnings.
       isMountedRef.current = false;
     };
-  }, []); // PERFORMANCE FIX: Removed fetchMetrics from deps to prevent unnecessary re-renders
-  // fetchMetrics is stable (useCallback with empty deps), so it doesn't need to be in dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // fetchMetrics is stable (useCallback with empty deps), intentionally excluded
 
   if (!isMonitoring || error) {
     return (

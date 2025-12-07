@@ -195,40 +195,69 @@ async function createDefaultFolder(smartFolders) {
  * @returns {string} Fallback destination path
  */
 function getFallbackDestination(file, smartFolders, defaultLocation) {
+  // Ensure defaultLocation is a valid string
+  const safeDefaultLocation =
+    typeof defaultLocation === 'string' ? defaultLocation : 'Documents';
+
   // Try to match based on file type
   const fileType = getFileTypeCategory(file.extension);
 
   // Look for a smart folder that matches the file type
-  const typeFolder = smartFolders.find((f) =>
-    f.name.toLowerCase().includes(fileType.toLowerCase()),
+  const typeFolder = smartFolders.find(
+    (f) =>
+      f.name &&
+      typeof f.name === 'string' &&
+      f.name.toLowerCase().includes(fileType.toLowerCase()),
   );
 
   if (typeFolder) {
-    return path.join(
-      typeFolder.path || `${defaultLocation}/${typeFolder.name}`,
-      file.name,
-    );
+    const folderPath =
+      typeof typeFolder.path === 'string'
+        ? typeFolder.path
+        : `${safeDefaultLocation}/${typeFolder.name}`;
+    return path.join(folderPath, file.name);
   }
 
   // Use category from analysis if available
-  if (file.analysis?.category) {
+  if (file.analysis?.category && typeof file.analysis.category === 'string') {
     const categoryFolder = smartFolders.find(
-      (f) => f.name.toLowerCase() === file.analysis.category.toLowerCase(),
+      (f) =>
+        f.name &&
+        typeof f.name === 'string' &&
+        f.name.toLowerCase() === file.analysis.category.toLowerCase(),
     );
 
     if (categoryFolder) {
-      return path.join(
-        categoryFolder.path || `${defaultLocation}/${categoryFolder.name}`,
-        file.name,
-      );
+      const folderPath =
+        typeof categoryFolder.path === 'string'
+          ? categoryFolder.path
+          : `${safeDefaultLocation}/${categoryFolder.name}`;
+      return path.join(folderPath, file.name);
     }
 
     // Create new folder based on category
-    return path.join(defaultLocation, file.analysis.category, file.name);
+    return path.join(safeDefaultLocation, file.analysis.category, file.name);
   }
 
   // Ultimate fallback - organize by file type
-  return path.join(defaultLocation, fileType, file.name);
+  return path.join(safeDefaultLocation, fileType, file.name);
+}
+
+/**
+ * Extract string value from a property that might be an object
+ * @param {*} value - Value to extract from
+ * @param {string} fallback - Fallback value if extraction fails
+ * @returns {string} Extracted string value
+ */
+function extractStringValue(value, fallback = 'Uncategorized') {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    // Try common property names for folder/path objects
+    return value.name || value.path || value.folder || fallback;
+  }
+  return fallback;
 }
 
 /**
@@ -245,12 +274,38 @@ function buildDestinationPath(
   defaultLocation,
   preserveNames,
 ) {
-  const folderPath =
-    suggestion.path || path.join(defaultLocation, suggestion.folder);
+  // Validate and extract folder path - handle both string and object cases
+  let folderPath;
 
-  const fileName = preserveNames
+  // First try suggestion.path (should be a full path string)
+  if (suggestion.path && typeof suggestion.path === 'string') {
+    folderPath = suggestion.path;
+  } else if (suggestion.path && typeof suggestion.path === 'object') {
+    // Path is an object, try to extract the path string
+    folderPath = extractStringValue(suggestion.path, null);
+  }
+
+  // If no valid path, build from defaultLocation and folder name
+  if (!folderPath) {
+    const folderName = extractStringValue(suggestion.folder, 'Uncategorized');
+    const location =
+      typeof defaultLocation === 'string'
+        ? defaultLocation
+        : extractStringValue(defaultLocation, 'Documents');
+    folderPath = path.join(location, folderName);
+  }
+
+  let fileName = preserveNames
     ? file.name
     : file.analysis?.suggestedName || file.name;
+
+  // Ensure the original file extension is preserved
+  const originalExt = path.extname(file.name);
+  const currentExt = path.extname(fileName);
+  if (originalExt && !currentExt) {
+    // suggestedName is missing the extension, add it back
+    fileName = fileName + originalExt;
+  }
 
   return path.join(folderPath, fileName);
 }

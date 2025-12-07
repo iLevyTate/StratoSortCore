@@ -256,8 +256,9 @@ class EmbeddingCache {
   /**
    * Shutdown the cache and cleanup resources
    * Should be called when the application is shutting down
+   * @returns {Promise<void>}
    */
-  shutdown() {
+  async shutdown() {
     // Clear cleanup interval if it exists
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);

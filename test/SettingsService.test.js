@@ -3,8 +3,6 @@
  * Tests settings loading, saving, validation, and backup management
  */
 
-const path = require('path');
-
 // Mock electron
 jest.mock('electron', () => ({
   app: {
@@ -61,7 +59,9 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock settings validation
 jest.mock('../src/shared/settingsValidation', () => ({
-  validateSettings: jest.fn().mockReturnValue({ valid: true, errors: [], warnings: [] }),
+  validateSettings: jest
+    .fn()
+    .mockReturnValue({ valid: true, errors: [], warnings: [] }),
   sanitizeSettings: jest.fn((s) => s),
 }));
 
@@ -189,7 +189,9 @@ describe('SettingsService', () => {
         JSON.stringify({ theme: 'light', existingSetting: true }),
       );
 
-      const { backupAndReplace } = require('../src/shared/atomicFileOperations');
+      const {
+        backupAndReplace,
+      } = require('../src/shared/atomicFileOperations');
 
       await service.save({ theme: 'dark' });
 
@@ -271,10 +273,16 @@ describe('SettingsService', () => {
       ]);
       mockFs.readFile
         .mockResolvedValueOnce(
-          JSON.stringify({ timestamp: '2024-01-01T00:00:00Z', appVersion: '1.0.0' }),
+          JSON.stringify({
+            timestamp: '2024-01-01T00:00:00Z',
+            appVersion: '1.0.0',
+          }),
         )
         .mockResolvedValueOnce(
-          JSON.stringify({ timestamp: '2024-01-02T00:00:00Z', appVersion: '1.0.0' }),
+          JSON.stringify({
+            timestamp: '2024-01-02T00:00:00Z',
+            appVersion: '1.0.0',
+          }),
         );
       mockFs.stat
         .mockResolvedValueOnce({ size: 100, mtime: new Date('2024-01-01') })

@@ -159,12 +159,15 @@ function buildOperations({
     const suggestedName =
       edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
 
-    // Ensure extension is present
-    const originalExt = file.name.includes('.')
-      ? `.${file.name.split('.').pop()}`
-      : '';
+    // Ensure extension is present - use lastIndexOf for more robust extension detection
+    const originalExtIdx = file.name.lastIndexOf('.');
+    const originalExt =
+      originalExtIdx > 0 ? file.name.slice(originalExtIdx) : '';
+    const suggestedExtIdx = suggestedName.lastIndexOf('.');
+    const hasExtension =
+      suggestedExtIdx > 0 && suggestedExtIdx > suggestedName.length - 6;
     const newName =
-      suggestedName.includes('.') || !originalExt
+      hasExtension || !originalExt
         ? suggestedName
         : suggestedName + originalExt;
 
@@ -214,11 +217,15 @@ function buildPreview({
     const suggestedName =
       edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
 
-    const originalExt = file.name.includes('.')
-      ? `.${file.name.split('.').pop()}`
-      : '';
+    // Ensure extension is present - use lastIndexOf for more robust extension detection
+    const originalExtIdx = file.name.lastIndexOf('.');
+    const originalExt =
+      originalExtIdx > 0 ? file.name.slice(originalExtIdx) : '';
+    const suggestedExtIdx = suggestedName.lastIndexOf('.');
+    const hasExtension =
+      suggestedExtIdx > 0 && suggestedExtIdx > suggestedName.length - 6;
     const newName =
-      suggestedName.includes('.') || !originalExt
+      hasExtension || !originalExt
         ? suggestedName
         : suggestedName + originalExt;
 
@@ -261,13 +268,37 @@ export function useOrganization({
 
   const handleOrganizeFiles = useCallback(
     async (filesToOrganize = null) => {
+      // FIX: Ensure filesToOrganize is actually an array, not a React event
+      const actualFilesToOrganize = Array.isArray(filesToOrganize)
+        ? filesToOrganize
+        : null;
+
+      logger.info('[ORGANIZE] handleOrganizeFiles called', {
+        providedFiles: actualFilesToOrganize?.length ?? 'null',
+        unprocessedFilesCount: unprocessedFiles?.length ?? 0,
+      });
+
       try {
         setIsOrganizing(true);
         setOrganizingState(true);
 
         const filesToProcess =
-          filesToOrganize || unprocessedFiles.filter((f) => f.analysis);
-        if (filesToProcess.length === 0) return;
+          actualFilesToOrganize || unprocessedFiles.filter((f) => f.analysis);
+
+        logger.info('[ORGANIZE] Files to process', {
+          count: filesToProcess.length,
+        });
+
+        if (filesToProcess.length === 0) {
+          addNotification(
+            'No files ready to organize. Please ensure files have been analyzed.',
+            'warning',
+          );
+          logger.warn('[ORGANIZE] No files to process - returning early');
+          setIsOrganizing(false);
+          setOrganizingState(false);
+          return;
+        }
 
         setBatchProgress({
           current: 0,
@@ -277,9 +308,14 @@ export function useOrganization({
 
         // Check if auto-organize with suggestions is available
         const useAutoOrganize = window.electronAPI?.organize?.auto;
+        logger.info(
+          '[ORGANIZE] Auto-organize API available:',
+          !!useAutoOrganize,
+        );
 
         let operations;
         if (useAutoOrganize) {
+          logger.info('[ORGANIZE] Calling auto-organize API...');
           const result = await window.electronAPI.organize.auto({
             files: filesToProcess,
             smartFolders,
@@ -289,6 +325,12 @@ export function useOrganization({
               preserveNames: false,
             },
           });
+          logger.info('[ORGANIZE] Auto-organize result:', {
+            success: result?.success,
+            operationsCount:
+              result?.operations?.length ?? result?.organized?.length ?? 0,
+            error: result?.error,
+          });
 
           if (result && result.success === false) {
             addNotification(
@@ -297,12 +339,31 @@ export function useOrganization({
               5000,
               'organize-service-error',
             );
-            logger.error('Auto-organize failed:', result.error);
+            logger.error('[ORGANIZE] Auto-organize failed:', result.error);
             setIsOrganizing(false);
+            setOrganizingState(false);
+            setBatchProgress({ current: 0, total: 0, currentFile: '' });
             return;
           }
 
-          operations = result?.operations || result?.organized || [];
+          // Prefer operations array (correct format), fall back to organized but convert format
+          if (result?.operations && result.operations.length > 0) {
+            operations = result.operations;
+          } else if (result?.organized && result.organized.length > 0) {
+            logger.warn(
+              '[ORGANIZE] Using organized array as fallback - converting format',
+            );
+            // Convert organized format {file, destination, confidence} to operations format {type, source, destination}
+            operations = result.organized
+              .map((item) => ({
+                type: 'move',
+                source: item.file?.path || item.source || item.path,
+                destination: item.destination,
+              }))
+              .filter((op) => op.source && op.destination);
+          } else {
+            operations = [];
+          }
 
           if (result?.needsReview && result.needsReview.length > 0) {
             addNotification(
@@ -356,8 +417,11 @@ export function useOrganization({
             defaultLocation,
           });
           setOrganizePreview(preview);
-        } catch {
-          // Non-fatal if preview generation fails
+        } catch (previewError) {
+          logger.warn(
+            '[ORGANIZE] Preview generation failed (non-fatal):',
+            previewError.message,
+          );
         }
 
         const sourcePathsSet = new Set(operations.map((op) => op.source));
@@ -402,9 +466,16 @@ export function useOrganization({
                   total: filesToProcess.length,
                   currentFile: '',
                 });
+              } else {
+                logger.warn(
+                  '[ORGANIZE] onExecute: No successful results to process',
+                );
               }
-            } catch {
-              // Non-fatal if state callback fails
+            } catch (callbackError) {
+              logger.error(
+                '[ORGANIZE] onExecute callback failed:',
+                callbackError.message,
+              );
             }
           },
           onUndo: (result) => {
@@ -444,8 +515,11 @@ export function useOrganization({
                   'info',
                 );
               }
-            } catch {
-              // Non-fatal if state callback fails
+            } catch (undoError) {
+              logger.error(
+                '[ORGANIZE] onUndo callback failed:',
+                undoError.message,
+              );
             }
           },
           onRedo: (result) => {
@@ -498,11 +572,18 @@ export function useOrganization({
                   'info',
                 );
               }
-            } catch {
-              // Non-fatal if state callback fails
+            } catch (redoError) {
+              logger.error(
+                '[ORGANIZE] onRedo callback failed:',
+                redoError.message,
+              );
             }
           },
         };
+
+        logger.info('[ORGANIZE] Executing batch action with', {
+          operationsCount: operations.length,
+        });
 
         const result = await executeAction(
           createOrganizeBatchAction(
@@ -512,11 +593,37 @@ export function useOrganization({
           ),
         );
 
+        logger.info('[ORGANIZE] Batch action result:', {
+          success: result?.success,
+          resultsCount: result?.results?.length ?? 0,
+        });
+
         const successCount = Array.isArray(result?.results)
           ? result.results.filter((r) => r.success).length
           : 0;
-        if (successCount > 0) actions.advancePhase(PHASES.COMPLETE);
+
+        logger.info('[ORGANIZE] Final result:', {
+          successCount,
+          totalResults: result?.results?.length ?? 0,
+          willAdvancePhase: successCount > 0,
+        });
+
+        if (successCount > 0) {
+          actions.advancePhase(PHASES.COMPLETE);
+        } else {
+          logger.warn(
+            '[ORGANIZE] No successful operations - phase will not advance',
+          );
+          addNotification(
+            'No files were organized successfully. Check the logs for details.',
+            'warning',
+          );
+        }
       } catch (error) {
+        logger.error('[ORGANIZE] Organization error:', {
+          message: error.message,
+          stack: error.stack,
+        });
         addNotification(`Organization failed: ${error.message}`, 'error');
       } finally {
         setIsOrganizing(false);
@@ -524,6 +631,7 @@ export function useOrganization({
         setBatchProgress({ current: 0, total: 0, currentFile: '' });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       unprocessedFiles,
       editingFiles,
@@ -540,6 +648,7 @@ export function useOrganization({
       executeAction,
       setOrganizedFiles,
       setOrganizingState,
+      // Note: setBatchProgress, setIsOrganizing, setOrganizePreview are stable useState setters
     ],
   );
 

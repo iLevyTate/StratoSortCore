@@ -37,11 +37,18 @@ async function getLLMAlternativeSuggestions(file, smartFolders, config = {}) {
     const llmTemperature = config.llmTemperature || 0.7;
     const llmMaxTokens = config.llmMaxTokens || 500;
 
+    // Limit analysis content size and avoid leaking excessive detail
+    const serializedAnalysis = JSON.stringify(
+      file.analysis || {},
+      null,
+      2,
+    ).slice(0, 800);
+
     const prompt = `Given this file analysis, suggest 3 alternative organization approaches:
 
 File: ${file.name}
 Type: ${file.extension}
-Analysis: ${JSON.stringify(file.analysis || {}, null, 2).slice(0, 500)}
+Analysis (truncated): ${serializedAnalysis}
 
 Available folders: ${smartFolders.map((f) => `${f.name}: ${f.description}`).join(', ')}
 
@@ -113,14 +120,29 @@ Return JSON: {
       return [];
     }
 
-    return parsed.suggestions.map((s) => ({
-      folder: s.folder,
-      score: s.confidence || 0.5,
-      confidence: s.confidence || 0.5,
-      reasoning: s.reasoning,
-      strategy: s.strategy,
-      method: 'llm_creative',
-    }));
+    return parsed.suggestions
+      .filter((s) => {
+        // Ensure folder is a valid string
+        if (typeof s.folder !== 'string' || !s.folder.trim()) {
+          logger.warn(
+            '[LLMSuggester] Skipping suggestion with invalid folder',
+            {
+              folder: s.folder,
+              type: typeof s.folder,
+            },
+          );
+          return false;
+        }
+        return true;
+      })
+      .map((s) => ({
+        folder: String(s.folder).trim(),
+        score: s.confidence || 0.5,
+        confidence: s.confidence || 0.5,
+        reasoning: s.reasoning,
+        strategy: s.strategy,
+        method: 'llm_creative',
+      }));
   } catch (error) {
     logger.warn('[LLMSuggester] LLM suggestions failed:', error.message);
     return [];

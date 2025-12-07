@@ -3,8 +3,6 @@
  * Tests ChromaDB executable resolution and spawn plan building
  */
 
-const path = require('path');
-
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
   logger: {
@@ -101,7 +99,8 @@ describe('chromaSpawnUtils', () => {
     });
 
     test('handles quoted arguments in custom command', async () => {
-      process.env.CHROMA_SERVER_COMMAND = 'chroma run --path "/path with spaces/db"';
+      process.env.CHROMA_SERVER_COMMAND =
+        'chroma run --path "/path with spaces/db"';
 
       const result = await chromaSpawnUtils.buildChromaSpawnPlan(defaultConfig);
 

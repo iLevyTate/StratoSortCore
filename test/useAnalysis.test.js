@@ -3,7 +3,7 @@
  * Tests file analysis logic and state management
  */
 
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 
 // Mock dependencies
 jest.mock('../src/shared/logger', () => ({
@@ -112,9 +112,12 @@ describe('useAnalysis', () => {
       category: 'documents',
       suggestedName: 'test-document.txt',
     });
-    mockElectronAPI.settings.get.mockResolvedValue({ maxConcurrentAnalysis: 3 });
+    mockElectronAPI.settings.get.mockResolvedValue({
+      maxConcurrentAnalysis: 3,
+    });
 
-    useAnalysis = require('../src/renderer/phases/discover/useAnalysis').useAnalysis;
+    useAnalysis =
+      require('../src/renderer/phases/discover/useAnalysis').useAnalysis;
   });
 
   afterEach(() => {
@@ -207,13 +210,13 @@ describe('useAnalysis', () => {
       expect(mockUpdateFileState).toHaveBeenCalledWith(
         '/test.txt',
         'analyzing',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
     test('prevents concurrent analysis runs', async () => {
       const { result } = renderHook(() =>
-        useAnalysis(createMockOptions({ isAnalyzing: true }))
+        useAnalysis(createMockOptions({ isAnalyzing: true })),
       );
       const files = [{ path: '/test.txt', name: 'test.txt' }];
 
@@ -236,11 +239,14 @@ describe('useAnalysis', () => {
 
       expect(mockSetIsAnalyzing).toHaveBeenCalledWith(false);
       expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
-      expect(mockSetAnalysisProgress).toHaveBeenCalledWith({ current: 0, total: 0 });
+      expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
+        current: 0,
+        total: 0,
+      });
       expect(mockAddNotification).toHaveBeenCalledWith(
         'Analysis stopped',
         'info',
-        2000
+        2000,
       );
     });
 
@@ -251,8 +257,14 @@ describe('useAnalysis', () => {
         result.current.cancelAnalysis();
       });
 
-      expect(mockActions.setPhaseData).toHaveBeenCalledWith('isAnalyzing', false);
-      expect(mockActions.setPhaseData).toHaveBeenCalledWith('currentAnalysisFile', '');
+      expect(mockActions.setPhaseData).toHaveBeenCalledWith(
+        'isAnalyzing',
+        false,
+      );
+      expect(mockActions.setPhaseData).toHaveBeenCalledWith(
+        'currentAnalysisFile',
+        '',
+      );
     });
   });
 
@@ -266,7 +278,10 @@ describe('useAnalysis', () => {
 
       expect(mockSetAnalysisResults).toHaveBeenCalledWith([]);
       expect(mockSetFileStates).toHaveBeenCalledWith({});
-      expect(mockSetAnalysisProgress).toHaveBeenCalledWith({ current: 0, total: 0 });
+      expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
+        current: 0,
+        total: 0,
+      });
       expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
     });
 
@@ -281,7 +296,7 @@ describe('useAnalysis', () => {
         'Analysis queue cleared',
         'info',
         2000,
-        'queue-management'
+        'queue-management',
       );
     });
   });
@@ -394,7 +409,7 @@ describe('useAnalysis', () => {
         expect.stringContaining('Resuming analysis'),
         'info',
         3000,
-        'analysis-resume'
+        'analysis-resume',
       );
     });
 

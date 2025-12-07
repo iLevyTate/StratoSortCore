@@ -1,12 +1,12 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { List } from 'react-window';
+import { FixedSizeList as List } from 'react-window';
 import ReadyFileItem from './ReadyFileItem';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
 // Height calculations for responsive grid layout
-const ITEM_HEIGHT = 280; // Height per row (each item card is approx 260px + padding)
-const LIST_HEIGHT = 600; // Max visible area height
+const ITEM_HEIGHT = 280; // Height per row (each item card is approx 240px + padding)
+const LIST_HEIGHT = 500; // Max visible area height (soft cap)
 const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
 
 /**
@@ -39,6 +39,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
     handleEditFile,
     smartFolders,
     defaultLocation,
+    onViewDetails,
   } = data;
 
   const startIndex = index * columnsPerRow;
@@ -75,6 +76,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
           onEdit={handleEditFile}
           destination={destination}
           category={currentCategory}
+          onViewDetails={onViewDetails}
         />
       </div>,
     );
@@ -109,6 +111,7 @@ VirtualizedFileRow.propTypes = {
     handleEditFile: PropTypes.func.isRequired,
     smartFolders: PropTypes.array.isRequired,
     defaultLocation: PropTypes.string.isRequired,
+    onViewDetails: PropTypes.func.isRequired,
   }).isRequired,
 };
 
@@ -128,6 +131,7 @@ function VirtualizedFileGrid({
   smartFolders,
   defaultLocation,
   containerWidth = 1200, // Default to xl breakpoint width
+  onViewDetails,
 }) {
   const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
   const columnsPerRow = getColumnCount(containerWidth);
@@ -147,6 +151,7 @@ function VirtualizedFileGrid({
       handleEditFile,
       smartFolders,
       defaultLocation,
+      onViewDetails,
     }),
     [
       files,
@@ -160,18 +165,25 @@ function VirtualizedFileGrid({
       handleEditFile,
       smartFolders,
       defaultLocation,
+      onViewDetails,
     ],
   );
 
   // Calculate optimal list height
   const listHeight = useMemo(() => {
-    const calculatedHeight = Math.min(rowCount * ITEM_HEIGHT, LIST_HEIGHT);
+    const viewportHeight =
+      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const maxHeight = Math.min(
+      LIST_HEIGHT,
+      Math.max(320, Math.round(viewportHeight * 0.55)),
+    );
+    const calculatedHeight = Math.min(rowCount * ITEM_HEIGHT, maxHeight);
     return Math.max(calculatedHeight, ITEM_HEIGHT);
   }, [rowCount]);
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full">
+      <div className="w-full max-h-[50vh] overflow-y-auto modern-scrollbar">
         <div className="text-xs text-system-gray-500 mb-2">
           Showing {files.length} files (virtualized for performance)
         </div>
@@ -192,7 +204,7 @@ function VirtualizedFileGrid({
 
   // For smaller lists, render normally without virtualization overhead
   return (
-    <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);
         const rawCategory =
@@ -238,6 +250,7 @@ VirtualizedFileGrid.propTypes = {
   smartFolders: PropTypes.array.isRequired,
   defaultLocation: PropTypes.string.isRequired,
   containerWidth: PropTypes.number,
+  onViewDetails: PropTypes.func.isRequired,
 };
 
 export default memo(VirtualizedFileGrid);

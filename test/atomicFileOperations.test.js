@@ -12,7 +12,6 @@ describe('AtomicFileOperations', () => {
   let atomicFileOps;
   let crossDeviceMove;
   let organizeFilesAtomically;
-  let backupAndReplace;
   let testDir;
 
   beforeEach(async () => {
@@ -28,7 +27,6 @@ describe('AtomicFileOperations', () => {
     atomicFileOps = module.atomicFileOps;
     crossDeviceMove = module.crossDeviceMove;
     organizeFilesAtomically = module.organizeFilesAtomically;
-    backupAndReplace = module.backupAndReplace;
   });
 
   afterEach(async () => {

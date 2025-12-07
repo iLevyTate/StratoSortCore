@@ -22,6 +22,15 @@ import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
 
+// Section keys for expand/collapse all functionality
+const SECTION_KEYS = [
+  'settings-ai',
+  'settings-performance',
+  'settings-defaults',
+  'settings-app',
+  'settings-api',
+];
+
 // Set logger context for this component
 logger.setContext('SettingsPanel');
 
@@ -33,18 +42,11 @@ const isElectronAPIAvailable = () => {
 const SettingsPanel = React.memo(function SettingsPanel() {
   const dispatch = useAppDispatch();
 
-  // FIX: Guard against missing electronAPI (e.g., if preload fails or non-Electron context)
-  if (!isElectronAPIAvailable()) {
-    return (
-      <div className="p-6 text-center">
-        <p className="text-red-600 font-medium">Settings unavailable</p>
-        <p className="text-sm text-system-gray-500 mt-2">
-          Electron API not available. Please restart the application.
-        </p>
-      </div>
-    );
-  }
+  // FIX: All hooks must be called before any conditional returns (React hooks rules)
   const { addNotification } = useNotification();
+
+  // Check if electronAPI is available (used for conditional rendering at end)
+  const isApiAvailable = isElectronAPIAvailable();
 
   // Memoize the toggleSettings function - dispatch is stable so no recreations
   const handleToggleSettings = useCallback(() => {
@@ -173,6 +175,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, []);
 
   useEffect(() => {
+    // Don't run if API is not available
+    if (!isApiAvailable) return;
+
     let mounted = true;
 
     const loadSettingsIfMounted = async () => {
@@ -193,10 +198,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isApiAvailable, loadSettings, loadOllamaModels]);
 
   // After settings are loaded the first time, automatically check Ollama health
   useEffect(() => {
+    if (!isApiAvailable) return;
     if (!settingsLoaded) return;
     if (didAutoHealthCheckRef.current) return;
     didAutoHealthCheckRef.current = true;
@@ -223,7 +229,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     return () => {
       isMounted = false;
     };
-  }, [settingsLoaded, settings.ollamaHost, loadOllamaModels]);
+  }, [isApiAvailable, settingsLoaded, settings.ollamaHost, loadOllamaModels]);
 
   const saveSettings = useCallback(async () => {
     try {
@@ -259,10 +265,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   );
 
   useEffect(() => {
-    if (settingsLoaded) {
+    if (isApiAvailable && settingsLoaded) {
       autoSaveSettings();
     }
-  }, [settings, settingsLoaded, autoSaveSettings]);
+  }, [isApiAvailable, settings, settingsLoaded, autoSaveSettings]);
 
   const testOllamaConnection = useCallback(async () => {
     try {
@@ -355,14 +361,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [modelToDelete, addNotification, loadOllamaModels]);
 
   // Collapsible section keys for expand/collapse all
-  const SECTION_KEYS = [
-    'settings-ai',
-    'settings-performance',
-    'settings-defaults',
-    'settings-app',
-    'settings-api',
-  ];
-
   const expandAll = useCallback(() => {
     try {
       SECTION_KEYS.forEach((k) =>
@@ -385,10 +383,22 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, []);
 
+  // FIX: Guard against missing electronAPI - moved after all hooks to follow React rules
+  if (!isApiAvailable) {
+    return (
+      <div className="p-6 text-center">
+        <p className="text-red-600 font-medium">Settings unavailable</p>
+        <p className="text-sm text-system-gray-500 mt-2">
+          Electron API not available. Please restart the application.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl xl:max-w-4xl 2xl:max-w-5xl w-full mx-4 max-h-[85vh] overflow-y-auto modern-scrollbar">
-        <div className="p-6 border-b border-system-gray-200">
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
+      <div className="surface-panel w-full max-w-2xl xl:max-w-4xl 2xl:max-w-5xl mx-auto max-h-[86vh] overflow-hidden modern-scrollbar">
+        <div className="px-6 py-5 border-b border-border-soft/70 bg-white/90 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-system-gray-900">
               ⚙️ Settings
@@ -417,7 +427,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-[calc(86vh-160px)] overflow-y-auto modern-scrollbar">
           <Collapsible
             title="🤖 AI Configuration"
             defaultOpen
@@ -521,7 +531,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="p-6 border-t border-system-gray-200 flex justify-end gap-4">
+        <div className="px-6 py-5 border-t border-border-soft/70 bg-white/90 backdrop-blur-sm flex justify-end gap-3">
           <Button onClick={handleToggleSettings} variant="secondary">
             Cancel
           </Button>

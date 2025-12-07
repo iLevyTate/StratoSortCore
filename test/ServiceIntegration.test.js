@@ -94,7 +94,9 @@ jest.mock('../src/main/services/ServiceContainer', () => {
       shutdown: jest.fn().mockResolvedValue(),
     },
     // Expose reset function for tests
-    _resetMockServices: () => { mockServices = new Map(); },
+    _resetMockServices: () => {
+      mockServices = new Map();
+    },
     ServiceIds: {
       SETTINGS: 'settings',
       CHROMA_DB: 'chromaDb',
@@ -172,9 +174,13 @@ describe('ServiceIntegration', () => {
 
       await integration.initialize();
 
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.ANALYSIS_HISTORY);
+      expect(container.resolve).toHaveBeenCalledWith(
+        ServiceIds.ANALYSIS_HISTORY,
+      );
       expect(container.resolve).toHaveBeenCalledWith(ServiceIds.UNDO_REDO);
-      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.PROCESSING_STATE);
+      expect(container.resolve).toHaveBeenCalledWith(
+        ServiceIds.PROCESSING_STATE,
+      );
       expect(container.resolve).toHaveBeenCalledWith(ServiceIds.CHROMA_DB);
     });
 
@@ -231,6 +237,7 @@ describe('ServiceIntegration', () => {
       const service = integration.getService(ServiceIds.SETTINGS);
 
       expect(container.resolve).toHaveBeenCalledWith(ServiceIds.SETTINGS);
+      expect(service).toBe(mockService);
     });
   });
 
@@ -242,6 +249,7 @@ describe('ServiceIntegration', () => {
       const result = integration.hasService(ServiceIds.SETTINGS);
 
       expect(container.has).toHaveBeenCalledWith(ServiceIds.SETTINGS);
+      expect(result).toBe(true);
     });
   });
 });

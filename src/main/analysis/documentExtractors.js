@@ -3,11 +3,22 @@ const { createReadStream } = require('fs');
 
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
+let XMLParser;
+try {
+  // Prefer the full parser when available
+  ({ XMLParser } = require('fast-xml-parser'));
+} catch {
+  // Fallback: lightweight internal parser to keep runtime alive when dependency is missing
+  ({ XMLParser } = require('./xmlParserFallback'));
+}
+const { parse: parseCsv } = require('csv-parse/sync');
 logger.setContext('DocumentExtractors');
 
 // Streaming thresholds for large file handling
 const STREAM_THRESHOLD = 50 * 1024 * 1024; // 50MB - use streaming for files larger than this
 const MAX_CONTENT_LENGTH = 2 * 1024 * 1024; // 2MB of text max for LLM
+const MAX_CSV_ROWS = 5000;
+const MAX_CSV_COLS = 100;
 
 // Pre-compiled regex patterns for performance (compiled once at module load)
 const REGEX_PATTERNS = {
@@ -47,6 +58,13 @@ const REGEX_PATTERNS = {
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB max file size
 const MAX_TEXT_LENGTH = 500000; // 500k characters max output
 const MAX_XLSX_ROWS = 10000; // Limit spreadsheet rows to prevent memory issues
+const xmlParser = new XMLParser({
+  ignoreAttributes: true,
+  attributeNamePrefix: '',
+  trimValues: true,
+  allowBooleanAttributes: true,
+  ignoreDeclaration: true,
+});
 
 /**
  * Check file size and enforce memory limits
@@ -82,6 +100,90 @@ function truncateText(text) {
   if (!text) return '';
   if (text.length <= MAX_TEXT_LENGTH) return text;
   return `${text.substring(0, MAX_TEXT_LENGTH)}\n\n[Text truncated due to length]`;
+}
+
+function flattenXmlText(value, chunks) {
+  if (value === null || value === undefined) return;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    chunks.push(String(value));
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => flattenXmlText(item, chunks));
+    return;
+  }
+  if (typeof value === 'object') {
+    Object.values(value).forEach((item) => flattenXmlText(item, chunks));
+  }
+}
+
+function extractPlainTextFromXml(xmlString) {
+  if (!xmlString) return '';
+  try {
+    const parsed = xmlParser.parse(xmlString);
+    const chunks = [];
+    flattenXmlText(parsed, chunks);
+    const text = chunks
+      .join(' ')
+      .replace(REGEX_PATTERNS.whitespace, ' ')
+      .trim();
+    if (text) return truncateText(text);
+  } catch (error) {
+    logger.warn(
+      '[XML] Failed to parse XML safely, falling back to tag stripping',
+      {
+        error: error.message,
+      },
+    );
+  }
+  return extractPlainTextFromHtml(xmlString);
+}
+
+async function extractTextFromCsv(filePath) {
+  // Treat CSV as structured text; enforce file size to avoid memory blowups
+  await checkFileSize(filePath, filePath);
+  const raw = await fs.readFile(filePath, 'utf8');
+  try {
+    const records = parseCsv(raw, {
+      bom: true,
+      skipEmptyLines: true,
+      relaxColumnCount: true,
+      relaxQuotes: true,
+    });
+
+    if (!Array.isArray(records) || records.length === 0) {
+      return truncateText(raw);
+    }
+
+    const rows = records.slice(0, MAX_CSV_ROWS).map((row) => {
+      if (Array.isArray(row)) {
+        return row
+          .slice(0, MAX_CSV_COLS)
+          .filter((cell) => cell !== null && cell !== undefined)
+          .map((cell) => String(cell))
+          .join(' ');
+      }
+      if (row && typeof row === 'object') {
+        return Object.values(row)
+          .slice(0, MAX_CSV_COLS)
+          .filter((cell) => cell !== null && cell !== undefined)
+          .map((cell) => String(cell))
+          .join(' ');
+      }
+      return String(row);
+    });
+
+    return truncateText(rows.join('\n'));
+  } catch (error) {
+    logger.warn('[CSV] Structured parse failed, returning raw text', {
+      error: error.message,
+    });
+    return truncateText(raw);
+  }
 }
 
 /**
@@ -786,6 +888,55 @@ async function extractTextFromPpt(filePath) {
   }
 }
 
+/**
+ * Chunk text for downstream analysis with optional overlap.
+ * Keeps total output under a configurable limit to avoid LLM truncation.
+ * @param {string} text - Normalized text to chunk
+ * @param {Object} options
+ * @param {number} [options.chunkSize=4000] - Target chunk size in characters
+ * @param {number} [options.overlap=400] - Overlap between chunks in characters
+ * @param {number} [options.maxTotalLength=16000] - Max combined length to return
+ * @returns {{chunks: string[], combined: string}}
+ */
+function chunkTextForAnalysis(
+  text,
+  { chunkSize = 4000, overlap = 400, maxTotalLength = 16000 } = {},
+) {
+  if (!text || typeof text !== 'string') {
+    return { chunks: [], combined: '' };
+  }
+
+  const safeChunkSize = Math.max(500, chunkSize);
+  const safeOverlap = Math.min(
+    Math.max(0, overlap),
+    Math.floor(safeChunkSize / 2),
+  );
+
+  const chunks = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = Math.min(start + safeChunkSize, text.length);
+    chunks.push(text.slice(start, end));
+    if (end === text.length) break;
+    start = end - safeOverlap;
+  }
+
+  // Combine chunks until reaching the maxTotalLength budget
+  const combined = [];
+  let remaining = Math.max(1000, maxTotalLength);
+  for (const chunk of chunks) {
+    if (remaining <= 0) break;
+    const slice = chunk.slice(0, remaining);
+    combined.push(slice);
+    remaining -= slice.length;
+  }
+
+  return {
+    chunks,
+    combined: combined.join('\n\n---\n\n'),
+  };
+}
+
 module.exports = {
   extractTextFromPdf,
   ocrPdfIfNeeded,
@@ -801,10 +952,13 @@ module.exports = {
   extractTextFromMsg,
   extractTextFromKml,
   extractTextFromKmz,
+  extractTextFromCsv,
+  extractPlainTextFromXml,
   extractPlainTextFromRtf,
   extractPlainTextFromHtml,
   // MED-4: Streaming support for large files
   extractContentWithSizeCheck,
   extractContentStreaming,
   extractContentBuffered,
+  chunkTextForAnalysis,
 };

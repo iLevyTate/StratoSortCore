@@ -213,7 +213,8 @@ function DiscoverPhase() {
         resetAnalysisState('Stuck analysis detected on mount');
       }
     }
-  }, []); // Run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Intentionally run once on mount - deps excluded to avoid repeated checks
 
   // Resume analysis on mount if needed
   useEffect(() => {
@@ -299,12 +300,12 @@ function DiscoverPhase() {
   );
 
   return (
-    <div className="h-full w-full flex flex-col overflow-auto bg-system-gray-50/30">
-      <div className="container-responsive flex flex-col min-h-full gap-6 py-6 pb-24">
+    <div className="min-h-[calc(100vh-var(--app-nav-height))] w-full flex flex-col overflow-auto modern-scrollbar bg-system-gray-50/30 pb-8">
+      <div className="container-responsive flex flex-col flex-1 min-h-0 gap-4 py-4">
         {/* Header Section */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 flex-shrink-0">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 flex-shrink-0">
           <div className="space-y-1">
-            <h1 className="heading-primary text-2xl md:text-3xl">
+            <h1 className="heading-primary text-[clamp(22px,2.6vw,28px)]">
               Discover & Analyze
             </h1>
             <p className="text-base text-system-gray-600 max-w-2xl">
@@ -320,11 +321,11 @@ function DiscoverPhase() {
           </Button>
         </div>
 
-        <div className="flex-1 flex flex-col gap-6">
+        <div className="flex-1 min-h-0 flex flex-col gap-4">
           {/* Dashboard Grid - Top Section */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 flex-shrink-0 min-h-[350px]">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-shrink-0">
             {/* Input Source Card - Left Side */}
-            <section className="xl:col-span-5 glass-panel p-6 flex flex-col gap-6 shadow-sm border border-white/50">
+            <section className="lg:col-span-5 xl:col-span-4 surface-panel flex flex-col gap-4 min-h-[220px]">
               <div className="flex items-center justify-between">
                 <h3 className="heading-tertiary m-0 flex items-center gap-2">
                   <span className="text-lg">📂</span> Select Content
@@ -341,7 +342,7 @@ function DiscoverPhase() {
                 <DragAndDropZone
                   isDragging={isDragging}
                   dragProps={dragProps}
-                  className="flex-1 flex flex-col justify-center items-center min-h-[140px] bg-white/50 hover:bg-white/80 transition-all border-system-gray-200"
+                  className="flex-1 flex flex-col justify-center items-center min-h-[120px] bg-white/70 hover:bg-white transition-all border-system-gray-200 rounded-lg"
                 />
                 <SelectionControls
                   onSelectFiles={handleFileSelection}
@@ -353,7 +354,7 @@ function DiscoverPhase() {
             </section>
 
             {/* Settings Card - Right Side */}
-            <section className="xl:col-span-7 glass-panel p-6 flex flex-col gap-6 shadow-sm border border-white/50">
+            <section className="lg:col-span-7 xl:col-span-8 surface-panel flex flex-col gap-4 min-h-[220px]">
               <div className="flex items-center justify-between">
                 <h3 className="heading-tertiary m-0 flex items-center gap-2">
                   <span className="text-lg">⚙️</span> Naming Strategy
@@ -363,7 +364,7 @@ function DiscoverPhase() {
                 </div>
               </div>
 
-              <div className="flex-1 flex flex-col justify-center overflow-y-auto modern-scrollbar">
+              <div className="flex-1 min-h-0 flex flex-col justify-center overflow-y-auto modern-scrollbar">
                 <NamingSettings
                   namingConvention={namingConvention}
                   setNamingConvention={setNamingConvention}
@@ -380,7 +381,7 @@ function DiscoverPhase() {
 
           {/* Middle Section - Queue & Status Actions */}
           {(selectedFiles.length > 0 || isAnalyzing) && (
-            <div className="flex-shrink-0 glass-panel p-4 flex items-center justify-between gap-4 shadow-sm border border-white/50 bg-white/40 backdrop-blur-md animate-fade-in">
+            <div className="surface-panel p-4 flex items-center justify-between gap-4 bg-white/85 backdrop-blur-md animate-fade-in sticky top-[calc(var(--app-nav-height)+12px)] z-10">
               <div className="flex items-center gap-4 flex-1">
                 {isAnalyzing ? (
                   <div className="flex-1 max-w-2xl">
@@ -433,8 +434,8 @@ function DiscoverPhase() {
 
           {/* Bottom Section - Results */}
           {analysisResults.length > 0 && (
-            <div className="flex-1 min-h-0 glass-panel shadow-sm border border-white/50 flex flex-col overflow-hidden animate-slide-up">
-              <div className="p-4 border-b border-system-gray-100 bg-white/30 flex items-center justify-between">
+            <div className="flex-1 min-h-[280px] max-h-[60vh] surface-panel flex flex-col overflow-hidden animate-slide-up">
+              <div className="p-4 border-b border-border-soft/70 bg-white/70 flex items-center justify-between">
                 <h3 className="heading-tertiary m-0 text-sm uppercase tracking-wider text-system-gray-500">
                   Analysis Results
                 </h3>
@@ -443,7 +444,7 @@ function DiscoverPhase() {
                   failed
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-0 modern-scrollbar bg-white/20">
+              <div className="flex-1 min-h-0 p-0 pb-4 bg-white/10">
                 <AnalysisResultsList
                   results={analysisResults}
                   onFileAction={handleFileAction}
@@ -514,7 +515,7 @@ function DiscoverPhase() {
         )}
 
         {/* Footer Navigation */}
-        <div className="mt-auto pt-4 border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between gap-4 flex-shrink-0">
+        <div className="mt-auto pt-4 border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between gap-3 flex-shrink-0">
           <Button
             onClick={() => actions.advancePhase(PHASES.SETUP)}
             variant="secondary"
@@ -523,44 +524,74 @@ function DiscoverPhase() {
             ← Back to Setup
           </Button>
 
-          <Button
-            onClick={() => {
-              if (isAnalyzing) {
-                addNotification(
-                  'Please wait for analysis to complete',
-                  'warning',
-                  3000,
-                );
-                return;
-              }
-              if (readyAnalysisCount === 0 && !totalAnalysisFailure) {
-                addNotification(
-                  analysisResults.length > 0
-                    ? 'All files failed analysis. Use the recovery options above or click "Continue Without Analysis".'
-                    : 'Please analyze files first',
-                  'warning',
-                  4000,
-                );
-                return;
-              }
-              if (totalAnalysisFailure) {
-                setTotalAnalysisFailure(false);
-              }
-              actions.advancePhase(PHASES.ORGANIZE);
-            }}
-            variant={totalAnalysisFailure ? 'secondary' : 'primary'}
-            className={`w-full sm:w-auto ${totalAnalysisFailure ? 'border-amber-300 text-amber-700 hover:bg-amber-50' : 'shadow-lg shadow-blue-500/20'}`}
-            disabled={
-              isAnalyzing ||
-              (analysisResults.length === 0 &&
-                readySelectedFilesCount === 0 &&
-                !totalAnalysisFailure)
+          {(() => {
+            const disabledBecauseAnalyzing = isAnalyzing;
+            const disabledBecauseNoAnalysis =
+              analysisResults.length === 0 &&
+              readySelectedFilesCount === 0 &&
+              !totalAnalysisFailure;
+            const disabledBecauseEmpty =
+              analysisResults.length === 0 &&
+              readySelectedFilesCount === 0 &&
+              totalAnalysisFailure;
+
+            let disabledReason = '';
+            if (disabledBecauseAnalyzing) {
+              disabledReason = 'Analysis is in progress.';
+            } else if (disabledBecauseNoAnalysis) {
+              disabledReason = 'Analyze files or continue without analysis.';
+            } else if (disabledBecauseEmpty) {
+              disabledReason =
+                'No analyzed or ready files. Add files or continue without analysis.';
             }
-          >
-            {totalAnalysisFailure
-              ? 'Continue Without Analysis →'
-              : 'Continue to Organize →'}
-          </Button>
+
+            return (
+              <Button
+                onClick={() => {
+                  if (isAnalyzing) {
+                    addNotification(
+                      'Please wait for analysis to complete',
+                      'warning',
+                      3000,
+                    );
+                    return;
+                  }
+                  if (readyAnalysisCount === 0 && !totalAnalysisFailure) {
+                    addNotification(
+                      analysisResults.length > 0
+                        ? 'All files failed analysis. Use the recovery options above or click "Continue Without Analysis".'
+                        : 'Please analyze files first',
+                      'warning',
+                      4000,
+                    );
+                    return;
+                  }
+                  if (totalAnalysisFailure) {
+                    setTotalAnalysisFailure(false);
+                  }
+                  actions.advancePhase(PHASES.ORGANIZE);
+                }}
+                variant={totalAnalysisFailure ? 'secondary' : 'primary'}
+                className={`w-full sm:w-auto ${totalAnalysisFailure ? 'border-amber-300 text-amber-700 hover:bg-amber-50' : 'shadow-lg shadow-blue-500/20'}`}
+                disabled={
+                  isAnalyzing ||
+                  (analysisResults.length === 0 &&
+                    readySelectedFilesCount === 0 &&
+                    !totalAnalysisFailure)
+                }
+                title={disabledReason || undefined}
+                aria-label={
+                  disabledReason
+                    ? `Continue button disabled: ${disabledReason}`
+                    : undefined
+                }
+              >
+                {totalAnalysisFailure
+                  ? 'Continue Without Analysis →'
+                  : 'Continue to Organize →'}
+              </Button>
+            );
+          })()}
         </div>
 
         <ConfirmDialog />

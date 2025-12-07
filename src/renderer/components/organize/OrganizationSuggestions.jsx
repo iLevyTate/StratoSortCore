@@ -12,6 +12,17 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
   const [selectedStrategy, setSelectedStrategy] = useState(null);
   const [expandedAlternatives, setExpandedAlternatives] = useState(false);
 
+  // FIX: Move useCallback before early return to follow React hooks rules
+  const handleStrategySelect = useCallback(
+    (strategyId) => {
+      setSelectedStrategy(strategyId);
+      if (onStrategyChange) {
+        onStrategyChange(file, strategyId);
+      }
+    },
+    [file, onStrategyChange],
+  );
+
   if (!suggestions || !suggestions.primary) {
     return null;
   }
@@ -60,16 +71,6 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
     if (conf >= 0.5) return 'Good Match';
     return 'Possible Match';
   };
-
-  const handleStrategySelect = useCallback(
-    (strategyId) => {
-      setSelectedStrategy(strategyId);
-      if (onStrategyChange) {
-        onStrategyChange(file, strategyId);
-      }
-    },
-    [file, onStrategyChange],
-  );
 
   return (
     <div className="space-y-4">

@@ -132,17 +132,17 @@ const Modal = ({
 
   return (
     <div
-      className="fixed inset-0 z-max flex items-center justify-center p-13 animate-modal-backdrop"
+      className="fixed inset-0 z-max flex items-center justify-center px-6 py-8 bg-black/55 backdrop-blur-md animate-modal-backdrop"
       onClick={handleOverlayClick}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-modal-backdrop" />
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-md animate-modal-backdrop" />
 
       {/* Modal */}
       <div
         ref={modalRef}
         className={`
-          relative glass-panel w-full ${getSizeClasses()}
+          relative surface-panel w-full ${getSizeClasses()}
           max-h-[90vh] overflow-hidden animate-modal-enter ${className}
         `}
         role="dialog"
@@ -153,7 +153,7 @@ const Modal = ({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between border-b border-border-soft/60 px-8 py-6">
+          <div className="flex items-center justify-between border-b border-border-soft/70 px-6 py-5 bg-white/90">
             {title && (
               <h2
                 id="modal-title"
@@ -165,7 +165,7 @@ const Modal = ({
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className="p-5 text-system-gray-400 hover:text-system-gray-600 hover:bg-system-gray-100 rounded-md transition-colors"
+                className="p-4 text-system-gray-400 hover:text-system-gray-600 hover:bg-system-gray-100 rounded-lg transition-colors"
                 aria-label="Close modal"
               >
                 <span className="text-xl leading-none">×</span>
@@ -175,7 +175,7 @@ const Modal = ({
         )}
 
         {/* Content */}
-        <div className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto px-8 py-6">
+        <div className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto px-6 py-6 bg-white/85">
           {children}
         </div>
       </div>
@@ -299,9 +299,9 @@ export const ConfirmModal = ({
       size="small"
       closeOnOverlayClick={false}
       showCloseButton={false}
-      className="card-glass-subtle"
+      className=""
     >
-      <div className="p-8">
+      <div className="p-7">
         {/* Icon and Content */}
         <div className="flex items-start gap-4 mb-6">
           <div className={variant === 'danger' ? 'animate-confirm-bounce' : ''}>
@@ -314,7 +314,7 @@ export const ConfirmModal = ({
             <div className="text-gray-600 leading-relaxed">
               {message}
               {fileName && (
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
+                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-border-soft">
                   <div className="flex items-center gap-2 text-sm">
                     <svg
                       className="w-4 h-4 text-gray-400"
@@ -340,7 +340,7 @@ export const ConfirmModal = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
+        <div className="flex gap-3 justify-end pt-4 border-t border-border-soft/70">
           <button onClick={onClose} className={getCancelButtonClass()}>
             {cancelText}
           </button>

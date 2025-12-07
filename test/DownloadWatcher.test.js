@@ -4,7 +4,6 @@
  */
 
 const path = require('path');
-const os = require('os');
 
 // Mock fs
 const mockFs = {
@@ -159,7 +158,9 @@ describe('DownloadWatcher', () => {
 
   describe('constructor', () => {
     test('initializes with dependencies', () => {
-      expect(watcher.analyzeDocumentFile).toBe(mockDependencies.analyzeDocumentFile);
+      expect(watcher.analyzeDocumentFile).toBe(
+        mockDependencies.analyzeDocumentFile,
+      );
       expect(watcher.analyzeImageFile).toBe(mockDependencies.analyzeImageFile);
       expect(watcher.watcher).toBeNull();
       expect(watcher.isStarting).toBe(false);
@@ -210,15 +211,24 @@ describe('DownloadWatcher', () => {
       await new Promise((r) => originalSetTimeout(r, 100));
 
       expect(mockWatcher.on).toHaveBeenCalledWith('add', expect.any(Function));
-      expect(mockWatcher.on).toHaveBeenCalledWith('error', expect.any(Function));
-      expect(mockWatcher.on).toHaveBeenCalledWith('ready', expect.any(Function));
+      expect(mockWatcher.on).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function),
+      );
+      expect(mockWatcher.on).toHaveBeenCalledWith(
+        'ready',
+        expect.any(Function),
+      );
     });
   });
 
   describe('stop', () => {
     test('closes watcher and clears timers', () => {
       watcher.watcher = mockWatcher;
-      watcher.debounceTimers.set('test', setTimeout(() => {}, 1000));
+      watcher.debounceTimers.set(
+        'test',
+        setTimeout(() => {}, 1000),
+      );
 
       watcher.stop();
 
@@ -264,7 +274,12 @@ describe('DownloadWatcher', () => {
 
     test('skips files in node_modules', async () => {
       // Use path.join to get proper path separators for the current OS
-      const filePath = path.join('downloads', 'node_modules', 'package', 'index.js');
+      const filePath = path.join(
+        'downloads',
+        'node_modules',
+        'package',
+        'index.js',
+      );
       const result = await watcher._validateFile(filePath);
 
       expect(result).toBe(false);
@@ -331,10 +346,12 @@ describe('DownloadWatcher', () => {
     });
 
     test('handles low confidence results', async () => {
-      mockDependencies.autoOrganizeService.processNewFile.mockResolvedValueOnce({
-        destination: null,
-        confidence: 0.5,
-      });
+      mockDependencies.autoOrganizeService.processNewFile.mockResolvedValueOnce(
+        {
+          destination: null,
+          confidence: 0.5,
+        },
+      );
 
       const result = await watcher._attemptAutoOrganize('/downloads/test.pdf');
 
@@ -455,8 +472,7 @@ describe('DownloadWatcher', () => {
       const existsError = new Error('EEXIST');
       existsError.code = 'EEXIST';
       mockFs.rename.mockRejectedValueOnce(existsError);
-      mockFs.access
-        .mockRejectedValueOnce({ code: 'ENOENT' }); // Check unique name exists
+      mockFs.access.mockRejectedValueOnce({ code: 'ENOENT' }); // Check unique name exists
 
       await watcher._moveFileWithConflictHandling(
         '/source/file.txt',
@@ -473,7 +489,9 @@ describe('DownloadWatcher', () => {
 
   describe('_debouncedHandleFile', () => {
     test('debounces rapid file events', async () => {
-      const handleFileSpy = jest.spyOn(watcher, 'handleFile').mockResolvedValue();
+      const handleFileSpy = jest
+        .spyOn(watcher, 'handleFile')
+        .mockResolvedValue();
 
       watcher._debouncedHandleFile('/test/file.txt');
       watcher._debouncedHandleFile('/test/file.txt');
@@ -482,7 +500,9 @@ describe('DownloadWatcher', () => {
       expect(watcher.debounceTimers.size).toBe(1);
 
       // Wait for debounce to complete
-      await new Promise((r) => originalSetTimeout(r, watcher.debounceDelay + 100));
+      await new Promise((r) =>
+        originalSetTimeout(r, watcher.debounceDelay + 100),
+      );
 
       expect(handleFileSpy).toHaveBeenCalledTimes(1);
     });
@@ -496,7 +516,9 @@ describe('DownloadWatcher', () => {
       watcher._debouncedHandleFile('/test/file.txt');
 
       // Wait for debounce and file processing
-      await new Promise((r) => originalSetTimeout(r, watcher.debounceDelay + 100));
+      await new Promise((r) =>
+        originalSetTimeout(r, watcher.debounceDelay + 100),
+      );
 
       expect(checkedProcessing).toBe(true);
     });

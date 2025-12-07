@@ -36,6 +36,10 @@ export function useOrganizeState() {
   const filesWithAnalysis = useAppSelector(selectFilesWithAnalysis);
   const fileStats = useAppSelector(selectFileStats);
   const analysisResults = useAppSelector((state) => state.analysis.results);
+  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
+  const analysisProgress = useAppSelector(
+    (state) => state.analysis.analysisProgress,
+  );
   const smartFolders = useAppSelector((state) => state.files.smartFolders);
   const fileStates = useAppSelector((state) => state.files.fileStates);
   const documentsPath = useAppSelector((state) => state.system.documentsPath);
@@ -93,8 +97,17 @@ export function useOrganizeState() {
       smartFolders,
       organizedFiles,
       fileStates,
+      isAnalyzing,
+      analysisProgress,
     }),
-    [analysisResults, smartFolders, organizedFiles, fileStates],
+    [
+      analysisResults,
+      smartFolders,
+      organizedFiles,
+      fileStates,
+      isAnalyzing,
+      analysisProgress,
+    ],
   );
 
   // Memoized actions object for legacy compatibility
@@ -119,6 +132,8 @@ export function useOrganizeState() {
     filesWithAnalysis,
     fileStats,
     analysisResults,
+    isAnalyzing,
+    analysisProgress,
     smartFolders,
     fileStates,
     documentsPath,
@@ -179,7 +194,8 @@ export function useLoadInitialData(refs, addNotification) {
       }
     };
     loadSmartFoldersIfMissing();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount - refs and addNotification are stable
 
   // Fetch documents path
   useEffect(() => {

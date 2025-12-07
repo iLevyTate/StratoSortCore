@@ -4,9 +4,6 @@
  */
 
 import { renderHook, act } from '@testing-library/react';
-import React from 'react';
-import { Provider } from 'react-redux';
-import { configureStore } from '@reduxjs/toolkit';
 
 // Mock the logger
 jest.mock('../src/shared/logger', () => ({
@@ -19,124 +16,6 @@ jest.mock('../src/shared/logger', () => ({
   },
 }));
 
-// Create mock slices
-const filesSlice = {
-  name: 'files',
-  initialState: {
-    selectedFiles: [],
-    fileStates: {},
-    namingConvention: {
-      convention: 'original',
-      dateFormat: 'YYYY-MM-DD',
-      caseConvention: 'original',
-      separator: '-',
-    },
-    organizedFiles: [],
-    smartFolders: [],
-  },
-  reducers: {
-    setSelectedFiles: (state, action) => {
-      state.selectedFiles = action.payload;
-    },
-    updateFileState: (state, action) => {
-      const { path, state: fileState, metadata } = action.payload;
-      state.fileStates[path] = { state: fileState, ...metadata };
-    },
-    setFileStates: (state, action) => {
-      state.fileStates = action.payload;
-    },
-    setNamingConvention: (state, action) => {
-      state.namingConvention = { ...state.namingConvention, ...action.payload };
-    },
-  },
-};
-
-const analysisSlice = {
-  name: 'analysis',
-  initialState: {
-    results: [],
-    isAnalyzing: false,
-    analysisProgress: { current: 0, total: 0 },
-    currentAnalysisFile: '',
-  },
-  reducers: {
-    startAnalysis: (state, action) => {
-      state.isAnalyzing = true;
-      state.analysisProgress.total = action.payload?.total || 0;
-    },
-    updateProgress: (state, action) => {
-      state.analysisProgress = { ...state.analysisProgress, ...action.payload };
-      if (action.payload.currentFile !== undefined) {
-        state.currentAnalysisFile = action.payload.currentFile;
-      }
-    },
-    stopAnalysis: (state) => {
-      state.isAnalyzing = false;
-    },
-    setAnalysisResults: (state, action) => {
-      state.results = action.payload;
-    },
-    resetAnalysisState: (state) => {
-      state.results = [];
-      state.isAnalyzing = false;
-      state.analysisProgress = { current: 0, total: 0 };
-      state.currentAnalysisFile = '';
-    },
-  },
-};
-
-const uiSlice = {
-  name: 'ui',
-  initialState: {
-    phase: 'discover',
-    isAnalyzing: false,
-  },
-  reducers: {
-    setPhase: (state, action) => {
-      state.phase = action.payload;
-    },
-    setAnalyzing: (state, action) => {
-      state.isAnalyzing = action.payload;
-    },
-  },
-};
-
-function createFilesReducer() {
-  return (state = filesSlice.initialState, action) => {
-    const reducer = filesSlice.reducers[action.type?.replace('files/', '')];
-    if (reducer) {
-      const draft = { ...state };
-      reducer(draft, action);
-      return draft;
-    }
-    return state;
-  };
-}
-
-function createAnalysisReducer() {
-  return (state = analysisSlice.initialState, action) => {
-    const reducer = analysisSlice.reducers[action.type?.replace('analysis/', '')];
-    if (reducer) {
-      const draft = { ...state };
-      reducer(draft, action);
-      return draft;
-    }
-    return state;
-  };
-}
-
-function createUiReducer() {
-  return (state = uiSlice.initialState, action) => {
-    const reducer = uiSlice.reducers[action.type?.replace('ui/', '')];
-    if (reducer) {
-      const draft = { ...state };
-      reducer(draft, action);
-      return draft;
-    }
-    return state;
-  };
-}
-
 // Mock the store modules
 jest.mock('../src/renderer/store/hooks', () => ({
   useAppSelector: jest.fn((selector) => selector),
@@ -144,17 +23,38 @@ jest.mock('../src/renderer/store/hooks', () => ({
 }));
 
 jest.mock('../src/renderer/store/slices/filesSlice', () => ({
-  setSelectedFiles: jest.fn((payload) => ({ type: 'files/setSelectedFiles', payload })),
-  updateFileState: jest.fn((payload) => ({ type: 'files/updateFileState', payload })),
-  setFileStates: jest.fn((payload) => ({ type: 'files/setFileStates', payload })),
-  setNamingConvention: jest.fn((payload) => ({ type: 'files/setNamingConvention', payload })),
+  setSelectedFiles: jest.fn((payload) => ({
+    type: 'files/setSelectedFiles',
+    payload,
+  })),
+  updateFileState: jest.fn((payload) => ({
+    type: 'files/updateFileState',
+    payload,
+  })),
+  setFileStates: jest.fn((payload) => ({
+    type: 'files/setFileStates',
+    payload,
+  })),
+  setNamingConvention: jest.fn((payload) => ({
+    type: 'files/setNamingConvention',
+    payload,
+  })),
 }));
 
 jest.mock('../src/renderer/store/slices/analysisSlice', () => ({
-  startAnalysis: jest.fn((payload) => ({ type: 'analysis/startAnalysis', payload })),
-  updateProgress: jest.fn((payload) => ({ type: 'analysis/updateProgress', payload })),
+  startAnalysis: jest.fn((payload) => ({
+    type: 'analysis/startAnalysis',
+    payload,
+  })),
+  updateProgress: jest.fn((payload) => ({
+    type: 'analysis/updateProgress',
+    payload,
+  })),
   stopAnalysis: jest.fn(() => ({ type: 'analysis/stopAnalysis' })),
-  setAnalysisResults: jest.fn((payload) => ({ type: 'analysis/setAnalysisResults', payload })),
+  setAnalysisResults: jest.fn((payload) => ({
+    type: 'analysis/setAnalysisResults',
+    payload,
+  })),
   resetAnalysisState: jest.fn(() => ({ type: 'analysis/resetAnalysisState' })),
 }));
 
@@ -206,20 +106,25 @@ describe('useDiscoverState', () => {
       return selector;
     });
 
-    useDiscoverState = require('../src/renderer/phases/discover/useDiscoverState').useDiscoverState;
+    useDiscoverState =
+      require('../src/renderer/phases/discover/useDiscoverState').useDiscoverState;
   });
 
   describe('state selectors', () => {
     test('returns selectedFiles from state', () => {
       const { result } = renderHook(() => useDiscoverState());
 
-      expect(result.current.selectedFiles).toEqual(defaultState.files.selectedFiles);
+      expect(result.current.selectedFiles).toEqual(
+        defaultState.files.selectedFiles,
+      );
     });
 
     test('returns analysisResults from state', () => {
       const { result } = renderHook(() => useDiscoverState());
 
-      expect(result.current.analysisResults).toEqual(defaultState.analysis.results);
+      expect(result.current.analysisResults).toEqual(
+        defaultState.analysis.results,
+      );
     });
 
     test('returns isAnalyzing from state', () => {
@@ -260,7 +165,10 @@ describe('useDiscoverState', () => {
       const { result } = renderHook(() => useDiscoverState());
 
       act(() => {
-        result.current.setSelectedFiles((prev) => [...prev, { path: '/new.txt' }]);
+        result.current.setSelectedFiles((prev) => [
+          ...prev,
+          { path: '/new.txt' },
+        ]);
       });
 
       expect(mockDispatch).toHaveBeenCalled();
@@ -310,7 +218,9 @@ describe('useDiscoverState', () => {
       const { result } = renderHook(() => useDiscoverState());
 
       act(() => {
-        result.current.updateFileState('/test.txt', 'analyzing', { progress: 50 });
+        result.current.updateFileState('/test.txt', 'analyzing', {
+          progress: 50,
+        });
       });
 
       expect(mockDispatch).toHaveBeenCalled();

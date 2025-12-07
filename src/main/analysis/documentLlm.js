@@ -1,3 +1,4 @@
+const path = require('path');
 const {
   getOllamaModel,
   loadOllamaConfig,
@@ -10,6 +11,7 @@ const { extractAndParseJSON } = require('../utils/jsonRepair');
 const crypto = require('crypto');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { logger } = require('../../shared/logger');
+const { chunkTextForAnalysis } = require('./documentExtractors');
 logger.setContext('DocumentLLM');
 
 const AppConfig = {
@@ -124,11 +126,27 @@ async function analyzeTextWithOllama(
       cfg.selectedModel ||
       AppConfig.ai.textAnalysis.defaultModel;
 
-    // Normalize and truncate text to reduce token count
-    const truncated = normalizeTextForModel(
+    // Normalize and chunk text to reduce truncation loss
+    const normalized = normalizeTextForModel(
       textContent,
-      AppConfig.ai.textAnalysis.maxContentLength,
+      AppConfig.ai.textAnalysis.maxContentLength * 4,
     );
+    const { combined: combinedChunks, chunks } = chunkTextForAnalysis(
+      normalized,
+      {
+        chunkSize: Math.min(4000, AppConfig.ai.textAnalysis.maxContentLength),
+        overlap: 400,
+        maxTotalLength: AppConfig.ai.textAnalysis.maxContentLength,
+      },
+    );
+    const truncated =
+      combinedChunks ||
+      normalizeTextForModel(
+        normalized,
+        AppConfig.ai.textAnalysis.maxContentLength,
+      );
+    const chunkCount =
+      Array.isArray(chunks) && chunks.length > 0 ? chunks.length : 1;
 
     // Fast-path: return cached result if available
     const cacheKey = getCacheKey(truncated, modelToUse, smartFolders);
@@ -180,7 +198,7 @@ CRITICAL REQUIREMENTS:
 3. Do NOT return an empty keywords array
 4. Base ALL fields on the actual document content, not the filename
 
-Document content (${truncated.length} characters):
+Document content (${truncated.length} characters, ${chunkCount} chunk(s)):
 ${truncated}`;
 
     // Use deduplicator to prevent duplicate LLM calls for identical content
@@ -341,10 +359,16 @@ ${truncated}`;
             typeof parsedJson.category === 'string'
               ? parsedJson.category
               : 'document',
-          suggestedName:
-            typeof parsedJson.suggestedName === 'string'
-              ? parsedJson.suggestedName
-              : undefined,
+          suggestedName: (() => {
+            if (typeof parsedJson.suggestedName !== 'string') return undefined;
+            // Ensure the original file extension is preserved
+            const originalExt = path.extname(originalFileName);
+            const suggestedExt = path.extname(parsedJson.suggestedName);
+            if (originalExt && !suggestedExt) {
+              return parsedJson.suggestedName + originalExt;
+            }
+            return parsedJson.suggestedName;
+          })(),
           keywords: finalKeywords,
           confidence: parsedJson.confidence,
         };

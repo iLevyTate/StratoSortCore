@@ -44,7 +44,8 @@ export default function FirstRunWizard({ onComplete }) {
         setHostOk(false);
       }
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // setHostOk is a stable state setter from useState
 
   const handlePull = async () => {
     try {

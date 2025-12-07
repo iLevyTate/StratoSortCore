@@ -63,22 +63,30 @@ export function useConfirmDialog() {
     setConfirmState((prev) => ({ ...prev, isOpen: false }));
   }, []);
 
-  const ConfirmDialog = React.useCallback(() => {
-    if (!confirmState.isOpen) return null;
-    return (
-      <ConfirmModal
-        isOpen={confirmState.isOpen}
-        onClose={hideConfirm}
-        onConfirm={confirmState.onConfirm}
-        title={confirmState.title}
-        message={confirmState.message}
-        confirmText={confirmState.confirmText}
-        cancelText={confirmState.cancelText}
-        variant={confirmState.variant}
-        fileName={confirmState.fileName}
-      />
-    );
-  }, [confirmState, hideConfirm]);
+  // Return JSX element directly instead of a component function
+  // This avoids the anti-pattern of defining components inside hooks
+  // Wrapped in useMemo to stabilize the reference and prevent unnecessary re-renders
+  const confirmDialog = React.useMemo(
+    () =>
+      confirmState.isOpen ? (
+        <ConfirmModal
+          isOpen={confirmState.isOpen}
+          onClose={hideConfirm}
+          onConfirm={confirmState.onConfirm}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmText={confirmState.confirmText}
+          cancelText={confirmState.cancelText}
+          variant={confirmState.variant}
+          fileName={confirmState.fileName}
+        />
+      ) : null,
+    [confirmState, hideConfirm],
+  );
 
-  return { showConfirm, ConfirmDialog };
+  // Return both the old API (ConfirmDialog as a function for backwards compatibility)
+  // and the new recommended API (confirmDialog as JSX element)
+  const ConfirmDialog = React.useCallback(() => confirmDialog, [confirmDialog]);
+
+  return { showConfirm, ConfirmDialog, confirmDialog };
 }

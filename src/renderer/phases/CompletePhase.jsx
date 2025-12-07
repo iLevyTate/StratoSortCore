@@ -6,6 +6,7 @@ import { resetFilesState } from '../store/slices/filesSlice';
 import { resetAnalysisState } from '../store/slices/analysisSlice';
 import Collapsible from '../components/ui/Collapsible';
 import Button from '../components/ui/Button';
+import { UndoRedoToolbar } from '../components/UndoRedoSystem';
 
 function CompletePhase() {
   const dispatch = useAppDispatch();
@@ -33,16 +34,21 @@ function CompletePhase() {
   );
 
   return (
-    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
-      <div className="container-responsive gap-6 py-6 pb-24 flex flex-col min-h-min">
-        <div className="text-center space-y-4">
+    <div className="min-h-[calc(100vh-var(--app-nav-height))] w-full overflow-auto modern-scrollbar pb-8">
+      <div className="container-responsive gap-4 py-4 flex flex-col h-full min-h-0">
+        {/* Undo/Redo Toolbar */}
+        <div className="flex justify-end flex-shrink-0">
+          <UndoRedoToolbar className="flex-shrink-0" />
+        </div>
+
+        <div className="text-center space-y-3">
           <div className="text-6xl">✅</div>
           <h1 className="heading-primary">Organization Complete!</h1>
-          <p className="text-lg text-system-gray-600 max-w-2xl mx-auto">
+          <p className="text-base text-system-gray-600 max-w-2xl mx-auto">
             Successfully organized {organizedFiles.length} files using
             AI-powered analysis.
           </p>
-          <div className="flex items-center justify-center gap-6 text-xs text-system-gray-500">
+          <div className="flex items-center justify-center gap-4 text-xs text-system-gray-500">
             <button
               className="hover:text-system-gray-800 underline"
               onClick={() => {
@@ -84,21 +90,38 @@ function CompletePhase() {
             title="Organization Summary"
             defaultOpen
             persistKey="complete-summary"
-            contentClassName="p-8"
-            className="glass-panel"
+            contentClassName="p-[var(--panel-padding)] panel-scroll max-h-[320px]"
+            className="surface-panel"
+            collapsedPreview={
+              <div className="text-sm text-system-gray-600 py-1">
+                {organizedFiles.length} file
+                {organizedFiles.length !== 1 ? 's' : ''} successfully organized
+              </div>
+            }
           >
-            <div className="space-y-5 overflow-hidden">
+            <div className="space-y-4 overflow-hidden">
               {/* FIX: Add null check for file objects and use stable identifier */}
               {organizedFiles.slice(0, 5).map((file, index) => {
                 // FIX: Guard against null/undefined file objects
                 if (!file || typeof file !== 'object') {
                   return null;
                 }
-                const originalName = file.originalName || file.name || `File ${index + 1}`;
-                const destination = file.path || file.newLocation || file.destination || 'Organized';
+                const originalName =
+                  file.originalName || file.name || `File ${index + 1}`;
+                const destination =
+                  file.path ||
+                  file.newLocation ||
+                  file.destination ||
+                  'Organized';
                 return (
                   <div
-                    key={file.path || file.id || file.originalPath || file.originalName || `file-${index}`}
+                    key={
+                      file.path ||
+                      file.id ||
+                      file.originalPath ||
+                      file.originalName ||
+                      `file-${index}`
+                    }
                     className="text-sm flex items-center gap-2 overflow-hidden"
                   >
                     <span className="text-green-600 flex-shrink-0">✓</span>
@@ -124,10 +147,15 @@ function CompletePhase() {
           title="Next Steps"
           defaultOpen
           persistKey="complete-next-steps"
-          className="glass-panel"
+          className="surface-panel"
+          collapsedPreview={
+            <div className="text-sm text-system-gray-600 py-1">
+              Start a new session or go back to previous steps
+            </div>
+          }
         >
-          <div className="flex flex-col gap-13">
-            <div className="flex flex-col sm:flex-row gap-8 flex-shrink-0">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
               <Button
                 onClick={() => actions.advancePhase(PHASES.ORGANIZE)}
                 variant="secondary"
@@ -146,7 +174,7 @@ function CompletePhase() {
             <Button
               onClick={() => actions.resetWorkflow()}
               variant="primary"
-              className="px-34 py-13 w-full sm:w-auto"
+              className="px-8 py-4 w-full sm:w-auto"
             >
               🚀 Start New Organization Session
             </Button>

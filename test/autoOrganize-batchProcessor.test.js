@@ -3,8 +3,6 @@
  * Tests batch processing operations for auto-organize
  */
 
-const path = require('path');
-
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
   logger: {
@@ -76,24 +74,35 @@ describe('AutoOrganize Batch Processor', () => {
   describe('processBatchResults', () => {
     test('processes files with high confidence', async () => {
       const batchSuggestions = {
-        groups: [{
-          folder: 'Documents',
-          confidence: 0.9,
-          files: [{
-            name: 'report.pdf',
-            path: '/source/report.pdf',
-            suggestion: { folder: 'Documents', path: '/docs/Documents' },
-          }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            confidence: 0.9,
+            files: [
+              {
+                name: 'report.pdf',
+                path: '/source/report.pdf',
+                suggestion: { folder: 'Documents', path: '/docs/Documents' },
+              },
+            ],
+          },
+        ],
       };
 
-      const files = [{ name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' },
+      ];
       const options = {
         confidenceThreshold: 0.7,
         defaultLocation: '/default',
         preserveNames: true,
       };
-      const results = { organized: [], needsReview: [], operations: [], failed: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        operations: [],
+        failed: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processBatchResults(
@@ -112,15 +121,19 @@ describe('AutoOrganize Batch Processor', () => {
 
     test('adds files to needsReview for medium confidence', async () => {
       const batchSuggestions = {
-        groups: [{
-          folder: 'Documents',
-          confidence: 0.6,
-          files: [{
-            name: 'report.pdf',
-            path: '/source/report.pdf',
-            suggestion: { folder: 'Documents' },
-          }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            confidence: 0.6,
+            files: [
+              {
+                name: 'report.pdf',
+                path: '/source/report.pdf',
+                suggestion: { folder: 'Documents' },
+              },
+            ],
+          },
+        ],
       };
 
       const files = [{ name: 'report.pdf', path: '/source/report.pdf' }];
@@ -128,7 +141,12 @@ describe('AutoOrganize Batch Processor', () => {
         confidenceThreshold: 0.8,
         defaultLocation: '/default',
       };
-      const results = { organized: [], needsReview: [], operations: [], failed: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        operations: [],
+        failed: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processBatchResults(
@@ -146,24 +164,35 @@ describe('AutoOrganize Batch Processor', () => {
 
     test('uses fallback for low confidence', async () => {
       const batchSuggestions = {
-        groups: [{
-          folder: 'Documents',
-          confidence: 0.3,
-          files: [{
-            name: 'report.pdf',
-            path: '/source/report.pdf',
-            extension: 'pdf',
-            suggestion: { folder: 'Documents' },
-          }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            confidence: 0.3,
+            files: [
+              {
+                name: 'report.pdf',
+                path: '/source/report.pdf',
+                extension: 'pdf',
+                suggestion: { folder: 'Documents' },
+              },
+            ],
+          },
+        ],
       };
 
-      const files = [{ name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' },
+      ];
       const options = {
         confidenceThreshold: 0.8,
         defaultLocation: '/default',
       };
-      const results = { organized: [], needsReview: [], operations: [], failed: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        operations: [],
+        failed: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processBatchResults(
@@ -181,24 +210,35 @@ describe('AutoOrganize Batch Processor', () => {
 
     test('uses fallback when no suggestion', async () => {
       const batchSuggestions = {
-        groups: [{
-          folder: 'Unknown',
-          confidence: 0,
-          files: [{
-            name: 'report.pdf',
-            path: '/source/report.pdf',
-            extension: 'pdf',
-            suggestion: null,
-          }],
-        }],
+        groups: [
+          {
+            folder: 'Unknown',
+            confidence: 0,
+            files: [
+              {
+                name: 'report.pdf',
+                path: '/source/report.pdf',
+                extension: 'pdf',
+                suggestion: null,
+              },
+            ],
+          },
+        ],
       };
 
-      const files = [{ name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' },
+      ];
       const options = {
         confidenceThreshold: 0.8,
         defaultLocation: '/default',
       };
-      const results = { organized: [], needsReview: [], operations: [], failed: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        operations: [],
+        failed: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processBatchResults(
@@ -216,24 +256,35 @@ describe('AutoOrganize Batch Processor', () => {
 
     test('records feedback for high confidence suggestions', async () => {
       const batchSuggestions = {
-        groups: [{
-          folder: 'Documents',
-          confidence: 0.95,
-          files: [{
-            name: 'report.pdf',
-            path: '/source/report.pdf',
-            suggestion: { folder: 'Documents', path: '/docs' },
-          }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            confidence: 0.95,
+            files: [
+              {
+                name: 'report.pdf',
+                path: '/source/report.pdf',
+                suggestion: { folder: 'Documents', path: '/docs' },
+              },
+            ],
+          },
+        ],
       };
 
-      const files = [{ name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' }];
+      const files = [
+        { name: 'report.pdf', path: '/source/report.pdf', extension: 'pdf' },
+      ];
       const options = {
         confidenceThreshold: 0.7,
         defaultLocation: '/default',
         preserveNames: true,
       };
-      const results = { organized: [], needsReview: [], operations: [], failed: [] };
+      const results = {
+        organized: [],
+        needsReview: [],
+        operations: [],
+        failed: [],
+      };
       const thresholds = { requireReview: 0.5 };
 
       await processBatchResults(
@@ -255,17 +306,22 @@ describe('AutoOrganize Batch Processor', () => {
     test('processes batch with auto-approve threshold', async () => {
       mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
         success: true,
-        groups: [{
-          folder: 'Documents',
-          path: '/docs/Documents',
-          confidence: 0.95,
-          files: [{ name: 'doc.pdf', path: '/src/doc.pdf' }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            path: '/docs/Documents',
+            confidence: 0.95,
+            files: [{ name: 'doc.pdf', path: '/src/doc.pdf' }],
+          },
+        ],
       });
 
       const files = [{ name: 'doc.pdf', path: '/src/doc.pdf' }];
       const smartFolders = [];
-      const options = { autoApproveThreshold: 0.9, defaultLocation: '/default' };
+      const options = {
+        autoApproveThreshold: 0.9,
+        defaultLocation: '/default',
+      };
       const thresholds = { autoApprove: 0.9 };
 
       const result = await batchOrganize(
@@ -284,11 +340,13 @@ describe('AutoOrganize Batch Processor', () => {
     test('skips low confidence groups', async () => {
       mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
         success: true,
-        groups: [{
-          folder: 'Documents',
-          confidence: 0.5,
-          files: [{ name: 'doc.pdf', path: '/src/doc.pdf' }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            confidence: 0.5,
+            files: [{ name: 'doc.pdf', path: '/src/doc.pdf' }],
+          },
+        ],
       });
 
       const files = [{ name: 'doc.pdf', path: '/src/doc.pdf' }];
@@ -328,11 +386,13 @@ describe('AutoOrganize Batch Processor', () => {
 
       mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
         success: true,
-        groups: [{
-          folder: 'Documents',
-          confidence: 0.95,
-          files: [{ name: 'doc.pdf', path: '/src/doc.pdf' }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            confidence: 0.95,
+            files: [{ name: 'doc.pdf', path: '/src/doc.pdf' }],
+          },
+        ],
       });
 
       const files = [{ name: 'doc.pdf', path: '/src/doc.pdf' }];
@@ -355,23 +415,36 @@ describe('AutoOrganize Batch Processor', () => {
     test('records feedback for processed files', async () => {
       mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
         success: true,
-        groups: [{
-          folder: 'Documents',
-          path: '/docs',
-          confidence: 0.95,
-          files: [{
-            name: 'doc.pdf',
-            path: '/src/doc.pdf',
-            suggestion: { folder: 'Documents' },
-          }],
-        }],
+        groups: [
+          {
+            folder: 'Documents',
+            path: '/docs',
+            confidence: 0.95,
+            files: [
+              {
+                name: 'doc.pdf',
+                path: '/src/doc.pdf',
+                suggestion: { folder: 'Documents' },
+              },
+            ],
+          },
+        ],
       });
 
       const files = [{ name: 'doc.pdf', path: '/src/doc.pdf' }];
-      const options = { autoApproveThreshold: 0.9, defaultLocation: '/default' };
+      const options = {
+        autoApproveThreshold: 0.9,
+        defaultLocation: '/default',
+      };
       const thresholds = { autoApprove: 0.9 };
 
-      await batchOrganize(files, [], options, mockSuggestionService, thresholds);
+      await batchOrganize(
+        files,
+        [],
+        options,
+        mockSuggestionService,
+        thresholds,
+      );
 
       expect(mockSuggestionService.recordFeedback).toHaveBeenCalled();
     });

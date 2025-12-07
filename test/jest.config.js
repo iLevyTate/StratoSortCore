@@ -45,6 +45,7 @@ module.exports = {
     '^node-tesseract-ocr$': '<rootDir>/mocks/tesseract.js',
     '^sharp$': '<rootDir>/mocks/sharp.js',
     '^xlsx-populate$': '<rootDir>/mocks/xlsx.js',
+    '^fast-xml-parser$': '<rootDir>/mocks/fast-xml-parser.js',
     '^sanitize-html$': '<rootDir>/mocks/sanitize-html.js',
     '^music-metadata$': '<rootDir>/mocks/music-metadata.js',
     // Redirect refactored service paths to new locations

@@ -24,12 +24,12 @@ function SmartFolderItem({
 
   return (
     <div
-      className="p-13 bg-surface-secondary rounded-lg hover:bg-surface-tertiary transition-colors duration-200 animate-slide-in-right"
+      className="p-4 bg-surface-secondary rounded-lg hover:bg-surface-tertiary transition-colors duration-200 animate-slide-in-right"
       style={{ animationDelay: `${index * 0.1}s` }}
     >
       {isEditing ? (
-        <div className="space-y-8" role="form" aria-label="Edit smart folder">
-          <div className="flex flex-col md:flex-row gap-8">
+        <div className="space-y-4" role="form" aria-label="Edit smart folder">
+          <div className="flex flex-col md:flex-row gap-4">
             <Input
               type="text"
               value={editingFolder.name || ''}
@@ -72,7 +72,7 @@ function SmartFolderItem({
             rows={2}
             aria-label="Folder description"
           />
-          <div className="flex gap-5">
+          <div className="flex gap-3">
             <Button
               onClick={onSaveEdit}
               disabled={isSavingEdit}
@@ -99,8 +99,8 @@ function SmartFolderItem({
           </div>
         </div>
       ) : (
-        <div className="flex items-start justify-between gap-13">
-          <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex-1 min-w-[220px]">
             <div className="font-medium text-system-gray-700 mb-2 break-words">
               {folder.name}
             </div>
@@ -111,7 +111,7 @@ function SmartFolderItem({
               {folder.path}
             </div>
             {folder.description && (
-              <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 p-8 rounded-lg border-l-4 border-stratosort-blue/30">
+              <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 p-3 rounded-lg border-l-4 border-stratosort-blue/30">
                 <div className="font-medium text-stratosort-blue mb-2">
                   📝 AI Context:
                 </div>
@@ -119,14 +119,14 @@ function SmartFolderItem({
               </div>
             )}
           </div>
-          <div className="flex items-center gap-8 shrink-0">
-            <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3 shrink-0 flex-wrap justify-start md:justify-end min-w-[240px] w-full">
+            <div className="flex items-center gap-2">
               <div className="status-dot success"></div>
               <span className="text-sm font-medium text-stratosort-success">
                 Active
               </span>
             </div>
-            <div className="flex gap-5">
+            <div className="flex gap-2 flex-wrap justify-start md:justify-end">
               {!folder.physicallyExists && (
                 <Button
                   onClick={async () => {
@@ -145,7 +145,7 @@ function SmartFolderItem({
                         );
                     }
                   }}
-                  className="p-5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                  className="p-2 text-blue-600 hover:bg-blue-100 rounded transition-colors"
                   title="Create this folder directory"
                   aria-label={`Create directory for ${folder.name}`}
                 >
@@ -156,7 +156,7 @@ function SmartFolderItem({
               )}
               <Button
                 onClick={() => onOpenFolder(folder.path)}
-                className={`p-5 rounded transition-colors ${folder.physicallyExists ? 'text-green-600 hover:bg-green-100' : 'text-gray-400 cursor-not-allowed'}`}
+                className={`p-2 rounded transition-colors ${folder.physicallyExists ? 'text-green-600 hover:bg-green-100' : 'text-gray-400 cursor-not-allowed'}`}
                 title={
                   folder.physicallyExists
                     ? 'Open folder in file explorer'
@@ -171,7 +171,7 @@ function SmartFolderItem({
               </Button>
               <Button
                 onClick={() => onEditStart(folder)}
-                className="p-5 text-stratosort-blue hover:bg-stratosort-blue/10 rounded transition-colors"
+                className="p-2 text-stratosort-blue hover:bg-stratosort-blue/10 rounded transition-colors"
                 title="Edit folder"
                 aria-label={`Edit folder ${folder.name}`}
               >
@@ -199,7 +199,7 @@ function SmartFolderItem({
                     setIsRebuilding(false);
                   }
                 }}
-                className={`p-5 rounded transition-colors ${isRebuilding ? 'opacity-70' : 'text-purple-600 hover:bg-purple-100'}`}
+                className={`p-2 rounded transition-colors ${isRebuilding ? 'opacity-70' : 'text-purple-600 hover:bg-purple-100'}`}
                 title="Rebuild embeddings"
                 aria-label={`Rebuild embeddings for smart folders`}
                 disabled={isRebuilding}
@@ -215,7 +215,7 @@ function SmartFolderItem({
               <Button
                 onClick={() => onDeleteFolder(folder.id)}
                 disabled={isDeleting}
-                className="p-5 text-system-red-600 hover:bg-system-red-100 rounded transition-colors disabled:opacity-50"
+                className="p-2 text-system-red-600 hover:bg-system-red-100 rounded transition-colors disabled:opacity-50"
                 title="Remove from config"
                 aria-label={`Delete folder ${folder.name}`}
               >

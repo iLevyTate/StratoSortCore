@@ -837,8 +837,9 @@ class SettingsService {
 
   /**
    * Shutdown the service and cleanup resources
+   * @returns {Promise<void>}
    */
-  shutdown() {
+  async shutdown() {
     this._stopFileWatcher();
   }
 }

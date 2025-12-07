@@ -184,6 +184,7 @@ describe('ipcVerification', () => {
 
       // Should have made multiple attempts
       expect(attempts).toBeGreaterThan(1);
+      expect(result).toBe(true);
     });
   });
 
@@ -207,7 +208,7 @@ describe('ipcVerification', () => {
       // Should check for Windows handlers
       if (result.missing.length > 0) {
         const hasWindowsHandler = result.missing.some((h) =>
-          windowsVerification.WINDOWS_HANDLERS.includes(h)
+          windowsVerification.WINDOWS_HANDLERS.includes(h),
         );
         expect(hasWindowsHandler).toBe(true);
       }

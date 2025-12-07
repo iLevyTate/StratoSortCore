@@ -1,37 +1,32 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { List } from 'react-window';
+import { FixedSizeList as List } from 'react-window';
 
 // FIX: Implement virtualization for large folder lists to prevent UI lag
-const ITEM_HEIGHT = 120; // Approximate height of each folder item
-const LIST_HEIGHT = 400; // Visible area height
+const ITEM_HEIGHT = 140; // Slightly taller to fit wrapped text comfortably
+const LIST_HEIGHT = 520; // Taller viewport for readability
 const VIRTUALIZATION_THRESHOLD = 20; // Only virtualize when > 20 folders
 
 // Memoized FolderItem to prevent re-renders when folder data hasn't changed
 // FIX: Added proper text overflow handling for long paths with title tooltips
-const FolderItem = memo(function FolderItem({ folder, defaultLocation, style }) {
+const FolderItem = memo(function FolderItem({
+  folder,
+  defaultLocation,
+  style,
+}) {
   const fullPath = folder.path || `${defaultLocation}/${folder.name}`;
 
   return (
     <div style={style} className="p-2">
-      <div className="p-4 bg-surface-secondary rounded-lg border border-stratosort-blue/20 min-w-0 h-full overflow-hidden">
-        <div
-          className="font-medium text-system-gray-900 mb-2 truncate"
-          title={folder.name}
-        >
+      <div className="p-4 bg-white rounded-xl border border-border-soft shadow-sm min-w-0 h-full overflow-hidden space-y-2">
+        <div className="font-semibold text-system-gray-900 text-base leading-snug break-words">
           {folder.name}
         </div>
-        <div
-          className="text-sm text-system-gray-600 mb-3 truncate"
-          title={fullPath}
-        >
+        <div className="text-sm text-system-gray-700 leading-relaxed break-words">
           📂 {fullPath}
         </div>
         {folder.description && (
-          <div
-            className="text-xs text-system-gray-500 bg-stratosort-blue/5 p-2 rounded italic truncate"
-            title={folder.description}
-          >
+          <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 p-3 rounded-lg italic leading-relaxed break-words">
             &ldquo;{folder.description}&rdquo;
           </div>
         )}
@@ -54,7 +49,11 @@ FolderItem.propTypes = {
 /**
  * Virtualized row component for rendering folder items
  */
-const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, data }) {
+const VirtualizedFolderRow = memo(function VirtualizedFolderRow({
+  index,
+  style,
+  data,
+}) {
   const { folders, defaultLocation } = data;
   const folder = folders[index];
 
@@ -90,19 +89,25 @@ const TargetFolderList = memo(function TargetFolderList({
       folders,
       defaultLocation,
     }),
-    [folders, defaultLocation]
+    [folders, defaultLocation],
   );
 
   // Calculate optimal list height based on number of items
   const listHeight = useMemo(() => {
-    const calculatedHeight = Math.min(folders.length * ITEM_HEIGHT, LIST_HEIGHT);
+    const viewportHeight =
+      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const maxHeight = Math.min(
+      LIST_HEIGHT,
+      Math.max(260, Math.round(viewportHeight * 0.5)),
+    );
+    const calculatedHeight = Math.min(folders.length * ITEM_HEIGHT, maxHeight);
     return Math.max(calculatedHeight, ITEM_HEIGHT); // At least show one item
   }, [folders.length]);
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full">
-        <div className="text-xs text-system-gray-500 mb-2">
+      <div className="w-full max-h-[60vh] overflow-y-auto modern-scrollbar">
+        <div className="text-xs text-system-gray-500 mb-3">
           Showing {folders.length} folders (virtualized for performance)
         </div>
         <List
@@ -111,7 +116,7 @@ const TargetFolderList = memo(function TargetFolderList({
           itemSize={ITEM_HEIGHT}
           width="100%"
           itemData={itemData}
-          overscanCount={3}
+          overscanCount={4}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
         >
           {VirtualizedFolderRow}

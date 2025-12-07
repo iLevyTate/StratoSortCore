@@ -27,8 +27,6 @@ jest.mock('child_process', () => ({
   spawn: jest.fn((...args) => mockSpawnImplementation(...args)),
 }));
 
-const { spawn } = require('child_process');
-
 describe('asyncSpawnUtils', () => {
   let asyncSpawnUtils;
 
@@ -100,7 +98,9 @@ describe('asyncSpawnUtils', () => {
       mockSpawnImplementation = () => mockChild;
       // Don't emit close - let it timeout
 
-      const result = await asyncSpawnUtils.asyncSpawn('slowcmd', [], { timeout: 50 });
+      const result = await asyncSpawnUtils.asyncSpawn('slowcmd', [], {
+        timeout: 50,
+      });
 
       expect(result.timedOut).toBe(true);
       expect(result.error.message).toContain('timed out');
@@ -209,13 +209,17 @@ describe('asyncSpawnUtils', () => {
       const mockChild = createMockChild();
       mockSpawnImplementation = () => {
         setImmediate(() => {
-          mockChild.stderr.emit('data', Buffer.from('No module named nonexistent_module'));
+          mockChild.stderr.emit(
+            'data',
+            Buffer.from('No module named nonexistent_module'),
+          );
           mockChild.emit('close', 1, null);
         });
         return mockChild;
       };
 
-      const result = await asyncSpawnUtils.hasPythonModuleAsync('nonexistent_module');
+      const result =
+        await asyncSpawnUtils.hasPythonModuleAsync('nonexistent_module');
 
       expect(result).toBe(false);
     });

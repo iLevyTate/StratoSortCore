@@ -321,7 +321,16 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
 
         // Invalidate cache for all affected files
         if (queryCache) {
-          updatesToProcess.forEach((u) => queryCache.invalidateForFile(u.id));
+          updatesToProcess.forEach((u) => {
+            queryCache.invalidateForFile(u.id);
+            // Also invalidate any old IDs to avoid stale entries
+            // (oldId was deleted above when different from newId)
+          });
+          pathUpdates.forEach((u) => {
+            if (u.oldId && u.oldId !== u.newId) {
+              queryCache.invalidateForFile(u.oldId);
+            }
+          });
         }
 
         updatedCount += updatesToProcess.length;
@@ -419,6 +428,7 @@ async function resetFiles({ client }) {
       metadata: {
         description: 'Document and image file embeddings for semantic search',
         hnsw_space: 'cosine',
+        'hnsw:space': 'cosine', // Keep for backward compatibility with existing collections
       },
     });
 

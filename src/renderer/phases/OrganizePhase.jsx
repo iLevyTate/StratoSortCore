@@ -21,7 +21,8 @@ import {
   VirtualizedProcessedFiles,
 } from '../components/organize';
 import { UndoRedoToolbar, useUndoRedo } from '../components/UndoRedoSystem';
-
+import Modal from '../components/Modal';
+import AnalysisDetails from '../components/AnalysisDetails';
 // Import decomposed hooks
 import {
   useOrganizeState,
@@ -43,12 +44,15 @@ logger.setContext('OrganizePhase');
 function OrganizePhase() {
   const { addNotification } = useNotification();
   const { executeAction } = useUndoRedo();
+  const [viewingFileDetails, setViewingFileDetails] = React.useState(null);
 
   // Redux state management
   const {
     organizedFiles,
     filesWithAnalysis,
     analysisResults,
+    isAnalyzing,
+    analysisProgress,
     smartFolders,
     fileStates,
     defaultLocation,
@@ -193,10 +197,11 @@ function OrganizePhase() {
       setProcessedFileIds(processedIds);
     };
     loadPersistedData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount - uses current Redux state snapshot intentionally
 
-  const isAnalysisRunning = phaseData.isAnalyzing || false;
-  const analysisProgressFromDiscover = phaseData.analysisProgress || {
+  const isAnalysisRunning = isAnalyzing || false;
+  const analysisProgressFromDiscover = analysisProgress || {
     current: 0,
     total: 0,
   };
@@ -230,18 +235,18 @@ function OrganizePhase() {
   ]);
 
   return (
-    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
-      <div className="container-responsive gap-6 py-6 flex flex-col min-h-min">
+    <div className="organize-page min-h-[calc(100vh-var(--app-nav-height))] w-full overflow-auto modern-scrollbar pb-8 bg-white">
+      <div className="container-responsive gap-4 py-4 flex flex-col h-full min-h-0">
         {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
-          <div className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
+          <div className="space-y-2">
             <h1 className="heading-primary">📂 Review & Organize</h1>
-            <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl">
+            <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl">
               Inspect suggestions, fine-tune smart folders, and execute the
               batch once you&apos;re ready.
             </p>
             {isAnalysisRunning && (
-              <div className="flex items-center gap-4 rounded-2xl border border-stratosort-blue/30 bg-stratosort-blue/5 px-5 py-4 text-sm text-stratosort-blue">
+              <div className="flex items-center gap-3 rounded-2xl border border-stratosort-blue/30 bg-stratosort-blue/5 px-4 py-3 text-sm text-stratosort-blue">
                 <span className="loading-spinner h-5 w-5 border-t-transparent" />
                 Analysis continuing in background:{' '}
                 {analysisProgressFromDiscover.current}/
@@ -253,14 +258,20 @@ function OrganizePhase() {
         </div>
 
         {/* Main Content */}
-        <div className="flex flex-col gap-6">
+        <div className="flex-1 min-h-0 flex flex-col gap-4">
           {smartFolders.length > 0 && (
             <Collapsible
               title="📁 Target Smart Folders"
               defaultOpen={false}
               persistKey="organize-target-folders"
-              contentClassName="p-8"
-              className="glass-panel"
+              contentClassName="p-[var(--panel-padding)] panel-scroll max-h-[45vh] min-h-[180px]"
+              className="surface-panel"
+              collapsedPreview={
+                <div className="text-sm text-system-gray-600 py-1">
+                  {smartFolders.length} folder
+                  {smartFolders.length !== 1 ? 's' : ''} configured
+                </div>
+              }
             >
               <TargetFolderList
                 folders={smartFolders}
@@ -273,7 +284,13 @@ function OrganizePhase() {
               title="📊 File Status Overview"
               defaultOpen
               persistKey="organize-status"
-              className="glass-panel"
+              className="surface-panel"
+              collapsedPreview={
+                <div className="text-sm text-system-gray-600 py-1">
+                  {unprocessedFiles.length} ready • {processedFiles.length}{' '}
+                  organized • {failedCount} failed
+                </div>
+              }
             >
               <StatusOverview
                 unprocessedCount={unprocessedFiles.length}
@@ -287,7 +304,14 @@ function OrganizePhase() {
               title="Bulk Operations"
               defaultOpen
               persistKey="organize-bulk"
-              className="glass-panel"
+              className="surface-panel"
+              collapsedPreview={
+                <div className="text-sm text-system-gray-600 py-1">
+                  {selectedFiles.size > 0
+                    ? `${selectedFiles.size} files selected`
+                    : 'Select files to perform bulk actions'}
+                </div>
+              }
             >
               <BulkOperations
                 total={unprocessedFiles.length}
@@ -308,10 +332,18 @@ function OrganizePhase() {
               title="Previously Organized Files"
               defaultOpen={false}
               persistKey="organize-history"
-              contentClassName="p-8"
-              className="glass-panel"
+              contentClassName="p-[var(--panel-padding)]"
+              className="surface-panel"
+              collapsedPreview={
+                <div className="text-sm text-system-gray-600 py-1">
+                  {processedFiles.length} file
+                  {processedFiles.length !== 1 ? 's' : ''} organized
+                </div>
+              }
             >
-              <VirtualizedProcessedFiles files={processedFiles} />
+              <div className="panel-scroll max-h-[320px]">
+                <VirtualizedProcessedFiles files={processedFiles} />
+              </div>
             </Collapsible>
           )}
 
@@ -320,48 +352,66 @@ function OrganizePhase() {
             title="Files Ready for Organization"
             defaultOpen
             persistKey="organize-ready-list"
-            className="glass-panel"
-            contentClassName="p-6"
+            className="surface-panel flex-1"
+            contentClassName="p-4 flex flex-col min-h-[300px] max-h-[55vh] panel-scroll"
+            collapsedPreview={
+              <div className="text-sm text-system-gray-600 py-1">
+                {unprocessedFiles.length > 0
+                  ? `${unprocessedFiles.length} file${unprocessedFiles.length !== 1 ? 's' : ''} ready for organization`
+                  : processedFiles.length > 0
+                    ? 'All files have been organized'
+                    : 'No files ready yet'}
+              </div>
+            }
           >
             {unprocessedFiles.length === 0 ? (
-              <div className="text-center py-21">
-                <div className="text-4xl mb-13">
+              <div className="text-center py-12 space-y-4">
+                <div className="text-4xl">
                   {processedFiles.length > 0 ? '✅' : '📭'}
                 </div>
-                <p className="text-system-gray-500 italic">
-                  {processedFiles.length > 0
-                    ? 'All files have been organized! Check the results below.'
-                    : 'No files ready for organization yet.'}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-system-gray-800 font-medium">
+                    {processedFiles.length > 0
+                      ? 'Everything here is organized.'
+                      : 'No files ready to organize yet.'}
+                  </p>
+                  <p className="text-system-gray-500 text-sm">
+                    {processedFiles.length > 0
+                      ? 'Review organized files below or return to Discover to add more.'
+                      : 'Add files in Discover, run analysis, then return here to organize.'}
+                  </p>
+                </div>
                 {processedFiles.length === 0 && (
                   <Button
                     onClick={() => actions.advancePhase(PHASES.DISCOVER)}
                     variant="primary"
-                    className="mt-13"
+                    className="mt-2"
                   >
                     ← Go Back to Select Files
                   </Button>
                 )}
               </div>
             ) : (
-              <VirtualizedFileGrid
-                files={unprocessedFiles}
-                selectedFiles={selectedFiles}
-                toggleFileSelection={toggleFileSelection}
-                getFileWithEdits={getFileWithEdits}
-                editingFiles={editingFiles}
-                findSmartFolderForCategory={findSmartFolderForCategory}
-                getFileStateDisplay={getFileStateDisplay}
-                handleEditFile={handleEditFile}
-                smartFolders={smartFolders}
-                defaultLocation={defaultLocation}
-              />
+              <div className="flex-1 min-h-0">
+                <VirtualizedFileGrid
+                  files={unprocessedFiles}
+                  selectedFiles={selectedFiles}
+                  toggleFileSelection={toggleFileSelection}
+                  getFileWithEdits={getFileWithEdits}
+                  editingFiles={editingFiles}
+                  findSmartFolderForCategory={findSmartFolderForCategory}
+                  getFileStateDisplay={getFileStateDisplay}
+                  handleEditFile={handleEditFile}
+                  smartFolders={smartFolders}
+                  defaultLocation={defaultLocation}
+                />
+              </div>
             )}
           </Collapsible>
 
           {/* Action Area */}
           {unprocessedFiles.length > 0 && (
-            <div className="glass-panel p-6">
+            <div className="surface-panel p-[var(--panel-padding)] flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-system-gray-600 font-medium">
@@ -383,7 +433,7 @@ function OrganizePhase() {
                   <Button
                     onClick={handleOrganizeFiles}
                     variant="success"
-                    className="text-lg px-8 py-4"
+                    className="text-base px-6 py-3"
                     disabled={readyFilesCount === 0 || isOrganizing}
                     isLoading={isOrganizing}
                   >
@@ -396,7 +446,7 @@ function OrganizePhase() {
         </div>
 
         {/* Footer Buttons */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-auto pt-4 border-t border-system-gray-200/50">
           <Button
             onClick={() => actions.advancePhase(PHASES.DISCOVER)}
             variant="secondary"
@@ -413,11 +463,48 @@ function OrganizePhase() {
                 ? 'opacity-50 cursor-not-allowed'
                 : ''
             }`}
+            title={
+              processedFiles.length === 0
+                ? 'Process at least one file to view results.'
+                : isOrganizing
+                  ? 'Finishing current organize operation.'
+                  : undefined
+            }
           >
             View Results →
           </Button>
         </div>
       </div>
+
+      {/* Analysis Details Modal */}
+      <Modal
+        isOpen={!!viewingFileDetails}
+        onClose={() => setViewingFileDetails(null)}
+        title="File Analysis Details"
+        size="medium"
+      >
+        {viewingFileDetails && viewingFileDetails.analysis && (
+          <div className="space-y-4">
+            <div className="bg-system-gray-50 p-4 rounded-lg border border-border-soft">
+              <h4 className="text-sm font-medium text-system-gray-900 mb-1">
+                {viewingFileDetails.name}
+              </h4>
+              <p className="text-xs text-system-gray-500 truncate">
+                {viewingFileDetails.path}
+              </p>
+            </div>
+            <AnalysisDetails analysis={viewingFileDetails.analysis} />
+            <div className="flex justify-end pt-4">
+              <Button
+                onClick={() => setViewingFileDetails(null)}
+                variant="secondary"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

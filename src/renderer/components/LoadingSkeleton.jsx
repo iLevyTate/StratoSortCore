@@ -77,7 +77,7 @@ export const FileListSkeleton = ({
     {Array.from({ length: count }, (_, i) => (
       <div
         key={i}
-        className="flex items-center gap-3 p-3 bg-white rounded-lg border border-border-light"
+        className="flex items-center gap-3 p-3 bg-white rounded-lg border border-border-soft"
       >
         <LoadingSkeleton variant="avatar" />
         <div className="flex-1 space-y-2">
@@ -110,7 +110,7 @@ export const FolderGridSkeleton = ({
     {Array.from({ length: count }, (_, i) => (
       <div
         key={i}
-        className="p-4 bg-white rounded-xl border border-border-light"
+        className="p-4 bg-white rounded-xl border border-border-soft"
       >
         <LoadingSkeleton variant="folder" />
         <div className="mt-3 space-y-2">
@@ -129,7 +129,7 @@ FolderGridSkeleton.propTypes = {
 
 export const AnalysisProgressSkeleton = () => (
   <div
-    className="p-6 bg-white rounded-xl border border-border-light shadow-sm"
+    className="p-6 bg-white rounded-xl border border-border-soft shadow-sm"
     role="status"
     aria-label="Loading analysis"
   >
@@ -144,7 +144,7 @@ export const AnalysisProgressSkeleton = () => (
         <LoadingSkeleton variant="text" className="w-20" />
       </div>
     </div>
-    <div className="mt-4 pt-4 border-t border-border-light">
+    <div className="mt-4 pt-4 border-t border-border-soft">
       <LoadingSkeleton variant="text" className="w-2/3" />
     </div>
     <span className="sr-only">Loading analysis progress...</span>
@@ -160,8 +160,11 @@ export const SmartFolderListSkeleton = ({
 }) => (
   <div className="space-y-8" role="status" aria-label="Loading smart folders">
     {Array.from({ length: count }, (_, i) => (
-      <div key={i} className="p-13 bg-surface-secondary rounded-lg">
-        <div className="flex items-start justify-between gap-13">
+      <div
+        key={i}
+        className="p-13 bg-surface-muted rounded-lg border border-border-soft"
+      >
+        <div className="flex items-start justify-between gap-8">
           <div className="flex-1 min-w-0">
             <LoadingSkeleton className="w-3/4 mb-2" />
             <LoadingSkeleton variant="text" className="w-full mb-3" />

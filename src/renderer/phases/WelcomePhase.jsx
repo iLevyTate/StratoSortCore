@@ -11,9 +11,9 @@ function WelcomePhase() {
   };
 
   return (
-    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
-      <section className="container-responsive gap-10 text-center py-8 pb-24 flex flex-col min-h-min">
-        <header className="space-y-4">
+    <div className="h-[calc(100vh-var(--app-nav-height))] w-full overflow-hidden bg-system-gray-50/40">
+      <section className="container-responsive gap-6 text-center py-6 flex flex-col h-full min-h-0 overflow-y-auto modern-scrollbar">
+        <header className="space-y-3">
           <p className="text-sm font-medium uppercase tracking-[0.3em] text-system-gray-400">
             Intelligent file orchestration
           </p>
@@ -27,14 +27,14 @@ function WelcomePhase() {
             </span>{' '}
             Welcome to <span className="text-gradient">StratoSort</span>
           </h1>
-          <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
+          <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
             Let our local AI co-pilot study your workspace, understand every
             file, and deliver calm, glassy organization in minutes.
           </p>
         </header>
 
         <div
-          className="mx-auto flex w-full max-w-xl flex-col gap-4 rounded-2xl bg-white/80 p-6 shadow-lg"
+          className="mx-auto flex w-full max-w-xl flex-col gap-3.5 rounded-2xl bg-white/85 p-5 shadow-lg"
           role="navigation"
           aria-label="Primary actions"
         >

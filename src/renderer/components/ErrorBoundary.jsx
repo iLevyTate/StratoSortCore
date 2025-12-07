@@ -39,8 +39,8 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-primary to-surface-secondary p-8">
-          <div className="max-w-lg w-full bg-white rounded-2xl shadow-xl border border-border-light p-8 animate-slide-up">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-primary to-surface-muted p-8">
+          <div className="max-w-lg w-full bg-white rounded-2xl shadow-xl border border-border-soft p-8 animate-slide-up">
             <div className="text-center mb-6">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-system-red/10 rounded-full mb-4">
                 <svg

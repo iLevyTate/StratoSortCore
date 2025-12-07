@@ -1,8 +1,7 @@
-import React, { memo, useCallback, useState } from 'react';
+import React, { memo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
-import AnalysisDetails from '../AnalysisDetails';
 
 function ReadyFileItem({
   file,
@@ -15,6 +14,7 @@ function ReadyFileItem({
   onEdit,
   destination,
   category: categoryProp,
+  onViewDetails,
 }) {
   const analysis = editing?.analysis || file?.analysis;
   const suggestedName = editing?.suggestedName ?? analysis?.suggestedName;
@@ -31,22 +31,29 @@ function ReadyFileItem({
     (e) => onEdit(index, 'category', e.target.value),
     [onEdit, index],
   );
-  const [showDetails, setShowDetails] = useState(false);
-  const toggleDetails = useCallback(() => setShowDetails((prev) => !prev), []);
 
   // Extract file path for tooltip
   const filePath = file.path || '';
+  const tone = stateDisplay.color?.includes('green')
+    ? 'success'
+    : stateDisplay.color?.includes('amber') ||
+        stateDisplay.color?.includes('warning')
+      ? 'warning'
+      : stateDisplay.color?.includes('red') ||
+          stateDisplay.color?.includes('danger')
+        ? 'error'
+        : 'info';
 
   return (
     <div
-      className={`border rounded-lg p-4 transition-all duration-200 overflow-hidden ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-system-gray-200'}`}
+      className={`surface-card transition-all duration-200 overflow-hidden ${isSelected ? 'ring-2 ring-stratosort-blue/25 shadow-md' : ''}`}
     >
       <div className="flex items-start gap-4">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={handleToggle}
-          className="form-checkbox mt-1 flex-shrink-0"
+          className="form-checkbox mt-1 flex-shrink-0 accent-stratosort-blue h-4 w-4"
           aria-label={`Select ${file.name}`}
         />
         <div className="flex-1 min-w-0 overflow-hidden">
@@ -99,25 +106,15 @@ function ReadyFileItem({
                   </Select>
                 </div>
               </div>
-              <div className="mt-3 pt-3 border-t border-system-gray-100">
+              <div className="mt-3 pt-3 border-t border-border-soft/70">
                 <button
                   type="button"
-                  onClick={toggleDetails}
-                  className="text-xs text-system-gray-500 hover:text-system-gray-700 flex items-center gap-1 mb-2"
+                  onClick={() => onViewDetails && onViewDetails(file)}
+                  className="text-xs text-system-gray-500 hover:text-system-gray-700 flex items-center gap-1 mb-2 w-full"
                 >
-                  <span
-                    className={`transition-transform ${showDetails ? 'rotate-90' : ''}`}
-                  >
-                    ▶
-                  </span>
-                  {showDetails ? 'Hide details' : 'Show details'}
+                  <span>▶</span>
+                  View Analysis Details
                 </button>
-                {showDetails && (
-                  <AnalysisDetails
-                    analysis={analysis}
-                    options={{ showName: false, showCategory: false }}
-                  />
-                )}
               </div>
               {destination && (
                 <div className="text-sm text-system-gray-600 mt-2 overflow-hidden">
@@ -137,13 +134,18 @@ function ReadyFileItem({
             </div>
           )}
         </div>
-        <div
-          className={`text-sm font-medium flex items-center gap-2 flex-shrink-0 ${stateDisplay.color}`}
-        >
-          <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
-            {stateDisplay.icon}
-          </span>
-          <span className="hidden sm:inline">{stateDisplay.label}</span>
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <div className={`status-chip ${tone}`}>
+            <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
+              {stateDisplay.icon}
+            </span>
+            <span className="hidden sm:inline">{stateDisplay.label}</span>
+          </div>
+          {analysis?.confidence && (
+            <span className="text-[11px] text-system-gray-500">
+              Confidence {Math.round(analysis.confidence * 100)}%
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -181,6 +183,7 @@ ReadyFileItem.propTypes = {
   onEdit: PropTypes.func.isRequired,
   destination: PropTypes.string,
   category: PropTypes.string,
+  onViewDetails: PropTypes.func,
 };
 
 export default memo(ReadyFileItem);

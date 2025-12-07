@@ -3,8 +3,6 @@
  * Tests error categorization, logging, and user notification
  */
 
-const path = require('path');
-
 // Mock electron
 jest.mock('electron', () => ({
   app: {
@@ -362,7 +360,10 @@ describe('ErrorHandler', () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 10);
 
-      mockFs.readdir.mockResolvedValue(['stratosort-old.log', 'stratosort-new.log']);
+      mockFs.readdir.mockResolvedValue([
+        'stratosort-old.log',
+        'stratosort-new.log',
+      ]);
       mockFs.stat
         .mockResolvedValueOnce({ mtime: oldDate })
         .mockResolvedValueOnce({ mtime: new Date() });
@@ -382,7 +383,10 @@ describe('ErrorHandler', () => {
     });
 
     test('only processes stratosort log files', async () => {
-      mockFs.readdir.mockResolvedValue(['other-file.log', 'stratosort-test.log']);
+      mockFs.readdir.mockResolvedValue([
+        'other-file.log',
+        'stratosort-test.log',
+      ]);
       mockFs.stat.mockResolvedValue({ mtime: new Date(0) });
 
       await errorHandler.cleanupLogs(7);

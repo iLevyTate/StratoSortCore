@@ -14,6 +14,15 @@ import { SmartFolderItem } from '../components/setup';
 // Set logger context for this component
 logger.setContext('SetupPhase');
 
+const normalizePathValue = (value, fallback = 'Documents') => {
+  if (!value) return fallback;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && typeof value.path === 'string') {
+    return value.path;
+  }
+  return fallback;
+};
+
 function SetupPhase() {
   const dispatch = useAppDispatch();
   const documentsPathFromStore = useAppSelector(
@@ -66,7 +75,8 @@ function SetupPhase() {
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Intentionally run once on mount - loader functions are stable
 
   // FIX: Use ref to avoid re-adding listener on every editingFolder change
   const editingFolderRef = useRef(editingFolder);
@@ -87,7 +97,9 @@ function SetupPhase() {
   // Update defaultLocation when Redux store gets the path
   useEffect(() => {
     if (documentsPathFromStore && defaultLocation === 'Documents') {
-      setDefaultLocation(documentsPathFromStore);
+      setDefaultLocation(
+        normalizePathValue(documentsPathFromStore, defaultLocation),
+      );
     }
   }, [documentsPathFromStore, defaultLocation]);
 
@@ -95,9 +107,16 @@ function SetupPhase() {
     try {
       const settings = await window.electronAPI.settings.get();
       if (settings?.defaultSmartFolderLocation) {
-        setDefaultLocation(settings.defaultSmartFolderLocation);
+        setDefaultLocation(
+          normalizePathValue(
+            settings.defaultSmartFolderLocation,
+            defaultLocation,
+          ),
+        );
       } else if (documentsPathFromStore) {
-        setDefaultLocation(documentsPathFromStore);
+        setDefaultLocation(
+          normalizePathValue(documentsPathFromStore, defaultLocation),
+        );
       } else {
         // Fetch via Redux thunk (will be cached)
         dispatch(fetchDocumentsPath());
@@ -177,7 +196,10 @@ function SetupPhase() {
       if (newFolderPath.trim()) {
         targetPath = newFolderPath.trim();
       } else {
-        let resolvedDefaultLocation = defaultLocation;
+        let resolvedDefaultLocation = normalizePathValue(
+          defaultLocation,
+          documentsPathFromStore || 'Documents',
+        );
         // Use cached documents path from Redux if defaultLocation isn't absolute
         if (
           !/^[A-Za-z]:[\\/]/.test(resolvedDefaultLocation) &&
@@ -367,7 +389,7 @@ function SetupPhase() {
       const res = await window.electronAPI.files.selectDirectory();
       // FIX: Handler returns 'path' not 'folder'
       if (res?.success && res.path) {
-        setNewFolderPath(res.path);
+        setNewFolderPath(normalizePathValue(res.path, ''));
       }
     } catch (error) {
       logger.error('Failed to browse folder', {
@@ -408,17 +430,17 @@ function SetupPhase() {
   };
 
   return (
-    <div className="h-full w-full overflow-y-auto overflow-x-hidden modern-scrollbar">
-      <div className="container-responsive gap-6 py-6 flex flex-col min-h-min">
-        <div className="text-center space-y-4 flex-shrink-0">
+    <div className="min-h-[calc(100vh-var(--app-nav-height))] w-full overflow-auto modern-scrollbar">
+      <div className="container-responsive gap-4 py-4 flex flex-col min-h-0">
+        <div className="text-center space-y-3 flex-shrink-0">
           <h1 className="heading-primary">
             ⚙️ Configure <span className="text-gradient">Smart Folders</span>
           </h1>
-          <p className="text-lg text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
+          <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
             Define trusted destinations so the AI can organize every discovery
             with confidence.
           </p>
-          <div className="flex items-center justify-center gap-6 text-xs text-system-gray-500">
+          <div className="flex items-center justify-center gap-4 text-xs text-system-gray-500">
             <button
               className="hover:text-system-gray-800 underline"
               onClick={() => {
@@ -454,9 +476,9 @@ function SetupPhase() {
             </button>
           </div>
         </div>
-        <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch">
           <Collapsible
-            className="glass-panel"
+            className="surface-panel h-full flex flex-col"
             title="📁 Current Smart Folders"
             actions={
               smartFolders.length > 0 ? (
@@ -488,25 +510,53 @@ function SetupPhase() {
             }
             defaultOpen
             persistKey="setup-current-folders"
-            contentClassName="p-8"
+            contentClassName="p-[var(--panel-padding)] flex-1 min-h-[400px] panel-scroll"
+            collapsedPreview={
+              <div className="text-sm text-system-gray-600 py-1">
+                {isLoading
+                  ? 'Loading folders...'
+                  : smartFolders.length > 0
+                    ? `${smartFolders.length} smart folder${smartFolders.length !== 1 ? 's' : ''} configured`
+                    : 'No smart folders configured yet'}
+              </div>
+            }
           >
             {isLoading ? (
               <SmartFolderSkeleton count={3} />
             ) : smartFolders.length === 0 ? (
-              <div className="text-center py-21">
+              <div className="text-center py-8 space-y-3">
                 <div
-                  className="text-4xl mb-8 opacity-50"
+                  className="text-4xl opacity-60"
                   role="img"
                   aria-label="empty folder"
                 >
                   📂
                 </div>
-                <p className="text-muted italic">
-                  No smart folders configured yet.
+                <p className="text-system-gray-800 font-medium">
+                  No smart folders yet.
                 </p>
+                <p className="text-system-gray-500 text-sm">
+                  Add at least one destination so analysis and organization have
+                  a place to send files.
+                </p>
+                <Button
+                  onClick={() => {
+                    try {
+                      const key = 'setup-add-folder';
+                      window.localStorage.setItem(`collapsible:${key}`, 'true');
+                      window.dispatchEvent(new Event('storage'));
+                    } catch {
+                      // non-fatal
+                    }
+                  }}
+                  variant="primary"
+                  className="mt-2"
+                >
+                  ➕ Add your first smart folder
+                </Button>
               </div>
             ) : (
-              <div className="space-y-8">
+              <div className="space-y-4 panel-scroll flex-1 min-h-0 pr-3 pb-4 modern-scrollbar overflow-x-hidden">
                 {smartFolders.map((folder, index) => (
                   <SmartFolderItem
                     key={folder.id}
@@ -533,11 +583,17 @@ function SetupPhase() {
             title="Add New Smart Folder"
             defaultOpen={false}
             persistKey="setup-add-folder"
-            className="glass-panel"
+            className="surface-panel h-full flex flex-col md:sticky md:top-[88px]"
+            contentClassName="p-[var(--panel-padding)] space-y-4 panel-scroll flex-1 min-h-0 overflow-y-auto"
+            collapsedPreview={
+              <div className="text-sm text-system-gray-600 py-1">
+                Create a new destination for organized files
+              </div>
+            }
           >
-            <div className="space-y-13">
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                <label className="block text-sm font-medium text-system-gray-700 mb-3">
                   Folder Name
                 </label>
                 <Input
@@ -559,17 +615,17 @@ function SetupPhase() {
                 />
                 <div
                   id="folder-name-help"
-                  className="text-xs text-system-gray-500 mt-3"
+                  className="text-xs text-system-gray-500 mt-2"
                 >
-                  Enter a descriptive name for your smart folder. Press Enter to
-                  add the folder.
+                  Enter a descriptive name. Avoid characters: &lt; &gt; : &quot;
+                  | ? *. Press Enter to add the folder.
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                <label className="block text-sm font-medium text-system-gray-700 mb-3">
                   Target Path (optional)
                 </label>
-                <div className="flex gap-8 flex-col sm:flex-row">
+                <div className="flex gap-4 flex-col sm:flex-row">
                   <Input
                     type="text"
                     value={newFolderPath}
@@ -586,13 +642,13 @@ function SetupPhase() {
                     📁 Browse
                   </Button>
                 </div>
-                <p className="text-xs text-system-gray-500 mt-3">
+                <p className="text-xs text-system-gray-500 mt-2">
                   Leave empty to use default {defaultLocation}/
                   {newFolderName || 'FolderName'}
                 </p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-5">
+                <label className="block text-sm font-medium text-system-gray-700 mb-3">
                   Description{' '}
                   <span className="text-stratosort-blue font-semibold">
                     (Important for AI)
@@ -608,7 +664,7 @@ function SetupPhase() {
                 />
                 <div
                   id="description-help"
-                  className="text-xs text-system-gray-500 mt-3"
+                  className="text-xs text-system-gray-500 mt-2"
                 >
                   💡 <strong>Tip:</strong> The more specific your description,
                   the better the AI will organize your files. Include file
@@ -636,7 +692,7 @@ function SetupPhase() {
             </div>
           </Collapsible>
         </div>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-1">
           <Button
             onClick={() => actions.advancePhase(PHASES.WELCOME)}
             variant="secondary"
@@ -673,6 +729,11 @@ function SetupPhase() {
             variant="primary"
             className="w-full sm:w-auto"
             disabled={isLoading}
+            title={
+              smartFolders.length === 0
+                ? 'Add at least one smart folder before continuing.'
+                : undefined
+            }
           >
             {isLoading ? (
               <>

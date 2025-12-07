@@ -12,7 +12,7 @@ const DragAndDropZone = memo(function DragAndDropZone({
         isDragging
           ? 'border-stratosort-blue bg-stratosort-blue/5'
           : 'border-system-gray-300 hover:border-system-gray-400 hover:bg-system-gray-50/50'
-      } ${className || 'p-21'}`}
+      } ${className || 'p-8'}`}
       {...dragProps}
     >
       <div className="text-2xl mb-5">📥</div>

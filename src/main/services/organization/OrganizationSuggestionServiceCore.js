@@ -180,6 +180,9 @@ class OrganizationSuggestionServiceCore {
         'Invalid file object: file.extension exceeds maximum length',
       );
     }
+    if (!file.path || typeof file.path !== 'string') {
+      throw new Error('Invalid file object: file.path is required');
+    }
 
     try {
       // Ensure smart folders have embeddings
@@ -376,11 +379,20 @@ class OrganizationSuggestionServiceCore {
         }
 
         const { file, suggestion } = result;
+        if (!suggestion?.success || !suggestion.primary) {
+          logger.warn(
+            '[OrganizationSuggestionService] Skipping file with no primary suggestion',
+            { file: file?.name },
+          );
+          continue;
+        }
+
         const key = suggestion.primary?.folder || 'Uncategorized';
 
         if (!groups.has(key)) {
           groups.set(key, {
             folder: suggestion.primary?.folder || key,
+            path: suggestion.primary?.path, // Include path for destination building
             files: [],
             confidence: 0,
             strategy: suggestion.primary?.strategy,
@@ -566,15 +578,11 @@ class OrganizationSuggestionServiceCore {
 
   /**
    * Record user feedback
+   * @returns {Promise<void>}
    */
-  recordFeedback(file, suggestion, accepted) {
+  async recordFeedback(file, suggestion, accepted) {
     this.patternMatcher.recordFeedback(file, suggestion, accepted);
-    this._savePatterns().catch((error) => {
-      logger.error(
-        '[OrganizationSuggestionService] Failed to save after feedback:',
-        error,
-      );
-    });
+    return this._savePatterns();
   }
 
   /**

@@ -40,12 +40,18 @@ async function processBatchResults(
 ) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
 
-  // Create a map of files by name for quick lookup
-  const fileMap = new Map(files.map((f) => [f.name, f]));
+  // Create a map of files keyed by path (more stable than name)
+  const fileMap = new Map(files.map((f) => [f.path || f.name, f]));
 
-  for (const group of batchSuggestions.groups) {
+  // Validate groups array defensively
+  const groups = Array.isArray(batchSuggestions?.groups)
+    ? batchSuggestions.groups
+    : [];
+
+  for (const group of groups) {
     for (const fileWithSuggestion of group.files) {
-      const file = fileMap.get(fileWithSuggestion.name) || fileWithSuggestion;
+      const lookupKey = fileWithSuggestion.path || fileWithSuggestion.name;
+      const file = fileMap.get(lookupKey) || fileWithSuggestion;
       const suggestion = fileWithSuggestion.suggestion;
       const confidence = group.confidence || 0;
 
@@ -75,9 +81,21 @@ async function processBatchResults(
       // Determine action based on confidence
       if (confidence >= confidenceThreshold) {
         // High confidence - organize automatically
+        // Ensure suggestion folder/path are valid strings
+        const safeSuggestion = {
+          ...suggestion,
+          folder:
+            typeof suggestion.folder === 'string'
+              ? suggestion.folder
+              : suggestion.folder?.name || 'Uncategorized',
+          path:
+            typeof suggestion.path === 'string'
+              ? suggestion.path
+              : suggestion.path?.path || undefined,
+        };
         const destination = buildDestinationPath(
           file,
-          suggestion,
+          safeSuggestion,
           defaultLocation,
           preserveNames,
         );
@@ -193,9 +211,19 @@ async function batchOrganize(
 
         for (const file of group.files) {
           try {
+            // Ensure folder and path are valid strings
+            const folderName =
+              typeof group.folder === 'string'
+                ? group.folder
+                : group.folder?.name || 'Uncategorized';
+            const folderPath =
+              typeof group.path === 'string'
+                ? group.path
+                : group.path?.path || undefined;
+
             const destination = buildDestFn(
               file,
-              { folder: group.folder, path: group.path },
+              { folder: folderName, path: folderPath },
               options.defaultLocation || 'Documents',
               options.preserveNames,
             );

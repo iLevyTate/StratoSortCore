@@ -7,9 +7,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
 
-// Use mock prefix so jest allows the variable reference
-let mockTestDir;
-
 // Mock electron with a getter that reads the dynamic value
 jest.mock('electron', () => ({
   app: {
@@ -25,7 +22,6 @@ describe('UndoRedoService', () => {
   beforeEach(async () => {
     // Create temp directory for tests FIRST
     testDir = path.join(os.tmpdir(), `undo-test-${Date.now()}`);
-    mockTestDir = testDir;
     await fs.mkdir(testDir, { recursive: true });
 
     // Update the mock to return our testDir
@@ -134,18 +130,26 @@ describe('UndoRedoService', () => {
     });
 
     test('generates unique action ID', async () => {
-      const id1 = await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
-      const id2 = await service.recordAction('FILE_MOVE', { originalPath: '/c', newPath: '/d' });
+      const id1 = await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
+      const id2 = await service.recordAction('FILE_MOVE', {
+        originalPath: '/c',
+        newPath: '/d',
+      });
 
       expect(id1).not.toBe(id2);
     });
 
     test('truncates batch operations over max size', async () => {
-      const operations = Array(200).fill().map((_, i) => ({
-        type: 'move',
-        originalPath: `/a${i}`,
-        newPath: `/b${i}`,
-      }));
+      const operations = Array(200)
+        .fill()
+        .map((_, i) => ({
+          type: 'move',
+          originalPath: `/a${i}`,
+          newPath: `/b${i}`,
+        }));
 
       await service.recordAction('BATCH_ORGANIZE', { operations });
 
@@ -153,16 +157,25 @@ describe('UndoRedoService', () => {
     });
 
     test('removes future actions when recording after undo', async () => {
-      await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
 
       const source = path.join(testDir, 'source.txt');
       const dest = path.join(testDir, 'dest.txt');
       await fs.writeFile(dest, 'content');
-      await service.recordAction('FILE_MOVE', { originalPath: source, newPath: dest });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: source,
+        newPath: dest,
+      });
 
       await service.undo();
 
-      await service.recordAction('FILE_RENAME', { originalPath: '/e', newPath: '/f' });
+      await service.recordAction('FILE_RENAME', {
+        originalPath: '/e',
+        newPath: '/f',
+      });
 
       expect(service.actions).toHaveLength(2);
       expect(service.actions[1].type).toBe('FILE_RENAME');
@@ -241,8 +254,14 @@ describe('UndoRedoService', () => {
     });
 
     test('returns action history', async () => {
-      await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
-      await service.recordAction('FILE_RENAME', { originalPath: '/c', newPath: '/d' });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
+      await service.recordAction('FILE_RENAME', {
+        originalPath: '/c',
+        newPath: '/d',
+      });
 
       const history = service.getActionHistory();
 
@@ -255,7 +274,10 @@ describe('UndoRedoService', () => {
 
     test('respects limit parameter', async () => {
       for (let i = 0; i < 5; i++) {
-        await service.recordAction('FILE_MOVE', { originalPath: `/a${i}`, newPath: `/b${i}` });
+        await service.recordAction('FILE_MOVE', {
+          originalPath: `/a${i}`,
+          newPath: `/b${i}`,
+        });
       }
 
       const history = service.getActionHistory(2);
@@ -271,8 +293,14 @@ describe('UndoRedoService', () => {
 
   describe('clearHistory', () => {
     test('clears all actions', async () => {
-      await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
-      await service.recordAction('FILE_MOVE', { originalPath: '/c', newPath: '/d' });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/c',
+        newPath: '/d',
+      });
 
       await service.clearHistory();
 
@@ -284,7 +312,10 @@ describe('UndoRedoService', () => {
 
   describe('getStats', () => {
     test('returns statistics', async () => {
-      await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
 
       const stats = service.getStats();
 
@@ -299,8 +330,14 @@ describe('UndoRedoService', () => {
     });
 
     test('totalActions reflects recorded actions', async () => {
-      await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
-      await service.recordAction('FILE_MOVE', { originalPath: '/c', newPath: '/d' });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/c',
+        newPath: '/d',
+      });
 
       const stats = service.getStats();
       expect(stats.totalActions).toBe(2);
@@ -395,7 +432,10 @@ describe('UndoRedoService', () => {
     });
 
     test('recalculates memory estimate', async () => {
-      await service.recordAction('FILE_MOVE', { originalPath: '/a', newPath: '/b' });
+      await service.recordAction('FILE_MOVE', {
+        originalPath: '/a',
+        newPath: '/b',
+      });
       const beforeRecalc = service.currentMemoryEstimate;
 
       service._recalculateMemoryEstimate();

@@ -167,9 +167,21 @@ async function processFilesIndividually(
       // Determine action based on confidence
       if (confidence >= confidenceThreshold) {
         // High confidence - organize automatically
+        // Ensure primary suggestion folder/path are valid strings
+        const safePrimary = {
+          ...primary,
+          folder:
+            typeof primary.folder === 'string'
+              ? primary.folder
+              : primary.folder?.name || 'Uncategorized',
+          path:
+            typeof primary.path === 'string'
+              ? primary.path
+              : primary.path?.path || undefined,
+        };
         const destination = buildDestinationPath(
           file,
-          primary,
+          safePrimary,
           defaultLocation,
           preserveNames,
         );
@@ -324,9 +336,22 @@ async function processNewFile(
       suggestion.primary &&
       suggestion.confidence >= confidenceThreshold
     ) {
+      // Ensure primary suggestion folder/path are valid strings
+      const primary = suggestion.primary;
+      const safePrimary = {
+        ...primary,
+        folder:
+          typeof primary.folder === 'string'
+            ? primary.folder
+            : primary.folder?.name || 'Uncategorized',
+        path:
+          typeof primary.path === 'string'
+            ? primary.path
+            : primary.path?.path || undefined,
+      };
       const destination = buildDestinationPath(
         file,
-        suggestion.primary,
+        safePrimary,
         options.defaultLocation || 'Documents',
         false,
       );

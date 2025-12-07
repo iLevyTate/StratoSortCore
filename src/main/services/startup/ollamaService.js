@@ -12,6 +12,7 @@ const axios = require('axios');
 const { logger } = require('../../../shared/logger');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
+const { shouldUseShell } = require('../../../shared/platformUtils');
 
 logger.setContext('StartupManager:Ollama');
 
@@ -86,10 +87,17 @@ async function startOllama({ serviceStatus }) {
   }
 
   logger.info('[STARTUP] Starting Ollama server...');
-  const ollamaProcess = spawn('ollama', ['serve'], {
-    detached: false,
-    stdio: 'pipe',
-  });
+  let ollamaProcess;
+  try {
+    ollamaProcess = spawn('ollama', ['serve'], {
+      detached: false,
+      stdio: 'pipe',
+      shell: shouldUseShell(),
+      windowsHide: true,
+    });
+  } catch (error) {
+    throw new Error(`Failed to spawn Ollama binary: ${error.message}`);
+  }
 
   let startupError = null;
 

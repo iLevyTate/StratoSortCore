@@ -272,7 +272,7 @@ class StartupManager {
       isChromaDBRunning,
       {
         required: false,
-        verifyTimeout: 3000,
+        verifyTimeout: 12000,
       },
     );
   }

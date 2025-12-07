@@ -32,35 +32,71 @@ describe('indexManager', () => {
 
   describe('generateFileHash', () => {
     test('generates consistent hash for same input', () => {
-      const hash1 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
-      const hash2 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
+      const hash1 = indexManager.generateFileHash(
+        '/path/file.pdf',
+        1000,
+        '2024-01-15',
+      );
+      const hash2 = indexManager.generateFileHash(
+        '/path/file.pdf',
+        1000,
+        '2024-01-15',
+      );
 
       expect(hash1).toBe(hash2);
     });
 
     test('generates different hash for different path', () => {
-      const hash1 = indexManager.generateFileHash('/path/file1.pdf', 1000, '2024-01-15');
-      const hash2 = indexManager.generateFileHash('/path/file2.pdf', 1000, '2024-01-15');
+      const hash1 = indexManager.generateFileHash(
+        '/path/file1.pdf',
+        1000,
+        '2024-01-15',
+      );
+      const hash2 = indexManager.generateFileHash(
+        '/path/file2.pdf',
+        1000,
+        '2024-01-15',
+      );
 
       expect(hash1).not.toBe(hash2);
     });
 
     test('generates different hash for different size', () => {
-      const hash1 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
-      const hash2 = indexManager.generateFileHash('/path/file.pdf', 2000, '2024-01-15');
+      const hash1 = indexManager.generateFileHash(
+        '/path/file.pdf',
+        1000,
+        '2024-01-15',
+      );
+      const hash2 = indexManager.generateFileHash(
+        '/path/file.pdf',
+        2000,
+        '2024-01-15',
+      );
 
       expect(hash1).not.toBe(hash2);
     });
 
     test('generates different hash for different lastModified', () => {
-      const hash1 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
-      const hash2 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-20');
+      const hash1 = indexManager.generateFileHash(
+        '/path/file.pdf',
+        1000,
+        '2024-01-15',
+      );
+      const hash2 = indexManager.generateFileHash(
+        '/path/file.pdf',
+        1000,
+        '2024-01-20',
+      );
 
       expect(hash1).not.toBe(hash2);
     });
 
     test('generates 16 character hash', () => {
-      const hash = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
+      const hash = indexManager.generateFileHash(
+        '/path/file.pdf',
+        1000,
+        '2024-01-15',
+      );
 
       expect(hash.length).toBe(16);
     });
@@ -208,6 +244,7 @@ describe('indexManager', () => {
       indexManager.updateIndexes(index, entry);
 
       expect(index.updatedAt).toBeDefined();
+      expect(index.updatedAt).not.toBe(originalUpdatedAt);
     });
   });
 
