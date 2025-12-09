@@ -8,7 +8,7 @@
  */
 
 /**
- * Ensure value is an array
+ * Ensure value is an array (internal helper)
  * @param {*} val - Value to check
  * @returns {Array} The value as an array, or empty array if not array-like
  */
@@ -19,7 +19,7 @@ function ensureArray(val) {
 }
 
 /**
- * Safely get a nested property with default value
+ * Safely get a property with default value (internal helper)
  * @param {Object} obj - Object to access
  * @param {string} key - Property key
  * @param {*} defaultVal - Default value if property doesn't exist
@@ -32,7 +32,7 @@ function safeGet(obj, key, defaultVal) {
 }
 
 /**
- * Filter folders to get only custom/valid folders
+ * Filter folders to get only custom/valid folders (internal helper)
  * @param {Array} folders - Array of folder objects
  * @returns {Array} Filtered array of custom folders
  */
@@ -96,9 +96,6 @@ function getFolderNamesString(folderCategories) {
 }
 
 module.exports = {
-  ensureArray,
-  safeGet,
-  filterCustomFolders,
   mapFoldersToCategories,
   getFolderNamesString,
 };

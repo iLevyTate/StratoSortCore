@@ -13,8 +13,54 @@ const { logger } = require('../../../shared/logger');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
 const { container, ServiceIds } = require('../ServiceContainer');
+const { app } = require('electron');
+const path = require('path');
 
 logger.setContext('StartupManager:ChromaDB');
+
+// Construct a minimal, side-effect-free ChromaDB server config when the service
+// container is not yet populated during startup.
+function buildDefaultChromaConfig() {
+  const DEFAULT_PROTOCOL = 'http';
+  const DEFAULT_HOST = '127.0.0.1';
+  const DEFAULT_PORT = 8000;
+
+  let protocol = DEFAULT_PROTOCOL;
+  let host = DEFAULT_HOST;
+  let port = DEFAULT_PORT;
+
+  const url = process.env.CHROMA_SERVER_URL;
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      protocol = parsed.protocol?.replace(':', '') || DEFAULT_PROTOCOL;
+      host = parsed.hostname || DEFAULT_HOST;
+      port =
+        Number(parsed.port) ||
+        (protocol === 'https' ? 443 : 80) ||
+        DEFAULT_PORT;
+    } catch (err) {
+      logger.warn('[STARTUP] Invalid CHROMA_SERVER_URL, using defaults', {
+        url,
+        message: err?.message,
+      });
+    }
+  } else {
+    protocol = process.env.CHROMA_SERVER_PROTOCOL || DEFAULT_PROTOCOL;
+    host = process.env.CHROMA_SERVER_HOST || DEFAULT_HOST;
+    port = Number(process.env.CHROMA_SERVER_PORT) || DEFAULT_PORT;
+  }
+
+  const dbPath = path.join(app.getPath('userData'), 'chromadb');
+
+  return {
+    host,
+    port,
+    protocol,
+    url: `${protocol}://${host}:${port}`,
+    dbPath,
+  };
+}
 
 /**
  * Check ChromaDB health
@@ -158,8 +204,11 @@ async function startChromaDB({
 
   if (!plan) {
     const { buildChromaSpawnPlan } = require('../../utils/chromaSpawnUtils');
-    const chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
-    const serverConfig = chromaDbService.getServerConfig();
+    // Chroma service might not be registered yet during early startup.
+    // Prefer registered service config when available; otherwise fall back to env/defaults.
+    const serverConfig = container.has(ServiceIds.CHROMA_DB)
+      ? container.resolve(ServiceIds.CHROMA_DB).getServerConfig()
+      : buildDefaultChromaConfig();
 
     plan = await buildChromaSpawnPlan(serverConfig);
 
