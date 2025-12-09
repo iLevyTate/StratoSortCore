@@ -65,6 +65,19 @@ jest.mock('../src/main/analysis/embeddingQueue', () => ({
   removeByFilePath: jest.fn().mockReturnValue(0),
 }));
 
+// Mock pathSanitization - allow paths through validation
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPath: jest.fn().mockImplementation(async (filePath) => ({
+    valid: true,
+    normalizedPath: filePath,
+  })),
+  sanitizePath: jest.fn((p) => p),
+  isPathDangerous: jest.fn(() => false),
+  checkSymlinkSafety: jest
+    .fn()
+    .mockResolvedValue({ isSymlink: false, isSafe: true }),
+}));
+
 describe('File Operation Handlers', () => {
   let registerFileOperationHandlers;
   let mockIpcMain;
@@ -154,23 +167,32 @@ describe('File Operation Handlers', () => {
 
     test('handles move operation', async () => {
       const handler = handlers['files:perform-operation'];
-      const result = await handler({}, {
-        type: 'move',
-        source: '/source/file.txt',
-        destination: '/dest/file.txt',
-      });
+      const result = await handler(
+        {},
+        {
+          type: 'move',
+          source: '/source/file.txt',
+          destination: '/dest/file.txt',
+        },
+      );
 
       expect(result.success).toBe(true);
-      expect(mockFs.rename).toHaveBeenCalledWith('/source/file.txt', '/dest/file.txt');
+      expect(mockFs.rename).toHaveBeenCalledWith(
+        '/source/file.txt',
+        '/dest/file.txt',
+      );
     });
 
     test('handles copy operation', async () => {
       const handler = handlers['files:perform-operation'];
-      const result = await handler({}, {
-        type: 'copy',
-        source: '/source/file.txt',
-        destination: '/dest/file.txt',
-      });
+      const result = await handler(
+        {},
+        {
+          type: 'copy',
+          source: '/source/file.txt',
+          destination: '/dest/file.txt',
+        },
+      );
 
       expect(result.success).toBe(true);
       expect(mockFs.copyFile).toHaveBeenCalled();
@@ -178,10 +200,13 @@ describe('File Operation Handlers', () => {
 
     test('handles delete operation', async () => {
       const handler = handlers['files:perform-operation'];
-      const result = await handler({}, {
-        type: 'delete',
-        source: '/source/file.txt',
-      });
+      const result = await handler(
+        {},
+        {
+          type: 'delete',
+          source: '/source/file.txt',
+        },
+      );
 
       expect(result.success).toBe(true);
       expect(mockFs.unlink).toHaveBeenCalledWith('/source/file.txt');
@@ -189,10 +214,13 @@ describe('File Operation Handlers', () => {
 
     test('handles unknown operation type', async () => {
       const handler = handlers['files:perform-operation'];
-      const result = await handler({}, {
-        type: 'unknown',
-        source: '/test',
-      });
+      const result = await handler(
+        {},
+        {
+          type: 'unknown',
+          source: '/test',
+        },
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Unknown operation type');
@@ -203,11 +231,14 @@ describe('File Operation Handlers', () => {
       const chromaDb = getInstance();
 
       const handler = handlers['files:perform-operation'];
-      await handler({}, {
-        type: 'move',
-        source: '/source/file.txt',
-        destination: '/dest/file.txt',
-      });
+      await handler(
+        {},
+        {
+          type: 'move',
+          source: '/source/file.txt',
+          destination: '/dest/file.txt',
+        },
+      );
 
       expect(chromaDb.updateFilePaths).toHaveBeenCalled();
     });
@@ -219,11 +250,14 @@ describe('File Operation Handlers', () => {
       });
 
       const handler = handlers['files:perform-operation'];
-      const result = await handler({}, {
-        type: 'move',
-        source: '/source/file.txt',
-        destination: '/dest/file.txt',
-      });
+      const result = await handler(
+        {},
+        {
+          type: 'move',
+          source: '/source/file.txt',
+          destination: '/dest/file.txt',
+        },
+      );
 
       expect(result.success).toBe(true);
       expect(result.warning).toBeDefined();
@@ -264,7 +298,10 @@ describe('File Operation Handlers', () => {
     });
 
     test('handles file not found', async () => {
-      mockFs.access.mockRejectedValueOnce(new Error('ENOENT'));
+      // Mock stat to fail with ENOENT (file not found)
+      const enoentError = new Error('ENOENT: no such file or directory');
+      enoentError.code = 'ENOENT';
+      mockFs.stat.mockRejectedValueOnce(enoentError);
 
       const handler = handlers['files:delete-file'];
       const result = await handler({}, '/nonexistent/file.txt');
@@ -279,7 +316,9 @@ describe('File Operation Handlers', () => {
       const handler = handlers['files:delete-file'];
       await handler({}, '/path/to/file.txt');
 
-      expect(embeddingQueue.removeByFilePath).toHaveBeenCalledWith('/path/to/file.txt');
+      expect(embeddingQueue.removeByFilePath).toHaveBeenCalledWith(
+        '/path/to/file.txt',
+      );
     });
   });
 
@@ -324,10 +363,17 @@ describe('File Operation Handlers', () => {
     });
 
     test('handles source not found', async () => {
-      mockFs.access.mockRejectedValueOnce(new Error('ENOENT'));
+      // Mock stat to fail with ENOENT (source file not found)
+      const enoentError = new Error('ENOENT: no such file or directory');
+      enoentError.code = 'ENOENT';
+      mockFs.stat.mockRejectedValueOnce(enoentError);
 
       const handler = handlers['files:copy-file'];
-      const result = await handler({}, '/nonexistent/file.txt', '/dest/file.txt');
+      const result = await handler(
+        {},
+        '/nonexistent/file.txt',
+        '/dest/file.txt',
+      );
 
       expect(result.success).toBe(false);
       expect(result.errorCode).toBe('SOURCE_NOT_FOUND');

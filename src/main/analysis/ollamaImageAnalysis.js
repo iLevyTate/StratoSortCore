@@ -569,13 +569,17 @@ async function analyzeImageFile(filePath, smartFolders = []) {
 
         // BUG FIX #8: Duck typing validation - check that all required methods exist
         // Don't just check if object is truthy, validate it has the methods we need
+        // SECURITY FIX: Also validate embedText and matchVectorToFolders which are called later
         const hasRequiredMethods =
           folderMatcher &&
           typeof folderMatcher === 'object' &&
           typeof folderMatcher.initialize === 'function' &&
           typeof folderMatcher.upsertFolderEmbedding === 'function' &&
           typeof folderMatcher.upsertFileEmbedding === 'function' &&
-          typeof folderMatcher.matchFileToFolders === 'function';
+          typeof folderMatcher.matchFileToFolders === 'function' &&
+          typeof folderMatcher.embedText === 'function' &&
+          typeof folderMatcher.matchVectorToFolders === 'function' &&
+          typeof folderMatcher.batchUpsertFolders === 'function';
 
         if (!hasRequiredMethods) {
           logger.warn(
@@ -590,6 +594,11 @@ async function analyzeImageFile(filePath, smartFolders = []) {
                 typeof folderMatcher?.upsertFileEmbedding === 'function',
               hasMatchFile:
                 typeof folderMatcher?.matchFileToFolders === 'function',
+              hasEmbedText: typeof folderMatcher?.embedText === 'function',
+              hasMatchVectorToFolders:
+                typeof folderMatcher?.matchVectorToFolders === 'function',
+              hasBatchUpsertFolders:
+                typeof folderMatcher?.batchUpsertFolders === 'function',
             },
           );
         } else {
@@ -647,7 +656,9 @@ async function analyzeImageFile(filePath, smartFolders = []) {
             // Validate summary is non-empty before upserting
             if (summary && summary.trim().length > 0) {
               // CRITICAL FIX: Ensure ChromaDB is initialized
-              const chromaDbService = container.tryResolve(ServiceIds.CHROMA_DB);
+              const chromaDbService = container.tryResolve(
+                ServiceIds.CHROMA_DB,
+              );
               if (chromaDbService) {
                 await chromaDbService.initialize();
               }

@@ -5,6 +5,7 @@
 
 const path = require('path');
 const os = require('os');
+const fs = require('fs').promises;
 
 // Import centralized security configuration
 const {
@@ -13,6 +14,7 @@ const {
   RESERVED_WINDOWS_NAMES,
   PROTOTYPE_POLLUTION_KEYS,
   ALLOWED_METADATA_FIELDS,
+  getDangerousPaths,
 } = require('./securityConfig');
 
 /**
@@ -159,8 +161,267 @@ function sanitizeMetadata(metadata, allowedFields = null) {
   return sanitized;
 }
 
+/**
+ * Check if a path is within allowed base directories
+ *
+ * @param {string} targetPath - The resolved absolute path to check
+ * @param {string[]} allowedBasePaths - Array of allowed base directory paths
+ * @returns {boolean} True if path is within allowed directories
+ */
+function isPathWithinAllowed(targetPath, allowedBasePaths) {
+  if (!targetPath || !Array.isArray(allowedBasePaths)) {
+    return false;
+  }
+
+  const normalizedTarget = path.normalize(targetPath).toLowerCase();
+
+  for (const basePath of allowedBasePaths) {
+    if (!basePath) continue;
+    const normalizedBase = path.normalize(basePath).toLowerCase();
+
+    // Check if target starts with base path
+    if (normalizedTarget.startsWith(normalizedBase)) {
+      // Ensure it's a proper subdirectory (not just a prefix match)
+      const remainder = normalizedTarget.slice(normalizedBase.length);
+      if (remainder === '' || remainder.startsWith(path.sep)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a path is in a dangerous system directory
+ *
+ * @param {string} filePath - Path to check
+ * @returns {boolean} True if path is dangerous
+ */
+function isPathDangerous(filePath) {
+  if (!filePath) return true;
+
+  const normalizedPath = path.normalize(filePath).toLowerCase();
+  const dangerousPaths = getDangerousPaths();
+
+  for (const dangerous of dangerousPaths) {
+    const normalizedDangerous = path.normalize(dangerous).toLowerCase();
+    if (normalizedPath.startsWith(normalizedDangerous)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a path is a symbolic link and if so, whether it's safe
+ * Returns info about the symlink status and resolved target
+ *
+ * @param {string} filePath - Path to check
+ * @param {string[]} [allowedBasePaths] - Optional allowed base paths for symlink targets
+ * @returns {Promise<{isSymlink: boolean, isSafe: boolean, realPath?: string, error?: string}>}
+ */
+async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
+  try {
+    const stats = await fs.lstat(filePath);
+
+    if (!stats.isSymbolicLink()) {
+      return { isSymlink: false, isSafe: true };
+    }
+
+    // It's a symlink - resolve it and check where it points
+    const realPath = await fs.realpath(filePath);
+
+    // Check if resolved path is in dangerous locations
+    if (isPathDangerous(realPath)) {
+      return {
+        isSymlink: true,
+        isSafe: false,
+        realPath,
+        error: 'Symbolic link points to a dangerous system directory',
+      };
+    }
+
+    // If allowed base paths provided, check resolved path is within them
+    if (allowedBasePaths && allowedBasePaths.length > 0) {
+      if (!isPathWithinAllowed(realPath, allowedBasePaths)) {
+        return {
+          isSymlink: true,
+          isSafe: false,
+          realPath,
+          error: 'Symbolic link points outside allowed directories',
+        };
+      }
+    }
+
+    return { isSymlink: true, isSafe: true, realPath };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      // Path doesn't exist - that's okay for some operations
+      return { isSymlink: false, isSafe: true, error: 'Path does not exist' };
+    }
+    return {
+      isSymlink: false,
+      isSafe: false,
+      error: `Failed to check symlink: ${error.message}`,
+    };
+  }
+}
+
+/**
+ * Validate a file path for file operations (move, copy, delete, open)
+ * Performs comprehensive security checks including:
+ * - Path traversal detection
+ * - Dangerous directory detection
+ * - Symlink safety (optional)
+ * - Allowed directory validation (optional)
+ *
+ * @param {string} filePath - Path to validate
+ * @param {Object} [options] - Validation options
+ * @param {string[]} [options.allowedBasePaths] - If provided, path must be within these directories
+ * @param {boolean} [options.checkSymlinks=false] - Whether to check symlink safety
+ * @param {boolean} [options.requireExists=false] - Whether the path must exist
+ * @returns {Promise<{valid: boolean, normalizedPath: string, error?: string}>}
+ */
+async function validateFileOperationPath(filePath, options = {}) {
+  const {
+    allowedBasePaths = null,
+    checkSymlinks = false,
+    requireExists = false,
+  } = options;
+
+  // Basic validation
+  if (!filePath || typeof filePath !== 'string') {
+    return {
+      valid: false,
+      normalizedPath: '',
+      error: 'Invalid path: path must be a non-empty string',
+    };
+  }
+
+  try {
+    // Sanitize the path (removes null bytes, normalizes, checks traversal)
+    const sanitized = sanitizePath(filePath);
+
+    // Resolve to absolute path
+    const normalizedPath = path.resolve(sanitized);
+
+    // Check for dangerous system directories
+    if (isPathDangerous(normalizedPath)) {
+      return {
+        valid: false,
+        normalizedPath,
+        error: 'Invalid path: access to system directories is not allowed',
+      };
+    }
+
+    // Check allowed base paths if provided
+    if (allowedBasePaths && allowedBasePaths.length > 0) {
+      if (!isPathWithinAllowed(normalizedPath, allowedBasePaths)) {
+        return {
+          valid: false,
+          normalizedPath,
+          error: 'Invalid path: path is outside allowed directories',
+        };
+      }
+    }
+
+    // Check symlink safety if requested
+    if (checkSymlinks) {
+      const symlinkResult = await checkSymlinkSafety(
+        normalizedPath,
+        allowedBasePaths,
+      );
+      if (!symlinkResult.isSafe) {
+        return {
+          valid: false,
+          normalizedPath,
+          error: symlinkResult.error || 'Invalid path: unsafe symbolic link',
+        };
+      }
+    }
+
+    // Check existence if required
+    if (requireExists) {
+      try {
+        await fs.access(normalizedPath);
+      } catch {
+        return {
+          valid: false,
+          normalizedPath,
+          error: 'Invalid path: file or directory does not exist',
+        };
+      }
+    }
+
+    return { valid: true, normalizedPath };
+  } catch (error) {
+    return {
+      valid: false,
+      normalizedPath: '',
+      error: error.message || 'Path validation failed',
+    };
+  }
+}
+
+/**
+ * Synchronous path validation for simple checks (no symlink or existence checks)
+ * Use this when async operations aren't possible
+ *
+ * @param {string} filePath - Path to validate
+ * @param {string[]} [allowedBasePaths] - If provided, path must be within these directories
+ * @returns {{valid: boolean, normalizedPath: string, error?: string}}
+ */
+function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
+  if (!filePath || typeof filePath !== 'string') {
+    return {
+      valid: false,
+      normalizedPath: '',
+      error: 'Invalid path: path must be a non-empty string',
+    };
+  }
+
+  try {
+    const sanitized = sanitizePath(filePath);
+    const normalizedPath = path.resolve(sanitized);
+
+    if (isPathDangerous(normalizedPath)) {
+      return {
+        valid: false,
+        normalizedPath,
+        error: 'Invalid path: access to system directories is not allowed',
+      };
+    }
+
+    if (allowedBasePaths && allowedBasePaths.length > 0) {
+      if (!isPathWithinAllowed(normalizedPath, allowedBasePaths)) {
+        return {
+          valid: false,
+          normalizedPath,
+          error: 'Invalid path: path is outside allowed directories',
+        };
+      }
+    }
+
+    return { valid: true, normalizedPath };
+  } catch (error) {
+    return {
+      valid: false,
+      normalizedPath: '',
+      error: error.message || 'Path validation failed',
+    };
+  }
+}
+
 module.exports = {
   sanitizePath,
   isPathSafe,
   sanitizeMetadata,
+  // New exports for file operation security
+  validateFileOperationPath,
+  validateFileOperationPathSync,
+  checkSymlinkSafety,
+  isPathDangerous,
+  isPathWithinAllowed,
 };

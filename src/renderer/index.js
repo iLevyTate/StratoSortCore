@@ -18,14 +18,41 @@ store.dispatch(fetchSettings());
 // Set logger context for renderer entry point
 logger.setContext('Renderer');
 
+// FIX: Use named functions and track handler references for proper HMR cleanup
+// Store handlers in a module-level object for reliable cleanup
+const eventHandlers = {
+  click: null,
+  visibilitychange: null,
+  beforeunload: null,
+};
+
+// Remove any previously registered handlers (important for HMR)
+function cleanupEventHandlers() {
+  if (eventHandlers.click) {
+    document.removeEventListener('click', eventHandlers.click);
+  }
+  if (eventHandlers.visibilitychange) {
+    document.removeEventListener(
+      'visibilitychange',
+      eventHandlers.visibilitychange,
+    );
+  }
+  if (eventHandlers.beforeunload) {
+    window.removeEventListener('beforeunload', eventHandlers.beforeunload);
+  }
+}
+
 // Enable smooth scrolling globally
 if (typeof window !== 'undefined') {
   // Set smooth scroll on document
   document.documentElement.style.scrollBehavior = 'smooth';
   document.body.style.scrollBehavior = 'smooth';
 
+  // Clean up any existing handlers first
+  cleanupEventHandlers();
+
   // Add smooth scroll behavior to all internal links with proper cleanup
-  const clickHandler = (e) => {
+  eventHandlers.click = function handleSmoothScrollClick(e) {
     const link = e.target.closest('a');
     if (link && link.getAttribute('href')?.startsWith('#')) {
       e.preventDefault();
@@ -41,28 +68,28 @@ if (typeof window !== 'undefined') {
     }
   };
 
-  document.addEventListener('click', clickHandler);
+  document.addEventListener('click', eventHandlers.click);
 
-  // Handle visibility changes to clean up references during minimize/restore
-  const visibilityHandler = () => {
-    if (document.hidden) {
-      // Clear any pending animations or timers when window is hidden
-      if (typeof cancelAnimationFrame !== 'undefined') {
-        // Cancel any pending animation frames to prevent dangling callbacks
-        let id = requestAnimationFrame(() => {});
-        while (id > 0) {
-          cancelAnimationFrame(id--);
-        }
-      }
-    }
+  // Handle visibility changes - simplified, removed ineffective animation frame cleanup
+  eventHandlers.visibilitychange = function handleVisibilityChange() {
+    // Visibility changes are handled - no action needed currently
+    // The previous animation frame cancellation loop was ineffective
+    // as it only cancelled frames that hadn't started yet
   };
-  document.addEventListener('visibilitychange', visibilityHandler);
+  document.addEventListener('visibilitychange', eventHandlers.visibilitychange);
 
   // Add cleanup on page unload to prevent dangling references
-  window.addEventListener('beforeunload', () => {
-    document.removeEventListener('click', clickHandler);
-    document.removeEventListener('visibilitychange', visibilityHandler);
-  });
+  eventHandlers.beforeunload = function handleBeforeUnload() {
+    cleanupEventHandlers();
+  };
+  window.addEventListener('beforeunload', eventHandlers.beforeunload);
+
+  // Support HMR cleanup if module.hot is available
+  if (typeof module !== 'undefined' && module.hot) {
+    module.hot.dispose(() => {
+      cleanupEventHandlers();
+    });
+  }
 }
 
 // Wait for DOM to be ready before initializing React
@@ -121,8 +148,7 @@ function initializeApp() {
     const initialLoading = document.getElementById('initial-loading');
     if (initialLoading) {
       const section = document.createElement('section');
-      section.className =
-        'mx-auto max-w-md text-center text-stratosort-danger';
+      section.className = 'mx-auto max-w-md text-center text-stratosort-danger';
 
       const icon = document.createElement('div');
       icon.className = 'text-4xl mb-4';

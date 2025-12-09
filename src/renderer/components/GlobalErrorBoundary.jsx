@@ -36,18 +36,22 @@ class GlobalErrorBoundary extends Component {
       timestamp: new Date().toISOString(),
     });
 
-    // Update error count for tracking repeated errors and schedule reset with fresh state
-    this.setState((prevState) => {
-      const newCount = prevState.errorCount + 1;
-      if (newCount < 3) {
-        this.scheduleReset();
-      }
-      return {
+    // FIX: Update error count and store error info
+    // Schedule reset AFTER setState completes, not inside the callback
+    this.setState(
+      (prevState) => ({
         error,
         errorInfo,
-        errorCount: newCount,
-      };
-    });
+        errorCount: prevState.errorCount + 1,
+      }),
+      () => {
+        // FIX: Schedule reset in setState callback to ensure state is updated first
+        // This ensures errorCount check uses the updated value
+        if (this.state.errorCount < 3) {
+          this.scheduleReset();
+        }
+      },
+    );
 
     // Report to main process if available
     try {
@@ -65,8 +69,6 @@ class GlobalErrorBoundary extends Component {
         reportError,
       );
     }
-
-    // Auto-reset scheduled within setState callback to avoid stale reads
   }
 
   componentWillUnmount() {

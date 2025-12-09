@@ -10,6 +10,67 @@ const { ERROR_TYPES } = require('../../shared/constants');
 const { logger } = require('../../shared/logger');
 logger.setContext('ErrorHandler');
 
+/**
+ * Sanitize sensitive data from log messages
+ * Redacts full file paths to just filenames in production
+ * @param {string|object} data - Data to sanitize
+ * @returns {string|object} Sanitized data
+ */
+function sanitizeLogData(data) {
+  // Skip sanitization in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return data;
+  }
+
+  if (typeof data === 'string') {
+    // Replace Windows absolute paths with just the filename
+    // Matches: C:\path\to\file.txt, D:\folder\subfolder\file.txt
+    let sanitized = data.replace(
+      /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*([^\\/:*?"<>|\r\n]+)/g,
+      (match, filename) => `[REDACTED_PATH]\\${filename}`,
+    );
+
+    // Replace Unix absolute paths with just the filename
+    // Matches: /path/to/file.txt, /home/user/documents/file.txt
+    sanitized = sanitized.replace(
+      /\/(?:[^/\s]+\/)+([^/\s]+)/g,
+      (match, filename) => `[REDACTED_PATH]/${filename}`,
+    );
+
+    return sanitized;
+  }
+
+  if (typeof data === 'object' && data !== null) {
+    // Recursively sanitize objects
+    const sanitized = Array.isArray(data) ? [] : {};
+    for (const [key, value] of Object.entries(data)) {
+      // Special handling for known path fields
+      if (
+        (key === 'path' ||
+          key === 'filePath' ||
+          key === 'source' ||
+          key === 'destination') &&
+        typeof value === 'string'
+      ) {
+        // For path fields, just keep the filename
+        sanitized[key] = path.basename(value);
+      } else if (key === 'stack' && typeof value === 'string') {
+        // For stack traces, sanitize paths within them
+        sanitized[key] = sanitizeLogData(value);
+      } else if (typeof value === 'object' && value !== null) {
+        sanitized[key] = sanitizeLogData(value);
+      } else if (typeof value === 'string') {
+        sanitized[key] = sanitizeLogData(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
+  return data;
+}
+
 class ErrorHandler {
   constructor() {
     this.logPath = path.join(app.getPath('userData'), 'logs');
@@ -213,18 +274,27 @@ class ErrorHandler {
 
   /**
    * Log messages to file
+   * Sanitizes sensitive data (file paths) in production mode
    */
   async log(level, message, data = {}) {
+    // Sanitize data to remove sensitive information in production
+    const sanitizedData = sanitizeLogData(data);
+    const sanitizedMessage = sanitizeLogData(message);
+
     if (!this.isInitialized) {
-      logger.log(level, `[${level.toUpperCase()}] ${message}`, data);
+      logger.log(
+        level,
+        `[${level.toUpperCase()}] ${sanitizedMessage}`,
+        sanitizedData,
+      );
       return;
     }
 
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: level.toUpperCase(),
-      message,
-      data,
+      message: sanitizedMessage,
+      data: sanitizedData,
     };
 
     try {

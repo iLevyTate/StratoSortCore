@@ -13,8 +13,63 @@ const { withErrorLogging, withValidation } = require('../withErrorLogging');
 const { logger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
 const { z, operationSchema } = require('./schemas');
+const {
+  validateFileOperationPath,
+} = require('../../../shared/pathSanitization');
 
 logger.setContext('IPC:Files:Operations');
+
+/**
+ * Validate source and destination paths for file operations
+ * @param {string} source - Source file path
+ * @param {string} destination - Destination file path (optional for delete)
+ * @param {Object} log - Logger instance
+ * @returns {Promise<{valid: boolean, source?: string, destination?: string, error?: string}>}
+ */
+async function validateOperationPaths(source, destination, log) {
+  // Validate source path
+  const sourceResult = await validateFileOperationPath(source, {
+    checkSymlinks: true,
+  });
+
+  if (!sourceResult.valid) {
+    log.warn('[FILE-OPS] Source path validation failed', {
+      source,
+      error: sourceResult.error,
+    });
+    return {
+      valid: false,
+      error: `Invalid source path: ${sourceResult.error}`,
+    };
+  }
+
+  // If no destination, return validated source only
+  if (!destination) {
+    return { valid: true, source: sourceResult.normalizedPath };
+  }
+
+  // Validate destination path
+  const destResult = await validateFileOperationPath(destination, {
+    checkSymlinks: true,
+  });
+
+  if (!destResult.valid) {
+    log.warn('[FILE-OPS] Destination path validation failed', {
+      destination,
+      error: destResult.error,
+    });
+    return {
+      valid: false,
+      error: `Invalid destination path: ${destResult.error}`,
+    };
+  }
+
+  return {
+    valid: true,
+    source: sourceResult.normalizedPath,
+    destination: destResult.normalizedPath,
+  };
+}
 
 /**
  * Update database path after file move
@@ -122,14 +177,28 @@ function createPerformOperationHandler({
 
       switch (operation.type) {
         case 'move': {
-          await fs.rename(operation.source, operation.destination);
+          // SECURITY FIX: Validate paths before file operation
+          const moveValidation = await validateOperationPaths(
+            operation.source,
+            operation.destination,
+            log,
+          );
+          if (!moveValidation.valid) {
+            return {
+              success: false,
+              error: moveValidation.error,
+              errorCode: 'INVALID_PATH',
+            };
+          }
+
+          await fs.rename(moveValidation.source, moveValidation.destination);
 
           try {
             await getServiceIntegration()?.undoRedo?.recordAction?.(
               ACTION_TYPES.FILE_MOVE,
               {
-                originalPath: operation.source,
-                newPath: operation.destination,
+                originalPath: moveValidation.source,
+                newPath: moveValidation.destination,
               },
             );
           } catch {
@@ -137,35 +206,64 @@ function createPerformOperationHandler({
           }
 
           const dbSyncWarning = await updateDatabasePath(
-            operation.source,
-            operation.destination,
+            moveValidation.source,
+            moveValidation.destination,
             log,
           );
 
           return {
             success: true,
-            message: `Moved ${operation.source} to ${operation.destination}`,
+            message: `Moved ${moveValidation.source} to ${moveValidation.destination}`,
             ...(dbSyncWarning && { warning: dbSyncWarning }),
           };
         }
 
-        case 'copy':
-          await fs.copyFile(operation.source, operation.destination);
+        case 'copy': {
+          // SECURITY FIX: Validate paths before file operation
+          const copyValidation = await validateOperationPaths(
+            operation.source,
+            operation.destination,
+            log,
+          );
+          if (!copyValidation.valid) {
+            return {
+              success: false,
+              error: copyValidation.error,
+              errorCode: 'INVALID_PATH',
+            };
+          }
+
+          await fs.copyFile(copyValidation.source, copyValidation.destination);
           return {
             success: true,
-            message: `Copied ${operation.source} to ${operation.destination}`,
+            message: `Copied ${copyValidation.source} to ${copyValidation.destination}`,
           };
+        }
 
         case 'delete': {
-          await fs.unlink(operation.source);
-          const dbDeleteWarning = await deleteFromDatabase(
+          // SECURITY FIX: Validate path before file operation
+          const deleteValidation = await validateOperationPaths(
             operation.source,
+            null,
+            log,
+          );
+          if (!deleteValidation.valid) {
+            return {
+              success: false,
+              error: deleteValidation.error,
+              errorCode: 'INVALID_PATH',
+            };
+          }
+
+          await fs.unlink(deleteValidation.source);
+          const dbDeleteWarning = await deleteFromDatabase(
+            deleteValidation.source,
             log,
           );
 
           return {
             success: true,
-            message: `Deleted ${operation.source}`,
+            message: `Deleted ${deleteValidation.source}`,
             ...(dbDeleteWarning && { warning: dbDeleteWarning }),
           };
         }
@@ -231,30 +329,63 @@ function registerFileOperationHandlers({
           };
         }
 
-        try {
-          await fs.access(filePath);
-        } catch (accessError) {
+        // SECURITY FIX: Validate path before any operations
+        const validation = await validateFileOperationPath(filePath, {
+          checkSymlinks: true,
+        });
+
+        if (!validation.valid) {
+          log.warn('[FILE-OPS] Delete path validation failed', {
+            filePath,
+            error: validation.error,
+          });
           return {
             success: false,
-            error: 'File not found or inaccessible',
-            errorCode: 'FILE_NOT_FOUND',
-            details: accessError.message,
+            error: validation.error,
+            errorCode: 'INVALID_PATH',
           };
         }
 
-        const stats = await fs.stat(filePath);
-        await fs.unlink(filePath);
+        const validatedPath = validation.normalizedPath;
 
-        const dbDeleteWarning = await deleteFromDatabase(filePath, log);
+        // TOCTOU FIX: Get stats in try-catch, handle errors gracefully
+        // Combine stat + unlink - if stat fails, we'll get the error
+        // If file is deleted between stat and unlink, unlink will also fail with ENOENT
+        let fileSize = 0;
+        try {
+          const stats = await fs.stat(validatedPath);
+          fileSize = stats.size;
+        } catch (statError) {
+          if (statError.code === 'ENOENT') {
+            return {
+              success: false,
+              error: 'File not found or inaccessible',
+              errorCode: 'FILE_NOT_FOUND',
+              details: statError.message,
+            };
+          }
+          // For other errors, try to proceed with delete anyway
+          log.warn('[FILE-OPS] Could not stat file before delete', {
+            error: statError.message,
+          });
+        }
 
-        log.info('[FILE-OPS] Deleted file:', filePath, `(${stats.size} bytes)`);
+        await fs.unlink(validatedPath);
+
+        const dbDeleteWarning = await deleteFromDatabase(validatedPath, log);
+
+        log.info(
+          '[FILE-OPS] Deleted file:',
+          validatedPath,
+          `(${fileSize} bytes)`,
+        );
 
         return {
           success: true,
           message: 'File deleted successfully',
           deletedFile: {
-            path: filePath,
-            size: stats.size,
+            path: validatedPath,
+            size: fileSize,
             deletedAt: new Date().toISOString(),
           },
           ...(dbDeleteWarning && { warning: dbDeleteWarning }),
@@ -300,24 +431,48 @@ function registerFileOperationHandlers({
           };
         }
 
-        const normalizedSource = path.resolve(sourcePath);
-        const normalizedDestination = path.resolve(destinationPath);
+        // SECURITY FIX: Validate both paths before any operations
+        const validation = await validateOperationPaths(
+          sourcePath,
+          destinationPath,
+          log,
+        );
 
-        try {
-          await fs.access(normalizedSource);
-        } catch (accessError) {
+        if (!validation.valid) {
           return {
             success: false,
-            error: 'Source file not found',
-            errorCode: 'SOURCE_NOT_FOUND',
-            details: accessError.message,
+            error: validation.error,
+            errorCode: 'INVALID_PATH',
           };
+        }
+
+        const normalizedSource = validation.source;
+        const normalizedDestination = validation.destination;
+
+        // TOCTOU FIX: Don't pre-check with access(), let copyFile handle errors
+        // Get stats for return value, but don't gate on it
+        let fileSize = 0;
+        try {
+          const sourceStats = await fs.stat(normalizedSource);
+          fileSize = sourceStats.size;
+        } catch (statError) {
+          if (statError.code === 'ENOENT') {
+            return {
+              success: false,
+              error: 'Source file not found',
+              errorCode: 'SOURCE_NOT_FOUND',
+              details: statError.message,
+            };
+          }
+          // For other errors, try to proceed anyway
+          log.warn('[FILE-OPS] Could not stat source file before copy', {
+            error: statError.message,
+          });
         }
 
         const destDir = path.dirname(normalizedDestination);
         await fs.mkdir(destDir, { recursive: true });
 
-        const sourceStats = await fs.stat(normalizedSource);
         await fs.copyFile(normalizedSource, normalizedDestination);
 
         log.info(
@@ -333,7 +488,7 @@ function registerFileOperationHandlers({
           operation: {
             source: normalizedSource,
             destination: normalizedDestination,
-            size: sourceStats.size,
+            size: fileSize,
             copiedAt: new Date().toISOString(),
           },
         };
@@ -352,6 +507,9 @@ function registerFileOperationHandlers({
         } else if (error.code === 'EEXIST') {
           errorCode = 'FILE_EXISTS';
           userMessage = 'Destination file already exists';
+        } else if (error.code === 'ENOENT') {
+          errorCode = 'SOURCE_NOT_FOUND';
+          userMessage = 'Source file not found';
         }
 
         return {

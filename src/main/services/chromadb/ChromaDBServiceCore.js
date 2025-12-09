@@ -252,6 +252,48 @@ class ChromaDBServiceCore extends EventEmitter {
 
       this.serverUrl = `${this.serverProtocol}://${this.serverHost}:${this.serverPort}`;
     }
+
+    // SECURITY: Warn about non-HTTPS connections for non-localhost servers
+    this._warnIfInsecureRemoteConnection();
+  }
+
+  /**
+   * Warn if using HTTP (non-HTTPS) for remote server connections
+   * @private
+   */
+  _warnIfInsecureRemoteConnection() {
+    const isLocalhost =
+      this.serverHost === 'localhost' ||
+      this.serverHost === '127.0.0.1' ||
+      this.serverHost === '::1' ||
+      this.serverHost.startsWith('192.168.') ||
+      this.serverHost.startsWith('10.') ||
+      this.serverHost.startsWith('172.16.') ||
+      this.serverHost.startsWith('172.17.') ||
+      this.serverHost.startsWith('172.18.') ||
+      this.serverHost.startsWith('172.19.') ||
+      this.serverHost.startsWith('172.2') || // 172.20-172.29
+      this.serverHost.startsWith('172.30.') ||
+      this.serverHost.startsWith('172.31.');
+
+    if (this.serverProtocol === 'http' && !isLocalhost) {
+      logger.warn(
+        '[ChromaDB] SECURITY WARNING: Using unencrypted HTTP connection to remote server',
+        {
+          host: this.serverHost,
+          port: this.serverPort,
+          recommendation:
+            'Consider using HTTPS for remote ChromaDB connections to protect data in transit',
+        },
+      );
+      // Emit event so UI can display warning if needed
+      this.emit('security-warning', {
+        type: 'insecure_connection',
+        message:
+          'ChromaDB is configured to use HTTP for a remote server. Data may be transmitted unencrypted.',
+        host: this.serverHost,
+      });
+    }
   }
 
   async ensureDbDirectory() {

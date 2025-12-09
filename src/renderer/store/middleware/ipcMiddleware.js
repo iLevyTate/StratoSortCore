@@ -11,6 +11,11 @@ let beforeUnloadHandler = null;
 const ipcMiddleware = (store) => {
   // Set up listeners once (with cleanup tracking)
   if (window.electronAPI?.events && !listenersInitialized) {
+    // FIX: Clean up any existing listeners first (defensive for HMR edge cases)
+    // This ensures no duplicate listeners accumulate even if listenersInitialized
+    // was incorrectly reset or the module was partially reloaded
+    cleanupIpcListeners();
+
     listenersInitialized = true;
 
     // Listen for operation progress from batch operations
