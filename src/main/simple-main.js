@@ -1,5 +1,4 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const isDev = process.env.NODE_ENV === 'development';
 
 // Logging utility
@@ -45,7 +44,7 @@ const { analyzeImageFile } = require('./analysis/ollamaImageAnalysis');
 const tesseract = require('node-tesseract-ocr');
 const fs = require('fs').promises;
 const path = require('path');
-const { isWindows } = require('../shared/platformUtils');
+// platformUtils imported in core/jumpList.js for Windows detection
 
 // Extracted core modules
 const {
@@ -58,10 +57,15 @@ const {
   initializeTrayConfig,
   createSystemTray,
   updateTrayMenu,
-  destroyTray,
-  getTray,
 } = require('./core/systemTray');
 const { verifyIpcHandlersRegistered } = require('./core/ipcVerification');
+const {
+  initializeLifecycle,
+  registerLifecycleHandlers,
+} = require('./core/lifecycle');
+const { initializeAutoUpdater } = require('./core/autoUpdater');
+const { initializeJumpList } = require('./core/jumpList');
+const { runBackgroundSetup } = require('./core/backgroundSetup');
 
 let mainWindow;
 let customFolders = []; // Initialize customFolders at module level
@@ -80,13 +84,7 @@ let eventListeners = [];
 let childProcessListeners = [];
 let globalProcessListeners = [];
 
-// HIGH-3 FIX: Track background setup status for visibility
-let backgroundSetupStatus = {
-  complete: false,
-  error: null,
-  startedAt: null,
-  completedAt: null,
-};
+// Background setup status is now tracked in ./core/backgroundSetup module
 
 // NOTE: Startup logic is handled by StartupManager and ServiceIntegration
 // IPC verification is handled by ./core/ipcVerification
@@ -659,137 +657,8 @@ app.whenReady().then(async () => {
     handleSettingsChanged(initialSettings);
 
     // Run first-time setup in background (non-blocking)
-    // HIGH-3 FIX: Track status for visibility and error reporting
-    (async () => {
-      backgroundSetupStatus.startedAt = new Date().toISOString();
-
-      try {
-        const setupMarker = path.join(
-          app.getPath('userData'),
-          'ollama-setup-complete.marker',
-        );
-        let isFirstRun = false;
-        try {
-          await fs.access(setupMarker);
-        } catch {
-          isFirstRun = true;
-        }
-
-        if (isFirstRun) {
-          logger.info(
-            '[STARTUP] First run detected - will check Ollama setup (background)',
-          );
-
-          // Check if installation marker exists (from installer)
-          const installerMarker = path.join(
-            app.getPath('exe'),
-            '..',
-            'first-run.marker',
-          );
-          try {
-            await fs.access(installerMarker);
-            try {
-              await fs.unlink(installerMarker);
-            } catch (e) {
-              logger.debug(
-                '[STARTUP] Could not remove installer marker:',
-                e.message,
-              );
-            }
-          } catch {
-            // Installer marker doesn't exist, no action needed
-          }
-
-          // Run Ollama setup check
-          const setupScript = path.join(__dirname, '../../setup-ollama.js');
-          try {
-            await fs.access(setupScript);
-            const {
-              isOllamaInstalled,
-              getInstalledModels,
-              installEssentialModels,
-            } = require(setupScript);
-
-            // Check if Ollama is installed and has models
-            if (await isOllamaInstalled()) {
-              const models = await getInstalledModels();
-              if (models.length === 0) {
-                logger.info(
-                  '[STARTUP] No AI models found, installing essential models...',
-                );
-
-                // Notify UI about model installation
-                const win = BrowserWindow.getAllWindows()[0];
-                if (win) {
-                  win.webContents.send('operation-progress', {
-                    type: 'info',
-                    message: 'Installing AI models in background...',
-                  });
-                }
-
-                try {
-                  await installEssentialModels();
-                  logger.info('[STARTUP] AI models installed successfully');
-                  if (win) {
-                    win.webContents.send('operation-progress', {
-                      type: 'success',
-                      message: 'AI models installed successfully',
-                    });
-                  }
-                } catch (e) {
-                  logger.warn(
-                    '[STARTUP] Could not install AI models automatically:',
-                    e.message,
-                  );
-                }
-              }
-            } else {
-              logger.warn(
-                '[STARTUP] Ollama not installed - AI features will be limited',
-              );
-            }
-          } catch (err) {
-            logger.warn('[STARTUP] Setup script error:', err.message);
-          }
-
-          // Mark setup as complete
-          // FIX: Use atomic write (temp + rename) to prevent corruption
-          try {
-            const tempPath = `${setupMarker}.tmp.${Date.now()}`;
-            await fs.writeFile(tempPath, new Date().toISOString());
-            await fs.rename(tempPath, setupMarker);
-          } catch (e) {
-            logger.debug('[STARTUP] Could not create setup marker:', e.message);
-          }
-        }
-
-        // HIGH-3 FIX: Mark background setup as complete
-        backgroundSetupStatus.complete = true;
-        backgroundSetupStatus.completedAt = new Date().toISOString();
-        logger.info('[STARTUP] Background setup completed successfully');
-      } catch (error) {
-        // HIGH-3 FIX: Track error and notify renderer
-        backgroundSetupStatus.error = error.message;
-        backgroundSetupStatus.completedAt = new Date().toISOString();
-        logger.error('[STARTUP] Background setup failed:', error);
-
-        // Notify renderer of degraded state if window exists
-        try {
-          const win = BrowserWindow.getAllWindows()[0];
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('startup-degraded', {
-              reason: error.message,
-              component: 'background-setup',
-            });
-          }
-        } catch (notifyError) {
-          logger.debug(
-            '[STARTUP] Could not notify renderer of error:',
-            notifyError.message,
-          );
-        }
-      }
-    })();
+    // Handled by ./core/backgroundSetup module
+    runBackgroundSetup();
 
     // Start periodic system metrics broadcast to renderer
     try {
@@ -801,6 +670,7 @@ app.whenReady().then(async () => {
 
       // PERFORMANCE FIX: Increased interval from 10s to 30s to reduce overhead
       // Renderer component polls directly, so main process doesn't need to poll as frequently
+      const { TIMEOUTS } = require('../shared/performanceConstants');
       metricsInterval = setInterval(async () => {
         try {
           const win = BrowserWindow.getAllWindows()[0];
@@ -810,7 +680,7 @@ app.whenReady().then(async () => {
         } catch (error) {
           logger.error('[METRICS] Failed to collect or send metrics:', error);
         }
-      }, 30000); // Increased from 10000ms to 30000ms (30 seconds)
+      }, TIMEOUTS.METRICS_BROADCAST);
       try {
         metricsInterval.unref();
       } catch (error) {
@@ -836,66 +706,47 @@ app.whenReady().then(async () => {
       logger.warn('[TRAY] Failed to initialize tray:', e.message);
     }
 
-    // Handle app command-line tasks (Windows Jump List)
-    try {
-      const args = process.argv.slice(1);
-      if (args.includes('--open-documents')) {
-        try {
-          const docs = app.getPath('documents');
-          shell.openPath(docs);
-        } catch (error) {
-          logger.error('[JUMP-LIST] Failed to open documents folder:', error);
-        }
-      }
-      if (args.includes('--analyze-folder')) {
-        // Bring window to front and trigger select directory
-        const win = BrowserWindow.getAllWindows()[0];
-        if (win) {
-          win.focus();
-          try {
-            win.webContents.send('operation-progress', {
-              type: 'hint',
-              message: 'Use Select Directory to analyze a folder',
-            });
-          } catch (error) {
-            logger.error('[JUMP-LIST] Failed to send hint message:', error);
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('[JUMP-LIST] Failed to handle command-line tasks:', error);
-    }
-    // Windows Jump List tasks
-    try {
-      if (isWindows) {
-        app.setAppUserModelId('com.stratosort.app');
-        app.setJumpList([
-          {
-            type: 'tasks',
-            items: [
-              {
-                type: 'task',
-                title: 'Analyze Folder…',
-                program: process.execPath,
-                args: '--analyze-folder',
-                iconPath: process.execPath,
-                iconIndex: 0,
-              },
-              {
-                type: 'task',
-                title: 'Open Documents Folder',
-                program: process.execPath,
-                args: '--open-documents',
-                iconPath: process.execPath,
-                iconIndex: 0,
-              },
-            ],
-          },
-        ]);
-      }
-    } catch (error) {
-      logger.error('[JUMP-LIST] Failed to set Windows Jump List:', error);
-    }
+    // Initialize lifecycle module with state accessors
+    initializeLifecycle({
+      getMetricsInterval: () => metricsInterval,
+      setMetricsInterval: (val) => {
+        metricsInterval = val;
+      },
+      getDownloadWatcher: () => downloadWatcher,
+      setDownloadWatcher: (val) => {
+        downloadWatcher = val;
+      },
+      getServiceIntegration: () => serviceIntegration,
+      getSettingsService: () => settingsService,
+      getChromaDbProcess: () => chromaDbProcess,
+      setChromaDbProcess: (val) => {
+        chromaDbProcess = val;
+      },
+      getEventListeners: () => eventListeners,
+      setEventListeners: (val) => {
+        eventListeners = val;
+      },
+      getChildProcessListeners: () => childProcessListeners,
+      setChildProcessListeners: (val) => {
+        childProcessListeners = val;
+      },
+      getGlobalProcessListeners: () => globalProcessListeners,
+      setGlobalProcessListeners: (val) => {
+        globalProcessListeners = val;
+      },
+      setIsQuitting: (val) => {
+        isQuitting = val;
+      },
+    });
+
+    // Register lifecycle handlers (replaces inline before-quit, window-all-closed, etc.)
+    const lifecycleCleanup = registerLifecycleHandlers(createWindow);
+    eventListeners.push(lifecycleCleanup.cleanupAppListeners);
+    globalProcessListeners.push(lifecycleCleanup.cleanupProcessListeners);
+
+    // Handle Windows Jump List command-line tasks and setup
+    // Handled by ./core/jumpList module
+    initializeJumpList();
     // Fire-and-forget resume of incomplete batches shortly after window is ready
     const resumeTimeout = setTimeout(() => {
       try {
@@ -944,87 +795,10 @@ app.whenReady().then(async () => {
       logger.error('[DEVTOOLS] Failed to setup React DevTools:', error);
     }
 
-    // Auto-updates (production only)
-    try {
-      if (!isDev) {
-        autoUpdater.autoDownload = true;
-
-        // FIX: Store handler references for proper cleanup
-        const autoUpdaterErrorHandler = (err) =>
-          logger.error('[UPDATER] Error:', err);
-        const autoUpdaterAvailableHandler = () => {
-          logger.info('[UPDATER] Update available');
-          try {
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed())
-              win.webContents.send('app:update', { status: 'available' });
-          } catch (error) {
-            logger.error(
-              '[UPDATER] Failed to send update-available message:',
-              error,
-            );
-          }
-        };
-        const autoUpdaterNotAvailableHandler = () => {
-          logger.info('[UPDATER] No updates available');
-          try {
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed())
-              win.webContents.send('app:update', { status: 'none' });
-          } catch (error) {
-            logger.error(
-              '[UPDATER] Failed to send update-not-available message:',
-              error,
-            );
-          }
-        };
-        const autoUpdaterDownloadedHandler = () => {
-          logger.info('[UPDATER] Update downloaded');
-          try {
-            const win = BrowserWindow.getAllWindows()[0];
-            if (win && !win.isDestroyed())
-              win.webContents.send('app:update', { status: 'ready' });
-          } catch (error) {
-            logger.error(
-              '[UPDATER] Failed to send update-downloaded message:',
-              error,
-            );
-          }
-        };
-
-        autoUpdater.on('error', autoUpdaterErrorHandler);
-        autoUpdater.on('update-available', autoUpdaterAvailableHandler);
-        autoUpdater.on('update-not-available', autoUpdaterNotAvailableHandler);
-        autoUpdater.on('update-downloaded', autoUpdaterDownloadedHandler);
-
-        // FIX: Track autoUpdater listeners for cleanup
-        eventListeners.push(() => {
-          autoUpdater.removeListener('error', autoUpdaterErrorHandler);
-          autoUpdater.removeListener(
-            'update-available',
-            autoUpdaterAvailableHandler,
-          );
-          autoUpdater.removeListener(
-            'update-not-available',
-            autoUpdaterNotAvailableHandler,
-          );
-          autoUpdater.removeListener(
-            'update-downloaded',
-            autoUpdaterDownloadedHandler,
-          );
-        });
-
-        try {
-          await autoUpdater.checkForUpdatesAndNotify();
-        } catch (e) {
-          logger.error('Update check failed', {
-            error: e.message,
-            stack: e.stack,
-          });
-        }
-      }
-    } catch (error) {
-      logger.error('[UPDATER] Failed to setup auto-updater:', error);
+    // Auto-updates (production only) - handled by ./core/autoUpdater module
+    const autoUpdaterResult = await initializeAutoUpdater(isDev);
+    if (autoUpdaterResult.cleanup) {
+      eventListeners.push(autoUpdaterResult.cleanup);
     }
   } catch (error) {
     // Log full error details for debugging
@@ -1042,365 +816,13 @@ app.whenReady().then(async () => {
 });
 
 // ===== APP LIFECYCLE =====
+// Lifecycle handlers (before-quit, window-all-closed, activate, error handling)
+// are now managed by ./core/lifecycle module and registered via registerLifecycleHandlers()
 logger.info(
   '[STARTUP] Organizer AI App - Main Process Started with Full AI Features',
 );
 logger.info('[UI] Modern UI loaded with GPU acceleration');
-
-// App lifecycle
-app.on('before-quit', async () => {
-  isQuitting = true;
-
-  // HIGH PRIORITY FIX (HIGH-2): Add hard timeout for all cleanup operations
-  // Prevents hanging on shutdown and ensures app quits even if cleanup fails
-  const CLEANUP_TIMEOUT = 5000; // 5 seconds max for all cleanup
-  const cleanupStartTime = Date.now();
-
-  logger.info('[SHUTDOWN] Starting cleanup with 5-second timeout...');
-
-  // Wrap ALL cleanup in a timeout promise
-  const cleanupPromise = (async () => {
-    // Clean up all intervals first
-    if (metricsInterval) {
-      clearInterval(metricsInterval);
-      metricsInterval = null;
-      logger.info('[CLEANUP] Metrics interval cleared');
-    }
-
-    // Clean up download watcher
-    if (downloadWatcher) {
-      try {
-        downloadWatcher.stop();
-        downloadWatcher = null;
-        logger.info('[CLEANUP] Download watcher stopped');
-      } catch (error) {
-        logger.error('[CLEANUP] Failed to stop download watcher:', error);
-      }
-    }
-
-    // Clean up child process listeners
-    for (const cleanup of childProcessListeners) {
-      try {
-        cleanup();
-      } catch (error) {
-        logger.error(
-          '[CLEANUP] Failed to clean up child process listener:',
-          error,
-        );
-      }
-    }
-    childProcessListeners = [];
-
-    // Clean up global process listeners
-    for (const cleanup of globalProcessListeners) {
-      try {
-        cleanup();
-      } catch (error) {
-        logger.error(
-          '[CLEANUP] Failed to clean up global process listener:',
-          error,
-        );
-      }
-    }
-    globalProcessListeners = [];
-
-    // Clean up app event listeners
-    for (const cleanup of eventListeners) {
-      try {
-        cleanup();
-      } catch (error) {
-        logger.error('[CLEANUP] Failed to clean up app event listener:', error);
-      }
-    }
-    eventListeners = [];
-
-    // Clean up IPC listeners (CRITICAL FIX: use targeted cleanup via registry)
-    try {
-      const { removeAllRegistered } = require('./core/ipcRegistry');
-      const stats = removeAllRegistered(ipcMain);
-      logger.info(
-        `[CLEANUP] IPC cleanup: ${stats.handlers} handlers, ${stats.listeners} listeners removed`,
-      );
-    } catch (error) {
-      logger.error('[CLEANUP] Failed to remove IPC listeners:', error);
-    }
-
-    // Clean up ChromaDB event listeners
-    try {
-      const { cleanupEventListeners } = require('./ipc/chromadb');
-      cleanupEventListeners();
-      logger.info('[CLEANUP] ChromaDB event listeners cleaned up');
-    } catch (error) {
-      logger.error(
-        '[CLEANUP] Failed to clean up ChromaDB event listeners:',
-        error,
-      );
-    }
-
-    // Clean up tray
-    destroyTray();
-
-    // Use StartupManager for graceful shutdown
-    try {
-      const startupManager = getStartupManager();
-      await startupManager.shutdown();
-      logger.info('[SHUTDOWN] StartupManager cleanup completed');
-    } catch (error) {
-      logger.error('[SHUTDOWN] StartupManager cleanup failed:', error);
-    }
-
-    // Legacy chromaDbProcess cleanup (fallback if StartupManager didn't handle it)
-    // Uses async killProcess from platformBehavior to avoid blocking main thread
-    if (chromaDbProcess) {
-      const pid = chromaDbProcess.pid;
-      logger.info(`[ChromaDB] Stopping ChromaDB server process (PID: ${pid})`);
-
-      try {
-        // Remove listeners before killing to avoid spurious error events
-        chromaDbProcess.removeAllListeners();
-
-        // Use async platform-aware process killing (no blocking execSync)
-        const {
-          killProcess,
-          isProcessRunning,
-        } = require('./core/platformBehavior');
-        const result = await killProcess(pid);
-
-        if (result.success) {
-          logger.info('[ChromaDB] Process terminated successfully');
-        } else {
-          logger.warn(
-            '[ChromaDB] Process kill may have failed:',
-            result.error?.message,
-          );
-        }
-
-        // Brief async wait then verify (replaces blocking sleep)
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Verify process is actually terminated
-        if (isProcessRunning(pid)) {
-          logger.warn(
-            '[ChromaDB] Process may still be running after kill attempt!',
-          );
-        } else {
-          logger.info('[ChromaDB] Process confirmed terminated');
-        }
-      } catch (e) {
-        logger.error('[ChromaDB] Error stopping ChromaDB process:', e);
-      }
-      chromaDbProcess = null;
-    }
-
-    // Clean up service integration
-    if (serviceIntegration) {
-      try {
-        // Ensure all services are properly shut down
-        await serviceIntegration.shutdown?.();
-        logger.info('[CLEANUP] Service integration shut down');
-      } catch (error) {
-        logger.error(
-          '[CLEANUP] Failed to shut down service integration:',
-          error,
-        );
-      }
-    }
-
-    // Fixed: Clean up settings service file watcher
-    if (settingsService) {
-      try {
-        settingsService.shutdown?.();
-        logger.info('[CLEANUP] Settings service shut down');
-      } catch (error) {
-        logger.error('[CLEANUP] Failed to shut down settings service:', error);
-      }
-    }
-
-    // Clean up system analytics
-    try {
-      systemAnalytics.destroy();
-      logger.info('[CLEANUP] System analytics destroyed');
-    } catch {
-      // Silently ignore destroy errors on quit
-    }
-
-    // Post-shutdown verification: Verify all resources are released
-    const shutdownTimeout = 10000; // 10 seconds max for shutdown
-
-    try {
-      await Promise.race([
-        verifyShutdownCleanup(),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Shutdown verification timeout')),
-            shutdownTimeout,
-          ),
-        ),
-      ]);
-    } catch (error) {
-      logger.warn(
-        '[SHUTDOWN-VERIFY] Verification failed or timed out:',
-        error.message,
-      );
-    }
-  })(); // Close cleanup promise wrapper
-
-  // HIGH PRIORITY FIX (HIGH-2): Race cleanup against timeout
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(
-      () => reject(new Error('Cleanup timeout exceeded')),
-      CLEANUP_TIMEOUT,
-    ),
-  );
-
-  try {
-    await Promise.race([cleanupPromise, timeoutPromise]);
-    const elapsed = Date.now() - cleanupStartTime;
-    logger.info(`[SHUTDOWN] ✅ Cleanup completed successfully in ${elapsed}ms`);
-  } catch (error) {
-    const elapsed = Date.now() - cleanupStartTime;
-    if (error.message === 'Cleanup timeout exceeded') {
-      logger.error(
-        `[SHUTDOWN] ⚠️ Cleanup timed out after ${elapsed}ms (max: ${CLEANUP_TIMEOUT}ms)`,
-      );
-      logger.error(
-        '[SHUTDOWN] Forcing app quit to prevent hanging. Some resources may not be properly released.',
-      );
-    } else {
-      logger.error(
-        `[SHUTDOWN] Cleanup failed after ${elapsed}ms:`,
-        error.message,
-      );
-    }
-  }
-});
-
-/**
- * Verify that all resources are properly released after shutdown
- * @returns {Promise<void>}
- */
-async function verifyShutdownCleanup() {
-  const issues = [];
-
-  // 1. Verify intervals are cleared
-  if (metricsInterval !== null) {
-    issues.push('metricsInterval is not null');
-  }
-
-  // 2. Verify child process listeners are cleared
-  if (childProcessListeners.length > 0) {
-    issues.push(
-      `childProcessListeners still has ${childProcessListeners.length} entries`,
-    );
-  }
-
-  // 3. Verify global process listeners are cleared
-  if (globalProcessListeners.length > 0) {
-    issues.push(
-      `globalProcessListeners still has ${globalProcessListeners.length} entries`,
-    );
-  }
-
-  // 4. Verify app event listeners are cleared
-  if (eventListeners.length > 0) {
-    issues.push(`eventListeners still has ${eventListeners.length} entries`);
-  }
-
-  // 5. Verify ChromaDB process is terminated
-  if (chromaDbProcess !== null) {
-    issues.push('chromaDbProcess is not null');
-    // Try to verify process is actually dead
-    try {
-      if (chromaDbProcess.pid) {
-        process.kill(chromaDbProcess.pid, 0);
-        issues.push(
-          `ChromaDB process ${chromaDbProcess.pid} may still be running`,
-        );
-      }
-    } catch (e) {
-      if (e.code !== 'ESRCH') {
-        // ESRCH means process doesn't exist (good), other errors are issues
-        issues.push(`ChromaDB process check failed: ${e.message}`);
-      }
-    }
-  }
-
-  // 6. Verify service integration is nullified
-  if (serviceIntegration && serviceIntegration.initialized !== false) {
-    issues.push('ServiceIntegration may not be fully shut down');
-  }
-
-  // 7. Verify download watcher is cleared
-  if (downloadWatcher !== null) {
-    issues.push('downloadWatcher is not null');
-  }
-
-  // 8. Verify tray is destroyed
-  if (getTray() !== null) {
-    issues.push('tray is not null');
-  }
-
-  // Log verification results
-  if (issues.length === 0) {
-    logger.info('[SHUTDOWN-VERIFY] ✅ All resources verified as released');
-  } else {
-    logger.warn(
-      `[SHUTDOWN-VERIFY] ⚠️ Found ${issues.length} potential resource leaks:`,
-    );
-    issues.forEach((issue) => logger.warn(`[SHUTDOWN-VERIFY]   - ${issue}`));
-  }
-}
-
-const windowAllClosedHandler = () => {
-  // Use platform abstraction instead of direct isMacOS check
-  const { shouldQuitOnAllWindowsClosed } = require('./core/platformBehavior');
-  if (shouldQuitOnAllWindowsClosed()) {
-    app.quit();
-  }
-};
-app.on('window-all-closed', windowAllClosedHandler);
-
-const activateHandler = () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-};
-app.on('activate', activateHandler);
-
-// Track for cleanup
-eventListeners.push(() => {
-  app.removeListener('window-all-closed', windowAllClosedHandler);
-  app.removeListener('activate', activateHandler);
-});
-
-// Error handling
-logger.info('✅ StratoSort main process initialized');
-
-// Add comprehensive error handling (single registration)
-const uncaughtExceptionHandler = (error) => {
-  logger.error('UNCAUGHT EXCEPTION:', {
-    message: error.message,
-    stack: error.stack,
-  });
-};
-
-const unhandledRejectionHandler = (reason, promise) => {
-  logger.error('UNHANDLED REJECTION', { reason, promise: String(promise) });
-};
-
-process.on('uncaughtException', uncaughtExceptionHandler);
-process.on('unhandledRejection', unhandledRejectionHandler);
-
-// Track for cleanup
-globalProcessListeners.push(() => {
-  process.removeListener('uncaughtException', uncaughtExceptionHandler);
-  process.removeListener('unhandledRejection', unhandledRejectionHandler);
-});
-
-// Keep the process alive for debugging
-logger.debug(
-  '[DEBUG] Process should stay alive. If you see this and the app closes, check for errors above.',
-);
+logger.info('StratoSort main process initialized');
 
 // All Analysis History and System metrics handlers are registered via ./ipc/* modules
 

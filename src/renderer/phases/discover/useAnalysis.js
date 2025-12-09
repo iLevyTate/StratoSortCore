@@ -155,24 +155,37 @@ function showAnalysisCompletionNotification({
 /**
  * Custom hook for analysis operations
  * @param {Object} options - Hook options
+ * @param {Array} options.selectedFiles - Currently selected files
+ * @param {Object} options.fileStates - Current file states map
+ * @param {Array} options.analysisResults - Existing analysis results
+ * @param {boolean} options.isAnalyzing - Whether analysis is in progress
+ * @param {Object} options.analysisProgress - Progress tracking object
+ * @param {Object} options.namingSettings - Naming convention settings
+ * @param {Object} options.setters - State setter functions
+ * @param {Function} options.updateFileState - File state update function
+ * @param {Function} options.addNotification - Notification function
+ * @param {Object} options.actions - Phase actions
  * @returns {Object} Analysis functions and state
  */
-export function useAnalysis({
-  selectedFiles,
-  fileStates,
-  analysisResults,
-  isAnalyzing,
-  analysisProgress,
-  namingSettings,
-  setIsAnalyzing,
-  setAnalysisProgress,
-  setCurrentAnalysisFile,
-  setAnalysisResults,
-  setFileStates,
-  updateFileState,
-  addNotification,
-  actions,
-}) {
+export function useAnalysis(options) {
+  const {
+    selectedFiles,
+    fileStates,
+    analysisResults,
+    isAnalyzing,
+    analysisProgress,
+    namingSettings,
+    setters: {
+      setIsAnalyzing,
+      setAnalysisProgress,
+      setCurrentAnalysisFile,
+      setAnalysisResults,
+      setFileStates,
+    } = {},
+    updateFileState,
+    addNotification,
+    actions,
+  } = options;
   const hasResumedRef = useRef(false);
   const analysisLockRef = useRef(false);
   const [globalAnalysisActive, setGlobalAnalysisActive] = useState(false);
@@ -327,23 +340,20 @@ export function useAnalysis({
       await new Promise((resolve) => setTimeout(resolve, 10));
 
       // Safety timeout
-      const lockTimeout = setTimeout(
-        () => {
-          if (analysisLockRef.current) {
-            logger.warn('Analysis lock timeout, forcing release');
-            analysisLockRef.current = false;
-            if (heartbeatIntervalRef.current) {
-              clearInterval(heartbeatIntervalRef.current);
-              heartbeatIntervalRef.current = null;
-            }
-            if (analysisTimeoutRef.current) {
-              clearTimeout(analysisTimeoutRef.current);
-              analysisTimeoutRef.current = null;
-            }
+      const lockTimeout = setTimeout(() => {
+        if (analysisLockRef.current) {
+          logger.warn('Analysis lock timeout, forcing release');
+          analysisLockRef.current = false;
+          if (heartbeatIntervalRef.current) {
+            clearInterval(heartbeatIntervalRef.current);
+            heartbeatIntervalRef.current = null;
           }
-        },
-        TIMEOUTS.ANALYSIS_LOCK,
-      );
+          if (analysisTimeoutRef.current) {
+            clearTimeout(analysisTimeoutRef.current);
+            analysisTimeoutRef.current = null;
+          }
+        }
+      }, TIMEOUTS.ANALYSIS_LOCK);
 
       setIsAnalyzing(true);
       const initialProgress = {
@@ -384,22 +394,19 @@ export function useAnalysis({
       }, TIMEOUTS.HEARTBEAT_INTERVAL);
 
       // Global timeout
-      analysisTimeoutRef.current = setTimeout(
-        () => {
-          logger.warn('Global analysis timeout (10 min)');
-          if (heartbeatIntervalRef.current) {
-            clearInterval(heartbeatIntervalRef.current);
-            heartbeatIntervalRef.current = null;
-          }
-          addNotification(
-            'Analysis took too long and was stopped.',
-            'warning',
-            5000,
-            'analysis-timeout',
-          );
-        },
-        TIMEOUTS.GLOBAL_ANALYSIS,
-      );
+      analysisTimeoutRef.current = setTimeout(() => {
+        logger.warn('Global analysis timeout (10 min)');
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = null;
+        }
+        addNotification(
+          'Analysis took too long and was stopped.',
+          'warning',
+          5000,
+          'analysis-timeout',
+        );
+      }, TIMEOUTS.GLOBAL_ANALYSIS);
 
       const results = [];
       let maxConcurrent = CONCURRENCY.DEFAULT_WORKERS;
@@ -415,7 +422,10 @@ export function useAnalysis({
 
       const concurrency = Math.max(
         CONCURRENCY.MIN_WORKERS,
-        Math.min(Number(maxConcurrent) || CONCURRENCY.DEFAULT_WORKERS, CONCURRENCY.MAX_WORKERS),
+        Math.min(
+          Number(maxConcurrent) || CONCURRENCY.DEFAULT_WORKERS,
+          CONCURRENCY.MAX_WORKERS,
+        ),
       );
 
       try {

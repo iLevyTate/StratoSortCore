@@ -1,7 +1,11 @@
 const path = require('path');
 const { performance } = require('perf_hooks');
 const { withErrorLogging, withValidation } = require('./ipcWrappers');
-const { safeGet, safeFilePath, ensureArray } = require('../utils/safeAccess');
+const { safeFilePath } = require('../utils/safeAccess');
+const {
+  mapFoldersToCategories,
+  getFolderNamesString,
+} = require('../../shared/folderUtils');
 const { logger: moduleLogger } = require('../../shared/logger');
 let z;
 try {
@@ -71,17 +75,10 @@ function registerAnalysisIpc({
                 folderError.message,
               );
             }
-            const customFolders = ensureArray(folders).filter(
-              (f) => f && (!f.isDefault || f.path),
-            );
-            const folderCategories = customFolders.map((f) => ({
-              name: safeGet(f, 'name', 'Unknown'),
-              description: safeGet(f, 'description', ''),
-              id: safeGet(f, 'id', null),
-            }));
+            const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              folderCategories.map((f) => f.name).join(', '),
+              getFolderNamesString(folderCategories),
             );
             const result = await analyzeDocumentFile(
               filePath,
@@ -224,17 +221,10 @@ function registerAnalysisIpc({
             // Add null check for getCustomFolders
             const folders =
               typeof getCustomFolders === 'function' ? getCustomFolders() : [];
-            const customFolders = ensureArray(folders).filter(
-              (f) => f && (!f.isDefault || f.path),
-            );
-            const folderCategories = customFolders.map((f) => ({
-              name: safeGet(f, 'name', 'Unknown'),
-              description: safeGet(f, 'description', ''),
-              id: safeGet(f, 'id', null),
-            }));
+            const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              folderCategories.map((f) => f.name).join(', '),
+              getFolderNamesString(folderCategories),
             );
             const result = await analyzeDocumentFile(
               filePath,
@@ -334,17 +324,10 @@ function registerAnalysisIpc({
             // Add null check for getCustomFolders
             const folders =
               typeof getCustomFolders === 'function' ? getCustomFolders() : [];
-            const customFolders = ensureArray(folders).filter(
-              (f) => f && (!f.isDefault || f.path),
-            );
-            const folderCategories = customFolders.map((f) => ({
-              name: safeGet(f, 'name', 'Unknown'),
-              description: safeGet(f, 'description', ''),
-              id: safeGet(f, 'id', null),
-            }));
+            const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-IMAGE-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              folderCategories.map((f) => f.name).join(', '),
+              getFolderNamesString(folderCategories),
             );
             const result = await analyzeImageFile(filePath, folderCategories);
             try {
@@ -490,17 +473,10 @@ function registerAnalysisIpc({
             // Add null check for getCustomFolders
             const folders =
               typeof getCustomFolders === 'function' ? getCustomFolders() : [];
-            const customFolders = ensureArray(folders).filter(
-              (f) => f && (!f.isDefault || f.path),
-            );
-            const folderCategories = customFolders.map((f) => ({
-              name: safeGet(f, 'name', 'Unknown'),
-              description: safeGet(f, 'description', ''),
-              id: safeGet(f, 'id', null),
-            }));
+            const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-IMAGE-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              folderCategories.map((f) => f.name).join(', '),
+              getFolderNamesString(folderCategories),
             );
             const result = await analyzeImageFile(filePath, folderCategories);
             try {

@@ -1,4 +1,7 @@
 /**
+ * @jest-environment node
+ */
+/**
  * Tests for UndoRedoService
  * Tests undo/redo functionality, memory management, and file operations
  */

@@ -7,7 +7,7 @@ const {
   SUPPORTED_VIDEO_EXTENSIONS,
   AI_DEFAULTS,
 } = require('../../shared/constants');
-const { TRUNCATION } = require('../../shared/performanceConstants');
+const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
 const { getOllamaModel, loadOllamaConfig } = require('../ollamaUtils');
 const { AppConfig } = require('./documentLlm');
@@ -53,13 +53,7 @@ const CACHE_CONFIG = {
 };
 const ANALYSIS_SIGNATURE_VERSION = 'v2';
 
-// Folder matching configuration constants
-const FOLDER_MATCHING_CONFIG = {
-  // Minimum score threshold for automatic category refinement based on folder match
-  // Files with folder match scores above this threshold will have their category
-  // automatically refined to match the top-scoring folder
-  MIN_SCORE_THRESHOLD: 0.55,
-};
+// Folder match threshold now in THRESHOLDS.FOLDER_MATCH_CONFIDENCE
 
 // In-memory cache of per-file analysis results (path|size|mtimeMs -> result)
 const fileAnalysisCache = new Map();
@@ -82,6 +76,152 @@ const folderMatcher = new FolderMatchingService(chromaDbService);
 
 // Set logger context for this module
 logger.setContext('DocumentAnalysis');
+
+// ============================================================================
+// Helper Functions - Extracted for readability and maintainability
+// ============================================================================
+
+/**
+ * Create a fallback analysis result when AI analysis is unavailable
+ * @param {string} fileName - Original file name
+ * @param {string} fileExtension - File extension
+ * @param {string} purpose - Purpose description
+ * @param {Array} smartFolders - Smart folders for category matching
+ * @param {Object} options - Additional options (confidence, extractionMethod, error)
+ * @returns {Object} Fallback analysis result
+ */
+function createDocumentFallback(
+  fileName,
+  fileExtension,
+  purpose,
+  smartFolders,
+  options = {},
+) {
+  const {
+    confidence = CACHE_CONFIG.FALLBACK_CONFIDENCE,
+    extractionMethod = 'filename_fallback',
+    error = null,
+  } = options;
+
+  const intelligentCategory = getIntelligentCategory(
+    fileName,
+    fileExtension,
+    smartFolders,
+  );
+  const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
+  const safeCategory = intelligentCategory || 'document';
+
+  const result = {
+    purpose:
+      purpose ||
+      `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
+    project: fileName.replace(fileExtension, ''),
+    category: safeCategory,
+    date: new Date().toISOString().split('T')[0],
+    keywords: intelligentKeywords || [],
+    confidence,
+    suggestedName: safeSuggestedName(fileName, fileExtension),
+    extractionMethod,
+  };
+
+  if (error) {
+    result.error = error;
+  }
+
+  return result;
+}
+
+/**
+ * Apply semantic folder matching using ChromaDB embeddings
+ * @param {Object} analysis - Current analysis result
+ * @param {string} filePath - File path
+ * @param {string} fileName - File name
+ * @param {string} extractedText - Extracted text content
+ * @param {Array} smartFolders - Available smart folders
+ */
+async function applyDocumentFolderMatching(
+  analysis,
+  filePath,
+  fileName,
+  extractedText,
+  smartFolders,
+) {
+  if (!chromaDbService) {
+    logger.warn(
+      '[DocumentAnalysis] ChromaDB service not available, skipping folder matching',
+    );
+    return;
+  }
+
+  await chromaDbService.initialize();
+
+  if (folderMatcher && !folderMatcher.embeddingCache?.initialized) {
+    folderMatcher.initialize();
+    logger.debug('[DocumentAnalysis] FolderMatchingService initialized');
+  }
+
+  if (smartFolders && smartFolders.length > 0) {
+    logger.debug('[DocumentAnalysis] Upserting folder embeddings', {
+      folderCount: smartFolders.length,
+    });
+    await folderMatcher.batchUpsertFolders(smartFolders);
+  }
+
+  const fileId = `file:${filePath}`;
+  const summaryForEmbedding = [
+    analysis.project,
+    analysis.purpose,
+    (analysis.keywords || []).join(' '),
+    extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  logger.debug('[DocumentAnalysis] Generating embedding for folder matching', {
+    fileId,
+    summaryLength: summaryForEmbedding.length,
+  });
+
+  const { vector, model } = await folderMatcher.embedText(
+    summaryForEmbedding || '',
+  );
+  const candidates = await folderMatcher.matchVectorToFolders(vector, 5);
+
+  embeddingQueue.enqueue({
+    id: fileId,
+    vector,
+    model,
+    meta: { path: filePath, name: fileName },
+    updatedAt: new Date().toISOString(),
+  });
+
+  if (Array.isArray(candidates) && candidates.length > 0) {
+    logger.debug('[DocumentAnalysis] Folder matching results', {
+      fileId,
+      candidateCount: candidates.length,
+      topScore: candidates[0]?.score,
+      topFolder: candidates[0]?.name,
+    });
+
+    const top = candidates[0];
+    if (top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
+      logger.info(
+        '[DocumentAnalysis] Refining category based on folder match',
+        {
+          originalCategory: analysis.category,
+          newCategory: top.name,
+          score: top.score,
+        },
+      );
+      analysis.category = top.name;
+      analysis.suggestedFolder = top.name;
+      analysis.destinationFolder = top.path || top.name;
+    }
+    analysis.folderMatchCandidates = candidates;
+  } else {
+    logger.debug('[DocumentAnalysis] No folder matches found', { fileId });
+  }
+}
 
 /**
  * Analyzes a document file using AI or fallback methods
@@ -145,51 +285,20 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
     const connectionCheck = await modelVerifier.checkOllamaConnection();
     if (!connectionCheck.connected) {
       logger.warn(
-        `Ollama unavailable (${connectionCheck.error}). Using filename-based analysis for ${fileName}.`,
+        `Ollama unavailable (${connectionCheck.error}). Using filename-based analysis.`,
       );
-      // FIX: Corrected arguments - was passing stray numeric literals (96, 97)
-      const intelligentCategory = getIntelligentCategory(
+      return createDocumentFallback(
         fileName,
         fileExtension,
+        null,
         smartFolders,
       );
-      const intelligentKeywords = getIntelligentKeywords(
-        fileName,
-        fileExtension,
-      );
-      // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
-      const safeCategory = intelligentCategory || 'document';
-      return {
-        purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
-        project: fileName.replace(fileExtension, ''),
-        category: safeCategory,
-        date: new Date().toISOString().split('T')[0],
-        keywords: intelligentKeywords,
-        confidence: CACHE_CONFIG.FALLBACK_CONFIDENCE,
-        suggestedName: safeSuggestedName(fileName, fileExtension),
-        extractionMethod: 'filename_fallback',
-      };
     }
   } catch (error) {
     logger.error('Pre-flight verification failed:', error);
-    const intelligentCategory = getIntelligentCategory(
-      fileName,
-      fileExtension,
-      smartFolders,
-    );
-    const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
-    // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
-    const safeCategory = intelligentCategory || 'document';
-    return {
-      purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
-      project: fileName.replace(fileExtension, ''),
-      category: safeCategory,
-      date: new Date().toISOString().split('T')[0],
-      keywords: intelligentKeywords || [],
+    return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
       confidence: 65,
-      suggestedName: safeSuggestedName(fileName, fileExtension),
-      extractionMethod: 'filename_fallback',
-    };
+    });
   }
 
   // FIX: Flattened nested try/catch - separate cache logic from main extraction
@@ -330,7 +439,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           length: extractedText.length,
         });
       } catch (officeError) {
-        // CRITICAL FIX: Provide detailed error information instead of generic "Unknown analysis error"
+        // Provide detailed error information for debugging
         const errorMessage = officeError?.message || 'Unknown extraction error';
         const errorCode = officeError?.code || 'UNKNOWN_ERROR';
         const errorDetails = {
@@ -408,35 +517,21 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         extractionMethod: 'archive',
       };
     } else {
-      // Placeholder for other document types
+      // No content parser available - use filename-based fallback
       logger.warn(`[FILENAME-FALLBACK] No content parser`, {
         extension: fileExtension,
         fileName,
       });
-
-      // Intelligent category detection based on filename and extension
-      const intelligentCategory = getIntelligentCategory(
+      return createDocumentFallback(
         fileName,
         fileExtension,
+        null,
         smartFolders,
+        {
+          confidence: 75,
+          extractionMethod: 'filename',
+        },
       );
-      const intelligentKeywords = getIntelligentKeywords(
-        fileName,
-        fileExtension,
-      );
-      // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
-      const safeCategory = intelligentCategory || 'document';
-
-      return {
-        purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document`,
-        project: fileName.replace(fileExtension, ''),
-        category: safeCategory,
-        date: new Date().toISOString().split('T')[0],
-        keywords: intelligentKeywords,
-        confidence: 75, // Higher confidence for pattern-based detection
-        suggestedName: safeSuggestedName(fileName, fileExtension),
-        extractionMethod: 'filename', // Mark that this used filename-only analysis
-      };
     }
 
     // If PDF had no extractable text, attempt OCR on a rasterized page
@@ -480,142 +575,20 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         () => analyzeTextWithOllama(extractedText, fileName, smartFolders),
       );
 
-      // Attempt semantic folder refinement
+      // Semantic folder refinement using embeddings (delegated to helper)
       try {
-        // CRITICAL FIX: Ensure ChromaDB is initialized before folder matching
-        if (!chromaDbService) {
-          logger.warn(
-            '[DocumentAnalysis] ChromaDB service not available, skipping folder matching',
-          );
-        } else {
-          // CRITICAL FIX: Initialize ChromaDB service first
-          await chromaDbService.initialize();
-
-          // Fixed: Initialize FolderMatchingService on first use
-          if (folderMatcher && !folderMatcher.embeddingCache?.initialized) {
-            folderMatcher.initialize();
-            logger.debug(
-              '[DocumentAnalysis] FolderMatchingService initialized',
-            );
-          }
-
-          // Ensure folder embeddings exist
-          if (smartFolders && smartFolders.length > 0) {
-            logger.debug('[DocumentAnalysis] Upserting folder embeddings', {
-              folderCount: smartFolders.length,
-            });
-            // BATCH OPTIMIZATION: Use batch upsert instead of individual calls
-            await folderMatcher.batchUpsertFolders(smartFolders);
-          }
-
-          // Create a file id for embedding lookup using path hash-like identifier
-          const fileId = `file:${filePath}`;
-          const summaryForEmbedding = [
-            analysis.project,
-            analysis.purpose,
-            (analysis.keywords || []).join(' '),
-            extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX),
-          ]
-            .filter(Boolean)
-            .join('\n');
-
-          logger.debug(
-            '[DocumentAnalysis] Generating embedding for folder matching',
-            {
-              fileId,
-              summaryLength: summaryForEmbedding.length,
-            },
-          );
-
-          // Generate embedding immediately using in-memory service
-          const { vector, model } = await folderMatcher.embedText(
-            summaryForEmbedding || '',
-          );
-
-          // Match against folders using the vector directly (no DB flush needed)
-          logger.debug(
-            '[DocumentAnalysis] Querying folder matches using vector',
-            {
-              fileId,
-            },
-          );
-          const candidates = await folderMatcher.matchVectorToFolders(
-            vector,
-            5,
-          );
-
-          // Queue embedding for batch persistence (decoupled from matching)
-          embeddingQueue.enqueue({
-            id: fileId,
-            vector,
-            model,
-            meta: { path: filePath, name: fileName },
-            updatedAt: new Date().toISOString(),
-          });
-
-          if (Array.isArray(candidates) && candidates.length > 0) {
-            logger.debug('[DocumentAnalysis] Folder matching results', {
-              fileId,
-              candidateCount: candidates.length,
-              topScore: candidates[0]?.score,
-              topFolder: candidates[0]?.name,
-            });
-
-            const top = candidates[0];
-            // Use configurable threshold instead of hardcoded value
-            if (
-              top &&
-              top.score >= FOLDER_MATCHING_CONFIG.MIN_SCORE_THRESHOLD
-            ) {
-              logger.info(
-                '[DocumentAnalysis] Refining category based on folder match',
-                {
-                  originalCategory: analysis.category,
-                  newCategory: top.name,
-                  score: top.score,
-                  folderPath: top.path,
-                },
-              );
-              // CRITICAL FIX: Ensure category and destination folder match
-              // Category should always be the folder name
-              analysis.category = top.name;
-              // Suggested folder name for display
-              analysis.suggestedFolder = top.name;
-              // Destination folder path (or name if path missing) - should correspond to category
-              analysis.destinationFolder = top.path || top.name;
-
-              // Validation: Log if there's a mismatch between category and destination folder name
-              if (
-                top.path &&
-                !top.path.includes(top.name) &&
-                top.path !== top.name
-              ) {
-                logger.debug(
-                  '[DocumentAnalysis] Destination folder path differs from category name',
-                  {
-                    category: top.name,
-                    destinationPath: top.path,
-                    note: 'This is expected if path contains full directory path',
-                  },
-                );
-              }
-            }
-            analysis.folderMatchCandidates = candidates;
-          } else {
-            logger.debug('[DocumentAnalysis] No folder matches found', {
-              fileId,
-            });
-          }
-        }
-      } catch (e) {
-        // CRITICAL FIX: Log errors instead of silently swallowing them
-        logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
-          error: e.message,
-          errorStack: e.stack,
+        await applyDocumentFolderMatching(
+          analysis,
           filePath,
           fileName,
+          extractedText,
+          smartFolders,
+        );
+      } catch (e) {
+        logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
+          error: e.message,
+          filePath,
         });
-        // Non-fatal; continue without refinement
       }
 
       if (analysis && !analysis.error) {
@@ -685,27 +658,9 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       path: filePath,
       error: error.message,
     });
-    // Graceful fallback to filename-based analysis on any failure
-    const intelligentCategory = getIntelligentCategory(
-      fileName,
-      fileExtension,
-      smartFolders,
-    );
-    const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
-    // BUG FIX: Add null/undefined check for intelligentCategory to prevent crashes
-    const safeCategory = intelligentCategory || 'document';
-    return {
-      purpose: `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
-      project: fileName.replace(fileExtension, ''),
-      category: safeCategory,
-      date: new Date().toISOString().split('T')[0],
-      keywords: intelligentKeywords,
+    return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
       confidence: 60,
-      suggestedName: fileName
-        .replace(fileExtension, '')
-        .replace(/[^a-zA-Z0-9_-]/g, '_'),
-      extractionMethod: 'filename_fallback',
-    };
+    });
   }
 }
 

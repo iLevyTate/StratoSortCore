@@ -46,6 +46,21 @@ jest.mock('../src/main/services/chromadb', () => ({
   }),
 }));
 
+// Mock ServiceContainer to provide chromaDb service
+jest.mock('../src/main/services/ServiceContainer', () => ({
+  container: {
+    resolve: jest.fn().mockReturnValue({
+      getServerConfig: jest.fn().mockReturnValue({
+        host: '127.0.0.1',
+        port: 8000,
+      }),
+    }),
+  },
+  ServiceIds: {
+    CHROMA_DB: 'chromaDb',
+  },
+}));
+
 describe('chromaService', () => {
   let chromaService;
   let axios;
@@ -112,7 +127,7 @@ describe('chromaService', () => {
 
       expect(axios.get).toHaveBeenCalledWith(
         expect.stringContaining('http://127.0.0.1:8000'),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -129,7 +144,7 @@ describe('chromaService', () => {
 
       expect(freshAxios.get).toHaveBeenCalledWith(
         expect.stringContaining('http://custom:9000'),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -179,7 +194,7 @@ describe('chromaService', () => {
         expect.objectContaining({
           maxRetries: 2,
           initialDelay: 500,
-        })
+        }),
       );
     });
   });
@@ -341,7 +356,7 @@ describe('chromaService', () => {
           chromadbDependencyMissing: false,
           cachedChromaSpawnPlan: null,
           setCachedSpawnPlan: jest.fn(),
-        })
+        }),
       ).rejects.toThrow('No viable ChromaDB startup plan found');
     });
 
@@ -377,7 +392,7 @@ describe('chromaService', () => {
 
       expect(mockProcess.stdout.on).toHaveBeenCalledWith(
         'data',
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -400,7 +415,7 @@ describe('chromaService', () => {
 
       expect(mockProcess.stderr.on).toHaveBeenCalledWith(
         'data',
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -421,7 +436,10 @@ describe('chromaService', () => {
         setCachedSpawnPlan: jest.fn(),
       });
 
-      expect(mockProcess.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockProcess.on).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function),
+      );
     });
 
     test('sets up exit handler that updates status', async () => {
@@ -443,7 +461,7 @@ describe('chromaService', () => {
 
       // Find and call the exit handler
       const exitCall = mockProcess.on.mock.calls.find(
-        (call) => call[0] === 'exit'
+        (call) => call[0] === 'exit',
       );
       const exitHandler = exitCall[1];
       exitHandler(0, null);

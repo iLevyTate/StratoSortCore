@@ -12,43 +12,14 @@ import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
 import { Button, Card } from '../components/ui';
-
-// Inline SVG Icons
-const FolderOpenIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
-  </svg>
-);
-
-const BarChart3Icon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-  </svg>
-);
-
-const CheckCircle2Icon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const InboxIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-  </svg>
-);
-
-const FileStackIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-  </svg>
-);
-
-const SparklesIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-  </svg>
-);
+import {
+  FolderOpenIcon,
+  BarChart3Icon,
+  CheckCircle2Icon,
+  InboxIcon,
+  FileStackIcon,
+  SparklesIcon,
+} from '../components/icons';
 import {
   StatusOverview,
   TargetFolderList,
@@ -276,11 +247,30 @@ function OrganizePhase() {
   ]);
 
   return (
-    <div className="organize-page phase-container bg-white" style={{ paddingBottom: 'var(--spacing-spacious)' }}>
-      <div className="container-responsive flex flex-col flex-1 min-h-0" style={{ gap: 'var(--spacing-default)', paddingTop: 'var(--spacing-default)', paddingBottom: 'var(--spacing-default)' }}>
+    <div
+      className="organize-page phase-container bg-white"
+      style={{ paddingBottom: 'var(--spacing-spacious)' }}
+    >
+      <div
+        className="container-responsive flex flex-col flex-1 min-h-0"
+        style={{
+          gap: 'var(--spacing-default)',
+          paddingTop: 'var(--spacing-default)',
+          paddingBottom: 'var(--spacing-default)',
+        }}
+      >
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0" style={{ gap: 'var(--spacing-cozy)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-compact)' }}>
+        <div
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0"
+          style={{ gap: 'var(--spacing-cozy)' }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--spacing-compact)',
+            }}
+          >
             <h1 className="heading-primary flex items-center gap-3">
               <FileStackIcon className="w-7 h-7 text-stratosort-blue" />
               Review & Organize
@@ -290,7 +280,14 @@ function OrganizePhase() {
               batch once you&apos;re ready.
             </p>
             {isAnalysisRunning && (
-              <div className="flex items-center border border-stratosort-blue/30 bg-stratosort-blue/5 text-sm text-stratosort-blue" style={{ gap: 'var(--spacing-cozy)', borderRadius: 'var(--radius-lg)', padding: 'var(--spacing-cozy) var(--spacing-default)' }}>
+              <div
+                className="flex items-center border border-stratosort-blue/30 bg-stratosort-blue/5 text-sm text-stratosort-blue"
+                style={{
+                  gap: 'var(--spacing-cozy)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: 'var(--spacing-cozy) var(--spacing-default)',
+                }}
+              >
                 <span className="loading-spinner h-5 w-5 border-t-transparent" />
                 Analysis continuing in background:{' '}
                 {analysisProgressFromDiscover.current}/
@@ -319,10 +316,14 @@ function OrganizePhase() {
             <BarChart3Icon className="w-4 h-4" />
             <span>{unprocessedFiles.length} Ready</span>
             {processedFiles.length > 0 && (
-              <span className="text-stratosort-success">• {processedFiles.length} Done</span>
+              <span className="text-stratosort-success">
+                • {processedFiles.length} Done
+              </span>
             )}
             {failedCount > 0 && (
-              <span className="text-stratosort-danger">• {failedCount} Failed</span>
+              <span className="text-stratosort-danger">
+                • {failedCount} Failed
+              </span>
             )}
           </button>
           {processedFiles.length > 0 && (
@@ -337,7 +338,10 @@ function OrganizePhase() {
         </div>
 
         {/* Main Content - Files Ready for Organization takes primary focus */}
-        <div className="flex-1 min-h-0 flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
+        <div
+          className="flex-1 min-h-0 flex flex-col"
+          style={{ gap: 'var(--spacing-default)' }}
+        >
           {/* Inline Bulk Operations when files selected */}
           {unprocessedFiles.length > 0 && selectedFiles.size > 0 && (
             <div className="surface-panel p-[var(--panel-padding)] flex-shrink-0">
@@ -365,7 +369,8 @@ function OrganizePhase() {
                 </h2>
                 {unprocessedFiles.length > 0 && (
                   <span className="px-2.5 py-1 text-xs font-medium bg-stratosort-blue/10 text-stratosort-blue rounded-full">
-                    {unprocessedFiles.length} file{unprocessedFiles.length !== 1 ? 's' : ''}
+                    {unprocessedFiles.length} file
+                    {unprocessedFiles.length !== 1 ? 's' : ''}
                   </span>
                 )}
               </div>
@@ -374,7 +379,9 @@ function OrganizePhase() {
                   onClick={selectAllFiles}
                   className="text-sm text-stratosort-blue hover:text-stratosort-blue/80 font-medium transition-colors"
                 >
-                  {selectedFiles.size === unprocessedFiles.length ? 'Deselect All' : 'Select All'}
+                  {selectedFiles.size === unprocessedFiles.length
+                    ? 'Deselect All'
+                    : 'Select All'}
                 </button>
               )}
             </div>
@@ -437,7 +444,8 @@ function OrganizePhase() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-system-gray-700 font-medium">
-                    Ready to move {readyFilesCount} file{readyFilesCount !== 1 ? 's' : ''}
+                    Ready to move {readyFilesCount} file
+                    {readyFilesCount !== 1 ? 's' : ''}
                   </p>
                   <p className="text-xs text-system-gray-500">
                     You can undo this operation if needed
@@ -456,11 +464,20 @@ function OrganizePhase() {
                     onClick={handleOrganizeFiles}
                     variant="success"
                     className="text-base"
-                    style={{ padding: 'var(--spacing-cozy) var(--spacing-relaxed)' }}
+                    style={{
+                      padding: 'var(--spacing-cozy) var(--spacing-relaxed)',
+                    }}
                     disabled={readyFilesCount === 0 || isOrganizing}
                     isLoading={isOrganizing}
                   >
-                    {isOrganizing ? 'Organizing...' : <><SparklesIcon className="w-4 h-4 mr-1.5 inline" /> Organize Files Now</>}
+                    {isOrganizing ? (
+                      'Organizing...'
+                    ) : (
+                      <>
+                        <SparklesIcon className="w-4 h-4 mr-1.5 inline" />{' '}
+                        Organize Files Now
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
@@ -469,7 +486,13 @@ function OrganizePhase() {
         </div>
 
         {/* Footer Buttons */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-auto border-t border-system-gray-200/50" style={{ gap: 'var(--spacing-cozy)', paddingTop: 'var(--spacing-default)' }}>
+        <div
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-auto border-t border-system-gray-200/50"
+          style={{
+            gap: 'var(--spacing-cozy)',
+            paddingTop: 'var(--spacing-default)',
+          }}
+        >
           <Button
             onClick={() => actions.advancePhase(PHASES.DISCOVER)}
             variant="secondary"
@@ -519,7 +542,10 @@ function OrganizePhase() {
                 <AnalysisDetails analysis={viewingFileDetails.analysis} />
               </div>
             </Card>
-            <div className="flex justify-end" style={{ paddingTop: 'var(--spacing-default)' }}>
+            <div
+              className="flex justify-end"
+              style={{ paddingTop: 'var(--spacing-default)' }}
+            >
               <Button
                 onClick={() => setViewingFileDetails(null)}
                 variant="secondary"
@@ -540,7 +566,8 @@ function OrganizePhase() {
       >
         <div className="flex flex-col gap-[var(--spacing-default)]">
           <p className="text-sm text-system-gray-600">
-            Files will be organized into these destination folders based on their content.
+            Files will be organized into these destination folders based on
+            their content.
           </p>
           <div className="max-h-[60vh] overflow-y-auto modern-scrollbar">
             <TargetFolderList
@@ -549,7 +576,10 @@ function OrganizePhase() {
             />
           </div>
           <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
-            <Button onClick={() => setShowFoldersModal(false)} variant="secondary">
+            <Button
+              onClick={() => setShowFoldersModal(false)}
+              variant="secondary"
+            >
               Close
             </Button>
           </div>
@@ -570,7 +600,10 @@ function OrganizePhase() {
             failedCount={failedCount}
           />
           <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
-            <Button onClick={() => setShowStatusModal(false)} variant="secondary">
+            <Button
+              onClick={() => setShowStatusModal(false)}
+              variant="secondary"
+            >
               Close
             </Button>
           </div>
@@ -586,13 +619,18 @@ function OrganizePhase() {
       >
         <div className="flex flex-col gap-[var(--spacing-default)]">
           <p className="text-sm text-system-gray-600">
-            {processedFiles.length} file{processedFiles.length !== 1 ? 's have' : ' has'} been successfully organized.
+            {processedFiles.length} file
+            {processedFiles.length !== 1 ? 's have' : ' has'} been successfully
+            organized.
           </p>
           <div className="max-h-[60vh] overflow-y-auto modern-scrollbar">
             <VirtualizedProcessedFiles files={processedFiles} />
           </div>
           <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
-            <Button onClick={() => setShowHistoryModal(false)} variant="secondary">
+            <Button
+              onClick={() => setShowHistoryModal(false)}
+              variant="secondary"
+            >
               Close
             </Button>
           </div>

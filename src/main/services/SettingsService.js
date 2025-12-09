@@ -3,7 +3,10 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { backupAndReplace, atomicFileOps } = require('../../shared/atomicFileOperations');
+const {
+  backupAndReplace,
+  atomicFileOps,
+} = require('../../shared/atomicFileOperations');
 const {
   validateSettings,
   sanitizeSettings,
@@ -846,12 +849,20 @@ class SettingsService {
   }
 }
 
-function getService() {
+/**
+ * Get singleton instance of SettingsService
+ * @returns {SettingsService}
+ */
+function getInstance() {
   if (!singletonInstance) {
     singletonInstance = new SettingsService();
   }
   return singletonInstance;
 }
 
+// Backwards compatibility alias
+const getService = getInstance;
+
 module.exports = SettingsService;
-module.exports.getService = getService;
+module.exports.getInstance = getInstance;
+module.exports.getService = getService; // Deprecated: use getInstance

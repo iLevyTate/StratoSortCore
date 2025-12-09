@@ -92,3 +92,6 @@ docs/.doctrees/
 # Project data and local artifacts
 Documents/
 tmpUserData/
+
+# Internal planning documents
+.internal/
