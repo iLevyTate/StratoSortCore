@@ -7,6 +7,7 @@ import React, {
   memo,
 } from 'react';
 import PropTypes from 'prop-types';
+import { ChevronRight } from 'lucide-react';
 import { logger } from '../../../shared/logger';
 
 logger.setContext('Collapsible');
@@ -93,7 +94,7 @@ const Collapsible = memo(function Collapsible({
     : 'px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.9)]';
 
   return (
-    <section className={`${sectionClasses} flex flex-col min-h-0`}>
+    <section className={`${sectionClasses} flex flex-col flex-shrink-0`}>
       <div
         className={`flex items-center justify-between gap-4 ${headerPadding} flex-shrink-0`}
       >
@@ -101,17 +102,20 @@ const Collapsible = memo(function Collapsible({
         <div className="flex items-center gap-3 text-xs text-system-gray-500">
           <button
             type="button"
-            className="px-3 py-1.5 rounded-md border border-border-soft bg-white/80 hover:bg-system-gray-100 hover:border-system-gray-300 text-system-gray-600 hover:text-system-gray-800 transition-all duration-150 font-medium flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-md border border-border-soft bg-white/80 hover:bg-system-gray-100 hover:border-system-gray-300 text-system-gray-600 hover:text-system-gray-800 transition-all font-medium flex items-center gap-1.5"
+            style={{ transitionDuration: 'var(--duration-fast)' }}
             onClick={toggle}
             aria-expanded={isOpen}
             aria-controls={contentId}
             aria-label={isOpen ? 'Collapse section' : 'Expand section'}
           >
-            <span
-              className={`transition-transform duration-200 ${isOpen ? 'rotate-90' : 'rotate-0'}`}
-            >
-              ▶
-            </span>
+            <ChevronRight
+              className="w-4 h-4 transition-transform"
+              style={{
+                transitionDuration: 'var(--duration-normal)',
+                transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)'
+              }}
+            />
             {isOpen ? 'Collapse' : 'Expand'}
           </button>
           {actions ? (
@@ -137,7 +141,7 @@ const Collapsible = memo(function Collapsible({
         >
           {collapsedPreview || (
             <div className="flex items-center gap-2 py-2 border-t border-border-soft/50">
-              <span className="text-system-gray-400">▸</span>
+              <ChevronRight className="w-3 h-3 text-system-gray-500" />
               <span className="italic">Click Expand to view content</span>
             </div>
           )}

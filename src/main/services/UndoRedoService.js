@@ -1,6 +1,5 @@
 const fs = require('fs').promises;
 const path = require('path');
-const posixPath = path.posix;
 const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
@@ -9,27 +8,18 @@ logger.setContext('UndoRedoService');
 
 const normalizePath = (filePath) => {
   if (typeof filePath !== 'string') return filePath;
-  // Ensure forward slashes so memfs (used in tests) resolves paths reliably on Windows
-  let normalized = posixPath.normalize(filePath).replace(/\\/g, '/');
-  normalized = normalized.replace(/\/{2,}/g, '/');
-  if (!normalized.startsWith('/')) {
-    normalized = `/${normalized}`;
-  }
-  return normalized;
+  return path.resolve(filePath);
 };
 
+const { container, ServiceIds } = require('./ServiceContainer');
+
 // Lazy-load ChromaDB to avoid circular dependencies
-let chromaDbService = null;
 function getChromaDbService() {
-  if (!chromaDbService) {
-    try {
-      const { getInstance } = require('./chromadb');
-      chromaDbService = getInstance();
-    } catch {
-      // ChromaDB not available
-    }
+  try {
+    return container.tryResolve(ServiceIds.CHROMA_DB);
+  } catch {
+    return null;
   }
-  return chromaDbService;
 }
 
 // Helper to generate secure random IDs
@@ -54,7 +44,7 @@ class UndoRedoService {
 
   async ensureParentDirectory(filePath) {
     const normalizedPath = normalizePath(filePath);
-    const parentDirectory = posixPath.dirname(normalizedPath);
+    const parentDirectory = path.dirname(normalizedPath);
     await fs.mkdir(parentDirectory, { recursive: true });
   }
 
@@ -767,16 +757,16 @@ class UndoRedoService {
   async createBackup(filePath) {
     const normalizedPath = normalizePath(filePath);
     const backupDir = normalizePath(
-      posixPath.join(this.userDataPath, 'undo-backups'),
+      path.join(this.userDataPath, 'undo-backups'),
     );
-    await this.ensureParentDirectory(posixPath.join(backupDir, 'dummy'));
+    await this.ensureParentDirectory(path.join(backupDir, 'dummy'));
 
     // Create unique backup filename with timestamp and secure random component
-    const originalName = posixPath.basename(normalizedPath);
+    const originalName = path.basename(normalizedPath);
     const timestamp = Date.now();
     const randomId = crypto.randomBytes(4).toString('hex');
     const backupName = `${timestamp}_${randomId}_${originalName}`;
-    const backupPath = normalizePath(posixPath.join(backupDir, backupName));
+    const backupPath = normalizePath(path.join(backupDir, backupName));
 
     // Verify source file exists before attempting backup
     if (!(await this.fileExists(normalizedPath))) {

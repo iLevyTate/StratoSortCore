@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from 'react';
 import PropTypes from 'prop-types';
+import { Search, Eye, ClipboardList, CheckCircle, Target, Zap, Lightbulb, BarChart3, Folder } from 'lucide-react';
 import { logger } from '../../../shared/logger';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
@@ -20,10 +21,10 @@ logger.setContext('SmartOrganizer');
 
 // FIX: Move steps array outside component to prevent recreation on every render
 const ORGANIZATION_STEPS = [
-  { id: 'analyze', label: 'Analyze', icon: '🔍' },
-  { id: 'review', label: 'Review', icon: '👀' },
-  { id: 'preview', label: 'Preview', icon: '📋' },
-  { id: 'organize', label: 'Organize', icon: '✅' },
+  { id: 'analyze', label: 'Analyze', Icon: Search },
+  { id: 'review', label: 'Review', Icon: Eye },
+  { id: 'preview', label: 'Preview', Icon: ClipboardList },
+  { id: 'organize', label: 'Organize', Icon: CheckCircle },
 ];
 
 /**
@@ -223,10 +224,10 @@ function SmartOrganizer({
               className={`flex items-center justify-center w-10 h-10 rounded-full ${
                 currentStep === step.id
                   ? 'bg-stratosort-blue text-white'
-                  : 'bg-gray-200 text-gray-600'
+                  : 'bg-system-gray-200 text-system-gray-600'
               }`}
             >
-              <span>{step.icon}</span>
+              <step.Icon className="w-5 h-5" />
             </div>
             <div className="ml-2 mr-4">
               <span
@@ -238,7 +239,7 @@ function SmartOrganizer({
               </span>
             </div>
             {index < ORGANIZATION_STEPS.length - 1 && (
-              <div className="w-8 h-0.5 bg-gray-300 mr-4" />
+              <div className="w-8 h-0.5 bg-system-gray-300 mr-4" />
             )}
           </div>
         ))}
@@ -248,17 +249,25 @@ function SmartOrganizer({
   );
 
   // FIX: Memoize average confidence calculation to prevent recalculation on every render
+  const normalizeConfidencePercent = (value) => {
+    if (!Number.isFinite(value)) return 0;
+    const normalized = value > 1 ? value : value * 100;
+    return Math.round(Math.min(100, Math.max(0, normalized)));
+  };
+
   const averageConfidence = useMemo(() => {
     if (files.length === 1) {
       const suggestion = suggestions[files[0]?.path];
-      return suggestion ? Math.round(suggestion.confidence * 100) : 0;
+      return suggestion
+        ? normalizeConfidencePercent(suggestion.confidence)
+        : 0;
     } else if (batchSuggestions?.groups?.length > 0) {
       const avg =
         batchSuggestions.groups.reduce(
           (sum, group) => sum + (group.confidence || 0),
           0,
         ) / batchSuggestions.groups.length;
-      return Math.round(avg * 100);
+      return normalizeConfidencePercent(avg);
     }
     return 0;
   }, [files, suggestions, batchSuggestions]);
@@ -278,26 +287,26 @@ function SmartOrganizer({
 
         <div className="flex items-center gap-2">
           <span className="text-sm text-system-gray-600">Mode:</span>
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="flex bg-system-gray-100 rounded-lg p-1">
             <button
-              className={`px-3 py-1 text-sm rounded ${
+              className={`px-3 py-1 text-sm rounded-md flex items-center gap-1.5 ${
                 mode === 'quick'
                   ? 'bg-white text-stratosort-blue font-medium shadow-sm'
-                  : 'text-gray-600'
+                  : 'text-system-gray-600'
               }`}
               onClick={() => setMode('quick')}
             >
-              ⚡ Quick
+              <Zap className="w-3.5 h-3.5" /> Quick
             </button>
             <button
-              className={`px-3 py-1 text-sm rounded ${
+              className={`px-3 py-1 text-sm rounded-md flex items-center gap-1.5 ${
                 mode === 'detailed'
                   ? 'bg-white text-stratosort-blue font-medium shadow-sm'
-                  : 'text-gray-600'
+                  : 'text-system-gray-600'
               }`}
               onClick={() => setMode('detailed')}
             >
-              🔍 Detailed
+              <Search className="w-3.5 h-3.5" /> Detailed
             </button>
           </div>
         </div>
@@ -319,7 +328,9 @@ function SmartOrganizer({
             </div>
           ) : (
             <div className="text-center py-8">
-              <div className="text-6xl mb-4">🎯</div>
+              <div className="mb-4 flex justify-center">
+                <Target className="w-16 h-16 text-stratosort-blue" />
+              </div>
               <h3 className="text-xl font-medium mb-2">Ready to Organize!</h3>
               <p className="text-system-gray-600 mb-6">
                 {mode === 'quick'
@@ -335,7 +346,7 @@ function SmartOrganizer({
                     onClick={handleQuickOrganize}
                     className="bg-stratosort-blue hover:bg-stratosort-blue/90"
                   >
-                    ⚡ Quick Organize
+                    <Zap className="w-4 h-4 mr-1.5" /> Quick Organize
                   </Button>
                 ) : (
                   <Button
@@ -360,9 +371,9 @@ function SmartOrganizer({
         <div className="space-y-4">
           {/* Folder Health Check */}
           {folderImprovements.length > 0 && (
-            <Card className="p-4 bg-yellow-50 border-yellow-200">
+            <Card className="p-4 bg-stratosort-warning/5 border-stratosort-warning/20">
               <div className="flex items-start gap-3">
-                <span className="text-2xl">💡</span>
+                <Lightbulb className="w-6 h-6 text-stratosort-warning flex-shrink-0" />
                 <div className="flex-1">
                   <h4 className="font-medium text-system-gray-900">
                     Folder Structure Improvements Available
@@ -447,12 +458,12 @@ function SmartOrganizer({
 
       {/* Quick Tips */}
       {currentStep === 'analyze' && !isAnalyzing && (
-        <Card className="p-4 bg-blue-50 border-blue-200">
+        <Card className="p-4 bg-stratosort-blue/5 border-stratosort-blue/20">
           <div className="flex items-start gap-3">
-            <span className="text-xl">💡</span>
+            <Lightbulb className="w-5 h-5 text-stratosort-blue flex-shrink-0" />
             <div>
-              <h4 className="font-medium text-blue-900">Pro Tip</h4>
-              <p className="text-sm text-blue-700 mt-1">
+              <h4 className="font-medium text-stratosort-blue">Pro Tip</h4>
+              <p className="text-sm text-stratosort-blue/80 mt-1">
                 {mode === 'quick'
                   ? 'Quick mode automatically organizes files with confidence scores above 80%. Perfect for routine cleanup!'
                   : 'Detailed mode lets you review every suggestion. Great for important files or learning the system.'}
@@ -466,9 +477,9 @@ function SmartOrganizer({
       {(suggestions || batchSuggestions) && (
         <div className="flex items-center justify-between text-sm text-system-gray-600 pt-4 border-t">
           <div className="flex items-center gap-4">
-            <span>📊 Accuracy: {averageConfidence}%</span>
-            <span>📁 {smartFolders.length} Smart Folders</span>
-            <span>✅ {Object.keys(acceptedSuggestions).length} Accepted</span>
+            <span className="flex items-center gap-1"><BarChart3 className="w-4 h-4" /> Accuracy: {averageConfidence}%</span>
+            <span className="flex items-center gap-1"><Folder className="w-4 h-4" /> {smartFolders.length} Smart Folders</span>
+            <span className="flex items-center gap-1"><CheckCircle className="w-4 h-4 text-stratosort-success" /> {Object.keys(acceptedSuggestions).length} Accepted</span>
           </div>
           <div className="text-xs">The system learns from your choices</div>
         </div>

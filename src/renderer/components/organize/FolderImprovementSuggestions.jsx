@@ -32,7 +32,7 @@ function FolderImprovementSuggestions({
       case 'low':
         return 'text-blue-600 bg-blue-50';
       default:
-        return 'text-gray-600 bg-gray-50';
+        return 'text-system-gray-600 bg-system-gray-50';
     }
   };
 
@@ -83,11 +83,11 @@ function FolderImprovementSuggestions({
           className={`overflow-hidden ${
             improvement.priority === 'high'
               ? 'border-red-200'
-              : 'border-gray-200'
+              : 'border-system-gray-200'
           }`}
         >
           <div
-            className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+            className="p-4 cursor-pointer hover:bg-system-gray-50 transition-colors"
             onClick={() => toggleSection(improvement.type)}
           >
             <div className="flex items-start justify-between">
@@ -123,7 +123,7 @@ function FolderImprovementSuggestions({
           </div>
 
           {expandedSections.has(improvement.type) && (
-            <div className="border-t bg-gray-50 p-4">
+            <div className="border-t bg-system-gray-50 p-4">
               {improvement.type === 'missing_categories' && (
                 <div className="space-y-3">
                   {improvement.suggestions.map((category) => (

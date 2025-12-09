@@ -104,6 +104,12 @@ function OrganizationPreview({
     };
   }, [files, suggestions]);
 
+  const normalizeConfidenceFraction = (value) => {
+    if (!Number.isFinite(value)) return 0;
+    const fraction = value > 1 ? value / 100 : value;
+    return Math.min(1, Math.max(0, fraction));
+  };
+
   const toggleFolder = (folderPath) => {
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(folderPath)) {
@@ -115,9 +121,11 @@ function OrganizationPreview({
   };
 
   const getConfidenceColor = (confidence) => {
-    if (confidence >= 0.8) return 'text-green-600 bg-green-50';
-    if (confidence >= 0.5) return 'text-yellow-600 bg-yellow-50';
-    return 'text-orange-600 bg-orange-50';
+    if (confidence >= 0.8)
+      return 'text-stratosort-success bg-stratosort-success/10';
+    if (confidence >= 0.5)
+      return 'text-stratosort-warning bg-stratosort-warning/10';
+    return 'text-stratosort-danger bg-stratosort-danger/10';
   };
 
   return (
@@ -136,7 +144,7 @@ function OrganizationPreview({
             </div>
             <div className="text-sm text-system-gray-500">
               Pattern:{' '}
-              <code className="bg-white px-2 py-1 rounded">
+              <code className="bg-white px-2 py-1 rounded-md">
                 {strategy.pattern}
               </code>
             </div>
@@ -153,19 +161,19 @@ function OrganizationPreview({
           <div className="text-xs text-system-gray-600">Total Files</div>
         </Card>
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-green-600">
+          <div className="text-2xl font-semibold text-stratosort-success">
             {stats.totalFolders}
           </div>
           <div className="text-xs text-system-gray-600">Target Folders</div>
         </Card>
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-blue-600">
+          <div className="text-2xl font-semibold text-stratosort-blue">
             {stats.movedFiles}
           </div>
           <div className="text-xs text-system-gray-600">Files to Move</div>
         </Card>
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-purple-600">
+          <div className="text-2xl font-semibold text-stratosort-indigo">
             {stats.renamedFiles}
           </div>
           <div className="text-xs text-system-gray-600">Files to Rename</div>
@@ -181,7 +189,7 @@ function OrganizationPreview({
           {Object.entries(previewTree).map(([folderPath, folder]) => (
             <div key={folderPath} className="border rounded-lg overflow-hidden">
               <div
-                className="p-3 cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between"
+                className="p-3 cursor-pointer hover:bg-system-gray-50 transition-colors flex items-center justify-between"
                 onClick={() => toggleFolder(folderPath)}
               >
                 <div className="flex items-center gap-2">
@@ -192,7 +200,7 @@ function OrganizationPreview({
                   >
                     ▶
                   </span>
-                  <span className="text-yellow-600">📁</span>
+                  <span className="text-stratosort-accent">📁</span>
                   <span className="font-medium">{folder.name}</span>
                   <span className="text-sm text-system-gray-500">
                     ({folder.files.length} files)
@@ -200,20 +208,23 @@ function OrganizationPreview({
                 </div>
                 <div className="flex items-center gap-2">
                   <span
-                    className={`text-xs px-2 py-1 rounded ${getConfidenceColor(
-                      folder.confidence,
+                    className={`text-xs px-2 py-1 rounded-md ${getConfidenceColor(
+                      normalizeConfidenceFraction(folder.confidence),
                     )}`}
                   >
-                    {Math.round(folder.confidence * 100)}% match
+                    {Math.round(
+                      normalizeConfidenceFraction(folder.confidence) * 100,
+                    )}
+                    % match
                   </span>
-                  <span className="text-xs text-system-gray-400">
+                  <span className="text-xs text-system-gray-500">
                     {folderPath}
                   </span>
                 </div>
               </div>
 
               {expandedFolders.has(folderPath) && (
-                <div className="border-t bg-gray-50 p-3">
+                <div className="border-t bg-system-gray-50 p-3">
                   <div className="space-y-1">
                     {/* FIX: Use stable file path as key instead of array index */}
                     {folder.files.map((fileInfo) => (
@@ -226,15 +237,15 @@ function OrganizationPreview({
                         className="flex items-center justify-between text-sm py-1"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-system-gray-400">└─</span>
-                          <span className="text-blue-600">📄</span>
+                          <span className="text-system-gray-500">└─</span>
+                          <span className="text-stratosort-blue">📄</span>
                           <div className="flex flex-col">
                             {fileInfo.renamed ? (
                               <>
-                                <span className="line-through text-system-gray-400">
+                                <span className="line-through text-system-gray-500">
                                   {fileInfo.original.name}
                                 </span>
-                                <span className="text-green-600">
+                                <span className="text-stratosort-success">
                                   → {fileInfo.newName}
                                 </span>
                               </>
@@ -245,12 +256,12 @@ function OrganizationPreview({
                         </div>
                         <div className="flex items-center gap-2 text-xs">
                           {fileInfo.renamed && (
-                            <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                            <span className="px-2 py-0.5 bg-system-purple/10 text-system-purple rounded-md">
                               Renamed
                             </span>
                           )}
                           {fileInfo.moved && (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                            <span className="px-2 py-0.5 bg-stratosort-blue/10 text-stratosort-blue rounded-md">
                               Moved
                             </span>
                           )}
@@ -266,7 +277,7 @@ function OrganizationPreview({
       </Card>
 
       {/* Visual Tree Diagram */}
-      <Card className="p-4 bg-gray-50">
+      <Card className="p-4 bg-system-gray-50">
         <h4 className="font-medium text-system-gray-900 mb-3">
           Folder Structure Visualization
         </h4>
@@ -279,7 +290,7 @@ function OrganizationPreview({
               <div key={folderPath}>
                 <div className="text-system-gray-600">
                   {indent}└─ 📁 {folder.name}
-                  <span className="text-xs text-system-gray-400 ml-2">
+                  <span className="text-xs text-system-gray-500 ml-2">
                     ({folder.files.length})
                   </span>
                 </div>
@@ -299,11 +310,11 @@ function OrganizationPreview({
             <h5 className="text-sm font-medium text-system-gray-700 mb-2">
               Current State
             </h5>
-            <div className="bg-red-50 border border-red-200 rounded p-3 text-sm">
-              <div className="text-red-700 font-medium mb-2">
+            <div className="bg-stratosort-danger/5 border border-stratosort-danger/20 rounded-md p-3 text-sm">
+              <div className="text-stratosort-danger font-medium mb-2">
                 ❌ Disorganized
               </div>
-              <ul className="space-y-1 text-red-600">
+              <ul className="space-y-1 text-stratosort-danger/80">
                 <li>• All files in one location</li>
                 <li>• No clear categorization</li>
                 <li>• Difficult to find related files</li>
@@ -315,11 +326,11 @@ function OrganizationPreview({
             <h5 className="text-sm font-medium text-system-gray-700 mb-2">
               After Organization
             </h5>
-            <div className="bg-green-50 border border-green-200 rounded p-3 text-sm">
-              <div className="text-green-700 font-medium mb-2">
+            <div className="bg-stratosort-success/5 border border-stratosort-success/20 rounded-md p-3 text-sm">
+              <div className="text-stratosort-success font-medium mb-2">
                 ✅ Well-Organized
               </div>
-              <ul className="space-y-1 text-green-600">
+              <ul className="space-y-1 text-stratosort-success/80">
                 <li>• Files sorted into {stats.totalFolders} folders</li>
                 <li>• Clear categorization by {strategy?.name || 'purpose'}</li>
                 <li>• Easy to locate related content</li>

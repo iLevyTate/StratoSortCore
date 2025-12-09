@@ -22,16 +22,8 @@ describe('registerAnalysisHistoryIpc', () => {
   let mockAnalysisHistory;
   let handlers;
 
-  const IPC_CHANNELS = {
-    ANALYSIS_HISTORY: {
-      GET_STATISTICS: 'history:stats',
-      GET: 'history:get',
-      SEARCH: 'history:search',
-      GET_FILE_HISTORY: 'history:file',
-      CLEAR: 'history:clear',
-      EXPORT: 'history:export',
-    },
-  };
+  const { IPC_CHANNELS } = require('../src/shared/constants');
+  const HISTORY_CHANNELS = IPC_CHANNELS.ANALYSIS_HISTORY;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -104,7 +96,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns statistics', async () => {
-      const result = await handlers['history:stats']({});
+      const result = await handlers[HISTORY_CHANNELS.GET_STATISTICS]({});
 
       expect(result.totalAnalyses).toBe(100);
       expect(result.successRate).toBe(0.95);
@@ -115,7 +107,7 @@ describe('registerAnalysisHistoryIpc', () => {
         new Error('DB error'),
       );
 
-      const result = await handlers['history:stats']({});
+      const result = await handlers[HISTORY_CHANNELS.GET_STATISTICS]({});
 
       expect(result).toEqual({});
     });
@@ -123,7 +115,7 @@ describe('registerAnalysisHistoryIpc', () => {
     test('returns fallback when service unavailable', async () => {
       mockGetServiceIntegration.mockReturnValueOnce(null);
 
-      const result = await handlers['history:stats']({});
+      const result = await handlers[HISTORY_CHANNELS.GET_STATISTICS]({});
 
       expect(result).toEqual({});
     });
@@ -140,14 +132,14 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns recent history with default options', async () => {
-      const result = await handlers['history:get']({}, {});
+      const result = await handlers[HISTORY_CHANNELS.GET]({}, {});
 
       expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(50);
       expect(result).toHaveLength(2);
     });
 
     test('returns all history when requested', async () => {
-      await handlers['history:get']({}, { all: true });
+      await handlers[HISTORY_CHANNELS.GET]({}, { all: true });
 
       expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(
         Number.MAX_SAFE_INTEGER,
@@ -155,7 +147,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('handles limit: "all"', async () => {
-      await handlers['history:get']({}, { limit: 'all' });
+      await handlers[HISTORY_CHANNELS.GET]({}, { limit: 'all' });
 
       expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(
         Number.MAX_SAFE_INTEGER,
@@ -170,7 +162,10 @@ describe('registerAnalysisHistoryIpc', () => {
         { id: '4' },
       ]);
 
-      const result = await handlers['history:get']({}, { limit: 2, offset: 1 });
+      const result = await handlers[HISTORY_CHANNELS.GET](
+        {},
+        { limit: 2, offset: 1 },
+      );
 
       expect(result).toHaveLength(2);
     });
@@ -180,7 +175,7 @@ describe('registerAnalysisHistoryIpc', () => {
         new Error('Failed'),
       );
 
-      const result = await handlers['history:get']({}, {});
+      const result = await handlers[HISTORY_CHANNELS.GET]({}, {});
 
       expect(result).toEqual([]);
     });
@@ -188,7 +183,7 @@ describe('registerAnalysisHistoryIpc', () => {
     test('handles null result from service', async () => {
       mockAnalysisHistory.getRecentAnalysis.mockResolvedValueOnce(null);
 
-      const result = await handlers['history:get']({}, {});
+      const result = await handlers[HISTORY_CHANNELS.GET]({}, {});
 
       expect(result).toEqual([]);
     });
@@ -205,7 +200,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('searches history', async () => {
-      const result = await handlers['history:search']({}, 'doc', {});
+      const result = await handlers[HISTORY_CHANNELS.SEARCH]({}, 'doc', {});
 
       expect(mockAnalysisHistory.searchAnalysis).toHaveBeenCalledWith('doc', {});
       expect(result).toHaveLength(1);
@@ -216,7 +211,7 @@ describe('registerAnalysisHistoryIpc', () => {
         new Error('Search failed'),
       );
 
-      const result = await handlers['history:search']({}, 'query', {});
+      const result = await handlers[HISTORY_CHANNELS.SEARCH]({}, 'query', {});
 
       expect(result).toEqual([]);
     });
@@ -233,7 +228,10 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns file history', async () => {
-      const result = await handlers['history:file']({}, '/test/doc1.pdf');
+      const result = await handlers[HISTORY_CHANNELS.GET_FILE_HISTORY](
+        {},
+        '/test/doc1.pdf',
+      );
 
       expect(mockAnalysisHistory.getAnalysisByPath).toHaveBeenCalledWith(
         '/test/doc1.pdf',
@@ -246,7 +244,10 @@ describe('registerAnalysisHistoryIpc', () => {
         new Error('Not found'),
       );
 
-      const result = await handlers['history:file']({}, '/unknown.pdf');
+      const result = await handlers[HISTORY_CHANNELS.GET_FILE_HISTORY](
+        {},
+        '/unknown.pdf',
+      );
 
       expect(result).toBeNull();
     });
@@ -263,7 +264,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('clears history', async () => {
-      const result = await handlers['history:clear']({});
+      const result = await handlers[HISTORY_CHANNELS.CLEAR]({});
 
       expect(mockAnalysisHistory.createDefaultStructures).toHaveBeenCalled();
       expect(result.success).toBe(true);
@@ -274,7 +275,7 @@ describe('registerAnalysisHistoryIpc', () => {
         new Error('Clear failed'),
       );
 
-      const result = await handlers['history:clear']({});
+      const result = await handlers[HISTORY_CHANNELS.CLEAR]({});
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -301,7 +302,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('exports as JSON', async () => {
-      const result = await handlers['history:export']({}, 'json');
+      const result = await handlers[HISTORY_CHANNELS.EXPORT]({}, 'json');
 
       expect(result.success).toBe(true);
       expect(result.mime).toBe('application/json');
@@ -310,7 +311,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('exports as CSV', async () => {
-      const result = await handlers['history:export']({}, 'csv');
+      const result = await handlers[HISTORY_CHANNELS.EXPORT]({}, 'csv');
 
       expect(result.success).toBe(true);
       expect(result.mime).toBe('text/csv');
@@ -319,7 +320,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns raw data for unknown format', async () => {
-      const result = await handlers['history:export']({}, 'unknown');
+      const result = await handlers[HISTORY_CHANNELS.EXPORT]({}, 'unknown');
 
       expect(result.success).toBe(true);
       expect(Array.isArray(result.data)).toBe(true);
@@ -330,7 +331,7 @@ describe('registerAnalysisHistoryIpc', () => {
         new Error('Export failed'),
       );
 
-      const result = await handlers['history:export']({}, 'json');
+      const result = await handlers[HISTORY_CHANNELS.EXPORT]({}, 'json');
 
       expect(result.success).toBe(false);
     });

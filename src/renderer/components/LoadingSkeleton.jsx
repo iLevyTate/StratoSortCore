@@ -26,12 +26,12 @@ const LoadingSkeleton = ({
     default: 'h-4 w-full',
     title: 'h-8 w-3/4',
     text: 'h-3 w-full',
-    card: 'h-32 w-full rounded-lg',
-    avatar: 'h-12 w-12 rounded-full',
-    button: 'h-10 w-24 rounded-lg',
-    input: 'h-10 w-full rounded-lg',
-    file: 'h-16 w-full rounded-lg',
-    folder: 'h-20 w-full rounded-xl',
+    card: 'h-32 w-full rounded-[var(--radius-md)]',
+    avatar: 'h-12 w-12 rounded-[var(--radius-full)]',
+    button: 'h-10 w-24 rounded-[var(--radius-md)]',
+    input: 'h-10 w-full rounded-[var(--radius-md)]',
+    file: 'h-16 w-full rounded-[var(--radius-md)]',
+    folder: 'h-20 w-full rounded-[var(--radius-lg)]',
   };
 
   const skeletons = Array.from({ length: count }, (_, i) => (
@@ -224,7 +224,7 @@ LazyLoadingSpinner.propTypes = {
 // Modal loading overlay for lazy-loaded modals/panels
 export const ModalLoadingOverlay = ({ message = 'Loading...' }) => (
   <div
-    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal"
     role="status"
     aria-label={message}
   >

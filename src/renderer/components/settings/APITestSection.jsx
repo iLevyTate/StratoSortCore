@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { CheckCircle, XCircle } from 'lucide-react';
 import Button from '../ui/Button';
 
 /**
@@ -15,44 +16,44 @@ function APITestSection({ addNotification }) {
 
     try {
       await window.electronAPI.files.getDocumentsPath();
-      results.fileOperations = '✅ Working';
+      results.fileOperations = { success: true, message: 'Working' };
     } catch (error) {
-      results.fileOperations = `❌ Error: ${error.message}`;
+      results.fileOperations = { success: false, message: error.message };
     }
 
     try {
       await window.electronAPI.smartFolders.get();
-      results.smartFolders = '✅ Working';
+      results.smartFolders = { success: true, message: 'Working' };
     } catch (error) {
-      results.smartFolders = `❌ Error: ${error.message}`;
+      results.smartFolders = { success: false, message: error.message };
     }
 
     try {
       await window.electronAPI.analysisHistory.getStatistics();
-      results.analysisHistory = '✅ Working';
+      results.analysisHistory = { success: true, message: 'Working' };
     } catch (error) {
-      results.analysisHistory = `❌ Error: ${error.message}`;
+      results.analysisHistory = { success: false, message: error.message };
     }
 
     try {
       await window.electronAPI.undoRedo.canUndo();
-      results.undoRedo = '✅ Working';
+      results.undoRedo = { success: true, message: 'Working' };
     } catch (error) {
-      results.undoRedo = `❌ Error: ${error.message}`;
+      results.undoRedo = { success: false, message: error.message };
     }
 
     try {
       await window.electronAPI.system.getApplicationStatistics();
-      results.systemMonitoring = '✅ Working';
+      results.systemMonitoring = { success: true, message: 'Working' };
     } catch (error) {
-      results.systemMonitoring = `❌ Error: ${error.message}`;
+      results.systemMonitoring = { success: false, message: error.message };
     }
 
     try {
       await window.electronAPI.ollama.getModels();
-      results.ollama = '✅ Working';
+      results.ollama = { success: true, message: 'Working' };
     } catch (error) {
-      results.ollama = `❌ Error: ${error.message}`;
+      results.ollama = { success: false, message: error.message };
     }
 
     setTestResults(results);
@@ -72,12 +73,19 @@ function APITestSection({ addNotification }) {
       </Button>
       {Object.keys(testResults).length > 0 && (
         <div className="space-y-3 text-sm">
-          {Object.entries(testResults).map(([service, status]) => (
-            <div key={service} className="flex justify-between">
+          {Object.entries(testResults).map(([service, result]) => (
+            <div key={service} className="flex justify-between items-center">
               <span className="capitalize">
                 {service.replace(/([A-Z])/g, ' $1').trim()}:
               </span>
-              <span className="font-mono text-xs">{status}</span>
+              <span className="font-mono text-xs flex items-center gap-1">
+                {result.success ? (
+                  <CheckCircle className="w-4 h-4 text-stratosort-success" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-stratosort-danger" />
+                )}
+                {result.success ? result.message : `Error: ${result.message}`}
+              </span>
             </div>
           ))}
         </div>

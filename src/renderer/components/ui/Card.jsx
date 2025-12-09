@@ -3,20 +3,21 @@ import PropTypes from 'prop-types';
 
 const VARIANT_TO_CLASS = {
   default:
-    'bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] hover:shadow-md hover:border-border-strong/60 transition-all duration-200 backdrop-blur-sm',
+    'surface-card',
   compact:
-    'bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[calc(var(--panel-padding)*0.75)] hover:shadow-md hover:border-border-strong/60 transition-all duration-200 backdrop-blur-sm',
+    'surface-card p-[calc(var(--panel-padding)*0.75)]',
   elevated:
-    'bg-surface-primary rounded-xl border border-border-soft shadow-lg p-[var(--panel-padding)] transition-all duration-200 backdrop-blur-sm',
-  hero: 'glass-medium rounded-2xl shadow-2xl border border-white/30 p-[calc(var(--panel-padding)*1.35)]',
+    'surface-card shadow-lg',
+  hero:
+    'glass-panel rounded-2xl shadow-2xl border border-white/30 p-[calc(var(--panel-padding)*1.35)]',
   success:
-    'bg-gradient-to-br from-emerald-50 to-green-50 border-stratosort-success/30 rounded-xl p-[var(--panel-padding)] shadow-sm ring-1 ring-stratosort-success/10',
+    'bg-gradient-to-br from-emerald-50 to-green-50 border border-stratosort-success/30 rounded-xl p-[var(--panel-padding)] shadow-sm',
   error:
-    'bg-gradient-to-br from-red-50 to-rose-50 border-stratosort-accent/30 rounded-xl p-[var(--panel-padding)] shadow-sm ring-1 ring-stratosort-accent/10',
+    'bg-gradient-to-br from-red-50 to-rose-50 border border-stratosort-danger/30 rounded-xl p-[var(--panel-padding)] shadow-sm',
   warning:
-    'bg-gradient-to-br from-amber-50 to-yellow-50 border-stratosort-warning/30 rounded-xl p-[var(--panel-padding)] shadow-sm ring-1 ring-stratosort-warning/10',
+    'bg-gradient-to-br from-amber-50 to-yellow-50 border border-stratosort-warning/30 rounded-xl p-[var(--panel-padding)] shadow-sm',
   interactive:
-    'bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] transition-transform duration-150 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] backdrop-blur-sm',
+    'surface-card transition-transform [transition-duration:var(--duration-fast)] hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]',
 };
 
 const Card = memo(function Card({

@@ -14,25 +14,24 @@ const CompletePhase = lazy(() => import('../phases/CompletePhase'));
 const SettingsPanel = lazy(() => import('./SettingsPanel'));
 import { PHASES } from '../../shared/constants';
 
+// Optimized page transitions with GPU acceleration
+// Using simpler opacity-only transitions for smoother performance
 const pageVariants = {
   initial: {
     opacity: 0,
-    y: 20,
   },
   in: {
     opacity: 1,
-    y: 0,
   },
   out: {
     opacity: 0,
-    y: -20,
   },
 };
 
 const pageTransition = {
   type: 'tween',
-  ease: 'anticipate',
-  duration: 0.5,
+  ease: 'easeInOut',
+  duration: 0.2, // Fast, smooth fade
 };
 
 function PhaseRenderer() {
@@ -88,23 +87,29 @@ function PhaseRenderer() {
   };
 
   return (
-    <div className="flex flex-col w-full h-full overflow-auto">
-      {/* FIX: Changed overflow-hidden to overflow-auto to allow scrolling in phases */}
-      <Suspense fallback={<LazyLoadingSpinner message="Loading phase..." />}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentPhase}
-            initial="initial"
-            animate="in"
-            exit="out"
-            variants={pageVariants}
-            transition={pageTransition}
-            className="w-full h-full flex flex-col overflow-auto"
-          >
-            {renderCurrentPhase()}
-          </motion.div>
-        </AnimatePresence>
-      </Suspense>
+    <>
+      <div className="flex flex-col w-full min-h-full">
+        <Suspense fallback={<LazyLoadingSpinner message="Loading phase..." />}>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={currentPhase}
+              initial="initial"
+              animate="in"
+              exit="out"
+              variants={pageVariants}
+              transition={pageTransition}
+              className="w-full flex-1 flex flex-col"
+              style={{
+                willChange: 'opacity',
+                backfaceVisibility: 'hidden',
+                transform: 'translate3d(0, 0, 0)',
+              }}
+            >
+              {renderCurrentPhase()}
+            </motion.div>
+          </AnimatePresence>
+        </Suspense>
+      </div>
       {showSettings && (
         <Suspense
           fallback={<ModalLoadingOverlay message="Loading Settings..." />}
@@ -114,7 +119,7 @@ function PhaseRenderer() {
           </PhaseErrorBoundary>
         </Suspense>
       )}
-    </div>
+    </>
   );
 }
 

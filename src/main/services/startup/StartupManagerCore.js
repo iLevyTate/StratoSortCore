@@ -24,7 +24,7 @@ const {
   checkOllamaHealth,
 } = require('./ollamaService');
 const { createHealthMonitor } = require('./healthMonitoring');
-const { shutdown } = require('./shutdownHandler');
+const { shutdown, shutdownProcess } = require('./shutdownHandler');
 
 logger.setContext('StartupManager');
 
@@ -531,7 +531,41 @@ class StartupManager {
       global.degradedMode.limitations.push('Manual organization only');
     }
 
+    await this.cleanupFailedServiceProcesses();
+
     this.reportProgress('degraded', 'Running in degraded mode', 100);
+  }
+
+  async cleanupFailedServiceProcesses() {
+    const stopPromises = [];
+
+    for (const [serviceName, process] of this.serviceProcesses.entries()) {
+      const status = this.serviceStatus[serviceName]?.status;
+      const shouldStop =
+        status !== 'running' && status !== 'disabled' && status !== 'stopped';
+
+      if (shouldStop) {
+        stopPromises.push(
+          shutdownProcess(serviceName, process).catch((error) => {
+            logger.warn(
+              `[STARTUP] Failed to stop ${serviceName} during degradation`,
+              { error: error.message },
+            );
+          }),
+        );
+      }
+    }
+
+    if (stopPromises.length > 0) {
+      await Promise.allSettled(stopPromises);
+
+      for (const [serviceName] of this.serviceProcesses.entries()) {
+        const status = this.serviceStatus[serviceName]?.status;
+        if (status !== 'running' && status !== 'disabled') {
+          this.serviceProcesses.delete(serviceName);
+        }
+      }
+    }
   }
 
   startHealthMonitoring() {

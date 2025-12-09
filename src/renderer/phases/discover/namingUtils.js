@@ -7,6 +7,33 @@
  * @module phases/discover/namingUtils
  */
 
+import React from 'react';
+
+// Inline SVG Icons
+const RefreshCwIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const XCircleIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const CheckCircleIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const ClockIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
 /**
  * Format a date according to the specified format
  * @param {Date} date - Date to format
@@ -152,34 +179,34 @@ export function validateProgressState(progress) {
 export function getFileStateDisplayInfo(state, hasAnalysis) {
   if (state === 'analyzing')
     return {
-      icon: '🔄',
+      icon: <RefreshCwIcon className="w-4 h-4" />,
       label: 'Analyzing...',
       color: 'text-blue-600',
       spinning: true,
     };
   if (state === 'error')
     return {
-      icon: '❌',
+      icon: <XCircleIcon className="w-4 h-4" />,
       label: 'Error',
       color: 'text-red-600',
       spinning: false,
     };
   if (hasAnalysis && state === 'ready')
     return {
-      icon: '✅',
+      icon: <CheckCircleIcon className="w-4 h-4" />,
       label: 'Ready',
       color: 'text-green-600',
       spinning: false,
     };
   if (state === 'pending')
     return {
-      icon: '⏳',
+      icon: <ClockIcon className="w-4 h-4" />,
       label: 'Pending',
       color: 'text-yellow-600',
       spinning: false,
     };
   return {
-    icon: '❌',
+    icon: <XCircleIcon className="w-4 h-4" />,
     label: 'Failed',
     color: 'text-red-600',
     spinning: false,

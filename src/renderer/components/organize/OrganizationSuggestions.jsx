@@ -35,9 +35,16 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
     explanation,
   } = suggestions;
 
-  // CRITICAL FIX #1: Validate confidence to prevent NaN/undefined in SVG calculations
-  // Ensures strokeDasharray always gets a valid numeric value
-  const safeConfidence = Number.isFinite(confidence) ? confidence : 0;
+  // Normalize confidence for both display (0-100) and logic (0-1)
+  const normalizeConfidenceFraction = (value) => {
+    if (!Number.isFinite(value)) return 0;
+    const fraction = value > 1 ? value / 100 : value;
+    return Math.min(1, Math.max(0, fraction));
+  };
+
+  const confidenceFraction = normalizeConfidenceFraction(confidence);
+  const confidencePercent = Math.round(confidenceFraction * 100);
+  const safeConfidence = confidenceFraction;
 
   // SECURITY FIX #7: Comprehensive XSS prevention in folder names
   // React automatically escapes text content when using {}, but we add defense-in-depth:
@@ -82,9 +89,11 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
               <h4 className="font-medium text-system-gray-900">
                 Suggested Organization
               </h4>
-              <span className={`text-sm ${getConfidenceColor(safeConfidence)}`}>
-                {getConfidenceLabel(safeConfidence)} (
-                {Math.round(safeConfidence * 100)}
+              <span
+                className={`text-sm ${getConfidenceColor(confidenceFraction)}`}
+              >
+                {getConfidenceLabel(confidenceFraction)} (
+                {confidencePercent}
                 %)
               </span>
             </div>
@@ -145,7 +154,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                   stroke="currentColor"
                   strokeWidth="4"
                   fill="none"
-                  className="text-gray-200"
+                  className="text-system-gray-200"
                 />
                 <circle
                   cx="32"
@@ -190,7 +199,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
               {alternatives.map((alt) => (
                 <Card
                   key={`${alt.folder}-${alt.confidence}-${alt.method || 'default'}`}
-                  className="p-3 border-gray-200 hover:border-stratosort-blue/50 transition-colors"
+                  className="p-3 border-system-gray-200 hover:border-stratosort-blue/50 transition-colors"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
@@ -199,9 +208,15 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                           {sanitizeFolderName(alt.folder)}
                         </span>
                         <span
-                          className={`text-xs ${getConfidenceColor(alt.confidence || 0)}`}
+                          className={`text-xs ${getConfidenceColor(
+                            normalizeConfidenceFraction(alt.confidence || 0),
+                          )}`}
                         >
-                          {Math.round((alt.confidence || 0) * 100)}%
+                          {Math.round(
+                            normalizeConfidenceFraction(alt.confidence || 0) *
+                              100,
+                          )}
+                          %
                         </span>
                       </div>
                       {alt.reasoning && (
@@ -210,7 +225,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                         </p>
                       )}
                       {alt.method && (
-                        <span className="text-xs text-system-gray-400">
+                        <span className="text-xs text-system-gray-500">
                           Source: {alt.method.replace('_', ' ')}
                         </span>
                       )}
@@ -233,7 +248,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
 
       {/* Organization Strategies */}
       {strategies.length > 0 && (
-        <Card className="p-4 bg-gray-50">
+        <Card className="p-4 bg-system-gray-50">
           <h5 className="text-sm font-medium text-system-gray-700 mb-3">
             Organization Strategies
           </h5>
@@ -244,7 +259,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                 className={`p-2 rounded border cursor-pointer transition-all ${
                   selectedStrategy === strategy.id
                     ? 'border-stratosort-blue bg-stratosort-blue/5'
-                    : 'border-gray-200 hover:border-gray-300'
+                    : 'border-system-gray-200 hover:border-system-gray-300'
                 }`}
                 onClick={() => handleStrategySelect(strategy.id)}
               >

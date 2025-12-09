@@ -3,6 +3,7 @@ const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../shared/logger');
+const { atomicFileOps } = require('../shared/atomicFileOperations');
 
 // Optional: set context for clearer log origins
 logger.setContext('ollama-utils');
@@ -228,7 +229,26 @@ async function loadOllamaConfig() {
     }
     if (config.host) {
       ollamaHost = config.host;
-      ollamaInstance = new Ollama({ host: ollamaHost });
+      // Create Ollama instance with keep-alive agent for connection pooling
+      try {
+        const http = require('http');
+        const https = require('https');
+        const isHttps = ollamaHost.startsWith('https://');
+        const agent = isHttps
+          ? new https.Agent({ keepAlive: true, maxSockets: 10 })
+          : new http.Agent({ keepAlive: true, maxSockets: 10 });
+        ollamaInstance = new Ollama({
+          host: ollamaHost,
+          fetch: (url, opts = {}) => {
+            return (global.fetch || require('node-fetch'))(url, {
+              agent,
+              ...opts,
+            });
+          },
+        });
+      } catch {
+        ollamaInstance = new Ollama({ host: ollamaHost });
+      }
       ollamaInstanceHost = ollamaHost;
       logger.info(`[OLLAMA] Loaded host: ${ollamaHost}`);
     }
@@ -279,36 +299,43 @@ async function loadOllamaConfig() {
 async function saveOllamaConfig(config) {
   try {
     const filePath = getOllamaConfigPath();
-    // FIX: Use atomic write (temp + rename) to prevent corruption on crash
-    const tempPath = `${filePath}.tmp.${Date.now()}`;
-    try {
-      await fs.writeFile(tempPath, JSON.stringify(config, null, 2));
-      // Retry rename on Windows EPERM errors (file handle race condition)
-      let lastError;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await fs.rename(tempPath, filePath);
-          lastError = null;
-          break;
-        } catch (renameError) {
-          lastError = renameError;
-          if (renameError.code === 'EPERM' && attempt < 2) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 50 * (attempt + 1)),
-            );
-            continue;
-          }
-          throw renameError;
-        }
-      }
-      if (lastError) throw lastError;
-    } catch (writeError) {
+    const content = JSON.stringify(config, null, 2);
+
+    // Prefer atomic write when available; skip when fs mocks lack mkdir
+    if (atomicFileOps?.safeWriteFile && typeof fs.mkdir === 'function') {
       try {
-        await fs.unlink(tempPath);
+        await atomicFileOps.safeWriteFile(filePath, content);
+        return;
       } catch {
-        // Ignore cleanup errors
+        // Fall through to manual atomic write
       }
-      throw writeError;
+    }
+
+    const dir = path.dirname(filePath);
+    if (typeof fs.mkdir === 'function') {
+      await fs.mkdir(dir, { recursive: true }).catch(() => {});
+    }
+    const tempFile = path.join(
+      dir,
+      `ollama-config.tmp.${Date.now()}.${Math.random().toString(16).slice(2)}`,
+    );
+
+    await fs.writeFile(tempFile, content);
+
+    let attempts = 0;
+    const maxAttempts = 2;
+    while (attempts < maxAttempts) {
+      try {
+        await fs.rename(tempFile, filePath);
+        return;
+      } catch (renameError) {
+        if (renameError.code === 'EPERM' && attempts < maxAttempts - 1) {
+          attempts += 1;
+          continue;
+        }
+        await fs.unlink(tempFile).catch(() => {});
+        throw renameError;
+      }
     }
   } catch (error) {
     logger.error('[OLLAMA] Error saving Ollama config', { error });

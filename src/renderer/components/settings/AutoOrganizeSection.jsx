@@ -12,11 +12,12 @@ function AutoOrganizeSection({ settings, setSettings }) {
   return (
     <div className="space-y-4">
       {/* Auto-organize toggle */}
-      <label className="flex items-center gap-5">
+      <label className="flex items-center gap-3">
         <input
           type="checkbox"
           checked={settings.autoOrganize}
           onChange={(e) => updateSetting('autoOrganize', e.target.checked)}
+          className="form-checkbox accent-stratosort-blue"
         />
         <span className="text-sm text-system-gray-700">
           Automatically organize new downloads
@@ -25,7 +26,7 @@ function AutoOrganizeSection({ settings, setSettings }) {
 
       {/* Confidence thresholds */}
       {settings.autoOrganize && (
-        <div className="ml-6 space-y-3 p-3 bg-gray-50 rounded-lg">
+        <div className="ml-6 space-y-3 p-3 bg-system-gray-50 rounded-lg">
           <h4 className="text-xs font-medium text-system-gray-600 uppercase tracking-wider">
             Confidence Thresholds
           </h4>
@@ -114,7 +115,7 @@ function AutoOrganizeSection({ settings, setSettings }) {
           </div>
 
           {/* Visual confidence guide */}
-          <div className="mt-3 p-2 bg-white rounded border border-gray-200">
+          <div className="mt-3 p-2 bg-white rounded border border-system-gray-200">
             <div className="text-xs text-system-gray-600 mb-2">
               Confidence Guide:
             </div>

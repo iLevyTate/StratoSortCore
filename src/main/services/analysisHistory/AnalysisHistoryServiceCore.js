@@ -305,7 +305,7 @@ class AnalysisHistoryServiceCore {
 
   async searchAnalysis(query, options = {}) {
     await this.initialize();
-    return searchAnalysisHelper(
+    return await searchAnalysisHelper(
       this.analysisHistory,
       this._cache,
       this.SEARCH_CACHE_TTL_MS,

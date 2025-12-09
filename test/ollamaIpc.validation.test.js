@@ -35,11 +35,7 @@ describe('ollama IPC validation fallback', () => {
       },
     };
 
-    const IPC_CHANNELS = {
-      OLLAMA: {
-        TEST_CONNECTION: 'ollama-test-connection',
-      },
-    };
+    const { IPC_CHANNELS } = require('../src/shared/constants');
 
     const logger = { error: jest.fn(), warn: jest.fn(), info: jest.fn() };
     const systemAnalytics = {};

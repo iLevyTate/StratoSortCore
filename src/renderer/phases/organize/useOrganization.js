@@ -402,6 +402,7 @@ export function useOrganization({
             'organize-no-operations',
           );
           setIsOrganizing(false);
+          setOrganizingState(false);
           setBatchProgress({ current: 0, total: 0, currentFile: '' });
           return;
         }
@@ -631,7 +632,6 @@ export function useOrganization({
         setBatchProgress({ current: 0, total: 0, currentFile: '' });
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       unprocessedFiles,
       editingFiles,
@@ -648,7 +648,9 @@ export function useOrganization({
       executeAction,
       setOrganizedFiles,
       setOrganizingState,
-      // Note: setBatchProgress, setIsOrganizing, setOrganizePreview are stable useState setters
+      setBatchProgress,
+      setIsOrganizing,
+      setOrganizePreview,
     ],
   );
 

@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 
 function BackgroundModeSection({ settings, setSettings }) {
   return (
-    <label className="flex items-center gap-5">
+    <label className="flex items-center gap-3">
       <input
         type="checkbox"
         checked={settings.backgroundMode}
@@ -13,6 +13,7 @@ function BackgroundModeSection({ settings, setSettings }) {
             backgroundMode: e.target.checked,
           }))
         }
+        className="form-checkbox accent-stratosort-blue"
       />
       <span className="text-sm text-system-gray-700">
         Keep running in background

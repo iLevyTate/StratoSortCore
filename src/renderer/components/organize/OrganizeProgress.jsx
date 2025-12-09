@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { FolderOpen, CheckCircle, Clock, FileText } from 'lucide-react';
 
 function OrganizeProgress({
   isOrganizing,
@@ -22,8 +23,7 @@ function OrganizeProgress({
       return;
     }
     if (!startedAt) setStartedAt(Date.now());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOrganizing]); // startedAt excluded - effect sets it, including would cause loops
+  }, [isOrganizing, startedAt]);
 
   // Smooth, informative visual progress when real percent is unavailable
   useEffect(() => {
@@ -61,7 +61,6 @@ function OrganizeProgress({
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     return `${m}m ${s}s remaining`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     startedAt,
     hasTotals,
@@ -78,13 +77,16 @@ function OrganizeProgress({
     : visualPercent;
 
   return (
-    <div className="py-13">
+    // py-12 (3rem vertical padding) provides optimal visual breathing room for the organization
+    // progress display, ensuring the animated spinner, progress bars, and file preview list
+    // are comfortably spaced without overwhelming the interface during file operations
+    <div className="py-12">
       {/* Animated header */}
       <div className="flex items-center justify-center gap-8 text-stratosort-blue mb-8">
         <div className="relative w-21 h-21">
           <div className="absolute inset-0 animate-spin rounded-full border-4 border-stratosort-blue/30 border-t-stratosort-blue"></div>
           <div className="absolute inset-2 rounded-full bg-stratosort-blue/5 flex items-center justify-center">
-            <span className="text-lg">📂</span>
+            <FolderOpen className="w-5 h-5 text-stratosort-blue" />
           </div>
         </div>
         <div>
@@ -143,10 +145,16 @@ function OrganizeProgress({
               return (
                 <div
                   key={op.destination || op.fileName || idx}
-                  className={`flex items-start gap-8 text-sm ${isCurrentFile ? 'bg-stratosort-blue/10 -mx-2 px-2 py-1 rounded' : ''}`}
+                  className={`flex items-start gap-3 text-sm ${isCurrentFile ? 'bg-stratosort-blue/10 -mx-2 px-2 py-1 rounded' : ''}`}
                 >
-                  <span className="mt-1 flex-shrink-0">
-                    {isProcessed ? '✅' : isCurrentFile ? '⏳' : '📄'}
+                  <span className="mt-0.5 flex-shrink-0">
+                    {isProcessed ? (
+                      <CheckCircle className="w-4 h-4 text-stratosort-success" />
+                    ) : isCurrentFile ? (
+                      <Clock className="w-4 h-4 text-stratosort-blue animate-pulse" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-system-gray-400" />
+                    )}
                   </span>
                   <div className="min-w-0 flex-1 overflow-hidden">
                     <div

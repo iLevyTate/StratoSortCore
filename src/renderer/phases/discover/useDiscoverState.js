@@ -7,7 +7,7 @@
  * @module phases/discover/useDiscoverState
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import {
   setSelectedFiles as setSelectedFilesAction,
@@ -55,40 +55,64 @@ export function useDiscoverState() {
   const caseConvention = namingConventionState.caseConvention;
   const separator = namingConventionState.separator;
 
+  // Refs to keep track of latest state for stable callbacks
+  const selectedFilesRef = useRef(selectedFiles);
+  const analysisResultsRef = useRef(analysisResults);
+  const fileStatesRef = useRef(fileStates);
+  const analysisProgressRef = useRef(analysisProgress);
+
+  useEffect(() => {
+    selectedFilesRef.current = selectedFiles;
+  }, [selectedFiles]);
+
+  useEffect(() => {
+    analysisResultsRef.current = analysisResults;
+  }, [analysisResults]);
+
+  useEffect(() => {
+    fileStatesRef.current = fileStates;
+  }, [fileStates]);
+
+  useEffect(() => {
+    analysisProgressRef.current = analysisProgress;
+  }, [analysisProgress]);
+
   // Redux action wrappers
   const setSelectedFiles = useCallback(
     (files) => {
       if (typeof files === 'function') {
-        dispatch(setSelectedFilesAction(files(selectedFiles)));
+        dispatch(setSelectedFilesAction(files(selectedFilesRef.current)));
       } else {
         dispatch(setSelectedFilesAction(files));
       }
     },
-    [dispatch, selectedFiles],
+    [dispatch],
   );
 
   const setAnalysisResults = useCallback(
     (results) => {
       if (typeof results === 'function') {
-        dispatch(setAnalysisResultsAction(results(analysisResults)));
+        dispatch(setAnalysisResultsAction(results(analysisResultsRef.current)));
       } else {
         dispatch(setAnalysisResultsAction(results));
       }
     },
-    [dispatch, analysisResults],
+    [dispatch],
   );
 
   const setIsAnalyzing = useCallback(
     (val) => {
       if (val) {
-        dispatch(startAnalysisAction({ total: analysisProgress.total }));
+        dispatch(
+          startAnalysisAction({ total: analysisProgressRef.current.total }),
+        );
         dispatch(setAnalyzing(true));
       } else {
         dispatch(stopAnalysisAction());
         dispatch(setAnalyzing(false));
       }
     },
-    [dispatch, analysisProgress],
+    [dispatch],
   );
 
   const setAnalysisProgress = useCallback(
@@ -124,12 +148,12 @@ export function useDiscoverState() {
   const setFileStates = useCallback(
     (val) => {
       if (typeof val === 'function') {
-        dispatch(setFileStatesAction(val(fileStates)));
+        dispatch(setFileStatesAction(val(fileStatesRef.current)));
       } else {
         dispatch(setFileStatesAction(val));
       }
     },
-    [dispatch, fileStates],
+    [dispatch],
   );
 
   const updateFileState = useCallback(

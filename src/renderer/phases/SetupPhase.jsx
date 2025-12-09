@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -7,11 +7,10 @@ import { setPhase } from '../store/slices/uiSlice';
 import { fetchDocumentsPath } from '../store/slices/systemSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog } from '../hooks';
-import { Collapsible, Button, Input, Textarea } from '../components/ui';
+import { Button } from '../components/ui';
 import { SmartFolderSkeleton } from '../components/LoadingSkeleton';
-import { SmartFolderItem } from '../components/setup';
+import { SmartFolderItem, AddSmartFolderModal } from '../components/setup';
 
-// Set logger context for this component
 logger.setContext('SetupPhase');
 
 const normalizePathValue = (value, fallback = 'Documents') => {
@@ -28,7 +27,7 @@ function SetupPhase() {
   const documentsPathFromStore = useAppSelector(
     (state) => state.system.documentsPath,
   );
-  // FIX: Memoize actions object to prevent recreation on every render
+
   const actions = useMemo(
     () => ({
       setPhaseData: (key, value) => {
@@ -44,16 +43,94 @@ function SetupPhase() {
     useNotification();
 
   const [smartFolders, setSmartFolders] = useState([]);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [newFolderPath, setNewFolderPath] = useState('');
-  const [newFolderDescription, setNewFolderDescription] = useState('');
   const [editingFolder, setEditingFolder] = useState(null);
   const [defaultLocation, setDefaultLocation] = useState('Documents');
   const [isLoading, setIsLoading] = useState(true);
-  const [isAddingFolder, setIsAddingFolder] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeletingFolder, setIsDeletingFolder] = useState(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState(new Set());
+  const [viewMode, setViewMode] = useState('compact'); // 'compact' or 'expanded'
   const isMountedRef = useRef(true);
+
+  // Use ref to avoid re-adding listener on every editingFolder change
+  const editingFolderRef = useRef(editingFolder);
+  useEffect(() => {
+    editingFolderRef.current = editingFolder;
+  }, [editingFolder]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && editingFolderRef.current) {
+        setEditingFolder(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Update defaultLocation when Redux store gets the path
+  useEffect(() => {
+    if (documentsPathFromStore && defaultLocation === 'Documents') {
+      setDefaultLocation(
+        normalizePathValue(documentsPathFromStore, defaultLocation),
+      );
+    }
+  }, [documentsPathFromStore, defaultLocation]);
+
+  const loadDefaultLocation = useCallback(async () => {
+    try {
+      const settings = await window.electronAPI.settings.get();
+      if (settings?.defaultSmartFolderLocation) {
+        setDefaultLocation(
+          normalizePathValue(
+            settings.defaultSmartFolderLocation,
+            defaultLocation,
+          ),
+        );
+      } else if (documentsPathFromStore) {
+        setDefaultLocation(
+          normalizePathValue(documentsPathFromStore, defaultLocation),
+        );
+      } else {
+        dispatch(fetchDocumentsPath());
+      }
+    } catch (error) {
+      logger.error('Failed to load default location', {
+        error: error.message,
+      });
+    }
+  }, [defaultLocation, documentsPathFromStore, dispatch]);
+
+  const loadSmartFolders = useCallback(async () => {
+    try {
+      if (!window.electronAPI || !window.electronAPI.smartFolders) {
+        logger.error('electronAPI.smartFolders not available');
+        showError(
+          'Electron API not available. Please restart the application.',
+        );
+        return;
+      }
+
+      const folders = await window.electronAPI.smartFolders.get();
+
+      if (!Array.isArray(folders)) {
+        logger.warn('Received non-array response', { folders });
+        setSmartFolders([]);
+        return;
+      }
+
+      setSmartFolders(folders);
+      actions.setPhaseData('smartFolders', folders);
+    } catch (error) {
+      logger.error('Failed to load smart folders', {
+        error: error.message,
+        stack: error.stack,
+      });
+      showError(`Failed to load smart folders: ${error.message}`);
+      setSmartFolders([]);
+    }
+  }, [actions, showError]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -75,173 +152,14 @@ function SetupPhase() {
     return () => {
       isMountedRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentionally run once on mount - loader functions are stable
+  }, [loadSmartFolders, loadDefaultLocation, showError]);
 
-  // FIX: Use ref to avoid re-adding listener on every editingFolder change
-  const editingFolderRef = useRef(editingFolder);
-  useEffect(() => {
-    editingFolderRef.current = editingFolder;
-  }, [editingFolder]);
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && editingFolderRef.current) {
-        setEditingFolder(null);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []); // Empty deps - listener added once
-
-  // Update defaultLocation when Redux store gets the path
-  useEffect(() => {
-    if (documentsPathFromStore && defaultLocation === 'Documents') {
-      setDefaultLocation(
-        normalizePathValue(documentsPathFromStore, defaultLocation),
-      );
-    }
-  }, [documentsPathFromStore, defaultLocation]);
-
-  const loadDefaultLocation = async () => {
+  const handleAddFolder = async (newFolder) => {
     try {
-      const settings = await window.electronAPI.settings.get();
-      if (settings?.defaultSmartFolderLocation) {
-        setDefaultLocation(
-          normalizePathValue(
-            settings.defaultSmartFolderLocation,
-            defaultLocation,
-          ),
-        );
-      } else if (documentsPathFromStore) {
-        setDefaultLocation(
-          normalizePathValue(documentsPathFromStore, defaultLocation),
-        );
-      } else {
-        // Fetch via Redux thunk (will be cached)
-        dispatch(fetchDocumentsPath());
-      }
-    } catch (error) {
-      logger.error('Failed to load default location', {
-        error: error.message,
-      });
-    }
-  };
-
-  const loadSmartFolders = async () => {
-    try {
-      // Debug logging in development mode
-      if (process.env.NODE_ENV === 'development') {
-        logger.debug('Loading smart folders');
-      }
-
-      // Check if electronAPI is available
-      if (!window.electronAPI || !window.electronAPI.smartFolders) {
-        logger.error('electronAPI.smartFolders not available');
-        showError(
-          'Electron API not available. Please restart the application.',
-        );
-        return;
-      }
-
-      const folders = await window.electronAPI.smartFolders.get();
-      // Debug logging in development mode
-      if (process.env.NODE_ENV === 'development') {
-        logger.debug('Loaded smart folders', {
-          count: folders?.length || 0,
-          folders,
-        });
-      }
-
-      if (!Array.isArray(folders)) {
-        logger.warn('Received non-array response', { folders });
-        setSmartFolders([]);
-        return;
-      }
-
-      setSmartFolders(folders);
-      actions.setPhaseData('smartFolders', folders);
-
-      // Debug logging in development mode
-      if (process.env.NODE_ENV === 'development') {
-        if (folders.length > 0) {
-          logger.debug('Smart folders loaded successfully', {
-            count: folders.length,
-          });
-        } else {
-          logger.debug('No smart folders found (using defaults)');
-        }
-      }
-    } catch (error) {
-      logger.error('Failed to load smart folders', {
-        error: error.message,
-        stack: error.stack,
-        electronAPI: !!window.electronAPI,
-        smartFolders: !!window.electronAPI?.smartFolders,
-      });
-      showError(`Failed to load smart folders: ${error.message}`);
-      // Set empty array as fallback
-      setSmartFolders([]);
-    }
-  };
-
-  const handleAddFolder = async () => {
-    if (!newFolderName.trim()) {
-      showWarning('Please enter a folder name');
-      return;
-    }
-    setIsAddingFolder(true);
-    try {
-      let targetPath;
-      if (newFolderPath.trim()) {
-        targetPath = newFolderPath.trim();
-      } else {
-        let resolvedDefaultLocation = normalizePathValue(
-          defaultLocation,
-          documentsPathFromStore || 'Documents',
-        );
-        // Use cached documents path from Redux if defaultLocation isn't absolute
-        if (
-          !/^[A-Za-z]:[\\/]/.test(resolvedDefaultLocation) &&
-          !resolvedDefaultLocation.startsWith('/')
-        ) {
-          if (documentsPathFromStore) {
-            resolvedDefaultLocation = documentsPathFromStore;
-          }
-        }
-        targetPath = `${resolvedDefaultLocation}/${newFolderName.trim()}`;
-      }
-      // Use cached documents path if targetPath isn't absolute
-      if (!/^[A-Za-z]:[\\/]/.test(targetPath) && !targetPath.startsWith('/')) {
-        if (documentsPathFromStore) {
-          targetPath = `${documentsPathFromStore}/${targetPath}`;
-        }
-      }
-
-      // eslint-disable-next-line no-control-regex
-      const illegalChars = /[<>:"|?*\x00-\x1f]/g;
-      if (illegalChars.test(newFolderName)) {
-        showError(
-          'Folder name contains invalid characters. Please avoid: < > : " | ? *',
-        );
-        return;
-      }
-
-      const existingFolder = smartFolders.find(
-        (f) =>
-          f.name.toLowerCase() === newFolderName.trim().toLowerCase() ||
-          (f.path && f.path.toLowerCase() === targetPath.toLowerCase()),
-      );
-      if (existingFolder) {
-        showWarning(
-          `A smart folder with name "${existingFolder.name}" or path "${existingFolder.path}" already exists`,
-        );
-        return;
-      }
-
-      const parentPath = targetPath.substring(
+      // Validate parent path
+      const parentPath = newFolder.path.substring(
         0,
-        targetPath.lastIndexOf('/') || targetPath.lastIndexOf('\\'),
+        newFolder.path.lastIndexOf('/') || newFolder.path.lastIndexOf('\\'),
       );
       try {
         if (parentPath) {
@@ -251,7 +169,7 @@ function SetupPhase() {
             showError(
               `Parent directory "${parentPath}" does not exist or is not accessible`,
             );
-            return;
+            return false;
           }
         }
       } catch {
@@ -260,40 +178,27 @@ function SetupPhase() {
         );
       }
 
-      const newFolder = {
-        name: newFolderName.trim(),
-        path: targetPath,
-        description:
-          newFolderDescription.trim() ||
-          `Smart folder for ${newFolderName.trim()}`,
-        isDefault: false,
-      };
       const result = await window.electronAPI.smartFolders.add(newFolder);
       if (result.success) {
         if (result.directoryCreated) {
           showSuccess(
-            `✅ Added smart folder and created directory: ${newFolder.name}`,
+            `Added smart folder and created directory: ${newFolder.name}`,
           );
         } else if (result.directoryExisted) {
           showSuccess(
-            `✅ Added smart folder: ${newFolder.name} (directory already exists)`,
+            `Added smart folder: ${newFolder.name} (directory already exists)`,
           );
         } else {
-          showSuccess(`✅ Added smart folder: ${newFolder.name}`);
+          showSuccess(`Added smart folder: ${newFolder.name}`);
         }
         if (result.llmEnhanced) {
-          showInfo('🤖 Smart folder enhanced with AI suggestions', 5000);
+          showInfo('Smart folder enhanced with AI suggestions', 5000);
         }
-        showInfo(
-          '💡 Tip: You can reanalyze files to see how they fit with your new smart folder',
-          5000,
-        );
         await loadSmartFolders();
-        setNewFolderName('');
-        setNewFolderPath('');
-        setNewFolderDescription('');
+        return true;
       } else {
-        showError(`❌ Failed to add folder: ${result.error}`);
+        showError(`Failed to add folder: ${result.error}`);
+        return false;
       }
     } catch (error) {
       logger.error('Failed to add smart folder', {
@@ -301,13 +206,14 @@ function SetupPhase() {
         stack: error.stack,
       });
       showError('Failed to add smart folder');
-    } finally {
-      setIsAddingFolder(false);
+      return false;
     }
   };
 
   const handleEditFolder = (folder) => {
     setEditingFolder({ ...folder });
+    // Expand the folder being edited
+    setExpandedFolders((prev) => new Set([...prev, folder.id]));
   };
 
   const handleSaveEdit = async () => {
@@ -322,15 +228,11 @@ function SetupPhase() {
         editingFolder,
       );
       if (result.success) {
-        showSuccess(`✅ Updated folder: ${editingFolder.name}`);
-        showInfo(
-          '💡 Tip: You can reanalyze files to see how they fit with updated smart folders',
-          5000,
-        );
+        showSuccess(`Updated folder: ${editingFolder.name}`);
         await loadSmartFolders();
         setEditingFolder(null);
       } else {
-        showError(`❌ Failed to update folder: ${result.error}`);
+        showError(`Failed to update folder: ${result.error}`);
       }
     } catch (error) {
       logger.error('Failed to update folder', {
@@ -364,38 +266,19 @@ function SetupPhase() {
     try {
       const result = await window.electronAPI.smartFolders.delete(folderId);
       if (result.success) {
-        if (result.deletedFolder) {
-          showSuccess(`✅ Removed smart folder: ${result.deletedFolder.name}`);
-        } else {
-          showSuccess('✅ Removed smart folder');
-        }
+        showSuccess(`Removed smart folder: ${result.deletedFolder?.name || folder.name}`);
         await loadSmartFolders();
       } else {
-        showError(`❌ Failed to delete folder: ${result.error}`);
+        showError(`Failed to delete folder: ${result.error}`);
       }
     } catch (error) {
       logger.error('Failed to delete folder', {
         error: error.message,
         stack: error.stack,
       });
-      showError('❌ Failed to delete folder');
+      showError('Failed to delete folder');
     } finally {
       setIsDeletingFolder(null);
-    }
-  };
-
-  const handleBrowseFolder = async () => {
-    try {
-      const res = await window.electronAPI.files.selectDirectory();
-      // FIX: Handler returns 'path' not 'folder'
-      if (res?.success && res.path) {
-        setNewFolderPath(normalizePathValue(res.path, ''));
-      }
-    } catch (error) {
-      logger.error('Failed to browse folder', {
-        error: error.message,
-      });
-      showError('Failed to browse folder');
     }
   };
 
@@ -403,7 +286,7 @@ function SetupPhase() {
     try {
       const result = await window.electronAPI.files.openFolder(folderPath);
       if (result?.success) {
-        showSuccess(`📁 Opened folder: ${folderPath.split(/[\\/]/).pop()}`);
+        showSuccess(`Opened folder: ${folderPath.split(/[\\/]/).pop()}`);
       } else {
         showError(`Failed to open folder: ${result?.error || 'Unknown error'}`);
       }
@@ -429,59 +312,66 @@ function SetupPhase() {
     }
   };
 
+  const handleToggleExpand = useCallback((folderId) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleViewMode = () => {
+    setViewMode((prev) => (prev === 'compact' ? 'expanded' : 'compact'));
+    // When switching to expanded, expand all; when switching to compact, collapse all
+    if (viewMode === 'compact') {
+      setExpandedFolders(new Set(smartFolders.map((f) => f.id)));
+    } else {
+      setExpandedFolders(new Set());
+    }
+  };
+
+  const isCompactMode = viewMode === 'compact';
+
   return (
-    <div className="min-h-[calc(100vh-var(--app-nav-height))] w-full overflow-auto modern-scrollbar">
-      <div className="container-responsive gap-4 py-4 flex flex-col min-h-0">
-        <div className="text-center space-y-3 flex-shrink-0">
-          <h1 className="heading-primary">
-            ⚙️ Configure <span className="text-gradient">Smart Folders</span>
+    <div className="phase-container">
+      <div className="container-responsive flex flex-col flex-1 min-h-0 py-4 md:py-6 gap-4">
+        {/* Header */}
+        <div className="text-center flex flex-col flex-shrink-0 gap-2">
+          <h1 className="heading-primary text-xl md:text-2xl">
+            Configure <span className="text-gradient">Smart Folders</span>
           </h1>
-          <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl mx-auto">
+          <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
             Define trusted destinations so the AI can organize every discovery
             with confidence.
           </p>
-          <div className="flex items-center justify-center gap-4 text-xs text-system-gray-500">
-            <button
-              className="hover:text-system-gray-800 underline"
-              onClick={() => {
-                try {
-                  const keys = ['setup-current-folders', 'setup-add-folder'];
-                  keys.forEach((k) =>
-                    window.localStorage.setItem(`collapsible:${k}`, 'true'),
-                  );
-                  window.dispatchEvent(new Event('storage'));
-                } catch {
-                  // Non-fatal if localStorage fails
-                }
-              }}
-            >
-              Expand all
-            </button>
-            <span className="text-system-gray-300">•</span>
-            <button
-              className="hover:text-system-gray-800 underline"
-              onClick={() => {
-                try {
-                  const keys = ['setup-current-folders', 'setup-add-folder'];
-                  keys.forEach((k) =>
-                    window.localStorage.setItem(`collapsible:${k}`, 'false'),
-                  );
-                  window.dispatchEvent(new Event('storage'));
-                } catch {
-                  // Non-fatal if localStorage fails
-                }
-              }}
-            >
-              Collapse all
-            </button>
-          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 items-stretch">
-          <Collapsible
-            className="surface-panel h-full flex flex-col"
-            title="📁 Current Smart Folders"
-            actions={
-              smartFolders.length > 0 ? (
+
+        {/* Main content */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-system-gray-600">
+                {isLoading
+                  ? 'Loading...'
+                  : `${smartFolders.length} folder${smartFolders.length !== 1 ? 's' : ''}`}
+              </span>
+              {smartFolders.length > 0 && (
+                <button
+                  onClick={toggleViewMode}
+                  className="text-xs text-system-gray-500 hover:text-system-gray-700 underline transition-colors"
+                >
+                  {isCompactMode ? 'Expand all' : 'Collapse all'}
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {smartFolders.length > 0 && (
                 <Button
                   onClick={async () => {
                     try {
@@ -489,74 +379,69 @@ function SetupPhase() {
                         await window.electronAPI.embeddings.rebuildFolders();
                       if (res?.success) {
                         showSuccess(
-                          `🧠 Rebuilt ${res.folders || 0} folder embeddings`,
+                          `Rebuilt ${res.folders || 0} folder embeddings`,
                         );
                       } else {
                         showError(
-                          `Failed to rebuild embeddings: ${res?.error || 'Unknown error'}`,
+                          `Failed to rebuild: ${res?.error || 'Unknown error'}`,
                         );
                       }
                     } catch (e) {
                       showError(`Failed: ${e.message}`);
                     }
                   }}
-                  variant="primary"
+                  variant="secondary"
                   className="text-sm"
-                  title="Rebuild all smart folder embeddings"
+                  title="Rebuild all folder embeddings"
                 >
-                  🧠 Rebuild Embeddings
+                  <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Rebuild
                 </Button>
-              ) : null
-            }
-            defaultOpen
-            persistKey="setup-current-folders"
-            contentClassName="p-[var(--panel-padding)] flex-1 min-h-[400px] panel-scroll"
-            collapsedPreview={
-              <div className="text-sm text-system-gray-600 py-1">
-                {isLoading
-                  ? 'Loading folders...'
-                  : smartFolders.length > 0
-                    ? `${smartFolders.length} smart folder${smartFolders.length !== 1 ? 's' : ''} configured`
-                    : 'No smart folders configured yet'}
-              </div>
-            }
-          >
+              )}
+              <Button
+                onClick={() => setIsAddModalOpen(true)}
+                variant="primary"
+                className="text-sm"
+              >
+                <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Folder
+              </Button>
+            </div>
+          </div>
+
+          {/* Folder list */}
+          <div className="flex-1 min-h-0">
             {isLoading ? (
               <SmartFolderSkeleton count={3} />
             ) : smartFolders.length === 0 ? (
-              <div className="text-center py-8 space-y-3">
-                <div
-                  className="text-4xl opacity-60"
-                  role="img"
-                  aria-label="empty folder"
-                >
-                  📂
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-system-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
                 </div>
-                <p className="text-system-gray-800 font-medium">
-                  No smart folders yet.
-                </p>
-                <p className="text-system-gray-500 text-sm">
-                  Add at least one destination so analysis and organization have
-                  a place to send files.
+                <h3 className="text-lg font-medium text-system-gray-800 mb-1">
+                  No smart folders yet
+                </h3>
+                <p className="text-sm text-system-gray-500 mb-4 max-w-sm">
+                  Add at least one destination folder so StratoSort knows where to organize your files.
                 </p>
                 <Button
-                  onClick={() => {
-                    try {
-                      const key = 'setup-add-folder';
-                      window.localStorage.setItem(`collapsible:${key}`, 'true');
-                      window.dispatchEvent(new Event('storage'));
-                    } catch {
-                      // non-fatal
-                    }
-                  }}
+                  onClick={() => setIsAddModalOpen(true)}
                   variant="primary"
-                  className="mt-2"
                 >
-                  ➕ Add your first smart folder
+                  <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add your first folder
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4 panel-scroll flex-1 min-h-0 pr-3 pb-4 modern-scrollbar overflow-x-hidden">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {smartFolders.map((folder, index) => (
                   <SmartFolderItem
                     key={folder.id}
@@ -573,136 +458,30 @@ function SetupPhase() {
                     onCreateDirectory={createSingleFolder}
                     onOpenFolder={handleOpenFolder}
                     addNotification={addNotification}
+                    compact={isCompactMode}
+                    isExpanded={expandedFolders.has(folder.id)}
+                    onToggleExpand={handleToggleExpand}
                   />
                 ))}
               </div>
             )}
-          </Collapsible>
-
-          <Collapsible
-            title="Add New Smart Folder"
-            defaultOpen={false}
-            persistKey="setup-add-folder"
-            className="surface-panel h-full flex flex-col md:sticky md:top-[88px]"
-            contentClassName="p-[var(--panel-padding)] space-y-4 panel-scroll flex-1 min-h-0 overflow-y-auto"
-            collapsedPreview={
-              <div className="text-sm text-system-gray-600 py-1">
-                Create a new destination for organized files
-              </div>
-            }
-          >
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-3">
-                  Folder Name
-                </label>
-                <Input
-                  type="text"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === 'Enter' &&
-                      newFolderName.trim() &&
-                      !isAddingFolder
-                    ) {
-                      handleAddFolder();
-                    }
-                  }}
-                  placeholder="e.g., Documents, Photos, Projects"
-                  className="w-full"
-                  aria-describedby="folder-name-help"
-                />
-                <div
-                  id="folder-name-help"
-                  className="text-xs text-system-gray-500 mt-2"
-                >
-                  Enter a descriptive name. Avoid characters: &lt; &gt; : &quot;
-                  | ? *. Press Enter to add the folder.
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-3">
-                  Target Path (optional)
-                </label>
-                <div className="flex gap-4 flex-col sm:flex-row">
-                  <Input
-                    type="text"
-                    value={newFolderPath}
-                    onChange={(e) => setNewFolderPath(e.target.value)}
-                    placeholder="e.g., Documents/Work, Pictures/Family"
-                    className="flex-1"
-                  />
-                  <Button
-                    onClick={handleBrowseFolder}
-                    variant="secondary"
-                    title="Browse for folder"
-                    className="w-full sm:w-auto"
-                  >
-                    📁 Browse
-                  </Button>
-                </div>
-                <p className="text-xs text-system-gray-500 mt-2">
-                  Leave empty to use default {defaultLocation}/
-                  {newFolderName || 'FolderName'}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-3">
-                  Description{' '}
-                  <span className="text-stratosort-blue font-semibold">
-                    (Important for AI)
-                  </span>
-                </label>
-                <Textarea
-                  value={newFolderDescription}
-                  onChange={(e) => setNewFolderDescription(e.target.value)}
-                  placeholder="Describe what types of files should go in this folder. E.g., 'Work documents, contracts, and business correspondence' or 'Family photos from vacations and special events'"
-                  className="w-full"
-                  rows={4}
-                  aria-describedby="description-help"
-                />
-                <div
-                  id="description-help"
-                  className="text-xs text-system-gray-500 mt-2"
-                >
-                  💡 <strong>Tip:</strong> The more specific your description,
-                  the better the AI will organize your files. Include file
-                  types, content themes, and use cases.
-                </div>
-              </div>
-              <Button
-                onClick={handleAddFolder}
-                disabled={!newFolderName.trim() || isAddingFolder}
-                variant="primary"
-                className="w-full sm:w-auto"
-                aria-label={
-                  isAddingFolder ? 'Adding folder...' : 'Add smart folder'
-                }
-              >
-                {isAddingFolder ? (
-                  <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full inline-block mr-2"></div>
-                    Adding...
-                  </>
-                ) : (
-                  <>➕ Add Smart Folder</>
-                )}
-              </Button>
-            </div>
-          </Collapsible>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 pt-1">
+
+        {/* Footer navigation */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0 gap-3 pt-3 border-t border-border-soft/50">
           <Button
             onClick={() => actions.advancePhase(PHASES.WELCOME)}
             variant="secondary"
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto text-sm"
           >
-            ← Back to Welcome
+            <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
           </Button>
           <Button
             onClick={async () => {
-              // Reload folders to ensure we have latest data
               const reloadedFolders =
                 await window.electronAPI.smartFolders.get();
               const currentFolders = Array.isArray(reloadedFolders)
@@ -711,23 +490,16 @@ function SetupPhase() {
 
               if (currentFolders.length === 0) {
                 showWarning(
-                  'Please add at least one smart folder before continuing. Smart folders help the AI organize your files effectively.',
+                  'Please add at least one smart folder before continuing.',
                 );
               } else {
-                // FIX: Update phase data synchronously BEFORE advancing to prevent race condition
-                // This ensures Discover phase has access to latest folder data
-                // Redux dispatch is synchronous - no setTimeout needed (removed arbitrary 50ms delay)
                 actions.setPhaseData('smartFolders', currentFolders);
-
-                // Update local state (for UI consistency, not critical for phase transition)
                 setSmartFolders(currentFolders);
-
-                // Advance immediately - Redux state is already updated synchronously
                 actions.advancePhase(PHASES.DISCOVER);
               }
             }}
             variant="primary"
-            className="w-full sm:w-auto"
+            className="w-full sm:w-auto text-sm"
             disabled={isLoading}
             title={
               smartFolders.length === 0
@@ -737,14 +509,29 @@ function SetupPhase() {
           >
             {isLoading ? (
               <>
-                <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full inline-block mr-2"></div>
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
                 Loading...
               </>
             ) : (
-              <>Continue to File Discovery →</>
+              <>
+                Continue to Discovery
+                <svg className="w-4 h-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </>
             )}
           </Button>
         </div>
+
+        {/* Add Folder Modal */}
+        <AddSmartFolderModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onAdd={handleAddFolder}
+          defaultLocation={defaultLocation}
+          existingFolders={smartFolders}
+          showNotification={addNotification}
+        />
 
         <ConfirmDialog />
       </div>

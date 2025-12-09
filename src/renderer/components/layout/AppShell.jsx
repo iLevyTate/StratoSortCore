@@ -12,14 +12,14 @@ import PropTypes from 'prop-types';
  */
 export default function AppShell({ header, subheader, footer, children }) {
   return (
-    <div className="page-shell app-surface flex min-h-screen min-h-0 flex-col modern-scrollbar">
+    <div className="page-shell app-surface flex h-screen flex-col overflow-hidden">
       {header}
-      {/* FIX: Changed overflow-hidden to overflow-auto to allow phase content to scroll */}
-      <main className="flex flex-1 min-h-0 flex-col pt-[var(--app-nav-height)] overflow-auto modern-scrollbar">
+      <main
+        id="main-content"
+        className="flex-1 flex flex-col min-h-0 pt-[var(--app-nav-height)] overflow-y-auto overflow-x-hidden modern-scrollbar"
+      >
         {subheader}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <div className="animate-fade-in h-full">{children}</div>
-        </div>
+        {children}
       </main>
       {footer}
     </div>

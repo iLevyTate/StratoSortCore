@@ -196,7 +196,14 @@ function registerSettingsIpc({
   const settingsSchema = z
     ? z
         .object({
-          ollamaHost: z.string().url().optional(),
+          // Fixed: Use regex for more permissive URL validation (optional protocol)
+          ollamaHost: z
+            .string()
+            .regex(
+              /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/,
+              'Invalid Ollama URL format',
+            )
+            .optional(),
           textModel: z.string().optional(),
           visionModel: z.string().optional(),
           embeddingModel: z.string().optional(),

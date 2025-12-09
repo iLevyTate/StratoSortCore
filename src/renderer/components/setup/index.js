@@ -36,16 +36,19 @@ export default function FirstRunWizard({ onComplete }) {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   useEffect(() => {
+    let isActive = true;
     (async () => {
       try {
         const res = await window.electronAPI?.ollama?.testConnection?.();
-        setHostOk(Boolean(res?.success));
+        if (isActive) setHostOk(Boolean(res?.success));
       } catch {
-        setHostOk(false);
+        if (isActive) setHostOk(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // setHostOk is a stable state setter from useState
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const handlePull = async () => {
     try {
@@ -104,7 +107,7 @@ export default function FirstRunWizard({ onComplete }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-modal">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-5">
         {step === 0 && (
           <div>
@@ -188,3 +191,4 @@ FirstRunWizard.propTypes = {
 };
 
 export { default as SmartFolderItem } from './SmartFolderItem';
+export { default as AddSmartFolderModal } from './AddSmartFolderModal';

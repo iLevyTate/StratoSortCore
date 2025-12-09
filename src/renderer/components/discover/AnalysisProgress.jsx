@@ -1,5 +1,7 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
+import { FolderOpen } from 'lucide-react';
+import { StatusBadge } from '../ui';
 
 const AnalysisProgress = memo(function AnalysisProgress({
   progress = { current: 0, total: 0 },
@@ -25,8 +27,8 @@ const AnalysisProgress = memo(function AnalysisProgress({
         <div className="flex items-center gap-3">
           <div className="relative h-10 w-10">
             <div className="absolute inset-0 rounded-full border-2 border-stratosort-blue/25 border-t-stratosort-blue animate-spin" />
-            <div className="absolute inset-2 rounded-full bg-stratosort-blue/10 flex items-center justify-center text-base">
-              📂
+            <div className="absolute inset-2 rounded-full bg-stratosort-blue/10 flex items-center justify-center">
+              <FolderOpen className="w-4 h-4 text-stratosort-blue" />
             </div>
           </div>
           <div>
@@ -43,10 +45,9 @@ const AnalysisProgress = memo(function AnalysisProgress({
           </div>
         </div>
         {hasTotals && (
-          <div className="status-chip info">
-            <span className="h-2 w-2 rounded-full bg-stratosort-blue" />
+          <StatusBadge variant="info">
             {percent}%
-          </div>
+          </StatusBadge>
         )}
       </div>
 

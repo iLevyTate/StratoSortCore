@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { logger } from '../../shared/logger';
 import { PHASES, PHASE_METADATA } from '../../shared/constants';
 import { useAppSelector } from '../store/hooks';
@@ -8,6 +8,7 @@ logger.setContext('ProgressIndicator');
 function ProgressIndicator() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const [showPhaseMenu, setShowPhaseMenu] = useState(false);
+  const firstMenuItemRef = useRef(null);
   const metadata = PHASE_METADATA[currentPhase] || {
     title: 'Unknown',
     icon: '?',
@@ -62,13 +63,13 @@ function ProgressIndicator() {
   };
 
   return (
-    <div className="bg-surface-muted/70 border-b border-border-soft px-21 py-8 backdrop-blur-sm">
+    <div className="bg-surface-muted/70 border-b border-border-soft py-[var(--section-gap)] backdrop-blur-sm">
       <div className="container-enhanced">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-[var(--section-gap)]">
             <span className="text-2xl">{metadata.icon}</span>
             <div>
-              <div className="font-semibold text-system-gray-900">
+              <div className="heading-tertiary">
                 {metadata.title}
               </div>
               <div className="text-sm text-system-gray-600">
@@ -80,12 +81,24 @@ function ProgressIndicator() {
                 className="relative"
                 onBlur={() => setTimeout(() => setShowPhaseMenu(false), 100)}
                 tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowPhaseMenu(false);
+                    return;
+                  }
+                  if (e.key === 'ArrowDown' && showPhaseMenu) {
+                    e.preventDefault();
+                    firstMenuItemRef.current?.focus();
+                  }
+                }}
               >
                 <button
-                  className="p-5 text-system-gray-500 hover:text-system-gray-700 rounded"
+                  type="button"
+                  className="p-[var(--spacing-default)] text-system-gray-500 hover:text-system-gray-700 rounded-[var(--radius-sm)]"
                   aria-haspopup="menu"
                   aria-expanded={showPhaseMenu}
                   title="Phase sections"
+                  aria-label="Open phase menu"
                   onClick={() => setShowPhaseMenu((prev) => !prev)}
                 >
                   <svg
@@ -102,9 +115,10 @@ function ProgressIndicator() {
                   </svg>
                 </button>
                 {showPhaseMenu && (
-                  <div className="absolute right-0 mt-2 bg-white border border-system-gray-200 rounded-md shadow-lg z-50 min-w-36">
+                  <div className="absolute right-0 mt-2 bg-white border border-system-gray-200 rounded-[var(--radius-sm)] shadow-lg z-overlay min-w-36">
                     <button
                       className="nav-item"
+                      ref={firstMenuItemRef}
                       onClick={() => {
                         applyPhaseExpandCollapse(true);
                         setShowPhaseMenu(false);
@@ -126,14 +140,14 @@ function ProgressIndicator() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-13">
-            <div className="flex items-center gap-8">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-[var(--section-gap)]">
               <div className="text-sm text-system-gray-600">
                 {metadata.progress}%
               </div>
-              <div className="w-32 h-2 bg-system-gray-200 rounded-full overflow-hidden">
+              <div className="w-32 h-2 bg-system-gray-200 rounded-[var(--radius-full)] overflow-hidden">
                 <div
-                  className="h-full bg-stratosort-blue transition-all duration-500"
+                  className="h-full bg-stratosort-blue transition-all [transition-duration:var(--duration-slow)]"
                   style={{ width: `${metadata.progress}%` }}
                 />
               </div>

@@ -17,6 +17,7 @@ import { logger } from '../../../shared/logger';
 import {
   validateProgressState,
   generatePreviewName as generatePreviewNameUtil,
+  extractFileName,
 } from './namingUtils';
 
 logger.setContext('DiscoverPhase:Analysis');
@@ -102,6 +103,61 @@ export function useAnalysis({
     },
     [namingSettings],
   );
+
+  /**
+   * Re-apply naming convention to existing analyses when settings change.
+   * Keeps Discover and Organize screens in sync with the user-selected naming.
+   */
+  useEffect(() => {
+    if ((!analysisResults || analysisResults.length === 0) && !fileStates) {
+      return;
+    }
+
+    setAnalysisResults((prev) => {
+      if (!prev || prev.length === 0) return prev;
+      return prev.map((result) => {
+        if (!result?.analysis) return result;
+        const baseName =
+          result.analysis.originalSuggestedName ||
+          result.analysis.suggestedName ||
+          result.name ||
+          extractFileName(result.path || '') ||
+          '';
+        return {
+          ...result,
+          analysis: {
+            ...result.analysis,
+            suggestedName: generatePreviewName(baseName),
+            namingConvention: namingSettings,
+          },
+        };
+      });
+    });
+
+    setFileStates((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      Object.entries(next).forEach(([filePath, state]) => {
+        if (!state?.analysis) return;
+        const baseName =
+          state.analysis.originalSuggestedName ||
+          state.analysis.suggestedName ||
+          state.name ||
+          extractFileName(filePath) ||
+          '';
+        next[filePath] = {
+          ...state,
+          analysis: {
+            ...state.analysis,
+            suggestedName: generatePreviewName(baseName),
+            namingConvention: namingSettings,
+          },
+        };
+      });
+      return next;
+    });
+    // Only re-run when naming settings change; analysis state handled via functional updates
+  }, [generatePreviewName, namingSettings, setAnalysisResults, setFileStates]);
 
   /**
    * Main analysis function
@@ -305,11 +361,12 @@ export function useAnalysis({
             const analysis = await analyzeWithRetry(file.path);
 
             if (analysis && !analysis.error) {
+              const baseSuggestedName = analysis.suggestedName || fileName;
               const enhancedAnalysis = {
                 ...analysis,
-                suggestedName: generatePreviewName(
-                  analysis.suggestedName || fileName,
-                ),
+                // Preserve the raw suggestion so we can re-apply naming changes later
+                originalSuggestedName: baseSuggestedName,
+                suggestedName: generatePreviewName(baseSuggestedName),
                 namingConvention: namingSettings,
               };
               results.push({
@@ -476,7 +533,6 @@ export function useAnalysis({
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       setIsAnalyzing,
       setCurrentAnalysisFile,
@@ -488,7 +544,6 @@ export function useAnalysis({
       actions,
       generatePreviewName,
       namingSettings,
-      // Note: analysisResults, fileStates accessed via refs to prevent stale closures
       resetAnalysisState,
     ],
   );

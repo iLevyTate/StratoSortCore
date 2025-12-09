@@ -1,6 +1,14 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
+  Home,
+  Settings,
+  Search,
+  FolderOpen,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
+import {
   PHASES,
   PHASE_TRANSITIONS,
   PHASE_METADATA,
@@ -10,79 +18,49 @@ import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setPhase, toggleSettings } from '../store/slices/uiSlice';
 import UpdateIndicator from './UpdateIndicator';
 
-// Set logger context for this component
 logger.setContext('NavigationBar');
 
-// Phase Icons - Memoized to prevent unnecessary re-renders
+// =============================================================================
+// Icon Components - Using Lucide React for premium icons
+// =============================================================================
+
 const HomeIcon = memo(function HomeIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-    </svg>
-  );
+  return <Home className={className} aria-hidden="true" />;
 });
-HomeIcon.propTypes = {
-  className: PropTypes.string,
-};
+HomeIcon.propTypes = { className: PropTypes.string };
 
 const CogIcon = memo(function CogIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
+  return <Settings className={className} aria-hidden="true" />;
 });
-CogIcon.propTypes = {
-  className: PropTypes.string,
-};
+CogIcon.propTypes = { className: PropTypes.string };
 
 const SearchIcon = memo(function SearchIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
+  return <Search className={className} aria-hidden="true" />;
 });
-SearchIcon.propTypes = {
-  className: PropTypes.string,
-};
+SearchIcon.propTypes = { className: PropTypes.string };
 
 const FolderIcon = memo(function FolderIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-    </svg>
-  );
+  return <FolderOpen className={className} aria-hidden="true" />;
 });
-FolderIcon.propTypes = {
-  className: PropTypes.string,
-};
+FolderIcon.propTypes = { className: PropTypes.string };
 
 const CheckCircleIcon = memo(function CheckCircleIcon({ className = '' }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
+  return <CheckCircle2 className={className} aria-hidden="true" />;
 });
-CheckCircleIcon.propTypes = {
-  className: PropTypes.string,
-};
+CheckCircleIcon.propTypes = { className: PropTypes.string };
 
-// Map phases to their icons
-const phaseIcons = {
+const SettingsIcon = memo(function SettingsIcon({ className = '' }) {
+  return <Settings className={className} aria-hidden="true" />;
+});
+SettingsIcon.propTypes = { className: PropTypes.string };
+
+const SpinnerIcon = memo(function SpinnerIcon({ className = '' }) {
+  return <Loader2 className={`animate-spin ${className}`} aria-hidden="true" />;
+});
+SpinnerIcon.propTypes = { className: PropTypes.string };
+
+// Phase to icon mapping
+const PHASE_ICONS = {
   [PHASES.WELCOME]: HomeIcon,
   [PHASES.SETUP]: CogIcon,
   [PHASES.DISCOVER]: SearchIcon,
@@ -90,22 +68,191 @@ const phaseIcons = {
   [PHASES.COMPLETE]: CheckCircleIcon,
 };
 
-// Settings Icon SVG Component - Memoized
-const SettingsIcon = memo(function SettingsIcon({ className = '' }) {
+const PHASE_ORDER = [
+  PHASES.WELCOME,
+  PHASES.SETUP,
+  PHASES.DISCOVER,
+  PHASES.ORGANIZE,
+  PHASES.COMPLETE,
+];
+
+// =============================================================================
+// Sub-Components
+// =============================================================================
+
+/**
+ * Connection status indicator - subtle dot with tooltip
+ */
+const ConnectionIndicator = memo(function ConnectionIndicator({ isConnected = true }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      xmlns="http://www.w3.org/2000/svg"
+    <div
+      className="relative flex items-center justify-center"
+      title={isConnected ? 'Services connected' : 'Services disconnected'}
+      aria-label={isConnected ? 'Connected' : 'Disconnected'}
     >
-      <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5a3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.08-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1c0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66Z" />
-    </svg>
+      <span
+        className={`
+          h-2 w-2 rounded-full
+          ${isConnected ? 'bg-stratosort-success' : 'bg-stratosort-danger'}
+        `}
+      />
+      {isConnected && (
+        <span className="absolute inset-0 h-2 w-2 rounded-full bg-stratosort-success animate-ping opacity-75" />
+      )}
+    </div>
   );
 });
-SettingsIcon.propTypes = {
-  className: PropTypes.string,
+ConnectionIndicator.propTypes = { isConnected: PropTypes.bool };
+
+/**
+ * Brand logo and name
+ */
+const Brand = memo(function Brand({ isConnected }) {
+  return (
+    <div className="flex items-center gap-3 select-none">
+      <div className="relative">
+        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-gradient-primary-start to-gradient-primary-end text-white font-semibold text-sm flex items-center justify-center shadow-md">
+          S
+        </div>
+        {/* Connection indicator overlaid on logo */}
+        <div className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-white rounded-full shadow-sm">
+          <ConnectionIndicator isConnected={isConnected} />
+        </div>
+      </div>
+      <div className="hidden sm:block leading-tight">
+        <p className="text-sm font-semibold text-system-gray-900">StratoSort</p>
+        <p className="text-xs text-system-gray-500">Cognitive file flow</p>
+      </div>
+    </div>
+  );
+});
+Brand.propTypes = { isConnected: PropTypes.bool };
+
+/**
+ * Navigation tab button
+ */
+const NavTab = memo(function NavTab({
+  phase,
+  isActive,
+  canNavigate,
+  isLoading,
+  onClick,
+  onHover,
+  isHovered,
+}) {
+  const metadata = PHASE_METADATA[phase];
+  const IconComponent = PHASE_ICONS[phase];
+
+  // Get short label for nav
+  const label = useMemo(() => {
+    const navLabel = metadata?.navLabel;
+    if (navLabel) return navLabel;
+
+    const title = metadata?.title || '';
+    const words = title
+      .replace(/&/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .filter((w) => !/^to|and|of|the|for|a|an$/i.test(w));
+    return words.slice(0, 2).join(' ');
+  }, [metadata]);
+
+  const showSpinner = isActive && isLoading;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => onHover(phase)}
+      onMouseLeave={() => onHover(null)}
+      disabled={!canNavigate}
+      className={`
+        relative flex items-center gap-2 rounded-full
+        px-3 py-1.5 text-sm font-medium whitespace-nowrap
+        transition-all duration-200 ease-out
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
+        ${isActive
+          ? 'bg-white text-stratosort-blue shadow-sm border border-system-gray-200'
+          : canNavigate
+            ? 'text-system-gray-600 hover:text-system-gray-900 hover:bg-white/60 border border-transparent'
+            : 'text-system-gray-400 cursor-not-allowed border border-transparent'
+        }
+      `}
+      aria-label={metadata?.title}
+      aria-current={isActive ? 'page' : undefined}
+      aria-busy={showSpinner}
+      title={
+        !canNavigate && !isActive
+          ? 'Navigation disabled during operation'
+          : metadata?.description || metadata?.title
+      }
+      style={{ WebkitAppRegion: 'no-drag' }}
+    >
+      {showSpinner ? (
+        <SpinnerIcon className="h-4 w-4 text-stratosort-blue" />
+      ) : (
+        IconComponent && (
+          <IconComponent
+            className={`h-4 w-4 transition-colors duration-200
+              ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}
+            `}
+          />
+        )
+      )}
+      <span>{label}</span>
+
+      {/* Active indicator */}
+      {isActive && !showSpinner && (
+        <span className="absolute -bottom-px left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-stratosort-blue" />
+      )}
+    </button>
+  );
+});
+
+NavTab.propTypes = {
+  phase: PropTypes.string.isRequired,
+  isActive: PropTypes.bool.isRequired,
+  canNavigate: PropTypes.bool.isRequired,
+  isLoading: PropTypes.bool.isRequired,
+  onClick: PropTypes.func.isRequired,
+  onHover: PropTypes.func.isRequired,
+  isHovered: PropTypes.bool.isRequired,
 };
+
+/**
+ * Action buttons (settings, update indicator)
+ */
+const NavActions = memo(function NavActions({ onSettingsClick }) {
+  return (
+    <div
+      className="flex items-center gap-2"
+      style={{ WebkitAppRegion: 'no-drag' }}
+    >
+      <UpdateIndicator />
+      <button
+        type="button"
+        onClick={onSettingsClick}
+        className="
+          h-9 w-9 rounded-lg flex items-center justify-center
+          text-system-gray-500 hover:text-stratosort-blue
+          bg-white/80 hover:bg-white border border-system-gray-200 hover:border-stratosort-blue/30
+          shadow-sm hover:shadow-md
+          transition-all duration-200 ease-out
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
+        "
+        aria-label="Open Settings"
+        title="Settings"
+      >
+        <SettingsIcon className="h-5 w-5" />
+      </button>
+    </div>
+  );
+});
+NavActions.propTypes = { onSettingsClick: PropTypes.func.isRequired };
+
+// =============================================================================
+// Main Component
+// =============================================================================
 
 function NavigationBar() {
   const dispatch = useAppDispatch();
@@ -114,7 +261,10 @@ function NavigationBar() {
   const isAnalyzing = useAppSelector((state) => state.ui.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
 
-  // MEDIUM FIX: Memoize actions to prevent object recreation on every render
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [hoveredTab, setHoveredTab] = useState(null);
+
+  // Memoized action creators
   const actions = useMemo(
     () => ({
       advancePhase: (phase) => dispatch(setPhase(phase)),
@@ -123,247 +273,93 @@ function NavigationBar() {
     [dispatch],
   );
 
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [hoveredTab, setHoveredTab] = useState(null);
-
+  // Scroll effect for glass morphism
   useEffect(() => {
     const handleScroll = () => {
-      try {
-        // Add null check for window object
-        if (typeof window !== 'undefined' && window.scrollY !== undefined) {
-          setIsScrolled(window.scrollY > 10);
-        }
-      } catch (error) {
-        logger.error('Error in scroll handler', {
-          error: error.message,
-          stack: error.stack,
-        });
-      }
+      setIsScrolled(window.scrollY > 10);
     };
 
-    // Initial check
     handleScroll();
-
-    // Add event listener with error handling
-    try {
-      window.addEventListener('scroll', handleScroll, { passive: true });
-    } catch (error) {
-      logger.error('Failed to add scroll listener', {
-        error: error.message,
-      });
-    }
-
-    // Cleanup function
-    return () => {
-      try {
-        window.removeEventListener('scroll', handleScroll);
-      } catch (error) {
-        logger.error('Failed to remove scroll listener', {
-          error: error.message,
-        });
-      }
-    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Phase navigation handler
   const handlePhaseChange = useCallback(
     (newPhase) => {
-      try {
-        // Validate inputs
-        if (!newPhase || typeof newPhase !== 'string') {
-          logger.warn('Invalid phase', { phase: newPhase });
-          return;
-        }
+      if (!newPhase || typeof newPhase !== 'string') return;
 
-        const allowedTransitions = PHASE_TRANSITIONS[currentPhase] || [];
-        if (
-          allowedTransitions.includes(newPhase) ||
-          newPhase === currentPhase
-        ) {
-          // Check if actions and advancePhase exist
-          if (actions && typeof actions.advancePhase === 'function') {
-            actions.advancePhase(newPhase);
-          } else {
-            logger.error('advancePhase function not available');
-          }
-        }
-      } catch (error) {
-        logger.error('Error changing phase', {
-          error: error.message,
-          stack: error.stack,
-        });
+      const allowedTransitions = PHASE_TRANSITIONS[currentPhase] || [];
+      if (allowedTransitions.includes(newPhase) || newPhase === currentPhase) {
+        actions.advancePhase(newPhase);
       }
     },
     [currentPhase, actions],
   );
 
-  const phaseOrder = [
-    PHASES.WELCOME,
-    PHASES.SETUP,
-    PHASES.DISCOVER,
-    PHASES.ORGANIZE,
-    PHASES.COMPLETE,
-  ];
+  // Settings handler
+  const handleSettingsClick = useCallback(() => {
+    actions.toggleSettings();
+  }, [actions]);
 
-  const getTwoWordLabel = (title, navLabel) => {
-    if (navLabel && typeof navLabel === 'string') return navLabel;
-    if (!title) return '';
-    const filtered = title
-      .replace(/&/g, ' ')
-      .split(/\s+/)
-      .filter(Boolean)
-      .filter((w) => !/^to|and|of|the|for|a|an$/i.test(w));
-    return filtered.slice(0, 2).join(' ');
-  };
-
-  const navShellClasses = [
-    'fixed inset-x-0 top-0 z-[100] border-b border-white/60',
-    'backdrop-blur-xl backdrop-saturate-150 transition-all duration-300',
-    isScrolled ? 'bg-white/95 shadow-glass' : 'bg-white/85 shadow-md',
-  ].join(' ');
+  // Check if navigation should be blocked
+  const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
 
   return (
-    <div className={navShellClasses} style={{ WebkitAppRegion: 'drag' }}>
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gradient-primary-start/30 to-transparent" />
-      <div className="relative flex h-[var(--app-nav-height)] items-center justify-between px-4 md:px-6 lg:px-8 xl:px-10">
-        <div
-          className="flex items-center gap-3 select-none"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-gradient-primary-start to-gradient-primary-end text-white font-semibold flex items-center justify-center shadow-glow">
-            S
-          </div>
-          <div className="leading-tight">
-            <p className="text-base font-semibold text-system-gray-900">
-              StratoSort
-            </p>
-            <p className="text-xs text-system-gray-500">Cognitive file flow</p>
-          </div>
+    <header
+      className={`
+        fixed inset-x-0 top-0 z-[100]
+        border-b backdrop-blur-xl backdrop-saturate-150
+        transition-all duration-300 ease-out
+        ${isScrolled
+          ? 'bg-white/95 border-system-gray-200/60 shadow-md'
+          : 'bg-white/85 border-white/60 shadow-sm'
+        }
+      `}
+      style={{ WebkitAppRegion: 'drag' }}
+    >
+      {/* Top highlight line */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gradient-primary-start/20 to-transparent" />
+
+      <div className="relative flex h-14 items-center justify-between px-4 lg:px-6">
+        {/* Left: Brand */}
+        <div style={{ WebkitAppRegion: 'no-drag' }}>
+          <Brand isConnected={true} />
         </div>
 
-        {/* MEDIUM FIX: Add role and aria-label for accessibility */}
+        {/* Center: Phase Navigation */}
         <nav
-          className="flex items-center gap-3 lg:gap-4 xl:gap-5"
+          className="flex items-center gap-1"
           style={{ WebkitAppRegion: 'no-drag' }}
           aria-label="Phase navigation"
         >
-          {phaseOrder.map((phase) => {
-            const metadata = PHASE_METADATA[phase];
+          {PHASE_ORDER.map((phase) => {
             const allowedTransitions = PHASE_TRANSITIONS[currentPhase] || [];
-            // Check if transition is allowed AND no blocking operations are in progress
-            const isBlockedByOperation =
-              isOrganizing || isAnalyzing || isLoading;
-            const canNavigate =
-              (allowedTransitions.includes(phase) || phase === currentPhase) &&
-              !isBlockedByOperation;
-            const label = getTwoWordLabel(metadata.title, metadata.navLabel);
             const isActive = phase === currentPhase;
-            const IconComponent = phaseIcons[phase];
-            // Show loading state on current phase during operations
-            const showSpinner = isActive && isBlockedByOperation;
+            const canNavigate =
+              (allowedTransitions.includes(phase) || isActive) &&
+              !isBlockedByOperation;
 
             return (
-              <button
+              <NavTab
                 key={phase}
+                phase={phase}
+                isActive={isActive}
+                canNavigate={canNavigate}
+                isLoading={isActive && isBlockedByOperation}
                 onClick={() => canNavigate && handlePhaseChange(phase)}
-                onMouseEnter={() => setHoveredTab(phase)}
-                onMouseLeave={() => setHoveredTab(null)}
-                disabled={!canNavigate}
-                className={[
-                  'relative flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-all duration-200',
-                  isActive
-                    ? 'bg-white/95 text-stratosort-blue border-border-soft shadow-sm'
-                    : canNavigate
-                      ? 'text-system-gray-600 border-border-soft/40 hover:border-border-soft hover:text-system-gray-900 hover:bg-white/80 shadow-xs'
-                      : 'text-system-gray-400/70 border-transparent cursor-not-allowed',
-                ].join(' ')}
-                aria-label={metadata.title}
-                aria-current={isActive ? 'page' : undefined}
-                aria-busy={showSpinner}
-                title={
-                  isBlockedByOperation && !isActive
-                    ? 'Navigation disabled during operation'
-                    : metadata.description || metadata.title
-                }
-                style={{ WebkitAppRegion: 'no-drag' }}
-              >
-                {showSpinner ? (
-                  <svg
-                    className="animate-spin h-4 w-4 text-stratosort-blue"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                ) : (
-                  IconComponent && (
-                    <IconComponent
-                      className={`h-4 w-4 ${
-                        isActive || hoveredTab === phase
-                          ? 'text-stratosort-blue'
-                          : 'text-current opacity-70'
-                      }`}
-                    />
-                  )
-                )}
-                <span className="font-medium">{label}</span>
-                {isActive && !showSpinner && (
-                  <span className="absolute -bottom-1 left-1/2 h-1.5 w-5 -translate-x-1/2 rounded-full bg-gradient-primary-start/80" />
-                )}
-              </button>
+                onHover={setHoveredTab}
+                isHovered={hoveredTab === phase}
+              />
             );
           })}
         </nav>
 
-        <div
-          className="flex items-center gap-2"
-          style={{ WebkitAppRegion: 'no-drag' }}
-        >
-          <div className="status-chip success">
-            <span className="h-2 w-2 rounded-full bg-stratosort-success animate-pulse" />
-            Connected
-          </div>
-          <UpdateIndicator />
-          <button
-            onClick={() => {
-              try {
-                if (actions && typeof actions.toggleSettings === 'function') {
-                  actions.toggleSettings();
-                } else {
-                  logger.error('toggleSettings function not available');
-                }
-              } catch (error) {
-                logger.error('Error toggling settings', {
-                  error: error.message,
-                  stack: error.stack,
-                });
-              }
-            }}
-            className="btn h-10 w-10 rounded-2xl border border-system-gray-200 bg-white text-system-gray-600 hover:text-stratosort-blue hover:border-stratosort-blue hover:shadow-md transition-all duration-200 flex items-center justify-center"
-            aria-label="Open Settings"
-            title="Settings"
-          >
-            <SettingsIcon className="h-5 w-5" />
-          </button>
-        </div>
+        {/* Right: Actions */}
+        <NavActions onSettingsClick={handleSettingsClick} />
       </div>
-    </div>
+    </header>
   );
 }
 
-// FIX: Wrap in memo for consistency with other components
-// Note: Limited benefit since component reads from Redux, but prevents re-renders from parent
 export default memo(NavigationBar);

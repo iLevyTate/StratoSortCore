@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { CheckCircle, Lightbulb, Info, ChevronRight, FileText } from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 
@@ -44,14 +45,14 @@ function BatchOrganizationSuggestions({
     batchSuggestions;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-[var(--spacing-default)]">
       {/* Pattern Analysis */}
       {patterns && (
         <Card className="p-4 bg-blue-50 border-stratosort-blue/30">
           <h3 className="font-medium text-system-gray-900 mb-3">
             Pattern Analysis
           </h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[var(--spacing-cozy)] text-sm">
             {patterns.hasCommonProject && (
               <div>
                 <span className="text-system-gray-600">Common Project:</span>
@@ -79,7 +80,7 @@ function BatchOrganizationSuggestions({
                   {patterns.commonTerms.map((term) => (
                     <span
                       key={term}
-                      className="px-2 py-1 bg-white rounded text-xs"
+                      className="px-2 py-1 bg-white rounded-md text-xs"
                     >
                       {term}
                     </span>
@@ -97,25 +98,39 @@ function BatchOrganizationSuggestions({
           <h3 className="font-medium text-system-gray-900 mb-3">
             Recommendations
           </h3>
-          <div className="space-y-3">
+          <div className="flex flex-col gap-[var(--spacing-cozy)]">
             {/* FIX: Use stable identifier instead of array index as key */}
             {recommendations.map((rec) => (
               <div key={rec.id || rec.description || rec.type} className="flex items-start gap-3">
-                <div className="mt-1">
-                  {rec.confidence >= 0.8
-                    ? '✅'
-                    : rec.confidence >= 0.5
-                      ? '💡'
-                      : 'ℹ️'}
+                <div className="mt-0.5">
+                  {rec.confidence >= 0.8 ? (
+                    <CheckCircle className="w-4 h-4 text-stratosort-success" />
+                  ) : rec.confidence >= 0.5 ? (
+                    <Lightbulb className="w-4 h-4 text-stratosort-warning" />
+                  ) : (
+                    <Info className="w-4 h-4 text-stratosort-blue" />
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="font-medium text-sm">{rec.description}</div>
                   <div className="text-xs text-system-gray-600 mt-1">
                     {rec.suggestion}
                   </div>
-                  <div className="text-xs text-system-gray-500 mt-1">
-                    Confidence: {Math.round(rec.confidence * 100)}%
-                  </div>
+                <div className="text-xs text-system-gray-500 mt-1">
+                  Confidence:{' '}
+                  {Math.round(
+                    Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        (rec.confidence || 0) > 1
+                          ? rec.confidence
+                          : (rec.confidence || 0) * 100,
+                      ),
+                    ),
+                  )}
+                  %
+                </div>
                 </div>
               </div>
             ))}
@@ -131,7 +146,18 @@ function BatchOrganizationSuggestions({
               Suggested Organization Strategy
             </h3>
             <span className="text-sm text-stratosort-blue">
-              {Math.round((suggestedStrategy.score || 0) * 100)}% Match
+              {Math.round(
+                Math.min(
+                  100,
+                  Math.max(
+                    0,
+                    (suggestedStrategy.score || 0) > 1
+                      ? suggestedStrategy.score
+                      : (suggestedStrategy.score || 0) * 100,
+                  ),
+                ),
+              )}
+              % Match
             </span>
           </div>
           <div className="mb-4">
@@ -141,7 +167,7 @@ function BatchOrganizationSuggestions({
             </div>
             <div className="text-xs text-system-gray-500 mt-2">
               Pattern:{' '}
-              <code className="bg-white px-2 py-1 rounded">
+              <code className="bg-white px-2 py-1 rounded-md">
                 {suggestedStrategy.pattern}
               </code>
             </div>
@@ -171,7 +197,7 @@ function BatchOrganizationSuggestions({
         <h3 className="font-medium text-system-gray-900 mb-3">
           Suggested File Groups ({groups.length})
         </h3>
-        <div className="space-y-3">
+        <div className="flex flex-col gap-[var(--spacing-cozy)] max-h-viewport-md overflow-y-auto modern-scrollbar">
           {/* FIX: Use stable identifier instead of array index as key */}
           {groups.map((group, groupIndex) => (
             <Card key={group.folder || group.id || `group-${groupIndex}`} className="overflow-hidden">
@@ -181,13 +207,11 @@ function BatchOrganizationSuggestions({
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span
-                      className={`transform transition-transform ${
+                    <ChevronRight
+                      className={`w-4 h-4 text-system-gray-500 transform transition-transform ${
                         expandedGroups.has(groupIndex) ? 'rotate-90' : ''
                       }`}
-                    >
-                      ▶
-                    </span>
+                    />
                     <div>
                       <div className="font-medium">{group.folder}</div>
                       <div className="text-sm text-system-gray-600">
@@ -218,7 +242,7 @@ function BatchOrganizationSuggestions({
               </div>
 
               {expandedGroups.has(groupIndex) && (
-                <div className="border-t border-gray-200 p-4 bg-gray-50">
+                <div className="border-t border-system-gray-200 p-4 bg-system-gray-50">
                   <div className="space-y-2">
                     {/* FIX: Use stable identifier instead of array index as key */}
                     {group.files.map((file) => (
@@ -227,7 +251,7 @@ function BatchOrganizationSuggestions({
                         className="flex items-center justify-between text-sm"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="text-system-gray-500">📄</span>
+                          <FileText className="w-4 h-4 text-system-gray-400" />
                           <span>{file.name}</span>
                         </div>
                         {file.suggestion && (
@@ -245,7 +269,7 @@ function BatchOrganizationSuggestions({
                   {/* FIX: Use consistent optional chaining and add array length check */}
                   {group.files?.length > 0 &&
                     group.files[0]?.alternatives?.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="mt-3 pt-3 border-t border-system-gray-200">
                         <div className="text-xs text-system-gray-600 mb-2">
                           Alternative folders for this group:
                         </div>
@@ -256,7 +280,7 @@ function BatchOrganizationSuggestions({
                             .map((alt) => (
                               <button
                                 key={alt.folder || alt.id}
-                                className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:border-stratosort-blue transition-colors"
+                                className="px-2 py-1 text-xs bg-white border border-system-gray-300 rounded-md hover:border-stratosort-blue transition-colors"
                                 onClick={() =>
                                   onCustomizeGroup(groupIndex, {
                                     ...group,

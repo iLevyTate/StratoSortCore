@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
@@ -17,6 +17,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   const hasLoadedRef = React.useRef(false);
   // FIX: Track mounted state to prevent state updates after unmount
   const isMountedRef = React.useRef(true);
+  const [isClearing, setIsClearing] = useState(false);
 
   // FIX: Cleanup on unmount
   useEffect(() => {
@@ -26,17 +27,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
     };
   }, []);
 
-  useEffect(() => {
-    // FIX H3: Only load data once on mount to prevent infinite re-renders
-    if (hasLoadedRef.current) {
-      return;
-    }
-    hasLoadedRef.current = true;
-    loadAnalysisData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // loadAnalysisData intentionally excluded - ref guard prevents infinite loops
-
-  const loadAnalysisData = async () => {
+  const loadAnalysisData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [stats, history] = await Promise.all([
@@ -64,7 +55,16 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
         setIsLoading(false);
       }
     }
-  };
+  }, [addNotification, setAnalysisStats]);
+
+  useEffect(() => {
+    // FIX H3: Only load data once on mount to prevent infinite re-renders
+    if (hasLoadedRef.current) {
+      return;
+    }
+    hasLoadedRef.current = true;
+    loadAnalysisData();
+  }, [loadAnalysisData]);
 
   const searchHistory = async () => {
     if (!searchQuery.trim()) return;
@@ -119,6 +119,29 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
     }
   };
 
+  const clearHistory = useCallback(async () => {
+    if (isClearing) return;
+    const confirmed = window.confirm(
+      'This will permanently clear all analysis history and statistics. Continue?',
+    );
+    if (!confirmed) return;
+    setIsClearing(true);
+    try {
+      const result = await window.electronAPI.analysisHistory.clear();
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to clear history');
+      }
+      await loadAnalysisData();
+      addNotification('Analysis history cleared', 'success');
+    } catch (error) {
+      addNotification('Failed to clear analysis history', 'error');
+    } finally {
+      if (isMountedRef.current) {
+        setIsClearing(false);
+      }
+    }
+  }, [isClearing, loadAnalysisData, addNotification]);
+
   const getDestinationLabel = (entry) => {
     try {
       const actual = entry?.organization?.actual;
@@ -142,7 +165,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[200]">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden">
         <div className="p-[var(--panel-padding)] border-b border-system-gray-200">
           <div className="flex items-center justify-between">
@@ -191,7 +214,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       </div>
                     </div>
                     <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] text-center">
-                      <div className="text-2xl font-bold text-green-600">
+                    <div className="text-2xl font-bold text-stratosort-success">
                         {Math.round(analysisStats.averageConfidence || 0)}%
                       </div>
                       <div className="text-sm text-system-gray-600">
@@ -199,7 +222,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       </div>
                     </div>
                     <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] text-center">
-                      <div className="text-2xl font-bold text-purple-600">
+                    <div className="text-2xl font-bold text-stratosort-indigo">
                         {analysisStats.categoriesCount || 0}
                       </div>
                       <div className="text-sm text-system-gray-600">
@@ -207,7 +230,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       </div>
                     </div>
                     <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] text-center">
-                      <div className="text-2xl font-bold text-orange-600">
+                    <div className="text-2xl font-bold text-stratosort-warning">
                         {Math.round(analysisStats.averageProcessingTime || 0)}ms
                       </div>
                       <div className="text-sm text-system-gray-600">
@@ -232,6 +255,14 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       >
                         Export CSV
                       </Button>
+                    <Button
+                      onClick={clearHistory}
+                      variant="danger"
+                      className="text-sm ml-auto"
+                      disabled={isClearing}
+                    >
+                      {isClearing ? 'Clearing...' : 'Clear History'}
+                    </Button>
                     </div>
                   </div>
                 </div>

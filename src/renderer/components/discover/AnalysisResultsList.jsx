@@ -1,7 +1,8 @@
 import React, { memo, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { FixedSizeList as List } from 'react-window';
-import { Button } from '../ui';
+import { FileText, Compass } from 'lucide-react';
+import { Button, StatusBadge } from '../ui';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
 // Each item is approximately 140px in height
@@ -43,23 +44,28 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
         : 'info';
 
   return (
-    <div style={style} className="px-2 py-1">
-      <div className="list-row h-full overflow-hidden p-4 flex flex-col gap-3">
+    <div style={style} className="px-2 py-1.5">
+      <div className="list-row h-full overflow-visible p-4 flex flex-col gap-3">
         <div className="flex items-start gap-4">
-          <div className="text-2xl flex-shrink-0">📄</div>
+          <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
           <div className="flex-1 min-w-0 overflow-hidden">
             <div
-              className="font-medium text-system-gray-900 truncate"
+              className="font-medium text-system-gray-900 truncate whitespace-normal break-words"
               title={`${file.name}${file.path ? ` (${file.path})` : ''}`}
             >
               {file.name}
             </div>
-            <div className="text-xs text-system-gray-500 truncate">
-              {file.source?.replace('_', ' ')}
-              {file.size ? ` • ${Math.round(file.size / 1024)} KB` : ''}
+            <div className="text-xs text-system-gray-500 truncate whitespace-normal break-words">
+              {file.source && file.source !== 'file_selection' && (
+                <>
+                  {file.source.replace('_', ' ')}
+                  {file.size ? ' • ' : ''}
+                </>
+              )}
+              {file.size ? `${Math.round(file.size / 1024)} KB` : ''}
             </div>
             {file.analysis?.category && (
-              <div className="text-xs text-system-gray-600 mt-1 truncate">
+              <div className="text-xs text-system-gray-600 mt-1 truncate whitespace-normal break-words">
                 Category:{' '}
                 <span className="text-stratosort-blue font-medium">
                   {file.analysis.category}
@@ -68,14 +74,14 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
             )}
           </div>
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
-            <div className={`status-chip ${tone}`}>
+            <StatusBadge variant={tone}>
               <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
                 {stateDisplay.icon}
               </span>
               <span>{stateDisplay.label}</span>
-            </div>
+            </StatusBadge>
             {confidence !== null && (
-              <span className="text-[11px] text-system-gray-500">
+              <span className="text-xs text-system-gray-500">
                 Confidence {confidence}%
               </span>
             )}
@@ -87,7 +93,6 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
             variant="ghost"
             onClick={() => handleAction('open', file.path)}
             aria-label="Open file"
-            className="!px-3 !py-1.5"
           >
             Open
           </Button>
@@ -96,7 +101,6 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
             variant="ghost"
             onClick={() => handleAction('reveal', file.path)}
             aria-label="Reveal in file explorer"
-            className="!px-3 !py-1.5"
           >
             Reveal
           </Button>
@@ -105,7 +109,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
             variant="subtle"
             onClick={() => handleAction('remove', file.path)}
             aria-label="Remove from queue"
-            className="!px-3 !py-1.5 ml-auto"
+            className="ml-auto"
           >
             Remove
           </Button>
@@ -114,7 +118,6 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
             variant="danger"
             onClick={() => handleAction('delete', file.path)}
             aria-label="Delete file permanently"
-            className="!px-3 !py-1.5"
           >
             Delete
           </Button>
@@ -182,12 +185,12 @@ function AnalysisResultsList({
   }, [items.length]);
 
   // Simple wrapper - inline to avoid component identity issues
-  const listContainerClass = `p-4 h-full w-full modern-scrollbar ${shouldVirtualize ? 'overflow-hidden' : 'overflow-y-auto'}`;
+  const listContainerClass = `p-4 w-full modern-scrollbar overflow-y-auto flex flex-col gap-3`;
 
   if (isEmpty) {
     return (
       <div className="empty-state">
-        <div className="text-3xl">🧭</div>
+        <Compass className="w-8 h-8 text-system-gray-400" />
         <div className="space-y-1">
           <p className="text-system-gray-800 font-semibold">
             No analysis results yet
@@ -240,23 +243,28 @@ function AnalysisResultsList({
         return (
           <div
             key={file.path || file.id || `${file.name}-${file.size || index}`}
-            className="list-row p-4 overflow-hidden"
+            className="list-row p-4 overflow-visible"
           >
             <div className="flex items-start gap-4">
-              <div className="text-2xl flex-shrink-0">📄</div>
+              <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
               <div className="flex-1 min-w-0 overflow-hidden">
                 <div
-                  className="font-medium text-system-gray-900 truncate"
+                  className="font-medium text-system-gray-900 truncate whitespace-normal break-words"
                   title={`${file.name}${file.path ? ` (${file.path})` : ''}`}
                 >
                   {file.name}
                 </div>
-                <div className="text-xs text-system-gray-500 truncate">
-                  {file.source?.replace('_', ' ')}
-                  {file.size ? ` • ${Math.round(file.size / 1024)} KB` : ''}
+                <div className="text-xs text-system-gray-500 truncate whitespace-normal break-words">
+                  {file.source && file.source !== 'file_selection' && (
+                    <>
+                      {file.source.replace('_', ' ')}
+                      {file.size ? ' • ' : ''}
+                    </>
+                  )}
+                  {file.size ? `${Math.round(file.size / 1024)} KB` : ''}
                 </div>
                 {file.analysis?.category && (
-                  <div className="text-xs text-system-gray-600 mt-1 truncate">
+                  <div className="text-xs text-system-gray-600 mt-1 truncate whitespace-normal break-words">
                     Category:{' '}
                     <span className="text-stratosort-blue font-medium">
                       {file.analysis.category}
@@ -265,14 +273,14 @@ function AnalysisResultsList({
                 )}
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <div className={`status-chip ${tone}`}>
+                <StatusBadge variant={tone}>
                   <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
                     {stateDisplay.icon}
                   </span>
                   <span>{stateDisplay.label}</span>
-                </div>
+                </StatusBadge>
                 {confidence !== null && (
-                  <span className="text-[11px] text-system-gray-500">
+                  <span className="text-xs text-system-gray-500">
                     Confidence {confidence}%
                   </span>
                 )}
@@ -284,7 +292,6 @@ function AnalysisResultsList({
                 variant="ghost"
                 onClick={() => handleAction('open', file.path)}
                 aria-label="Open file"
-                className="!px-3 !py-1.5"
               >
                 Open
               </Button>
@@ -293,7 +300,6 @@ function AnalysisResultsList({
                 variant="ghost"
                 onClick={() => handleAction('reveal', file.path)}
                 aria-label="Reveal in file explorer"
-                className="!px-3 !py-1.5"
               >
                 Reveal
               </Button>
@@ -302,7 +308,7 @@ function AnalysisResultsList({
                 variant="subtle"
                 onClick={() => handleAction('remove', file.path)}
                 aria-label="Remove from queue"
-                className="!px-3 !py-1.5 ml-auto"
+                className="ml-auto"
               >
                 Remove
               </Button>
@@ -311,7 +317,6 @@ function AnalysisResultsList({
                 variant="danger"
                 onClick={() => handleAction('delete', file.path)}
                 aria-label="Delete file permanently"
-                className="!px-3 !py-1.5"
               >
                 Delete
               </Button>

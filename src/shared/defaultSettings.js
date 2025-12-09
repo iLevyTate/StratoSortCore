@@ -3,6 +3,8 @@
  * Single source of truth for all default settings
  */
 
+const { SERVICE_URLS } = require('./configDefaults');
+
 const DEFAULT_SETTINGS = {
   // UI
   theme: 'system',
@@ -17,7 +19,7 @@ const DEFAULT_SETTINGS = {
   downloadConfidenceThreshold: 0.9,
   reviewThreshold: 0.5,
   // AI
-  ollamaHost: 'http://127.0.0.1:11434',
+  ollamaHost: SERVICE_URLS.OLLAMA_HOST,
   textModel: 'llama3.2:latest',
   visionModel: 'llava:latest',
   embeddingModel: 'mxbai-embed-large',

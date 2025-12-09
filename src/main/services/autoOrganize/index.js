@@ -18,28 +18,26 @@ const AutoOrganizeServiceCore = require('./AutoOrganizeServiceCore');
  * @returns {AutoOrganizeServiceCore} A new service instance
  */
 function createWithDefaults() {
-  const { getInstance: getChromaDB } = require('../chromadb');
-  const FolderMatchingService = require('../FolderMatchingService');
-  const { getService: getSettingsService } = require('../SettingsService');
-  const OrganizationSuggestionService = require('../organization');
-  const UndoRedoService = require('../UndoRedoService');
+  const { container, ServiceIds } = require('../ServiceContainer');
+  const AutoOrganizeServiceCore = require('./AutoOrganizeServiceCore');
 
-  const chromaDbService = getChromaDB();
-  const settingsService = getSettingsService();
-  const folderMatchingService = new FolderMatchingService(chromaDbService);
-  const suggestionService = new OrganizationSuggestionService({
-    chromaDbService,
-    folderMatchingService,
-    settingsService,
-  });
-  const undoRedoService = new UndoRedoService();
+  // Try to resolve from container first
+  try {
+    return container.resolve(ServiceIds.AUTO_ORGANIZE);
+  } catch {
+    // Fallback if not registered yet (e.g. during early init or tests)
+    const settingsService = container.resolve(ServiceIds.SETTINGS);
+    const folderMatchingService = container.resolve(ServiceIds.FOLDER_MATCHING);
+    const suggestionService = container.resolve(ServiceIds.ORGANIZATION_SUGGESTION);
+    const undoRedoService = container.resolve(ServiceIds.UNDO_REDO);
 
-  return new AutoOrganizeServiceCore({
-    suggestionService,
-    settingsService,
-    folderMatchingService,
-    undoRedoService,
-  });
+    return new AutoOrganizeServiceCore({
+      suggestionService,
+      settingsService,
+      folderMatchingService,
+      undoRedoService,
+    });
+  }
 }
 
 // Export both the class and factory function for backward compatibility

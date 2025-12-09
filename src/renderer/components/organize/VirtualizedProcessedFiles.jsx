@@ -1,11 +1,23 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { FixedSizeList as List } from 'react-window';
+import { StatusBadge } from '../ui';
 
 // FIX: Implement virtualization for large processed file lists to prevent UI lag
-const ITEM_HEIGHT = 80; // Height of each processed file item
-const LIST_HEIGHT = 400; // Max visible area height (soft cap)
+const ITEM_HEIGHT = 72; // Compact height for processed file items
 const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
+
+/**
+ * Calculate optimal list height based on file count and viewport
+ * Adapts to data volume for proportional space usage
+ */
+const getListHeight = (itemCount, viewportHeight) => {
+  // Processed files: show up to 8 without scroll, 40vh max
+  const targetItems = Math.min(itemCount, 8);
+  const contentHeight = targetItems * ITEM_HEIGHT;
+  const maxHeight = Math.round(viewportHeight * 0.4);
+  return Math.max(ITEM_HEIGHT * 2, Math.min(contentHeight, maxHeight));
+};
 
 /**
  * Individual processed file row component
@@ -24,7 +36,7 @@ const ProcessedFileRow = memo(function ProcessedFileRow({
     <div style={style} className="px-2 py-1">
       <div className="list-row flex items-center justify-between p-4 h-full">
         <div className="flex items-center gap-4">
-          <span className="status-chip success">OK</span>
+          <StatusBadge variant="success">OK</StatusBadge>
           <div>
             <div className="text-sm font-medium text-system-gray-900">
               {file.originalName} -&gt; {file.newName}
@@ -55,7 +67,7 @@ ProcessedFileRow.propTypes = {
  * VirtualizedProcessedFiles - Renders a virtualized list of organized files
  * Uses react-window FixedSizeList for efficient rendering of large file lists
  */
-function VirtualizedProcessedFiles({ files }) {
+function VirtualizedProcessedFiles({ files, isLoading = false }) {
   const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
 
   // Memoize item data to prevent unnecessary re-renders
@@ -66,21 +78,29 @@ function VirtualizedProcessedFiles({ files }) {
     [files],
   );
 
-  // Calculate optimal list height
+  // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
     const viewportHeight =
       typeof window !== 'undefined' ? window.innerHeight : 900;
-    const maxHeight = Math.min(
-      LIST_HEIGHT,
-      Math.max(260, Math.round(viewportHeight * 0.5)),
-    );
-    const calculatedHeight = Math.min(files.length * ITEM_HEIGHT, maxHeight);
-    return Math.max(calculatedHeight, ITEM_HEIGHT);
+    return getListHeight(files.length, viewportHeight);
   }, [files.length]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3" role="status" aria-label="Loading organized files">
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="h-16 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse"
+          />
+        ))}
+      </div>
+    );
+  }
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full max-h-[55vh] overflow-hidden">
+      <div className="w-full max-h-[55vh] min-h-[200px] overflow-hidden">
         <div className="text-xs text-system-gray-500 mb-2">
           Showing {files.length} organized files (virtualized for performance)
         </div>
@@ -100,15 +120,16 @@ function VirtualizedProcessedFiles({ files }) {
   }
 
   // For smaller lists, render normally without virtualization overhead
+  // Add max-height constraint to prevent unbounded growth
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-h-viewport-sm overflow-y-auto modern-scrollbar">
       {files.map((file) => (
         <div
           key={file.originalPath || `${file.originalName}-${file.organizedAt}`}
           className="list-row flex items-center justify-between p-4"
         >
           <div className="flex items-center gap-4">
-            <span className="status-chip success">OK</span>
+            <StatusBadge variant="success">OK</StatusBadge>
             <div>
               <div className="text-sm font-medium text-system-gray-900">
                 {file.originalName} -&gt; {file.newName}
@@ -138,6 +159,7 @@ VirtualizedProcessedFiles.propTypes = {
       organizedAt: PropTypes.string,
     }),
   ).isRequired,
+  isLoading: PropTypes.bool,
 };
 
 export default memo(VirtualizedProcessedFiles);

@@ -35,22 +35,9 @@ describe('IPC registration', () => {
       scanDirectory: async () => [],
     });
 
-    // Note: Some channels are defined in constants but handlers not yet implemented
-    // TODO: Implement handlers for SELECT_DIRECTORY, GET_DOCUMENTS_PATH,
-    //       CREATE_FOLDER_DIRECT, GET_FILE_STATS, GET_FILES_IN_DIRECTORY
-    const unimplementedChannels = [
-      IPC_CHANNELS.FILES.SELECT_DIRECTORY,
-      IPC_CHANNELS.FILES.GET_DOCUMENTS_PATH,
-      IPC_CHANNELS.FILES.CREATE_FOLDER_DIRECT,
-      IPC_CHANNELS.FILES.GET_FILE_STATS,
-      IPC_CHANNELS.FILES.GET_FILES_IN_DIRECTORY,
-    ];
-
     const expectedChannels = [
-      // Files (excluding unimplemented)
-      ...Object.values(IPC_CHANNELS.FILES).filter(
-        (ch) => !unimplementedChannels.includes(ch),
-      ),
+      // Files (all implemented)
+      ...Object.values(IPC_CHANNELS.FILES),
       // Smart folders
       ...Object.values(IPC_CHANNELS.SMART_FOLDERS),
       // Undo/redo

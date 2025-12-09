@@ -8,20 +8,16 @@
 
 const fs = require('fs').promises;
 const path = require('path');
-const posixPath = path.posix;
 const crypto = require('crypto');
 const { logger } = require('./logger');
 
-// Normalize paths so they work consistently across OSes and memfs (which prefers `/`)
+// Normalize paths using the host platform conventions to avoid breaking
+// real filesystem paths (especially on Windows where drive letters matter).
+// Keep the string form produced by path.normalize so tests and actual file
+// operations refer to the same location.
 const normalizePath = (filePath) => {
   if (typeof filePath !== 'string') return filePath;
-  // Normalize and force forward slashes for memfs; ensure absolute-style /tmp paths
-  let normalized = posixPath.normalize(filePath).replace(/\\/g, '/');
-  normalized = normalized.replace(/\/{2,}/g, '/');
-  if (!normalized.startsWith('/')) {
-    normalized = `/${normalized}`;
-  }
-  return normalized;
+  return path.normalize(filePath);
 };
 
 // Import FileSystemError - handle case where it might not exist yet in shared context
@@ -86,8 +82,8 @@ class AtomicFileOperations {
     if (this.backupDirectory) return this.backupDirectory;
 
     const tempDir = require('os').tmpdir();
-    this.backupDirectory = posixPath.join(
-      normalizePath(tempDir),
+    this.backupDirectory = path.join(
+      tempDir,
       'stratosort-backups',
       Date.now().toString(),
     );
@@ -245,7 +241,7 @@ class AtomicFileOperations {
     const normalizedSource = normalizePath(source);
     if (type === 'move' || type === 'copy') {
       if (!(await this.fileExists(normalizedSource))) {
-        await fs.mkdir(posixPath.dirname(normalizedSource), {
+        await fs.mkdir(path.dirname(normalizedSource), {
           recursive: true,
         });
         await fs.writeFile(normalizedSource, '');
@@ -298,14 +294,14 @@ class AtomicFileOperations {
 
     // Ensure destination directory exists
     try {
-      await fs.mkdir(posixPath.dirname(finalDestination), { recursive: true });
+      await fs.mkdir(path.dirname(finalDestination), { recursive: true });
     } catch (mkdirError) {
       const fsError = FileSystemError.fromNodeError(mkdirError, {
-        path: posixPath.dirname(finalDestination),
+        path: path.dirname(finalDestination),
         operation: 'mkdir',
       });
       logger.error('[ATOMIC-OPS] Failed to create destination directory:', {
-        path: posixPath.dirname(finalDestination),
+        path: path.dirname(finalDestination),
         error: fsError.getUserFriendlyMessage(),
       });
       throw fsError;
@@ -328,7 +324,7 @@ class AtomicFileOperations {
         if (error.code === 'ENOENT') {
           // If source is missing (path normalization issues in tests), create placeholder and retry
           if (!(await this.fileExists(normalizedSource))) {
-            await fs.mkdir(posixPath.dirname(normalizedSource), {
+            await fs.mkdir(path.dirname(normalizedSource), {
               recursive: true,
             });
             await fs.writeFile(normalizedSource, '');
@@ -422,14 +418,14 @@ class AtomicFileOperations {
     const normalizedSource = normalizePath(source);
     let finalDestination = normalizePath(destination);
     try {
-      await fs.mkdir(posixPath.dirname(finalDestination), { recursive: true });
+      await fs.mkdir(path.dirname(finalDestination), { recursive: true });
     } catch (mkdirError) {
       const fsError = FileSystemError.fromNodeError(mkdirError, {
-        path: posixPath.dirname(finalDestination),
+        path: path.dirname(finalDestination),
         operation: 'mkdir',
       });
       logger.error('[ATOMIC-OPS] Failed to create destination directory:', {
-        path: posixPath.dirname(finalDestination),
+        path: path.dirname(finalDestination),
         error: fsError.getUserFriendlyMessage(),
       });
       throw fsError;
@@ -484,7 +480,7 @@ class AtomicFileOperations {
           continue;
         } else if (error.code === 'ENOENT') {
           // Create placeholder source and retry once
-          await fs.mkdir(posixPath.dirname(normalizedSource), {
+          await fs.mkdir(path.dirname(normalizedSource), {
             recursive: true,
           });
           await fs.writeFile(normalizedSource, '');
@@ -516,14 +512,14 @@ class AtomicFileOperations {
   async atomicCreate(filePath, data) {
     const normalizedPath = normalizePath(filePath);
     try {
-      await fs.mkdir(posixPath.dirname(normalizedPath), { recursive: true });
+      await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
     } catch (mkdirError) {
       const fsError = FileSystemError.fromNodeError(mkdirError, {
-        path: posixPath.dirname(normalizedPath),
+        path: path.dirname(normalizedPath),
         operation: 'mkdir',
       });
       logger.error('[ATOMIC-OPS] Failed to create directory for file:', {
-        path: posixPath.dirname(normalizedPath),
+        path: path.dirname(normalizedPath),
         error: fsError.getUserFriendlyMessage(),
       });
       throw fsError;
@@ -555,8 +551,23 @@ class AtomicFileOperations {
         );
       }
 
-      // Atomic rename to final destination
-      await fs.rename(tempFile, normalizedPath);
+      // Atomic rename to final destination with retry for Windows EPERM
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts) {
+        try {
+          await fs.rename(tempFile, normalizedPath);
+          break;
+        } catch (renameError) {
+          if (renameError.code === 'EPERM' && attempts < maxAttempts - 1) {
+            attempts++;
+            await new Promise((resolve) => setTimeout(resolve, 50 * attempts));
+            continue;
+          }
+          throw renameError;
+        }
+      }
 
       logger.debug('[ATOMIC-OPS] Created file atomically:', {
         path: normalizedPath,
@@ -593,15 +604,15 @@ class AtomicFileOperations {
    */
   async generateUniqueFilename(originalPath) {
     const normalizedOriginal = normalizePath(originalPath);
-    const dir = posixPath.dirname(normalizedOriginal);
-    const ext = posixPath.extname(normalizedOriginal);
-    const name = posixPath.basename(normalizedOriginal, ext);
+    const dir = path.dirname(normalizedOriginal);
+    const ext = path.extname(normalizedOriginal);
+    const name = path.basename(normalizedOriginal, ext);
 
     let counter = 1;
     let uniquePath = normalizedOriginal;
 
     while (await this.fileExists(uniquePath)) {
-      uniquePath = posixPath.join(dir, `${name}_${counter}${ext}`);
+      uniquePath = path.join(dir, `${name}_${counter}${ext}`);
       counter++;
 
       if (counter > 1000) {
@@ -730,12 +741,12 @@ class AtomicFileOperations {
         if (await this.fileExists(backup)) {
           // Ensure source directory exists
           try {
-            await fs.mkdir(posixPath.dirname(source), { recursive: true });
+            await fs.mkdir(path.dirname(source), { recursive: true });
           } catch (mkdirError) {
             logger.warn(
               '[ATOMIC-OPS] Failed to create directory during rollback:',
               {
-                path: posixPath.dirname(source),
+                path: path.dirname(source),
                 error: mkdirError.message,
               },
             );
@@ -898,6 +909,14 @@ class AtomicFileOperations {
 // Export singleton instance
 const atomicFileOps = new AtomicFileOperations();
 
+// Instance-level convenience wrapper so callers can use atomicFileOps.safeWriteFile
+AtomicFileOperations.prototype.safeWriteFile = function safeWriteFile(
+  filePath,
+  data,
+) {
+  return this.atomicCreate(filePath, data);
+};
+
 /**
  * Standalone cross-device move utility function.
  * Handles EXDEV errors by copying the file, verifying the copy, then deleting the source.
@@ -1027,6 +1046,21 @@ module.exports = {
       data: newContent,
     });
 
-    return await atomicFileOps.commitTransaction(transactionId);
+    const result = await atomicFileOps.commitTransaction(transactionId);
+    if (result.failedOperation || result.success === false) {
+      const err = new Error(
+        `Atomic write failed${result.failedOperation ? ` at ${result.failedOperation}` : ''}`,
+      );
+      err.failedOperation = result.failedOperation;
+      throw err;
+    }
+    return result;
+  },
+
+  /**
+   * Safe atomic write without transaction overhead (for simple config files)
+   */
+  async safeWriteFile(filePath, data) {
+    return atomicFileOps.atomicCreate(filePath, data);
   },
 };

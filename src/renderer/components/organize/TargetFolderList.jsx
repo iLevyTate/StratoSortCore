@@ -1,11 +1,23 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { FixedSizeList as List } from 'react-window';
+import { Folder } from 'lucide-react';
 
 // FIX: Implement virtualization for large folder lists to prevent UI lag
-const ITEM_HEIGHT = 140; // Slightly taller to fit wrapped text comfortably
-const LIST_HEIGHT = 520; // Taller viewport for readability
+const ITEM_HEIGHT = 100; // Compact folder cards for better space utilization
 const VIRTUALIZATION_THRESHOLD = 20; // Only virtualize when > 20 folders
+
+/**
+ * Calculate optimal list height based on folder count and viewport
+ * Adapts to data volume for proportional space usage
+ */
+const getListHeight = (folderCount, viewportHeight) => {
+  // Folders list rarely has many items, optimize for readability
+  const maxFraction = folderCount <= 10 ? 0.35 : 0.45;
+  const contentHeight = folderCount * ITEM_HEIGHT;
+  const maxHeight = Math.round(viewportHeight * maxFraction);
+  return Math.max(ITEM_HEIGHT * 2, Math.min(contentHeight, maxHeight));
+};
 
 // Memoized FolderItem to prevent re-renders when folder data hasn't changed
 // FIX: Added proper text overflow handling for long paths with title tooltips
@@ -22,8 +34,9 @@ const FolderItem = memo(function FolderItem({
         <div className="font-semibold text-system-gray-900 text-base leading-snug break-words">
           {folder.name}
         </div>
-        <div className="text-sm text-system-gray-700 leading-relaxed break-words">
-          📂 {fullPath}
+        <div className="text-sm text-system-gray-700 leading-relaxed break-words flex items-center gap-1.5">
+          <Folder className="w-4 h-4 text-stratosort-blue flex-shrink-0" />
+          <span>{fullPath}</span>
         </div>
         {folder.description && (
           <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 p-3 rounded-lg italic leading-relaxed break-words">
@@ -80,6 +93,7 @@ VirtualizedFolderRow.propTypes = {
 const TargetFolderList = memo(function TargetFolderList({
   folders = [],
   defaultLocation = 'Documents',
+  isLoading = false,
 }) {
   const shouldVirtualize = folders.length > VIRTUALIZATION_THRESHOLD;
 
@@ -92,21 +106,29 @@ const TargetFolderList = memo(function TargetFolderList({
     [folders, defaultLocation],
   );
 
-  // Calculate optimal list height based on number of items
+  // Calculate optimal list height based on folder count (data-aware sizing)
   const listHeight = useMemo(() => {
     const viewportHeight =
       typeof window !== 'undefined' ? window.innerHeight : 900;
-    const maxHeight = Math.min(
-      LIST_HEIGHT,
-      Math.max(260, Math.round(viewportHeight * 0.5)),
-    );
-    const calculatedHeight = Math.min(folders.length * ITEM_HEIGHT, maxHeight);
-    return Math.max(calculatedHeight, ITEM_HEIGHT); // At least show one item
+    return getListHeight(folders.length, viewportHeight);
   }, [folders.length]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3" role="status" aria-label="Loading folders">
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            className="h-20 rounded-xl border border-border-soft bg-system-gray-100 animate-pulse"
+          />
+        ))}
+      </div>
+    );
+  }
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full max-h-[60vh] overflow-y-auto modern-scrollbar">
+      <div className="w-full">
         <div className="text-xs text-system-gray-500 mb-3">
           Showing {folders.length} folders (virtualized for performance)
         </div>
@@ -126,8 +148,9 @@ const TargetFolderList = memo(function TargetFolderList({
   }
 
   // For smaller lists, render normally without virtualization overhead
+  // Use auto-fit grid that adapts to content amount
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-auto-fit-md gap-4">
       {folders.map((folder) => (
         <FolderItem
           key={folder.id}
@@ -149,6 +172,7 @@ TargetFolderList.propTypes = {
     }),
   ),
   defaultLocation: PropTypes.string,
+  isLoading: PropTypes.bool,
 };
 
 export default TargetFolderList;

@@ -21,7 +21,7 @@ const {
   getIntelligentKeywords: getIntelligentImageKeywords,
   safeSuggestedName,
 } = require('./fallbackUtils');
-const { getInstance: getChromaDB } = require('../services/chromadb');
+const { container, ServiceIds } = require('../services/ServiceContainer');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const { logger } = require('../../shared/logger');
@@ -551,7 +551,10 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     // Semantic folder refinement using embeddings based on image JSON fields
     try {
       // Reuse single service instances to avoid reloading data repeatedly
-      const chromaDb = chromaDbSingleton || (chromaDbSingleton = getChromaDB());
+      const chromaDb = container.tryResolve(ServiceIds.CHROMA_DB);
+      if (chromaDb !== chromaDbSingleton) {
+        chromaDbSingleton = chromaDb;
+      }
 
       // BUG FIX #8: Comprehensive null/undefined validation with duck typing
       // CRITICAL: folderMatcher can be an object with undefined methods, causing crashes
@@ -644,8 +647,7 @@ async function analyzeImageFile(filePath, smartFolders = []) {
             // Validate summary is non-empty before upserting
             if (summary && summary.trim().length > 0) {
               // CRITICAL FIX: Ensure ChromaDB is initialized
-              const chromaDbService =
-                require('../services/chromadb').getInstance();
+              const chromaDbService = container.tryResolve(ServiceIds.CHROMA_DB);
               if (chromaDbService) {
                 await chromaDbService.initialize();
               }

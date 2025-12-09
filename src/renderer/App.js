@@ -18,16 +18,14 @@ function App() {
         <a href="#main-content" className="skip-link">
           Skip to main content
         </a>
-        <div className="page-shell app-surface flex min-h-screen min-h-0 flex-col overflow-hidden">
+        <div className="page-shell app-surface flex h-screen flex-col overflow-hidden">
           <NavigationBar />
           <main
             id="main-content"
-            className="flex flex-1 min-h-0 flex-col pt-[var(--app-nav-height)] overflow-auto modern-scrollbar"
+            className="flex-1 flex flex-col min-h-0 pt-[var(--app-nav-height)] overflow-y-auto overflow-x-hidden modern-scrollbar"
             tabIndex={-1}
           >
-            <div className="flex-1 min-h-0 overflow-y-auto relative">
-              <PhaseRenderer />
-            </div>
+            <PhaseRenderer />
           </main>
         </div>
         <TooltipManager />

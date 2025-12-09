@@ -1,7 +1,8 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { logger } from '../../shared/logger';
-logger.setContext('GlobalErrorBoundary');
+import { createLogger } from '../../shared/logger';
+
+const logger = createLogger('GlobalErrorBoundary');
 
 /**
  * Global Error Boundary Component
@@ -35,12 +36,18 @@ class GlobalErrorBoundary extends Component {
       timestamp: new Date().toISOString(),
     });
 
-    // Update error count for tracking repeated errors
-    this.setState((prevState) => ({
-      error,
-      errorInfo,
-      errorCount: prevState.errorCount + 1,
-    }));
+    // Update error count for tracking repeated errors and schedule reset with fresh state
+    this.setState((prevState) => {
+      const newCount = prevState.errorCount + 1;
+      if (newCount < 3) {
+        this.scheduleReset();
+      }
+      return {
+        error,
+        errorInfo,
+        errorCount: newCount,
+      };
+    });
 
     // Report to main process if available
     try {
@@ -59,10 +66,7 @@ class GlobalErrorBoundary extends Component {
       );
     }
 
-    // Auto-reset after 30 seconds if not too many errors
-    if (this.state.errorCount < 3) {
-      this.scheduleReset();
-    }
+    // Auto-reset scheduled within setState callback to avoid stale reads
   }
 
   componentWillUnmount() {
@@ -122,7 +126,7 @@ class GlobalErrorBoundary extends Component {
 
       // Default fallback UI
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="min-h-screen flex items-center justify-center bg-system-gray-50 px-4">
           <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
             <div className="flex items-center mb-4">
               <svg
@@ -136,12 +140,12 @@ class GlobalErrorBoundary extends Component {
               >
                 <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <h2 className="text-xl font-semibold text-gray-800">
+              <h2 className="text-xl font-semibold text-system-gray-800">
                 Something went wrong
               </h2>
             </div>
 
-            <p className="text-gray-600 mb-4">
+            <p className="text-system-gray-600 mb-4">
               An unexpected error occurred. The application has recovered
               automatically, or you can try the options below.
             </p>
@@ -156,10 +160,10 @@ class GlobalErrorBoundary extends Component {
 
             {process.env.NODE_ENV === 'development' && this.state.error && (
               <details className="mb-4">
-                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+                <summary className="cursor-pointer text-sm text-system-gray-500 hover:text-system-gray-700">
                   Error Details (Development Only)
                 </summary>
-                <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-40">
+                <pre className="mt-2 text-xs bg-system-gray-100 p-2 rounded overflow-auto max-h-40">
                   {this.state.error.toString()}
                   {this.state.errorInfo?.componentStack}
                 </pre>
@@ -175,7 +179,7 @@ class GlobalErrorBoundary extends Component {
               </button>
               <button
                 onClick={this.handleReload}
-                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                className="flex-1 px-4 py-2 bg-system-gray-200 text-system-gray-700 rounded hover:bg-system-gray-300 transition-colors"
               >
                 Reload App
               </button>

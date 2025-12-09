@@ -8,7 +8,6 @@
  */
 
 const { logger } = require('../../../shared/logger');
-
 logger.setContext('ChromaDB:QueryCache');
 
 /**
@@ -25,8 +24,28 @@ class ChromaQueryCache {
    */
   constructor(options = {}) {
     this.cache = new Map();
-    this.maxSize = options.maxSize || 200;
-    this.ttlMs = options.ttlMs || 120000; // 2 minutes default
+
+    const envMaxSize =
+      process.env.CHROMA_QUERY_CACHE_SIZE ||
+      process.env.STRATOSORT_CHROMA_CACHE_SIZE;
+    const parsedMaxSize = Number.parseInt(envMaxSize, 10);
+
+    const envTtl =
+      process.env.CHROMA_QUERY_CACHE_TTL_MS ||
+      process.env.STRATOSORT_CHROMA_CACHE_TTL_MS;
+    const parsedTtl = Number.parseInt(envTtl, 10);
+
+    this.maxSize = Number.isFinite(options.maxSize)
+      ? options.maxSize
+      : Number.isFinite(parsedMaxSize) && parsedMaxSize > 0
+        ? parsedMaxSize
+        : 200;
+
+    this.ttlMs = Number.isFinite(options.ttlMs)
+      ? options.ttlMs
+      : Number.isFinite(parsedTtl) && parsedTtl > 0
+        ? parsedTtl
+        : 120000; // 2 minutes default
   }
 
   /**
@@ -94,27 +113,31 @@ class ChromaQueryCache {
 
   /**
    * Invalidate cache entries for a specific file
-   * Optimized to delete directly during iteration (single pass)
+   * Collect keys first to avoid mutation during iteration
    * @param {string} fileId - File ID to invalidate
    */
   invalidateForFile(fileId) {
+    const keysToDelete = [];
     for (const key of this.cache.keys()) {
       if (key.includes(fileId)) {
-        this.cache.delete(key);
+        keysToDelete.push(key);
       }
     }
+    keysToDelete.forEach((key) => this.cache.delete(key));
   }
 
   /**
    * Invalidate cache entries for folder queries
-   * Optimized to delete directly during iteration (single pass)
+   * Collect keys first to avoid mutation during iteration
    */
   invalidateForFolder() {
+    const keysToDelete = [];
     for (const key of this.cache.keys()) {
       if (key.startsWith('query:folders:')) {
-        this.cache.delete(key);
+        keysToDelete.push(key);
       }
     }
+    keysToDelete.forEach((key) => this.cache.delete(key));
   }
 
   /**

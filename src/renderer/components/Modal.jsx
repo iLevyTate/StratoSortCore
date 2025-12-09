@@ -1,5 +1,37 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
+
+// Inline SVG Icons
+const XIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const AlertTriangleIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+  </svg>
+);
+
+const InfoIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const HelpCircleIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const FileTextIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
 
 const Modal = ({
   isOpen,
@@ -82,7 +114,10 @@ const Modal = ({
     );
 
     // FIX #18: Guard against empty focusable elements to prevent crash
-    if (focusableElements.length === 0) return;
+    if (focusableElements.length === 0) {
+      modalRef.current.focus();
+      return;
+    }
 
     const firstElement = focusableElements[0];
     const lastElement = focusableElements[focusableElements.length - 1];
@@ -128,16 +163,16 @@ const Modal = ({
     }
   };
 
-  if (!isOpen) return null;
+  const portalTarget =
+    typeof document !== 'undefined' ? document.body : null;
 
-  return (
+  if (!isOpen || !portalTarget) return null;
+
+  const modalContent = (
     <div
-      className="fixed inset-0 z-max flex items-center justify-center px-6 py-8 bg-black/55 backdrop-blur-md animate-modal-backdrop"
+      className="fixed inset-0 z-modal flex items-center justify-center p-[var(--panel-padding)] bg-black/55 backdrop-blur-md animate-modal-backdrop"
       onClick={handleOverlayClick}
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/55 backdrop-blur-md animate-modal-backdrop" />
-
       {/* Modal */}
       <div
         ref={modalRef}
@@ -153,7 +188,7 @@ const Modal = ({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between border-b border-border-soft/70 px-6 py-5 bg-white/90">
+          <div className="flex items-center justify-between border-b border-border-soft/70 p-[var(--panel-padding)] bg-white/90 rounded-t-2xl">
             {title && (
               <h2
                 id="modal-title"
@@ -164,23 +199,26 @@ const Modal = ({
             )}
             {showCloseButton && (
               <button
+                type="button"
                 onClick={onClose}
-                className="p-4 text-system-gray-400 hover:text-system-gray-600 hover:bg-system-gray-100 rounded-lg transition-colors"
+                className="p-2 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-100 rounded-lg transition-colors"
                 aria-label="Close modal"
               >
-                <span className="text-xl leading-none">×</span>
+                <XIcon className="w-5 h-5" />
               </button>
             )}
           </div>
         )}
 
         {/* Content */}
-        <div className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto px-6 py-6 bg-white/85">
+        <div className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto p-[var(--panel-padding)] bg-white/85 rounded-b-2xl">
           {children}
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, portalTarget);
 };
 
 // Enhanced Confirmation Modal with modern design
@@ -197,22 +235,22 @@ export const ConfirmModal = ({
 }) => {
   const getConfirmButtonClass = () => {
     const baseClass =
-      'px-6 py-2.5 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 transform hover:scale-105 active:scale-95';
+      'px-[var(--panel-padding)] py-[var(--spacing-cozy)] rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 transform hover:scale-105 active:scale-95';
 
     switch (variant) {
       case 'danger':
-        return `${baseClass} bg-stratosort-danger hover:bg-stratosort-danger/90 text-white focus:ring-stratosort-danger/50 hover:shadow-lg shadow-stratosort-danger/25`;
+        return `${baseClass} bg-stratosort-danger hover:bg-stratosort-danger/90 text-white focus:ring-stratosort-danger/80 hover:shadow-lg shadow-stratosort-danger/25`;
       case 'warning':
-        return `${baseClass} bg-stratosort-warning hover:bg-stratosort-warning/90 text-white focus:ring-stratosort-warning/50 hover:shadow-lg shadow-stratosort-warning/25`;
+        return `${baseClass} bg-stratosort-warning hover:bg-stratosort-warning/90 text-white focus:ring-stratosort-warning/80 hover:shadow-lg shadow-stratosort-warning/25`;
       case 'info':
-        return `${baseClass} bg-stratosort-blue hover:bg-stratosort-blue/90 text-white focus:ring-stratosort-blue/50 hover:shadow-lg shadow-stratosort-blue/25`;
+        return `${baseClass} bg-stratosort-blue hover:bg-stratosort-blue/90 text-white focus:ring-stratosort-blue/80 hover:shadow-lg shadow-stratosort-blue/25`;
       default:
-        return `${baseClass} bg-system-gray-600 hover:bg-system-gray-700 text-white focus:ring-system-gray-500 hover:shadow-lg shadow-system-gray-500/25`;
+        return `${baseClass} bg-system-gray-600 hover:bg-system-gray-700 text-white focus:ring-system-gray-500/80 hover:shadow-lg shadow-system-gray-500/25`;
     }
   };
 
   const getCancelButtonClass = () => {
-    return 'bg-system-gray-100 hover:bg-system-gray-200 text-system-gray-700 px-6 py-2.5 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-system-gray-500 focus:ring-offset-2 transform hover:scale-105 active:scale-95 hover:shadow-sm';
+    return 'bg-system-gray-100 hover:bg-system-gray-200 text-system-gray-700 px-[var(--panel-padding)] py-[var(--spacing-cozy)] rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-system-gray-500/80 focus:ring-offset-2 transform hover:scale-105 active:scale-95 hover:shadow-sm';
   };
 
   const getIcon = () => {
@@ -220,73 +258,25 @@ export const ConfirmModal = ({
       case 'danger':
         return (
           <div className="w-12 h-12 bg-stratosort-danger/10 rounded-full flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-stratosort-danger"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
-              />
-            </svg>
+            <AlertTriangleIcon className="w-6 h-6 text-stratosort-danger" />
           </div>
         );
       case 'warning':
         return (
           <div className="w-12 h-12 bg-stratosort-warning/10 rounded-full flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-stratosort-warning"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
-              />
-            </svg>
+            <AlertTriangleIcon className="w-6 h-6 text-stratosort-warning" />
           </div>
         );
       case 'info':
         return (
-          <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-blue-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+          <div className="w-12 h-12 bg-stratosort-blue/10 rounded-full flex items-center justify-center">
+            <InfoIcon className="w-6 h-6 text-stratosort-blue" />
           </div>
         );
       default:
         return (
-          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
-            <svg
-              className="w-6 h-6 text-gray-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+          <div className="w-12 h-12 bg-system-gray-100 rounded-full flex items-center justify-center">
+            <HelpCircleIcon className="w-6 h-6 text-system-gray-600" />
           </div>
         );
     }
@@ -299,37 +289,25 @@ export const ConfirmModal = ({
       size="small"
       closeOnOverlayClick={false}
       showCloseButton={false}
-      className=""
+      className="rounded-2xl border border-border-soft shadow-xl bg-white/95"
     >
-      <div className="p-7">
+      <div className="p-[var(--spacing-relaxed)]">
         {/* Icon and Content */}
-        <div className="flex items-start gap-4 mb-6">
+        <div className="flex items-start gap-[var(--spacing-default)] mb-[var(--panel-padding)]">
           <div className={variant === 'danger' ? 'animate-confirm-bounce' : ''}>
             {getIcon()}
           </div>
           <div className="flex-1 pt-1">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <h3 className="text-lg font-semibold text-system-gray-900 mb-2 leading-tight">
               {title}
             </h3>
-            <div className="text-gray-600 leading-relaxed">
+              <div className="text-system-gray-600 leading-relaxed break-words">
               {message}
               {fileName && (
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-border-soft">
-                  <div className="flex items-center gap-2 text-sm">
-                    <svg
-                      className="w-4 h-4 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                    <span className="font-medium text-gray-700">
+                <div className="mt-[var(--spacing-cozy)] p-[var(--spacing-cozy)] bg-system-gray-50 rounded-lg border border-border-soft">
+                  <div className="flex items-center gap-[var(--spacing-compact)] text-sm">
+                    <FileTextIcon className="w-4 h-4 text-system-gray-400" />
+                    <span className="font-medium text-system-gray-700">
                       {fileName}
                     </span>
                   </div>
@@ -340,7 +318,7 @@ export const ConfirmModal = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 justify-end pt-4 border-t border-border-soft/70">
+        <div className="flex gap-[var(--spacing-cozy)] justify-end pt-[var(--spacing-default)] border-t border-border-soft/70">
           <button onClick={onClose} className={getCancelButtonClass()}>
             {cancelText}
           </button>

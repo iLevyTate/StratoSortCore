@@ -1,4 +1,5 @@
 const defaultTheme = require('tailwindcss/defaultTheme');
+const plugin = require('tailwindcss/plugin');
 
 const EXTENDED_SPACING = {
   2.5: '0.625rem',
@@ -91,12 +92,9 @@ module.exports = {
     './src/**/*.{html,js,ts,jsx,tsx}',
   ],
   safelist: [
-    // Status utilities that may be constructed dynamically
-    'status-success',
-    'status-error',
-    'status-warning',
-    'status-info',
-    // Button variants potentially composed dynamically
+    // Status utilities (use .status-chip.success etc)
+    'status-chip',
+    // Button variants
     'btn-primary',
     'btn-secondary',
     'btn-success',
@@ -104,11 +102,11 @@ module.exports = {
     'btn-ghost',
     'btn-outline',
     'btn-subtle',
-    'btn-ghost-minimal',
     // Layout helpers
-    'container-enhanced',
-    'glass-card',
-    'gradient-bg',
+    'container-responsive',
+    'surface-panel',
+    'surface-card',
+    'glass-panel',
     // DaisyUI component classes
     'btn',
     'btn-sm',
@@ -236,6 +234,20 @@ module.exports = {
         'content-2xl': '105rem',
         'content-md': '56rem',
       },
+      gridTemplateColumns: {
+        // Auto-fit grids - items stretch to fill available space
+        'auto-fit-xs': 'repeat(auto-fit, minmax(150px, 1fr))',
+        'auto-fit-sm': 'repeat(auto-fit, minmax(200px, 1fr))',
+        'auto-fit-md': 'repeat(auto-fit, minmax(280px, 1fr))',
+        'auto-fit-lg': 'repeat(auto-fit, minmax(320px, 1fr))',
+        'auto-fit-xl': 'repeat(auto-fit, minmax(400px, 1fr))',
+        // Auto-fill grids - items maintain size, empty columns created
+        'auto-fill-xs': 'repeat(auto-fill, minmax(150px, 1fr))',
+        'auto-fill-sm': 'repeat(auto-fill, minmax(200px, 1fr))',
+        'auto-fill-md': 'repeat(auto-fill, minmax(280px, 1fr))',
+        'auto-fill-lg': 'repeat(auto-fill, minmax(320px, 1fr))',
+        'auto-fill-xl': 'repeat(auto-fill, minmax(400px, 1fr))',
+      },
       fontFamily: {
         sans: ['Inter', 'SF Pro Display', ...defaultTheme.fontFamily.sans],
         mono: ['JetBrains Mono', ...defaultTheme.fontFamily.mono],
@@ -304,74 +316,91 @@ module.exports = {
         'modal-enter': {
           '0%': {
             opacity: '0',
-            transform: 'scale(0.95) translateY(-10px)',
+            transform: 'translate3d(0, -8px, 0) scale(0.98)',
           },
           '100%': {
             opacity: '1',
-            transform: 'scale(1) translateY(0)',
+            transform: 'translate3d(0, 0, 0) scale(1)',
           },
         },
         'confirm-bounce': {
           '0%, 100%': { transform: 'scale(1)' },
-          '50%': { transform: 'scale(1.05)' },
+          '50%': { transform: 'scale(1.03)' },
         },
         'slide-up': {
           '0%': {
             opacity: '0',
-            transform: 'translateY(20px)',
+            transform: 'translate3d(0, 12px, 0)',
           },
           '100%': {
             opacity: '1',
-            transform: 'translateY(0)',
+            transform: 'translate3d(0, 0, 0)',
           },
         },
         'slide-in-right': {
           '0%': {
             opacity: '0',
-            transform: 'translateX(20px)',
+            transform: 'translate3d(12px, 0, 0)',
           },
           '100%': {
             opacity: '1',
-            transform: 'translateX(0)',
+            transform: 'translate3d(0, 0, 0)',
           },
         },
         float: {
-          '0%, 100%': { transform: 'translateY(0)' },
-          '50%': { transform: 'translateY(-10px)' },
+          '0%, 100%': { transform: 'translate3d(0, 0, 0)' },
+          '50%': { transform: 'translate3d(0, -8px, 0)' },
         },
         'bounce-subtle': {
-          '0%, 100%': { transform: 'translateY(0)' },
-          '50%': { transform: 'translateY(-5px)' },
+          '0%, 100%': { transform: 'translate3d(0, 0, 0)' },
+          '50%': { transform: 'translate3d(0, -4px, 0)' },
         },
       },
       animation: {
-        'fade-in': 'fade-in 0.2s ease-out',
+        'fade-in': 'fade-in 0.15s ease-out',
         'modal-backdrop': 'modal-backdrop 0.15s ease-out',
-        'modal-enter': 'modal-enter 0.2s ease-out',
-        'confirm-bounce': 'confirm-bounce 0.3s ease-in-out',
-        'slide-up': 'slide-up 0.3s ease-out',
-        'slide-in-right': 'slide-in-right 0.3s ease-out',
+        'modal-enter': 'modal-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        'confirm-bounce': 'confirm-bounce 0.25s ease-in-out',
+        'slide-up': 'slide-up 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        'slide-in-right': 'slide-in-right 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         float: 'float 3s ease-in-out infinite',
         'bounce-subtle': 'bounce-subtle 2s ease-in-out infinite',
       },
     },
   },
-  plugins: [require('daisyui')],
+  plugins: [
+    require('daisyui'),
+    // Custom plugin for dynamic auto-fit/auto-fill grid utilities
+    plugin(function ({ matchUtilities, theme }) {
+      matchUtilities(
+        {
+          'grid-auto-fit': (value) => ({
+            gridTemplateColumns: `repeat(auto-fit, minmax(min(${value}, 100%), 1fr))`,
+          }),
+          'grid-auto-fill': (value) => ({
+            gridTemplateColumns: `repeat(auto-fill, minmax(min(${value}, 100%), 1fr))`,
+          }),
+        },
+        { values: theme('spacing') }
+      );
+    }),
+  ],
   daisyui: {
     themes: [
       {
         stratosort: {
-          primary: '#2563EB',
-          secondary: '#8B5CF6',
-          accent: '#F59E0B',
-          neutral: '#334155',
-          'base-100': '#FFFFFF',
-          'base-200': '#F8FAFC',
-          'base-300': '#F1F5F9',
-          info: '#3B82F6',
-          success: '#10B981',
-          warning: '#F59E0B',
-          error: '#EF4444',
+          // Aligned with BRAND_COLORS.stratosort
+          primary: '#2563EB',      // stratosort-blue
+          secondary: '#8B5CF6',    // system.purple
+          accent: '#F59E0B',       // stratosort-accent (amber)
+          neutral: '#334155',      // system-gray-700
+          'base-100': '#FFFFFF',   // surface-primary
+          'base-200': '#F8FAFC',   // surface-muted
+          'base-300': '#F1F5F9',   // system-gray-100
+          info: '#2563EB',         // stratosort-blue (was #3B82F6)
+          success: '#10B981',      // stratosort-success
+          warning: '#F97316',      // stratosort-warning (was #F59E0B)
+          error: '#EF4444',        // stratosort-danger
         },
       },
     ],

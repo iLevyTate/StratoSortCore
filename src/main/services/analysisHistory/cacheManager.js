@@ -32,6 +32,9 @@ function createCacheStore() {
     searchResults: new Map(),
     searchResultsMaxSize: CACHE.MAX_LRU_CACHE / 2, // LRU cache size limit
 
+    // Embedding cache for semantic search (entryId -> { vector, model })
+    entryEmbeddings: new Map(),
+
     // Category/tag query caches with pagination support
     categoryResults: new Map(),
     tagResults: new Map(),

@@ -4,6 +4,8 @@ import React, {
   useState,
   useCallback,
   useMemo,
+  Suspense,
+  lazy,
 } from 'react';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
@@ -12,6 +14,7 @@ import { toggleSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
 import Collapsible from './ui/Collapsible';
+import { ModalLoadingOverlay } from './LoadingSkeleton';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 import OllamaConfigSection from './settings/OllamaConfigSection';
@@ -21,6 +24,8 @@ import EmbeddingRebuildSection from './settings/EmbeddingRebuildSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
+
+const AnalysisHistoryModal = lazy(() => import('./AnalysisHistoryModal'));
 
 // Section keys for expand/collapse all functionality
 const SECTION_KEYS = [
@@ -81,6 +86,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
   const [showAllModels, setShowAllModels] = useState(false);
+  const [showAnalysisHistory, setShowAnalysisHistory] = useState(false);
+  const [analysisStats, setAnalysisStats] = useState(null);
   const didAutoHealthCheckRef = useRef(false);
 
   // Memoized computed values
@@ -386,9 +393,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   // FIX: Guard against missing electronAPI - moved after all hooks to follow React rules
   if (!isApiAvailable) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-[var(--panel-padding)] text-center">
         <p className="text-red-600 font-medium">Settings unavailable</p>
-        <p className="text-sm text-system-gray-500 mt-2">
+        <p className="text-sm text-system-gray-500 mt-[var(--spacing-sm)]">
           Electron API not available. Please restart the application.
         </p>
       </div>
@@ -396,28 +403,32 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm px-4 py-6">
-      <div className="surface-panel w-full max-w-2xl xl:max-w-4xl 2xl:max-w-5xl mx-auto max-h-[86vh] overflow-hidden modern-scrollbar">
-        <div className="px-6 py-5 border-b border-border-soft/70 bg-white/90 backdrop-blur-sm">
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-[var(--panel-padding)]">
+      <div className="surface-panel w-full max-w-2xl xl:max-w-4xl 2xl:max-w-5xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
+        <div className="p-[var(--panel-padding)] border-b border-border-soft/70 bg-white/90 backdrop-blur-sm flex-shrink-0 rounded-t-[var(--radius-panel)]">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-system-gray-900">
+            <h2 className="heading-secondary">
               ⚙️ Settings
             </h2>
-            <div className="flex items-center gap-3">
-              <Button onClick={expandAll} variant="subtle" className="text-xs">
+            <div className="flex flex-wrap items-center gap-[var(--spacing-md)]">
+              <Button
+                onClick={expandAll}
+                variant="subtle"
+                className="text-xs px-[var(--spacing-md)]"
+              >
                 Expand all
               </Button>
               <Button
                 onClick={collapseAll}
                 variant="subtle"
-                className="text-xs"
+                className="text-xs px-[var(--spacing-md)]"
               >
                 Collapse all
               </Button>
               <Button
                 onClick={handleToggleSettings}
                 variant="ghost"
-                className="text-system-gray-500 hover:text-system-gray-700 p-2"
+                className="text-system-gray-500 hover:text-system-gray-700 p-[var(--spacing-sm)]"
                 aria-label="Close settings"
                 title="Close settings"
               >
@@ -427,13 +438,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[calc(86vh-160px)] overflow-y-auto modern-scrollbar">
+        <div className="p-[var(--panel-padding)] flex flex-col gap-[var(--section-gap)] flex-1 min-h-0 overflow-y-auto modern-scrollbar">
           <Collapsible
             title="🤖 AI Configuration"
             defaultOpen
             persistKey="settings-ai"
           >
-            <div className="space-y-6">
+            <div className="flex flex-col gap-[var(--section-gap)]">
               <OllamaConfigSection
                 settings={settings}
                 setSettings={setSettings}
@@ -473,7 +484,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen
             persistKey="settings-performance"
           >
-            <div className="space-y-6">
+            <div className="flex flex-col gap-[var(--section-gap)]">
               <div>
                 <label className="block text-sm font-medium text-system-gray-700 mb-2">
                   Max Concurrent Analysis ({settings.maxConcurrentAnalysis})
@@ -523,6 +534,25 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
 
           <Collapsible
+            title="📜 Analysis History"
+            defaultOpen={false}
+            persistKey="settings-history"
+          >
+            <div className="flex flex-col gap-[var(--spacing-cozy)]">
+              <p className="text-sm text-system-gray-600">
+                View and manage your file analysis history, including past results and statistics.
+              </p>
+              <Button
+                onClick={() => setShowAnalysisHistory(true)}
+                variant="secondary"
+                className="w-fit"
+              >
+                View Analysis History
+              </Button>
+            </div>
+          </Collapsible>
+
+          <Collapsible
             title="🔧 Backend API Test"
             defaultOpen={false}
             persistKey="settings-api"
@@ -531,7 +561,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="px-6 py-5 border-t border-border-soft/70 bg-white/90 backdrop-blur-sm flex justify-end gap-3">
+        <div className="p-[var(--panel-padding)] border-t border-border-soft/70 bg-white/90 backdrop-blur-sm flex flex-wrap justify-end gap-[var(--spacing-xl)] flex-shrink-0 rounded-b-[var(--radius-panel)]">
           <Button onClick={handleToggleSettings} variant="secondary">
             Cancel
           </Button>
@@ -540,6 +570,17 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Button>
         </div>
       </div>
+      {showAnalysisHistory && (
+        <Suspense
+          fallback={<ModalLoadingOverlay message="Loading History..." />}
+        >
+          <AnalysisHistoryModal
+            onClose={() => setShowAnalysisHistory(false)}
+            analysisStats={analysisStats}
+            setAnalysisStats={setAnalysisStats}
+          />
+        </Suspense>
+      )}
     </div>
   );
 });

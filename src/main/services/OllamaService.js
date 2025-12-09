@@ -434,6 +434,8 @@ class OllamaService {
         const response = await ollama.generate({
           model,
           prompt,
+          format: options.format,
+          system: options.system,
           options: options.ollamaOptions || {},
           stream: false,
         });
@@ -474,6 +476,7 @@ class OllamaService {
           model,
           prompt,
           images: [imageBase64],
+          format: options.format,
           options: options.ollamaOptions || {},
           stream: false,
         });

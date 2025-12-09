@@ -60,8 +60,12 @@ export function useOrganizeState() {
 
   // Action dispatchers
   const setOrganizedFiles = useCallback(
-    (files) => dispatch(setOrganizedFilesAction(files)),
-    [dispatch],
+    (value) => {
+      const nextValue =
+        typeof value === 'function' ? value(organizedFiles) : value;
+      dispatch(setOrganizedFilesAction(nextValue));
+    },
+    [dispatch, organizedFiles],
   );
 
   const setFileStates = useCallback(
@@ -169,33 +173,33 @@ export function useLoadInitialData(refs, addNotification) {
   const documentsPath = useAppSelector((state) => state.system.documentsPath);
 
   // Load smart folders if missing
-  useEffect(() => {
-    const loadSmartFoldersIfMissing = async () => {
-      try {
-        const currentSmartFolders = smartFoldersRef.current;
-        if (
-          !Array.isArray(currentSmartFolders) ||
-          currentSmartFolders.length === 0
-        ) {
-          const folders = await window.electronAPI.smartFolders.get();
-          if (Array.isArray(folders) && folders.length > 0) {
-            dispatchRef.current(setSmartFoldersAction(folders));
-            addNotification(
-              `Loaded ${folders.length} smart folder${folders.length > 1 ? 's' : ''}`,
-              'info',
-            );
-          }
+  const loadSmartFoldersIfMissing = useCallback(async () => {
+    try {
+      const currentSmartFolders = smartFoldersRef.current;
+      if (
+        !Array.isArray(currentSmartFolders) ||
+        currentSmartFolders.length === 0
+      ) {
+        const folders = await window.electronAPI.smartFolders.get();
+        if (Array.isArray(folders) && folders.length > 0) {
+          dispatchRef.current(setSmartFoldersAction(folders));
+          addNotification(
+            `Loaded ${folders.length} smart folder${folders.length > 1 ? 's' : ''}`,
+            'info',
+          );
         }
-      } catch (error) {
-        logger.error('Failed to load smart folders in Organize phase', {
-          error: error.message,
-          stack: error.stack,
-        });
       }
-    };
+    } catch (error) {
+      logger.error('Failed to load smart folders in Organize phase', {
+        error: error.message,
+        stack: error.stack,
+      });
+    }
+  }, [addNotification, smartFoldersRef, dispatchRef]);
+
+  useEffect(() => {
     loadSmartFoldersIfMissing();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount - refs and addNotification are stable
+  }, [loadSmartFoldersIfMissing]);
 
   // Fetch documents path
   useEffect(() => {

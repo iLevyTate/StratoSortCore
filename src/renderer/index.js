@@ -121,33 +121,32 @@ function initializeApp() {
     const initialLoading = document.getElementById('initial-loading');
     if (initialLoading) {
       const section = document.createElement('section');
-      section.style.cssText =
-        'text-align: center; max-width: 400px; color: #EF4444;';
+      section.className =
+        'mx-auto max-w-md text-center text-stratosort-danger';
 
       const icon = document.createElement('div');
-      icon.style.cssText = 'font-size: 48px; margin-bottom: 16px;';
+      icon.className = 'text-4xl mb-4';
       icon.textContent = '⚠️';
 
       const heading = document.createElement('h1');
-      heading.style.cssText =
-        'color: #EF4444; margin: 0; font-size: 24px; font-weight: 600;';
+      heading.className = 'm-0 text-2xl font-semibold text-stratosort-danger';
       heading.textContent = 'Failed to Load';
 
       const description = document.createElement('p');
-      description.style.cssText =
-        'color: #64748B; margin: 8px 0 0 0; font-size: 14px;';
+      description.className = 'mt-2 text-sm text-system-gray-500';
       description.textContent = 'React application failed to initialize';
 
       const details = document.createElement('details');
-      details.style.cssText = 'margin-top: 16px; text-align: left;';
+      details.className = 'mt-4 text-left';
 
       const summary = document.createElement('summary');
-      summary.style.cssText = 'cursor: pointer; color: #64748B;';
+      summary.className =
+        'cursor-pointer text-system-gray-500 hover:text-system-gray-700 transition-colors';
       summary.textContent = 'Error Details';
 
       const pre = document.createElement('pre');
-      pre.style.cssText =
-        'background: #F1F5F9; padding: 8px; border-radius: 4px; margin-top: 8px; font-size: 12px; overflow: auto;';
+      pre.className =
+        'mt-2 overflow-auto rounded-lg border border-border-soft bg-surface-muted p-3 text-xs text-system-gray-800 font-mono';
       pre.textContent = error.message; // Safe: textContent escapes HTML
 
       details.appendChild(summary);

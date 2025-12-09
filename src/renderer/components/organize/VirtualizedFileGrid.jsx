@@ -5,18 +5,40 @@ import ReadyFileItem from './ReadyFileItem';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
 // Height calculations for responsive grid layout
-const ITEM_HEIGHT = 280; // Height per row (each item card is approx 240px + padding)
-const LIST_HEIGHT = 500; // Max visible area height (soft cap)
+// Slightly taller rows to prevent cutting off multi-line text in review cards
+const ITEM_HEIGHT = 320;
 const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
 
 /**
+ * Calculate optimal list height based on file count and viewport
+ * Adapts to data volume: sparse data gets compact height, dense data gets more space
+ */
+const getListHeight = (itemCount, viewportHeight) => {
+  // Sparse: 35vh, Moderate: 45vh, Dense: 55vh
+  const maxFraction = itemCount <= 10 ? 0.35 : itemCount <= 30 ? 0.45 : 0.55;
+  const contentMinHeight = 300;
+  const maxHeight = Math.round(viewportHeight * maxFraction);
+  return Math.min(
+    Math.max(contentMinHeight, itemCount * 80),
+    maxHeight
+  );
+};
+
+/**
  * Calculate how many columns to render based on container width
- * Matches: grid-cols-1 lg:grid-cols-2 xl:grid-cols-3
+ * Used only for virtualized mode - non-virtualized uses CSS auto-fit
  */
 const getColumnCount = (containerWidth) => {
   if (containerWidth >= 1280) return 3; // xl breakpoint
   if (containerWidth >= 1024) return 2; // lg breakpoint
   return 1; // default
+};
+
+// Stable key generator to prevent row/content mismatches during reorders
+const itemKeyForRow = (index, data) => {
+  const startIndex = index * data.columnsPerRow;
+  const file = data.files[startIndex];
+  return file?.path || `row-${index}`;
 };
 
 /**
@@ -64,7 +86,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
       : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
 
     rowItems.push(
-      <div key={file.path} className="flex-1 min-w-0 p-2">
+      <div key={file.path} className="flex-1 min-w-0">
         <ReadyFileItem
           file={fileWithEdits}
           index={fileIndex}
@@ -85,7 +107,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
   // Fill remaining space if row is incomplete
   while (rowItems.length < columnsPerRow) {
     rowItems.push(
-      <div key={`empty-${rowItems.length}`} className="flex-1 min-w-0 p-2" />,
+      <div key={`empty-${rowItems.length}`} className="flex-1 min-w-0" />,
     );
   }
 
@@ -121,6 +143,7 @@ VirtualizedFileRow.propTypes = {
  */
 function VirtualizedFileGrid({
   files,
+  isLoading = false,
   selectedFiles,
   toggleFileSelection,
   getFileWithEdits,
@@ -133,9 +156,9 @@ function VirtualizedFileGrid({
   containerWidth = 1200, // Default to xl breakpoint width
   onViewDetails,
 }) {
-  const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
   const columnsPerRow = getColumnCount(containerWidth);
   const rowCount = Math.ceil(files.length / columnsPerRow);
+  const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
 
   // Memoize item data to prevent unnecessary re-renders
   const itemData = useMemo(
@@ -169,21 +192,33 @@ function VirtualizedFileGrid({
     ],
   );
 
-  // Calculate optimal list height
+  // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
     const viewportHeight =
       typeof window !== 'undefined' ? window.innerHeight : 900;
-    const maxHeight = Math.min(
-      LIST_HEIGHT,
-      Math.max(320, Math.round(viewportHeight * 0.55)),
+    return getListHeight(files.length, viewportHeight);
+  }, [files.length]);
+
+  if (isLoading) {
+    return (
+      <div
+        className="grid grid-cols-auto-fit-md gap-4"
+        role="status"
+        aria-label="Loading files"
+      >
+        {[...Array(6)].map((_, i) => (
+          <div
+            key={i}
+            className="h-64 rounded-xl bg-system-gray-100 animate-pulse"
+          />
+        ))}
+      </div>
     );
-    const calculatedHeight = Math.min(rowCount * ITEM_HEIGHT, maxHeight);
-    return Math.max(calculatedHeight, ITEM_HEIGHT);
-  }, [rowCount]);
+  }
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full max-h-[50vh] overflow-y-auto modern-scrollbar">
+      <div className="w-full max-h-viewport-lg overflow-y-auto modern-scrollbar">
         <div className="text-xs text-system-gray-500 mb-2">
           Showing {files.length} files (virtualized for performance)
         </div>
@@ -193,6 +228,7 @@ function VirtualizedFileGrid({
           itemSize={ITEM_HEIGHT}
           width="100%"
           itemData={itemData}
+          itemKey={itemKeyForRow}
           overscanCount={2}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
         >
@@ -203,8 +239,11 @@ function VirtualizedFileGrid({
   }
 
   // For smaller lists, render normally without virtualization overhead
+  // Use auto-fit grid that adapts to content amount
+  // Center content when sparse data (≤5 files) for better visual balance
+  const isSparse = files.length <= 5;
   return (
-    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+    <div className={`grid grid-adaptive-lg gap-4 ${isSparse ? 'place-content-center min-h-[300px]' : ''}`}>
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);
         const rawCategory =
@@ -231,6 +270,7 @@ function VirtualizedFileGrid({
             onEdit={handleEditFile}
             destination={destination}
             category={currentCategory}
+            onViewDetails={onViewDetails}
           />
         );
       })}
@@ -240,6 +280,7 @@ function VirtualizedFileGrid({
 
 VirtualizedFileGrid.propTypes = {
   files: PropTypes.array.isRequired,
+  isLoading: PropTypes.bool,
   selectedFiles: PropTypes.instanceOf(Set).isRequired,
   toggleFileSelection: PropTypes.func.isRequired,
   getFileWithEdits: PropTypes.func.isRequired,

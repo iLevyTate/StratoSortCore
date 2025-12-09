@@ -48,13 +48,8 @@ describe('registerAnalysisIpc', () => {
   let mockLogger;
   let handlers;
 
-  const IPC_CHANNELS = {
-    ANALYSIS: {
-      ANALYZE_DOCUMENT: 'analyze:document',
-      ANALYZE_IMAGE: 'analyze:image',
-      EXTRACT_IMAGE_TEXT: 'analyze:extract-text',
-    },
-  };
+  const { IPC_CHANNELS } = require('../src/shared/constants');
+  const ANALYSIS_CHANNELS = IPC_CHANNELS.ANALYSIS;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -139,9 +134,9 @@ describe('registerAnalysisIpc', () => {
     });
 
     expect(mockIpcMain.handle).toHaveBeenCalledTimes(3);
-    expect(handlers['analyze:document']).toBeDefined();
-    expect(handlers['analyze:image']).toBeDefined();
-    expect(handlers['analyze:extract-text']).toBeDefined();
+    expect(handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]).toBeDefined();
+    expect(handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE]).toBeDefined();
+    expect(handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]).toBeDefined();
   });
 
   describe('document analysis handler', () => {
@@ -160,7 +155,10 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('analyzes document successfully', async () => {
-      const result = await handlers['analyze:document']({}, '/test/doc.pdf');
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
+        {},
+        '/test/doc.pdf',
+      );
 
       expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith(
         '/test/doc.pdf',
@@ -171,7 +169,7 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('passes custom folders to analysis', async () => {
-      await handlers['analyze:document']({}, '/test/doc.pdf');
+      await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
       expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith(
         '/test/doc.pdf',
@@ -183,7 +181,7 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('records processing time', async () => {
-      await handlers['analyze:document']({}, '/test/doc.pdf');
+      await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
       expect(mockSystemAnalytics.recordProcessingTime).toHaveBeenCalled();
     });
@@ -191,7 +189,10 @@ describe('registerAnalysisIpc', () => {
     test('handles analysis error gracefully', async () => {
       mockAnalyzeDocumentFile.mockRejectedValueOnce(new Error('Analysis failed'));
 
-      const result = await handlers['analyze:document']({}, '/test/doc.pdf');
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
+        {},
+        '/test/doc.pdf',
+      );
 
       expect(result.error).toBe('Analysis failed');
       expect(result.category).toBe('documents');
@@ -219,7 +220,10 @@ describe('registerAnalysisIpc', () => {
         getCustomFolders: null,
       });
 
-      const result = await handlers['analyze:document']({}, '/test/doc.pdf');
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
+        {},
+        '/test/doc.pdf',
+      );
 
       expect(result.suggestedName).toBeDefined();
     });
@@ -229,7 +233,10 @@ describe('registerAnalysisIpc', () => {
         throw new Error('Folder error');
       });
 
-      const result = await handlers['analyze:document']({}, '/test/doc.pdf');
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
+        {},
+        '/test/doc.pdf',
+      );
 
       // Should still complete analysis
       expect(result.suggestedName).toBeDefined();
@@ -252,7 +259,10 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('analyzes image successfully', async () => {
-      const result = await handlers['analyze:image']({}, '/test/image.jpg');
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE](
+        {},
+        '/test/image.jpg',
+      );
 
       expect(mockAnalyzeImageFile).toHaveBeenCalledWith(
         '/test/image.jpg',
@@ -265,7 +275,10 @@ describe('registerAnalysisIpc', () => {
     test('handles image analysis error', async () => {
       mockAnalyzeImageFile.mockRejectedValueOnce(new Error('Vision failed'));
 
-      const result = await handlers['analyze:image']({}, '/test/image.jpg');
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE](
+        {},
+        '/test/image.jpg',
+      );
 
       expect(result.error).toBe('Vision failed');
       expect(result.category).toBe('images');
@@ -288,7 +301,10 @@ describe('registerAnalysisIpc', () => {
     });
 
     test('extracts text from image', async () => {
-      const result = await handlers['analyze:extract-text']({}, '/test/scan.png');
+      const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT](
+        {},
+        '/test/scan.png',
+      );
 
       expect(mockTesseract.recognize).toHaveBeenCalledWith(
         '/test/scan.png',
@@ -305,7 +321,10 @@ describe('registerAnalysisIpc', () => {
     test('handles OCR error', async () => {
       mockTesseract.recognize.mockRejectedValueOnce(new Error('OCR failed'));
 
-      const result = await handlers['analyze:extract-text']({}, '/test/scan.png');
+      const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT](
+        {},
+        '/test/scan.png',
+      );
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('OCR failed');

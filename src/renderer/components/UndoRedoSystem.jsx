@@ -434,7 +434,7 @@ function HistoryModal() {
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal"
       style={{
         position: 'fixed',
         inset: 0,
@@ -446,7 +446,7 @@ function HistoryModal() {
     >
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className="text-xl font-semibold text-system-gray-900">
             Action History
           </h2>
           <div className="flex items-center space-x-2">
@@ -458,7 +458,7 @@ function HistoryModal() {
             </button>
             <button
               onClick={() => setIsHistoryVisible(false)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-system-gray-400 hover:text-system-gray-600 transition-colors"
             >
               <svg
                 className="w-6 h-6"
@@ -479,9 +479,9 @@ function HistoryModal() {
 
         <div className="p-6 overflow-y-auto max-h-[60vh]">
           {history.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-system-gray-500">
               <svg
-                className="w-12 h-12 mx-auto mb-4 text-gray-300"
+                className="w-12 h-12 mx-auto mb-4 text-system-gray-300"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -503,22 +503,22 @@ function HistoryModal() {
                 .map((action, index) => (
                   <div
                     key={action.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    className="flex items-center justify-between p-3 bg-system-gray-50 rounded-lg"
                   >
                     <div className="flex items-center space-x-3">
                       <span className="text-lg">
                         {ACTION_METADATA[action.type]?.icon || '📄'}
                       </span>
                       <div>
-                        <div className="font-medium text-gray-900">
+                        <div className="font-medium text-system-gray-900">
                           {action.description}
                         </div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-system-gray-500">
                           {new Date(action.timestamp).toLocaleString()}
                         </div>
                       </div>
                     </div>
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-system-gray-400">
                       #{history.length - index}
                     </div>
                   </div>
@@ -562,10 +562,10 @@ export function UndoRedoToolbar({ className = '' }) {
         className={`p-8 rounded-lg transition-colors border
           ${
             !canUndo
-              ? 'text-gray-300 cursor-not-allowed border-transparent'
+              ? 'text-system-gray-300 cursor-not-allowed border-transparent'
               : isImportantOperation
                 ? 'text-orange-700 hover:bg-orange-50 hover:text-orange-900 border-orange-200 hover:border-orange-300'
-                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 border-transparent hover:border-gray-200'
+                : 'text-system-gray-700 hover:bg-system-gray-100 hover:text-system-gray-900 border-transparent hover:border-system-gray-200'
           }
         `}
         title={
@@ -596,8 +596,8 @@ export function UndoRedoToolbar({ className = '' }) {
           p-8 rounded-lg transition-colors
           ${
             canRedo
-              ? 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-              : 'text-gray-300 cursor-not-allowed'
+              ? 'text-system-gray-700 hover:bg-system-gray-100 hover:text-system-gray-900'
+              : 'text-system-gray-300 cursor-not-allowed'
           }
         `}
         title={
@@ -621,12 +621,12 @@ export function UndoRedoToolbar({ className = '' }) {
         </svg>
       </button>
 
-      <div className="w-px h-6 bg-gray-300 mx-1" />
-      <div className="hidden md:block w-px h-6 bg-gray-300" />
+      <div className="w-px h-6 bg-system-gray-300 mx-1" />
+      <div className="hidden md:block w-px h-6 bg-system-gray-300" />
 
       <button
         onClick={() => setIsHistoryVisible(true)}
-        className="p-8 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+        className="p-8 rounded-lg text-system-gray-700 hover:bg-system-gray-100 hover:text-system-gray-900 transition-colors"
         title="View action history"
         aria-label="View action history"
       >

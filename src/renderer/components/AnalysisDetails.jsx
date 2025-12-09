@@ -12,16 +12,18 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
   const { showName = true, showCategory = true } = options || {};
 
   // Safe array checks with proper validation
-  const hasKeywords =
-    analysis.keywords !== null &&
-    analysis.keywords !== undefined &&
-    Array.isArray(analysis.keywords) &&
-    analysis.keywords.length > 0;
-  const hasColors =
-    analysis.colors !== null &&
-    analysis.colors !== undefined &&
-    Array.isArray(analysis.colors) &&
-    analysis.colors.length > 0;
+  const keywordList = Array.isArray(analysis.keywords)
+    ? analysis.keywords
+        .filter((k) => typeof k === 'string')
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0)
+    : [];
+  const hasKeywords = keywordList.length > 0;
+
+  const colorList = Array.isArray(analysis.colors)
+    ? analysis.colors.filter((c) => typeof c === 'string')
+    : [];
+  const hasColors = colorList.length > 0;
   const displayDate = analysis.date;
   const displayProject = analysis.project;
   const displayPurpose = analysis.purpose;
@@ -32,6 +34,33 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
       : typeof analysis.hasText === 'boolean'
         ? analysis.hasText
         : undefined;
+
+  const confidenceValue =
+    typeof analysis.confidence === 'number' &&
+    Number.isFinite(analysis.confidence)
+      ? analysis.confidence
+      : null;
+  const displayConfidence =
+    confidenceValue === null
+      ? null
+      : Math.max(
+          0,
+          confidenceValue <= 1
+            ? Math.round(confidenceValue * 100)
+            : Math.round(confidenceValue),
+        );
+
+  const ocrText =
+    analysis.ocrText && typeof analysis.ocrText === 'string'
+      ? analysis.ocrText
+      : null;
+  const isOcrTruncated = !!ocrText && ocrText.length > 300;
+
+  const transcriptText =
+    analysis.transcript && typeof analysis.transcript === 'string'
+      ? analysis.transcript
+      : null;
+  const isTranscriptTruncated = !!transcriptText && transcriptText.length > 300;
 
   return (
     <div className="space-y-3">
@@ -72,22 +101,26 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
       {hasKeywords && (
         <div className="text-sm text-system-gray-500">
           <strong>Keywords:</strong>{' '}
-          {analysis.keywords
-            .filter((k) => k != null && typeof k === 'string')
-            .join(', ')}
+          {keywordList.join(', ')}
         </div>
       )}
 
-      {typeof analysis.confidence !== 'undefined' &&
-        analysis.confidence !== null && (
-          <div className="text-xs text-system-gray-400">
-            <strong>AI Confidence:</strong> {analysis.confidence}%
+      {displayConfidence !== null && (
+          <div className="text-xs text-system-gray-500">
+            <strong>AI Confidence:</strong>{' '}
+            {displayConfidence}%
           </div>
         )}
 
       {displayContentType && (
         <div className="text-xs text-system-gray-500">
-          <strong>Content Type:</strong> {displayContentType}
+          <strong>Content Type:</strong>{' '}
+          {typeof displayContentType === 'object'
+            ? displayContentType.mime ||
+              displayContentType.type ||
+              displayContentType.name ||
+              'Unknown Type'
+            : displayContentType}
         </div>
       )}
 
@@ -100,23 +133,21 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
       {hasColors && (
         <div className="text-xs text-system-gray-500">
           <strong>Colors:</strong>{' '}
-          {analysis.colors
-            .filter((c) => c != null && typeof c === 'string')
-            .join(', ')}
+          {colorList.join(', ')}
         </div>
       )}
 
-      {analysis.ocrText && typeof analysis.ocrText === 'string' && (
+      {ocrText && (
         <div className="text-xs text-system-gray-500 line-clamp-6">
-          <strong>OCR:</strong> {analysis.ocrText.slice(0, 300)}
-          {analysis.ocrText.length > 300 ? '…' : ''}
+          <strong>OCR:</strong> {ocrText.slice(0, 300)}
+          {isOcrTruncated ? '… (truncated)' : ''}
         </div>
       )}
 
-      {analysis.transcript && typeof analysis.transcript === 'string' && (
+      {transcriptText && (
         <div className="text-xs text-system-gray-500 line-clamp-6">
-          <strong>Transcript:</strong> {analysis.transcript.slice(0, 300)}
-          {analysis.transcript.length > 300 ? '…' : ''}
+          <strong>Transcript:</strong> {transcriptText.slice(0, 300)}
+          {isTranscriptTruncated ? '… (truncated)' : ''}
         </div>
       )}
     </div>
@@ -132,8 +163,8 @@ AnalysisDetails.propTypes = {
     date: PropTypes.string,
     keywords: PropTypes.arrayOf(PropTypes.string),
     confidence: PropTypes.number,
-    content_type: PropTypes.string,
-    contentType: PropTypes.string,
+    content_type: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
+    contentType: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
     has_text: PropTypes.bool,
     hasText: PropTypes.bool,
     colors: PropTypes.arrayOf(PropTypes.string),

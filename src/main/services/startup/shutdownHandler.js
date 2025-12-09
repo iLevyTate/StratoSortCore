@@ -10,7 +10,6 @@
 const os = require('os');
 const { spawn } = require('child_process');
 const { logger } = require('../../../shared/logger');
-
 logger.setContext('StartupManager:Shutdown');
 
 /**

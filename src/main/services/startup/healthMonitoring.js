@@ -13,6 +13,7 @@ const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { isPortAvailable } = require('./preflightChecks');
 const { checkChromaDBHealth } = require('./chromaService');
 const { checkOllamaHealth } = require('./ollamaService');
+const { container, ServiceIds } = require('../ServiceContainer');
 
 logger.setContext('StartupManager:Health');
 
@@ -131,8 +132,17 @@ async function checkServiceHealthWithRecovery(
   try {
     let isHealthy;
     if (serviceName === 'chromadb') {
-      const chromaDbService = require('../chromadb').getInstance();
-      isHealthy = await chromaDbService.checkHealth();
+      let chromaDbService = null;
+      try {
+        chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
+      } catch {
+        try {
+          chromaDbService = require('../chromadb').getInstance();
+        } catch {
+          chromaDbService = null;
+        }
+      }
+      isHealthy = await chromaDbService?.checkHealth?.();
     } else if (serviceName === 'ollama') {
       const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
       const response = await axiosWithRetry(

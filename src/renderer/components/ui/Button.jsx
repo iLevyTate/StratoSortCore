@@ -6,11 +6,12 @@ const VARIANT_TO_CLASS = {
   secondary: 'btn-secondary',
   success: 'btn-success',
   danger: 'btn-danger',
-  ghost: 'btn-ghost-minimal',
+  ghost: 'btn-ghost',
   outline: 'btn-outline',
   subtle: 'btn-subtle',
 };
 
+// Size variants - sm size uses px-3 py-1.5 for compact buttons in file action rows
 const SIZE_TO_CLASS = {
   sm: 'text-sm px-3 py-1.5',
   md: 'text-base px-6 py-2.5',

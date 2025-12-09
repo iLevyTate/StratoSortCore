@@ -12,6 +12,7 @@ const axios = require('axios');
 const { logger } = require('../../../shared/logger');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
+const { container, ServiceIds } = require('../ServiceContainer');
 
 logger.setContext('StartupManager:ChromaDB');
 
@@ -157,7 +158,7 @@ async function startChromaDB({
 
   if (!plan) {
     const { buildChromaSpawnPlan } = require('../../utils/chromaSpawnUtils');
-    const chromaDbService = require('../chromadb').getInstance();
+    const chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
     const serverConfig = chromaDbService.getServerConfig();
 
     plan = await buildChromaSpawnPlan(serverConfig);

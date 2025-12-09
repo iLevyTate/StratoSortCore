@@ -32,11 +32,34 @@
   --panel-padding: clamp(16px, 2.6vw, 24px);
   --section-gap: clamp(16px, 2.4vw, 24px);
 
+  /* Component spacing scale */
+  --spacing-compact: 0.5rem;    /* 8px */
+  --spacing-cozy: 0.75rem;      /* 12px */
+  --spacing-default: 1rem;      /* 16px */
+  --spacing-relaxed: 1.5rem;    /* 24px */
+  --spacing-spacious: 2rem;     /* 32px */
+
+  /* Button padding tokens */
+  --button-padding-sm: 0.375rem 0.75rem;   /* 6px 12px */
+  --button-padding-md: 0.625rem 1.5rem;    /* 10px 24px */
+  --button-padding-lg: 0.75rem 2rem;       /* 12px 32px */
+
+  /* Border radius tokens */
+  --radius-sm: 0.5rem;     /* 8px - small elements */
+  --radius-md: 0.75rem;    /* 12px - cards, inputs */
+  --radius-lg: 1rem;       /* 16px - panels */
+  --radius-full: 9999px;   /* Pills, badges */
+
   /* Responsive typography guardrails */
   --heading-1: clamp(26px, 3vw, 32px);
   --heading-2: clamp(22px, 2.6vw, 28px);
   --heading-3: clamp(18px, 2.1vw, 22px);
   --body-text: clamp(15px, 1.8vw, 16px);
+
+  /* Animation duration tokens */
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
 }
 
 @media (min-width: 1440px) {
@@ -81,12 +104,12 @@
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
-    @apply outline-none ring-2 ring-stratosort-blue ring-offset-2 ring-offset-surface-primary;
+    @apply outline-none ring-2 ring-stratosort-blue/80 ring-offset-2 ring-offset-surface-primary;
   }
 
   /* Checkbox focus states */
   input[type='checkbox']:focus-visible {
-    @apply outline-none ring-2 ring-stratosort-blue ring-offset-2;
+    @apply outline-none ring-2 ring-stratosort-blue/80 ring-offset-2;
   }
 }
 
@@ -102,32 +125,14 @@
     -webkit-app-region: no-drag;
   }
 
-  .content-container {
-    @apply w-full max-w-5xl mx-auto;
-    padding-left: var(--layout-gutter);
-    padding-right: var(--layout-gutter);
-  }
-
-  .container-enhanced {
-    @apply w-full max-w-5xl mx-auto;
-    padding-left: var(--layout-gutter);
-    padding-right: var(--layout-gutter);
-  }
-
-  .container-centered {
-    @apply w-full max-w-4xl mx-auto;
-    padding-left: var(--layout-gutter);
-    padding-right: var(--layout-gutter);
-  }
-
-  .container-narrow {
-    @apply w-full max-w-3xl mx-auto;
-    padding-left: var(--layout-gutter);
-    padding-right: var(--layout-gutter);
-  }
-
+  /* Legacy aliases - use .container-responsive instead */
+  .content-container,
+  .container-enhanced,
+  .container-centered,
+  .container-narrow,
   .main-content-wrapper {
-    @apply w-full max-w-5xl mx-auto;
+    @apply w-full mx-auto;
+    max-width: var(--page-max-width);
     padding-left: var(--layout-gutter);
     padding-right: var(--layout-gutter);
   }
@@ -171,9 +176,10 @@
   }
 
   .surface-panel {
-    @apply rounded-[var(--radius-panel)] border border-border-soft/80 bg-white/85 shadow-sm backdrop-blur-md transition-all duration-200;
+    @apply rounded-[var(--radius-panel)] border border-border-soft/80 bg-white/85 shadow-sm backdrop-blur-md transition-all;
     box-shadow: var(--shadow-soft);
     padding: var(--panel-padding);
+    transition-duration: var(--duration-normal);
   }
 
   /* Organize page: force solid panels to avoid blur/ghosting overlap */
@@ -186,9 +192,10 @@
   }
 
   .surface-card {
-    @apply rounded-[var(--radius-card)] border border-border-soft bg-white/90 shadow-sm backdrop-blur-md transition-all duration-200;
+    @apply rounded-[var(--radius-card)] border border-border-soft bg-white/90 shadow-sm backdrop-blur-md transition-all;
     box-shadow: var(--shadow-soft);
     padding: var(--panel-padding);
+    transition-duration: var(--duration-normal);
   }
 
   .surface-card:hover,
@@ -196,14 +203,9 @@
     @apply shadow-md border-border-strong/60;
   }
 
+  /* Legacy alias - use .surface-card instead */
   .surface-quiet {
-    @apply rounded-[var(--radius-card)] border border-border-soft bg-white/75 shadow-xs;
-    padding: var(--panel-padding);
-  }
-
-  .surface-contrast {
-    @apply rounded-[var(--radius-card)] border border-white/10 bg-gradient-to-br from-surface-contrast/96 via-surface-contrast/94 to-surface-contrast/90 text-white shadow-xl;
-    box-shadow: var(--shadow-ambient);
+    @apply surface-card;
   }
 
   .glass-panel {
@@ -215,25 +217,13 @@
     @apply rounded-glass;
   }
 
-  .glass-card {
-    @apply glass-panel shadow-glass;
-    padding: var(--panel-padding);
-  }
-
-  .glass-subtle {
-    @apply glass-panel bg-white/75;
-  }
-
-  .glass-medium {
-    @apply glass-panel bg-white/85;
-  }
-
-  .glass-strong {
-    @apply glass-panel bg-white/95;
-  }
-
+  /* Legacy aliases - use .glass-panel with custom bg if needed */
+  .glass-card,
+  .glass-subtle,
+  .glass-medium,
+  .glass-strong,
   .section-card {
-    @apply glass-panel space-y-5;
+    @apply glass-panel;
     padding: var(--panel-padding);
   }
 
@@ -241,33 +231,29 @@
     @apply grid gap-8 sm:gap-11;
   }
 
-  .section-heading {
-    @apply font-semibold text-system-gray-900 tracking-tight;
-    font-size: var(--heading-1);
-    line-height: 1.15;
-  }
-
-  .section-subheading {
-    @apply text-system-gray-600 max-w-2xl;
-    font-size: clamp(15px, 2vw, 18px);
-  }
-
   .heading-primary {
-    @apply font-semibold text-system-gray-900 tracking-tight mb-5;
     font-size: var(--heading-1);
-    line-height: 1.15;
+    @apply font-semibold text-system-gray-900 tracking-tight;
   }
 
   .heading-secondary {
-    @apply font-semibold text-system-gray-800 mb-3;
     font-size: var(--heading-2);
-    line-height: 1.2;
+    @apply font-semibold text-system-gray-900 tracking-tight;
   }
 
   .heading-tertiary {
-    @apply font-medium text-system-gray-800 mb-2.5;
     font-size: var(--heading-3);
-    line-height: 1.25;
+    @apply font-semibold text-system-gray-900 tracking-tight;
+  }
+
+  .section-heading {
+    font-size: var(--heading-2);
+    @apply font-semibold text-system-gray-900 mb-4;
+  }
+
+  .section-subheading {
+    font-size: var(--heading-3);
+    @apply font-medium text-system-gray-700 mb-3;
   }
 
   .text-muted {
@@ -283,8 +269,9 @@
   }
 
   .btn-base {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
+    transition-duration: var(--duration-normal);
   }
 
   .btn-primary {
@@ -301,7 +288,7 @@
   }
 
   .btn-ghost {
-    @apply btn-base bg-transparent text-system-gray-700 border border-transparent hover:border-border-soft;
+    @apply btn-base bg-transparent text-system-gray-600 border border-transparent hover:border-border-soft hover:bg-system-gray-50;
   }
 
   .btn-outline {
@@ -320,35 +307,90 @@
     @apply btn-base bg-stratosort-danger text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
   }
 
+  /* Legacy alias - use .btn-ghost instead */
   .btn-ghost-minimal {
-    @apply btn-base bg-transparent text-system-gray-600 border border-transparent hover:border-border-soft;
+    @apply btn-ghost;
   }
 
   .form-input-enhanced {
-    @apply w-full rounded-xl border border-border-soft bg-white/85 text-system-gray-800 placeholder-system-gray-400 transition-all duration-200 shadow-sm focus:border-stratosort-blue/60 focus:ring-2 focus:ring-stratosort-blue/15;
+    @apply w-full rounded-xl border border-border-soft bg-white/90 text-system-gray-800 placeholder-system-gray-400 transition-all shadow-sm focus:border-stratosort-blue/60 focus:ring-2 focus:ring-stratosort-blue/20;
     padding: clamp(11px, 2.5vw, 14px) clamp(12px, 3vw, 16px);
+    transition-duration: var(--duration-normal);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
   .form-input-enhanced:focus {
     @apply border-stratosort-blue shadow-md bg-white;
+  }
+  .form-input-enhanced:hover:not(:focus) {
+    @apply border-system-gray-300 shadow;
   }
   .form-textarea-enhanced {
     @apply form-input-enhanced resize-y min-h-[6rem];
   }
 
+  /* Enhanced select dropdown styling */
+  select.form-input-enhanced {
+    /* Fix for rendering artifacts/black box on dropdown open */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    @apply bg-white;
+    
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 12px center;
+    background-repeat: no-repeat;
+    background-size: 20px;
+    padding-right: 40px;
+    cursor: pointer;
+  }
+  select.form-input-enhanced:hover:not(:focus) {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%233b82f6' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  }
+  select.form-input-enhanced option {
+    @apply bg-white text-system-gray-800;
+    padding: 12px 16px;
+  }
+
   .toast-enhanced {
-    @apply glass-panel px-6 py-4 text-sm shadow-lg translate-x-full transition-all duration-300;
+    @apply glass-panel px-6 py-4 text-sm shadow-lg translate-x-full transition-all;
     max-width: 22rem;
+    transition-duration: var(--duration-slow);
   }
   .toast-enhanced.show {
     @apply translate-x-0;
   }
 
   .tooltip-enhanced {
-    @apply glass-panel text-xs py-1.5 px-3 rounded-lg pointer-events-none opacity-0 transition-all duration-150 z-toast;
+    @apply text-xs py-2 px-3.5 pointer-events-none opacity-0 transition-all z-toast text-system-gray-800 font-medium;
+    position: fixed;
+    background: rgba(255, 255, 255, 0.98);
+    border-radius: 12px;
     transform: translate3d(0, -6px, 0);
+    transition-duration: var(--duration-fast);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.08),
+      0 10px 15px -3px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(15, 23, 42, 0.06);
+    max-width: 280px;
+    line-height: 1.4;
   }
   .tooltip-enhanced.show {
-    @apply opacity-100 translate-y-0;
+    @apply opacity-100;
+    transform: translate3d(0, 0, 0);
+  }
+  .tooltip-arrow {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow:
+      1px 1px 3px rgba(0, 0, 0, 0.05),
+      0 0 0 1px rgba(15, 23, 42, 0.04);
+    border-radius: 2px;
+    transform: rotate(45deg);
   }
 
   .status-dot {
@@ -367,21 +409,12 @@
     @apply bg-stratosort-blue;
   }
 
-  .status-pill {
-    @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide;
-  }
-  .status-success {
-    @apply status-pill border-stratosort-success/40 bg-stratosort-success/10 text-stratosort-success;
-  }
-  .status-warning {
-    @apply status-pill border-stratosort-warning/40 bg-stratosort-warning/10 text-stratosort-warning;
-  }
-  .status-error {
-    @apply status-pill border-stratosort-danger/40 bg-stratosort-danger/10 text-stratosort-danger;
-  }
-  .status-info {
-    @apply status-pill border-stratosort-blue/40 bg-stratosort-blue/10 text-stratosort-blue;
-  }
+  /* Legacy aliases - use .status-chip.success/warning/error/info instead */
+  .status-pill { @apply status-chip; }
+  .status-success { @apply status-chip border-stratosort-success/30 bg-stratosort-success/10 text-stratosort-success; }
+  .status-warning { @apply status-chip border-stratosort-warning/30 bg-stratosort-warning/10 text-stratosort-warning; }
+  .status-error { @apply status-chip border-stratosort-danger/30 bg-stratosort-danger/10 text-stratosort-danger; }
+  .status-info { @apply status-chip border-stratosort-blue/30 bg-stratosort-blue/10 text-stratosort-blue; }
 
   .loading-spinner {
     @apply inline-block h-6 w-6 rounded-full border-2 border-border-soft border-t-stratosort-blue animate-spin;
@@ -399,7 +432,9 @@
     @apply w-full h-3 rounded-full bg-system-gray-200 overflow-hidden;
   }
   .progress-bar-enhanced {
-    @apply h-full rounded-full bg-gradient-to-r from-stratosort-blue to-gradient-primary-end transition-all duration-300 ease-smooth shadow-xs;
+    @apply h-full rounded-full bg-gradient-to-r from-stratosort-blue to-gradient-primary-end transition-all ease-smooth shadow-xs transform-gpu;
+    will-change: transform;
+    transition-duration: var(--duration-slow);
   }
   .indeterminate-bar {
     @apply w-full h-3 rounded-full bg-system-gray-200 overflow-hidden relative;
@@ -453,23 +488,14 @@
     @apply flex items-center justify-between gap-3 rounded-2xl border border-border-soft bg-white/80 px-4 py-3 shadow-sm backdrop-blur;
   }
 
-  /* Viewport + panel guardrails */
-  .viewport-screen {
-    min-height: calc(100vh - var(--app-nav-height));
-  }
-  .viewport-stack {
-    @apply flex flex-col min-h-0;
-  }
+  /* Panel utilities */
   .panel-scroll {
     @apply min-h-0 overflow-y-auto modern-scrollbar;
   }
-  .panel-fill {
-    height: calc(100vh - var(--app-nav-height) - var(--panel-chrome-offset));
-    min-height: 360px;
-  }
 
   .list-row {
-    @apply rounded-xl border border-border-soft bg-white/85 shadow-sm transition-all duration-150;
+    @apply rounded-xl border border-border-soft bg-white/85 shadow-sm transition-all;
+    transition-duration: var(--duration-fast);
   }
   .list-row:hover {
     @apply shadow-md border-border-strong/60 bg-white;
@@ -478,9 +504,41 @@
   .empty-state {
     @apply text-center rounded-2xl border border-border-soft bg-white/80 shadow-sm py-10 px-6 space-y-3;
   }
+
+  /* GPU hint for modal entrance animation */
+  .animate-modal-enter {
+    will-change: transform, opacity;
+  }
+
+  /* Phase container - simple flex wrapper, no forced height or scroll */
+  .phase-container {
+    @apply w-full flex flex-col;
+  }
+
+  /* Scrollable flex child pattern */
+  .flex-scroll-child {
+    @apply flex-1 min-h-0 overflow-y-auto overflow-x-hidden modern-scrollbar;
+  }
 }
 
 @layer utilities {
+  /* GPU acceleration utilities for smooth animations */
+  .backface-hidden {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .gpu-accelerate {
+    transform: translateZ(0);
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+  }
+
+  /* Standardized focus ring utility */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/80 focus-visible:ring-offset-2;
+  }
+
   .layout-stack {
     @apply flex flex-col;
     gap: var(--section-gap);
@@ -497,11 +555,13 @@
   }
 
   .interactive-scale {
-    @apply transition-transform duration-200 ease-smooth hover:-translate-y-1 hover:scale-[1.01];
+    @apply transition-transform ease-smooth hover:-translate-y-1 hover:scale-[1.01];
+    transition-duration: var(--duration-normal);
   }
 
   .interactive-lift {
-    @apply transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5;
+    @apply transition-all hover:shadow-xl hover:-translate-y-0.5;
+    transition-duration: var(--duration-normal);
   }
 
   .section-padding {
@@ -528,6 +588,26 @@
 
   .gradient-bg {
     @apply bg-gradient-to-br from-stratosort-blue/5 via-white to-stratosort-blue/5;
+  }
+
+  /* Content centering for sparse data - centers items when few exist */
+  .content-center-sparse {
+    display: grid;
+    place-content: center;
+    min-height: clamp(200px, 30vh, 350px);
+  }
+
+  /* Data-volume height modifiers for adaptive containers */
+  .data-sparse {
+    --list-max-height: clamp(200px, 35vh, 400px);
+  }
+
+  .data-moderate {
+    --list-max-height: clamp(300px, 45vh, 550px);
+  }
+
+  .data-dense {
+    --list-max-height: clamp(400px, 55vh, 700px);
   }
 
   .glass-surface {
@@ -627,5 +707,165 @@
     .desktop-spacing-lg {
       gap: 2.5rem;
     }
+  }
+
+  /* Container query support for adaptive layouts */
+  .container-query {
+    container-type: inline-size;
+  }
+
+  .container-query-block {
+    container-type: size;
+  }
+
+  /* Proportional flex utilities - content-aware sizing */
+  .flex-proportional {
+    @apply flex flex-wrap;
+    gap: var(--spacing-default);
+  }
+
+  .flex-proportional > * {
+    flex: 1 1 300px;
+    min-width: 0;
+  }
+
+  /* Adaptive grid that responds to content amount */
+  .grid-adaptive {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: var(--spacing-default);
+  }
+
+  .grid-adaptive-sm {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: var(--spacing-cozy);
+  }
+
+  .grid-adaptive-lg {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: var(--spacing-default);
+  }
+
+  /* Single item constraint - prevent overly wide single items */
+  .grid-adaptive-constrained > *:only-child {
+    max-width: 500px;
+  }
+
+  /* Ultra-wide screen grid enhancements */
+  @media (min-width: 1920px) {
+    .grid-adaptive-lg {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    }
+  }
+
+  @media (min-width: 2560px) {
+    .grid-adaptive-lg {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    }
+  }
+
+  /* Proportional height sections */
+  .section-flex-grow {
+    flex: 1 1 auto;
+    min-height: 200px;
+  }
+
+  .section-flex-shrink {
+    flex: 0 1 auto;
+  }
+
+  .section-flex-fixed {
+    flex: 0 0 auto;
+  }
+
+  /* Content-aware min heights */
+  .min-h-content-sm {
+    min-height: clamp(150px, 20vh, 250px);
+  }
+
+  .min-h-content-md {
+    min-height: clamp(200px, 30vh, 400px);
+  }
+
+  .min-h-content-lg {
+    min-height: clamp(300px, 40vh, 500px);
+  }
+
+  /* Responsive max heights based on viewport */
+  .max-h-viewport-sm {
+    max-height: clamp(200px, 30vh, 350px);
+  }
+
+  .max-h-viewport-md {
+    max-height: clamp(300px, 45vh, 500px);
+  }
+
+  .max-h-viewport-lg {
+    max-height: clamp(400px, 55vh, 650px);
+  }
+
+  /* Fill available space proportionally */
+  .fill-available {
+    flex: 1 1 0%;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  /* Two-column adaptive layout */
+  .layout-two-col {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-default);
+  }
+
+  @media (min-width: 768px) {
+    .layout-two-col {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .layout-two-col.layout-two-col-uneven {
+      grid-template-columns: 1fr 1.2fr;
+    }
+  }
+
+  /* Three-column adaptive layout */
+  .layout-three-col {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: var(--spacing-default);
+  }
+
+  @media (min-width: 1280px) {
+    .layout-three-col {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  /* Masonry-like layout for varying content heights */
+  .layout-masonry {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    grid-auto-rows: auto;
+    gap: var(--spacing-default);
+  }
+
+  /* Compact stats grid for status overviews */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+    gap: var(--spacing-cozy);
+  }
+
+  /* Responsive panel that grows/shrinks with content */
+  .panel-responsive {
+    @apply flex flex-col min-h-0;
+  }
+
+  .panel-responsive-content {
+    @apply flex-1 min-h-0 overflow-y-auto modern-scrollbar;
   }
 }

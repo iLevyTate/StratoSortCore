@@ -11,7 +11,44 @@ import React, { useMemo, useCallback, useEffect, useRef } from 'react';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
-import { Collapsible, Button } from '../components/ui';
+import { Button, Card } from '../components/ui';
+
+// Inline SVG Icons
+const FolderOpenIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+  </svg>
+);
+
+const BarChart3Icon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+  </svg>
+);
+
+const CheckCircle2Icon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const InboxIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+  </svg>
+);
+
+const FileStackIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+  </svg>
+);
+
+const SparklesIcon = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+  </svg>
+);
 import {
   StatusOverview,
   TargetFolderList,
@@ -45,6 +82,11 @@ function OrganizePhase() {
   const { addNotification } = useNotification();
   const { executeAction } = useUndoRedo();
   const [viewingFileDetails, setViewingFileDetails] = React.useState(null);
+
+  // Modal states for secondary panels
+  const [showFoldersModal, setShowFoldersModal] = React.useState(false);
+  const [showStatusModal, setShowStatusModal] = React.useState(false);
+  const [showHistoryModal, setShowHistoryModal] = React.useState(false);
 
   // Redux state management
   const {
@@ -197,8 +239,7 @@ function OrganizePhase() {
       setProcessedFileIds(processedIds);
     };
     loadPersistedData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount - uses current Redux state snapshot intentionally
+  }, [analysisResults, dispatch, fileStates, organizedFiles]);
 
   const isAnalysisRunning = isAnalyzing || false;
   const analysisProgressFromDiscover = analysisProgress || {
@@ -235,18 +276,21 @@ function OrganizePhase() {
   ]);
 
   return (
-    <div className="organize-page min-h-[calc(100vh-var(--app-nav-height))] w-full overflow-auto modern-scrollbar pb-8 bg-white">
-      <div className="container-responsive gap-4 py-4 flex flex-col h-full min-h-0">
+    <div className="organize-page phase-container bg-white" style={{ paddingBottom: 'var(--spacing-spacious)' }}>
+      <div className="container-responsive flex flex-col flex-1 min-h-0" style={{ gap: 'var(--spacing-default)', paddingTop: 'var(--spacing-default)', paddingBottom: 'var(--spacing-default)' }}>
         {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0">
-          <div className="space-y-2">
-            <h1 className="heading-primary">📂 Review & Organize</h1>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0" style={{ gap: 'var(--spacing-cozy)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-compact)' }}>
+            <h1 className="heading-primary flex items-center gap-3">
+              <FileStackIcon className="w-7 h-7 text-stratosort-blue" />
+              Review & Organize
+            </h1>
             <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl">
               Inspect suggestions, fine-tune smart folders, and execute the
               batch once you&apos;re ready.
             </p>
             {isAnalysisRunning && (
-              <div className="flex items-center gap-3 rounded-2xl border border-stratosort-blue/30 bg-stratosort-blue/5 px-4 py-3 text-sm text-stratosort-blue">
+              <div className="flex items-center border border-stratosort-blue/30 bg-stratosort-blue/5 text-sm text-stratosort-blue" style={{ gap: 'var(--spacing-cozy)', borderRadius: 'var(--radius-lg)', padding: 'var(--spacing-cozy) var(--spacing-default)' }}>
                 <span className="loading-spinner h-5 w-5 border-t-transparent" />
                 Analysis continuing in background:{' '}
                 {analysisProgressFromDiscover.current}/
@@ -257,62 +301,46 @@ function OrganizePhase() {
           <UndoRedoToolbar className="flex-shrink-0" />
         </div>
 
-        {/* Main Content */}
-        <div className="flex-1 min-h-0 flex flex-col gap-4">
+        {/* Quick Access Toolbar - Open modals for secondary info */}
+        <div className="flex items-center flex-wrap gap-2 flex-shrink-0">
           {smartFolders.length > 0 && (
-            <Collapsible
-              title="📁 Target Smart Folders"
-              defaultOpen={false}
-              persistKey="organize-target-folders"
-              contentClassName="p-[var(--panel-padding)] panel-scroll max-h-[45vh] min-h-[180px]"
-              className="surface-panel"
-              collapsedPreview={
-                <div className="text-sm text-system-gray-600 py-1">
-                  {smartFolders.length} folder
-                  {smartFolders.length !== 1 ? 's' : ''} configured
-                </div>
-              }
+            <button
+              onClick={() => setShowFoldersModal(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
             >
-              <TargetFolderList
-                folders={smartFolders}
-                defaultLocation={defaultLocation}
-              />
-            </Collapsible>
+              <FolderOpenIcon className="w-4 h-4" />
+              <span>{smartFolders.length} Smart Folders</span>
+            </button>
           )}
-          {(unprocessedFiles.length > 0 || processedFiles.length > 0) && (
-            <Collapsible
-              title="📊 File Status Overview"
-              defaultOpen
-              persistKey="organize-status"
-              className="surface-panel"
-              collapsedPreview={
-                <div className="text-sm text-system-gray-600 py-1">
-                  {unprocessedFiles.length} ready • {processedFiles.length}{' '}
-                  organized • {failedCount} failed
-                </div>
-              }
+          <button
+            onClick={() => setShowStatusModal(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
+          >
+            <BarChart3Icon className="w-4 h-4" />
+            <span>{unprocessedFiles.length} Ready</span>
+            {processedFiles.length > 0 && (
+              <span className="text-stratosort-success">• {processedFiles.length} Done</span>
+            )}
+            {failedCount > 0 && (
+              <span className="text-stratosort-danger">• {failedCount} Failed</span>
+            )}
+          </button>
+          {processedFiles.length > 0 && (
+            <button
+              onClick={() => setShowHistoryModal(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-stratosort-success bg-stratosort-success/5 border border-stratosort-success/20 rounded-xl hover:bg-stratosort-success/10 hover:border-stratosort-success/40 transition-colors"
             >
-              <StatusOverview
-                unprocessedCount={unprocessedFiles.length}
-                processedCount={processedFiles.length}
-                failedCount={failedCount}
-              />
-            </Collapsible>
+              <CheckCircle2Icon className="w-4 h-4" />
+              <span>{processedFiles.length} Organized</span>
+            </button>
           )}
-          {unprocessedFiles.length > 0 && (
-            <Collapsible
-              title="Bulk Operations"
-              defaultOpen
-              persistKey="organize-bulk"
-              className="surface-panel"
-              collapsedPreview={
-                <div className="text-sm text-system-gray-600 py-1">
-                  {selectedFiles.size > 0
-                    ? `${selectedFiles.size} files selected`
-                    : 'Select files to perform bulk actions'}
-                </div>
-              }
-            >
+        </div>
+
+        {/* Main Content - Files Ready for Organization takes primary focus */}
+        <div className="flex-1 min-h-0 flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
+          {/* Inline Bulk Operations when files selected */}
+          {unprocessedFiles.length > 0 && selectedFiles.size > 0 && (
+            <div className="surface-panel p-[var(--panel-padding)] flex-shrink-0">
               <BulkOperations
                 total={unprocessedFiles.length}
                 selectedCount={selectedFiles.size}
@@ -325,74 +353,67 @@ function OrganizePhase() {
                 onApplyBulkCategory={applyBulkCategoryChange}
                 smartFolders={smartFolders}
               />
-            </Collapsible>
-          )}
-          {processedFiles.length > 0 && (
-            <Collapsible
-              title="Previously Organized Files"
-              defaultOpen={false}
-              persistKey="organize-history"
-              contentClassName="p-[var(--panel-padding)]"
-              className="surface-panel"
-              collapsedPreview={
-                <div className="text-sm text-system-gray-600 py-1">
-                  {processedFiles.length} file
-                  {processedFiles.length !== 1 ? 's' : ''} organized
-                </div>
-              }
-            >
-              <div className="panel-scroll max-h-[320px]">
-                <VirtualizedProcessedFiles files={processedFiles} />
-              </div>
-            </Collapsible>
+            </div>
           )}
 
-          {/* Files Ready */}
-          <Collapsible
-            title="Files Ready for Organization"
-            defaultOpen
-            persistKey="organize-ready-list"
-            className="surface-panel flex-1"
-            contentClassName="p-4 flex flex-col min-h-[300px] max-h-[55vh] panel-scroll"
-            collapsedPreview={
-              <div className="text-sm text-system-gray-600 py-1">
-                {unprocessedFiles.length > 0
-                  ? `${unprocessedFiles.length} file${unprocessedFiles.length !== 1 ? 's' : ''} ready for organization`
-                  : processedFiles.length > 0
-                    ? 'All files have been organized'
-                    : 'No files ready yet'}
-              </div>
-            }
-          >
-            {unprocessedFiles.length === 0 ? (
-              <div className="text-center py-12 space-y-4">
-                <div className="text-4xl">
-                  {processedFiles.length > 0 ? '✅' : '📭'}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-system-gray-800 font-medium">
-                    {processedFiles.length > 0
-                      ? 'Everything here is organized.'
-                      : 'No files ready to organize yet.'}
-                  </p>
-                  <p className="text-system-gray-500 text-sm">
-                    {processedFiles.length > 0
-                      ? 'Review organized files below or return to Discover to add more.'
-                      : 'Add files in Discover, run analysis, then return here to organize.'}
-                  </p>
-                </div>
-                {processedFiles.length === 0 && (
-                  <Button
-                    onClick={() => actions.advancePhase(PHASES.DISCOVER)}
-                    variant="primary"
-                    className="mt-2"
-                  >
-                    ← Go Back to Select Files
-                  </Button>
+          {/* Files Ready - Main Focus Area */}
+          <div className="surface-panel flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-[var(--panel-padding)] pb-0 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <h2 className="font-semibold text-system-gray-900">
+                  Files Ready for Organization
+                </h2>
+                {unprocessedFiles.length > 0 && (
+                  <span className="px-2.5 py-1 text-xs font-medium bg-stratosort-blue/10 text-stratosort-blue rounded-full">
+                    {unprocessedFiles.length} file{unprocessedFiles.length !== 1 ? 's' : ''}
+                  </span>
                 )}
               </div>
-            ) : (
-              <div className="flex-1 min-h-0">
+              {unprocessedFiles.length > 0 && (
+                <button
+                  onClick={selectAllFiles}
+                  className="text-sm text-stratosort-blue hover:text-stratosort-blue/80 font-medium transition-colors"
+                >
+                  {selectedFiles.size === unprocessedFiles.length ? 'Deselect All' : 'Select All'}
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 min-h-0 p-[var(--panel-padding)] overflow-y-auto modern-scrollbar">
+              {unprocessedFiles.length === 0 ? (
+                <div className="h-full flex items-start justify-start p-[var(--panel-padding)]">
+                  <div className="text-left flex flex-col items-start gap-[var(--spacing-default)]">
+                    <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center">
+                      {processedFiles.length > 0 ? (
+                        <CheckCircle2Icon className="w-8 h-8 text-stratosort-success" />
+                      ) : (
+                        <InboxIcon className="w-8 h-8 text-system-gray-400" />
+                      )}
+                    </div>
+                    <div className="flex flex-col items-start gap-[var(--spacing-compact)]">
+                      <p className="text-system-gray-800 font-medium text-lg">
+                        {processedFiles.length > 0
+                          ? 'All files organized!'
+                          : 'No files ready yet'}
+                      </p>
+                      <p className="text-system-gray-500 text-sm max-w-md">
+                        {processedFiles.length > 0
+                          ? 'Click "Organized" above to review your organized files, or return to Discover to add more.'
+                          : 'Add files in Discover, run analysis, then return here to organize.'}
+                      </p>
+                    </div>
+                    {processedFiles.length === 0 && (
+                      <Button
+                        onClick={() => actions.advancePhase(PHASES.DISCOVER)}
+                        variant="primary"
+                        style={{ marginTop: 'var(--spacing-cozy)' }}
+                      >
+                        ← Go to Discover
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : (
                 <VirtualizedFileGrid
                   files={unprocessedFiles}
                   selectedFiles={selectedFiles}
@@ -404,18 +425,19 @@ function OrganizePhase() {
                   handleEditFile={handleEditFile}
                   smartFolders={smartFolders}
                   defaultLocation={defaultLocation}
+                  onViewDetails={setViewingFileDetails}
                 />
-              </div>
-            )}
-          </Collapsible>
+              )}
+            </div>
+          </div>
 
-          {/* Action Area */}
+          {/* Action Area - Sticky at bottom */}
           {unprocessedFiles.length > 0 && (
-            <div className="surface-panel p-[var(--panel-padding)] flex flex-col gap-3">
+            <div className="surface-panel p-[var(--panel-padding)] flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-system-gray-600 font-medium">
-                    Ready to move {readyFilesCount} files
+                  <p className="text-system-gray-700 font-medium">
+                    Ready to move {readyFilesCount} file{readyFilesCount !== 1 ? 's' : ''}
                   </p>
                   <p className="text-xs text-system-gray-500">
                     You can undo this operation if needed
@@ -433,11 +455,12 @@ function OrganizePhase() {
                   <Button
                     onClick={handleOrganizeFiles}
                     variant="success"
-                    className="text-base px-6 py-3"
+                    className="text-base"
+                    style={{ padding: 'var(--spacing-cozy) var(--spacing-relaxed)' }}
                     disabled={readyFilesCount === 0 || isOrganizing}
                     isLoading={isOrganizing}
                   >
-                    {isOrganizing ? 'Organizing...' : '✨ Organize Files Now'}
+                    {isOrganizing ? 'Organizing...' : <><SparklesIcon className="w-4 h-4 mr-1.5 inline" /> Organize Files Now</>}
                   </Button>
                 )}
               </div>
@@ -446,7 +469,7 @@ function OrganizePhase() {
         </div>
 
         {/* Footer Buttons */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-auto pt-4 border-t border-system-gray-200/50">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-auto border-t border-system-gray-200/50" style={{ gap: 'var(--spacing-cozy)', paddingTop: 'var(--spacing-default)' }}>
           <Button
             onClick={() => actions.advancePhase(PHASES.DISCOVER)}
             variant="secondary"
@@ -484,17 +507,19 @@ function OrganizePhase() {
         size="medium"
       >
         {viewingFileDetails && viewingFileDetails.analysis && (
-          <div className="space-y-4">
-            <div className="bg-system-gray-50 p-4 rounded-lg border border-border-soft">
-              <h4 className="text-sm font-medium text-system-gray-900 mb-1">
-                {viewingFileDetails.name}
-              </h4>
-              <p className="text-xs text-system-gray-500 truncate">
-                {viewingFileDetails.path}
-              </p>
-            </div>
-            <AnalysisDetails analysis={viewingFileDetails.analysis} />
-            <div className="flex justify-end pt-4">
+          <div className="flex flex-col gap-[var(--spacing-default)]">
+            <Card variant="compact" className="shadow-sm">
+              <div className="space-y-[var(--spacing-compact)]">
+                <h4 className="text-sm font-medium text-system-gray-900">
+                  {viewingFileDetails.name}
+                </h4>
+                <p className="text-xs text-system-gray-500 break-words">
+                  {viewingFileDetails.path}
+                </p>
+                <AnalysisDetails analysis={viewingFileDetails.analysis} />
+              </div>
+            </Card>
+            <div className="flex justify-end" style={{ paddingTop: 'var(--spacing-default)' }}>
               <Button
                 onClick={() => setViewingFileDetails(null)}
                 variant="secondary"
@@ -504,6 +529,74 @@ function OrganizePhase() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Smart Folders Modal */}
+      <Modal
+        isOpen={showFoldersModal}
+        onClose={() => setShowFoldersModal(false)}
+        title="📁 Target Smart Folders"
+        size="large"
+      >
+        <div className="flex flex-col gap-[var(--spacing-default)]">
+          <p className="text-sm text-system-gray-600">
+            Files will be organized into these destination folders based on their content.
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto modern-scrollbar">
+            <TargetFolderList
+              folders={smartFolders}
+              defaultLocation={defaultLocation}
+            />
+          </div>
+          <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
+            <Button onClick={() => setShowFoldersModal(false)} variant="secondary">
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Status Overview Modal */}
+      <Modal
+        isOpen={showStatusModal}
+        onClose={() => setShowStatusModal(false)}
+        title="📊 File Status Overview"
+        size="medium"
+      >
+        <div className="flex flex-col gap-[var(--spacing-default)]">
+          <StatusOverview
+            unprocessedCount={unprocessedFiles.length}
+            processedCount={processedFiles.length}
+            failedCount={failedCount}
+          />
+          <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
+            <Button onClick={() => setShowStatusModal(false)} variant="secondary">
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Previously Organized Files Modal */}
+      <Modal
+        isOpen={showHistoryModal}
+        onClose={() => setShowHistoryModal(false)}
+        title="Previously Organized Files"
+        size="large"
+      >
+        <div className="flex flex-col gap-[var(--spacing-default)]">
+          <p className="text-sm text-system-gray-600">
+            {processedFiles.length} file{processedFiles.length !== 1 ? 's have' : ' has'} been successfully organized.
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto modern-scrollbar">
+            <VirtualizedProcessedFiles files={processedFiles} />
+          </div>
+          <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
+            <Button onClick={() => setShowHistoryModal(false)} variant="secondary">
+              Close
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

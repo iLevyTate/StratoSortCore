@@ -21,7 +21,7 @@ const Input = memo(
     const classes = useMemo(() => {
       const invalidClass =
         invalid || error
-          ? 'border-stratosort-danger focus:ring-stratosort-danger/15'
+          ? 'border-stratosort-danger focus:ring-stratosort-danger/20'
           : '';
       return `form-input-enhanced ${invalidClass} ${className}`.trim();
     }, [invalid, error, className]);

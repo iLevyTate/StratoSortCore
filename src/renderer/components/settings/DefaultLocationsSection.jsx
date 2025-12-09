@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { FolderOpen } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 
@@ -43,8 +44,9 @@ function DefaultLocationsSection({ settings, setSettings }) {
             type="button"
             title="Browse"
             aria-label="Browse for default folder"
+            leftIcon={<FolderOpen className="w-4 h-4" />}
           >
-            📁 Browse
+            Browse
           </Button>
         </div>
         <p className="text-xs text-system-gray-500 mt-3">

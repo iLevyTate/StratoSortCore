@@ -7,7 +7,7 @@ const StatusOverview = memo(function StatusOverview({
   failedCount = 0,
 }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div className="stats-grid">
       <div className="surface-card text-center p-4">
         <div className="text-xs font-semibold text-stratosort-blue/80 mb-1 uppercase tracking-wide">
           Ready to Organize

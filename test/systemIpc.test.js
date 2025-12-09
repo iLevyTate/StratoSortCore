@@ -33,15 +33,8 @@ describe('registerSystemIpc', () => {
   let mockServiceIntegration;
   let handlers;
 
-  const IPC_CHANNELS = {
-    SYSTEM: {
-      GET_APPLICATION_STATISTICS: 'get-application-statistics',
-      GET_METRICS: 'get-system-metrics',
-      APPLY_UPDATE: 'apply-update',
-      GET_CONFIG: 'get-app-config',
-      GET_CONFIG_VALUE: 'get-config-value',
-    },
-  };
+  const { IPC_CHANNELS } = require('../src/shared/constants');
+  const SYSTEM_CHANNELS = IPC_CHANNELS.SYSTEM;
 
   beforeEach(() => {
     jest.resetModules();
@@ -99,23 +92,23 @@ describe('registerSystemIpc', () => {
   describe('registration', () => {
     test('registers all system IPC handlers', () => {
       expect(mockIpcMain.handle).toHaveBeenCalledWith(
-        'get-application-statistics',
+        SYSTEM_CHANNELS.GET_APPLICATION_STATISTICS,
         expect.any(Function)
       );
       expect(mockIpcMain.handle).toHaveBeenCalledWith(
-        'get-system-metrics',
+        SYSTEM_CHANNELS.GET_METRICS,
         expect.any(Function)
       );
       expect(mockIpcMain.handle).toHaveBeenCalledWith(
-        'apply-update',
+        SYSTEM_CHANNELS.APPLY_UPDATE,
         expect.any(Function)
       );
       expect(mockIpcMain.handle).toHaveBeenCalledWith(
-        'get-app-config',
+        SYSTEM_CHANNELS.GET_CONFIG,
         expect.any(Function)
       );
       expect(mockIpcMain.handle).toHaveBeenCalledWith(
-        'get-config-value',
+        SYSTEM_CHANNELS.GET_CONFIG_VALUE,
         expect.any(Function)
       );
     });
@@ -123,7 +116,7 @@ describe('registerSystemIpc', () => {
 
   describe('GET_APPLICATION_STATISTICS handler', () => {
     test('returns application statistics', async () => {
-      const handler = handlers['get-application-statistics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_APPLICATION_STATISTICS];
 
       const result = await handler();
 
@@ -136,7 +129,7 @@ describe('registerSystemIpc', () => {
     });
 
     test('fetches statistics from service integration', async () => {
-      const handler = handlers['get-application-statistics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_APPLICATION_STATISTICS];
 
       await handler();
 
@@ -153,7 +146,7 @@ describe('registerSystemIpc', () => {
         getServiceIntegration: () => null,
       });
 
-      const handler = handlers['get-application-statistics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_APPLICATION_STATISTICS];
       const result = await handler();
 
       expect(result).toEqual({
@@ -169,7 +162,7 @@ describe('registerSystemIpc', () => {
         new Error('Database error')
       );
 
-      const handler = handlers['get-application-statistics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_APPLICATION_STATISTICS];
       const result = await handler();
 
       expect(result).toEqual({});
@@ -182,7 +175,7 @@ describe('registerSystemIpc', () => {
 
   describe('GET_METRICS handler', () => {
     test('returns system metrics', async () => {
-      const handler = handlers['get-system-metrics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_METRICS];
 
       const result = await handler();
 
@@ -194,7 +187,7 @@ describe('registerSystemIpc', () => {
     });
 
     test('calls systemAnalytics.collectMetrics', async () => {
-      const handler = handlers['get-system-metrics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_METRICS];
 
       await handler();
 
@@ -206,7 +199,7 @@ describe('registerSystemIpc', () => {
         new Error('Metrics error')
       );
 
-      const handler = handlers['get-system-metrics'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_METRICS];
       const result = await handler();
 
       expect(result).toEqual({});
@@ -226,7 +219,7 @@ describe('registerSystemIpc', () => {
         },
       }));
 
-      const handler = handlers['apply-update'];
+      const handler = handlers[SYSTEM_CHANNELS.APPLY_UPDATE];
 
       // This will try to require electron-updater which will throw in test env
       try {
@@ -239,7 +232,7 @@ describe('registerSystemIpc', () => {
 
   describe('GET_CONFIG handler', () => {
     test('returns configuration dump', async () => {
-      const handler = handlers['get-app-config'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG];
 
       const result = await handler();
 
@@ -257,7 +250,7 @@ describe('registerSystemIpc', () => {
 
     test('calls config dump with includeSensitive: false', async () => {
       const { dump } = require('../src/shared/config/index');
-      const handler = handlers['get-app-config'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG];
 
       await handler();
 
@@ -272,7 +265,7 @@ describe('registerSystemIpc', () => {
         warnings: ['Warning 1'],
       });
 
-      const handler = handlers['get-app-config'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG];
       const result = await handler();
 
       expect(result.validation).toEqual({
@@ -288,7 +281,7 @@ describe('registerSystemIpc', () => {
         throw new Error('Config error');
       });
 
-      const handler = handlers['get-app-config'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG];
       const result = await handler();
 
       expect(result.success).toBe(false);
@@ -298,7 +291,7 @@ describe('registerSystemIpc', () => {
 
   describe('GET_CONFIG_VALUE handler', () => {
     test('returns config value by path', async () => {
-      const handler = handlers['get-config-value'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG_VALUE];
 
       const result = await handler(null, 'test.path');
 
@@ -311,7 +304,7 @@ describe('registerSystemIpc', () => {
 
     test('calls config get with path', async () => {
       const { get } = require('../src/shared/config/index');
-      const handler = handlers['get-config-value'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG_VALUE];
 
       await handler(null, 'my.config.path');
 
@@ -324,7 +317,7 @@ describe('registerSystemIpc', () => {
         throw new Error('Path not found');
       });
 
-      const handler = handlers['get-config-value'];
+      const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG_VALUE];
       const result = await handler(null, 'invalid.path');
 
       expect(result.success).toBe(false);

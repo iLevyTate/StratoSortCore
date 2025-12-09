@@ -20,7 +20,7 @@ const Textarea = forwardRef(function Textarea(
 
   const invalidClass =
     invalid || error
-      ? 'border-stratosort-danger focus:ring-stratosort-danger/15'
+      ? 'border-stratosort-danger focus:ring-stratosort-danger/20'
       : '';
   const autoExpandClass = autoExpand ? 'auto-expand' : '';
   const classes =

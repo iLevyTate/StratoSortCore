@@ -7,7 +7,7 @@ import PropTypes from 'prop-types';
 function ApplicationSection({ settings, setSettings }) {
   return (
     <div className="space-y-6">
-      <div className="flex items-center">
+      <label className="flex items-center gap-3">
         <input
           type="checkbox"
           id="launchOnStartup"
@@ -18,15 +18,12 @@ function ApplicationSection({ settings, setSettings }) {
               launchOnStartup: e.target.checked,
             }))
           }
-          className="mr-3"
+          className="form-checkbox accent-stratosort-blue"
         />
-        <label
-          htmlFor="launchOnStartup"
-          className="text-sm text-system-gray-700"
-        >
+        <span className="text-sm text-system-gray-700">
           Launch StratoSort on system startup
-        </label>
-      </div>
+        </span>
+      </label>
     </div>
   );
 }

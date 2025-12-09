@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { Link2, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 
@@ -43,8 +44,9 @@ function OllamaConfigSection({
             variant="secondary"
             type="button"
             title="Test Ollama connection"
+            leftIcon={<Link2 className="w-4 h-4" />}
           >
-            🔗 Test
+            Test
           </Button>
         </div>
       </div>
@@ -55,8 +57,9 @@ function OllamaConfigSection({
           type="button"
           title="Refresh models"
           disabled={isRefreshingModels}
+          leftIcon={isRefreshingModels ? null : <RefreshCw className="w-4 h-4" />}
         >
-          {isRefreshingModels ? 'Refreshing…' : '🔄 Refresh Models'}
+          {isRefreshingModels ? 'Refreshing…' : 'Refresh Models'}
         </Button>
         <Button
           onClick={() => setShowAllModels((v) => !v)}

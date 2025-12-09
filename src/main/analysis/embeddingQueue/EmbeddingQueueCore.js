@@ -9,7 +9,7 @@
 const path = require('path');
 const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
-const ChromaDBService = require('../../services/chromadb');
+const { container, ServiceIds } = require('../../services/ServiceContainer');
 const { get: getConfig } = require('../../../shared/config/index');
 const {
   BATCH,
@@ -348,7 +348,7 @@ class EmbeddingQueue {
     try {
       logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
 
-      const chromaDbService = ChromaDBService.getInstance();
+      const chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
       await chromaDbService.initialize();
 
       if (!chromaDbService.isOnline) {

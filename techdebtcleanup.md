@@ -141,7 +141,7 @@ Examples:
 
 **Recommended Fix**:
 
-- Once consumers are updated to import from the new modular structure, remove the wrapper files
+- Once consumers are updated to use the new modular structure, remove the wrapper files
 - Update all imports to use the new paths directly
 
 **Why Not Fixed Now**:
@@ -356,7 +356,7 @@ Removed 6 hook implementations that were never used.
 ## Cleanup Session #3
 
 **Date**: 2025-11-30
-**Scope**: Re-export wrappers, DownloadWatcher pipeline, test cleanup, console.\* replacement
+**Scope**: Re-export wrappers, DownloadWatcher pipeline, test cleanup, console.* replacement
 
 ---
 
@@ -441,7 +441,7 @@ Removed unused functions from `test/utils/testUtilities.js`.
 
 ---
 
-#### 15. Replaced console.\* with Logger
+#### 15. Replaced console.* with Logger
 
 **Status**: FIXED
 
@@ -475,7 +475,7 @@ Removed commented-out import from `test/stress/timeoutRateLimit.test.js`.
 | handleFile refactored      | 1 method → 6 methods     | Cleaner pipeline    |
 | Skipped tests removed      | 4 tests                  | Cleaner test suite  |
 | Unused test utilities      | 4 functions (~152 lines) | Less dead code      |
-| console.\* replaced        | 6 statements             | Proper logging      |
+| console.* replaced         | 6 statements             | Proper logging      |
 | Commented code removed     | 1 block                  | Cleaner tests       |
 
 ---
@@ -935,7 +935,7 @@ const VIEWPORT = {
   WIDE_DESKTOP: 1600,
   ULTRA_WIDE: 1920,
   FOUR_K: 2560,
-};
+  };
 ```
 
 ---
@@ -1003,3 +1003,44 @@ These patterns are appropriate for document extraction where graceful degradatio
 4. **IDE support** - Autocomplete and go-to-definition
 
 ---
+
+## Cleanup Session #9
+
+**Date**: 2025-12-08
+**Scope**: Dependency Injection standardization, removing legacy `getInstance()` usage
+
+---
+
+### Tech Debt Addressed
+
+#### 30. Standardized DI Usage in Core Services
+
+**Status**: FIXED
+
+Refactored remaining `getInstance()` and `new Service()` calls to use `ServiceContainer.resolve()` in 6 key files.
+
+**Files Modified**:
+
+| File | Change |
+| ----------------------- | -------------------------------------------- |
+| `src/main/services/UndoRedoService.js` | Replaced `getInstance()` with `container.tryResolve()` |
+| `src/main/analysis/embeddingQueue/EmbeddingQueueCore.js` | Replaced `getInstance()` with `container.resolve()` |
+| `src/main/analysis/ollamaImageAnalysis.js` | Replaced `getInstance()` with `container.tryResolve()` |
+| `src/main/services/startup/healthMonitoring.js` | Replaced `getInstance()` with `container.resolve()` |
+| `src/main/services/startup/chromaService.js` | Replaced `getInstance()` with `container.resolve()` |
+| `src/main/services/autoOrganize/index.js` | Updated factory to use container resolution |
+
+**Impact**:
+- Enforced singletons via container
+- Removed direct coupling between services
+- Improved testability by allowing container mocking
+- Consistent pattern across the codebase
+
+---
+
+### Verification
+
+- ESLint passes with 0 errors
+- DI container properly resolves all services
+- Backward compatibility maintained for tests
+

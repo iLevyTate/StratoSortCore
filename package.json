@@ -120,6 +120,7 @@
     "electron-window-state": "^5.0.3",
     "fast-xml-parser": "^5.3.2",
     "framer-motion": "^12.23.25",
+    "lucide-react": "^0.556.0",
     "mammoth": "^1.11.0",
     "node-fetch": "^3.3.2",
     "node-tesseract-ocr": "^2.2.1",
@@ -136,7 +137,6 @@
     "xlsx-populate": "^1.21.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
     "@babel/core": "^7.28.5",
     "@babel/plugin-transform-react-jsx": "^7.27.1",
     "@babel/preset-env": "^7.28.5",
@@ -144,6 +144,7 @@
     "@babel/preset-typescript": "^7.28.5",
     "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^3.7.2",
+    "@playwright/test": "^1.49.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
     "@svgr/webpack": "^8.1.0",
     "@teamsupercell/typings-for-css-modules-loader": "^2.5.2",

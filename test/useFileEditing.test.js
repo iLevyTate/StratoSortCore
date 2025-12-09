@@ -43,7 +43,7 @@ describe('useFileEditing hooks', () => {
 
       const display = result.current.getFileStateDisplay('/file.txt', false, true);
       expect(display.label).toBe('Organized');
-      expect(display.icon).toBe('✅');
+      expect(display.iconSymbol).toBe('✅');
     });
 
     test('getFileStateDisplay returns analyzing state', () => {
