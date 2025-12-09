@@ -473,7 +473,9 @@ const FILE_SIZE_LIMITS = {
 // Processing limits - Optimized for faster models
 const PROCESSING_LIMITS = {
   MAX_CONCURRENT_ANALYSIS: 3,
-  MAX_BATCH_SIZE: 100,
+  MAX_BATCH_SIZE: 100, // Items per processing batch
+  MAX_BATCH_OPERATION_SIZE: 1000, // Security limit for batch file operations
+  MAX_BATCH_OPERATION_TIME: 600000, // 10 minutes timeout for batch operations
   ANALYSIS_TIMEOUT: 60000, // 1 minute for faster models
   RETRY_ATTEMPTS: 3,
 };

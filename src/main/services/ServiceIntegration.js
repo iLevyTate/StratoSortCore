@@ -338,6 +338,5 @@ class ServiceIntegration {
 
 // Export the class and re-export container and service IDs for convenience
 module.exports = ServiceIntegration;
-module.exports.ServiceIntegration = ServiceIntegration;
 module.exports.container = container;
 module.exports.ServiceIds = ServiceIds;

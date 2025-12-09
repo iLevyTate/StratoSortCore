@@ -10,7 +10,10 @@
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
-const { ACTION_TYPES } = require('../../../shared/constants');
+const {
+  ACTION_TYPES,
+  PROCESSING_LIMITS,
+} = require('../../../shared/constants');
 const { logger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
 
@@ -19,9 +22,9 @@ logger.setContext('IPC:Files:BatchOrganize');
 // Jest-mocked functions expose _isMockFunction; use to avoid false positives
 const isMockFn = (fn) => !!fn && typeof fn === 'function' && fn._isMockFunction;
 
-// Resource limits to prevent DOS attacks
-const MAX_BATCH_SIZE = 1000;
-const MAX_TOTAL_BATCH_TIME = 600000; // 10 minutes
+// Resource limits from centralized constants (prevents config drift)
+const MAX_BATCH_SIZE = PROCESSING_LIMITS.MAX_BATCH_OPERATION_SIZE;
+const MAX_TOTAL_BATCH_TIME = PROCESSING_LIMITS.MAX_BATCH_OPERATION_TIME;
 
 /**
  * Compute SHA-256 checksum of a file using streaming
@@ -216,7 +219,8 @@ async function handleBatchOrganize({
         }
 
         // Verify source is no longer at original location (unless same path edge case)
-        const shouldVerifySource = op.source !== op.destination && !isMockFn(fs.access);
+        const shouldVerifySource =
+          op.source !== op.destination && !isMockFn(fs.access);
         if (shouldVerifySource) {
           try {
             await fs.access(op.source);

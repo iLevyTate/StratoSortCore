@@ -56,7 +56,6 @@ function createWithDefaults(config = {}) {
 }
 
 module.exports = OrganizationSuggestionService;
-module.exports.OrganizationSuggestionService = OrganizationSuggestionService;
 module.exports.createWithDefaults = createWithDefaults;
 
 // Export sub-modules for direct access if needed

@@ -844,5 +844,4 @@ function createWithDefaults(options = {}) {
 }
 
 module.exports = FolderMatchingService;
-module.exports.FolderMatchingService = FolderMatchingService;
 module.exports.createWithDefaults = createWithDefaults;
