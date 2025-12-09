@@ -118,7 +118,7 @@
     "dotenv": "^17.2.3",
     "electron-updater": "^6.1.4",
     "electron-window-state": "^5.0.3",
-    "fast-xml-parser": "^4.5.0",
+    "fast-xml-parser": "^5.3.2",
     "framer-motion": "^12.23.25",
     "mammoth": "^1.11.0",
     "node-fetch": "^3.3.2",
