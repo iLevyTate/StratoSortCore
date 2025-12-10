@@ -8,6 +8,7 @@ import React, {
   lazy,
 } from 'react';
 import { logger } from '../../shared/logger';
+import { sanitizeSettings } from '../../shared/settingsValidation';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAppDispatch } from '../store/hooks';
 import { toggleSettings } from '../store/slices/uiSlice';
@@ -183,7 +184,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   useEffect(() => {
     // Don't run if API is not available
-    if (!isApiAvailable) return;
+    if (!isApiAvailable) return undefined;
 
     let mounted = true;
 
@@ -209,9 +210,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   // After settings are loaded the first time, automatically check Ollama health
   useEffect(() => {
-    if (!isApiAvailable) return;
-    if (!settingsLoaded) return;
-    if (didAutoHealthCheckRef.current) return;
+    if (!isApiAvailable) return undefined;
+    if (!settingsLoaded) return undefined;
+    if (didAutoHealthCheckRef.current) return undefined;
     didAutoHealthCheckRef.current = true;
 
     let isMounted = true;
@@ -241,7 +242,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const saveSettings = useCallback(async () => {
     try {
       setIsSaving(true);
-      await window.electronAPI.settings.save(settings);
+      const normalizedSettings = sanitizeSettings(settings);
+      setSettings(normalizedSettings);
+      await window.electronAPI.settings.save(normalizedSettings);
       addNotification('Settings saved successfully!', 'success');
       handleToggleSettings();
     } catch (error) {
@@ -253,13 +256,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsSaving(false);
     }
-  }, [settings, addNotification, handleToggleSettings]);
+  }, [settings, addNotification, handleToggleSettings, sanitizeSettings]);
 
   // Auto-save settings on change (debounced)
   const autoSaveSettings = useDebouncedCallback(
     async () => {
       try {
-        await window.electronAPI.settings.save(settings);
+        const normalizedSettings = sanitizeSettings(settings);
+        setSettings(normalizedSettings);
+        await window.electronAPI.settings.save(normalizedSettings);
       } catch (error) {
         logger.error('Auto-save settings failed', {
           error: error.message,
@@ -268,7 +273,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
     },
     800,
-    [],
+    [sanitizeSettings],
   );
 
   useEffect(() => {
@@ -407,9 +412,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       <div className="surface-panel w-full max-w-2xl xl:max-w-4xl 2xl:max-w-5xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
         <div className="p-[var(--panel-padding)] border-b border-border-soft/70 bg-white/90 backdrop-blur-sm flex-shrink-0 rounded-t-[var(--radius-panel)]">
           <div className="flex items-center justify-between">
-            <h2 className="heading-secondary">
-              ⚙️ Settings
-            </h2>
+            <h2 className="heading-secondary">⚙️ Settings</h2>
             <div className="flex flex-wrap items-center gap-[var(--spacing-md)]">
               <Button
                 onClick={expandAll}
@@ -540,7 +543,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           >
             <div className="flex flex-col gap-[var(--spacing-cozy)]">
               <p className="text-sm text-system-gray-600">
-                View and manage your file analysis history, including past results and statistics.
+                View and manage your file analysis history, including past
+                results and statistics.
               </p>
               <Button
                 onClick={() => setShowAnalysisHistory(true)}
