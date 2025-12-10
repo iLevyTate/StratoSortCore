@@ -114,7 +114,7 @@ function createDocumentFallback(
   const result = {
     purpose:
       purpose ||
-      `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document (fallback)`,
+      `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document`,
     project: fileName.replace(fileExtension, ''),
     category: safeCategory,
     date: new Date().toISOString().split('T')[0],
@@ -399,105 +399,131 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         });
       }
     } else if (SUPPORTED_DOCUMENT_EXTENSIONS.includes(fileExtension)) {
-      // Extract content from extended document set
-      try {
+      // Extract content from extended document set (office/odf/eml/msg/kml)
+      const extractOfficeContent = async () => {
+        if (fileExtension === '.docx') return extractTextFromDocx(filePath);
+        if (fileExtension === '.xlsx') return extractTextFromXlsx(filePath);
+        if (fileExtension === '.pptx') return extractTextFromPptx(filePath);
+        if (fileExtension === '.xls') return extractTextFromXls(filePath);
+        if (fileExtension === '.ppt') return extractTextFromPpt(filePath);
+        if (
+          fileExtension === '.odt' ||
+          fileExtension === '.ods' ||
+          fileExtension === '.odp'
+        )
+          return extractTextFromOdfZip(filePath);
+        if (fileExtension === '.epub') return extractTextFromEpub(filePath);
+        if (fileExtension === '.eml') return extractTextFromEml(filePath);
+        if (fileExtension === '.msg') return extractTextFromMsg(filePath);
+        if (fileExtension === '.kml') return extractTextFromKml(filePath);
+        if (fileExtension === '.kmz') return extractTextFromKmz(filePath);
+        return '';
+      };
+
+      const logExtraction = () =>
         logger.info(`Extracting content from document`, {
           fileName,
           fileExtension,
         });
 
-        if (fileExtension === '.docx') {
-          extractedText = await extractTextFromDocx(filePath);
-        } else if (fileExtension === '.xlsx') {
-          extractedText = await extractTextFromXlsx(filePath);
-        } else if (fileExtension === '.pptx') {
-          extractedText = await extractTextFromPptx(filePath);
-        } else if (fileExtension === '.xls') {
-          extractedText = await extractTextFromXls(filePath);
-        } else if (fileExtension === '.ppt') {
-          extractedText = await extractTextFromPpt(filePath);
-        } else if (
-          fileExtension === '.odt' ||
-          fileExtension === '.ods' ||
-          fileExtension === '.odp'
-        ) {
-          extractedText = await extractTextFromOdfZip(filePath);
-        } else if (fileExtension === '.epub') {
-          extractedText = await extractTextFromEpub(filePath);
-        } else if (fileExtension === '.eml') {
-          extractedText = await extractTextFromEml(filePath);
-        } else if (fileExtension === '.msg') {
-          extractedText = await extractTextFromMsg(filePath);
-        } else if (fileExtension === '.kml') {
-          extractedText = await extractTextFromKml(filePath);
-        } else if (fileExtension === '.kmz') {
-          extractedText = await extractTextFromKmz(filePath);
-        }
+      try {
+        logExtraction();
+        extractedText = await extractOfficeContent();
 
         logger.debug(`Extracted characters from office document`, {
           fileName,
           length: extractedText.length,
         });
       } catch (officeError) {
-        // Provide detailed error information for debugging
-        const errorMessage = officeError?.message || 'Unknown extraction error';
-        const errorCode = officeError?.code || 'UNKNOWN_ERROR';
-        const errorDetails = {
+        // Attempt a single retry after a brief delay to handle transient locks/streams
+        let finalError = officeError;
+        logger.warn(`Office extraction failed, retrying once`, {
           fileName,
           fileExtension,
-          error: errorMessage,
-          errorCode,
-          errorStack: officeError?.stack,
-          errorType: officeError?.constructor?.name || 'Error',
-        };
+          error: officeError?.message,
+          code: officeError?.code,
+        });
 
-        // Check if it's a FileProcessingError with additional context
-        if (officeError?.suggestion) {
-          errorDetails.suggestion = officeError.suggestion;
-        }
-        if (officeError?.originalError) {
-          errorDetails.originalError = officeError.originalError;
-        }
-
-        logger.error(`Error extracting office content`, errorDetails);
-
-        // Fall back to intelligent filename-based analysis
-        const intelligentCategory = getIntelligentCategory(
-          fileName,
-          fileExtension,
-          smartFolders,
-        );
-        const intelligentKeywords = getIntelligentKeywords(
-          fileName,
-          fileExtension,
-        );
-
-        let purpose = 'Office document (content extraction failed)';
-        const confidence = 70;
-
-        if (fileExtension === '.docx') {
-          purpose =
-            'Word document - content extraction failed, using filename analysis';
-        } else if (fileExtension === '.xlsx') {
-          purpose =
-            'Excel spreadsheet - content extraction failed, using filename analysis';
-        } else if (fileExtension === '.pptx') {
-          purpose =
-            'PowerPoint presentation - content extraction failed, using filename analysis';
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          logExtraction();
+          extractedText = await extractOfficeContent();
+          logger.info(`Office extraction recovered after retry`, {
+            fileName,
+            fileExtension,
+          });
+        } catch (retryError) {
+          finalError = retryError || officeError;
         }
 
-        return {
-          purpose,
-          project: fileName.replace(fileExtension, ''),
-          category: intelligentCategory || 'document',
-          date: new Date().toISOString().split('T')[0],
-          keywords: intelligentKeywords || [],
-          confidence,
-          suggestedName: safeSuggestedName(fileName, fileExtension),
-          extractionError: errorMessage,
-          extractionErrorCode: errorCode,
-          extractionMethod: 'filename_fallback',
-        };
+        // If still no extracted text, fall back to filename analysis
+        if (!extractedText) {
+          const errorMessage =
+            finalError?.message ||
+            officeError?.message ||
+            'Unknown extraction error';
+          const errorCode = finalError?.code || 'UNKNOWN_ERROR';
+          const errorDetails = {
+            fileName,
+            fileExtension,
+            error: errorMessage,
+            errorCode,
+            errorStack: finalError?.stack || officeError?.stack,
+            errorType:
+              finalError?.constructor?.name ||
+              officeError?.constructor?.name ||
+              'Error',
+          };
+
+          if (finalError?.suggestion || officeError?.suggestion) {
+            errorDetails.suggestion =
+              finalError?.suggestion || officeError?.suggestion;
+          }
+          if (finalError?.originalError || officeError?.originalError) {
+            errorDetails.originalError =
+              finalError?.originalError || officeError?.originalError;
+          }
+
+          logger.error(`Error extracting office content`, errorDetails);
+
+          // Fall back to intelligent filename-based analysis
+          const intelligentCategory = getIntelligentCategory(
+            fileName,
+            fileExtension,
+            smartFolders,
+          );
+          const intelligentKeywords = getIntelligentKeywords(
+            fileName,
+            fileExtension,
+          );
+
+          let purpose = 'Office document (content extraction failed)';
+          const confidence = 70;
+
+          if (fileExtension === '.docx') {
+            purpose =
+              'Word document - content extraction failed, using filename analysis';
+          } else if (fileExtension === '.xlsx') {
+            purpose =
+              'Excel spreadsheet - content extraction failed, using filename analysis';
+          } else if (fileExtension === '.pptx') {
+            purpose =
+              'PowerPoint presentation - content extraction failed, using filename analysis';
+          }
+
+          return {
+            purpose,
+            project: fileName.replace(fileExtension, ''),
+            category: intelligentCategory || 'document',
+            date: new Date().toISOString().split('T')[0],
+            keywords: intelligentKeywords || [],
+            confidence,
+            suggestedName: safeSuggestedName(fileName, fileExtension),
+            extractionError: errorMessage,
+            extractionErrorCode: errorCode,
+            extractionMethod: 'filename_fallback',
+          };
+        }
       }
     } else if (SUPPORTED_ARCHIVE_EXTENSIONS.includes(fileExtension)) {
       // Archive metadata inspection (best-effort)
