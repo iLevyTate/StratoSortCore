@@ -16,22 +16,22 @@ export default function FirstRunWizard({ onComplete }) {
     {
       id: 'llama3.2:latest',
       label: 'Text model (llama3.2:latest)',
-      defaultChecked: true,
+      defaultChecked: true
     },
     {
       id: 'llava:latest',
       label: 'Vision model (llava:latest)',
-      defaultChecked: true,
+      defaultChecked: true
     },
     {
       id: 'mxbai-embed-large',
       label: 'Embeddings (mxbai-embed-large)',
-      defaultChecked: true,
-    },
+      defaultChecked: true
+    }
   ];
 
   const [selectedModels, setSelectedModels] = useState(
-    models.filter((m) => m.defaultChecked).map((m) => m.id),
+    models.filter((m) => m.defaultChecked).map((m) => m.id)
   );
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
@@ -48,7 +48,7 @@ export default function FirstRunWizard({ onComplete }) {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [setHostOk]);
 
   const handlePull = async () => {
     try {
@@ -60,18 +60,14 @@ export default function FirstRunWizard({ onComplete }) {
         const model = selectedModels[i];
         setProgress({ current: i + 1, total: selectedModels.length });
         setResults((prev) =>
-          prev.map((r) =>
-            r.model === model ? { ...r, status: 'pulling' } : r,
-          ),
+          prev.map((r) => (r.model === model ? { ...r, status: 'pulling' } : r))
         );
         try {
           const res = await window.electronAPI?.ollama?.pullModels?.([model]);
           const result = res?.results?.[0];
           if (result?.success) {
             setResults((prev) =>
-              prev.map((r) =>
-                r.model === model ? { ...r, status: 'ready' } : r,
-              ),
+              prev.map((r) => (r.model === model ? { ...r, status: 'ready' } : r))
             );
           } else {
             setResults((prev) =>
@@ -79,19 +75,15 @@ export default function FirstRunWizard({ onComplete }) {
                 r.model === model
                   ? {
                       ...r,
-                      status: `failed: ${result?.error || 'unknown error'}`,
+                      status: `failed: ${result?.error || 'unknown error'}`
                     }
-                  : r,
-              ),
+                  : r
+              )
             );
           }
         } catch (error) {
           setResults((prev) =>
-            prev.map((r) =>
-              r.model === model
-                ? { ...r, status: `failed: ${error.message}` }
-                : r,
-            ),
+            prev.map((r) => (r.model === model ? { ...r, status: `failed: ${error.message}` } : r))
           );
         }
       }
@@ -113,8 +105,7 @@ export default function FirstRunWizard({ onComplete }) {
           <div>
             <h2 className="text-heading-2 mb-8">Set up AI locally</h2>
             <p className="text-body mb-8">
-              StratoSort uses Ollama to run models locally. We can pull the base
-              models for you.
+              StratoSort uses Ollama to run models locally. We can pull the base models for you.
             </p>
             <div className="space-y-2 mb-3">
               {models.map((m) => (
@@ -127,9 +118,7 @@ export default function FirstRunWizard({ onComplete }) {
                     onChange={(e) => {
                       const { checked } = e.target;
                       setSelectedModels((prev) =>
-                        checked
-                          ? [...prev, m.id]
-                          : prev.filter((id) => id !== m.id),
+                        checked ? [...prev, m.id] : prev.filter((id) => id !== m.id)
                       );
                     }}
                   />
@@ -141,10 +130,7 @@ export default function FirstRunWizard({ onComplete }) {
               <Button onClick={onComplete} variant="secondary">
                 Skip
               </Button>
-              <Button
-                onClick={handlePull}
-                disabled={pulling || selectedModels.length === 0}
-              >
+              <Button onClick={handlePull} disabled={pulling || selectedModels.length === 0}>
                 {pulling ? 'Pulling…' : 'Pull models'}
               </Button>
             </div>
@@ -153,18 +139,12 @@ export default function FirstRunWizard({ onComplete }) {
         {step === 1 && (
           <div>
             <h2 className="text-heading-2 mb-8">
-              {pulling
-                ? `Pulling models (${progress.current}/${progress.total})`
-                : 'Model setup'}
+              {pulling ? `Pulling models (${progress.current}/${progress.total})` : 'Model setup'}
             </h2>
             <div className="space-y-5">
               {results.map((r) => (
                 <div key={r.model} className="text-sm">
-                  {r.status === 'ready'
-                    ? '✅'
-                    : r.status.startsWith('failed')
-                      ? '⚠️'
-                      : '⏳'}{' '}
+                  {r.status === 'ready' ? '✅' : r.status.startsWith('failed') ? '⚠️' : '⏳'}{' '}
                   {r.model} {r.status === 'ready' ? 'ready' : r.status}
                 </div>
               ))}
@@ -187,7 +167,7 @@ export default function FirstRunWizard({ onComplete }) {
 }
 
 FirstRunWizard.propTypes = {
-  onComplete: PropTypes.func,
+  onComplete: PropTypes.func
 };
 
 export { default as SmartFolderItem } from './SmartFolderItem';

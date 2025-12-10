@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import { Folder } from 'lucide-react';
 
 // FIX: Implement virtualization for large folder lists to prevent UI lag
@@ -21,11 +21,7 @@ const getListHeight = (folderCount, viewportHeight) => {
 
 // Memoized FolderItem to prevent re-renders when folder data hasn't changed
 // FIX: Added proper text overflow handling for long paths with title tooltips
-const FolderItem = memo(function FolderItem({
-  folder,
-  defaultLocation,
-  style,
-}) {
+const FolderItem = memo(function FolderItem({ folder, defaultLocation, style }) {
   const fullPath = folder.path || `${defaultLocation}/${folder.name}`;
 
   return (
@@ -53,32 +49,22 @@ FolderItem.propTypes = {
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     name: PropTypes.string.isRequired,
     path: PropTypes.string,
-    description: PropTypes.string,
+    description: PropTypes.string
   }).isRequired,
   defaultLocation: PropTypes.string.isRequired,
-  style: PropTypes.object,
+  style: PropTypes.object
 };
 
 /**
  * Virtualized row component for rendering folder items
  */
-const VirtualizedFolderRow = memo(function VirtualizedFolderRow({
-  index,
-  style,
-  data,
-}) {
+const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, data }) {
   const { folders, defaultLocation } = data;
   const folder = folders[index];
 
   if (!folder) return null;
 
-  return (
-    <FolderItem
-      folder={folder}
-      defaultLocation={defaultLocation}
-      style={style}
-    />
-  );
+  return <FolderItem folder={folder} defaultLocation={defaultLocation} style={style} />;
 });
 
 VirtualizedFolderRow.propTypes = {
@@ -86,14 +72,14 @@ VirtualizedFolderRow.propTypes = {
   style: PropTypes.object.isRequired,
   data: PropTypes.shape({
     folders: PropTypes.array.isRequired,
-    defaultLocation: PropTypes.string.isRequired,
-  }).isRequired,
+    defaultLocation: PropTypes.string.isRequired
+  }).isRequired
 };
 
 const TargetFolderList = memo(function TargetFolderList({
   folders = [],
   defaultLocation = 'Documents',
-  isLoading = false,
+  isLoading = false
 }) {
   const shouldVirtualize = folders.length > VIRTUALIZATION_THRESHOLD;
 
@@ -101,15 +87,14 @@ const TargetFolderList = memo(function TargetFolderList({
   const itemData = useMemo(
     () => ({
       folders,
-      defaultLocation,
+      defaultLocation
     }),
-    [folders, defaultLocation],
+    [folders, defaultLocation]
   );
 
   // Calculate optimal list height based on folder count (data-aware sizing)
   const listHeight = useMemo(() => {
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
     return getListHeight(folders.length, viewportHeight);
   }, [folders.length]);
 
@@ -152,11 +137,7 @@ const TargetFolderList = memo(function TargetFolderList({
   return (
     <div className="grid grid-cols-auto-fit-md gap-4">
       {folders.map((folder) => (
-        <FolderItem
-          key={folder.id}
-          folder={folder}
-          defaultLocation={defaultLocation}
-        />
+        <FolderItem key={folder.id} folder={folder} defaultLocation={defaultLocation} />
       ))}
     </div>
   );
@@ -168,11 +149,11 @@ TargetFolderList.propTypes = {
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
       name: PropTypes.string.isRequired,
       path: PropTypes.string,
-      description: PropTypes.string,
-    }),
+      description: PropTypes.string
+    })
   ),
   defaultLocation: PropTypes.string,
-  isLoading: PropTypes.bool,
+  isLoading: PropTypes.bool
 };
 
 export default TargetFolderList;

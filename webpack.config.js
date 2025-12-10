@@ -17,7 +17,7 @@ module.exports = (env, argv) => {
       chunkFilename: '[id].renderer.js',
       clean: true,
       publicPath: '',
-      globalObject: 'globalThis',
+      globalObject: 'globalThis'
     },
     target: 'electron-renderer',
     module: {
@@ -28,25 +28,31 @@ module.exports = (env, argv) => {
           use: {
             loader: 'babel-loader',
             options: {
-              presets: ['@babel/preset-react'],
+              presets: [
+                [
+                  '@babel/preset-env',
+                  {
+                    targets: { electron: '39.0' }
+                  }
+                ],
+                '@babel/preset-react'
+              ],
               plugins: [
                 '@babel/plugin-transform-react-jsx',
-                ...(process.env.WEBPACK_DEV_SERVER === 'true'
-                  ? ['react-refresh/babel']
-                  : []),
-              ],
-            },
-          },
+                ...(process.env.WEBPACK_DEV_SERVER === 'true' ? ['react-refresh/babel'] : [])
+              ]
+            }
+          }
         },
         {
           test: /\.css$/,
           use: [
             MiniCssExtractPlugin.loader, // Always extract CSS to separate file
             'css-loader',
-            'postcss-loader',
-          ],
-        },
-      ],
+            'postcss-loader'
+          ]
+        }
+      ]
     },
     resolve: {
       extensions: ['.js', '.jsx'],
@@ -65,41 +71,39 @@ module.exports = (env, argv) => {
         assert: require.resolve('assert'),
         fs: false,
         child_process: false,
-        worker_threads: false,
-      },
+        worker_threads: false
+      }
     },
     externals: {
-      electron: 'require("electron")',
+      electron: 'require("electron")'
     },
     plugins: [
       new HtmlWebpackPlugin({
         template: './src/renderer/index.html',
         filename: 'index.html',
         inject: true,
-        scriptLoading: 'blocking',
+        scriptLoading: 'blocking'
       }),
       new webpack.DefinePlugin({
-        'process.env.NODE_ENV': JSON.stringify(
-          isProduction ? 'production' : 'development',
-        ),
-        global: 'globalThis',
+        'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
+        global: 'globalThis'
       }),
       // FIX: Use resolved path for process polyfill to avoid module resolution issues
       new webpack.ProvidePlugin({
         process: require.resolve('process/browser'),
-        Buffer: ['buffer', 'Buffer'],
+        Buffer: ['buffer', 'Buffer']
       }),
       // Always extract CSS to separate file for consistent loading
       new MiniCssExtractPlugin({ filename: 'styles.css' }),
       ...(isProduction
         ? [
             new webpack.IgnorePlugin({
-              resourceRegExp: /moment\/locale/,
-            }),
+              resourceRegExp: /moment\/locale/
+            })
           ]
         : process.env.WEBPACK_DEV_SERVER === 'true'
           ? [new ReactRefreshWebpackPlugin({ overlay: false })]
-          : []),
+          : [])
     ],
     // Use secure devtool options
     devtool: isProduction ? false : 'source-map',
@@ -109,7 +113,7 @@ module.exports = (env, argv) => {
       ? undefined
       : {
           static: {
-            directory: path.join(__dirname, 'dist'),
+            directory: path.join(__dirname, 'dist')
           },
           compress: true,
           port: 3000,
@@ -117,17 +121,17 @@ module.exports = (env, argv) => {
           // Security headers
           headers: {
             'Content-Security-Policy':
-              "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 ws://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self';",
-          },
+              "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' http://localhost:11434 http://127.0.0.1:11434 ws://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self';"
+          }
         },
 
     // Performance optimizations
     cache: {
       type: 'filesystem',
       buildDependencies: {
-        config: [__filename],
+        config: [__filename]
       },
-      cacheDirectory: path.resolve(__dirname, '.webpack-cache'),
+      cacheDirectory: path.resolve(__dirname, '.webpack-cache')
     },
 
     // Optimization
@@ -146,10 +150,10 @@ module.exports = (env, argv) => {
               extractComments: false,
               terserOptions: {
                 compress: {
-                  drop_console: true,
-                },
-              },
-            }),
+                  drop_console: true
+                }
+              }
+            })
           ]
         : [],
       splitChunks: {
@@ -164,15 +168,15 @@ module.exports = (env, argv) => {
           defaultVendors: {
             test: /[\\/]node_modules[\\/]/,
             priority: -10,
-            reuseExistingChunk: true,
+            reuseExistingChunk: true
           },
           default: {
             minChunks: 2,
             priority: -20,
-            reuseExistingChunk: true,
-          },
-        },
-      },
-    },
+            reuseExistingChunk: true
+          }
+        }
+      }
+    }
   };
 };

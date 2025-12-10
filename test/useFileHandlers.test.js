@@ -12,14 +12,14 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/shared/constants', () => ({
   RENDERER_LIMITS: {
-    FILE_STATS_BATCH_SIZE: 50,
-  },
+    FILE_STATS_BATCH_SIZE: 50
+  }
 }));
 
 jest.mock('../src/renderer/phases/discover/namingUtils', () => ({
@@ -30,7 +30,7 @@ jest.mock('../src/renderer/phases/discover/namingUtils', () => ({
   extractFileName: jest.fn((path) => {
     if (!path) return '';
     return path.split(/[\\/]/).pop() || '';
-  }),
+  })
 }));
 
 // Mock window.electronAPI
@@ -38,11 +38,11 @@ const mockElectronAPI = {
   files: {
     select: jest.fn(),
     selectDirectory: jest.fn(),
-    getStats: jest.fn(),
+    getStats: jest.fn()
   },
   smartFolders: {
-    scanStructure: jest.fn(),
-  },
+    scanStructure: jest.fn()
+  }
 };
 
 describe('useFileHandlers', () => {
@@ -58,7 +58,7 @@ describe('useFileHandlers', () => {
     updateFileState: mockUpdateFileState,
     addNotification: mockAddNotification,
     analyzeFiles: mockAnalyzeFiles,
-    ...overrides,
+    ...overrides
   });
 
   beforeEach(() => {
@@ -80,6 +80,7 @@ describe('useFileHandlers', () => {
       size: 1024,
       created: new Date().toISOString(),
       modified: new Date().toISOString(),
+      isDirectory: false
     });
     mockElectronAPI.smartFolders.scanStructure.mockResolvedValue({ files: [] });
 
@@ -139,7 +140,7 @@ describe('useFileHandlers', () => {
     test('adds new files when files are selected', async () => {
       mockElectronAPI.files.select.mockResolvedValue({
         success: true,
-        files: [{ path: '/test.txt', name: 'test.txt' }],
+        files: [{ path: '/test.txt', name: 'test.txt' }]
       });
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
@@ -160,13 +161,13 @@ describe('useFileHandlers', () => {
     test('skips duplicate files', async () => {
       mockElectronAPI.files.select.mockResolvedValue({
         success: true,
-        files: [{ path: '/existing.txt', name: 'existing.txt' }],
+        files: [{ path: '/existing.txt', name: 'existing.txt' }]
       });
 
       const { result } = renderHook(() =>
         useFileHandlers(
           createMockOptions({
-            selectedFiles: [{ path: '/existing.txt', name: 'existing.txt' }],
+            selectedFiles: [{ path: '/existing.txt', name: 'existing.txt' }]
           })
         )
       );
@@ -203,7 +204,7 @@ describe('useFileHandlers', () => {
     test('calls analyzeFiles after adding files', async () => {
       mockElectronAPI.files.select.mockResolvedValue({
         success: true,
-        files: [{ path: '/test.txt', name: 'test.txt' }],
+        files: [{ path: '/test.txt', name: 'test.txt' }]
       });
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
@@ -220,7 +221,7 @@ describe('useFileHandlers', () => {
     test('shows notification when folder selection cancelled', async () => {
       mockElectronAPI.files.selectDirectory.mockResolvedValue({
         success: false,
-        path: null,
+        path: null
       });
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
@@ -240,10 +241,10 @@ describe('useFileHandlers', () => {
     test('scans folder structure when selected', async () => {
       mockElectronAPI.files.selectDirectory.mockResolvedValue({
         success: true,
-        path: '/test-folder',
+        path: '/test-folder'
       });
       mockElectronAPI.smartFolders.scanStructure.mockResolvedValue({
-        files: [{ path: '/test-folder/test.pdf', name: 'test.pdf' }],
+        files: [{ path: '/test-folder/test.pdf', name: 'test.pdf' }]
       });
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
@@ -252,18 +253,16 @@ describe('useFileHandlers', () => {
         await result.current.handleFolderSelection();
       });
 
-      expect(mockElectronAPI.smartFolders.scanStructure).toHaveBeenCalledWith(
-        '/test-folder'
-      );
+      expect(mockElectronAPI.smartFolders.scanStructure).toHaveBeenCalledWith('/test-folder');
     });
 
     test('shows warning when no supported files found', async () => {
       mockElectronAPI.files.selectDirectory.mockResolvedValue({
         success: true,
-        path: '/test-folder',
+        path: '/test-folder'
       });
       mockElectronAPI.smartFolders.scanStructure.mockResolvedValue({
-        files: [{ path: '/test-folder/test.xyz', name: 'test.xyz' }],
+        files: [{ path: '/test-folder/test.xyz', name: 'test.xyz' }]
       });
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
@@ -281,9 +280,7 @@ describe('useFileHandlers', () => {
     });
 
     test('handles folder selection errors', async () => {
-      mockElectronAPI.files.selectDirectory.mockRejectedValue(
-        new Error('Folder error')
-      );
+      mockElectronAPI.files.selectDirectory.mockRejectedValue(new Error('Folder error'));
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
 
@@ -322,9 +319,7 @@ describe('useFileHandlers', () => {
     });
 
     test('adds dropped files', async () => {
-      const droppedFiles = [
-        { path: '/dropped.txt', name: 'dropped.txt' },
-      ];
+      const droppedFiles = [{ path: '/dropped.txt', name: 'dropped.txt' }];
 
       const { result } = renderHook(() => useFileHandlers(createMockOptions()));
 
@@ -377,6 +372,34 @@ describe('useFileHandlers', () => {
       // File should have extension set
       const setFilesCall = mockSetSelectedFiles.mock.calls[0][0];
       expect(setFilesCall[0].extension).toBe('.pdf');
+    });
+
+    test('expands dropped directories and analyzes contained files', async () => {
+      const droppedItems = [{ path: '/dropped-folder', name: 'dropped-folder' }];
+
+      mockElectronAPI.files.getStats.mockResolvedValueOnce({
+        size: 0,
+        created: new Date().toISOString(),
+        modified: new Date().toISOString(),
+        isDirectory: true
+      });
+
+      mockElectronAPI.smartFolders.scanStructure.mockResolvedValueOnce({
+        files: [{ path: '/dropped-folder/doc.pdf', name: 'doc.pdf' }]
+      });
+
+      const { result } = renderHook(() => useFileHandlers(createMockOptions()));
+
+      await act(async () => {
+        await result.current.handleFileDrop(droppedItems);
+      });
+
+      expect(mockElectronAPI.smartFolders.scanStructure).toHaveBeenCalledWith('/dropped-folder');
+      expect(mockSetSelectedFiles).toHaveBeenCalled();
+      expect(mockUpdateFileState).toHaveBeenCalledWith('/dropped-folder/doc.pdf', 'pending');
+      expect(mockAnalyzeFiles).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ path: '/dropped-folder/doc.pdf' })])
+      );
     });
   });
 

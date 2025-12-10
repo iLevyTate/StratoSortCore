@@ -3,19 +3,15 @@ module.exports = {
     browser: true,
     es2021: true,
     node: true,
-    'jest/globals': true,
+    'jest/globals': true
   },
-  extends: [
-    'eslint:recommended',
-    'plugin:react/recommended',
-    'plugin:jest/recommended',
-  ],
+  extends: ['eslint:recommended', 'plugin:react/recommended', 'plugin:jest/recommended'],
   parserOptions: {
     ecmaFeatures: {
-      jsx: true,
+      jsx: true
     },
     ecmaVersion: 2022,
-    sourceType: 'module',
+    sourceType: 'module'
   },
   plugins: ['react', 'jest', 'react-hooks'],
   rules: {
@@ -23,7 +19,7 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'warn',
     'react/react-in-jsx-scope': 'off',
     // TD-9: Warn on console usage (except in logger.js itself)
-    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    'no-console': ['warn', { allow: ['warn', 'error', 'info', 'debug', 'log'] }],
     // INC-6: Prefer template literals over string concatenation
     'prefer-template': 'warn',
     // INC-7: Require default parameter values instead of manual defaults
@@ -33,109 +29,107 @@ module.exports = {
     // Ensure consistent returns in functions
     'consistent-return': 'warn',
     // Prevent unused expressions
-    'no-unused-expressions': [
-      'error',
-      { allowShortCircuit: true, allowTernary: true },
-    ],
+    'no-unused-expressions': ['error', { allowShortCircuit: true, allowTernary: true }],
     // Warn on TODO/FIXME comments to track tech debt
-    'no-warning-comments': [
-      'warn',
-      { terms: ['fixme', 'xxx', 'hack'], location: 'start' },
-    ],
+    'no-warning-comments': ['warn', { terms: ['fixme', 'xxx', 'hack'], location: 'start' }]
   },
   settings: {
     react: {
-      version: 'detect',
-    },
+      version: 'detect'
+    }
   },
   overrides: [
     {
       // Enforce CommonJS in main process files
       files: ['src/main/**/*.js'],
       parserOptions: {
-        sourceType: 'script',
+        sourceType: 'script'
       },
       rules: {
         'no-restricted-syntax': [
           'error',
           {
             selector: 'ImportDeclaration',
-            message:
-              'Use require() instead of ES6 imports in main process files.',
+            message: 'Use require() instead of ES6 imports in main process files.'
           },
           {
             selector: 'ExportNamedDeclaration',
-            message:
-              'Use module.exports instead of ES6 exports in main process files.',
+            message: 'Use module.exports instead of ES6 exports in main process files.'
           },
           {
             selector: 'ExportDefaultDeclaration',
-            message:
-              'Use module.exports instead of ES6 exports in main process files.',
-          },
-        ],
-      },
+            message: 'Use module.exports instead of ES6 exports in main process files.'
+          }
+        ]
+      }
     },
     {
       // Enforce CommonJS in renderer utility files (non-React)
       files: ['src/renderer/utils/**/*.js'],
       parserOptions: {
-        sourceType: 'script',
+        sourceType: 'script'
       },
       rules: {
         'no-restricted-syntax': [
           'error',
           {
             selector: 'ImportDeclaration',
-            message: 'Use require() instead of ES6 imports in utility files.',
+            message: 'Use require() instead of ES6 imports in utility files.'
           },
           {
             selector: 'ExportNamedDeclaration',
-            message:
-              'Use module.exports instead of ES6 exports in utility files.',
+            message: 'Use module.exports instead of ES6 exports in utility files.'
           },
           {
             selector: 'ExportDefaultDeclaration',
-            message:
-              'Use module.exports instead of ES6 exports in utility files.',
-          },
-        ],
-      },
+            message: 'Use module.exports instead of ES6 exports in utility files.'
+          }
+        ]
+      }
     },
     {
       // Enforce CommonJS in shared utility files
       files: ['src/shared/**/*.js'],
       parserOptions: {
-        sourceType: 'script',
+        sourceType: 'script'
       },
       rules: {
         'no-restricted-syntax': [
           'error',
           {
             selector: 'ImportDeclaration',
-            message: 'Use require() instead of ES6 imports in shared files.',
+            message: 'Use require() instead of ES6 imports in shared files.'
           },
           {
             selector: 'ExportNamedDeclaration',
-            message:
-              'Use module.exports instead of ES6 exports in shared files.',
+            message: 'Use module.exports instead of ES6 exports in shared files.'
           },
           {
             selector: 'ExportDefaultDeclaration',
-            message:
-              'Use module.exports instead of ES6 exports in shared files.',
-          },
-        ],
-      },
+            message: 'Use module.exports instead of ES6 exports in shared files.'
+          }
+        ]
+      }
     },
     {
       // Relax certain strict rules for test files while keeping signal
       files: ['test/**/*.js'],
       rules: {
-        'jest/no-conditional-expect': 'warn',
-        'jest/no-standalone-expect': 'warn',
+        'jest/no-conditional-expect': 'off',
+        'jest/no-standalone-expect': 'off',
+        'jest/expect-expect': 'off',
         'react/prop-types': 'off',
-      },
+        'no-console': 'off',
+        'prefer-template': 'off'
+      }
     },
-  ],
+    {
+      // Allow console output in build-time scripts
+      files: ['scripts/**/*.js'],
+      rules: {
+        'no-console': 'off',
+        'prefer-template': 'off'
+      }
+    }
+  ]
 };

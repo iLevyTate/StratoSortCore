@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import ReadyFileItem from './ReadyFileItem';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
@@ -18,10 +18,7 @@ const getListHeight = (itemCount, viewportHeight) => {
   const maxFraction = itemCount <= 10 ? 0.35 : itemCount <= 30 ? 0.45 : 0.55;
   const contentMinHeight = 300;
   const maxHeight = Math.round(viewportHeight * maxFraction);
-  return Math.min(
-    Math.max(contentMinHeight, itemCount * 80),
-    maxHeight
-  );
+  return Math.min(Math.max(contentMinHeight, itemCount * 80), maxHeight);
 };
 
 /**
@@ -44,11 +41,7 @@ const itemKeyForRow = (index, data) => {
 /**
  * Virtualized row component that renders multiple file items per row
  */
-const VirtualizedFileRow = memo(function VirtualizedFileRow({
-  index,
-  style,
-  data,
-}) {
+const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data }) {
   const {
     files,
     columnsPerRow,
@@ -61,7 +54,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
     handleEditFile,
     smartFolders,
     defaultLocation,
-    onViewDetails,
+    onViewDetails
   } = data;
 
   const startIndex = index * columnsPerRow;
@@ -73,8 +66,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
 
     const file = files[fileIndex];
     const fileWithEdits = getFileWithEdits(file, fileIndex);
-    const rawCategory =
-      editingFiles[fileIndex]?.category || fileWithEdits.analysis?.category;
+    const rawCategory = editingFiles[fileIndex]?.category || fileWithEdits.analysis?.category;
     const smartFolder = findSmartFolderForCategory(rawCategory);
     // CRITICAL FIX: Use the matched smart folder's actual name for the Select value
     // This ensures case-insensitive matching between analysis category and dropdown options
@@ -100,15 +92,13 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
           category={currentCategory}
           onViewDetails={onViewDetails}
         />
-      </div>,
+      </div>
     );
   }
 
   // Fill remaining space if row is incomplete
   while (rowItems.length < columnsPerRow) {
-    rowItems.push(
-      <div key={`empty-${rowItems.length}`} className="flex-1 min-w-0" />,
-    );
+    rowItems.push(<div key={`empty-${rowItems.length}`} className="flex-1 min-w-0" />);
   }
 
   return (
@@ -133,8 +123,8 @@ VirtualizedFileRow.propTypes = {
     handleEditFile: PropTypes.func.isRequired,
     smartFolders: PropTypes.array.isRequired,
     defaultLocation: PropTypes.string.isRequired,
-    onViewDetails: PropTypes.func.isRequired,
-  }).isRequired,
+    onViewDetails: PropTypes.func.isRequired
+  }).isRequired
 };
 
 /**
@@ -154,7 +144,7 @@ function VirtualizedFileGrid({
   smartFolders,
   defaultLocation,
   containerWidth = 1200, // Default to xl breakpoint width
-  onViewDetails,
+  onViewDetails
 }) {
   const columnsPerRow = getColumnCount(containerWidth);
   const rowCount = Math.ceil(files.length / columnsPerRow);
@@ -174,7 +164,7 @@ function VirtualizedFileGrid({
       handleEditFile,
       smartFolders,
       defaultLocation,
-      onViewDetails,
+      onViewDetails
     }),
     [
       files,
@@ -188,29 +178,21 @@ function VirtualizedFileGrid({
       handleEditFile,
       smartFolders,
       defaultLocation,
-      onViewDetails,
-    ],
+      onViewDetails
+    ]
   );
 
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
     return getListHeight(files.length, viewportHeight);
   }, [files.length]);
 
   if (isLoading) {
     return (
-      <div
-        className="grid grid-cols-auto-fit-md gap-4"
-        role="status"
-        aria-label="Loading files"
-      >
+      <div className="grid grid-cols-auto-fit-md gap-4" role="status" aria-label="Loading files">
         {[...Array(6)].map((_, i) => (
-          <div
-            key={i}
-            className="h-64 rounded-xl bg-system-gray-100 animate-pulse"
-          />
+          <div key={i} className="h-64 rounded-xl bg-system-gray-100 animate-pulse" />
         ))}
       </div>
     );
@@ -243,11 +225,12 @@ function VirtualizedFileGrid({
   // Center content when sparse data (≤5 files) for better visual balance
   const isSparse = files.length <= 5;
   return (
-    <div className={`grid grid-adaptive-lg gap-4 ${isSparse ? 'place-content-center min-h-[300px]' : ''}`}>
+    <div
+      className={`grid grid-adaptive-lg gap-4 ${isSparse ? 'place-content-center min-h-[300px]' : ''}`}
+    >
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);
-        const rawCategory =
-          editingFiles[index]?.category || fileWithEdits.analysis?.category;
+        const rawCategory = editingFiles[index]?.category || fileWithEdits.analysis?.category;
         const smartFolder = findSmartFolderForCategory(rawCategory);
         // CRITICAL FIX: Use the matched smart folder's actual name for the Select value
         // This ensures case-insensitive matching between analysis category and dropdown options
@@ -291,7 +274,7 @@ VirtualizedFileGrid.propTypes = {
   smartFolders: PropTypes.array.isRequired,
   defaultLocation: PropTypes.string.isRequired,
   containerWidth: PropTypes.number,
-  onViewDetails: PropTypes.func.isRequired,
+  onViewDetails: PropTypes.func.isRequired
 };
 
 export default memo(VirtualizedFileGrid);

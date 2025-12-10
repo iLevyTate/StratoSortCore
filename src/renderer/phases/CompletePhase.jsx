@@ -1,4 +1,5 @@
 import React, { memo, useMemo } from 'react';
+import PropTypes from 'prop-types';
 import { PHASES } from '../../shared/constants';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setPhase, resetUi } from '../store/slices/uiSlice';
@@ -10,19 +11,34 @@ import { UndoRedoToolbar } from '../components/UndoRedoSystem';
 // Inline SVG Icons
 const CheckCircle2Icon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const ClipboardListIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+    />
   </svg>
 );
 
 const TargetIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
@@ -34,7 +50,12 @@ const CheckIcon = ({ className }) => (
 
 const ClockIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
@@ -61,8 +82,7 @@ const FileRow = ({ file, index }) => {
   }
 
   const originalName = file.originalName || file.name || `File ${index + 1}`;
-  const destination =
-    file.path || file.newLocation || file.destination || 'Organized';
+  const destination = file.path || file.newLocation || file.destination || 'Organized';
 
   return (
     <div
@@ -87,34 +107,32 @@ const FileRow = ({ file, index }) => {
 
 function CompletePhase() {
   const dispatch = useAppDispatch();
-  const organizedFiles =
-    useAppSelector((state) => state.files.organizedFiles) || [];
-  const fileStates = useAppSelector((state) => state.files.fileStates) || {};
+  const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
+  const fileStates = useAppSelector((state) => state.files.fileStates);
   const [showActionHistory, setShowActionHistory] = React.useState(false);
 
-  const { filesToRender, overflowCount, destinationCount, totalFiles } =
-    useMemo(() => {
-      const safeFiles = Array.isArray(organizedFiles) ? organizedFiles : [];
-      const destinations = new Set();
-      safeFiles.forEach((file) => {
-        if (file && typeof file === 'object') {
-          const destination =
-            file.path || file.newLocation || file.destination || 'Organized';
-          destinations.add(destination);
-        }
-      });
+  const { filesToRender, overflowCount, destinationCount, totalFiles } = useMemo(() => {
+    const safeFiles = Array.isArray(organizedFiles) ? organizedFiles : [];
+    const destinations = new Set();
+    safeFiles.forEach((file) => {
+      if (file && typeof file === 'object') {
+        const destination = file.path || file.newLocation || file.destination || 'Organized';
+        destinations.add(destination);
+      }
+    });
 
-      const displayed = safeFiles.slice(0, 8);
-      return {
-        filesToRender: displayed,
-        overflowCount: Math.max(safeFiles.length - displayed.length, 0),
-        destinationCount: destinations.size,
-        totalFiles: safeFiles.length,
-      };
-    }, [organizedFiles]);
+    const displayed = safeFiles.slice(0, 8);
+    return {
+      filesToRender: displayed,
+      overflowCount: Math.max(safeFiles.length - displayed.length, 0),
+      destinationCount: destinations.size,
+      totalFiles: safeFiles.length
+    };
+  }, [organizedFiles]);
 
   const actionHistory = useMemo(() => {
-    const entries = Object.entries(fileStates).map(([path, meta = {}]) => {
+    const safeFileStates = fileStates && typeof fileStates === 'object' ? fileStates : {};
+    const entries = Object.entries(safeFileStates).map(([path, meta = {}]) => {
       const timestamp = meta.timestamp ? new Date(meta.timestamp) : null;
       const label =
         meta.state === 'ready'
@@ -130,15 +148,12 @@ function CompletePhase() {
         fileName,
         state: meta.state,
         label,
-        timestamp,
+        timestamp
       };
     });
 
     return entries
-      .sort(
-        (a, b) =>
-          (b.timestamp?.getTime?.() || 0) - (a.timestamp?.getTime?.() || 0),
-      )
+      .sort((a, b) => (b.timestamp?.getTime?.() || 0) - (a.timestamp?.getTime?.() || 0))
       .slice(0, 8);
   }, [fileStates]);
 
@@ -157,20 +172,31 @@ function CompletePhase() {
         } catch {
           // Ignore cleanup errors
         }
-      },
+      }
     }),
-    [dispatch],
+    [dispatch]
   );
 
   return (
-    <div className="phase-container bg-system-gray-50/30" style={{ paddingBottom: 'var(--spacing-spacious)' }}>
-      <div className="container-responsive flex flex-col flex-1 min-h-0" style={{ gap: 'var(--spacing-default)', paddingTop: 'var(--spacing-default)', paddingBottom: 'var(--spacing-default)' }}>
+    <div
+      className="phase-container bg-system-gray-50/30"
+      style={{ paddingBottom: 'var(--spacing-spacious)' }}
+    >
+      <div
+        className="container-responsive flex flex-col flex-1 min-h-0"
+        style={{
+          gap: 'var(--spacing-default)',
+          paddingTop: 'var(--spacing-default)',
+          paddingBottom: 'var(--spacing-default)'
+        }}
+      >
         {/* Hero Summary */}
         <section
           className="surface-panel relative overflow-hidden"
           style={{
             padding: 'var(--spacing-default)',
-            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(16, 185, 129, 0.04))',
+            background:
+              'linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(16, 185, 129, 0.04))'
           }}
         >
           <div className="absolute inset-0 pointer-events-none">
@@ -194,7 +220,8 @@ function CompletePhase() {
                 </p>
                 <h1 className="heading-primary m-0">Organization Complete</h1>
                 <p className="text-base text-system-gray-600 max-w-2xl">
-                  Successfully organized {totalFiles} file{totalFiles !== 1 ? 's' : ''} using AI-powered analysis.
+                  Successfully organized {totalFiles} file{totalFiles !== 1 ? 's' : ''} using
+                  AI-powered analysis.
                 </p>
                 <div className="flex flex-wrap items-center" style={{ gap: 'var(--spacing-cozy)' }}>
                   <StatPill label="Files organized" value={totalFiles} tone="success" />
@@ -223,11 +250,23 @@ function CompletePhase() {
         </section>
 
         {/* Main Grid Layout */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 flex-1 min-h-0" style={{ gap: 'var(--spacing-default)' }}>
+        <div
+          className="grid grid-cols-1 xl:grid-cols-3 flex-1 min-h-0"
+          style={{ gap: 'var(--spacing-default)' }}
+        >
           {/* Organization Summary Card */}
-          <section className="surface-panel flex flex-col xl:col-span-2" style={{ gap: 'var(--spacing-default)' }}>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between" style={{ gap: 'var(--spacing-cozy)' }}>
-              <h3 className="heading-tertiary m-0 flex items-center" style={{ gap: 'var(--spacing-compact)' }}>
+          <section
+            className="surface-panel flex flex-col xl:col-span-2"
+            style={{ gap: 'var(--spacing-default)' }}
+          >
+            <div
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between"
+              style={{ gap: 'var(--spacing-cozy)' }}
+            >
+              <h3
+                className="heading-tertiary m-0 flex items-center"
+                style={{ gap: 'var(--spacing-compact)' }}
+              >
                 <ClipboardListIcon className="w-5 h-5 text-stratosort-blue" /> What changed
               </h3>
               <span className="status-chip success">
@@ -235,7 +274,10 @@ function CompletePhase() {
               </span>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto modern-scrollbar" style={{ maxHeight: '320px' }}>
+            <div
+              className="flex-1 min-h-0 overflow-y-auto modern-scrollbar"
+              style={{ maxHeight: '320px' }}
+            >
               {filesToRender.length > 0 ? (
                 <div className="flex flex-col" style={{ gap: 'var(--spacing-cozy)' }}>
                   {filesToRender.map((file, index) => (
@@ -252,13 +294,19 @@ function CompletePhase() {
                     />
                   ))}
                   {overflowCount > 0 && (
-                    <div className="text-sm text-system-gray-500 text-center" style={{ padding: 'var(--spacing-cozy)' }}>
+                    <div
+                      className="text-sm text-system-gray-500 text-center"
+                      style={{ padding: 'var(--spacing-cozy)' }}
+                    >
                       +{overflowCount} more file{overflowCount !== 1 ? 's' : ''} organized
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-system-gray-500 text-center" style={{ padding: 'var(--spacing-default)' }}>
+                <div
+                  className="text-sm text-system-gray-500 text-center"
+                  style={{ padding: 'var(--spacing-default)' }}
+                >
                   No files were organized in this session.
                 </div>
               )}
@@ -268,9 +316,15 @@ function CompletePhase() {
           {/* Action History + Next Steps */}
           <div className="flex flex-col gap-[var(--spacing-default)]">
             {showActionHistory && (
-              <section className="surface-panel flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
+              <section
+                className="surface-panel flex flex-col"
+                style={{ gap: 'var(--spacing-default)' }}
+              >
                 <div className="flex items-center justify-between">
-                  <h3 className="heading-tertiary m-0 flex items-center" style={{ gap: 'var(--spacing-compact)' }}>
+                  <h3
+                    className="heading-tertiary m-0 flex items-center"
+                    style={{ gap: 'var(--spacing-compact)' }}
+                  >
                     <ClipboardListIcon className="w-5 h-5 text-stratosort-blue" /> Action history
                   </h3>
                   <span className="text-xs text-system-gray-500">
@@ -286,7 +340,10 @@ function CompletePhase() {
                         className="flex items-start justify-between rounded-lg border border-border-soft/70 bg-white/80 px-3 py-2"
                         style={{ gap: 'var(--spacing-cozy)' }}
                       >
-                        <div className="flex flex-col min-w-0" style={{ gap: 'var(--spacing-compact)' }}>
+                        <div
+                          className="flex flex-col min-w-0"
+                          style={{ gap: 'var(--spacing-compact)' }}
+                        >
                           <span className="text-sm font-medium text-system-gray-900 break-words">
                             {entry.fileName}
                           </span>
@@ -305,7 +362,10 @@ function CompletePhase() {
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-system-gray-500 text-center" style={{ padding: 'var(--spacing-cozy)' }}>
+                    <div
+                      className="text-sm text-system-gray-500 text-center"
+                      style={{ padding: 'var(--spacing-cozy)' }}
+                    >
                       No recent actions recorded.
                     </div>
                   )}
@@ -313,9 +373,15 @@ function CompletePhase() {
               </section>
             )}
 
-            <section className="surface-panel flex flex-col justify-between" style={{ gap: 'var(--spacing-default)' }}>
+            <section
+              className="surface-panel flex flex-col justify-between"
+              style={{ gap: 'var(--spacing-default)' }}
+            >
               <div className="flex items-center justify-between">
-                <h3 className="heading-tertiary m-0 flex items-center" style={{ gap: 'var(--spacing-compact)' }}>
+                <h3
+                  className="heading-tertiary m-0 flex items-center"
+                  style={{ gap: 'var(--spacing-compact)' }}
+                >
                   <TargetIcon className="w-5 h-5 text-stratosort-blue" /> Next Steps
                 </h3>
                 <span className="text-xs text-system-gray-500">All set</span>
@@ -334,7 +400,10 @@ function CompletePhase() {
                   </Button>
                 </div>
 
-                <div className="border-t border-border-soft/60" style={{ paddingTop: 'var(--spacing-default)' }}>
+                <div
+                  className="border-t border-border-soft/60"
+                  style={{ paddingTop: 'var(--spacing-default)' }}
+                >
                   <p className="text-xs text-system-gray-500 mb-3">Need to make adjustments?</p>
                   <div className="flex flex-col" style={{ gap: 'var(--spacing-cozy)' }}>
                     <Button
@@ -363,6 +432,33 @@ function CompletePhase() {
     </div>
   );
 }
+
+const iconPropTypes = {
+  className: PropTypes.string
+};
+
+CheckCircle2Icon.propTypes = iconPropTypes;
+ClipboardListIcon.propTypes = iconPropTypes;
+TargetIcon.propTypes = iconPropTypes;
+CheckIcon.propTypes = iconPropTypes;
+ClockIcon.propTypes = iconPropTypes;
+
+StatPill.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  tone: PropTypes.string
+};
+
+FileRow.propTypes = {
+  file: PropTypes.shape({
+    originalName: PropTypes.string,
+    name: PropTypes.string,
+    path: PropTypes.string,
+    newLocation: PropTypes.string,
+    destination: PropTypes.string
+  }),
+  index: PropTypes.number.isRequired
+};
 
 // FIX: Wrap with memo to prevent unnecessary re-renders from parent changes
 export default memo(CompletePhase);

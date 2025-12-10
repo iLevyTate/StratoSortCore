@@ -4,6 +4,11 @@
  */
 const { vol, fs: memfs } = require('memfs');
 const path = require('path');
+const { EventEmitter } = require('events');
+
+// Avoid noisy MaxListeners warnings in Jest runs
+EventEmitter.defaultMaxListeners = 50;
+process.setMaxListeners(50);
 
 // Use platform-appropriate temp directory for memfs
 // On Windows, use /tmp as a virtual Unix-style path that memfs understands
@@ -15,7 +20,7 @@ memfs.promises.writeFile = async (filePath, data, options) => {
   // Normalize path to Unix-style for memfs
   const normalizedPath = filePath.replace(/\\/g, '/');
   await memfs.promises.mkdir(path.dirname(normalizedPath).replace(/\\/g, '/'), {
-    recursive: true,
+    recursive: true
   });
   return originalWriteFile(normalizedPath, data, options);
 };
@@ -26,7 +31,7 @@ memfs.promises.rename = async (oldPath, newPath) => {
   const normalizedOld = oldPath.replace(/\\/g, '/');
   const normalizedNew = newPath.replace(/\\/g, '/');
   await memfs.promises.mkdir(path.dirname(normalizedNew).replace(/\\/g, '/'), {
-    recursive: true,
+    recursive: true
   });
   return originalRename(normalizedOld, normalizedNew);
 };
@@ -49,10 +54,7 @@ memfs.promises.readFile = async (filePath, options) => {
 if (!memfs.promises.mkdtemp) {
   memfs.promises.mkdtemp = async (prefix) => {
     const normalizedPrefix = prefix.replace(/\\/g, '/');
-    const tempDir =
-      normalizedPrefix +
-      Date.now() +
-      Math.random().toString(36).substring(2, 8);
+    const tempDir = normalizedPrefix + Date.now() + Math.random().toString(36).substring(2, 8);
     await memfs.promises.mkdir(tempDir, { recursive: true });
     return tempDir;
   };
@@ -62,7 +64,7 @@ jest.mock('fs', () => require('memfs').fs);
 jest.mock('fs/promises', () => require('memfs').fs.promises);
 jest.mock('os', () => ({
   ...jest.requireActual('os'),
-  tmpdir: () => MOCK_TMP_DIR,
+  tmpdir: () => MOCK_TMP_DIR
 }));
 
 // Global test utilities
@@ -71,7 +73,8 @@ global.console = {
   log: jest.fn(),
   warn: jest.fn(),
   error: jest.fn(),
-  debug: jest.fn(),
+  info: jest.fn(),
+  debug: jest.fn()
 };
 
 // Mock DOM environment for Electron
@@ -80,14 +83,14 @@ global.document = {
   querySelectorAll: jest.fn(() => []),
   createElement: jest.fn(() => ({
     click: jest.fn(),
-    addEventListener: jest.fn(),
-  })),
+    addEventListener: jest.fn()
+  }))
 };
 
 global.window = {
   location: { href: 'http://localhost' },
   addEventListener: jest.fn(),
-  removeEventListener: jest.fn(),
+  removeEventListener: jest.fn()
 };
 
 // Initialize test state
@@ -99,7 +102,7 @@ global.aiConfig = {
   confidenceThreshold: 0.7,
   folderNamingPattern: '{category}/{type}',
   enableDateExtraction: true,
-  categories: ['Financial', 'Legal', 'Project', 'Personal', 'Technical'],
+  categories: ['Financial', 'Legal', 'Project', 'Personal', 'Technical']
 };
 
 // Clear the in-memory file system before each test
@@ -112,7 +115,7 @@ beforeEach(() => {
 global.performance = {
   mark: jest.fn(),
   measure: jest.fn(),
-  now: jest.fn(() => Date.now()),
+  now: jest.fn(() => Date.now())
 };
 
 // Test utilities for document processing
@@ -123,7 +126,7 @@ global.testUtils = {
     type: 'application/pdf',
     size: 1024,
     content: 'Mock document content for testing',
-    ...overrides,
+    ...overrides
   }),
 
   createMockAnalysisResult: (overrides = {}) => ({
@@ -133,17 +136,17 @@ global.testUtils = {
     confidence: 0.85,
     suggestedFolder: 'Test/Documents',
     extractedDate: '2024',
-    ...overrides,
+    ...overrides
   }),
 
   waitForAsync: (ms = 100) => new Promise((resolve) => setTimeout(resolve, ms)),
 
   generateLargeContent: (sizeKB = 100) => {
     const chunks = sizeKB;
-    return Array.from({ length: chunks }, (_, i) =>
-      `Mock content chunk ${i + 1} `.repeat(50),
-    ).join('\n');
-  },
+    return Array.from({ length: chunks }, (_, i) => `Mock content chunk ${i + 1} `.repeat(50)).join(
+      '\n'
+    );
+  }
 };
 
 // Performance testing utilities
@@ -170,12 +173,12 @@ global.performanceUtils = {
         memoryDelta: {
           heapUsed: endMemory.heapUsed - startMemory.heapUsed,
           heapTotal: endMemory.heapTotal - startMemory.heapTotal,
-          external: endMemory.external - startMemory.external,
+          external: endMemory.external - startMemory.external
         },
-        timeElapsed: Number(endTime - startTime) / 1000000, // milliseconds
+        timeElapsed: Number(endTime - startTime) / 1000000 // milliseconds
       };
     };
-  },
+  }
 };
 
 // Test data generators
@@ -189,7 +192,7 @@ global.testDataGenerators = {
       Payment Terms: Net 30
     `,
     expectedCategory: 'Financial',
-    expectedFolder: 'Financial/Invoices',
+    expectedFolder: 'Financial/Invoices'
   }),
 
   contract: () => ({
@@ -202,7 +205,7 @@ global.testDataGenerators = {
       Value: $${(Math.random() * 50000 + 10000).toFixed(2)}
     `,
     expectedCategory: 'Legal',
-    expectedFolder: 'Legal/Contracts',
+    expectedFolder: 'Legal/Contracts'
   }),
 
   report: () => ({
@@ -215,8 +218,8 @@ global.testDataGenerators = {
       Timeline: Meeting milestones
     `,
     expectedCategory: 'Project',
-    expectedFolder: 'Projects/Reports',
-  }),
+    expectedFolder: 'Projects/Reports'
+  })
 };
 
 // Import and setup mock services
@@ -244,8 +247,8 @@ beforeEach(() => {
       keywords: ['invoice', 'payment', 'financial'],
       confidence: 0.92,
       suggestedFolder: 'Financial/Invoices',
-      suggestedName: 'Invoice_Test_2024-06-04.pdf',
-    },
+      suggestedName: 'Invoice_Test_2024-06-04.pdf'
+    }
   });
 
   mockOllamaService.isConnected.mockReturnValue(true);

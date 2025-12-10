@@ -16,44 +16,42 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
     // Check if API is available
     if (!window?.electronAPI?.events?.onAppUpdate) {
       logger.warn('Update API not available');
-      return;
+      return undefined;
     }
 
     // Listen for update events from main
     try {
-      unsubscribeRef.current = window.electronAPI.events.onAppUpdate(
-        (payload) => {
-          // Check if component is still mounted
-          if (!isMountedRef.current) return;
+      unsubscribeRef.current = window.electronAPI.events.onAppUpdate((payload) => {
+        // Check if component is still mounted
+        if (!isMountedRef.current) return;
 
-          try {
-            if (!payload || !payload.status) {
-              logger.warn('Invalid update payload', { payload });
-              return;
-            }
-
-            // Update state only if mounted
-            if (payload.status === 'ready') {
-              setStatus('ready');
-              setVisible(true);
-            } else if (payload.status === 'available') {
-              setStatus('downloading');
-              setVisible(false);
-            } else if (payload.status === 'none') {
-              setVisible(false);
-            }
-          } catch (error) {
-            logger.error('Error handling update event', {
-              error: error.message,
-              stack: error.stack,
-            });
+        try {
+          if (!payload || !payload.status) {
+            logger.warn('Invalid update payload', { payload });
+            return;
           }
-        },
-      );
+
+          // Update state only if mounted
+          if (payload.status === 'ready') {
+            setStatus('ready');
+            setVisible(true);
+          } else if (payload.status === 'available') {
+            setStatus('downloading');
+            setVisible(false);
+          } else if (payload.status === 'none') {
+            setVisible(false);
+          }
+        } catch (error) {
+          logger.error('Error handling update event', {
+            error: error.message,
+            stack: error.stack
+          });
+        }
+      });
     } catch (error) {
       logger.error('Failed to set up update listener', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
     }
 
@@ -62,16 +60,13 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
       isMountedRef.current = false;
 
       // Safely unsubscribe
-      if (
-        unsubscribeRef.current &&
-        typeof unsubscribeRef.current === 'function'
-      ) {
+      if (unsubscribeRef.current && typeof unsubscribeRef.current === 'function') {
         try {
           unsubscribeRef.current();
         } catch (error) {
           logger.error('Error during cleanup', {
             error: error.message,
-            stack: error.stack,
+            stack: error.stack
           });
         }
       }
@@ -104,10 +99,7 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
           // FIX: Store timeout ID so we can clear it to prevent memory leak
           let timeoutId;
           const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(
-              () => reject(new Error('Update timeout')),
-              UPDATE_TIMEOUT_MS,
-            );
+            timeoutId = setTimeout(() => reject(new Error('Update timeout')), UPDATE_TIMEOUT_MS);
           });
 
           let res;
@@ -126,7 +118,7 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
           setStatus('error');
           logger.error('Error applying update', {
             error: error.message,
-            stack: error.stack,
+            stack: error.stack
           });
         }
       }}
@@ -152,11 +144,7 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
           <span className="w-2 h-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full animate-pulse" />
         )}
         <span className="font-medium">
-          {status === 'applying'
-            ? 'Updating…'
-            : status === 'ready'
-              ? 'Update Ready'
-              : 'Update'}
+          {status === 'applying' ? 'Updating…' : status === 'ready' ? 'Update Ready' : 'Update'}
         </span>
       </span>
       {/* Shimmer effect */}

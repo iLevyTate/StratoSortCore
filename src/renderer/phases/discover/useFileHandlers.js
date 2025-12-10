@@ -51,8 +51,10 @@ const SUPPORTED_EXTENSIONS = [
   '.tar',
   '.gz',
   '.kml',
-  '.kmz',
+  '.kmz'
 ];
+
+const SCAN_TIMEOUT = 30000;
 
 /**
  * Custom hook for file handling operations
@@ -69,7 +71,7 @@ export function useFileHandlers({
   setSelectedFiles,
   updateFileState,
   addNotification,
-  analyzeFiles,
+  analyzeFiles
 }) {
   const [isScanning, setIsScanning] = useState(false);
 
@@ -95,10 +97,11 @@ export function useFileHandlers({
                 path: filePath,
                 extension,
                 size: stats?.size || 0,
+                isDirectory: stats?.isDirectory || false,
                 type: 'file',
                 created: stats?.created,
                 modified: stats?.modified,
-                success: true,
+                success: true
               };
             } catch (error) {
               const fileName = extractFileName(filePath);
@@ -107,12 +110,13 @@ export function useFileHandlers({
                 path: filePath,
                 extension: extractExtension(fileName),
                 size: 0,
+                isDirectory: false,
                 type: 'file',
                 success: false,
-                error: error.message,
+                error: error.message
               };
             }
-          }),
+          })
         );
 
         batchResults.forEach((result, index) => {
@@ -126,9 +130,10 @@ export function useFileHandlers({
               path: filePath,
               extension: extractExtension(fileName),
               size: 0,
+              isDirectory: false,
               type: 'file',
               success: false,
-              error: result.reason?.message || 'Unknown error',
+              error: result.reason?.message || 'Unknown error'
             });
           }
         });
@@ -140,7 +145,7 @@ export function useFileHandlers({
 
       return results;
     },
-    [],
+    []
   );
 
   /**
@@ -161,20 +166,86 @@ export function useFileHandlers({
           `Skipped ${duplicateCount} duplicate files already in queue`,
           'info',
           2000,
-          'duplicate-files',
+          'duplicate-files'
         );
       } else if (newFiles.length === 0) {
-        addNotification(
-          'All files are already in the queue',
-          'info',
-          2000,
-          'duplicate-files',
-        );
+        addNotification('All files are already in the queue', 'info', 2000, 'duplicate-files');
       }
 
       return newFiles;
     },
-    [addNotification],
+    [addNotification]
+  );
+
+  const expandDroppedDirectories = useCallback(
+    async (directories) => {
+      if (!directories.length) return [];
+
+      const expanded = [];
+      for (const dir of directories) {
+        try {
+          let scanTimeoutId;
+          const scanResult = await Promise.race([
+            window.electronAPI.smartFolders.scanStructure(dir.path),
+            new Promise((_, reject) => {
+              scanTimeoutId = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      'Folder scan timeout - the folder may be on a slow network drive or contain too many files'
+                    )
+                  ),
+                SCAN_TIMEOUT
+              );
+            })
+          ]).finally(() => {
+            if (scanTimeoutId) clearTimeout(scanTimeoutId);
+          });
+
+          if (scanResult?.files?.length > 0) {
+            const supportedFiles = scanResult.files.filter((file) => {
+              const ext = extractExtension(file.name);
+              return SUPPORTED_EXTENSIONS.includes(ext);
+            });
+
+            if (supportedFiles.length === 0) {
+              addNotification(
+                `No supported files found in dropped folder: ${dir.name || dir.path}`,
+                'warning',
+                3000,
+                'drop-folder-empty'
+              );
+              continue;
+            }
+
+            expanded.push(
+              ...supportedFiles.map((file) => ({
+                ...file,
+                source: 'folder_scan',
+                droppedFrom: dir.path
+              }))
+            );
+          } else {
+            addNotification(
+              `No files found in dropped folder: ${dir.name || dir.path}`,
+              'warning',
+              3000,
+              'drop-folder-empty'
+            );
+          }
+        } catch (error) {
+          addNotification(
+            `Error scanning dropped folder: ${dir.name || dir.path}`,
+            'error',
+            4000,
+            'drop-folder-error'
+          );
+        }
+      }
+
+      return expanded;
+    },
+    [addNotification]
   );
 
   /**
@@ -198,20 +269,17 @@ export function useFileHandlers({
         });
 
         // Extract paths for getBatchFileStats which expects string array
-        const filePaths = newFiles.map((f) =>
-          typeof f === 'string' ? f : f.path,
-        );
+        const filePaths = newFiles.map((f) => (typeof f === 'string' ? f : f.path));
         const fileObjects = await getBatchFileStats(filePaths);
         const enhancedFiles = fileObjects.map((file) => ({
           ...file,
-          source: 'file_selection',
+          source: 'file_selection'
         }));
 
         // Merge with existing files
         const allFiles = [...selectedFiles, ...enhancedFiles];
         const uniqueFiles = allFiles.filter(
-          (file, index, self) =>
-            index === self.findIndex((f) => f.path === file.path),
+          (file, index, self) => index === self.findIndex((f) => f.path === file.path)
         );
 
         setSelectedFiles(uniqueFiles);
@@ -222,7 +290,7 @@ export function useFileHandlers({
             `Warning: ${failedFiles.length} files had issues loading metadata`,
             'warning',
             3000,
-            'file-issues',
+            'file-issues'
           );
         }
 
@@ -230,7 +298,7 @@ export function useFileHandlers({
           `Added ${enhancedFiles.length} new file${enhancedFiles.length !== 1 ? 's' : ''} for analysis`,
           'success',
           2500,
-          'files-added',
+          'files-added'
         );
 
         // Analyze the new files
@@ -245,7 +313,7 @@ export function useFileHandlers({
         `Error selecting files: ${error.message}`,
         'error',
         4000,
-        'file-selection-error',
+        'file-selection-error'
       );
     } finally {
       setIsScanning(false);
@@ -257,7 +325,7 @@ export function useFileHandlers({
     addNotification,
     getBatchFileStats,
     filterNewFiles,
-    analyzeFiles,
+    analyzeFiles
   ]);
 
   /**
@@ -270,7 +338,6 @@ export function useFileHandlers({
 
       // FIX: Handler returns 'path' not 'folder'
       if (result?.success && result?.path) {
-        const SCAN_TIMEOUT = 30000;
         let scanTimeoutId;
 
         const scanResult = await Promise.race([
@@ -280,12 +347,12 @@ export function useFileHandlers({
               () =>
                 reject(
                   new Error(
-                    'Folder scan timeout - the folder may be on a slow network drive or contain too many files',
-                  ),
+                    'Folder scan timeout - the folder may be on a slow network drive or contain too many files'
+                  )
                 ),
-              SCAN_TIMEOUT,
+              SCAN_TIMEOUT
             );
-          }),
+          })
         ]).finally(() => {
           if (scanTimeoutId) clearTimeout(scanTimeoutId);
         });
@@ -301,7 +368,7 @@ export function useFileHandlers({
               'No supported files found in the selected folder',
               'warning',
               3000,
-              'folder-scan',
+              'folder-scan'
             );
             return;
           }
@@ -312,19 +379,16 @@ export function useFileHandlers({
           // Update file states
           newFiles.forEach((file) => updateFileState(file.path, 'pending'));
 
-          const fileObjects = await getBatchFileStats(
-            newFiles.map((f) => f.path),
-          );
+          const fileObjects = await getBatchFileStats(newFiles.map((f) => f.path));
           const enhancedFiles = fileObjects.map((file) => ({
             ...file,
-            source: 'folder_scan',
+            source: 'folder_scan'
           }));
 
           // Merge files
           const allFiles = [...selectedFiles, ...enhancedFiles];
           const uniqueFiles = allFiles.filter(
-            (file, index, self) =>
-              index === self.findIndex((f) => f.path === file.path),
+            (file, index, self) => index === self.findIndex((f) => f.path === file.path)
           );
 
           setSelectedFiles(uniqueFiles);
@@ -333,27 +397,17 @@ export function useFileHandlers({
             `Added ${enhancedFiles.length} new file${enhancedFiles.length !== 1 ? 's' : ''} from folder for analysis`,
             'success',
             2500,
-            'files-added',
+            'files-added'
           );
 
           if (analyzeFiles) {
             await analyzeFiles(enhancedFiles);
           }
         } else {
-          addNotification(
-            'No files found in the selected folder',
-            'warning',
-            3000,
-            'folder-scan',
-          );
+          addNotification('No files found in the selected folder', 'warning', 3000, 'folder-scan');
         }
       } else if (result?.success === false && result?.path === null) {
-        addNotification(
-          'Folder selection cancelled',
-          'info',
-          2000,
-          'folder-selection',
-        );
+        addNotification('Folder selection cancelled', 'info', 2000, 'folder-selection');
       } else {
         addNotification('No folder selected', 'info', 2000, 'folder-selection');
       }
@@ -362,7 +416,7 @@ export function useFileHandlers({
         `Error selecting folder: ${error.message}`,
         'error',
         4000,
-        'folder-selection-error',
+        'folder-selection-error'
       );
     } finally {
       setIsScanning(false);
@@ -374,7 +428,7 @@ export function useFileHandlers({
     addNotification,
     getBatchFileStats,
     filterNewFiles,
-    analyzeFiles,
+    analyzeFiles
   ]);
 
   /**
@@ -409,29 +463,35 @@ export function useFileHandlers({
           `Skipped ${droppedMissingPath} item${droppedMissingPath > 1 ? 's' : ''} with no path`,
           'warning',
           2500,
-          'drop-missing-path',
+          'drop-missing-path'
         );
       }
       if (withPath.length === 0) return;
 
       // Fetch file stats for dropped items (aligns behavior with file picker)
-      const paths = withPath.map((file) =>
-        typeof file === 'string' ? file : file.path,
-      );
+      const paths = withPath.map((file) => (typeof file === 'string' ? file : file.path));
       const statsResults = await getBatchFileStats(paths);
 
-      // Merge stats and ensure extension property is set
-      const enhancedFiles = withPath.map((file, idx) => {
+      // Split directories and files
+      const droppedDirectories = [];
+      const droppedFiles = [];
+
+      withPath.forEach((file, idx) => {
         const pathValue = typeof file === 'string' ? file : file.path;
-        const stat = statsResults[idx];
+        const stat = statsResults[idx] || {};
         const fileName = file.name || extractFileName(pathValue || '');
+
+        if (stat?.isDirectory) {
+          droppedDirectories.push({ path: pathValue, name: fileName });
+          return;
+        }
 
         let extension = file.extension;
         if (!extension) {
           extension = extractExtension(fileName);
         }
 
-        return {
+        droppedFiles.push({
           ...file,
           path: pathValue,
           name: fileName,
@@ -441,9 +501,16 @@ export function useFileHandlers({
           modified: stat?.modified,
           type: 'file',
           source: 'drag_drop',
-          droppedAt: new Date().toISOString(),
-        };
+          droppedAt: new Date().toISOString()
+        });
       });
+
+      const expandedFromFolders = await expandDroppedDirectories(droppedDirectories);
+      const enhancedFiles = [...droppedFiles, ...expandedFromFolders];
+      if (enhancedFiles.length === 0) {
+        addNotification('No supported files found in drop', 'warning', 2000, 'drop-empty');
+        return;
+      }
 
       // Update file states
       enhancedFiles.forEach((file) => updateFileState(file.path, 'pending'));
@@ -451,8 +518,7 @@ export function useFileHandlers({
       // Merge files
       const allFiles = [...selectedFiles, ...enhancedFiles];
       const uniqueFiles = allFiles.filter(
-        (file, index, self) =>
-          index === self.findIndex((f) => f.path === file.path),
+        (file, index, self) => index === self.findIndex((f) => f.path === file.path)
       );
 
       setSelectedFiles(uniqueFiles);
@@ -461,7 +527,7 @@ export function useFileHandlers({
         `Added ${enhancedFiles.length} new file${enhancedFiles.length !== 1 ? 's' : ''} for analysis`,
         'success',
         2500,
-        'files-added',
+        'files-added'
       );
 
       if (analyzeFiles) {
@@ -475,7 +541,9 @@ export function useFileHandlers({
       addNotification,
       filterNewFiles,
       analyzeFiles,
-    ],
+      expandDroppedDirectories,
+      getBatchFileStats
+    ]
   );
 
   return {
@@ -483,7 +551,7 @@ export function useFileHandlers({
     handleFileSelection,
     handleFolderSelection,
     handleFileDrop,
-    getBatchFileStats,
+    getBatchFileStats
   };
 }
 

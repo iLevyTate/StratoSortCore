@@ -1,12 +1,4 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-  Suspense,
-  lazy,
-} from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo, Suspense, lazy } from 'react';
 import { logger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { useNotification } from '../contexts/NotificationContext';
@@ -34,7 +26,7 @@ const SECTION_KEYS = [
   'settings-performance',
   'settings-defaults',
   'settings-app',
-  'settings-api',
+  'settings-api'
 ];
 
 // Set logger context for this component
@@ -68,13 +60,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     autoOrganize: false,
     backgroundMode: false,
     defaultSmartFolderLocation: 'Documents',
-    launchOnStartup: false,
+    launchOnStartup: false
   });
   const [ollamaModelLists, setOllamaModelLists] = useState({
     text: [],
     vision: [],
     embedding: [],
-    all: [],
+    all: []
   });
   const [ollamaHealth, setOllamaHealth] = useState(null);
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
@@ -93,34 +85,24 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   // Memoized computed values
   const textModelOptions = useMemo(
-    () =>
-      ollamaModelLists.text.length
-        ? ollamaModelLists.text
-        : ollamaModelLists.all,
-    [ollamaModelLists.text, ollamaModelLists.all],
+    () => (ollamaModelLists.text.length ? ollamaModelLists.text : ollamaModelLists.all),
+    [ollamaModelLists.text, ollamaModelLists.all]
   );
 
   const visionModelOptions = useMemo(
-    () =>
-      ollamaModelLists.vision.length
-        ? ollamaModelLists.vision
-        : ollamaModelLists.all,
-    [ollamaModelLists.vision, ollamaModelLists.all],
+    () => (ollamaModelLists.vision.length ? ollamaModelLists.vision : ollamaModelLists.all),
+    [ollamaModelLists.vision, ollamaModelLists.all]
   );
 
   const embeddingModelOptions = useMemo(
-    () =>
-      ollamaModelLists.embedding.length
-        ? ollamaModelLists.embedding
-        : ollamaModelLists.all,
-    [ollamaModelLists.embedding, ollamaModelLists.all],
+    () => (ollamaModelLists.embedding.length ? ollamaModelLists.embedding : ollamaModelLists.all),
+    [ollamaModelLists.embedding, ollamaModelLists.all]
   );
 
   const pullProgressText = useMemo(() => {
     if (!pullProgress) return null;
     const percentage =
-      typeof pullProgress?.completed === 'number' &&
-      typeof pullProgress?.total === 'number'
+      typeof pullProgress?.completed === 'number' && typeof pullProgress?.total === 'number'
         ? ` (${Math.floor((pullProgress.completed / Math.max(1, pullProgress.total)) * 100)}%)`
         : '';
     return `Pulling ${newModel.trim()}… ${pullProgress?.status || ''}${percentage}`;
@@ -137,7 +119,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } catch (error) {
       logger.error('Failed to load settings', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
       setSettingsLoaded(true);
     }
@@ -151,13 +133,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const categories = response?.categories || {
         text: [],
         vision: [],
-        embedding: [],
+        embedding: []
       };
       setOllamaModelLists({
         text: (categories.text || []).slice().sort(),
         vision: (categories.vision || []).slice().sort(),
         embedding: (categories.embedding || []).slice().sort(),
-        all: (response?.models || []).slice().sort(),
+        all: (response?.models || []).slice().sort()
       });
       setModelToDelete((response?.models || [])[0] || '');
       if (response?.ollamaHealth) setOllamaHealth(response.ollamaHealth);
@@ -166,15 +148,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           ...prev,
           textModel: response.selected.textModel || prev.textModel,
           visionModel: response.selected.visionModel || prev.visionModel,
-          embeddingModel:
-            response.selected.embeddingModel || prev.embeddingModel,
-          ollamaHost: response.host || prev.ollamaHost,
+          embeddingModel: response.selected.embeddingModel || prev.embeddingModel,
+          ollamaHost: response.host || prev.ollamaHost
         }));
       }
     } catch (error) {
       logger.error('Failed to load Ollama models', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
       setOllamaModelLists({ text: [], vision: [], embedding: [], all: [] });
     } finally {
@@ -219,9 +200,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
     (async () => {
       try {
-        const res = await window.electronAPI.ollama.testConnection(
-          settings.ollamaHost,
-        );
+        const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
         if (!isMounted) return;
         setOllamaHealth(res?.ollamaHealth || null);
         if (res?.success && isMounted) {
@@ -229,7 +208,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         }
       } catch (e) {
         logger.error('Auto Ollama health check failed', {
-          error: e.message,
+          error: e.message
         });
       }
     })();
@@ -250,13 +229,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } catch (error) {
       logger.error('Failed to save settings', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
       addNotification('Failed to save settings', 'error');
     } finally {
       setIsSaving(false);
     }
-  }, [settings, addNotification, handleToggleSettings, sanitizeSettings]);
+  }, [settings, addNotification, handleToggleSettings]);
 
   // Auto-save settings on change (debounced)
   const autoSaveSettings = useDebouncedCallback(
@@ -268,12 +247,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       } catch (error) {
         logger.error('Auto-save settings failed', {
           error: error.message,
-          stack: error.stack,
+          stack: error.stack
         });
       }
     },
     800,
-    [sanitizeSettings],
+    [settings]
   );
 
   useEffect(() => {
@@ -284,21 +263,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   const testOllamaConnection = useCallback(async () => {
     try {
-      const res = await window.electronAPI.ollama.testConnection(
-        settings.ollamaHost,
-      );
+      const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
       setOllamaHealth(res?.ollamaHealth || null);
       if (res?.success) {
-        addNotification(
-          `Ollama connected: ${res.modelCount} models found`,
-          'success',
-        );
+        addNotification(`Ollama connected: ${res.modelCount} models found`, 'success');
         await loadOllamaModels();
       } else {
-        addNotification(
-          `Ollama connection failed: ${res?.error || 'Unknown error'}`,
-          'error',
-        );
+        addNotification(`Ollama connection failed: ${res?.error || 'Unknown error'}`, 'error');
       }
     } catch (e) {
       addNotification(`Ollama test failed: ${e.message}`, 'error');
@@ -311,15 +282,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setIsAddingModel(true);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
-        progressUnsubRef.current =
-          window.electronAPI.events.onOperationProgress((evt) => {
-            if (
-              evt?.type === 'ollama-pull' &&
-              evt?.model?.includes(newModel.trim())
-            ) {
-              setPullProgress(evt.progress || {});
-            }
-          });
+        progressUnsubRef.current = window.electronAPI.events.onOperationProgress((evt) => {
+          if (evt?.type === 'ollama-pull' && evt?.model?.includes(newModel.trim())) {
+            setPullProgress(evt.progress || {});
+          }
+        });
       } catch {
         // Non-fatal if progress subscription fails
       }
@@ -330,10 +297,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         setNewModel('');
         await loadOllamaModels();
       } else {
-        addNotification(
-          `Failed to add model: ${result?.error || 'Unknown error'}`,
-          'error',
-        );
+        addNotification(`Failed to add model: ${result?.error || 'Unknown error'}`, 'error');
       }
     } catch (e) {
       addNotification(`Failed to add model: ${e.message}`, 'error');
@@ -360,10 +324,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         setModelToDelete('');
         await loadOllamaModels();
       } else {
-        addNotification(
-          `Failed to delete model: ${res?.error || 'Unknown error'}`,
-          'error',
-        );
+        addNotification(`Failed to delete model: ${res?.error || 'Unknown error'}`, 'error');
       }
     } catch (e) {
       addNotification(`Failed to delete model: ${e.message}`, 'error');
@@ -375,9 +336,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   // Collapsible section keys for expand/collapse all
   const expandAll = useCallback(() => {
     try {
-      SECTION_KEYS.forEach((k) =>
-        localStorage.setItem(`collapsible:${k}`, 'true'),
-      );
+      SECTION_KEYS.forEach((k) => localStorage.setItem(`collapsible:${k}`, 'true'));
       window.dispatchEvent(new Event('storage'));
     } catch {
       // Non-fatal if localStorage fails
@@ -386,9 +345,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   const collapseAll = useCallback(() => {
     try {
-      SECTION_KEYS.forEach((k) =>
-        localStorage.setItem(`collapsible:${k}`, 'false'),
-      );
+      SECTION_KEYS.forEach((k) => localStorage.setItem(`collapsible:${k}`, 'false'));
       window.dispatchEvent(new Event('storage'));
     } catch {
       // Non-fatal if localStorage fails
@@ -442,11 +399,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         </div>
 
         <div className="p-[var(--panel-padding)] flex flex-col gap-[var(--section-gap)] flex-1 min-h-0 overflow-y-auto modern-scrollbar">
-          <Collapsible
-            title="🤖 AI Configuration"
-            defaultOpen
-            persistKey="settings-ai"
-          >
+          <Collapsible title="🤖 AI Configuration" defaultOpen persistKey="settings-ai">
             <div className="flex flex-col gap-[var(--section-gap)]">
               <OllamaConfigSection
                 settings={settings}
@@ -482,11 +435,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             </div>
           </Collapsible>
 
-          <Collapsible
-            title="⚡ Performance"
-            defaultOpen
-            persistKey="settings-performance"
-          >
+          <Collapsible title="⚡ Performance" defaultOpen persistKey="settings-performance">
             <div className="flex flex-col gap-[var(--section-gap)]">
               <div>
                 <label className="block text-sm font-medium text-system-gray-700 mb-2">
@@ -500,39 +449,22 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                   onChange={(e) =>
                     setSettings((prev) => ({
                       ...prev,
-                      maxConcurrentAnalysis: parseInt(e.target.value),
+                      maxConcurrentAnalysis: parseInt(e.target.value)
                     }))
                   }
                   className="w-full"
                 />
               </div>
-              <AutoOrganizeSection
-                settings={settings}
-                setSettings={setSettings}
-              />
-              <BackgroundModeSection
-                settings={settings}
-                setSettings={setSettings}
-              />
+              <AutoOrganizeSection settings={settings} setSettings={setSettings} />
+              <BackgroundModeSection settings={settings} setSettings={setSettings} />
             </div>
           </Collapsible>
 
-          <Collapsible
-            title="📁 Default Locations"
-            defaultOpen
-            persistKey="settings-defaults"
-          >
-            <DefaultLocationsSection
-              settings={settings}
-              setSettings={setSettings}
-            />
+          <Collapsible title="📁 Default Locations" defaultOpen persistKey="settings-defaults">
+            <DefaultLocationsSection settings={settings} setSettings={setSettings} />
           </Collapsible>
 
-          <Collapsible
-            title="🖥️ Application"
-            defaultOpen
-            persistKey="settings-app"
-          >
+          <Collapsible title="🖥️ Application" defaultOpen persistKey="settings-app">
             <ApplicationSection settings={settings} setSettings={setSettings} />
           </Collapsible>
 
@@ -543,8 +475,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           >
             <div className="flex flex-col gap-[var(--spacing-cozy)]">
               <p className="text-sm text-system-gray-600">
-                View and manage your file analysis history, including past
-                results and statistics.
+                View and manage your file analysis history, including past results and statistics.
               </p>
               <Button
                 onClick={() => setShowAnalysisHistory(true)}
@@ -556,11 +487,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             </div>
           </Collapsible>
 
-          <Collapsible
-            title="🔧 Backend API Test"
-            defaultOpen={false}
-            persistKey="settings-api"
-          >
+          <Collapsible title="🔧 Backend API Test" defaultOpen={false} persistKey="settings-api">
             <APITestSection addNotification={addNotification} />
           </Collapsible>
         </div>
@@ -575,9 +502,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         </div>
       </div>
       {showAnalysisHistory && (
-        <Suspense
-          fallback={<ModalLoadingOverlay message="Loading History..." />}
-        >
+        <Suspense fallback={<ModalLoadingOverlay message="Loading History..." />}>
           <AnalysisHistoryModal
             onClose={() => setShowAnalysisHistory(false)}
             analysisStats={analysisStats}

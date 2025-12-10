@@ -8,21 +8,13 @@
  */
 
 import { useCallback, useRef, useEffect, useState } from 'react';
-import {
-  PHASES,
-  RENDERER_LIMITS,
-  FILE_STATES,
-} from '../../../shared/constants';
-import {
-  TIMEOUTS,
-  CONCURRENCY,
-  RETRY,
-} from '../../../shared/performanceConstants';
+import { PHASES, RENDERER_LIMITS, FILE_STATES } from '../../../shared/constants';
+import { TIMEOUTS, CONCURRENCY, RETRY } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import {
   validateProgressState,
   generatePreviewName as generatePreviewNameUtil,
-  extractFileName,
+  extractFileName
 } from './namingUtils';
 
 logger.setContext('DiscoverPhase:Analysis');
@@ -43,9 +35,9 @@ async function analyzeWithRetry(filePath, attempt = 1) {
       new Promise((_, reject) => {
         timeoutId = setTimeout(
           () => reject(new Error('Analysis timeout after 3 minutes')),
-          RENDERER_LIMITS.ANALYSIS_TIMEOUT_MS,
+          RENDERER_LIMITS.ANALYSIS_TIMEOUT_MS
         );
-      }),
+      })
     ]).finally(() => {
       if (timeoutId) clearTimeout(timeoutId);
     });
@@ -72,9 +64,7 @@ async function analyzeWithRetry(filePath, attempt = 1) {
  * @returns {Array} Merged results array
  */
 function mergeAnalysisResults(existingResults, newResults) {
-  const resultsByPath = new Map(
-    (existingResults || []).map((r) => [r.path, r]),
-  );
+  const resultsByPath = new Map((existingResults || []).map((r) => [r.path, r]));
   newResults.forEach((r) => resultsByPath.set(r.path, r));
   return Array.from(resultsByPath.values());
 }
@@ -93,13 +83,13 @@ function mergeFileStates(existingStates, results) {
       mergedStates[result.path] = {
         state: 'ready',
         timestamp: new Date().toISOString(),
-        analysis: result.analysis,
+        analysis: result.analysis
       };
     } else if (result.error) {
       mergedStates[result.path] = {
         state: 'error',
         timestamp: new Date().toISOString(),
-        error: result.error,
+        error: result.error
       };
     }
   });
@@ -119,14 +109,14 @@ function showAnalysisCompletionNotification({
   successCount,
   failureCount,
   addNotification,
-  actions,
+  actions
 }) {
   if (successCount > 0 && failureCount === 0) {
     addNotification(
       `Analysis complete! ${successCount} files ready`,
       'success',
       4000,
-      'analysis-complete',
+      'analysis-complete'
     );
     setTimeout(() => {
       actions.advancePhase(PHASES.ORGANIZE);
@@ -136,7 +126,7 @@ function showAnalysisCompletionNotification({
       `Analysis complete: ${successCount} successful, ${failureCount} failed`,
       'warning',
       4000,
-      'analysis-complete',
+      'analysis-complete'
     );
     setTimeout(() => {
       actions.advancePhase(PHASES.ORGANIZE);
@@ -146,7 +136,7 @@ function showAnalysisCompletionNotification({
       `Analysis failed for all ${failureCount} files.`,
       'error',
       8000,
-      'analysis-complete',
+      'analysis-complete'
     );
     actions.setPhaseData('totalAnalysisFailure', true);
   }
@@ -180,11 +170,11 @@ export function useAnalysis(options) {
       setAnalysisProgress,
       setCurrentAnalysisFile,
       setAnalysisResults,
-      setFileStates,
+      setFileStates
     } = {},
     updateFileState,
     addNotification,
-    actions,
+    actions
   } = options;
   const hasResumedRef = useRef(false);
   const analysisLockRef = useRef(false);
@@ -193,6 +183,7 @@ export function useAnalysis(options) {
   const heartbeatIntervalRef = useRef(null);
   const analysisTimeoutRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const pendingFilesRef = useRef([]);
 
   // Refs to track current state values (prevents stale closures in callbacks)
   const isAnalyzingRef = useRef(isAnalyzing);
@@ -234,7 +225,7 @@ export function useAnalysis(options) {
         // Non-fatal
       }
     },
-    [setIsAnalyzing, setAnalysisProgress, setCurrentAnalysisFile],
+    [setIsAnalyzing, setAnalysisProgress, setCurrentAnalysisFile]
   );
 
   /**
@@ -244,7 +235,7 @@ export function useAnalysis(options) {
     (originalName) => {
       return generatePreviewNameUtil(originalName, namingSettings);
     },
-    [namingSettings],
+    [namingSettings]
   );
 
   /**
@@ -271,8 +262,8 @@ export function useAnalysis(options) {
           analysis: {
             ...result.analysis,
             suggestedName: generatePreviewName(baseName),
-            namingConvention: namingSettings,
-          },
+            namingConvention: namingSettings
+          }
         };
       });
     });
@@ -293,14 +284,14 @@ export function useAnalysis(options) {
           analysis: {
             ...state.analysis,
             suggestedName: generatePreviewName(baseName),
-            namingConvention: namingSettings,
-          },
+            namingConvention: namingSettings
+          }
         };
       });
       return next;
     });
     // Only re-run when naming settings change; analysis state handled via functional updates
-  }, [generatePreviewName, namingSettings, setAnalysisResults, setFileStates]);
+  }, [namingSettings, generatePreviewName, setAnalysisResults, setFileStates]);
 
   /**
    * Main analysis function
@@ -311,11 +302,7 @@ export function useAnalysis(options) {
 
       // Atomic lock acquisition (use refs to avoid stale closures)
       const lockAcquired = (() => {
-        if (
-          analysisLockRef.current ||
-          globalAnalysisActiveRef.current ||
-          isAnalyzingRef.current
-        ) {
+        if (analysisLockRef.current || globalAnalysisActiveRef.current || isAnalyzingRef.current) {
           return false;
         }
         analysisLockRef.current = true;
@@ -323,7 +310,14 @@ export function useAnalysis(options) {
       })();
 
       if (!lockAcquired) {
-        logger.debug('Lock already held, skipping');
+        // Queue files for analysis when current batch completes
+        logger.debug('Lock already held, queueing files for later', {
+          fileCount: files.length
+        });
+        pendingFilesRef.current = [
+          ...pendingFilesRef.current,
+          ...files.filter((f) => !pendingFilesRef.current.some((p) => p.path === f.path))
+        ];
         return;
       }
 
@@ -359,7 +353,7 @@ export function useAnalysis(options) {
       const initialProgress = {
         current: 0,
         total: files.length,
-        lastActivity: Date.now(),
+        lastActivity: Date.now()
       };
       setAnalysisProgress(initialProgress);
       setCurrentAnalysisFile('');
@@ -376,7 +370,7 @@ export function useAnalysis(options) {
           const currentProgress = {
             current: localProgressRef.current.current,
             total: localProgressRef.current.total,
-            lastActivity: localProgressRef.current.lastActivity || Date.now(),
+            lastActivity: localProgressRef.current.lastActivity || Date.now()
           };
 
           if (validateProgressState(currentProgress)) {
@@ -404,7 +398,7 @@ export function useAnalysis(options) {
           'Analysis took too long and was stopped.',
           'warning',
           5000,
-          'analysis-timeout',
+          'analysis-timeout'
         );
       }, TIMEOUTS.GLOBAL_ANALYSIS);
 
@@ -422,10 +416,7 @@ export function useAnalysis(options) {
 
       const concurrency = Math.max(
         CONCURRENCY.MIN_WORKERS,
-        Math.min(
-          Number(maxConcurrent) || CONCURRENCY.DEFAULT_WORKERS,
-          CONCURRENCY.MAX_WORKERS,
-        ),
+        Math.min(Number(maxConcurrent) || CONCURRENCY.DEFAULT_WORKERS, CONCURRENCY.MAX_WORKERS)
       );
 
       try {
@@ -433,7 +424,7 @@ export function useAnalysis(options) {
           `Starting AI analysis of ${files.length} files...`,
           'info',
           3000,
-          'analysis-start',
+          'analysis-start'
         );
 
         const processedFiles = new Set();
@@ -447,30 +438,37 @@ export function useAnalysis(options) {
           processedFiles.add(file.path);
           updateFileState(file.path, 'analyzing', { fileName });
 
+          // Show current file being processed (progress updates after completion)
+          setCurrentAnalysisFile(fileName);
+          actions.setPhaseData('currentAnalysisFile', fileName);
+          localProgressRef.current = {
+            ...localProgressRef.current,
+            lastActivity: Date.now()
+          };
+
+          const fileInfo = {
+            ...file,
+            size: file.size || 0,
+            created: file.created,
+            modified: file.modified
+          };
+
           try {
+            const analysis = await analyzeWithRetry(file.path);
+
+            // Increment progress AFTER analysis completes
             completedCount++;
             const progress = {
               current: completedCount,
               total: files.length,
-              lastActivity: Date.now(),
+              lastActivity: Date.now()
             };
 
             if (validateProgressState(progress)) {
               localProgressRef.current = progress;
               setAnalysisProgress(progress);
-              setCurrentAnalysisFile(fileName);
               actions.setPhaseData('analysisProgress', progress);
-              actions.setPhaseData('currentAnalysisFile', fileName);
             }
-
-            const fileInfo = {
-              ...file,
-              size: file.size || 0,
-              created: file.created,
-              modified: file.modified,
-            };
-
-            const analysis = await analyzeWithRetry(file.path);
 
             if (analysis && !analysis.error) {
               const baseSuggestedName = analysis.suggestedName || fileName;
@@ -479,19 +477,19 @@ export function useAnalysis(options) {
                 // Preserve the raw suggestion so we can re-apply naming changes later
                 originalSuggestedName: baseSuggestedName,
                 suggestedName: generatePreviewName(baseSuggestedName),
-                namingConvention: namingSettings,
+                namingConvention: namingSettings
               };
               results.push({
                 ...fileInfo,
                 analysis: enhancedAnalysis,
                 status: FILE_STATES.CATEGORIZED,
-                analyzedAt: new Date().toISOString(),
+                analyzedAt: new Date().toISOString()
               });
               updateFileState(file.path, 'ready', {
                 analysis: enhancedAnalysis,
                 analyzedAt: new Date().toISOString(),
                 name: fileInfo.name,
-                size: fileInfo.size,
+                size: fileInfo.size
               });
             } else {
               results.push({
@@ -499,50 +497,69 @@ export function useAnalysis(options) {
                 analysis: null,
                 error: analysis?.error || 'Analysis failed',
                 status: FILE_STATES.ERROR,
-                analyzedAt: new Date().toISOString(),
+                analyzedAt: new Date().toISOString()
               });
               updateFileState(file.path, 'error', {
                 error: analysis?.error || 'Analysis failed',
-                analyzedAt: new Date().toISOString(),
+                analyzedAt: new Date().toISOString()
               });
             }
           } catch (error) {
+            // Still increment count on error so progress continues
+            completedCount++;
+            const progress = {
+              current: completedCount,
+              total: files.length,
+              lastActivity: Date.now()
+            };
+            if (validateProgressState(progress)) {
+              localProgressRef.current = progress;
+              setAnalysisProgress(progress);
+              actions.setPhaseData('analysisProgress', progress);
+            }
+
             results.push({
               ...file,
               analysis: null,
               error: error.message,
               status: 'failed',
-              analyzedAt: new Date().toISOString(),
+              analyzedAt: new Date().toISOString()
             });
             updateFileState(file.path, 'error', { error: error.message });
           }
         };
 
-        const processBatch = async (batch) => {
-          if (abortSignal.aborted) {
-            throw new Error('Analysis cancelled by user');
-          }
-          await Promise.all(batch.map(processFile));
+        // Use a worker pool pattern for true parallel processing
+        // This keeps all workers busy instead of waiting for batches to complete
+        const runWorkerPool = async () => {
+          let fileIndex = 0;
 
-          const currentProgress = {
-            current: completedCount,
-            total: files.length,
-            lastActivity: Date.now(),
+          const worker = async () => {
+            while (fileIndex < fileQueue.length) {
+              if (abortSignal.aborted) {
+                return;
+              }
+              const currentIndex = fileIndex++;
+              if (currentIndex >= fileQueue.length) break;
+
+              const file = fileQueue[currentIndex];
+              await processFile(file);
+            }
           };
-          if (validateProgressState(currentProgress)) {
-            setAnalysisProgress(currentProgress);
-            actions.setPhaseData('analysisProgress', currentProgress);
+
+          // Start all workers in parallel
+          const workers = Array(Math.min(concurrency, fileQueue.length))
+            .fill(null)
+            .map(() => worker());
+
+          await Promise.all(workers);
+
+          if (abortSignal.aborted) {
+            addNotification('Analysis cancelled by user', 'info', 2000);
           }
         };
 
-        for (let i = 0; i < fileQueue.length; i += concurrency) {
-          if (abortSignal.aborted) {
-            addNotification('Analysis cancelled by user', 'info', 2000);
-            break;
-          }
-          const batch = fileQueue.slice(i, i + concurrency);
-          await processBatch(batch);
-        }
+        await runWorkerPool();
 
         // Merge results using extracted helper functions
         const mergedResults = mergeAnalysisResults(analysisResults, results);
@@ -561,16 +578,11 @@ export function useAnalysis(options) {
           successCount,
           failureCount,
           addNotification,
-          actions,
+          actions
         });
       } catch (error) {
         if (error.message !== 'Analysis cancelled by user') {
-          addNotification(
-            `Analysis failed: ${error.message}`,
-            'error',
-            5000,
-            'analysis-error',
-          );
+          addNotification(`Analysis failed: ${error.message}`, 'error', 5000, 'analysis-error');
         }
       } finally {
         if (heartbeatIntervalRef.current) {
@@ -600,6 +612,21 @@ export function useAnalysis(options) {
         } catch {
           // Non-fatal
         }
+
+        // Process any files that were queued during this analysis batch
+        if (pendingFilesRef.current.length > 0) {
+          const filesToProcess = [...pendingFilesRef.current];
+          pendingFilesRef.current = [];
+          logger.info('Processing queued files', {
+            fileCount: filesToProcess.length
+          });
+          // Use setTimeout to allow state to settle before starting next batch
+          setTimeout(() => {
+            if (analyzeFilesRef.current) {
+              analyzeFilesRef.current(filesToProcess);
+            }
+          }, 100);
+        }
       }
     },
     [
@@ -608,13 +635,15 @@ export function useAnalysis(options) {
       setAnalysisProgress,
       setAnalysisResults,
       setFileStates,
+      analysisResults,
+      fileStates,
       updateFileState,
       addNotification,
       actions,
       generatePreviewName,
       namingSettings,
-      resetAnalysisState,
-    ],
+      resetAnalysisState
+    ]
   );
 
   // Store analyzeFiles in ref for external access
@@ -628,6 +657,8 @@ export function useAnalysis(options) {
       abortControllerRef.current.abort();
       logger.info('Analysis aborted by user');
     }
+    // Clear any pending files when cancelling
+    pendingFilesRef.current = [];
     setIsAnalyzing(false);
     setCurrentAnalysisFile('');
     setAnalysisProgress({ current: 0, total: 0 });
@@ -635,18 +666,14 @@ export function useAnalysis(options) {
     actions.setPhaseData('currentAnalysisFile', '');
     actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
     addNotification('Analysis stopped', 'info', 2000);
-  }, [
-    setIsAnalyzing,
-    setCurrentAnalysisFile,
-    setAnalysisProgress,
-    actions,
-    addNotification,
-  ]);
+  }, [setIsAnalyzing, setCurrentAnalysisFile, setAnalysisProgress, actions, addNotification]);
 
   /**
    * Clear analysis queue
    */
   const clearAnalysisQueue = useCallback(() => {
+    // Clear any pending files
+    pendingFilesRef.current = [];
     setAnalysisResults([]);
     setFileStates({});
     setAnalysisProgress({ current: 0, total: 0 });
@@ -662,7 +689,7 @@ export function useAnalysis(options) {
     setAnalysisProgress,
     setCurrentAnalysisFile,
     actions,
-    addNotification,
+    addNotification
   ]);
 
   // Cleanup on unmount
@@ -703,7 +730,7 @@ export function useAnalysis(options) {
           `Resuming analysis of ${remaining.length} files...`,
           'info',
           3000,
-          'analysis-resume',
+          'analysis-resume'
         );
         if (analyzeFilesRef.current) {
           analyzeFilesRef.current(remaining);
@@ -712,13 +739,7 @@ export function useAnalysis(options) {
         resetAnalysisState('No remaining files');
       }
     }
-  }, [
-    isAnalyzing,
-    selectedFiles,
-    fileStates,
-    addNotification,
-    resetAnalysisState,
-  ]);
+  }, [isAnalyzing, selectedFiles, fileStates, addNotification, resetAnalysisState]);
 
   return {
     analyzeFiles,
@@ -726,7 +747,7 @@ export function useAnalysis(options) {
     cancelAnalysis,
     clearAnalysisQueue,
     resetAnalysisState,
-    generatePreviewName,
+    generatePreviewName
   };
 }
 

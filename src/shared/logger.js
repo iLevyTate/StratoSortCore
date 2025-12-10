@@ -8,7 +8,7 @@ const LOG_LEVELS = {
   WARN: 1,
   INFO: 2,
   DEBUG: 3,
-  TRACE: 4,
+  TRACE: 4
 };
 
 const LOG_LEVEL_NAMES = ['ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'];
@@ -65,7 +65,7 @@ class Logger {
           return {
             name: value.name,
             message: value.message,
-            stack: value.stack,
+            stack: value.stack
           };
         }
 
@@ -76,7 +76,7 @@ class Logger {
 
         return value;
       },
-      2,
+      2
     );
   }
 
@@ -142,6 +142,8 @@ class Logger {
         return console.error;
       case LOG_LEVELS.WARN:
         return console.warn;
+      case LOG_LEVELS.INFO:
+        return console.info;
       case LOG_LEVELS.DEBUG:
       case LOG_LEVELS.TRACE:
         return console.debug;
@@ -180,7 +182,7 @@ class Logger {
       filePath,
       model,
       duration: `${duration}ms`,
-      confidence: `${confidence}%`,
+      confidence: `${confidence}%`
     });
   }
 
@@ -191,7 +193,7 @@ class Logger {
   performance(operation, duration, metadata = {}) {
     this.debug(`Performance: ${operation}`, {
       duration: `${duration}ms`,
-      ...metadata,
+      ...metadata
     });
   }
 }
@@ -250,5 +252,5 @@ module.exports = {
   LOG_LEVEL_NAMES,
   // DUP-5: Factory functions
   createLogger,
-  getLogger,
+  getLogger
 };

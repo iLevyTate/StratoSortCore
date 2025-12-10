@@ -10,8 +10,7 @@
     "local-ai",
     "privacy",
     "file-organizer",
-    "stratosort",
-    "fibonacci-ui",
+    "elstratosort",
     "document-analysis"
   ],
   "homepage": "https://github.com/stratosort/stratosort#readme",
@@ -55,8 +54,8 @@
     "setup:ollama:check": "node scripts/setup-ollama.js --check",
     "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx",
     "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "prettier --write \"src/**/*.{js,jsx}\" \"test/**/*.js\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx}\" \"test/**/*.js\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
     "prepare": "husky install",
     "package": "rimraf dist && npm run build && electron-builder build --publish never",
     "start": "npm run build:dev && cross-env NODE_ENV=development electron . --enable-logging",
@@ -84,21 +83,8 @@
   },
   "browserslist": [],
   "overrides": {
-    "@jridgewell/gen-mapping": "^0.3.5"
-  },
-  "prettier": {
-    "singleQuote": true,
-    "overrides": [
-      {
-        "files": [
-          ".prettierrc",
-          ".eslintrc"
-        ],
-        "options": {
-          "parser": "json"
-        }
-      }
-    ]
+    "@jridgewell/gen-mapping": "^0.3.5",
+    "js-yaml": "^4.1.1"
   },
   "jest": {
     "projects": [
@@ -167,7 +153,7 @@
     "@types/uuid": "^11.0.0",
     "@types/webpack-bundle-analyzer": "^4.6.0",
     "@typescript-eslint/eslint-plugin": "^8.49.0",
-    "@typescript-eslint/parser": "^8.47.0",
+    "@typescript-eslint/parser": "^8.49.0",
     "assert": "^2.1.0",
     "autoprefixer": "^10.4.22",
     "babel-jest": "^30.2.0",

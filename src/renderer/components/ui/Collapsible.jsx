@@ -1,11 +1,4 @@
-import React, {
-  useEffect,
-  useId,
-  useState,
-  useCallback,
-  useMemo,
-  memo,
-} from 'react';
+import React, { useEffect, useId, useState, useCallback, useMemo, memo } from 'react';
 import PropTypes from 'prop-types';
 import { ChevronRight } from 'lucide-react';
 import { logger } from '../../../shared/logger';
@@ -20,7 +13,7 @@ const Collapsible = memo(function Collapsible({
   className = '',
   contentClassName = '',
   persistKey,
-  collapsedPreview = null,
+  collapsedPreview = null
 }) {
   const contentId = useId();
   const storageKey = persistKey ? `collapsible:${persistKey}` : null;
@@ -31,7 +24,7 @@ const Collapsible = memo(function Collapsible({
         if (saved === 'true' || saved === 'false') return saved === 'true';
       } catch (error) {
         logger.error('Failed to load collapsible state', {
-          error: error.message,
+          error: error.message
         });
       }
     }
@@ -48,7 +41,7 @@ const Collapsible = memo(function Collapsible({
           window.localStorage.setItem(storageKey, String(next));
         } catch (error) {
           logger.error('Failed to persist collapsible state', {
-            error: error.message,
+            error: error.message
           });
         }
       }
@@ -58,7 +51,7 @@ const Collapsible = memo(function Collapsible({
 
   // React to external expand/collapse broadcasts via storage events
   useEffect(() => {
-    if (!storageKey || typeof window === 'undefined') return;
+    if (!storageKey || typeof window === 'undefined') return undefined;
     const onStorage = (e) => {
       // If key provided and doesn't match ours, ignore. If generic event, still check our key.
       if (e && e.key && e.key !== storageKey) return;
@@ -69,7 +62,7 @@ const Collapsible = memo(function Collapsible({
         }
       } catch (error) {
         logger.error('Failed to sync collapsible state', {
-          error: error.message,
+          error: error.message
         });
       }
     };
@@ -82,22 +75,18 @@ const Collapsible = memo(function Collapsible({
     className && className.trim().length > 0 ? className.trim() : 'glass-panel';
   const sectionClasses = `${baseSectionClass} space-y-5`.trim();
   // Add padding to header to prevent content clipping from rounded corners
-  const headerPadding =
-    'px-[var(--panel-padding)] pt-[calc(var(--panel-padding)*0.75)]';
+  const headerPadding = 'px-[var(--panel-padding)] pt-[calc(var(--panel-padding)*0.75)]';
   // Content padding: use contentClassName if provided, otherwise add default padding
   // Check for any padding class (p-, px-, py-, pt-, pb-, pl-, pr-)
   const hasPadding =
-    contentClassName &&
-    /(p[xytblr]?-(\d+|\[.+\])|p-(\d+|\[.+\]))/.test(contentClassName);
+    contentClassName && /(p[xytblr]?-(\d+|\[.+\])|p-(\d+|\[.+\]))/.test(contentClassName);
   const defaultContentPadding = hasPadding
     ? ''
     : 'px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.9)]';
 
   return (
     <section className={`${sectionClasses} flex flex-col flex-shrink-0`}>
-      <div
-        className={`flex items-center justify-between gap-4 ${headerPadding} flex-shrink-0`}
-      >
+      <div className={`flex items-center justify-between gap-4 ${headerPadding} flex-shrink-0`}>
         <h3 className="heading-tertiary m-0">{title}</h3>
         <div className="flex items-center gap-3 text-xs text-system-gray-500">
           <button
@@ -118,9 +107,7 @@ const Collapsible = memo(function Collapsible({
             />
             {isOpen ? 'Collapse' : 'Expand'}
           </button>
-          {actions ? (
-            <div className="flex items-center gap-3">{actions}</div>
-          ) : null}
+          {actions ? <div className="flex items-center gap-3">{actions}</div> : null}
         </div>
       </div>
 
@@ -159,7 +146,7 @@ Collapsible.propTypes = {
   className: PropTypes.string,
   contentClassName: PropTypes.string,
   persistKey: PropTypes.string,
-  collapsedPreview: PropTypes.node,
+  collapsedPreview: PropTypes.node
 };
 
 export default Collapsible;

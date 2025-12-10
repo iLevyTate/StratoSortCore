@@ -8,30 +8,51 @@
  */
 
 import React from 'react';
+import PropTypes from 'prop-types';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 
 // Inline SVG Icons
 const RefreshCwIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+    />
   </svg>
 );
 
 const XCircleIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const CheckCircleIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const ClockIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
@@ -84,15 +105,13 @@ export function applyCaseConvention(text, convention) {
         .map((word, index) =>
           index === 0
             ? word.toLowerCase()
-            : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+            : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
         )
         .join('');
     case 'PascalCase':
       return text
         .split(/[^a-z0-9]+/i)
-        .map(
-          (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
-        )
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join('');
     case 'lowercase':
       return text.toLowerCase();
@@ -117,9 +136,7 @@ export function generatePreviewName(originalName, settings) {
   const { convention, separator, dateFormat, caseConvention } = settings;
 
   const baseName = originalName.replace(/\.[^/.]+$/, '');
-  const extension = originalName.includes('.')
-    ? `.${originalName.split('.').pop()}`
-    : '';
+  const extension = originalName.includes('.') ? `.${originalName.split('.').pop()}` : '';
   const today = new Date();
 
   let previewName = '';
@@ -154,15 +171,10 @@ export function generatePreviewName(originalName, settings) {
  */
 export function validateProgressState(progress) {
   if (!progress || typeof progress !== 'object') return false;
-  if (
-    typeof progress.current !== 'number' ||
-    typeof progress.total !== 'number'
-  )
-    return false;
+  if (typeof progress.current !== 'number' || typeof progress.total !== 'number') return false;
   if (progress.current < 0 || progress.total < 0) return false;
   if (progress.current > progress.total) return false;
-  if (!progress.lastActivity || typeof progress.lastActivity !== 'number')
-    return false;
+  if (!progress.lastActivity || typeof progress.lastActivity !== 'number') return false;
 
   // Check if progress is too old (more than 15 minutes)
   const timeSinceActivity = Date.now() - progress.lastActivity;
@@ -183,36 +195,45 @@ export function getFileStateDisplayInfo(state, hasAnalysis) {
       icon: <RefreshCwIcon className="w-4 h-4" />,
       label: 'Analyzing...',
       color: 'text-blue-600',
-      spinning: true,
+      spinning: true
     };
   if (state === 'error')
     return {
       icon: <XCircleIcon className="w-4 h-4" />,
       label: 'Error',
       color: 'text-red-600',
-      spinning: false,
+      spinning: false
     };
   if (hasAnalysis && state === 'ready')
     return {
       icon: <CheckCircleIcon className="w-4 h-4" />,
       label: 'Ready',
       color: 'text-green-600',
-      spinning: false,
+      spinning: false
     };
   if (state === 'pending')
     return {
       icon: <ClockIcon className="w-4 h-4" />,
       label: 'Pending',
       color: 'text-yellow-600',
-      spinning: false,
+      spinning: false
     };
   return {
     icon: <XCircleIcon className="w-4 h-4" />,
     label: 'Failed',
     color: 'text-red-600',
-    spinning: false,
+    spinning: false
   };
 }
+
+const iconPropTypes = {
+  className: PropTypes.string
+};
+
+RefreshCwIcon.propTypes = iconPropTypes;
+XCircleIcon.propTypes = iconPropTypes;
+CheckCircleIcon.propTypes = iconPropTypes;
+ClockIcon.propTypes = iconPropTypes;
 
 /**
  * Extract extension from filename
@@ -220,9 +241,7 @@ export function getFileStateDisplayInfo(state, hasAnalysis) {
  * @returns {string} Extension with dot prefix
  */
 export function extractExtension(fileName) {
-  return fileName.includes('.')
-    ? `.${fileName.split('.').pop().toLowerCase()}`
-    : '';
+  return fileName.includes('.') ? `.${fileName.split('.').pop().toLowerCase()}` : '';
 }
 
 /**

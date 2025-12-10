@@ -5,14 +5,12 @@ import { FolderOpen, CheckCircle, Clock, FileText } from 'lucide-react';
 function OrganizeProgress({
   isOrganizing,
   batchProgress = { current: 0, total: 0, currentFile: '' },
-  preview = [],
+  preview = []
 }) {
   const [startedAt, setStartedAt] = useState(null);
   const hasTotals = Number(batchProgress.total) > 0;
   const actualPercent = hasTotals
-    ? Math.round(
-        (Number(batchProgress.current) / Number(batchProgress.total)) * 100,
-      )
+    ? Math.round((Number(batchProgress.current) / Number(batchProgress.total)) * 100)
     : 0;
   const [visualPercent, setVisualPercent] = useState(0);
 
@@ -27,10 +25,10 @@ function OrganizeProgress({
 
   // Smooth, informative visual progress when real percent is unavailable
   useEffect(() => {
-    if (!isOrganizing) return;
+    if (!isOrganizing) return undefined;
     if (hasTotals && actualPercent > 0) {
       setVisualPercent((prev) => Math.max(prev, actualPercent));
-      return;
+      return undefined;
     }
     let rafId;
     let isMounted = true;
@@ -61,20 +59,12 @@ function OrganizeProgress({
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     return `${m}m ${s}s remaining`;
-  }, [
-    startedAt,
-    hasTotals,
-    actualPercent,
-    batchProgress.current,
-    batchProgress.total,
-  ]);
+  }, [startedAt, hasTotals, actualPercent, batchProgress]);
   // batchProgress props are read for computation; lint incorrectly flags object properties
 
   if (!isOrganizing) return null;
 
-  const percentToShow = hasTotals
-    ? Math.max(visualPercent, actualPercent)
-    : visualPercent;
+  const percentToShow = hasTotals ? Math.max(visualPercent, actualPercent) : visualPercent;
 
   return (
     // py-12 (3rem vertical padding) provides optimal visual breathing room for the organization
@@ -91,9 +81,7 @@ function OrganizeProgress({
         </div>
         <div>
           <div className="text-lg font-medium">Organizing Files...</div>
-          <div className="text-xs text-system-gray-600">
-            Do not close the app until completion
-          </div>
+          <div className="text-xs text-system-gray-600">Do not close the app until completion</div>
         </div>
       </div>
 
@@ -113,10 +101,7 @@ function OrganizeProgress({
         </div>
         {hasTotals ? (
           <div className="progress-enhanced">
-            <div
-              className="progress-bar-enhanced"
-              style={{ width: `${percentToShow}%` }}
-            />
+            <div className="progress-bar-enhanced" style={{ width: `${percentToShow}%` }} />
           </div>
         ) : (
           <div className="indeterminate-bar" />
@@ -138,8 +123,7 @@ function OrganizeProgress({
           <div className="space-y-5 max-h-40 overflow-y-auto pr-5">
             {preview.slice(0, 6).map((op, idx) => {
               const isCurrentFile =
-                batchProgress.currentFile &&
-                op.fileName === batchProgress.currentFile;
+                batchProgress.currentFile && op.fileName === batchProgress.currentFile;
               const isProcessed = hasTotals && idx < batchProgress.current;
 
               return (
@@ -157,16 +141,10 @@ function OrganizeProgress({
                     )}
                   </span>
                   <div className="min-w-0 flex-1 overflow-hidden">
-                    <div
-                      className="font-medium text-system-gray-900 truncate"
-                      title={op.fileName}
-                    >
+                    <div className="font-medium text-system-gray-900 truncate" title={op.fileName}>
                       {op.fileName}
                     </div>
-                    <div
-                      className="text-xs text-system-gray-600 truncate"
-                      title={op.destination}
-                    >
+                    <div className="text-xs text-system-gray-600 truncate" title={op.destination}>
                       → {op.destination}
                     </div>
                   </div>
@@ -190,14 +168,14 @@ OrganizeProgress.propTypes = {
   batchProgress: PropTypes.shape({
     current: PropTypes.number,
     total: PropTypes.number,
-    currentFile: PropTypes.string,
+    currentFile: PropTypes.string
   }),
   preview: PropTypes.arrayOf(
     PropTypes.shape({
       fileName: PropTypes.string,
-      destination: PropTypes.string,
-    }),
-  ),
+      destination: PropTypes.string
+    })
+  )
 };
 
 export default OrganizeProgress;

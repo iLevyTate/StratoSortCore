@@ -5,7 +5,7 @@ const {
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_ARCHIVE_EXTENSIONS,
   SUPPORTED_VIDEO_EXTENSIONS,
-  AI_DEFAULTS,
+  AI_DEFAULTS
 } = require('../../shared/constants');
 const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
@@ -31,14 +31,14 @@ const {
   extractTextFromKmz,
   extractPlainTextFromRtf,
   extractPlainTextFromXml,
-  extractPlainTextFromHtml,
+  extractPlainTextFromHtml
 } = require('./documentExtractors');
 const { analyzeTextWithOllama } = require('./documentLlm');
 const { normalizeAnalysisResult } = require('./utils');
 const {
   getIntelligentCategory,
   getIntelligentKeywords,
-  safeSuggestedName,
+  safeSuggestedName
 } = require('./fallbackUtils');
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const FolderMatchingService = require('../services/FolderMatchingService');
@@ -49,7 +49,7 @@ const { globalDeduplicator } = require('../utils/llmOptimization');
 const CACHE_CONFIG = {
   MAX_FILE_CACHE: 500, // Maximum number of files to cache in memory
   FALLBACK_CONFIDENCE: 65, // Confidence score for fallback analysis
-  DEFAULT_CONFIDENCE: 85, // Default confidence for successful analysis
+  DEFAULT_CONFIDENCE: 85 // Default confidence for successful analysis
 };
 const ANALYSIS_SIGNATURE_VERSION = 'v2';
 
@@ -90,38 +90,28 @@ logger.setContext('DocumentAnalysis');
  * @param {Object} options - Additional options (confidence, extractionMethod, error)
  * @returns {Object} Fallback analysis result
  */
-function createDocumentFallback(
-  fileName,
-  fileExtension,
-  purpose,
-  smartFolders,
-  options = {},
-) {
+function createDocumentFallback(fileName, fileExtension, purpose, smartFolders, options = {}) {
   const {
     confidence = CACHE_CONFIG.FALLBACK_CONFIDENCE,
     extractionMethod = 'filename_fallback',
-    error = null,
+    error = null
   } = options;
 
-  const intelligentCategory = getIntelligentCategory(
-    fileName,
-    fileExtension,
-    smartFolders,
-  );
+  const intelligentCategory = getIntelligentCategory(fileName, fileExtension, smartFolders);
   const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
   const safeCategory = intelligentCategory || 'document';
 
   const result = {
     purpose:
       purpose ||
-      `${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document`,
+      `fallback analysis for ${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document`,
     project: fileName.replace(fileExtension, ''),
     category: safeCategory,
     date: new Date().toISOString().split('T')[0],
     keywords: intelligentKeywords || [],
     confidence,
     suggestedName: safeSuggestedName(fileName, fileExtension),
-    extractionMethod,
+    extractionMethod
   };
 
   if (error) {
@@ -144,12 +134,10 @@ async function applyDocumentFolderMatching(
   filePath,
   fileName,
   extractedText,
-  smartFolders,
+  smartFolders
 ) {
   if (!chromaDbService) {
-    logger.warn(
-      '[DocumentAnalysis] ChromaDB service not available, skipping folder matching',
-    );
+    logger.warn('[DocumentAnalysis] ChromaDB service not available, skipping folder matching');
     return;
   }
 
@@ -162,7 +150,7 @@ async function applyDocumentFolderMatching(
 
   if (smartFolders && smartFolders.length > 0) {
     logger.debug('[DocumentAnalysis] Upserting folder embeddings', {
-      folderCount: smartFolders.length,
+      folderCount: smartFolders.length
     });
     await folderMatcher.batchUpsertFolders(smartFolders);
   }
@@ -172,19 +160,17 @@ async function applyDocumentFolderMatching(
     analysis.project,
     analysis.purpose,
     (analysis.keywords || []).join(' '),
-    extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX),
+    extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX)
   ]
     .filter(Boolean)
     .join('\n');
 
   logger.debug('[DocumentAnalysis] Generating embedding for folder matching', {
     fileId,
-    summaryLength: summaryForEmbedding.length,
+    summaryLength: summaryForEmbedding.length
   });
 
-  const { vector, model } = await folderMatcher.embedText(
-    summaryForEmbedding || '',
-  );
+  const { vector, model } = await folderMatcher.embedText(summaryForEmbedding || '');
   const candidates = await folderMatcher.matchVectorToFolders(vector, 5);
 
   embeddingQueue.enqueue({
@@ -192,7 +178,7 @@ async function applyDocumentFolderMatching(
     vector,
     model,
     meta: { path: filePath, name: fileName },
-    updatedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   });
 
   if (Array.isArray(candidates) && candidates.length > 0) {
@@ -200,19 +186,16 @@ async function applyDocumentFolderMatching(
       fileId,
       candidateCount: candidates.length,
       topScore: candidates[0]?.score,
-      topFolder: candidates[0]?.name,
+      topFolder: candidates[0]?.name
     });
 
     const top = candidates[0];
     if (top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
-      logger.info(
-        '[DocumentAnalysis] Refining category based on folder match',
-        {
-          originalCategory: analysis.category,
-          newCategory: top.name,
-          score: top.score,
-        },
-      );
+      logger.info('[DocumentAnalysis] Refining category based on folder match', {
+        originalCategory: analysis.category,
+        newCategory: top.name,
+        score: top.score
+      });
       analysis.category = top.name;
       analysis.suggestedFolder = top.name;
       analysis.destinationFolder = top.path || top.name;
@@ -242,17 +225,12 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
     : '';
 
   // Determine model in advance for cache signatures and deduplication
-  const defaultTextModel =
-    AppConfig?.ai?.textAnalysis?.defaultModel || AI_DEFAULTS.TEXT.MODEL;
+  const defaultTextModel = AppConfig?.ai?.textAnalysis?.defaultModel || AI_DEFAULTS.TEXT.MODEL;
 
   let modelName = defaultTextModel;
   try {
     const cfg = await loadOllamaConfig();
-    modelName =
-      getOllamaModel() ||
-      cfg.selectedTextModel ||
-      cfg.selectedModel ||
-      defaultTextModel;
+    modelName = getOllamaModel() || cfg.selectedTextModel || cfg.selectedModel || defaultTextModel;
   } catch {
     modelName = defaultTextModel;
   }
@@ -260,11 +238,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   // FAST SEMANTIC LABELING (Short-circuit)
   // Skip AI analysis for video files and use extension-based fallback immediately
   if ((SUPPORTED_VIDEO_EXTENSIONS || []).includes(fileExtension)) {
-    const intelligentCategory = getIntelligentCategory(
-      fileName,
-      fileExtension,
-      smartFolders,
-    );
+    const intelligentCategory = getIntelligentCategory(fileName, fileExtension, smartFolders);
     const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
     const safeCategory = intelligentCategory || 'video';
 
@@ -276,7 +250,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       keywords: intelligentKeywords,
       confidence: 80, // High confidence for known types
       suggestedName: safeSuggestedName(fileName, fileExtension),
-      extractionMethod: 'extension_short_circuit',
+      extractionMethod: 'extension_short_circuit'
     };
   }
 
@@ -284,20 +258,13 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   try {
     const connectionCheck = await modelVerifier.checkOllamaConnection();
     if (!connectionCheck.connected) {
-      logger.warn(
-        `Ollama unavailable (${connectionCheck.error}). Using filename-based analysis.`,
-      );
-      return createDocumentFallback(
-        fileName,
-        fileExtension,
-        null,
-        smartFolders,
-      );
+      logger.warn(`Ollama unavailable (${connectionCheck.error}). Using filename-based analysis.`);
+      return createDocumentFallback(fileName, fileExtension, null, smartFolders);
     }
   } catch (error) {
     logger.error('Pre-flight verification failed:', error);
     return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
-      confidence: 65,
+      confidence: 65
     });
   }
 
@@ -315,7 +282,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
     // Non-fatal: proceed without cache if stats fail
     logger.debug('Could not stat file for caching, proceeding with analysis', {
       path: filePath,
-      error: statError.message,
+      error: statError.message
     });
   }
 
@@ -334,7 +301,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       } catch (pdfError) {
         logger.error(`Error parsing PDF`, {
           fileName,
-          error: pdfError.message,
+          error: pdfError.message
         });
         // Attempt OCR fallback before giving up
         try {
@@ -344,15 +311,13 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           } else {
             throw new FileProcessingError('PDF_PROCESSING_FAILURE', fileName, {
               originalError: pdfError.message,
-              suggestion:
-                'PDF may be corrupted, password-protected, or image-based',
+              suggestion: 'PDF may be corrupted, password-protected, or image-based'
             });
           }
         } catch (ocrErr) {
           throw new FileProcessingError('PDF_PROCESSING_FAILURE', fileName, {
             originalError: pdfError.message,
-            suggestion:
-              'PDF may be corrupted, password-protected, or image-based',
+            suggestion: 'PDF may be corrupted, password-protected, or image-based'
           });
         }
       }
@@ -380,22 +345,22 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
 
         if (!extractedText || extractedText.trim().length === 0) {
           throw new FileProcessingError('FILE_EMPTY', fileName, {
-            suggestion: 'File appears to be empty or unreadable',
+            suggestion: 'File appears to be empty or unreadable'
           });
         }
 
         logger.debug(`Extracted characters from text file`, {
           fileName,
-          length: extractedText.length,
+          length: extractedText.length
         });
       } catch (textError) {
         logger.error(`Error reading text file`, {
           fileName,
-          error: textError.message,
+          error: textError.message
         });
         throw new FileProcessingError('DOCUMENT_ANALYSIS_FAILURE', fileName, {
           originalError: textError.message,
-          suggestion: 'File may be corrupted or access denied',
+          suggestion: 'File may be corrupted or access denied'
         });
       }
     } else if (SUPPORTED_DOCUMENT_EXTENSIONS.includes(fileExtension)) {
@@ -406,11 +371,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         if (fileExtension === '.pptx') return extractTextFromPptx(filePath);
         if (fileExtension === '.xls') return extractTextFromXls(filePath);
         if (fileExtension === '.ppt') return extractTextFromPpt(filePath);
-        if (
-          fileExtension === '.odt' ||
-          fileExtension === '.ods' ||
-          fileExtension === '.odp'
-        )
+        if (fileExtension === '.odt' || fileExtension === '.ods' || fileExtension === '.odp')
           return extractTextFromOdfZip(filePath);
         if (fileExtension === '.epub') return extractTextFromEpub(filePath);
         if (fileExtension === '.eml') return extractTextFromEml(filePath);
@@ -423,7 +384,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       const logExtraction = () =>
         logger.info(`Extracting content from document`, {
           fileName,
-          fileExtension,
+          fileExtension
         });
 
       try {
@@ -432,7 +393,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
 
         logger.debug(`Extracted characters from office document`, {
           fileName,
-          length: extractedText.length,
+          length: extractedText.length
         });
       } catch (officeError) {
         // Attempt a single retry after a brief delay to handle transient locks/streams
@@ -441,7 +402,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           fileName,
           fileExtension,
           error: officeError?.message,
-          code: officeError?.code,
+          code: officeError?.code
         });
 
         try {
@@ -450,7 +411,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           extractedText = await extractOfficeContent();
           logger.info(`Office extraction recovered after retry`, {
             fileName,
-            fileExtension,
+            fileExtension
           });
         } catch (retryError) {
           finalError = retryError || officeError;
@@ -459,9 +420,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         // If still no extracted text, fall back to filename analysis
         if (!extractedText) {
           const errorMessage =
-            finalError?.message ||
-            officeError?.message ||
-            'Unknown extraction error';
+            finalError?.message || officeError?.message || 'Unknown extraction error';
           const errorCode = finalError?.code || 'UNKNOWN_ERROR';
           const errorDetails = {
             fileName,
@@ -469,43 +428,29 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
             error: errorMessage,
             errorCode,
             errorStack: finalError?.stack || officeError?.stack,
-            errorType:
-              finalError?.constructor?.name ||
-              officeError?.constructor?.name ||
-              'Error',
+            errorType: finalError?.constructor?.name || officeError?.constructor?.name || 'Error'
           };
 
           if (finalError?.suggestion || officeError?.suggestion) {
-            errorDetails.suggestion =
-              finalError?.suggestion || officeError?.suggestion;
+            errorDetails.suggestion = finalError?.suggestion || officeError?.suggestion;
           }
           if (finalError?.originalError || officeError?.originalError) {
-            errorDetails.originalError =
-              finalError?.originalError || officeError?.originalError;
+            errorDetails.originalError = finalError?.originalError || officeError?.originalError;
           }
 
           logger.error(`Error extracting office content`, errorDetails);
 
           // Fall back to intelligent filename-based analysis
-          const intelligentCategory = getIntelligentCategory(
-            fileName,
-            fileExtension,
-            smartFolders,
-          );
-          const intelligentKeywords = getIntelligentKeywords(
-            fileName,
-            fileExtension,
-          );
+          const intelligentCategory = getIntelligentCategory(fileName, fileExtension, smartFolders);
+          const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
 
           let purpose = 'Office document (content extraction failed)';
           const confidence = 70;
 
           if (fileExtension === '.docx') {
-            purpose =
-              'Word document - content extraction failed, using filename analysis';
+            purpose = 'Word document - content extraction failed, using filename analysis';
           } else if (fileExtension === '.xlsx') {
-            purpose =
-              'Excel spreadsheet - content extraction failed, using filename analysis';
+            purpose = 'Excel spreadsheet - content extraction failed, using filename analysis';
           } else if (fileExtension === '.pptx') {
             purpose =
               'PowerPoint presentation - content extraction failed, using filename analysis';
@@ -521,7 +466,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
             suggestedName: safeSuggestedName(fileName, fileExtension),
             extractionError: errorMessage,
             extractionErrorCode: errorCode,
-            extractionMethod: 'filename_fallback',
+            extractionMethod: 'filename_fallback'
           };
         }
       }
@@ -540,31 +485,22 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         keywords,
         confidence: 70,
         suggestedName: safeSuggestedName(fileName, fileExtension),
-        extractionMethod: 'archive',
+        extractionMethod: 'archive'
       };
     } else {
       // No content parser available - use filename-based fallback
       logger.warn(`[FILENAME-FALLBACK] No content parser`, {
         extension: fileExtension,
-        fileName,
+        fileName
       });
-      return createDocumentFallback(
-        fileName,
-        fileExtension,
-        null,
-        smartFolders,
-        {
-          confidence: 75,
-          extractionMethod: 'filename',
-        },
-      );
+      return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
+        confidence: 75,
+        extractionMethod: 'filename'
+      });
     }
 
     // If PDF had no extractable text, attempt OCR on a rasterized page
-    if (
-      fileExtension === '.pdf' &&
-      (!extractedText || extractedText.trim().length === 0)
-    ) {
+    if (fileExtension === '.pdf' && (!extractedText || extractedText.trim().length === 0)) {
       const ocrText = await ocrPdfIfNeeded(filePath);
       if (ocrText) extractedText = ocrText;
     }
@@ -572,10 +508,10 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
     if (extractedText && extractedText.trim().length > 0) {
       logger.info(`[CONTENT-ANALYSIS] Processing`, {
         fileName,
-        extractedChars: extractedText.length,
+        extractedChars: extractedText.length
       });
       logger.debug(`[CONTENT-PREVIEW]`, {
-        preview: extractedText.substring(0, TRUNCATION.PREVIEW_MEDIUM),
+        preview: extractedText.substring(0, TRUNCATION.PREVIEW_MEDIUM)
       });
 
       // Backend Caching & Deduplication:
@@ -591,14 +527,11 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         fileName,
         task: 'analyzeTextWithOllama',
         model: modelName,
-        folders: Array.isArray(smartFolders)
-          ? smartFolders.map((f) => f?.name || '').join(',')
-          : '',
+        folders: Array.isArray(smartFolders) ? smartFolders.map((f) => f?.name || '').join(',') : ''
       });
 
-      const analysis = await globalDeduplicator.deduplicate(
-        deduplicationKey,
-        () => analyzeTextWithOllama(extractedText, fileName, smartFolders),
+      const analysis = await globalDeduplicator.deduplicate(deduplicationKey, () =>
+        analyzeTextWithOllama(extractedText, fileName, smartFolders)
       );
 
       // Semantic folder refinement using embeddings (delegated to helper)
@@ -608,12 +541,12 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           filePath,
           fileName,
           extractedText,
-          smartFolders,
+          smartFolders
         );
       } catch (e) {
         logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
           error: e.message,
-          filePath,
+          filePath
         });
       }
 
@@ -621,15 +554,15 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         logger.info(`[AI-ANALYSIS-SUCCESS]`, {
           fileName,
           category: analysis.category,
-          keywords: analysis.keywords,
+          keywords: analysis.keywords
         });
         const normalized = normalizeAnalysisResult(
           {
             ...analysis,
             contentLength: extractedText.length,
-            extractionMethod: 'content',
+            extractionMethod: 'content'
           },
-          { category: 'document', keywords: [], confidence: 0 },
+          { category: 'document', keywords: [], confidence: 0 }
         );
         // Use pre-computed signature if available, otherwise skip caching
         if (fileSignature) {
@@ -638,10 +571,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         return normalized;
       }
 
-      logger.warn(
-        `[AI-ANALYSIS-FAILED] Content extracted but AI analysis failed`,
-        { fileName },
-      );
+      logger.warn(`[AI-ANALYSIS-FAILED] Content extracted but AI analysis failed`, { fileName });
       return normalizeAnalysisResult(
         {
           rawText: extractedText.substring(0, 500),
@@ -653,17 +583,16 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           date: new Date().toISOString().split('T')[0],
           category: 'document',
           confidence: 60,
-          error:
-            analysis?.error || 'Ollama analysis failed for document content.',
+          error: analysis?.error || 'Ollama analysis failed for document content.',
           contentLength: extractedText.length,
-          extractionMethod: 'content',
+          extractionMethod: 'content'
         },
-        { category: 'document', keywords: [], confidence: 60 },
+        { category: 'document', keywords: [], confidence: 60 }
       );
     }
 
     logger.error(`[EXTRACTION-FAILED] Could not extract any text content`, {
-      fileName,
+      fileName
     });
     const result = {
       error: 'Could not extract text or analyze document.',
@@ -672,7 +601,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       date: new Date().toISOString().split('T')[0],
       keywords: [],
       confidence: 50,
-      extractionMethod: 'failed',
+      extractionMethod: 'failed'
     };
     // Use pre-computed signature if available, otherwise skip caching
     if (fileSignature) {
@@ -682,10 +611,10 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   } catch (error) {
     logger.error(`Error processing document`, {
       path: filePath,
-      error: error.message,
+      error: error.message
     });
     return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
-      confidence: 60,
+      confidence: 60
     });
   }
 }
@@ -724,8 +653,7 @@ function deriveKeywordsFromFilenames(names) {
     const b = parts.length > 0 ? parts[parts.length - 1] : '';
     if (!b) return; // Skip empty filenames
     const extParts = b.split('.');
-    const e =
-      extParts.length > 1 ? extParts[extParts.length - 1].toLowerCase() : '';
+    const e = extParts.length > 1 ? extParts[extParts.length - 1].toLowerCase() : '';
     if (e) exts[e] = (exts[e] || 0) + 1;
     b.replace(/[^a-zA-Z0-9]+/g, ' ')
       .toLowerCase()
@@ -752,5 +680,5 @@ async function flushAllEmbeddings() {
 
 module.exports = {
   analyzeDocumentFile,
-  flushAllEmbeddings,
+  flushAllEmbeddings
 };

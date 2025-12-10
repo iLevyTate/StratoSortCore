@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import { StatusBadge } from '../ui';
 
 // FIX: Implement virtualization for large processed file lists to prevent UI lag
@@ -22,11 +22,7 @@ const getListHeight = (itemCount, viewportHeight) => {
 /**
  * Individual processed file row component
  */
-const ProcessedFileRow = memo(function ProcessedFileRow({
-  index,
-  style,
-  data,
-}) {
+const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) {
   const { files } = data;
   const file = files[index];
 
@@ -42,14 +38,11 @@ const ProcessedFileRow = memo(function ProcessedFileRow({
               {file.originalName} -&gt; {file.newName}
             </div>
             <div className="text-xs text-system-gray-500">
-              Moved to {file.smartFolder} |{' '}
-              {new Date(file.organizedAt).toLocaleDateString()}
+              Moved to {file.smartFolder} | {new Date(file.organizedAt).toLocaleDateString()}
             </div>
           </div>
         </div>
-        <div className="text-xs text-stratosort-success font-semibold">
-          Organized
-        </div>
+        <div className="text-xs text-stratosort-success font-semibold">Organized</div>
       </div>
     </div>
   );
@@ -59,8 +52,8 @@ ProcessedFileRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
   data: PropTypes.shape({
-    files: PropTypes.array.isRequired,
-  }).isRequired,
+    files: PropTypes.array.isRequired
+  }).isRequired
 };
 
 /**
@@ -73,15 +66,14 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
   // Memoize item data to prevent unnecessary re-renders
   const itemData = useMemo(
     () => ({
-      files,
+      files
     }),
-    [files],
+    [files]
   );
 
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
     return getListHeight(files.length, viewportHeight);
   }, [files.length]);
 
@@ -135,14 +127,11 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
                 {file.originalName} -&gt; {file.newName}
               </div>
               <div className="text-xs text-system-gray-500">
-                Moved to {file.smartFolder} |{' '}
-                {new Date(file.organizedAt).toLocaleDateString()}
+                Moved to {file.smartFolder} | {new Date(file.organizedAt).toLocaleDateString()}
               </div>
             </div>
           </div>
-          <div className="text-xs text-stratosort-success font-semibold">
-            Organized
-          </div>
+          <div className="text-xs text-stratosort-success font-semibold">Organized</div>
         </div>
       ))}
     </div>
@@ -156,10 +145,10 @@ VirtualizedProcessedFiles.propTypes = {
       originalName: PropTypes.string,
       newName: PropTypes.string,
       smartFolder: PropTypes.string,
-      organizedAt: PropTypes.string,
-    }),
+      organizedAt: PropTypes.string
+    })
   ).isRequired,
-  isLoading: PropTypes.bool,
+  isLoading: PropTypes.bool
 };
 
 export default memo(VirtualizedProcessedFiles);

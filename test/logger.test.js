@@ -189,7 +189,7 @@ describe('Logger', () => {
       log.setLevel(LOG_LEVELS.INFO);
       log.info('Info message');
 
-      expect(console.log).toHaveBeenCalled();
+      expect(console.info).toHaveBeenCalled();
     });
 
     test('debug logs at DEBUG level', () => {
@@ -213,7 +213,7 @@ describe('Logger', () => {
       log.setLevel(LOG_LEVELS.ERROR);
       log.info('Info message');
 
-      expect(console.log).not.toHaveBeenCalled();
+      expect(console.info).not.toHaveBeenCalled();
     });
   });
 
@@ -223,7 +223,7 @@ describe('Logger', () => {
       log.setLevel(LOG_LEVELS.INFO);
       log.fileOperation('move', '/path/to/file.txt', 'success');
 
-      expect(console.log).toHaveBeenCalled();
+      expect(console.info).toHaveBeenCalled();
     });
 
     test('aiAnalysis logs AI analysis', () => {
@@ -231,7 +231,7 @@ describe('Logger', () => {
       log.setLevel(LOG_LEVELS.INFO);
       log.aiAnalysis('/path/to/file.txt', 'llama3', 1500, 85);
 
-      expect(console.log).toHaveBeenCalled();
+      expect(console.info).toHaveBeenCalled();
     });
 
     test('phaseTransition logs phase transition', () => {
@@ -239,7 +239,7 @@ describe('Logger', () => {
       log.setLevel(LOG_LEVELS.INFO);
       log.phaseTransition('discover', 'organize', { fileCount: 10 });
 
-      expect(console.log).toHaveBeenCalled();
+      expect(console.info).toHaveBeenCalled();
     });
 
     test('performance logs performance metrics', () => {

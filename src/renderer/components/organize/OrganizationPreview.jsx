@@ -2,27 +2,18 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Card, Button } from '../ui';
 
-function OrganizationPreview({
-  files,
-  strategy,
-  suggestions,
-  onConfirm,
-  onCancel,
-}) {
+function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel }) {
   const [previewTree, setPreviewTree] = useState({});
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [stats, setStats] = useState({
     totalFiles: 0,
     totalFolders: 0,
     movedFiles: 0,
-    renamedFiles: 0,
+    renamedFiles: 0
   });
 
   useEffect(() => {
-    if (!files || !suggestions) return;
-
-    // FIX: Track mounted state to prevent state updates after unmount
-    let isMounted = true;
+    if (!files || !suggestions) return undefined;
 
     // Build preview tree structure
     const tree = {};
@@ -43,13 +34,9 @@ function OrganizationPreview({
 
       // Ensure the original file extension is preserved
       const originalExt =
-        file.name.lastIndexOf('.') > 0
-          ? file.name.slice(file.name.lastIndexOf('.'))
-          : '';
+        file.name.lastIndexOf('.') > 0 ? file.name.slice(file.name.lastIndexOf('.')) : '';
       const currentExt =
-        newName.lastIndexOf('.') > 0
-          ? newName.slice(newName.lastIndexOf('.'))
-          : '';
+        newName.lastIndexOf('.') > 0 ? newName.slice(newName.lastIndexOf('.')) : '';
       if (originalExt && !currentExt) {
         newName = newName + originalExt;
       }
@@ -59,7 +46,7 @@ function OrganizationPreview({
           name: suggestion.folder,
           path: folderPath,
           files: [],
-          confidence: 0,
+          confidence: 0
         };
         folderCount.add(folderPath);
       }
@@ -68,7 +55,7 @@ function OrganizationPreview({
         original: file,
         newName,
         renamed: newName !== file.name,
-        moved: true, // Assuming all files in preview are being moved
+        moved: true // Assuming all files in preview are being moved
       });
 
       tree[folderPath].confidence =
@@ -78,15 +65,12 @@ function OrganizationPreview({
       if (newName !== file.name) renamedCount++;
     });
 
-    // FIX: Check mounted state before setting state
-    if (!isMounted) return;
-
     setPreviewTree(tree);
     setStats({
       totalFiles: files.length,
       totalFolders: folderCount.size,
       movedFiles: movedCount,
-      renamedFiles: renamedCount,
+      renamedFiles: renamedCount
     });
 
     // Auto-expand folders with high confidence
@@ -98,10 +82,7 @@ function OrganizationPreview({
     });
     setExpandedFolders(toExpand);
 
-    // FIX: Cleanup function to mark as unmounted
-    return () => {
-      isMounted = false;
-    };
+    return undefined;
   }, [files, suggestions]);
 
   const normalizeConfidenceFraction = (value) => {
@@ -121,10 +102,8 @@ function OrganizationPreview({
   };
 
   const getConfidenceColor = (confidence) => {
-    if (confidence >= 0.8)
-      return 'text-stratosort-success bg-stratosort-success/10';
-    if (confidence >= 0.5)
-      return 'text-stratosort-warning bg-stratosort-warning/10';
+    if (confidence >= 0.8) return 'text-stratosort-success bg-stratosort-success/10';
+    if (confidence >= 0.5) return 'text-stratosort-warning bg-stratosort-warning/10';
     return 'text-stratosort-danger bg-stratosort-danger/10';
   };
 
@@ -138,15 +117,10 @@ function OrganizationPreview({
               <h3 className="font-medium text-system-gray-900">
                 Organization Preview: {strategy.name}
               </h3>
-              <p className="text-sm text-system-gray-600 mt-1">
-                {strategy.description}
-              </p>
+              <p className="text-sm text-system-gray-600 mt-1">{strategy.description}</p>
             </div>
             <div className="text-sm text-system-gray-500">
-              Pattern:{' '}
-              <code className="bg-white px-2 py-1 rounded-md">
-                {strategy.pattern}
-              </code>
+              Pattern: <code className="bg-white px-2 py-1 rounded-md">{strategy.pattern}</code>
             </div>
           </div>
         </Card>
@@ -155,36 +129,26 @@ function OrganizationPreview({
       {/* Statistics */}
       <div className="grid grid-cols-4 gap-4">
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-stratosort-blue">
-            {stats.totalFiles}
-          </div>
+          <div className="text-2xl font-semibold text-stratosort-blue">{stats.totalFiles}</div>
           <div className="text-xs text-system-gray-600">Total Files</div>
         </Card>
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-stratosort-success">
-            {stats.totalFolders}
-          </div>
+          <div className="text-2xl font-semibold text-stratosort-success">{stats.totalFolders}</div>
           <div className="text-xs text-system-gray-600">Target Folders</div>
         </Card>
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-stratosort-blue">
-            {stats.movedFiles}
-          </div>
+          <div className="text-2xl font-semibold text-stratosort-blue">{stats.movedFiles}</div>
           <div className="text-xs text-system-gray-600">Files to Move</div>
         </Card>
         <Card className="p-3 text-center">
-          <div className="text-2xl font-semibold text-stratosort-indigo">
-            {stats.renamedFiles}
-          </div>
+          <div className="text-2xl font-semibold text-stratosort-indigo">{stats.renamedFiles}</div>
           <div className="text-xs text-system-gray-600">Files to Rename</div>
         </Card>
       </div>
 
       {/* Preview Tree */}
       <Card className="p-4">
-        <h4 className="font-medium text-system-gray-900 mb-3">
-          Preview of Organization Structure
-        </h4>
+        <h4 className="font-medium text-system-gray-900 mb-3">Preview of Organization Structure</h4>
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {Object.entries(previewTree).map(([folderPath, folder]) => (
             <div key={folderPath} className="border rounded-lg overflow-hidden">
@@ -209,17 +173,12 @@ function OrganizationPreview({
                 <div className="flex items-center gap-2">
                   <span
                     className={`text-xs px-2 py-1 rounded-md ${getConfidenceColor(
-                      normalizeConfidenceFraction(folder.confidence),
+                      normalizeConfidenceFraction(folder.confidence)
                     )}`}
                   >
-                    {Math.round(
-                      normalizeConfidenceFraction(folder.confidence) * 100,
-                    )}
-                    % match
+                    {Math.round(normalizeConfidenceFraction(folder.confidence) * 100)}% match
                   </span>
-                  <span className="text-xs text-system-gray-500">
-                    {folderPath}
-                  </span>
+                  <span className="text-xs text-system-gray-500">{folderPath}</span>
                 </div>
               </div>
 
@@ -229,11 +188,7 @@ function OrganizationPreview({
                     {/* FIX: Use stable file path as key instead of array index */}
                     {folder.files.map((fileInfo) => (
                       <div
-                        key={
-                          fileInfo.original?.path ||
-                          fileInfo.original?.name ||
-                          fileInfo.newName
-                        }
+                        key={fileInfo.original?.path || fileInfo.original?.name || fileInfo.newName}
                         className="flex items-center justify-between text-sm py-1"
                       >
                         <div className="flex items-center gap-2">
@@ -278,9 +233,7 @@ function OrganizationPreview({
 
       {/* Visual Tree Diagram */}
       <Card className="p-4 bg-system-gray-50">
-        <h4 className="font-medium text-system-gray-900 mb-3">
-          Folder Structure Visualization
-        </h4>
+        <h4 className="font-medium text-system-gray-900 mb-3">Folder Structure Visualization</h4>
         <div className="font-mono text-sm">
           <div className="text-system-gray-700">📁 Documents</div>
           {Object.entries(previewTree).map(([folderPath, folder]) => {
@@ -290,9 +243,7 @@ function OrganizationPreview({
               <div key={folderPath}>
                 <div className="text-system-gray-600">
                   {indent}└─ 📁 {folder.name}
-                  <span className="text-xs text-system-gray-500 ml-2">
-                    ({folder.files.length})
-                  </span>
+                  <span className="text-xs text-system-gray-500 ml-2">({folder.files.length})</span>
                 </div>
               </div>
             );
@@ -302,18 +253,12 @@ function OrganizationPreview({
 
       {/* Comparison View */}
       <Card className="p-4">
-        <h4 className="font-medium text-system-gray-900 mb-3">
-          Before & After Comparison
-        </h4>
+        <h4 className="font-medium text-system-gray-900 mb-3">Before & After Comparison</h4>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <h5 className="text-sm font-medium text-system-gray-700 mb-2">
-              Current State
-            </h5>
+            <h5 className="text-sm font-medium text-system-gray-700 mb-2">Current State</h5>
             <div className="bg-stratosort-danger/5 border border-stratosort-danger/20 rounded-md p-3 text-sm">
-              <div className="text-stratosort-danger font-medium mb-2">
-                ❌ Disorganized
-              </div>
+              <div className="text-stratosort-danger font-medium mb-2">❌ Disorganized</div>
               <ul className="space-y-1 text-stratosort-danger/80">
                 <li>• All files in one location</li>
                 <li>• No clear categorization</li>
@@ -323,13 +268,9 @@ function OrganizationPreview({
             </div>
           </div>
           <div>
-            <h5 className="text-sm font-medium text-system-gray-700 mb-2">
-              After Organization
-            </h5>
+            <h5 className="text-sm font-medium text-system-gray-700 mb-2">After Organization</h5>
             <div className="bg-stratosort-success/5 border border-stratosort-success/20 rounded-md p-3 text-sm">
-              <div className="text-stratosort-success font-medium mb-2">
-                ✅ Well-Organized
-              </div>
+              <div className="text-stratosort-success font-medium mb-2">✅ Well-Organized</div>
               <ul className="space-y-1 text-stratosort-success/80">
                 <li>• Files sorted into {stats.totalFolders} folders</li>
                 <li>• Clear categorization by {strategy?.name || 'purpose'}</li>
@@ -367,17 +308,17 @@ const suggestionShape = PropTypes.shape({
   folder: PropTypes.string,
   path: PropTypes.string,
   confidence: PropTypes.number,
-  suggestedName: PropTypes.string,
+  suggestedName: PropTypes.string
 });
 
 const fileShape = PropTypes.shape({
-  name: PropTypes.string.isRequired,
+  name: PropTypes.string.isRequired
 });
 
 const strategyShape = PropTypes.shape({
   name: PropTypes.string,
   description: PropTypes.string,
-  pattern: PropTypes.string,
+  pattern: PropTypes.string
 });
 
 OrganizationPreview.propTypes = {
@@ -387,11 +328,11 @@ OrganizationPreview.propTypes = {
     PropTypes.arrayOf(suggestionShape),
     PropTypes.shape({
       primary: suggestionShape,
-      alternatives: PropTypes.arrayOf(suggestionShape),
-    }),
+      alternatives: PropTypes.arrayOf(suggestionShape)
+    })
   ]),
   onConfirm: PropTypes.func,
-  onCancel: PropTypes.func,
+  onCancel: PropTypes.func
 };
 
 export default OrganizationPreview;

@@ -35,14 +35,11 @@ function buildDefaultChromaConfig() {
       const parsed = new URL(url);
       protocol = parsed.protocol?.replace(':', '') || DEFAULT_PROTOCOL;
       host = parsed.hostname || DEFAULT_HOST;
-      port =
-        Number(parsed.port) ||
-        (protocol === 'https' ? 443 : 80) ||
-        DEFAULT_PORT;
+      port = Number(parsed.port) || (protocol === 'https' ? 443 : 80) || DEFAULT_PORT;
     } catch (err) {
       logger.warn('[STARTUP] Invalid CHROMA_SERVER_URL, using defaults', {
         url,
-        message: err?.message,
+        message: err?.message
       });
     }
   } else {
@@ -58,7 +55,7 @@ function buildDefaultChromaConfig() {
     port,
     protocol,
     url: `${protocol}://${host}:${port}`,
-    dbPath,
+    dbPath
   };
 }
 
@@ -77,7 +74,7 @@ async function checkChromaDBHealth() {
     for (const endpoint of endpoints) {
       try {
         const response = await axios.get(`${baseUrl}${endpoint}`, {
-          timeout: 2000,
+          timeout: 2000
         });
         if (response.status === 200) {
           return true;
@@ -113,27 +110,21 @@ async function isChromaDBRunning() {
             operation: `ChromaDB health check ${endpoint}`,
             maxRetries: 2,
             initialDelay: 500,
-            maxDelay: 2000,
-          },
+            maxDelay: 2000
+          }
         );
         if (response.status === 200) {
           if (response.data && typeof response.data === 'object') {
             if (response.data.error) {
-              logger.debug(
-                `[STARTUP] ChromaDB ${endpoint} returned error: ${response.data.error}`,
-              );
+              logger.debug(`[STARTUP] ChromaDB ${endpoint} returned error: ${response.data.error}`);
               continue;
             }
           }
-          logger.info(
-            `[STARTUP] ChromaDB heartbeat successful on ${baseUrl}${endpoint}`,
-          );
+          logger.info(`[STARTUP] ChromaDB heartbeat successful on ${baseUrl}${endpoint}`);
           return true;
         }
       } catch (error) {
-        logger.debug(
-          `[STARTUP] ChromaDB heartbeat failed on ${endpoint}: ${error.message}`,
-        );
+        logger.debug(`[STARTUP] ChromaDB heartbeat failed on ${endpoint}: ${error.message}`);
       }
     }
 
@@ -159,7 +150,7 @@ async function startChromaDB({
   errors,
   chromadbDependencyMissing,
   cachedChromaSpawnPlan,
-  setCachedSpawnPlan,
+  setCachedSpawnPlan
 }) {
   // Check if ChromaDB is disabled
   if (process.env.STRATOSORT_DISABLE_CHROMADB === '1') {
@@ -170,9 +161,7 @@ async function startChromaDB({
   }
 
   if (chromadbDependencyMissing) {
-    logger.info(
-      '[STARTUP] ChromaDB dependency previously marked missing. Skipping startup.',
-    );
+    logger.info('[STARTUP] ChromaDB dependency previously marked missing. Skipping startup.');
     serviceStatus.chromadb.status = 'disabled';
     serviceStatus.chromadb.health = 'missing_dependency';
     return { success: false, disabled: true, reason: 'missing_dependency' };
@@ -184,18 +173,15 @@ async function startChromaDB({
     serviceStatus.chromadb.health = 'missing_dependency';
     errors.push({
       service: 'chromadb',
-      error:
-        'Python module "chromadb" is not installed. Semantic search disabled.',
-      critical: false,
+      error: 'Python module "chromadb" is not installed. Semantic search disabled.',
+      critical: false
     });
-    logger.warn(
-      '[STARTUP] Python module "chromadb" not available. Disabling ChromaDB features.',
-    );
+    logger.warn('[STARTUP] Python module "chromadb" not available. Disabling ChromaDB features.');
     return {
       success: false,
       disabled: true,
       reason: 'missing_dependency',
-      setDependencyMissing: true,
+      setDependencyMissing: true
     };
   }
 
@@ -206,9 +192,12 @@ async function startChromaDB({
     const { buildChromaSpawnPlan } = require('../../utils/chromaSpawnUtils');
     // Chroma service might not be registered yet during early startup.
     // Prefer registered service config when available; otherwise fall back to env/defaults.
-    const serverConfig = container.has(ServiceIds.CHROMA_DB)
-      ? container.resolve(ServiceIds.CHROMA_DB).getServerConfig()
-      : buildDefaultChromaConfig();
+    const hasServiceResolver =
+      container && typeof container.has === 'function' && typeof container.resolve === 'function';
+    const serverConfig =
+      hasServiceResolver && container.has(ServiceIds.CHROMA_DB)
+        ? container.resolve(ServiceIds.CHROMA_DB).getServerConfig()
+        : buildDefaultChromaConfig();
 
     plan = await buildChromaSpawnPlan(serverConfig);
 
@@ -227,9 +216,7 @@ async function startChromaDB({
     logger.info('[STARTUP] Using cached ChromaDB spawn plan for restart');
   }
 
-  logger.info(
-    `[STARTUP] ChromaDB spawn plan: ${plan.command} ${plan.args.join(' ')}`,
-  );
+  logger.info(`[STARTUP] ChromaDB spawn plan: ${plan.command} ${plan.args.join(' ')}`);
   const chromaProcess = spawn(plan.command, plan.args, plan.options);
 
   chromaProcess.stdout?.on('data', (data) => {
@@ -245,9 +232,7 @@ async function startChromaDB({
   });
 
   chromaProcess.on('exit', (code, signal) => {
-    logger.warn(
-      `[ChromaDB] Process exited with code ${code}, signal ${signal}`,
-    );
+    logger.warn(`[ChromaDB] Process exited with code ${code}, signal ${signal}`);
     serviceStatus.chromadb.status = 'stopped';
   });
 
@@ -257,5 +242,5 @@ async function startChromaDB({
 module.exports = {
   checkChromaDBHealth,
   isChromaDBRunning,
-  startChromaDB,
+  startChromaDB
 };

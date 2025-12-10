@@ -1,10 +1,7 @@
 const { logger } = require('../src/shared/logger');
 
 // Import optimization utilities
-const {
-  globalDeduplicator,
-  globalBatchProcessor,
-} = require('../src/main/utils/llmOptimization');
+const { globalDeduplicator, globalBatchProcessor } = require('../src/main/utils/llmOptimization');
 
 // Mock ChromaDBService
 class MockChromaDBService {
@@ -71,7 +68,7 @@ class MockChromaDBService {
     return {
       size: this.queryCache.size,
       maxSize: 100,
-      ttl: 60000,
+      ttl: 60000
     };
   }
 
@@ -84,7 +81,7 @@ class MockChromaDBService {
   }
 
   async initialize() {
-    if (this.initialized) return;
+    if (this.initialized) return undefined;
     if (this._isInitializing) {
       return this._initPromise;
     }
@@ -109,11 +106,11 @@ class MockOrganizationSuggestionService {
     this.folderMatchingService = deps?.folderMatchingService || {
       embedText: jest.fn(async () => ({
         vector: new Array(384).fill(0.1),
-        model: 'test',
+        model: 'test'
       })),
       generateFolderId: jest.fn((f) => `folder-${f.name || 'unknown'}`),
       upsertFileEmbedding: jest.fn(async () => {}),
-      matchFileToFolders: jest.fn(async () => []),
+      matchFileToFolders: jest.fn(async () => [])
     };
     this.maxUserPatterns = 5000;
     this.userPatterns = new Map();
@@ -126,7 +123,7 @@ class MockOrganizationSuggestionService {
         this.userPatterns.set(patternKey, {
           count: 0,
           folder: suggestion.folder,
-          extension: file.extension,
+          extension: file.extension
         });
       }
       const pattern = this.userPatterns.get(patternKey);
@@ -171,9 +168,9 @@ class MockOrganizationSuggestionService {
       primary: {
         folder: 'Documents',
         confidence: 0.8,
-        reason: 'Based on file type',
+        reason: 'Based on file type'
       },
-      alternatives: [],
+      alternatives: []
     };
   }
 }
@@ -190,9 +187,7 @@ const OrganizationSuggestionService = MockOrganizationSuggestionService;
 
 describe('Performance Optimizations Verification', () => {
   beforeAll(() => {
-    logger.info(
-      '===== Starting Performance Optimization Verification Tests =====',
-    );
+    logger.info('===== Starting Performance Optimization Verification Tests =====');
   });
 
   describe('1. LLM Request Deduplication', () => {
@@ -200,7 +195,7 @@ describe('Performance Optimizations Verification', () => {
       // Create identical request keys
       const key = globalDeduplicator.generateKey({
         fileName: 'test.pdf',
-        analysis: { category: 'document' },
+        analysis: { category: 'document' }
       });
 
       // Track execution count
@@ -226,9 +221,7 @@ describe('Performance Optimizations Verification', () => {
       // Function should only execute once
       expect(executionCount).toBe(1);
 
-      logger.info(
-        '✓ LLM deduplication working: 5 identical requests resulted in 1 execution',
-      );
+      logger.info('✓ LLM deduplication working: 5 identical requests resulted in 1 execution');
     }, 10000);
 
     test('should not deduplicate different requests', async () => {
@@ -243,7 +236,7 @@ describe('Performance Optimizations Verification', () => {
 
       const [result1, result2] = await Promise.all([
         globalDeduplicator.deduplicate(key1, testFn),
-        globalDeduplicator.deduplicate(key2, testFn),
+        globalDeduplicator.deduplicate(key2, testFn)
       ]);
 
       expect(executionCount).toBe(2);
@@ -267,7 +260,7 @@ describe('Performance Optimizations Verification', () => {
       };
 
       const result = await globalBatchProcessor.processBatch(items, processFn, {
-        concurrency: 3,
+        concurrency: 3
       });
 
       const duration = Date.now() - startTime;
@@ -280,9 +273,7 @@ describe('Performance Optimizations Verification', () => {
       expect(duration).toBeLessThan(600);
       expect(duration).toBeGreaterThan(300);
 
-      logger.info(
-        `✓ Batch processing 10 items with concurrency 3 took ${duration}ms`,
-      );
+      logger.info(`✓ Batch processing 10 items with concurrency 3 took ${duration}ms`);
     }, 10000);
 
     test('should handle errors gracefully in batch processing', async () => {
@@ -295,7 +286,7 @@ describe('Performance Optimizations Verification', () => {
 
       const result = await globalBatchProcessor.processBatch(items, processFn, {
         concurrency: 2,
-        stopOnError: false,
+        stopOnError: false
       });
 
       expect(result.successful).toBe(4);
@@ -317,7 +308,7 @@ describe('Performance Optimizations Verification', () => {
         async function () {
           this.lastQueryCount++;
           return [{ folderId: 'folder1', name: 'Test Folder', score: 0.9 }];
-        }.bind(chromaDb),
+        }.bind(chromaDb)
       );
     });
 
@@ -397,14 +388,14 @@ describe('Performance Optimizations Verification', () => {
         folderMatchingService: {
           embedText: jest.fn(async () => ({
             vector: new Array(384).fill(0.1),
-            model: 'test',
+            model: 'test'
           })),
           generateFolderId: jest.fn((f) => `folder-${f.name}`),
           upsertFileEmbedding: jest.fn(async () => {}),
-          matchFileToFolders: jest.fn(async () => []),
+          matchFileToFolders: jest.fn(async () => [])
         },
         settingsService: {},
-        config: {},
+        config: {}
       });
     });
 
@@ -413,28 +404,28 @@ describe('Performance Optimizations Verification', () => {
         {
           name: 'file1.pdf',
           extension: 'pdf',
-          analysis: { category: 'document' },
+          analysis: { category: 'document' }
         },
         {
           name: 'file2.jpg',
           extension: 'jpg',
-          analysis: { category: 'image' },
+          analysis: { category: 'image' }
         },
         {
           name: 'file3.docx',
           extension: 'docx',
-          analysis: { category: 'document' },
+          analysis: { category: 'document' }
         },
         {
           name: 'file4.png',
           extension: 'png',
-          analysis: { category: 'image' },
+          analysis: { category: 'image' }
         },
         {
           name: 'file5.xlsx',
           extension: 'xlsx',
-          analysis: { category: 'spreadsheet' },
-        },
+          analysis: { category: 'spreadsheet' }
+        }
       ];
 
       const startTime = Date.now();
@@ -445,9 +436,7 @@ describe('Performance Optimizations Verification', () => {
       expect(result.groups).toBeInstanceOf(Array);
       expect(result.patterns).toBeInstanceOf(Object);
 
-      logger.info(
-        `✓ Batch suggestions for ${files.length} files completed in ${duration}ms`,
-      );
+      logger.info(`✓ Batch suggestions for ${files.length} files completed in ${duration}ms`);
       logger.info(`  Groups created: ${result.groups.length}`);
     }, 10000);
 
@@ -457,20 +446,20 @@ describe('Performance Optimizations Verification', () => {
           id: 'f1',
           name: 'Documents',
           description: 'Document files',
-          path: '/Documents',
+          path: '/Documents'
         },
         {
           id: 'f2',
           name: 'Images',
           description: 'Image files',
-          path: '/Images',
+          path: '/Images'
         },
         {
           id: 'f3',
           name: 'Projects',
           description: 'Project files',
-          path: '/Projects',
-        },
+          path: '/Projects'
+        }
       ];
 
       const startTime = Date.now();
@@ -480,9 +469,7 @@ describe('Performance Optimizations Verification', () => {
       expect(typeof count).toBe('number');
       expect(count).toBeGreaterThanOrEqual(0);
 
-      logger.info(
-        `✓ Batch upserted ${count} folder embeddings in ${duration}ms`,
-      );
+      logger.info(`✓ Batch upserted ${count} folder embeddings in ${duration}ms`);
     });
   });
 
@@ -494,9 +481,7 @@ describe('Performance Optimizations Verification', () => {
       expect(stats.maxPending).toBe(100);
       expect(stats.pendingCount).toBeLessThanOrEqual(100);
 
-      logger.info(
-        `✓ Deduplicator limits pending requests: ${JSON.stringify(stats)}`,
-      );
+      logger.info(`✓ Deduplicator limits pending requests: ${JSON.stringify(stats)}`);
     });
 
     test('should limit user patterns to prevent memory leak', () => {
@@ -504,10 +489,10 @@ describe('Performance Optimizations Verification', () => {
         chromaDbService: new ChromaDBService(),
         folderMatchingService: {
           embedText: jest.fn(async () => ({ vector: [], model: 'test' })),
-          generateFolderId: jest.fn(() => 'test'),
+          generateFolderId: jest.fn(() => 'test')
         },
         settingsService: {},
-        config: {},
+        config: {}
       });
 
       expect(orgService.maxUserPatterns).toBe(5000);
@@ -518,17 +503,15 @@ describe('Performance Optimizations Verification', () => {
           {
             name: `file-${i}.pdf`,
             extension: '.pdf',
-            analysis: { category: 'document' },
+            analysis: { category: 'document' }
           },
           { folder: 'test', path: '/test' },
-          true,
+          true
         );
       }
 
       expect(orgService.userPatterns.size).toBeLessThanOrEqual(5000);
-      logger.info(
-        `✓ User patterns limited to ${orgService.maxUserPatterns} entries`,
-      );
+      logger.info(`✓ User patterns limited to ${orgService.maxUserPatterns} entries`);
     });
 
     test('should limit query cache size', () => {
@@ -553,30 +536,26 @@ describe('Performance Optimizations Verification', () => {
 
     test('should analyze files with proper concurrency', async () => {
       // Mock file paths
-      const filePaths = [
-        'C:\\test\\file1.pdf',
-        'C:\\test\\file2.jpg',
-        'C:\\test\\file3.docx',
-      ];
+      const filePaths = ['C:\\test\\file1.pdf', 'C:\\test\\file2.jpg', 'C:\\test\\file3.docx'];
 
       // Mock the analysis functions
       jest.mock('../src/main/analysis/ollamaDocumentAnalysis', () => ({
         analyzeDocumentFile: jest.fn(async () => {
           await new Promise((r) => setTimeout(r, 50));
           return { success: true, type: 'document' };
-        }),
+        })
       }));
 
       jest.mock('../src/main/analysis/ollamaImageAnalysis', () => ({
         analyzeImageFile: jest.fn(async () => {
           await new Promise((r) => setTimeout(r, 50));
           return { success: true, type: 'image' };
-        }),
+        })
       }));
 
       const startTime = Date.now();
       const result = await batchService.analyzeFiles(filePaths, [], {
-        concurrency: 2,
+        concurrency: 2
       });
       const duration = Date.now() - startTime;
 
@@ -600,17 +579,17 @@ describe('Performance Optimizations Verification', () => {
           embedText: jest.fn(async () => ({ vector: [], model: 'test' })),
           generateFolderId: jest.fn(() => 'test'),
           upsertFileEmbedding: jest.fn(async () => {}),
-          matchFileToFolders: jest.fn(async () => []),
+          matchFileToFolders: jest.fn(async () => [])
         },
         settingsService: {},
-        config: {},
+        config: {}
       });
 
       // This would normally trigger JSON.parse with try/catch
       const file = {
         name: 'test.pdf',
         extension: 'pdf',
-        analysis: { category: 'test' },
+        analysis: { category: 'test' }
       };
 
       const result = await orgService.getSuggestionsForFile(file, []);
@@ -644,9 +623,7 @@ describe('Performance Optimizations Verification', () => {
 
       expect(successful).toBeGreaterThanOrEqual(0); // At least no crashes
 
-      logger.info(
-        `✓ Handled ${promises.length} concurrent initialization attempts`,
-      );
+      logger.info(`✓ Handled ${promises.length} concurrent initialization attempts`);
     }, 10000);
   });
 
@@ -656,22 +633,22 @@ describe('Performance Optimizations Verification', () => {
         deduplication: {
           enabled: true,
           pendingRequests: globalDeduplicator.getStats().pendingCount,
-          maxPending: globalDeduplicator.getStats().maxPending,
+          maxPending: globalDeduplicator.getStats().maxPending
         },
         batching: {
           enabled: true,
           concurrencyLimit: globalBatchProcessor.concurrencyLimit,
-          activeCount: globalBatchProcessor.getStats().activeCount,
+          activeCount: globalBatchProcessor.getStats().activeCount
         },
         caching: {
           enabled: true,
-          chromaDbCache: new ChromaDBService().getQueryCacheStats(),
+          chromaDbCache: new ChromaDBService().getQueryCacheStats()
         },
         memoryLimits: {
           userPatterns: 5000,
           queryCache: 100,
-          pendingRequests: 100,
-        },
+          pendingRequests: 100
+        }
       };
 
       logger.info('===== PERFORMANCE METRICS SUMMARY =====');

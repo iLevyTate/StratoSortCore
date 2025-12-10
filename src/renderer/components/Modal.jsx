@@ -4,32 +4,58 @@ import PropTypes from 'prop-types';
 
 // Inline SVG Icons
 const XIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+  <svg
+    className={className}
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    aria-hidden="true"
+  >
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
 
 const AlertTriangleIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+    />
   </svg>
 );
 
 const InfoIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const HelpCircleIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const FileTextIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+    />
   </svg>
 );
 
@@ -41,7 +67,7 @@ const Modal = ({
   size = 'medium',
   closeOnOverlayClick = true,
   showCloseButton = true,
-  className = '',
+  className = ''
 }) => {
   const modalRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -60,7 +86,7 @@ const Modal = ({
         onClose();
       }
     },
-    [isOpen, onClose],
+    [isOpen, onClose]
   );
 
   // Focus management
@@ -96,6 +122,8 @@ const Modal = ({
         }
       };
     }
+
+    return undefined;
   }, [isOpen, handleKeyDown]);
 
   // Handle overlay click
@@ -110,7 +138,7 @@ const Modal = ({
     if (!modalRef.current) return;
 
     const focusableElements = modalRef.current.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
 
     // FIX #18: Guard against empty focusable elements to prevent crash
@@ -163,8 +191,7 @@ const Modal = ({
     }
   };
 
-  const portalTarget =
-    typeof document !== 'undefined' ? document.body : null;
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
 
   if (!isOpen || !portalTarget) return null;
 
@@ -190,10 +217,7 @@ const Modal = ({
         {(title || showCloseButton) && (
           <div className="flex items-center justify-between border-b border-border-soft/70 p-[var(--panel-padding)] bg-white/90 rounded-t-2xl">
             {title && (
-              <h2
-                id="modal-title"
-                className="text-xl font-semibold text-system-gray-900"
-              >
+              <h2 id="modal-title" className="text-xl font-semibold text-system-gray-900">
                 {title}
               </h2>
             )}
@@ -231,7 +255,7 @@ export const ConfirmModal = ({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   variant = 'default', // default, danger, warning, info
-  fileName = null, // For file operations
+  fileName = null // For file operations
 }) => {
   const getConfirmButtonClass = () => {
     const baseClass =
@@ -294,22 +318,18 @@ export const ConfirmModal = ({
       <div className="p-[var(--spacing-relaxed)]">
         {/* Icon and Content */}
         <div className="flex items-start gap-[var(--spacing-default)] mb-[var(--panel-padding)]">
-          <div className={variant === 'danger' ? 'animate-confirm-bounce' : ''}>
-            {getIcon()}
-          </div>
+          <div className={variant === 'danger' ? 'animate-confirm-bounce' : ''}>{getIcon()}</div>
           <div className="flex-1 pt-1">
-              <h3 className="text-lg font-semibold text-system-gray-900 mb-2 leading-tight">
+            <h3 className="text-lg font-semibold text-system-gray-900 mb-2 leading-tight">
               {title}
             </h3>
-              <div className="text-system-gray-600 leading-relaxed break-words">
+            <div className="text-system-gray-600 leading-relaxed break-words">
               {message}
               {fileName && (
                 <div className="mt-[var(--spacing-cozy)] p-[var(--spacing-cozy)] bg-system-gray-50 rounded-lg border border-border-soft">
                   <div className="flex items-center gap-[var(--spacing-compact)] text-sm">
                     <FileTextIcon className="w-4 h-4 text-system-gray-400" />
-                    <span className="font-medium text-system-gray-700">
-                      {fileName}
-                    </span>
+                    <span className="font-medium text-system-gray-700">{fileName}</span>
                   </div>
                 </div>
               )}
@@ -346,7 +366,7 @@ Modal.propTypes = {
   size: PropTypes.oneOf(['small', 'medium', 'large', 'full']),
   closeOnOverlayClick: PropTypes.bool,
   showCloseButton: PropTypes.bool,
-  className: PropTypes.string,
+  className: PropTypes.string
 };
 
 ConfirmModal.propTypes = {
@@ -358,7 +378,17 @@ ConfirmModal.propTypes = {
   confirmText: PropTypes.string,
   cancelText: PropTypes.string,
   variant: PropTypes.oneOf(['default', 'danger', 'warning', 'info']),
-  fileName: PropTypes.string,
+  fileName: PropTypes.string
 };
+
+const iconPropTypes = {
+  className: PropTypes.string
+};
+
+XIcon.propTypes = iconPropTypes;
+AlertTriangleIcon.propTypes = iconPropTypes;
+InfoIcon.propTypes = iconPropTypes;
+HelpCircleIcon.propTypes = iconPropTypes;
+FileTextIcon.propTypes = iconPropTypes;
 
 export default Modal;

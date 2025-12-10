@@ -1,6 +1,6 @@
 import React, { memo, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import { FileText, Compass } from 'lucide-react';
 import { Button, StatusBadge } from '../ui';
 
@@ -21,11 +21,7 @@ const formatConfidence = (value) => {
 /**
  * Individual row component for virtualized list
  */
-const AnalysisResultRow = memo(function AnalysisResultRow({
-  index,
-  style,
-  data,
-}) {
+const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }) {
   const { items, handleAction, getFileStateDisplay } = data;
   const file = items[index];
 
@@ -35,11 +31,9 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
   const confidence = formatConfidence(file.analysis?.confidence);
   const tone = stateDisplay.color?.includes('green')
     ? 'success'
-    : stateDisplay.color?.includes('amber') ||
-        stateDisplay.color?.includes('warning')
+    : stateDisplay.color?.includes('amber') || stateDisplay.color?.includes('warning')
       ? 'warning'
-      : stateDisplay.color?.includes('red') ||
-          stateDisplay.color?.includes('danger')
+      : stateDisplay.color?.includes('red') || stateDisplay.color?.includes('danger')
         ? 'error'
         : 'info';
 
@@ -67,9 +61,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
             {file.analysis?.category && (
               <div className="text-xs text-system-gray-600 mt-1 truncate whitespace-normal break-words">
                 Category:{' '}
-                <span className="text-stratosort-blue font-medium">
-                  {file.analysis.category}
-                </span>
+                <span className="text-stratosort-blue font-medium">{file.analysis.category}</span>
               </div>
             )}
           </div>
@@ -81,9 +73,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
               <span>{stateDisplay.label}</span>
             </StatusBadge>
             {confidence !== null && (
-              <span className="text-xs text-system-gray-500">
-                Confidence {confidence}%
-              </span>
+              <span className="text-xs text-system-gray-500">Confidence {confidence}%</span>
             )}
           </div>
         </div>
@@ -133,37 +123,27 @@ AnalysisResultRow.propTypes = {
   data: PropTypes.shape({
     items: PropTypes.array.isRequired,
     handleAction: PropTypes.func.isRequired,
-    getFileStateDisplay: PropTypes.func.isRequired,
-  }).isRequired,
+    getFileStateDisplay: PropTypes.func.isRequired
+  }).isRequired
 };
 
 /**
  * Analysis results list with optional virtualization for large lists
  * FIX: Implements react-window for performance with 100+ items
  */
-function AnalysisResultsList({
-  results = [],
-  onFileAction,
-  getFileStateDisplay,
-}) {
+function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }) {
   const isEmpty = !Array.isArray(results) || results.length === 0;
-  const items = useMemo(
-    () => (Array.isArray(results) ? results : []),
-    [results],
-  );
-  const handleAction = useCallback(
-    (action, path) => onFileAction(action, path),
-    [onFileAction],
-  );
+  const items = useMemo(() => (Array.isArray(results) ? results : []), [results]);
+  const handleAction = useCallback((action, path) => onFileAction(action, path), [onFileAction]);
 
   // Memoize item data to prevent unnecessary re-renders
   const itemData = useMemo(
     () => ({
       items,
       handleAction,
-      getFileStateDisplay,
+      getFileStateDisplay
     }),
-    [items, handleAction, getFileStateDisplay],
+    [items, handleAction, getFileStateDisplay]
   );
 
   // FIX: Use virtualization only for large lists to avoid overhead on small lists
@@ -172,13 +152,9 @@ function AnalysisResultsList({
   // FIX: Move useMemo before early return to follow React hooks rules
   const computedListHeight = React.useMemo(() => {
     // Keep list from blowing past viewport on shorter screens
-    const viewportHeight =
-      typeof window !== 'undefined' ? window.innerHeight : 900;
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
     // Use up to 65% of viewport, but at least 350px
-    const maxHeight = Math.min(
-      LIST_HEIGHT,
-      Math.max(350, Math.round(viewportHeight * 0.65)),
-    );
+    const maxHeight = Math.min(LIST_HEIGHT, Math.max(350, Math.round(viewportHeight * 0.65)));
     // Also avoid rendering excessive blank space when fewer rows
     const desired = Math.min(maxHeight, ITEM_HEIGHT * items.length);
     return Math.max(desired, Math.min(ITEM_HEIGHT * 4, maxHeight));
@@ -192,9 +168,7 @@ function AnalysisResultsList({
       <div className="empty-state">
         <Compass className="w-8 h-8 text-system-gray-400" />
         <div className="space-y-1">
-          <p className="text-system-gray-800 font-semibold">
-            No analysis results yet
-          </p>
+          <p className="text-system-gray-800 font-semibold">No analysis results yet</p>
           <p className="text-system-gray-500 text-sm">
             Add files above and start an analysis to see suggestions stream in.
           </p>
@@ -233,11 +207,9 @@ function AnalysisResultsList({
         const confidence = formatConfidence(file.analysis?.confidence);
         const tone = stateDisplay.color?.includes('green')
           ? 'success'
-          : stateDisplay.color?.includes('amber') ||
-              stateDisplay.color?.includes('warning')
+          : stateDisplay.color?.includes('amber') || stateDisplay.color?.includes('warning')
             ? 'warning'
-            : stateDisplay.color?.includes('red') ||
-                stateDisplay.color?.includes('danger')
+            : stateDisplay.color?.includes('red') || stateDisplay.color?.includes('danger')
               ? 'error'
               : 'info';
         return (
@@ -280,9 +252,7 @@ function AnalysisResultsList({
                   <span>{stateDisplay.label}</span>
                 </StatusBadge>
                 {confidence !== null && (
-                  <span className="text-xs text-system-gray-500">
-                    Confidence {confidence}%
-                  </span>
+                  <span className="text-xs text-system-gray-500">Confidence {confidence}%</span>
                 )}
               </div>
             </div>
@@ -331,7 +301,7 @@ function AnalysisResultsList({
 AnalysisResultsList.propTypes = {
   results: PropTypes.arrayOf(PropTypes.object),
   onFileAction: PropTypes.func.isRequired,
-  getFileStateDisplay: PropTypes.func.isRequired,
+  getFileStateDisplay: PropTypes.func.isRequired
 };
 
 export default memo(AnalysisResultsList);

@@ -14,7 +14,7 @@ const Toast = ({
   severity = 'info',
   duration = 3000, // Reduced from 5000ms to 3000ms for less invasiveness
   onClose,
-  show = true,
+  show = true
 }) => {
   const [isVisible, setIsVisible] = useState(show);
   // CRITICAL FIX: Use ref to track animation timer so cleanup can always access current value
@@ -42,6 +42,8 @@ const Toast = ({
         }
       };
     }
+
+    return undefined;
   }, [show, duration, onClose]);
 
   const handleClose = () => {
@@ -71,7 +73,7 @@ const Toast = ({
   };
 
   const getSeverityIcon = () => {
-    const iconClass = "w-5 h-5";
+    const iconClass = 'w-5 h-5';
     switch (severity) {
       case 'success':
         return <CheckCircle2 className={iconClass} />;
@@ -88,7 +90,7 @@ const Toast = ({
   // Comprehensive fallback style that matches the CSS exactly
   const fallbackStyle = {
     transform: isVisible ? 'translateX(0)' : 'translateX(100%)',
-    transition: 'all var(--duration-slow) ease-in-out',
+    transition: 'all var(--duration-slow) ease-in-out'
   };
 
   if (!show && !isVisible) return null;
@@ -146,15 +148,11 @@ const Toast = ({
 };
 
 Toast.propTypes = {
-  message: PropTypes.oneOfType([
-    PropTypes.string,
-    PropTypes.node,
-    PropTypes.object,
-  ]),
+  message: PropTypes.oneOfType([PropTypes.string, PropTypes.node, PropTypes.object]),
   severity: PropTypes.oneOf(['info', 'success', 'error', 'warning']),
   duration: PropTypes.number,
   onClose: PropTypes.func,
-  show: PropTypes.bool,
+  show: PropTypes.bool
 };
 
 // Toast Container for managing multiple toasts
@@ -197,7 +195,7 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
       } catch (error) {
         // Fixed: Log localStorage errors instead of silently swallowing
         logger.warn('Failed to save toast collapsed state to localStorage', {
-          error: error.message,
+          error: error.message
         });
       }
       return !prev;
@@ -264,7 +262,7 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
 
 ToastContainer.propTypes = {
   toasts: PropTypes.arrayOf(PropTypes.object),
-  onRemoveToast: PropTypes.func,
+  onRemoveToast: PropTypes.func
 };
 
 // Hook for using toasts (with simple grouping and caps)
@@ -281,12 +279,7 @@ export const useToast = () => {
     return aScore >= bScore ? a : b;
   };
 
-  const addToast = (
-    message,
-    severity = 'info',
-    duration = 3000,
-    groupKey = null,
-  ) => {
+  const addToast = (message, severity = 'info', duration = 3000, groupKey = null) => {
     const id = generateSecureId();
     const now = Date.now();
 
@@ -294,9 +287,7 @@ export const useToast = () => {
       // If grouping, try to merge with an existing toast
       if (groupKey) {
         const idx = prev.findIndex(
-          (t) =>
-            t.groupKey === groupKey &&
-            now - (t.createdAt || now) <= GROUP_WINDOW_MS,
+          (t) => t.groupKey === groupKey && now - (t.createdAt || now) <= GROUP_WINDOW_MS
         );
         if (idx !== -1) {
           const existing = prev[idx];
@@ -304,12 +295,9 @@ export const useToast = () => {
             ...existing,
             id: existing.id, // keep id stable for animation
             message,
-            severity: getHighestSeverity(
-              existing.severity || 'info',
-              severity || 'info',
-            ),
+            severity: getHighestSeverity(existing.severity || 'info', severity || 'info'),
             duration: duration ?? existing.duration,
-            createdAt: existing.createdAt || now,
+            createdAt: existing.createdAt || now
           };
           const copy = prev.slice();
           copy[idx] = updated;
@@ -326,8 +314,8 @@ export const useToast = () => {
           duration,
           show: true,
           groupKey: groupKey || null,
-          createdAt: now,
-        },
+          createdAt: now
+        }
       ];
       // Cap visible toasts
       if (next.length > MAX_VISIBLE_TOASTS) {
@@ -355,13 +343,10 @@ export const useToast = () => {
     // Legacy alias used throughout app
     addNotification: addToast,
     // Convenience methods with shorter defaults for less invasiveness
-    showSuccess: (message, duration = 2500) =>
-      addToast(message, 'success', duration),
-    showError: (message, duration = 4000) =>
-      addToast(message, 'error', duration), // Errors stay longer
-    showWarning: (message, duration = 3500) =>
-      addToast(message, 'warning', duration),
-    showInfo: (message, duration = 2000) => addToast(message, 'info', duration), // Info disappears quickly
+    showSuccess: (message, duration = 2500) => addToast(message, 'success', duration),
+    showError: (message, duration = 4000) => addToast(message, 'error', duration), // Errors stay longer
+    showWarning: (message, duration = 3500) => addToast(message, 'warning', duration),
+    showInfo: (message, duration = 2000) => addToast(message, 'info', duration) // Info disappears quickly
   };
 };
 

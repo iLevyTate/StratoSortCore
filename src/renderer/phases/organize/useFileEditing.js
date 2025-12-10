@@ -7,38 +7,74 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 const { debounce } = require('../../utils/performance');
 
 // Inline SVG Icons (keep UI visuals)
 const CheckCircleIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const RefreshCwIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+    />
   </svg>
 );
 
 const XCircleIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
 
 const FolderOpenIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
+    />
   </svg>
 );
 
 const ClockIcon = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+    />
   </svg>
 );
+
+const iconPropTypes = {
+  className: PropTypes.string
+};
+
+CheckCircleIcon.propTypes = iconPropTypes;
+RefreshCwIcon.propTypes = iconPropTypes;
+XCircleIcon.propTypes = iconPropTypes;
+FolderOpenIcon.propTypes = iconPropTypes;
+ClockIcon.propTypes = iconPropTypes;
 
 /**
  * Hook for file state display
@@ -48,7 +84,7 @@ const ClockIcon = ({ className }) => (
 export function useFileStateDisplay(fileStates) {
   const getFileState = useCallback(
     (filePath) => fileStates[filePath]?.state || 'pending',
-    [fileStates],
+    [fileStates]
   );
 
   const getFileStateDisplay = useCallback(
@@ -59,7 +95,7 @@ export function useFileStateDisplay(fileStates) {
           iconSymbol: '✅',
           label: 'Organized',
           color: 'text-green-600',
-          spinning: false,
+          spinning: false
         };
       const state = getFileState(filePath);
       if (state === 'analyzing')
@@ -68,7 +104,7 @@ export function useFileStateDisplay(fileStates) {
           iconSymbol: '🔄',
           label: 'Analyzing...',
           color: 'text-blue-600',
-          spinning: true,
+          spinning: true
         };
       if (state === 'error')
         return {
@@ -76,7 +112,7 @@ export function useFileStateDisplay(fileStates) {
           iconSymbol: '❌',
           label: 'Error',
           color: 'text-red-600',
-          spinning: false,
+          spinning: false
         };
       if (hasAnalysis && state === 'ready')
         return {
@@ -84,7 +120,7 @@ export function useFileStateDisplay(fileStates) {
           iconSymbol: '📂',
           label: 'Ready',
           color: 'text-stratosort-blue',
-          spinning: false,
+          spinning: false
         };
       if (state === 'pending')
         return {
@@ -92,17 +128,17 @@ export function useFileStateDisplay(fileStates) {
           iconSymbol: '🕒',
           label: 'Pending',
           color: 'text-yellow-600',
-          spinning: false,
+          spinning: false
         };
       return {
         icon: <XCircleIcon className="w-4 h-4" />,
         iconSymbol: '❌',
         label: 'Failed',
         color: 'text-red-600',
-        spinning: false,
+        spinning: false
       };
     },
-    [getFileState],
+    [getFileState]
   );
 
   return { getFileState, getFileStateDisplay };
@@ -118,7 +154,7 @@ export function useFileEditing() {
   const handleEditFile = useCallback((fileIndex, field, value) => {
     setEditingFiles((prev) => ({
       ...prev,
-      [fileIndex]: { ...prev[fileIndex], [field]: value },
+      [fileIndex]: { ...prev[fileIndex], [field]: value }
     }));
   }, []);
 
@@ -132,11 +168,11 @@ export function useFileEditing() {
         analysis: {
           ...file.analysis,
           suggestedName: edits.suggestedName || file.analysis?.suggestedName,
-          category: updatedCategory,
-        },
+          category: updatedCategory
+        }
       };
     },
-    [editingFiles],
+    [editingFiles]
   );
 
   return { editingFiles, setEditingFiles, handleEditFile, getFileWithEdits };
@@ -156,15 +192,13 @@ export function useFileSelection(totalFiles) {
       next.has(index) ? next.delete(index) : next.add(index);
       setSelectedFiles(next);
     },
-    [selectedFiles],
+    [selectedFiles]
   );
 
   const selectAllFiles = useCallback(() => {
     selectedFiles.size === totalFiles
       ? setSelectedFiles(new Set())
-      : setSelectedFiles(
-          new Set(Array.from({ length: totalFiles }, (_, i) => i)),
-        );
+      : setSelectedFiles(new Set(Array.from({ length: totalFiles }, (_, i) => i)));
   }, [selectedFiles, totalFiles]);
 
   const clearSelection = useCallback(() => {
@@ -176,7 +210,7 @@ export function useFileSelection(totalFiles) {
     setSelectedFiles,
     toggleFileSelection,
     selectAllFiles,
-    clearSelection,
+    clearSelection
   };
 }
 
@@ -190,7 +224,7 @@ export function useBulkOperations({
   editingFiles,
   setEditingFiles,
   setSelectedFiles,
-  addNotification,
+  addNotification
 }) {
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
@@ -200,25 +234,19 @@ export function useBulkOperations({
 
   // Initialize debounced function
   useEffect(() => {
-    debouncedBulkCategoryChangeRef.current = debounce(
-      (category, selected, edits, notify) => {
-        if (!category) return;
-        const newEdits = {};
-        selected.forEach((i) => {
-          const existingEdit = edits[i] || {};
-          newEdits[i] = { ...existingEdit, category };
-        });
-        setEditingFiles((prev) => ({ ...prev, ...newEdits }));
-        setBulkEditMode(false);
-        setBulkCategory('');
-        setSelectedFiles(new Set());
-        notify(
-          `Applied category "${category}" to ${selected.size} files`,
-          'success',
-        );
-      },
-      300,
-    );
+    debouncedBulkCategoryChangeRef.current = debounce((category, selected, edits, notify) => {
+      if (!category) return;
+      const newEdits = {};
+      selected.forEach((i) => {
+        const existingEdit = edits[i] || {};
+        newEdits[i] = { ...existingEdit, category };
+      });
+      setEditingFiles((prev) => ({ ...prev, ...newEdits }));
+      setBulkEditMode(false);
+      setBulkCategory('');
+      setSelectedFiles(new Set());
+      notify(`Applied category "${category}" to ${selected.size} files`, 'success');
+    }, 300);
 
     return () => {
       if (debouncedBulkCategoryChangeRef.current) {
@@ -234,7 +262,7 @@ export function useBulkOperations({
       bulkCategory,
       selectedFiles,
       editingFiles,
-      addNotification,
+      addNotification
     );
   }, [bulkCategory, selectedFiles, editingFiles, addNotification]);
 
@@ -243,7 +271,7 @@ export function useBulkOperations({
     setBulkEditMode,
     bulkCategory,
     setBulkCategory,
-    applyBulkCategoryChange,
+    applyBulkCategoryChange
   };
 }
 
@@ -262,7 +290,7 @@ export function useProcessedFiles(organizedFiles) {
         filePaths.forEach((path) => next.add(path));
         return next;
       }),
-    [],
+    []
   );
 
   const unmarkFilesAsProcessed = useCallback(
@@ -272,23 +300,21 @@ export function useProcessedFiles(organizedFiles) {
         filePaths.forEach((path) => next.delete(path));
         return next;
       }),
-    [],
+    []
   );
 
   // Compute unprocessed and processed files
   const getFilteredFiles = useCallback(
     (filesWithAnalysis) => {
       const unprocessedFiles = filesWithAnalysis.filter(
-        (file) => !processedFileIds.has(file.path) && file && file.analysis,
+        (file) => !processedFileIds.has(file.path) && file && file.analysis
       );
       const processedFiles = Array.isArray(organizedFiles)
-        ? organizedFiles.filter((file) =>
-            processedFileIds.has(file?.originalPath || file?.path),
-          )
+        ? organizedFiles.filter((file) => processedFileIds.has(file?.originalPath || file?.path))
         : [];
       return { unprocessedFiles, processedFiles };
     },
-    [processedFileIds, organizedFiles],
+    [processedFileIds, organizedFiles]
   );
 
   return {
@@ -296,7 +322,7 @@ export function useProcessedFiles(organizedFiles) {
     setProcessedFileIds,
     markFilesAsProcessed,
     unmarkFilesAsProcessed,
-    getFilteredFiles,
+    getFilteredFiles
   };
 }
 
@@ -305,5 +331,5 @@ export default {
   useFileEditing,
   useFileSelection,
   useBulkOperations,
-  useProcessedFiles,
+  useProcessedFiles
 };
