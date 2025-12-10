@@ -1,6 +1,6 @@
 import React, { memo, useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import { FileText, Compass } from 'lucide-react';
 import { Button, StatusBadge } from '../ui';
 

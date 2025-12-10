@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import ReadyFileItem from './ReadyFileItem';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
@@ -18,10 +18,7 @@ const getListHeight = (itemCount, viewportHeight) => {
   const maxFraction = itemCount <= 10 ? 0.35 : itemCount <= 30 ? 0.45 : 0.55;
   const contentMinHeight = 300;
   const maxHeight = Math.round(viewportHeight * maxFraction);
-  return Math.min(
-    Math.max(contentMinHeight, itemCount * 80),
-    maxHeight
-  );
+  return Math.min(Math.max(contentMinHeight, itemCount * 80), maxHeight);
 };
 
 /**
@@ -243,7 +240,9 @@ function VirtualizedFileGrid({
   // Center content when sparse data (≤5 files) for better visual balance
   const isSparse = files.length <= 5;
   return (
-    <div className={`grid grid-adaptive-lg gap-4 ${isSparse ? 'place-content-center min-h-[300px]' : ''}`}>
+    <div
+      className={`grid grid-adaptive-lg gap-4 ${isSparse ? 'place-content-center min-h-[300px]' : ''}`}
+    >
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);
         const rawCategory =

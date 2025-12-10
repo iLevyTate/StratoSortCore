@@ -1,4 +1,10 @@
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useMemo,
+  useRef,
+  useCallback,
+} from 'react';
 import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
@@ -27,6 +33,9 @@ function SetupPhase() {
   const documentsPathFromStore = useAppSelector(
     (state) => state.system.documentsPath,
   );
+  const smartFoldersFromStore = useAppSelector(
+    (state) => state.files.smartFolders,
+  );
 
   const actions = useMemo(
     () => ({
@@ -42,10 +51,12 @@ function SetupPhase() {
   const { showSuccess, showError, showWarning, showInfo, addNotification } =
     useNotification();
 
-  const [smartFolders, setSmartFolders] = useState([]);
+  const [smartFolders, setSmartFolders] = useState(smartFoldersFromStore || []);
   const [editingFolder, setEditingFolder] = useState(null);
   const [defaultLocation, setDefaultLocation] = useState('Documents');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(
+    (smartFoldersFromStore || []).length === 0,
+  );
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeletingFolder, setIsDeletingFolder] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -112,6 +123,12 @@ function SetupPhase() {
         return;
       }
 
+      if (smartFoldersFromStore && smartFoldersFromStore.length > 0) {
+        setSmartFolders(smartFoldersFromStore);
+        actions.setPhaseData('smartFolders', smartFoldersFromStore);
+        return;
+      }
+
       const folders = await window.electronAPI.smartFolders.get();
 
       if (!Array.isArray(folders)) {
@@ -130,12 +147,13 @@ function SetupPhase() {
       showError(`Failed to load smart folders: ${error.message}`);
       setSmartFolders([]);
     }
-  }, [actions, showError]);
+  }, [actions, showError, smartFoldersFromStore]);
 
   useEffect(() => {
     isMountedRef.current = true;
     const initializeSetup = async () => {
-      if (isMountedRef.current) setIsLoading(true);
+      if (isMountedRef.current && smartFoldersFromStore.length === 0)
+        setIsLoading(true);
       try {
         await Promise.all([loadSmartFolders(), loadDefaultLocation()]);
       } catch (error) {
@@ -152,7 +170,22 @@ function SetupPhase() {
     return () => {
       isMountedRef.current = false;
     };
-  }, [loadSmartFolders, loadDefaultLocation, showError]);
+  }, [
+    loadSmartFolders,
+    loadDefaultLocation,
+    showError,
+    smartFoldersFromStore.length,
+  ]);
+
+  // Keep local state in sync with Redux cache to prevent flicker when data is already loaded
+  useEffect(() => {
+    if (smartFoldersFromStore) {
+      setSmartFolders(smartFoldersFromStore);
+      if (smartFoldersFromStore.length > 0) {
+        setIsLoading(false);
+      }
+    }
+  }, [smartFoldersFromStore]);
 
   const handleAddFolder = async (newFolder) => {
     try {
@@ -266,7 +299,9 @@ function SetupPhase() {
     try {
       const result = await window.electronAPI.smartFolders.delete(folderId);
       if (result.success) {
-        showSuccess(`Removed smart folder: ${result.deletedFolder?.name || folder.name}`);
+        showSuccess(
+          `Removed smart folder: ${result.deletedFolder?.name || folder.name}`,
+        );
         await loadSmartFolders();
       } else {
         showError(`Failed to delete folder: ${result.error}`);
@@ -394,8 +429,18 @@ function SetupPhase() {
                   className="text-sm"
                   title="Rebuild all folder embeddings"
                 >
-                  <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <svg
+                    className="w-4 h-4 mr-1.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
                   </svg>
                   Rebuild
                 </Button>
@@ -405,8 +450,18 @@ function SetupPhase() {
                 variant="primary"
                 className="text-sm"
               >
-                <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <svg
+                  className="w-4 h-4 mr-1.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 Add Folder
               </Button>
@@ -420,22 +475,43 @@ function SetupPhase() {
             ) : smartFolders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
-                  <svg className="w-8 h-8 text-system-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  <svg
+                    className="w-8 h-8 text-system-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                    />
                   </svg>
                 </div>
                 <h3 className="text-lg font-medium text-system-gray-800 mb-1">
                   No smart folders yet
                 </h3>
                 <p className="text-sm text-system-gray-500 mb-4 max-w-sm">
-                  Add at least one destination folder so StratoSort knows where to organize your files.
+                  Add at least one destination folder so StratoSort knows where
+                  to organize your files.
                 </p>
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
                   variant="primary"
                 >
-                  <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <svg
+                    className="w-4 h-4 mr-1.5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
                   </svg>
                   Add your first folder
                 </Button>
@@ -475,8 +551,18 @@ function SetupPhase() {
             variant="secondary"
             className="w-full sm:w-auto text-sm"
           >
-            <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg
+              className="w-4 h-4 mr-1.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
             </svg>
             Back
           </Button>
@@ -515,8 +601,18 @@ function SetupPhase() {
             ) : (
               <>
                 Continue to Discovery
-                <svg className="w-4 h-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <svg
+                  className="w-4 h-4 ml-1.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
                 </svg>
               </>
             )}

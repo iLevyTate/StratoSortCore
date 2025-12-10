@@ -59,7 +59,7 @@ function ReadyFileItem({
     <div
       className={`surface-card w-full transition-all [transition-duration:var(--duration-normal)] overflow-visible ${isSelected ? 'ring-2 ring-stratosort-blue/25 shadow-md' : ''}`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <input
           type="checkbox"
           checked={isSelected}
@@ -67,8 +67,8 @@ function ReadyFileItem({
           className="form-checkbox mt-1 flex-shrink-0 accent-stratosort-blue h-4 w-4"
           aria-label={`Select ${file.name}`}
         />
-        <div className="flex-1 min-w-0 overflow-visible">
-          <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1 min-w-[260px] overflow-visible">
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
             <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
             <div className="flex-1 min-w-0 overflow-visible w-full">
               <div
@@ -113,10 +113,12 @@ function ReadyFileItem({
                   <Select
                     value={category}
                     onChange={handleEditCategory}
-                    className="text-sm w-full"
+                    className="text-sm w-full max-w-full"
                   >
                     {!hasCategoryOption && category && (
-                      <option value={category}>{`Unmapped: ${category}`}</option>
+                      <option
+                        value={category}
+                      >{`Unmapped: ${category}`}</option>
                     )}
                     {smartFolders.map((folder) => (
                       <option key={folder.id} value={folder.name}>
@@ -154,12 +156,12 @@ function ReadyFileItem({
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-end sm:justify-start flex-shrink-0 w-full sm:w-auto">
           <StatusBadge variant={tone}>
             <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
               {stateDisplay.icon}
             </span>
-            <span className="hidden sm:inline">{stateDisplay.label}</span>
+            <span>{stateDisplay.label}</span>
           </StatusBadge>
           {computedConfidence !== null && (
             <span className="text-[11px] text-system-gray-500">

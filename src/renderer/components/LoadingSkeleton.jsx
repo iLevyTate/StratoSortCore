@@ -158,35 +158,42 @@ export const AnalysisProgressSkeleton = () => (
 export const SmartFolderListSkeleton = ({
   count = ANIMATION_CONFIG.DEFAULT_FOLDER_COUNT,
 }) => (
-  <div className="space-y-8" role="status" aria-label="Loading smart folders">
+  <div
+    className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"
+    role="status"
+    aria-label="Loading smart folders"
+  >
     {Array.from({ length: count }, (_, i) => (
       <div
         key={i}
-        className="p-13 bg-surface-muted rounded-lg border border-border-soft"
+        className="bg-white/70 rounded-xl border border-border-soft/60 shadow-sm p-4 flex flex-col gap-3"
+        style={{ animationDelay: `${i * ANIMATION_CONFIG.DELAY_INCREMENT}s` }}
       >
-        <div className="flex items-start justify-between gap-8">
-          <div className="flex-1 min-w-0">
-            <LoadingSkeleton className="w-3/4 mb-2" />
-            <LoadingSkeleton variant="text" className="w-full mb-3" />
-            <div className="text-sm bg-stratosort-blue/5 p-8 rounded-lg border-l-4 border-stratosort-blue/30">
-              <LoadingSkeleton className="w-1/4 mb-2" />
-              <LoadingSkeleton variant="text" className="w-2/3" />
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <LoadingSkeleton
+              variant="avatar"
+              className="h-12 w-12 rounded-xl"
+            />
+            <div className="flex-1 space-y-2 min-w-0">
+              <LoadingSkeleton className="w-3/4 h-4" />
+              <LoadingSkeleton variant="text" className="w-full" />
             </div>
           </div>
-          <div className="flex items-center gap-8 shrink-0">
-            <div className="flex items-center gap-5">
-              <LoadingSkeleton
-                variant="avatar"
-                className="w-3 h-3 rounded-full"
-              />
-              <LoadingSkeleton className="w-12 h-4" />
-            </div>
-            <div className="flex gap-5">
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-            </div>
+          <LoadingSkeleton className="w-16 h-6 rounded-full" />
+        </div>
+
+        <div className="bg-stratosort-blue/5 rounded-xl border border-stratosort-blue/10 p-3 space-y-2">
+          <LoadingSkeleton className="w-1/3 h-3" />
+          <LoadingSkeleton variant="text" className="w-2/3" />
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+          <LoadingSkeleton variant="button" className="w-24 h-9" />
+          <div className="flex gap-2">
+            <LoadingSkeleton variant="button" className="w-9 h-9 rounded-lg" />
+            <LoadingSkeleton variant="button" className="w-9 h-9 rounded-lg" />
+            <LoadingSkeleton variant="button" className="w-9 h-9 rounded-lg" />
           </div>
         </div>
       </div>

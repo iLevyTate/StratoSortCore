@@ -49,7 +49,7 @@ StratoSort is a privacy-first document organizer that uses AI to intelligently c
 
 ## 🚀 Getting Started
 
-**New to StratoSort?** Check out our [Quick Start Guide](QUICK_START.md) for a 5-minute walkthrough!
+Follow these steps for a quick first run:
 
 1. **Launch StratoSort** - The app will start and check AI readiness
 2. **Select Files** - Choose files or folders to organize

@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import { StatusBadge } from '../ui';
 
 // FIX: Implement virtualization for large processed file lists to prevent UI lag
@@ -87,7 +87,11 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
 
   if (isLoading) {
     return (
-      <div className="space-y-3" role="status" aria-label="Loading organized files">
+      <div
+        className="space-y-3"
+        role="status"
+        aria-label="Loading organized files"
+      >
         {[...Array(3)].map((_, i) => (
           <div
             key={i}

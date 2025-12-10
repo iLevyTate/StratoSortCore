@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { FixedSizeList as List } from 'react-window';
+import { List } from 'react-window';
 import { Folder } from 'lucide-react';
 
 // FIX: Implement virtualization for large folder lists to prevent UI lag
