@@ -384,7 +384,18 @@ export function useFileHandlers({
     async (files) => {
       if (!files || files.length === 0) return;
 
-      const newFiles = filterNewFiles(files, selectedFiles);
+      // Normalize paths so dropped File objects always carry a path (fallback to name)
+      const normalizedFiles = files.map((file) => {
+        if (typeof file === 'string') return file;
+        const pathValue =
+          file.path ||
+          // Electron's File objects should have absolute path; fallback to name
+          file.name ||
+          '';
+        return { ...file, path: pathValue };
+      });
+
+      const newFiles = filterNewFiles(normalizedFiles, selectedFiles);
       if (newFiles.length === 0) return;
 
       // Enforce path presence for dropped items
@@ -403,16 +414,32 @@ export function useFileHandlers({
       }
       if (withPath.length === 0) return;
 
-      // Ensure extension property is set
-      const enhancedFiles = withPath.map((file) => {
+      // Fetch file stats for dropped items (aligns behavior with file picker)
+      const paths = withPath.map((file) =>
+        typeof file === 'string' ? file : file.path,
+      );
+      const statsResults = await getBatchFileStats(paths);
+
+      // Merge stats and ensure extension property is set
+      const enhancedFiles = withPath.map((file, idx) => {
+        const pathValue = typeof file === 'string' ? file : file.path;
+        const stat = statsResults[idx];
+        const fileName = file.name || extractFileName(pathValue || '');
+
         let extension = file.extension;
         if (!extension) {
-          const fileName = file.name || extractFileName(file.path || '');
           extension = extractExtension(fileName);
         }
+
         return {
           ...file,
+          path: pathValue,
+          name: fileName,
           extension,
+          size: stat?.size ?? file.size ?? 0,
+          created: stat?.created,
+          modified: stat?.modified,
+          type: 'file',
           source: 'drag_drop',
           droppedAt: new Date().toISOString(),
         };

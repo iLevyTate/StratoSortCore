@@ -1,5 +1,13 @@
 import { useCallback, useState } from 'react';
 
+// Simple absolute-path check (Windows drive/UNC, extended, or POSIX root)
+const isAbsolutePath = (p) =>
+  typeof p === 'string' &&
+  (/^[A-Za-z]:[\\/]/.test(p) || // C:\path or C:/path
+    p.startsWith('\\\\') || // UNC \\server\share or \\?\C:\path
+    p.startsWith('//') || // UNC with forward slashes
+    p.startsWith('/')); // POSIX
+
 export function useDragAndDrop(onFilesDropped) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -34,13 +42,18 @@ export function useDragAndDrop(onFilesDropped) {
 
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0 && onFilesDropped) {
-        const fileObjects = files.map((file) => ({
-          path: file.path || file.name,
-          name: file.name,
-          type: 'file',
-          size: file.size,
-        }));
-        onFilesDropped(fileObjects);
+        const fileObjects = files
+          .map((file) => ({
+            path: file.path || file.name,
+            name: file.name,
+            type: 'file',
+            size: file.size,
+          }))
+          // Only keep absolute paths; drop names without a real path (prevents security errors)
+          .filter((f) => isAbsolutePath(f.path));
+
+        // If filtering removed everything, fall back to the raw list so UI can notify
+        onFilesDropped(fileObjects.length > 0 ? fileObjects : files);
       }
     },
     [onFilesDropped],

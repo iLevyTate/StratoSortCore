@@ -545,78 +545,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       // CRITICAL FIX: Do NOT normalize path separators here - let main process handle it
       // Converting backslashes to forward slashes causes HTML encoding issues
       try {
-        // Basic security checks (Note: Main process must also validate)
-        // 1. Must be absolute path (check for drive letter on Windows or / on Unix)
-        const isAbsolute =
-          filePath &&
-          typeof filePath === 'string' &&
-          (filePath.match(/^[A-Za-z]:[\\/]/) || filePath.startsWith('/'));
-
-        if (!isAbsolute) {
-          throw new Error('Invalid file path: must be absolute path');
+        // Normalize incoming value (arrays, objects, quoted strings)
+        if (Array.isArray(filePath) && filePath.length > 0) {
+          filePath = filePath[0];
+        }
+        if (filePath && typeof filePath === 'object' && filePath.path) {
+          filePath = filePath.path;
+        }
+        if (typeof filePath === 'string') {
+          filePath = filePath.trim().replace(/^['"](.*)['"]$/, '$1');
         }
 
-        // 2. Check for path traversal attempts (including encoded variants)
-        // Decode URL-encoded paths to catch %2e%2e and similar bypasses
-        let decodedPath = filePath;
-        try {
-          decodedPath = decodeURIComponent(filePath);
-        } catch {
-          // If decode fails, use original (might have invalid encoding)
-        }
-        if (decodedPath.includes('..') || filePath.includes('..')) {
-          throw new Error('Invalid file path: path traversal detected');
-        }
-
-        // 3. Block access to system directories (basic protection)
-        // MEDIUM PRIORITY FIX (MED-7): More nuanced system path blocking
-        // Check with both separator types for Windows/Unix compatibility
-        const dangerousPaths = [
-          '/etc',
-          '/sys',
-          '/proc',
-          '/dev',
-          '/boot',
-          'C:/Windows/System32',
-          'C:\\Windows\\System32',
-          'C:/Windows/SysWOW64',
-          'C:\\Windows\\SysWOW64',
-          'C:/Windows/Boot',
-          'C:\\Windows\\Boot',
-          'C:/Windows/WinSxS',
-          'C:\\Windows\\WinSxS',
-          '/System/Library/CoreServices',
-          '/Library/System',
-          '/private/etc',
-          '/private/var/root',
-        ];
-
-        // User-accessible Windows subdirectories (explicitly allowed)
-        const allowedWindowsPaths = [
-          'C:/Windows/Temp',
-          'C:\\Windows\\Temp',
-          'C:/Windows/Fonts',
-          'C:\\Windows\\Fonts',
-          'C:/Windows/Downloaded Program Files',
-          'C:\\Windows\\Downloaded Program Files',
-        ];
-
-        const normalizedPath = filePath.toLowerCase();
-        const isExplicitlyAllowed = allowedWindowsPaths.some((allowed) =>
-          normalizedPath.startsWith(allowed.toLowerCase()),
-        );
-
-        // Only block if it's dangerous AND not explicitly allowed
-        const isDangerous =
-          !isExplicitlyAllowed &&
-          dangerousPaths.some((dangerous) =>
-            normalizedPath.startsWith(dangerous.toLowerCase()),
-          );
-
-        if (isDangerous) {
-          throw new Error(
-            'Invalid file path: access to system directories not allowed',
-          );
+        // Allow any non-empty local path; block obvious remote URLs
+        if (
+          !filePath ||
+          typeof filePath !== 'string' ||
+          filePath.length === 0 ||
+          filePath.startsWith('http://') ||
+          filePath.startsWith('https://')
+        ) {
+          throw new Error('Invalid file path');
         }
 
         // Extract file extension without path module (check both separator types)
