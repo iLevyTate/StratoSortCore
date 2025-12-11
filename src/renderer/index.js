@@ -7,6 +7,7 @@ import { fetchDocumentsPath } from './store/slices/systemSlice';
 import { fetchSmartFolders } from './store/slices/filesSlice';
 import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
+import { applyPlatformClass } from './utils/platform';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
 import './tailwind.css';
 
@@ -14,6 +15,9 @@ import './tailwind.css';
 store.dispatch(fetchDocumentsPath());
 store.dispatch(fetchSmartFolders());
 store.dispatch(fetchSettings());
+
+// Add platform class to body for OS-specific styling hooks
+applyPlatformClass();
 
 // Set logger context for renderer entry point
 logger.setContext('Renderer');

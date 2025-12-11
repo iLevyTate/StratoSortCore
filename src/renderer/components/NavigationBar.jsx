@@ -1,11 +1,22 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { Home, Settings, Search, FolderOpen, CheckCircle2, Loader2 } from 'lucide-react';
+import {
+  Home,
+  Settings,
+  Search,
+  FolderOpen,
+  CheckCircle2,
+  Loader2,
+  Minus,
+  Square,
+  X
+} from 'lucide-react';
 import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setPhase, toggleSettings } from '../store/slices/uiSlice';
 import UpdateIndicator from './UpdateIndicator';
+import { isMac } from '../utils/platform';
 
 logger.setContext('NavigationBar');
 
@@ -237,6 +248,120 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
 });
 NavActions.propTypes = { onSettingsClick: PropTypes.func.isRequired };
 
+/**
+ * Custom window controls for Windows/Linux (macOS uses native traffic lights)
+ */
+const WindowControls = memo(function WindowControls() {
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  const refreshMaximizedState = useCallback(async () => {
+    if (!window?.electronAPI?.window?.isMaximized) return;
+    try {
+      const maximized = await window.electronAPI.window.isMaximized();
+      setIsMaximized(Boolean(maximized));
+    } catch (error) {
+      logger.error('Failed to read window maximize state', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const updateState = async () => {
+      if (!isMounted) return;
+      await refreshMaximizedState();
+    };
+
+    updateState();
+    window.addEventListener('resize', updateState);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('resize', updateState);
+    };
+  }, [refreshMaximizedState]);
+
+  const handleMinimize = useCallback(async () => {
+    try {
+      await window.electronAPI?.window?.minimize?.();
+    } catch (error) {
+      logger.error('Failed to minimize window', error);
+    }
+  }, []);
+
+  const handleToggleMaximize = useCallback(async () => {
+    try {
+      const toggled = await window.electronAPI?.window?.toggleMaximize?.();
+      if (typeof toggled === 'boolean') {
+        setIsMaximized(toggled);
+      } else {
+        refreshMaximizedState();
+      }
+    } catch (error) {
+      logger.error('Failed to toggle maximize state', error);
+    }
+  }, [refreshMaximizedState]);
+
+  const handleClose = useCallback(async () => {
+    try {
+      await window.electronAPI?.window?.close?.();
+    } catch (error) {
+      logger.error('Failed to close window', error);
+    }
+  }, []);
+
+  // macOS uses the native traffic lights
+  if (isMac) return null;
+
+  return (
+    <div
+      className="flex items-center overflow-hidden rounded-xl border border-white/50 bg-white/75 shadow-sm backdrop-blur-sm"
+      style={{ WebkitAppRegion: 'no-drag' }}
+    >
+      <button
+        type="button"
+        onClick={handleMinimize}
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        aria-label="Minimize window"
+        title="Minimize"
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={handleToggleMaximize}
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-system-gray-900 hover:bg-white/70 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+        title={isMaximized ? 'Restore' : 'Maximize'}
+      >
+        {isMaximized ? (
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M3,1v2H1v6h6V7h2V1H3z M2,8V4h4v4H2z M8,6h-1V3H4V2h4V6z" />
+          </svg>
+        ) : (
+          <Square className="h-3.5 w-3.5" />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={handleClose}
+        className="h-9 w-11 flex items-center justify-center text-system-gray-500 hover:text-white hover:bg-stratosort-danger transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/70"
+        aria-label="Close window"
+        title="Close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+});
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -342,8 +467,11 @@ function NavigationBar() {
           })}
         </nav>
 
-        {/* Right: Actions */}
-        <NavActions onSettingsClick={handleSettingsClick} />
+        {/* Right: Actions + Window Controls */}
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
+          <NavActions onSettingsClick={handleSettingsClick} />
+          <WindowControls />
+        </div>
       </div>
     </header>
   );

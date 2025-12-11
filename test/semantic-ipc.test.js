@@ -19,7 +19,7 @@ describe('Embeddings/Semantic IPC', () => {
         // eslint-disable-next-line no-unused-vars
         embedText: jest.fn(async (_text) => ({
           vector: [0.1, 0.2, 0.3],
-          model: 'nomic-embed-text'
+          model: 'mxbai-embed-large'
         })),
         generateFolderId: jest.fn((f) => f.id || `folder-${f.name}`),
         upsertFolderEmbedding: jest.fn(async (f) => f),
@@ -93,7 +93,7 @@ describe('Embeddings/Semantic IPC', () => {
         // eslint-disable-next-line no-unused-vars
         embedText: jest.fn(async (_text) => ({
           vector: [0.1, 0.2, 0.3],
-          model: 'nomic-embed-text'
+          model: 'mxbai-embed-large'
         })),
         generateFolderId: jest.fn((f) => f.id || `folder-${f.name}`),
         upsertFolderEmbedding: jest.fn(async () => {}),

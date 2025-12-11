@@ -6,6 +6,7 @@ const windowStateKeeper = require('electron-window-state');
 const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
 
 const isDev = isDevelopment();
+const isMac = process.platform === 'darwin';
 
 function createMainWindow() {
   logger.debug('Creating new window');
@@ -19,7 +20,7 @@ function createMainWindow() {
 
   // Restore previous window position/size
   const mainWindowState = windowStateKeeper({
-    defaultWidth: 1440,
+    defaultWidth: 1400,
     defaultHeight: 900
   });
 
@@ -28,12 +29,14 @@ function createMainWindow() {
     y: mainWindowState.y,
     width: mainWindowState.width,
     height: mainWindowState.height,
-    minWidth: 1024,
-    minHeight: 768,
-    // Use native frame with dark theme
-    frame: true,
-    backgroundColor: '#0f0f10', // Dark background while loading
-    darkTheme: true, // Force dark theme on Windows
+    minWidth: 800,
+    minHeight: 600,
+    // Frameless chrome with platform-sensitive styling
+    frame: isMac ? true : false,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
+    backgroundColor: '#f8fafc', // Align with glass morphism surface-muted tone
+    darkTheme: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -57,8 +60,7 @@ function createMainWindow() {
     },
     icon: path.join(__dirname, '../../../assets/stratosort-logo.png'),
     show: false,
-    titleBarStyle: 'default',
-    autoHideMenuBar: false // Keep menu bar visible
+    autoHideMenuBar: true // Keep menu accessible via Alt while preserving a clean chrome
   });
 
   logger.debug('BrowserWindow created');

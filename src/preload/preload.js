@@ -516,6 +516,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
           filePath = filePath.trim().replace(/^['"](.*)['"]$/, '$1');
         }
 
+        // Normalize file:// URIs to filesystem paths (handles Windows drive prefix)
+        if (typeof filePath === 'string' && filePath.toLowerCase().startsWith('file://')) {
+          try {
+            const url = new URL(filePath);
+            const pathname = decodeURIComponent(url.pathname || '');
+            if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) {
+              filePath = pathname.slice(1); // drop leading slash before drive letter
+            } else {
+              filePath = pathname;
+            }
+          } catch {
+            // fall through to validation
+          }
+        }
+
         // Allow any non-empty local path; block obvious remote URLs
         if (
           !filePath ||
@@ -525,6 +540,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
           filePath.startsWith('https://')
         ) {
           throw new Error('Invalid file path');
+        }
+
+        // Require absolute filesystem path to avoid CWD-relative resolution
+        const isAbsolute =
+          /^[a-zA-Z]:[\\/]/.test(filePath) ||
+          filePath.startsWith('\\\\') ||
+          filePath.startsWith('/');
+        if (!isAbsolute) {
+          throw new Error('Invalid file path: must be an absolute path');
         }
 
         // Extract file extension without path module (check both separator types)

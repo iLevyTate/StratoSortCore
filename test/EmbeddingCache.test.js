@@ -29,7 +29,7 @@ describe('EmbeddingCache', () => {
   describe('Basic Functionality', () => {
     it('should store and retrieve embeddings', () => {
       const text = 'test document';
-      const model = 'nomic-embed-text';
+      const model = 'mxbai-embed-large';
       const vector = new Array(1024).fill(0.5);
 
       cache.set(text, model, vector);
@@ -505,7 +505,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
           embedding: new Array(1024).fill(0.5)
         })
       })),
-      getOllamaEmbeddingModel: jest.fn(() => 'nomic-embed-text')
+      getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large')
     }));
 
     mockChromaDB = {

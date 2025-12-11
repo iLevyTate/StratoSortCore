@@ -22,7 +22,7 @@ function generateDummyFiles(count, options = {}) {
     extensions = ['.pdf', '.docx', '.txt', '.jpg', '.png'],
     includeAnalysis = true,
     includeEmbedding = false,
-    embeddingDimensions = 768
+    embeddingDimensions = 1024
   } = options;
 
   const files = [];
@@ -75,7 +75,7 @@ function generateDummyFiles(count, options = {}) {
  * @param {number} dimensions - Vector dimensions
  * @returns {Array<number>} Random vector normalized to unit length
  */
-function generateRandomVector(dimensions = 768) {
+function generateRandomVector(dimensions = 1024) {
   const vector = [];
   let sumSquares = 0;
 
@@ -97,7 +97,7 @@ function generateRandomVector(dimensions = 768) {
  * @returns {Array<Object>} Array of folder objects
  */
 function generateDummyFolders(count, options = {}) {
-  const { includeEmbedding = true, embeddingDimensions = 768 } = options;
+  const { includeEmbedding = true, embeddingDimensions = 1024 } = options;
 
   const folderTypes = [
     'Documents',
@@ -117,7 +117,7 @@ function generateDummyFolders(count, options = {}) {
       name: `${type} ${i}`,
       path: `/smart-folders/${type.toLowerCase()}_${i}`,
       description: `Smart folder for ${type.toLowerCase()} - instance ${i}`,
-      model: 'nomic-embed-text',
+      model: 'mxbai-embed-large',
       updatedAt: new Date().toISOString()
     };
 
@@ -417,14 +417,14 @@ function createResourceTracker() {
  * @returns {Array<Object>} Array of queue items
  */
 function generateQueueItems(count, options = {}) {
-  const { type = 'file', includeVector = true, vectorDimensions = 768 } = options;
+  const { type = 'file', includeVector = true, vectorDimensions = 1024 } = options;
 
   const items = [];
 
   for (let i = 0; i < count; i++) {
     const item = {
       id: `${type}:item_${i}_${Date.now()}`,
-      model: 'nomic-embed-text',
+      model: 'mxbai-embed-large',
       updatedAt: new Date().toISOString(),
       meta: {
         name: `item_${i}.pdf`,

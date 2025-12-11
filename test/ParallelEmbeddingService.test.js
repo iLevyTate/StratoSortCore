@@ -22,7 +22,7 @@ const mockOllama = {
 
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(() => mockOllama),
-  getOllamaEmbeddingModel: jest.fn(() => 'nomic-embed-text')
+  getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large')
 }));
 
 // Mock ollamaApiRetry
@@ -171,7 +171,7 @@ describe('ParallelEmbeddingService', () => {
       const result = await service.embedText('hello world');
 
       expect(result.vector).toEqual([0.1, 0.2, 0.3]);
-      expect(result.model).toBe('nomic-embed-text');
+      expect(result.model).toBe('mxbai-embed-large');
     });
 
     test('updates statistics on success', async () => {

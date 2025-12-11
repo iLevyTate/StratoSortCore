@@ -39,7 +39,7 @@ describe('AnalysisHistoryService', () => {
     };
     await svc.recordAnalysis(fileInfo, analysis);
     const recent = await svc.getRecentAnalysis(10);
-    expect(recent.results.length).toBeGreaterThan(0);
+    expect(recent.length).toBeGreaterThan(0);
 
     // Corrupt the file, then re-initialize should recover
     const file = path.join(tmpDir, 'analysis-history.json');
@@ -63,6 +63,6 @@ describe('AnalysisHistoryService', () => {
       { summary: 'Project Beta report' }
     );
     const searchResult = await svc.searchAnalysis('alpha');
-    expect(searchResult.results.some((r) => r.originalPath.includes('alpha'))).toBe(true);
+    expect(searchResult.some((r) => r.originalPath.includes('alpha'))).toBe(true);
   });
 });

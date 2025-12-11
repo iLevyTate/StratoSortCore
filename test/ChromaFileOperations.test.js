@@ -81,7 +81,7 @@ describe('ChromaDB File Operations', () => {
         id: 'file-123',
         vector: [0.1, 0.2, 0.3],
         meta: { path: '/test/file.txt', name: 'file.txt' },
-        model: 'nomic-embed-text',
+        model: 'mxbai-embed-large',
         updatedAt: '2024-01-01T00:00:00Z'
       };
 

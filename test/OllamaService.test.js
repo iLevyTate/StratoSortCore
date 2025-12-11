@@ -134,7 +134,7 @@ describe('OllamaService', () => {
         host: 'http://localhost:11435',
         textModel: 'mistral',
         visionModel: 'bakllava',
-        embeddingModel: 'nomic-embed-text'
+        embeddingModel: 'mxbai-embed-large'
       };
 
       const result = await OllamaServiceModule.updateConfig(newConfig);
@@ -143,7 +143,7 @@ describe('OllamaService', () => {
       expect(setOllamaHost).toHaveBeenCalledWith('http://localhost:11435');
       expect(setOllamaModel).toHaveBeenCalledWith('mistral');
       expect(setOllamaVisionModel).toHaveBeenCalledWith('bakllava');
-      expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('nomic-embed-text');
+      expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('mxbai-embed-large');
       expect(saveOllamaConfig).toHaveBeenCalled();
     });
 

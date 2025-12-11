@@ -39,6 +39,14 @@ const FONT_SCALE = {
   display: ['3rem', { lineHeight: '1.1' }]
 };
 
+const SPACING_TOKENS = {
+  compact: 'var(--spacing-compact)',
+  cozy: 'var(--spacing-cozy)',
+  default: 'var(--spacing-default)',
+  relaxed: 'var(--spacing-relaxed)',
+  spacious: 'var(--spacing-spacious)'
+};
+
 const BRAND_COLORS = {
   stratosort: {
     blue: '#2563EB',
@@ -220,7 +228,10 @@ module.exports = {
         '4xl': '1920px',
         '5xl': '2560px'
       },
-      spacing: EXTENDED_SPACING,
+      spacing: {
+        ...EXTENDED_SPACING,
+        ...SPACING_TOKENS
+      },
       maxWidth: {
         'screen-xl': '1280px',
         'screen-2xl': '1440px',

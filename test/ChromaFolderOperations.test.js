@@ -92,7 +92,7 @@ describe('ChromaDB Folder Operations', () => {
         vector: [0.1, 0.2, 0.3],
         description: 'My documents folder',
         path: '/home/user/Documents',
-        model: 'nomic-embed-text'
+        model: 'mxbai-embed-large'
       };
 
       await directUpsertFolder({

@@ -56,6 +56,37 @@ const SUPPORTED_EXTENSIONS = [
 
 const SCAN_TIMEOUT = 30000;
 
+const normalizePathValue = (value) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim().replace(/^['"](.*)['"]$/, '$1');
+
+  if (trimmed.toLowerCase().startsWith('file://')) {
+    try {
+      const url = new URL(trimmed);
+      // On Windows, URL pathname starts with /C:/... — strip leading slash
+      const pathname = decodeURIComponent(url.pathname);
+      if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) {
+        return pathname.slice(1);
+      }
+      return pathname;
+    } catch {
+      // fall back to trimmed
+    }
+  }
+
+  return trimmed;
+};
+
+const isAbsolutePath = (value) => {
+  const normalized = normalizePathValue(value);
+  if (!normalized) return false;
+  return (
+    /^[a-zA-Z]:[\\/]/.test(normalized) ||
+    normalized.startsWith('\\\\') ||
+    normalized.startsWith('/')
+  );
+};
+
 /**
  * Custom hook for file handling operations
  * @param {Object} options - Hook options
@@ -257,7 +288,28 @@ export function useFileHandlers({
       const result = await window.electronAPI.files.select();
 
       if (result?.success && result?.files?.length > 0) {
-        const newFiles = filterNewFiles(result.files, selectedFiles);
+        const absoluteFiles = (result.files || []).map((f) => {
+          const rawPath = typeof f === 'string' ? f : f?.path;
+          const normalizedPath = normalizePathValue(rawPath);
+          return typeof f === 'string' ? normalizedPath : { ...f, path: normalizedPath };
+        });
+        const usableFiles = absoluteFiles.filter((f) =>
+          isAbsolutePath(typeof f === 'string' ? f : f?.path)
+        );
+        const droppedNonAbsolute = (result.files || []).length - absoluteFiles.length;
+        const unusableCount = absoluteFiles.length - usableFiles.length;
+
+        if (droppedNonAbsolute > 0 || unusableCount > 0) {
+          const skipped = droppedNonAbsolute + unusableCount;
+          addNotification(
+            `Skipped ${skipped} item${skipped > 1 ? 's' : ''} without a usable absolute path`,
+            'warning',
+            2500,
+            'file-selection-path'
+          );
+        }
+
+        const newFiles = filterNewFiles(usableFiles, selectedFiles);
 
         if (newFiles.length === 0) return;
 
@@ -438,35 +490,32 @@ export function useFileHandlers({
     async (files) => {
       if (!files || files.length === 0) return;
 
-      // Normalize paths so dropped File objects always carry a path (fallback to name)
+      // Normalize paths and require absolute paths for dropped items
       const normalizedFiles = files.map((file) => {
-        if (typeof file === 'string') return file;
-        const pathValue =
-          file.path ||
-          // Electron's File objects should have absolute path; fallback to name
-          file.name ||
-          '';
-        return { ...file, path: pathValue };
+        if (typeof file === 'string') return normalizePathValue(file);
+        const normalizedPath = normalizePathValue(file.path || '');
+        return { ...file, path: normalizedPath };
       });
 
-      const newFiles = filterNewFiles(normalizedFiles, selectedFiles);
-      if (newFiles.length === 0) return;
-
-      // Enforce path presence for dropped items
-      const withPath = newFiles.filter((file) => {
+      const usableFiles = normalizedFiles.filter((file) => {
         const pathValue = typeof file === 'string' ? file : file.path;
-        return typeof pathValue === 'string' && pathValue.trim().length > 0;
+        return isAbsolutePath(pathValue);
       });
-      const droppedMissingPath = newFiles.length - withPath.length;
-      if (droppedMissingPath > 0) {
+
+      const skippedCount = files.length - usableFiles.length;
+      if (skippedCount > 0) {
         addNotification(
-          `Skipped ${droppedMissingPath} item${droppedMissingPath > 1 ? 's' : ''} with no path`,
+          `Skipped ${skippedCount} item${skippedCount > 1 ? 's' : ''} without a usable absolute path`,
           'warning',
           2500,
           'drop-missing-path'
         );
       }
-      if (withPath.length === 0) return;
+
+      const newFiles = filterNewFiles(normalizedFiles, selectedFiles);
+      if (newFiles.length === 0) return;
+
+      const withPath = newFiles; // Already filtered for absolute paths
 
       // Fetch file stats for dropped items (aligns behavior with file picker)
       const paths = withPath.map((file) => (typeof file === 'string' ? file : file.path));

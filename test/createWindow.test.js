@@ -86,19 +86,19 @@ describe('createWindow', () => {
         expect.objectContaining({
           width: 1440,
           height: 900,
-          minWidth: 1024,
-          minHeight: 768
+          minWidth: 800,
+          minHeight: 600
         })
       );
     });
 
-    test('creates window with dark theme', () => {
+    test('creates window with light theme (default)', () => {
       createMainWindow();
 
       expect(BrowserWindow).toHaveBeenCalledWith(
         expect.objectContaining({
-          backgroundColor: '#0f0f10',
-          darkTheme: true
+          backgroundColor: '#f8fafc',
+          darkTheme: false
         })
       );
     });
