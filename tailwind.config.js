@@ -23,7 +23,7 @@ const EXTENDED_SPACING = {
   72: '18rem',
   89: '22.25rem',
   120: '30rem',
-  144: '36rem',
+  144: '36rem'
 };
 
 const FONT_SCALE = {
@@ -36,7 +36,15 @@ const FONT_SCALE = {
   '2xl': ['1.625rem', { lineHeight: '2.25rem' }],
   '3xl': ['1.875rem', { lineHeight: '2.5rem' }],
   '4xl': ['2.25rem', { lineHeight: '2.75rem' }],
-  display: ['3rem', { lineHeight: '1.1' }],
+  display: ['3rem', { lineHeight: '1.1' }]
+};
+
+const SPACING_TOKENS = {
+  compact: 'var(--spacing-compact)',
+  cozy: 'var(--spacing-cozy)',
+  default: 'var(--spacing-default)',
+  relaxed: 'var(--spacing-relaxed)',
+  spacious: 'var(--spacing-spacious)'
 };
 
 const BRAND_COLORS = {
@@ -48,19 +56,19 @@ const BRAND_COLORS = {
     coral: '#FB7185',
     success: '#10B981',
     warning: '#F97316',
-    danger: '#EF4444',
+    danger: '#EF4444'
   },
   surface: {
     primary: '#FFFFFF',
     muted: '#F8FAFC',
     subdued: '#EEF2FF',
     elevated: '#FFFFFF',
-    contrast: '#0F172A',
+    contrast: '#0F172A'
   },
   border: {
     soft: '#E2E8F0',
     medium: '#CBD5E1',
-    strong: '#94A3B8',
+    strong: '#94A3B8'
   },
   system: {
     blue: '#2563EB',
@@ -80,17 +88,14 @@ const BRAND_COLORS = {
       600: '#475569',
       700: '#334155',
       800: '#1E293B',
-      900: '#0F172A',
-    },
-  },
+      900: '#0F172A'
+    }
+  }
 };
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    './src/renderer/**/*.{html,js,ts,jsx,tsx}',
-    './src/**/*.{html,js,ts,jsx,tsx}',
-  ],
+  content: ['./src/renderer/**/*.{html,js,ts,jsx,tsx}', './src/**/*.{html,js,ts,jsx,tsx}'],
   safelist: [
     // Status utilities (use .status-chip.success etc)
     'status-chip',
@@ -204,7 +209,7 @@ module.exports = {
     'border-warning',
     'border-info',
     'border-error',
-    'border-neutral',
+    'border-neutral'
   ],
   theme: {
     container: {
@@ -212,8 +217,8 @@ module.exports = {
       padding: {
         DEFAULT: '1.5rem',
         lg: '2rem',
-        xl: '3rem',
-      },
+        xl: '3rem'
+      }
     },
     extend: {
       screens: {
@@ -221,9 +226,12 @@ module.exports = {
         '2xl': '1440px',
         '3xl': '1600px',
         '4xl': '1920px',
-        '5xl': '2560px',
+        '5xl': '2560px'
       },
-      spacing: EXTENDED_SPACING,
+      spacing: {
+        ...EXTENDED_SPACING,
+        ...SPACING_TOKENS
+      },
       maxWidth: {
         'screen-xl': '1280px',
         'screen-2xl': '1440px',
@@ -232,7 +240,7 @@ module.exports = {
         'content-lg': '72rem',
         'content-xl': '90rem',
         'content-2xl': '105rem',
-        'content-md': '56rem',
+        'content-md': '56rem'
       },
       gridTemplateColumns: {
         // Auto-fit grids - items stretch to fill available space
@@ -246,11 +254,11 @@ module.exports = {
         'auto-fill-sm': 'repeat(auto-fill, minmax(200px, 1fr))',
         'auto-fill-md': 'repeat(auto-fill, minmax(280px, 1fr))',
         'auto-fill-lg': 'repeat(auto-fill, minmax(320px, 1fr))',
-        'auto-fill-xl': 'repeat(auto-fill, minmax(400px, 1fr))',
+        'auto-fill-xl': 'repeat(auto-fill, minmax(400px, 1fr))'
       },
       fontFamily: {
         sans: ['Inter', 'SF Pro Display', ...defaultTheme.fontFamily.sans],
-        mono: ['JetBrains Mono', ...defaultTheme.fontFamily.mono],
+        mono: ['JetBrains Mono', ...defaultTheme.fontFamily.mono]
       },
       fontSize: FONT_SCALE,
       colors: {
@@ -261,8 +269,8 @@ module.exports = {
           'secondary-start': '#F093FB',
           'secondary-end': '#F5576C',
           'accent-start': '#4FACFE',
-          'accent-end': '#00F2FE',
-        },
+          'accent-end': '#00F2FE'
+        }
       },
       borderRadius: {
         xs: '0.125rem',
@@ -272,7 +280,7 @@ module.exports = {
         xl: '1rem',
         '2xl': '1.5rem',
         glass: '1.75rem',
-        button: '999px',
+        button: '999px'
       },
       boxShadow: {
         xs: '0 1px 2px rgba(15, 23, 42, 0.08)',
@@ -281,80 +289,80 @@ module.exports = {
         lg: '0 25px 45px rgba(15, 23, 42, 0.12)',
         xl: '0 35px 65px rgba(15, 23, 42, 0.14)',
         glow: '0 0 25px rgba(37, 99, 235, 0.35)',
-        glass: '0 20px 45px rgba(15, 23, 42, 0.25)',
+        glass: '0 20px 45px rgba(15, 23, 42, 0.25)'
       },
       backdropBlur: {
         xs: '2px',
         sm: '6px',
         DEFAULT: '12px',
         lg: '16px',
-        xl: '22px',
+        xl: '22px'
       },
       dropShadow: {
         card: '0 30px 45px rgba(15, 23, 42, 0.12)',
-        glow: '0 15px 45px rgba(37, 99, 235, 0.35)',
+        glow: '0 15px 45px rgba(37, 99, 235, 0.35)'
       },
       transitionTimingFunction: {
         smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',
-        snappy: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        snappy: 'cubic-bezier(0.16, 1, 0.3, 1)'
       },
       zIndex: {
         header: 100,
         overlay: 200,
         toast: 500,
-        modal: 600,
+        modal: 600
       },
       keyframes: {
         'fade-in': {
           '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
+          '100%': { opacity: '1' }
         },
         'modal-backdrop': {
           '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
+          '100%': { opacity: '1' }
         },
         'modal-enter': {
           '0%': {
             opacity: '0',
-            transform: 'translate3d(0, -8px, 0) scale(0.98)',
+            transform: 'translate3d(0, -8px, 0) scale(0.98)'
           },
           '100%': {
             opacity: '1',
-            transform: 'translate3d(0, 0, 0) scale(1)',
-          },
+            transform: 'translate3d(0, 0, 0) scale(1)'
+          }
         },
         'confirm-bounce': {
           '0%, 100%': { transform: 'scale(1)' },
-          '50%': { transform: 'scale(1.03)' },
+          '50%': { transform: 'scale(1.03)' }
         },
         'slide-up': {
           '0%': {
             opacity: '0',
-            transform: 'translate3d(0, 12px, 0)',
+            transform: 'translate3d(0, 12px, 0)'
           },
           '100%': {
             opacity: '1',
-            transform: 'translate3d(0, 0, 0)',
-          },
+            transform: 'translate3d(0, 0, 0)'
+          }
         },
         'slide-in-right': {
           '0%': {
             opacity: '0',
-            transform: 'translate3d(12px, 0, 0)',
+            transform: 'translate3d(12px, 0, 0)'
           },
           '100%': {
             opacity: '1',
-            transform: 'translate3d(0, 0, 0)',
-          },
+            transform: 'translate3d(0, 0, 0)'
+          }
         },
         float: {
           '0%, 100%': { transform: 'translate3d(0, 0, 0)' },
-          '50%': { transform: 'translate3d(0, -8px, 0)' },
+          '50%': { transform: 'translate3d(0, -8px, 0)' }
         },
         'bounce-subtle': {
           '0%, 100%': { transform: 'translate3d(0, 0, 0)' },
-          '50%': { transform: 'translate3d(0, -4px, 0)' },
-        },
+          '50%': { transform: 'translate3d(0, -4px, 0)' }
+        }
       },
       animation: {
         'fade-in': 'fade-in 0.15s ease-out',
@@ -364,9 +372,9 @@ module.exports = {
         'slide-up': 'slide-up 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         'slide-in-right': 'slide-in-right 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         float: 'float 3s ease-in-out infinite',
-        'bounce-subtle': 'bounce-subtle 2s ease-in-out infinite',
-      },
-    },
+        'bounce-subtle': 'bounce-subtle 2s ease-in-out infinite'
+      }
+    }
   },
   plugins: [
     require('daisyui'),
@@ -375,38 +383,38 @@ module.exports = {
       matchUtilities(
         {
           'grid-auto-fit': (value) => ({
-            gridTemplateColumns: `repeat(auto-fit, minmax(min(${value}, 100%), 1fr))`,
+            gridTemplateColumns: `repeat(auto-fit, minmax(min(${value}, 100%), 1fr))`
           }),
           'grid-auto-fill': (value) => ({
-            gridTemplateColumns: `repeat(auto-fill, minmax(min(${value}, 100%), 1fr))`,
-          }),
+            gridTemplateColumns: `repeat(auto-fill, minmax(min(${value}, 100%), 1fr))`
+          })
         },
         { values: theme('spacing') }
       );
-    }),
+    })
   ],
   daisyui: {
     themes: [
       {
         stratosort: {
           // Aligned with BRAND_COLORS.stratosort
-          primary: '#2563EB',      // stratosort-blue
-          secondary: '#8B5CF6',    // system.purple
-          accent: '#F59E0B',       // stratosort-accent (amber)
-          neutral: '#334155',      // system-gray-700
-          'base-100': '#FFFFFF',   // surface-primary
-          'base-200': '#F8FAFC',   // surface-muted
-          'base-300': '#F1F5F9',   // system-gray-100
-          info: '#2563EB',         // stratosort-blue (was #3B82F6)
-          success: '#10B981',      // stratosort-success
-          warning: '#F97316',      // stratosort-warning (was #F59E0B)
-          error: '#EF4444',        // stratosort-danger
-        },
-      },
+          primary: '#2563EB', // stratosort-blue
+          secondary: '#8B5CF6', // system.purple
+          accent: '#F59E0B', // stratosort-accent (amber)
+          neutral: '#334155', // system-gray-700
+          'base-100': '#FFFFFF', // surface-primary
+          'base-200': '#F8FAFC', // surface-muted
+          'base-300': '#F1F5F9', // system-gray-100
+          info: '#2563EB', // stratosort-blue (was #3B82F6)
+          success: '#10B981', // stratosort-success
+          warning: '#F97316', // stratosort-warning (was #F59E0B)
+          error: '#EF4444' // stratosort-danger
+        }
+      }
     ],
     darkTheme: false,
     base: true,
     styled: true,
-    utils: true,
-  },
+    utils: true
+  }
 };

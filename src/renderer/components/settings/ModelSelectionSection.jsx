@@ -10,20 +10,18 @@ function ModelSelectionSection({
   setSettings,
   textModelOptions,
   visionModelOptions,
-  embeddingModelOptions,
+  embeddingModelOptions
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
-          Text Model
-        </label>
+        <label className="block text-sm font-medium text-system-gray-700 mb-2">Text Model</label>
         <Select
           value={settings.textModel}
           onChange={(e) =>
             setSettings((prev) => ({
               ...prev,
-              textModel: e.target.value,
+              textModel: e.target.value
             }))
           }
         >
@@ -35,15 +33,13 @@ function ModelSelectionSection({
         </Select>
       </div>
       <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
-          Vision Model
-        </label>
+        <label className="block text-sm font-medium text-system-gray-700 mb-2">Vision Model</label>
         <Select
           value={settings.visionModel}
           onChange={(e) =>
             setSettings((prev) => ({
               ...prev,
-              visionModel: e.target.value,
+              visionModel: e.target.value
             }))
           }
         >
@@ -63,7 +59,7 @@ function ModelSelectionSection({
           onChange={(e) =>
             setSettings((prev) => ({
               ...prev,
-              embeddingModel: e.target.value,
+              embeddingModel: e.target.value
             }))
           }
         >
@@ -83,7 +79,7 @@ ModelSelectionSection.propTypes = {
   setSettings: PropTypes.func.isRequired,
   textModelOptions: PropTypes.array.isRequired,
   visionModelOptions: PropTypes.array.isRequired,
-  embeddingModelOptions: PropTypes.array.isRequired,
+  embeddingModelOptions: PropTypes.array.isRequired
 };
 
 export default ModelSelectionSection;

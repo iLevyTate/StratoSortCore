@@ -62,7 +62,7 @@ test.describe('Error Handling', () => {
         return {
           handled: true,
           errorType: error.name || 'Error',
-          message: error.message,
+          message: error.message
         };
       }
     });
@@ -86,9 +86,7 @@ test.describe('Error Handling', () => {
         // This should complete or timeout gracefully
         const metrics = await Promise.race([
           api.getMetrics(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Test timeout')), 10000)
-          ),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Test timeout')), 10000))
         ]);
 
         return { available: true, success: true, hasData: !!metrics };
@@ -139,7 +137,9 @@ test.describe('Error Handling', () => {
     // Check that error boundaries exist in the React app
     const hasErrorBoundary = await window.evaluate(() => {
       // Check for error boundary class/component in the DOM or React tree
-      const errorElements = document.querySelectorAll('[class*="error-boundary"], [class*="ErrorBoundary"]');
+      const errorElements = document.querySelectorAll(
+        '[class*="error-boundary"], [class*="ErrorBoundary"]'
+      );
       return errorElements.length > 0 || true; // Assume they exist even if not visible
     });
 
@@ -230,9 +230,8 @@ test.describe('Error Handling - File System Errors', () => {
         }
 
         // Try to access a system file (likely to fail)
-        const systemPath = process.platform === 'win32'
-          ? 'C:\\Windows\\System32\\config\\SAM'
-          : '/etc/shadow';
+        const systemPath =
+          process.platform === 'win32' ? 'C:\\Windows\\System32\\config\\SAM' : '/etc/shadow';
 
         await api.getStats(systemPath);
         return { tested: true, gotStats: true };
@@ -399,7 +398,7 @@ test.describe('Error Handling - Rate Limiting', () => {
         tested: true,
         total: results.length,
         successful: results.filter((r) => r.success).length,
-        errors: results.filter((r) => !r.success).map((r) => r.error),
+        errors: results.filter((r) => !r.success).map((r) => r.error)
       };
     });
 

@@ -9,8 +9,8 @@ jest.mock('child_process', () => ({
     stdout: { on: jest.fn() },
     stderr: { on: jest.fn() },
     on: jest.fn(),
-    pid: 12345,
-  }),
+    pid: 12345
+  })
 }));
 
 jest.mock('axios');
@@ -21,29 +21,29 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  axiosWithRetry: jest.fn(),
+  axiosWithRetry: jest.fn()
 }));
 
 jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
-  hasPythonModuleAsync: jest.fn(),
+  hasPythonModuleAsync: jest.fn()
 }));
 
 jest.mock('../src/main/utils/chromaSpawnUtils', () => ({
-  buildChromaSpawnPlan: jest.fn(),
+  buildChromaSpawnPlan: jest.fn()
 }));
 
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
     getServerConfig: jest.fn().mockReturnValue({
       host: '127.0.0.1',
-      port: 8000,
-    }),
-  }),
+      port: 8000
+    })
+  })
 }));
 
 // Mock ServiceContainer to provide chromaDb service
@@ -52,13 +52,13 @@ jest.mock('../src/main/services/ServiceContainer', () => ({
     resolve: jest.fn().mockReturnValue({
       getServerConfig: jest.fn().mockReturnValue({
         host: '127.0.0.1',
-        port: 8000,
-      }),
-    }),
+        port: 8000
+      })
+    })
   },
   ServiceIds: {
-    CHROMA_DB: 'chromaDb',
-  },
+    CHROMA_DB: 'chromaDb'
+  }
 }));
 
 describe('chromaService', () => {
@@ -83,10 +83,8 @@ describe('chromaService', () => {
     axios = require('axios');
     axiosWithRetry = require('../src/main/utils/ollamaApiRetry').axiosWithRetry;
     spawn = require('child_process').spawn;
-    hasPythonModuleAsync =
-      require('../src/main/utils/asyncSpawnUtils').hasPythonModuleAsync;
-    buildChromaSpawnPlan =
-      require('../src/main/utils/chromaSpawnUtils').buildChromaSpawnPlan;
+    hasPythonModuleAsync = require('../src/main/utils/asyncSpawnUtils').hasPythonModuleAsync;
+    buildChromaSpawnPlan = require('../src/main/utils/chromaSpawnUtils').buildChromaSpawnPlan;
 
     chromaService = require('../src/main/services/startup/chromaService');
   });
@@ -127,7 +125,7 @@ describe('chromaService', () => {
 
       expect(axios.get).toHaveBeenCalledWith(
         expect.stringContaining('http://127.0.0.1:8000'),
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -144,7 +142,7 @@ describe('chromaService', () => {
 
       expect(freshAxios.get).toHaveBeenCalledWith(
         expect.stringContaining('http://custom:9000'),
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -193,8 +191,8 @@ describe('chromaService', () => {
         expect.any(Function),
         expect.objectContaining({
           maxRetries: 2,
-          initialDelay: 500,
-        }),
+          initialDelay: 500
+        })
       );
     });
   });
@@ -205,7 +203,7 @@ describe('chromaService', () => {
 
     beforeEach(() => {
       serviceStatus = {
-        chromadb: { status: 'stopped', health: 'unknown' },
+        chromadb: { status: 'stopped', health: 'unknown' }
       };
       errors = [];
       hasPythonModuleAsync.mockResolvedValue(true);
@@ -213,7 +211,7 @@ describe('chromaService', () => {
         command: 'chroma',
         args: ['run'],
         options: {},
-        source: 'local-cli',
+        source: 'local-cli'
       });
     });
 
@@ -228,7 +226,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(result.success).toBe(true);
@@ -242,7 +240,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: true,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(result.success).toBe(false);
@@ -258,7 +256,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(hasPythonModuleAsync).toHaveBeenCalledWith('chromadb');
@@ -273,7 +271,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(errors).toHaveLength(1);
@@ -284,7 +282,7 @@ describe('chromaService', () => {
       const cachedPlan = {
         command: 'chroma',
         args: ['run', '--cached'],
-        options: {},
+        options: {}
       };
 
       await chromaService.startChromaDB({
@@ -292,7 +290,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: cachedPlan,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(buildChromaSpawnPlan).not.toHaveBeenCalled();
@@ -305,7 +303,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(buildChromaSpawnPlan).toHaveBeenCalled();
@@ -319,7 +317,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan,
+        setCachedSpawnPlan
       });
 
       expect(setCachedSpawnPlan).toHaveBeenCalled();
@@ -330,7 +328,7 @@ describe('chromaService', () => {
         command: 'python',
         args: ['-m', 'chromadb'],
         options: {},
-        source: 'fallback',
+        source: 'fallback'
       });
 
       const setCachedSpawnPlan = jest.fn();
@@ -340,7 +338,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan,
+        setCachedSpawnPlan
       });
 
       expect(setCachedSpawnPlan).not.toHaveBeenCalled();
@@ -355,8 +353,8 @@ describe('chromaService', () => {
           errors,
           chromadbDependencyMissing: false,
           cachedChromaSpawnPlan: null,
-          setCachedSpawnPlan: jest.fn(),
-        }),
+          setCachedSpawnPlan: jest.fn()
+        })
       ).rejects.toThrow('No viable ChromaDB startup plan found');
     });
 
@@ -366,7 +364,7 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       expect(spawn).toHaveBeenCalled();
@@ -378,7 +376,7 @@ describe('chromaService', () => {
         stdout: { on: jest.fn() },
         stderr: { on: jest.fn() },
         on: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -387,13 +385,10 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
-      expect(mockProcess.stdout.on).toHaveBeenCalledWith(
-        'data',
-        expect.any(Function),
-      );
+      expect(mockProcess.stdout.on).toHaveBeenCalledWith('data', expect.any(Function));
     });
 
     test('sets up stderr handler', async () => {
@@ -401,7 +396,7 @@ describe('chromaService', () => {
         stdout: { on: jest.fn() },
         stderr: { on: jest.fn() },
         on: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -410,13 +405,10 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
-      expect(mockProcess.stderr.on).toHaveBeenCalledWith(
-        'data',
-        expect.any(Function),
-      );
+      expect(mockProcess.stderr.on).toHaveBeenCalledWith('data', expect.any(Function));
     });
 
     test('sets up error handler', async () => {
@@ -424,7 +416,7 @@ describe('chromaService', () => {
         stdout: { on: jest.fn() },
         stderr: { on: jest.fn() },
         on: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -433,13 +425,10 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
-      expect(mockProcess.on).toHaveBeenCalledWith(
-        'error',
-        expect.any(Function),
-      );
+      expect(mockProcess.on).toHaveBeenCalledWith('error', expect.any(Function));
     });
 
     test('sets up exit handler that updates status', async () => {
@@ -447,7 +436,7 @@ describe('chromaService', () => {
         stdout: { on: jest.fn() },
         stderr: { on: jest.fn() },
         on: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -456,13 +445,11 @@ describe('chromaService', () => {
         errors,
         chromadbDependencyMissing: false,
         cachedChromaSpawnPlan: null,
-        setCachedSpawnPlan: jest.fn(),
+        setCachedSpawnPlan: jest.fn()
       });
 
       // Find and call the exit handler
-      const exitCall = mockProcess.on.mock.calls.find(
-        (call) => call[0] === 'exit',
-      );
+      const exitCall = mockProcess.on.mock.calls.find((call) => call[0] === 'exit');
       const exitHandler = exitCall[1];
       exitHandler(0, null);
 

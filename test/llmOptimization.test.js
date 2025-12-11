@@ -10,16 +10,16 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock crypto
 jest.mock('crypto', () => ({
   createHash: jest.fn().mockReturnValue({
     update: jest.fn().mockReturnThis(),
-    digest: jest.fn().mockReturnValue('mockhash123'),
-  }),
+    digest: jest.fn().mockReturnValue('mockhash123')
+  })
 }));
 
 describe('LLM Optimization Utilities', () => {
@@ -218,9 +218,9 @@ describe('LLM Optimization Utilities', () => {
       test('processes all items successfully', async () => {
         const processor = new BatchProcessor();
         const items = ['a', 'b', 'c'];
-        const processFn = jest.fn().mockImplementation((item) =>
-          Promise.resolve({ processed: item })
-        );
+        const processFn = jest
+          .fn()
+          .mockImplementation((item) => Promise.resolve({ processed: item }));
 
         const result = await processor.processBatch(items, processFn);
 
@@ -233,7 +233,8 @@ describe('LLM Optimization Utilities', () => {
       test('handles partial failures', async () => {
         const processor = new BatchProcessor();
         const items = ['a', 'b', 'c'];
-        const processFn = jest.fn()
+        const processFn = jest
+          .fn()
           .mockResolvedValueOnce({ processed: 'a' })
           .mockRejectedValueOnce(new Error('Failed'))
           .mockResolvedValueOnce({ processed: 'c' });
@@ -276,7 +277,7 @@ describe('LLM Optimization Utilities', () => {
         expect(onProgress).toHaveBeenCalledWith(
           expect.objectContaining({
             completed: expect.any(Number),
-            total: 2,
+            total: 2
           })
         );
       });
@@ -284,14 +285,15 @@ describe('LLM Optimization Utilities', () => {
       test('records error when stopOnError is true', async () => {
         const processor = new BatchProcessor(1); // Sequential to ensure order
         const items = ['a', 'b', 'c'];
-        const processFn = jest.fn()
+        const processFn = jest
+          .fn()
           .mockResolvedValueOnce({ processed: 'a' })
           .mockRejectedValueOnce(new Error('Stop here'))
           .mockResolvedValueOnce({ processed: 'c' });
 
         const result = await processor.processBatch(items, processFn, {
           stopOnError: true,
-          concurrency: 1,
+          concurrency: 1
         });
 
         // stopOnError throws from processItem which is caught by Promise.allSettled

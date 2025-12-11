@@ -23,7 +23,7 @@ const REQUEST_TYPES = {
   EMBEDDING: 'embedding',
   GENERATE: 'generate',
   VISION: 'vision',
-  LIST: 'list',
+  LIST: 'list'
 };
 
 /**
@@ -48,7 +48,7 @@ const DEFAULT_CONFIG = {
   // Offline queue settings
   maxOfflineQueueSize: 500,
   offlineQueueFlushInterval: 60000, // 1 minute
-  persistQueueOnShutdown: true,
+  persistQueueOnShutdown: true
 };
 
 /**
@@ -87,7 +87,7 @@ class OllamaClient {
       healthChecksFailed: 0,
       avgLatencyMs: 0,
       lastError: null,
-      lastErrorTime: null,
+      lastErrorTime: null
     };
 
     // Track pending operations for graceful shutdown
@@ -102,10 +102,7 @@ class OllamaClient {
 
     try {
       // Set up offline queue persistence path
-      this.offlineQueuePath = path.join(
-        app.getPath('userData'),
-        'ollama_offline_queue.json',
-      );
+      this.offlineQueuePath = path.join(app.getPath('userData'), 'ollama_offline_queue.json');
 
       // Load persisted offline queue
       await this._loadOfflineQueue();
@@ -122,8 +119,8 @@ class OllamaClient {
         config: {
           maxConcurrentRequests: this.config.maxConcurrentRequests,
           maxRetries: this.config.maxRetries,
-          offlineQueueSize: this.offlineQueue.length,
-        },
+          offlineQueueSize: this.offlineQueue.length
+        }
       });
     } catch (error) {
       logger.error('[OllamaClient] Initialization failed:', error.message);
@@ -154,17 +151,14 @@ class OllamaClient {
       const timeout = 10000;
       const startTime = Date.now();
 
-      while (
-        this._pendingOperations.size > 0 &&
-        Date.now() - startTime < timeout
-      ) {
+      while (this._pendingOperations.size > 0 && Date.now() - startTime < timeout) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
       if (this._pendingOperations.size > 0) {
         logger.warn(
           '[OllamaClient] Shutdown timeout, pending operations:',
-          this._pendingOperations.size,
+          this._pendingOperations.size
         );
       }
     }
@@ -175,7 +169,7 @@ class OllamaClient {
     }
 
     logger.info('[OllamaClient] Shutdown complete', {
-      offlineQueueSize: this.offlineQueue.length,
+      offlineQueueSize: this.offlineQueue.length
     });
   }
 
@@ -199,9 +193,7 @@ class OllamaClient {
     // Wait for a slot
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        const index = this.waitQueue.findIndex(
-          (item) => item.resolve === resolve,
-        );
+        const index = this.waitQueue.findIndex((item) => item.resolve === resolve);
         if (index !== -1) {
           this.waitQueue.splice(index, 1);
           reject(new Error('Request queue timeout'));
@@ -265,7 +257,7 @@ class OllamaClient {
         'ETIMEDOUT',
         'ENOTFOUND',
         'EHOSTUNREACH',
-        'ENETUNREACH',
+        'ENETUNREACH'
       ].includes(code)
     ) {
       return true;
@@ -326,7 +318,7 @@ class OllamaClient {
     const {
       operation = 'Ollama request',
       maxRetries = this.config.maxRetries,
-      onRetry = null,
+      onRetry = null
     } = options;
 
     let lastError;
@@ -336,9 +328,7 @@ class OllamaClient {
         const result = await fn();
 
         if (attempt > 0) {
-          logger.info(
-            `[OllamaClient] ${operation} succeeded on retry ${attempt}`,
-          );
+          logger.info(`[OllamaClient] ${operation} succeeded on retry ${attempt}`);
           this.stats.retriedRequests++;
         }
 
@@ -356,18 +346,15 @@ class OllamaClient {
             `[OllamaClient] ${operation} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms`,
             {
               error: error.message,
-              code: error.code,
-            },
+              code: error.code
+            }
           );
 
           if (onRetry) {
             try {
               await onRetry(attempt, error);
             } catch (retryError) {
-              logger.warn(
-                '[OllamaClient] onRetry callback error:',
-                retryError.message,
-              );
+              logger.warn('[OllamaClient] onRetry callback error:', retryError.message);
             }
           }
 
@@ -377,12 +364,12 @@ class OllamaClient {
           if (!isRetryable) {
             logger.debug(
               `[OllamaClient] ${operation} failed with non-retryable error:`,
-              error.message,
+              error.message
             );
           } else {
             logger.error(
               `[OllamaClient] ${operation} failed after ${attempt + 1} attempts:`,
-              error.message,
+              error.message
             );
           }
           break;
@@ -408,7 +395,7 @@ class OllamaClient {
       const timeoutPromise = new Promise((_, reject) => {
         timer = setTimeout(
           () => reject(new Error('Health check timeout')),
-          this.config.healthCheckTimeout,
+          this.config.healthCheckTimeout
         );
         if (timer.unref) timer.unref();
       });
@@ -431,7 +418,7 @@ class OllamaClient {
         if (this.isHealthy) {
           logger.warn(
             '[OllamaClient] Ollama marked unhealthy after consecutive failures:',
-            this.consecutiveFailures,
+            this.consecutiveFailures
           );
         }
         this.isHealthy = false;
@@ -461,16 +448,11 @@ class OllamaClient {
 
         // If we recovered, process offline queue
         if (!wasHealthy && this.isHealthy && this.offlineQueue.length > 0) {
-          logger.info(
-            '[OllamaClient] Ollama recovered, processing offline queue',
-          );
+          logger.info('[OllamaClient] Ollama recovered, processing offline queue');
           await this._processOfflineQueue();
         }
       } catch (error) {
-        logger.error(
-          '[OllamaClient] Health check interval error:',
-          error.message,
-        );
+        logger.error('[OllamaClient] Health check interval error:', error.message);
       }
     }, this.config.healthCheckInterval);
 
@@ -491,7 +473,7 @@ class OllamaClient {
       lastHealthCheck: this.lastHealthCheck,
       activeRequests: this.activeRequests,
       queuedRequests: this.waitQueue.length,
-      offlineQueueSize: this.offlineQueue.length,
+      offlineQueueSize: this.offlineQueue.length
     };
   }
 
@@ -507,17 +489,11 @@ class OllamaClient {
 
       if (Array.isArray(parsed)) {
         this.offlineQueue = parsed.slice(0, this.config.maxOfflineQueueSize);
-        logger.info(
-          '[OllamaClient] Loaded offline queue:',
-          this.offlineQueue.length,
-        );
+        logger.info('[OllamaClient] Loaded offline queue:', this.offlineQueue.length);
       }
     } catch (error) {
       if (error.code !== 'ENOENT') {
-        logger.warn(
-          '[OllamaClient] Error loading offline queue:',
-          error.message,
-        );
+        logger.warn('[OllamaClient] Error loading offline queue:', error.message);
       }
     }
   }
@@ -537,11 +513,7 @@ class OllamaClient {
       // FIX: Use atomic write (temp + rename) to prevent corruption on crash
       const tempPath = `${this.offlineQueuePath}.tmp.${Date.now()}`;
       try {
-        await fs.writeFile(
-          tempPath,
-          JSON.stringify(this.offlineQueue, null, 2),
-          'utf8',
-        );
+        await fs.writeFile(tempPath, JSON.stringify(this.offlineQueue, null, 2), 'utf8');
         await fs.rename(tempPath, this.offlineQueuePath);
       } catch (writeError) {
         // Clean up temp file on failure
@@ -553,10 +525,7 @@ class OllamaClient {
         throw writeError;
       }
     } catch (error) {
-      logger.warn(
-        '[OllamaClient] Error persisting offline queue:',
-        error.message,
-      );
+      logger.warn('[OllamaClient] Error persisting offline queue:', error.message);
     }
   }
 
@@ -567,21 +536,15 @@ class OllamaClient {
   _addToOfflineQueue(request) {
     if (this.offlineQueue.length >= this.config.maxOfflineQueueSize) {
       // Remove oldest entries
-      const dropCount = Math.max(
-        1,
-        Math.floor(this.config.maxOfflineQueueSize * 0.1),
-      );
+      const dropCount = Math.max(1, Math.floor(this.config.maxOfflineQueueSize * 0.1));
       this.offlineQueue.splice(0, dropCount);
-      logger.warn(
-        '[OllamaClient] Offline queue full, dropped oldest entries:',
-        dropCount,
-      );
+      logger.warn('[OllamaClient] Offline queue full, dropped oldest entries:', dropCount);
     }
 
     this.offlineQueue.push({
       ...request,
       queuedAt: new Date().toISOString(),
-      retryCount: 0,
+      retryCount: 0
     });
 
     this.stats.offlineQueuedRequests++;
@@ -601,11 +564,7 @@ class OllamaClient {
     }
 
     this.offlineQueueTimer = setInterval(() => {
-      if (
-        this.isHealthy &&
-        this.offlineQueue.length > 0 &&
-        !this.isProcessingOfflineQueue
-      ) {
+      if (this.isHealthy && this.offlineQueue.length > 0 && !this.isProcessingOfflineQueue) {
         this._processOfflineQueue();
       }
     }, this.config.offlineQueueFlushInterval);
@@ -625,17 +584,14 @@ class OllamaClient {
     this.isProcessingOfflineQueue = true;
 
     try {
-      logger.info(
-        '[OllamaClient] Processing offline queue:',
-        this.offlineQueue.length,
-      );
+      logger.info('[OllamaClient] Processing offline queue:', this.offlineQueue.length);
 
       // Process in batches
       const batchSize = Math.min(10, this.offlineQueue.length);
       const batch = this.offlineQueue.splice(0, batchSize);
 
       const results = await Promise.allSettled(
-        batch.map((request) => this._processQueuedRequest(request)),
+        batch.map((request) => this._processQueuedRequest(request))
       );
 
       // Re-queue failed requests (up to max retries)
@@ -646,7 +602,7 @@ class OllamaClient {
           if (request.retryCount < 3) {
             this.offlineQueue.push({
               ...request,
-              retryCount: request.retryCount + 1,
+              retryCount: request.retryCount + 1
             });
             requeued++;
           }
@@ -658,16 +614,13 @@ class OllamaClient {
         successful,
         failed: results.length - successful,
         requeued,
-        remaining: this.offlineQueue.length,
+        remaining: this.offlineQueue.length
       });
 
       // Persist updated queue
       await this._persistOfflineQueue();
     } catch (error) {
-      logger.error(
-        '[OllamaClient] Error processing offline queue:',
-        error.message,
-      );
+      logger.error('[OllamaClient] Error processing offline queue:', error.message);
     } finally {
       this.isProcessingOfflineQueue = false;
     }
@@ -720,7 +673,7 @@ class OllamaClient {
             const ollama = getOllama();
             return ollama.embeddings(options);
           },
-          { operation: `Embedding (${options.model})` },
+          { operation: `Embedding (${options.model})` }
         );
 
         this.stats.successfulRequests++;
@@ -738,7 +691,7 @@ class OllamaClient {
       if (!this.isHealthy && this._isRetryableError(error)) {
         this._addToOfflineQueue({
           type: REQUEST_TYPES.EMBEDDING,
-          payload: options,
+          payload: options
         });
       }
 
@@ -772,7 +725,7 @@ class OllamaClient {
             const ollama = getOllama();
             return ollama.generate(options);
           },
-          { operation: `Generate (${options.model})` },
+          { operation: `Generate (${options.model})` }
         );
 
         this.stats.successfulRequests++;
@@ -790,7 +743,7 @@ class OllamaClient {
       if (!this.isHealthy && this._isRetryableError(error) && !options.stream) {
         this._addToOfflineQueue({
           type: REQUEST_TYPES.GENERATE,
-          payload: options,
+          payload: options
         });
       }
 
@@ -824,21 +777,21 @@ class OllamaClient {
           try {
             const response = await this.embeddings({
               model,
-              prompt: item.text,
+              prompt: item.text
             });
             return {
               id: item.id,
               embedding: response.embedding,
-              success: true,
+              success: true
             };
           } catch (error) {
             return {
               id: item.id,
               error: error.message,
-              success: false,
+              success: false
             };
           }
-        }),
+        })
       );
 
       batchResults.forEach((result) => {
@@ -858,7 +811,7 @@ class OllamaClient {
         onProgress({
           completed,
           total: items.length,
-          percent: Math.round((completed / items.length) * 100),
+          percent: Math.round((completed / items.length) * 100)
         });
       }
     }
@@ -877,9 +830,7 @@ class OllamaClient {
       this.stats.avgLatencyMs = Math.round(latency);
       return;
     }
-    this.stats.avgLatencyMs = Math.round(
-      (this.stats.avgLatencyMs * (total - 1) + latency) / total,
-    );
+    this.stats.avgLatencyMs = Math.round((this.stats.avgLatencyMs * (total - 1) + latency) / total);
   }
 
   /**
@@ -895,8 +846,8 @@ class OllamaClient {
       offlineQueueSize: this.offlineQueue.length,
       config: {
         maxConcurrentRequests: this.config.maxConcurrentRequests,
-        maxRetries: this.config.maxRetries,
-      },
+        maxRetries: this.config.maxRetries
+      }
     };
   }
 
@@ -915,7 +866,7 @@ class OllamaClient {
       healthChecksFailed: 0,
       avgLatencyMs: 0,
       lastError: null,
-      lastErrorTime: null,
+      lastErrorTime: null
     };
   }
 }
@@ -955,5 +906,5 @@ module.exports = {
   OllamaClient,
   getInstance,
   resetInstance,
-  REQUEST_TYPES,
+  REQUEST_TYPES
 };

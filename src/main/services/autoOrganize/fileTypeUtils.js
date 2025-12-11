@@ -17,7 +17,7 @@ const FILE_TYPE_CATEGORIES = {
   videos: ['mp4', 'avi', 'mov', 'wmv', 'flv'],
   audio: ['mp3', 'wav', 'flac', 'aac', 'm4a'],
   code: ['js', 'py', 'java', 'cpp', 'html', 'css'],
-  archives: ['zip', 'rar', '7z', 'tar', 'gz'],
+  archives: ['zip', 'rar', '7z', 'tar', 'gz']
 };
 
 /**
@@ -59,14 +59,14 @@ function sanitizeFile(file) {
           category: file.analysis.category,
           suggestedName: file.analysis.suggestedName,
           confidence: file.analysis.confidence,
-          summary: file.analysis.summary,
+          summary: file.analysis.summary
         }
-      : null,
+      : null
   };
 }
 
 module.exports = {
   FILE_TYPE_CATEGORIES,
   getFileTypeCategory,
-  sanitizeFile,
+  sanitizeFile
 };

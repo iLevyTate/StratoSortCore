@@ -20,7 +20,7 @@ describe('IPC registration', () => {
       getServiceIntegration: () => ({
         undoRedo: {},
         analysisHistory: {},
-        processingState: {},
+        processingState: {}
       }),
       getCustomFolders: () => [],
       setCustomFolders: () => {},
@@ -32,7 +32,7 @@ describe('IPC registration', () => {
       getOllamaModel: () => 'llama3.2:latest',
       getOllamaVisionModel: () => null,
       buildOllamaOptions: async () => ({}),
-      scanDirectory: async () => [],
+      scanDirectory: async () => []
     });
 
     const expectedChannels = [
@@ -51,7 +51,7 @@ describe('IPC registration', () => {
       // Analysis history
       ...Object.values(IPC_CHANNELS.ANALYSIS_HISTORY),
       // Ollama
-      ...Object.values(IPC_CHANNELS.OLLAMA),
+      ...Object.values(IPC_CHANNELS.OLLAMA)
     ];
 
     // Check that handlers are registered for expected channels

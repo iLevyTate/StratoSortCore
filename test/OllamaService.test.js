@@ -11,8 +11,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock ollama utils
@@ -27,7 +27,7 @@ jest.mock('../src/main/ollamaUtils', () => ({
   setOllamaHost: jest.fn().mockResolvedValue(true),
   setOllamaModel: jest.fn().mockResolvedValue(true),
   setOllamaVisionModel: jest.fn().mockResolvedValue(true),
-  setOllamaEmbeddingModel: jest.fn().mockResolvedValue(true),
+  setOllamaEmbeddingModel: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock Ollama constructor
@@ -36,11 +36,11 @@ jest.mock('ollama', () => {
     list: jest.fn(),
     pull: jest.fn(),
     embeddings: jest.fn(),
-    generate: jest.fn(),
+    generate: jest.fn()
   };
 
   return {
-    Ollama: jest.fn().mockImplementation(() => mockOllamaInstance),
+    Ollama: jest.fn().mockImplementation(() => mockOllamaInstance)
   };
 });
 
@@ -54,16 +54,16 @@ jest.mock('../src/main/services/OllamaClient', () => ({
       queuedRequests: 0,
       offlineQueueSize: 0,
       consecutiveFailures: 0,
-      lastHealthCheck: Date.now(),
+      lastHealthCheck: Date.now()
     })),
     getStats: jest.fn(() => ({
       totalRequests: 0,
       successfulRequests: 0,
       failedRequests: 0,
       retriedRequests: 0,
-      avgLatencyMs: 0,
-    })),
-  })),
+      avgLatencyMs: 0
+    }))
+  }))
 }));
 
 // Import the service module (mocks are applied before this)
@@ -82,7 +82,7 @@ describe('OllamaService', () => {
     setOllamaHost,
     setOllamaModel,
     setOllamaVisionModel,
-    setOllamaEmbeddingModel,
+    setOllamaEmbeddingModel
   } = require('../src/main/ollamaUtils');
 
   beforeEach(() => {
@@ -97,7 +97,7 @@ describe('OllamaService', () => {
       list: jest.fn(),
       pull: jest.fn(),
       embeddings: jest.fn(),
-      generate: jest.fn(),
+      generate: jest.fn()
     };
 
     getOllama.mockReturnValue(mockOllama);
@@ -119,7 +119,7 @@ describe('OllamaService', () => {
         host: 'http://localhost:11434',
         textModel: 'llama2',
         visionModel: 'llava',
-        embeddingModel: 'mxbai-embed-large',
+        embeddingModel: 'mxbai-embed-large'
       });
       expect(getOllamaHost).toHaveBeenCalled();
       expect(getOllamaModel).toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe('OllamaService', () => {
         host: 'http://localhost:11435',
         textModel: 'mistral',
         visionModel: 'bakllava',
-        embeddingModel: 'nomic-embed-text',
+        embeddingModel: 'mxbai-embed-large'
       };
 
       const result = await OllamaServiceModule.updateConfig(newConfig);
@@ -143,13 +143,13 @@ describe('OllamaService', () => {
       expect(setOllamaHost).toHaveBeenCalledWith('http://localhost:11435');
       expect(setOllamaModel).toHaveBeenCalledWith('mistral');
       expect(setOllamaVisionModel).toHaveBeenCalledWith('bakllava');
-      expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('nomic-embed-text');
+      expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('mxbai-embed-large');
       expect(saveOllamaConfig).toHaveBeenCalled();
     });
 
     test('should update partial config', async () => {
       const result = await OllamaServiceModule.updateConfig({
-        textModel: 'llama3',
+        textModel: 'llama3'
       });
 
       expect(result.success).toBe(true);
@@ -163,7 +163,7 @@ describe('OllamaService', () => {
       setOllamaHost.mockRejectedValueOnce(new Error('Invalid host'));
 
       const result = await OllamaServiceModule.updateConfig({
-        host: 'invalid-host',
+        host: 'invalid-host'
       });
 
       expect(result.success).toBe(false);
@@ -174,7 +174,7 @@ describe('OllamaService', () => {
   describe('testConnection', () => {
     test('should test connection successfully', async () => {
       mockOllama.list.mockResolvedValue({
-        models: [{ name: 'llama2' }, { name: 'mistral' }],
+        models: [{ name: 'llama2' }, { name: 'mistral' }]
       });
 
       const result = await OllamaServiceModule.testConnection();
@@ -229,8 +229,8 @@ describe('OllamaService', () => {
           { name: 'llava' },
           { name: 'llava:13b' },
           { name: 'mxbai-embed-large' },
-          { name: 'nomic-embed-text' },
-        ],
+          { name: 'nomic-embed-text' }
+        ]
       });
 
       const result = await OllamaServiceModule.getModels();
@@ -239,10 +239,7 @@ describe('OllamaService', () => {
       expect(result.models).toHaveLength(6);
       expect(result.categories.text).toEqual(['llama2', 'mistral']);
       expect(result.categories.vision).toEqual(['llava', 'llava:13b']);
-      expect(result.categories.embedding).toEqual([
-        'mxbai-embed-large',
-        'nomic-embed-text',
-      ]);
+      expect(result.categories.embedding).toEqual(['mxbai-embed-large', 'nomic-embed-text']);
     });
 
     test('should include current selections', async () => {
@@ -253,7 +250,7 @@ describe('OllamaService', () => {
       expect(result.selected).toEqual({
         textModel: 'llama2',
         visionModel: 'llava',
-        embeddingModel: 'mxbai-embed-large',
+        embeddingModel: 'mxbai-embed-large'
       });
     });
 
@@ -268,18 +265,14 @@ describe('OllamaService', () => {
       expect(result.categories).toEqual({
         text: [],
         vision: [],
-        embedding: [],
+        embedding: []
       });
       expect(result.ollamaHealth.status).toBe('unhealthy');
     });
 
     test('should handle vision models with various naming patterns', async () => {
       mockOllama.list.mockResolvedValue({
-        models: [
-          { name: 'llava:latest' },
-          { name: 'bakllava' },
-          { name: 'vision-model' },
-        ],
+        models: [{ name: 'llava:latest' }, { name: 'bakllava' }, { name: 'vision-model' }]
       });
 
       const result = await OllamaServiceModule.getModels();
@@ -294,8 +287,8 @@ describe('OllamaService', () => {
         models: [
           { name: 'mxbai-embed-large' },
           { name: 'nomic-embed-text' },
-          { name: 'all-minilm' }, // 'embed' not in name
-        ],
+          { name: 'all-minilm' } // 'embed' not in name
+        ]
       });
 
       const result = await OllamaServiceModule.getModels();
@@ -310,10 +303,7 @@ describe('OllamaService', () => {
     test('should pull multiple models successfully', async () => {
       mockOllama.pull.mockResolvedValue({ status: 'success' });
 
-      const result = await OllamaServiceModule.pullModels([
-        'llama2',
-        'mistral',
-      ]);
+      const result = await OllamaServiceModule.pullModels(['llama2', 'mistral']);
 
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
@@ -327,10 +317,7 @@ describe('OllamaService', () => {
         .mockResolvedValueOnce({ status: 'success' })
         .mockRejectedValueOnce(new Error('Model not found'));
 
-      const result = await OllamaServiceModule.pullModels([
-        'llama2',
-        'invalid-model',
-      ]);
+      const result = await OllamaServiceModule.pullModels(['llama2', 'invalid-model']);
 
       expect(result.success).toBe(true); // At least one succeeded
       expect(result.results[0].success).toBe(true);
@@ -376,7 +363,7 @@ describe('OllamaService', () => {
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
         prompt: 'test text',
-        options: {},
+        options: {}
       });
     });
 
@@ -384,13 +371,13 @@ describe('OllamaService', () => {
       mockOllama.embeddings.mockResolvedValue({ embedding: [] });
 
       await OllamaServiceModule.generateEmbedding('text', {
-        model: 'custom-embed-model',
+        model: 'custom-embed-model'
       });
 
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'custom-embed-model',
         prompt: 'text',
-        options: {},
+        options: {}
       });
     });
 
@@ -398,13 +385,13 @@ describe('OllamaService', () => {
       mockOllama.embeddings.mockResolvedValue({ embedding: [] });
 
       await OllamaServiceModule.generateEmbedding('text', {
-        ollamaOptions: { temperature: 0.5 },
+        ollamaOptions: { temperature: 0.5 }
       });
 
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
         prompt: 'text',
-        options: { temperature: 0.5 },
+        options: { temperature: 0.5 }
       });
     });
 
@@ -421,7 +408,7 @@ describe('OllamaService', () => {
   describe('analyzeText', () => {
     test('should analyze text successfully', async () => {
       mockOllama.generate.mockResolvedValue({
-        response: 'Analysis result',
+        response: 'Analysis result'
       });
 
       const result = await OllamaServiceModule.analyzeText('Analyze this text');
@@ -432,7 +419,7 @@ describe('OllamaService', () => {
         model: 'llama2',
         prompt: 'Analyze this text',
         options: {},
-        stream: false,
+        stream: false
       });
     });
 
@@ -445,7 +432,7 @@ describe('OllamaService', () => {
         model: 'mistral',
         prompt: 'text',
         options: {},
-        stream: false,
+        stream: false
       });
     });
 
@@ -453,14 +440,14 @@ describe('OllamaService', () => {
       mockOllama.generate.mockResolvedValue({ response: 'result' });
 
       await OllamaServiceModule.analyzeText('text', {
-        ollamaOptions: { temperature: 0.7, num_predict: 100 },
+        ollamaOptions: { temperature: 0.7, num_predict: 100 }
       });
 
       expect(mockOllama.generate).toHaveBeenCalledWith({
         model: 'llama2',
         prompt: 'text',
         options: { temperature: 0.7, num_predict: 100 },
-        stream: false,
+        stream: false
       });
     });
 
@@ -478,13 +465,10 @@ describe('OllamaService', () => {
     test('should analyze image successfully', async () => {
       const imageBase64 = 'base64encodedimage';
       mockOllama.generate.mockResolvedValue({
-        response: 'Image analysis result',
+        response: 'Image analysis result'
       });
 
-      const result = await OllamaServiceModule.analyzeImage(
-        'Describe this image',
-        imageBase64,
-      );
+      const result = await OllamaServiceModule.analyzeImage('Describe this image', imageBase64);
 
       expect(result.success).toBe(true);
       expect(result.response).toBe('Image analysis result');
@@ -493,7 +477,7 @@ describe('OllamaService', () => {
         prompt: 'Describe this image',
         images: [imageBase64],
         options: {},
-        stream: false,
+        stream: false
       });
     });
 
@@ -501,7 +485,7 @@ describe('OllamaService', () => {
       mockOllama.generate.mockResolvedValue({ response: 'result' });
 
       await OllamaServiceModule.analyzeImage('prompt', 'image', {
-        model: 'bakllava',
+        model: 'bakllava'
       });
 
       expect(mockOllama.generate).toHaveBeenCalledWith({
@@ -509,7 +493,7 @@ describe('OllamaService', () => {
         prompt: 'prompt',
         images: ['image'],
         options: {},
-        stream: false,
+        stream: false
       });
     });
 
@@ -517,7 +501,7 @@ describe('OllamaService', () => {
       mockOllama.generate.mockResolvedValue({ response: 'result' });
 
       await OllamaServiceModule.analyzeImage('prompt', 'image', {
-        ollamaOptions: { temperature: 0.3 },
+        ollamaOptions: { temperature: 0.3 }
       });
 
       expect(mockOllama.generate).toHaveBeenCalledWith({
@@ -525,7 +509,7 @@ describe('OllamaService', () => {
         prompt: 'prompt',
         images: ['image'],
         options: { temperature: 0.3 },
-        stream: false,
+        stream: false
       });
     });
 
@@ -548,7 +532,7 @@ describe('OllamaService', () => {
         OllamaServiceModule.generateEmbedding('text1'),
         OllamaServiceModule.generateEmbedding('text2'),
         OllamaServiceModule.analyzeText('text3'),
-        OllamaServiceModule.analyzeText('text4'),
+        OllamaServiceModule.analyzeText('text4')
       ]);
 
       expect(results).toHaveLength(4);

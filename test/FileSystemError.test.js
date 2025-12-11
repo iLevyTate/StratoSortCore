@@ -31,7 +31,7 @@ describe('FileSystemError', () => {
   describe('FileSystemError base class', () => {
     test('creates error with code and metadata', () => {
       const error = new FileSystemError(FILE_SYSTEM_ERROR_CODES.FILE_NOT_FOUND, {
-        path: '/test/file.txt',
+        path: '/test/file.txt'
       });
 
       expect(error.name).toBe('FileSystemError');
@@ -43,7 +43,7 @@ describe('FileSystemError', () => {
 
     test('extracts fileName and directory from path', () => {
       const error = new FileSystemError(FILE_SYSTEM_ERROR_CODES.FILE_NOT_FOUND, {
-        path: '/home/user/documents/file.txt',
+        path: '/home/user/documents/file.txt'
       });
 
       expect(error.metadata.fileName).toBe('file.txt');
@@ -74,7 +74,7 @@ describe('FileSystemError', () => {
   describe('getUserFriendlyMessage', () => {
     test('returns user-friendly message for file not found', () => {
       const error = new FileSystemError(FILE_SYSTEM_ERROR_CODES.FILE_NOT_FOUND, {
-        path: '/test.txt',
+        path: '/test.txt'
       });
 
       const message = error.getUserFriendlyMessage();
@@ -114,7 +114,7 @@ describe('FileSystemError', () => {
       const steps = error.getActionableSteps();
 
       expect(steps.length).toBeGreaterThan(0);
-      expect(steps.some(s => s.toLowerCase().includes('permission'))).toBe(true);
+      expect(steps.some((s) => s.toLowerCase().includes('permission'))).toBe(true);
     });
 
     test('returns steps for disk full', () => {
@@ -203,7 +203,7 @@ describe('FileSystemError', () => {
   describe('toJSON', () => {
     test('serializes error to JSON', () => {
       const error = new FileSystemError(FILE_SYSTEM_ERROR_CODES.FILE_NOT_FOUND, {
-        path: '/test.txt',
+        path: '/test.txt'
       });
 
       const json = error.toJSON();
@@ -321,11 +321,10 @@ describe('FileSystemError', () => {
     });
 
     test('IntegrityError creates correct error', () => {
-      const error = new IntegrityError(
-        FILE_SYSTEM_ERROR_CODES.CHECKSUM_MISMATCH,
-        '/file.txt',
-        { expected: 'abc', actual: 'def' },
-      );
+      const error = new IntegrityError(FILE_SYSTEM_ERROR_CODES.CHECKSUM_MISMATCH, '/file.txt', {
+        expected: 'abc',
+        actual: 'def'
+      });
 
       expect(error.code).toBe('CHECKSUM_MISMATCH');
       expect(error.metadata.expected).toBe('abc');

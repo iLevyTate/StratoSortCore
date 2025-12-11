@@ -59,12 +59,12 @@ class ProcessingStateService {
       updatedAt: now,
       analysis: {
         jobs: {}, // key: filePath, value: { status: 'pending'|'in_progress'|'done'|'failed', startedAt, completedAt, error }
-        lastUpdated: now,
+        lastUpdated: now
       },
       organize: {
         batches: {}, // key: batchId, value: { id, operations: [{ source, destination, status, error }], startedAt, completedAt }
-        lastUpdated: now,
-      },
+        lastUpdated: now
+      }
     };
   }
 
@@ -104,9 +104,7 @@ class ProcessingStateService {
         } catch (renameError) {
           lastError = renameError;
           if (renameError.code === 'EPERM' && attempt < 2) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 50 * (attempt + 1)),
-            );
+            await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
             continue;
           }
           throw renameError;
@@ -143,7 +141,7 @@ class ProcessingStateService {
       return await savePromise;
     } catch (error) {
       logger.error('[ProcessingStateService] Save failed', {
-        error: error?.message,
+        error: error?.message
       });
       throw error;
     }
@@ -158,7 +156,7 @@ class ProcessingStateService {
       status: 'in_progress',
       startedAt: now,
       completedAt: null,
-      error: null,
+      error: null
     };
     this.state.analysis.lastUpdated = now;
     await this.saveState();
@@ -171,7 +169,7 @@ class ProcessingStateService {
       ...(this.state.analysis.jobs[filePath] || {}),
       status: 'done',
       completedAt: now,
-      error: null,
+      error: null
     };
     this.state.analysis.lastUpdated = now;
     await this.saveState();
@@ -184,7 +182,7 @@ class ProcessingStateService {
       ...(this.state.analysis.jobs[filePath] || {}),
       status: 'failed',
       completedAt: now,
-      error: errorMessage || 'Unknown analysis error',
+      error: errorMessage || 'Unknown analysis error'
     };
     this.state.analysis.lastUpdated = now;
     await this.saveState();
@@ -232,10 +230,10 @@ class ProcessingStateService {
         operations: operations.map((op) => ({
           ...op,
           status: 'pending',
-          error: null,
+          error: null
         })),
         startedAt: now,
-        completedAt: null,
+        completedAt: null
       };
       this.state.organize.lastUpdated = now;
       await this.saveState();
@@ -287,9 +285,7 @@ class ProcessingStateService {
 
   getIncompleteOrganizeBatches() {
     if (!this.state) return [];
-    return Object.values(this.state.organize.batches).filter(
-      (batch) => !batch.completedAt,
-    );
+    return Object.values(this.state.organize.batches).filter((batch) => !batch.completedAt);
   }
 }
 

@@ -10,7 +10,7 @@ const { logger } = require('../../shared/logger');
 const {
   FileSystemError,
   WatcherError,
-  FILE_SYSTEM_ERROR_CODES,
+  FILE_SYSTEM_ERROR_CODES
 } = require('../errors/FileSystemError');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 
@@ -45,7 +45,7 @@ async function safeReadFile(filePath, options = 'utf8') {
   } catch (error) {
     const fsError = FileSystemError.fromNodeError(error, {
       path: filePath,
-      operation: 'read',
+      operation: 'read'
     });
 
     // Only log warning for non-ENOENT errors (missing files are often expected)
@@ -53,7 +53,7 @@ async function safeReadFile(filePath, options = 'utf8') {
       logger.warn(`[ASYNC-OPS] Failed to read file:`, {
         path: filePath,
         error: fsError.getUserFriendlyMessage(),
-        code: fsError.code,
+        code: fsError.code
       });
     }
 
@@ -102,7 +102,7 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
         ? data.length
         : Buffer.byteLength(
             data,
-            typeof options === 'string' ? options : options.encoding || 'utf8',
+            typeof options === 'string' ? options : options.encoding || 'utf8'
           );
 
       if (stats.size !== expectedSize) {
@@ -112,19 +112,16 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
         } catch {
           // Ignore cleanup errors
         }
-        const fsError = new FileSystemError(
-          FILE_SYSTEM_ERROR_CODES.PARTIAL_WRITE,
-          {
-            path: filePath,
-            operation: 'write',
-            expectedSize,
-            actualSize: stats.size,
-          },
-        );
+        const fsError = new FileSystemError(FILE_SYSTEM_ERROR_CODES.PARTIAL_WRITE, {
+          path: filePath,
+          operation: 'write',
+          expectedSize,
+          actualSize: stats.size
+        });
         logger.error('[ASYNC-OPS] Partial write detected:', {
           path: filePath,
           expectedSize,
-          actualSize: stats.size,
+          actualSize: stats.size
         });
         return { success: false, error: fsError };
       }
@@ -139,9 +136,7 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
         } catch (renameError) {
           lastError = renameError;
           if (renameError.code === 'EPERM' && attempt < 2) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 50 * (attempt + 1)),
-            );
+            await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
             continue;
           }
           throw renameError;
@@ -162,12 +157,12 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
   } catch (error) {
     const fsError = FileSystemError.fromNodeError(error, {
       path: filePath,
-      operation: 'write',
+      operation: 'write'
     });
     logger.error('[ASYNC-OPS] Failed to write file:', {
       path: filePath,
       error: fsError.getUserFriendlyMessage(),
-      code: fsError.code,
+      code: fsError.code
     });
     return { success: false, error: fsError };
   }
@@ -205,13 +200,13 @@ async function ensureDirectory(dirPath) {
 
     const fsError = FileSystemError.fromNodeError(error, {
       path: dirPath,
-      operation: 'mkdir',
+      operation: 'mkdir'
     });
 
     logger.error('[ASYNC-OPS] Failed to create directory:', {
       path: dirPath,
       error: fsError.getUserFriendlyMessage(),
-      code: fsError.code,
+      code: fsError.code
     });
 
     return { success: false, error: fsError };
@@ -341,10 +336,7 @@ async function moveFile(src, dest, overwrite = false) {
         await crossDeviceMove(src, dest, { verify: true });
         return true;
       } catch (crossDeviceError) {
-        logger.error(
-          `Failed cross-device move ${src} to ${dest}:`,
-          crossDeviceError.message,
-        );
+        logger.error(`Failed cross-device move ${src} to ${dest}:`, crossDeviceError.message);
         return false;
       }
     }
@@ -434,8 +426,8 @@ async function processBatch(files, processor, batchSize = 5) {
         processor(file).catch((err) => {
           logger.error(`Error processing ${file}:`, err.message);
           return null;
-        }),
-      ),
+        })
+      )
     );
     results.push(...batchResults);
   }
@@ -468,36 +460,32 @@ async function watchPath(targetPath, callback, options = {}) {
     } catch (accessError) {
       const fsError = FileSystemError.fromNodeError(accessError, {
         path: targetPath,
-        operation: 'watch',
+        operation: 'watch'
       });
       logger.error('[ASYNC-OPS] Cannot watch path - does not exist:', {
         path: targetPath,
-        error: fsError.getUserFriendlyMessage(),
+        error: fsError.getUserFriendlyMessage()
       });
       return {
         close: () => {},
         isActive: () => false,
-        error: fsError,
+        error: fsError
       };
     }
 
     // Use synchronous fs.watch (not promisified) for watching
-    watcher = fsSync.watch(
-      targetPath,
-      { persistent, recursive },
-      (eventType, filename) => {
-        try {
-          callback(eventType, filename);
-        } catch (callbackError) {
-          logger.error('[ASYNC-OPS] Watcher callback error:', {
-            path: targetPath,
-            eventType,
-            filename,
-            error: callbackError.message,
-          });
-        }
-      },
-    );
+    watcher = fsSync.watch(targetPath, { persistent, recursive }, (eventType, filename) => {
+      try {
+        callback(eventType, filename);
+      } catch (callbackError) {
+        logger.error('[ASYNC-OPS] Watcher callback error:', {
+          path: targetPath,
+          eventType,
+          filename,
+          error: callbackError.message
+        });
+      }
+    });
 
     isActive = true;
 
@@ -510,17 +498,14 @@ async function watchPath(targetPath, callback, options = {}) {
       logger.error('[ASYNC-OPS] Watcher error:', {
         path: targetPath,
         error: fsError.getUserFriendlyMessage(),
-        code: fsError.code,
+        code: fsError.code
       });
 
       if (onError) {
         try {
           onError(fsError);
         } catch (onErrorError) {
-          logger.error(
-            '[ASYNC-OPS] onError callback failed:',
-            onErrorError.message,
-          );
+          logger.error('[ASYNC-OPS] onError callback failed:', onErrorError.message);
         }
       }
     });
@@ -539,30 +524,27 @@ async function watchPath(targetPath, callback, options = {}) {
           try {
             watcher.close();
           } catch (closeError) {
-            logger.warn(
-              '[ASYNC-OPS] Error closing watcher:',
-              closeError.message,
-            );
+            logger.warn('[ASYNC-OPS] Error closing watcher:', closeError.message);
           }
           isActive = false;
         }
       },
       isActive: () => isActive,
       error: null,
-      getLastError: () => lastError,
+      getLastError: () => lastError
     };
   } catch (error) {
     const fsError = new WatcherError(targetPath, error);
     logger.error('[ASYNC-OPS] Failed to start watcher:', {
       path: targetPath,
       error: fsError.getUserFriendlyMessage(),
-      code: fsError.code,
+      code: fsError.code
     });
 
     return {
       close: () => {},
       isActive: () => false,
-      error: fsError,
+      error: fsError
     };
   }
 }
@@ -606,5 +588,5 @@ module.exports = {
   // Re-export error classes for convenience
   FileSystemError,
   WatcherError,
-  FILE_SYSTEM_ERROR_CODES,
+  FILE_SYSTEM_ERROR_CODES
 };

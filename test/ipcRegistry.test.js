@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('ipcRegistry', () => {
@@ -26,7 +26,7 @@ describe('ipcRegistry', () => {
       handle: jest.fn(),
       on: jest.fn(),
       removeHandler: jest.fn(),
-      removeListener: jest.fn(),
+      removeListener: jest.fn()
     };
 
     ipcRegistry = require('../src/main/core/ipcRegistry');

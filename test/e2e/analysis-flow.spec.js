@@ -37,8 +37,13 @@ test.describe('Analysis Flow', () => {
 
     // We don't fail if not connected - tests should handle both cases
     // Just verify the indicator exists
-    const statusIndicator = window.locator('.animate-pulse, .text-stratosort-success, .text-stratosort-error');
-    const exists = await statusIndicator.first().isVisible().catch(() => false);
+    const statusIndicator = window.locator(
+      '.animate-pulse, .text-stratosort-success, .text-stratosort-error'
+    );
+    const exists = await statusIndicator
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] Connection indicator exists:', exists);
   });
@@ -54,7 +59,7 @@ test.describe('Analysis Flow', () => {
         // Text extraction
         extractText: typeof api?.analysis?.extractText === 'function',
         // Generic file analyze
-        analyze: typeof api?.files?.analyze === 'function',
+        analyze: typeof api?.files?.analyze === 'function'
       };
     });
 
@@ -71,7 +76,7 @@ test.describe('Analysis Flow', () => {
         get: typeof api?.get === 'function',
         search: typeof api?.search === 'function',
         getStatistics: typeof api?.getStatistics === 'function',
-        getFileHistory: typeof api?.getFileHistory === 'function',
+        getFileHistory: typeof api?.getFileHistory === 'function'
       };
     });
 
@@ -88,7 +93,9 @@ test.describe('Analysis Flow', () => {
     await window.waitForTimeout(500);
 
     // Look for progress-related UI elements (may be hidden initially)
-    const progressElements = window.locator('[data-testid="analysis-progress"], .progress, [role="progressbar"]');
+    const progressElements = window.locator(
+      '[data-testid="analysis-progress"], .progress, [role="progressbar"]'
+    );
     const count = await progressElements.count();
 
     console.log('[Test] Progress elements found:', count);
@@ -117,7 +124,7 @@ test.describe('Analysis Flow - Ollama Integration', () => {
       return {
         getModels: typeof api?.getModels === 'function',
         testConnection: typeof api?.testConnection === 'function',
-        pullModels: typeof api?.pullModels === 'function',
+        pullModels: typeof api?.pullModels === 'function'
       };
     });
 
@@ -200,7 +207,7 @@ test.describe('Analysis Flow - Settings', () => {
       const api = window.electronAPI?.settings;
       return {
         get: typeof api?.get === 'function',
-        save: typeof api?.save === 'function',
+        save: typeof api?.save === 'function'
       };
     });
 
@@ -217,7 +224,7 @@ test.describe('Analysis Flow - Settings', () => {
         return {
           loaded: true,
           hasSettings: !!settings,
-          settingsKeys: settings ? Object.keys(settings) : [],
+          settingsKeys: settings ? Object.keys(settings) : []
         };
       } catch (error) {
         return { loaded: false, error: error.message };
@@ -242,7 +249,9 @@ test.describe('Analysis Flow - Settings', () => {
     console.log('[Test] Model-related settings elements:', count);
 
     // Close settings
-    const closeButton = window.locator('[aria-label="Close Settings"], [aria-label="Close"], button:has-text("Close")');
+    const closeButton = window.locator(
+      '[aria-label="Close Settings"], [aria-label="Close"], button:has-text("Close")'
+    );
     if (await closeButton.isVisible()) {
       await closeButton.click();
     }
@@ -272,7 +281,7 @@ test.describe('Analysis Flow - Embeddings', () => {
         rebuildFiles: typeof api?.rebuildFiles === 'function',
         clearStore: typeof api?.clearStore === 'function',
         getStats: typeof api?.getStats === 'function',
-        findSimilar: typeof api?.findSimilar === 'function',
+        findSimilar: typeof api?.findSimilar === 'function'
       };
     });
 
@@ -291,7 +300,7 @@ test.describe('Analysis Flow - Embeddings', () => {
         getFileSuggestions: typeof api?.getFileSuggestions === 'function',
         getBatchSuggestions: typeof api?.getBatchSuggestions === 'function',
         recordFeedback: typeof api?.recordFeedback === 'function',
-        getStrategies: typeof api?.getStrategies === 'function',
+        getStrategies: typeof api?.getStrategies === 'function'
       };
     });
 
@@ -324,7 +333,7 @@ test.describe('Analysis Flow - Organization', () => {
         auto: typeof api?.auto === 'function',
         batch: typeof api?.batch === 'function',
         processNew: typeof api?.processNew === 'function',
-        getStats: typeof api?.getStats === 'function',
+        getStats: typeof api?.getStats === 'function'
       };
     });
 
@@ -342,7 +351,7 @@ test.describe('Analysis Flow - Organization', () => {
         redo: typeof api?.redo === 'function',
         canUndo: typeof api?.canUndo === 'function',
         canRedo: typeof api?.canRedo === 'function',
-        getHistory: typeof api?.getHistory === 'function',
+        getHistory: typeof api?.getHistory === 'function'
       };
     });
 

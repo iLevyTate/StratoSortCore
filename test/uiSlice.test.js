@@ -10,15 +10,15 @@ jest.mock('../src/shared/constants', () => ({
     SETUP: 'setup',
     DISCOVER: 'discover',
     ORGANIZE: 'organize',
-    COMPLETE: 'complete',
+    COMPLETE: 'complete'
   },
   PHASE_TRANSITIONS: {
     welcome: ['setup'],
     setup: ['welcome', 'discover'],
     discover: ['setup', 'organize'],
     organize: ['discover', 'complete'],
-    complete: ['welcome'],
-  },
+    complete: ['welcome']
+  }
 }));
 
 // Mock logger
@@ -28,8 +28,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 import uiReducer, {
@@ -48,7 +48,7 @@ import uiReducer, {
   fetchSettings,
   NAVIGATION_RULES,
   isValidPhase,
-  canTransitionTo,
+  canTransitionTo
 } from '../src/renderer/store/slices/uiSlice';
 
 describe('uiSlice', () => {
@@ -65,7 +65,7 @@ describe('uiSlice', () => {
     settingsLoading: false,
     isOrganizing: false,
     isAnalyzing: false,
-    navigationError: null,
+    navigationError: null
   };
 
   describe('initial state', () => {
@@ -129,7 +129,7 @@ describe('uiSlice', () => {
       const state = {
         ...initialState,
         currentPhase: 'welcome',
-        navigationError: 'previous error',
+        navigationError: 'previous error'
       };
 
       const result = uiReducer(state, setPhase('setup'));
@@ -211,7 +211,7 @@ describe('uiSlice', () => {
     test('sets loading with object', () => {
       const result = uiReducer(
         initialState,
-        setLoading({ isLoading: true, message: 'Processing...' }),
+        setLoading({ isLoading: true, message: 'Processing...' })
       );
 
       expect(result.isLoading).toBe(true);
@@ -222,7 +222,7 @@ describe('uiSlice', () => {
       const state = {
         ...initialState,
         isLoading: true,
-        loadingMessage: 'Loading...',
+        loadingMessage: 'Loading...'
       };
 
       const result = uiReducer(state, setLoading(false));
@@ -254,7 +254,7 @@ describe('uiSlice', () => {
         ...initialState,
         currentPhase: 'organize',
         isLoading: true,
-        showSettings: true,
+        showSettings: true
       };
 
       const result = uiReducer(modifiedState, resetUi());
@@ -267,10 +267,7 @@ describe('uiSlice', () => {
 
   describe('updateSettings', () => {
     test('updates settings', () => {
-      const result = uiReducer(
-        initialState,
-        updateSettings({ theme: 'dark', autoSave: true }),
-      );
+      const result = uiReducer(initialState, updateSettings({ theme: 'dark', autoSave: true }));
 
       expect(result.settings.theme).toBe('dark');
       expect(result.settings.autoSave).toBe(true);
@@ -279,7 +276,7 @@ describe('uiSlice', () => {
     test('merges with existing settings', () => {
       const state = {
         ...initialState,
-        settings: { theme: 'light', existing: true },
+        settings: { theme: 'light', existing: true }
       };
 
       const result = uiReducer(state, updateSettings({ theme: 'dark' }));
@@ -312,7 +309,7 @@ describe('uiSlice', () => {
       const state = {
         ...initialState,
         currentPhase: 'setup',
-        previousPhase: 'welcome',
+        previousPhase: 'welcome'
       };
 
       const result = uiReducer(state, goBack());
@@ -325,7 +322,7 @@ describe('uiSlice', () => {
       const state = {
         ...initialState,
         currentPhase: 'setup',
-        previousPhase: null,
+        previousPhase: null
       };
 
       const result = uiReducer(state, goBack());
@@ -337,7 +334,7 @@ describe('uiSlice', () => {
       const state = {
         ...initialState,
         currentPhase: 'setup',
-        previousPhase: 'invalid',
+        previousPhase: 'invalid'
       };
 
       const result = uiReducer(state, goBack());
@@ -349,7 +346,7 @@ describe('uiSlice', () => {
   describe('fetchSettings async thunk', () => {
     test('sets loading state on pending', () => {
       const result = uiReducer(initialState, {
-        type: fetchSettings.pending.type,
+        type: fetchSettings.pending.type
       });
 
       expect(result.settingsLoading).toBe(true);
@@ -360,7 +357,7 @@ describe('uiSlice', () => {
 
       const result = uiReducer(initialState, {
         type: fetchSettings.fulfilled.type,
-        payload: settings,
+        payload: settings
       });
 
       expect(result.settings).toEqual(settings);
@@ -369,7 +366,7 @@ describe('uiSlice', () => {
 
     test('sets empty object on rejected', () => {
       const result = uiReducer(initialState, {
-        type: fetchSettings.rejected.type,
+        type: fetchSettings.rejected.type
       });
 
       expect(result.settings).toEqual({});
@@ -380,17 +377,15 @@ describe('uiSlice', () => {
   describe('NAVIGATION_RULES', () => {
     describe('canGoBack', () => {
       test('returns false for welcome phase', () => {
-        expect(
-          NAVIGATION_RULES.canGoBack({ currentPhase: 'welcome' }),
-        ).toBe(false);
+        expect(NAVIGATION_RULES.canGoBack({ currentPhase: 'welcome' })).toBe(false);
       });
 
       test('returns false when loading', () => {
         expect(
           NAVIGATION_RULES.canGoBack({
             currentPhase: 'setup',
-            isLoading: true,
-          }),
+            isLoading: true
+          })
         ).toBe(false);
       });
 
@@ -398,8 +393,8 @@ describe('uiSlice', () => {
         expect(
           NAVIGATION_RULES.canGoBack({
             currentPhase: 'organize',
-            isOrganizing: true,
-          }),
+            isOrganizing: true
+          })
         ).toBe(false);
       });
 
@@ -407,8 +402,8 @@ describe('uiSlice', () => {
         expect(
           NAVIGATION_RULES.canGoBack({
             currentPhase: 'discover',
-            isAnalyzing: true,
-          }),
+            isAnalyzing: true
+          })
         ).toBe(false);
       });
 
@@ -418,76 +413,53 @@ describe('uiSlice', () => {
             currentPhase: 'setup',
             isLoading: false,
             isOrganizing: false,
-            isAnalyzing: false,
-          }),
+            isAnalyzing: false
+          })
         ).toBe(true);
       });
     });
 
     describe('canGoNext', () => {
       test('returns false when loading', () => {
-        expect(
-          NAVIGATION_RULES.canGoNext({ currentPhase: 'setup', isLoading: true }),
-        ).toBe(false);
+        expect(NAVIGATION_RULES.canGoNext({ currentPhase: 'setup', isLoading: true })).toBe(false);
       });
 
       test('checks hasSmartFolders for setup phase', () => {
         expect(
-          NAVIGATION_RULES.canGoNext(
-            { currentPhase: 'setup' },
-            { hasSmartFolders: true },
-          ),
+          NAVIGATION_RULES.canGoNext({ currentPhase: 'setup' }, { hasSmartFolders: true })
         ).toBe(true);
         expect(
-          NAVIGATION_RULES.canGoNext(
-            { currentPhase: 'setup' },
-            { hasSmartFolders: false },
-          ),
+          NAVIGATION_RULES.canGoNext({ currentPhase: 'setup' }, { hasSmartFolders: false })
         ).toBe(false);
       });
 
       test('checks hasAnalyzedFiles for discover phase', () => {
         expect(
-          NAVIGATION_RULES.canGoNext(
-            { currentPhase: 'discover' },
-            { hasAnalyzedFiles: true },
-          ),
+          NAVIGATION_RULES.canGoNext({ currentPhase: 'discover' }, { hasAnalyzedFiles: true })
         ).toBe(true);
       });
 
       test('allows totalAnalysisFailure for discover phase', () => {
         expect(
-          NAVIGATION_RULES.canGoNext(
-            { currentPhase: 'discover' },
-            { totalAnalysisFailure: true },
-          ),
+          NAVIGATION_RULES.canGoNext({ currentPhase: 'discover' }, { totalAnalysisFailure: true })
         ).toBe(true);
       });
 
       test('checks hasProcessedFiles for organize phase', () => {
         expect(
-          NAVIGATION_RULES.canGoNext(
-            { currentPhase: 'organize' },
-            { hasProcessedFiles: true },
-          ),
+          NAVIGATION_RULES.canGoNext({ currentPhase: 'organize' }, { hasProcessedFiles: true })
         ).toBe(true);
       });
 
       test('returns true for complete phase', () => {
-        expect(
-          NAVIGATION_RULES.canGoNext({ currentPhase: 'complete' }),
-        ).toBe(true);
+        expect(NAVIGATION_RULES.canGoNext({ currentPhase: 'complete' })).toBe(true);
       });
     });
 
     describe('getAllowedTransitions', () => {
       test('returns allowed transitions for phase', () => {
-        expect(NAVIGATION_RULES.getAllowedTransitions('welcome')).toEqual([
-          'setup',
-        ]);
-        expect(NAVIGATION_RULES.getAllowedTransitions('setup')).toContain(
-          'discover',
-        );
+        expect(NAVIGATION_RULES.getAllowedTransitions('welcome')).toEqual(['setup']);
+        expect(NAVIGATION_RULES.getAllowedTransitions('setup')).toContain('discover');
       });
 
       test('returns empty array for invalid phase', () => {

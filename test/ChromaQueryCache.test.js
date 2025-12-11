@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('ChromaQueryCache', () => {
@@ -206,10 +206,7 @@ describe('ChromaQueryCache', () => {
 
       cache.clear();
 
-      expect(logger.info).toHaveBeenCalledWith(
-        '[QueryCache] Cache cleared',
-        { entriesCleared: 2 },
-      );
+      expect(logger.info).toHaveBeenCalledWith('[QueryCache] Cache cleared', { entriesCleared: 2 });
     });
   });
 

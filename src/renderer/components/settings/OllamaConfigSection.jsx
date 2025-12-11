@@ -18,7 +18,7 @@ function OllamaConfigSection({
   setShowAllModels,
   ollamaModelLists,
   onTestConnection,
-  onRefreshModels,
+  onRefreshModels
 }) {
   return (
     <div className="space-y-4">
@@ -33,7 +33,7 @@ function OllamaConfigSection({
             onChange={(e) =>
               setSettings((prev) => ({
                 ...prev,
-                ollamaHost: e.target.value,
+                ollamaHost: e.target.value
               }))
             }
             placeholder="http://127.0.0.1:11434"
@@ -70,9 +70,7 @@ function OllamaConfigSection({
           {showAllModels ? 'Hide Models' : 'View All Models'}
         </Button>
         {pullProgressText && (
-          <span className="text-xs text-system-gray-600">
-            {pullProgressText}
-          </span>
+          <span className="text-xs text-system-gray-600">{pullProgressText}</span>
         )}
         {ollamaHealth && (
           <span
@@ -86,9 +84,7 @@ function OllamaConfigSection({
       </div>
       {showAllModels && (
         <div className="mt-4 p-4 bg-system-gray-50 rounded border border-system-gray-200 text-xs">
-          <div className="mb-2 font-medium text-system-gray-700">
-            All models from Ollama:
-          </div>
+          <div className="mb-2 font-medium text-system-gray-700">All models from Ollama:</div>
           {ollamaModelLists.all.length === 0 ? (
             <div className="text-system-gray-500">No models returned</div>
           ) : (
@@ -116,7 +112,7 @@ OllamaConfigSection.propTypes = {
   setShowAllModels: PropTypes.func.isRequired,
   ollamaModelLists: PropTypes.object.isRequired,
   onTestConnection: PropTypes.func.isRequired,
-  onRefreshModels: PropTypes.func.isRequired,
+  onRefreshModels: PropTypes.func.isRequired
 };
 
 export default OllamaConfigSection;

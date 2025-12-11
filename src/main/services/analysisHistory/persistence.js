@@ -86,7 +86,7 @@ async function loadHistory(
   schemaVersion,
   createEmptyHistory,
   saveHistory,
-  migrateHistory,
+  migrateHistory
 ) {
   try {
     const historyData = await fs.readFile(historyPath, 'utf8');
@@ -157,7 +157,7 @@ async function createDefaultStructures(
   paths,
   getDefaultConfig,
   createEmptyHistory,
-  createEmptyIndex,
+  createEmptyIndex
 ) {
   const config = getDefaultConfig();
   const history = createEmptyHistory();
@@ -166,7 +166,7 @@ async function createDefaultStructures(
   await Promise.all([
     saveConfig(paths.configPath, config),
     saveHistory(paths.historyPath, history),
-    saveIndex(paths.indexPath, index),
+    saveIndex(paths.indexPath, index)
   ]);
 
   return { config, history, index };
@@ -181,5 +181,5 @@ module.exports = {
   saveHistory,
   loadIndex,
   saveIndex,
-  createDefaultStructures,
+  createDefaultStructures
 };

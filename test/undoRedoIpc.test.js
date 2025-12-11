@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock errorHandlingUtils
@@ -19,13 +19,13 @@ jest.mock('../src/shared/errorHandlingUtils', () => ({
   createSuccessResponse: jest.fn((data) => ({ success: true, data })),
   ERROR_CODES: {
     UNKNOWN_ERROR: 'UNKNOWN_ERROR',
-    SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
-  },
+    SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE'
+  }
 }));
 
 // Mock ipcRegistry
 jest.mock('../src/main/core/ipcRegistry', () => ({
-  registerHandler: jest.fn(),
+  registerHandler: jest.fn()
 }));
 
 describe('Undo/Redo IPC Handlers', () => {
@@ -40,14 +40,14 @@ describe('Undo/Redo IPC Handlers', () => {
     jest.resetModules();
 
     mockIpcMain = {
-      handle: jest.fn(),
+      handle: jest.fn()
     };
 
     mockLogger = {
       info: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: jest.fn()
     };
 
     mockUndoRedoService = {
@@ -56,7 +56,7 @@ describe('Undo/Redo IPC Handlers', () => {
       getHistory: jest.fn(),
       clearHistory: jest.fn(),
       canUndo: jest.fn(),
-      canRedo: jest.fn(),
+      canRedo: jest.fn()
     };
 
     handlers = {};
@@ -79,12 +79,11 @@ describe('Undo/Redo IPC Handlers', () => {
           GET_HISTORY: 'undo-redo:get-history',
           CLEAR_HISTORY: 'undo-redo:clear-history',
           CAN_UNDO: 'undo-redo:can-undo',
-          CAN_REDO: 'undo-redo:can-redo',
-        },
+          CAN_REDO: 'undo-redo:can-redo'
+        }
       },
       logger: mockLogger,
-      getServiceIntegration: () =>
-        serviceAvailable ? { undoRedo: mockUndoRedoService } : null,
+      getServiceIntegration: () => (serviceAvailable ? { undoRedo: mockUndoRedoService } : null)
     });
   };
 
@@ -107,7 +106,7 @@ describe('Undo/Redo IPC Handlers', () => {
       setupHandlers();
       mockUndoRedoService.undo.mockResolvedValue({
         success: true,
-        action: { type: 'move' },
+        action: { type: 'move' }
       });
 
       const handler = handlers['undo-redo:undo'];
@@ -155,7 +154,7 @@ describe('Undo/Redo IPC Handlers', () => {
       setupHandlers();
       mockUndoRedoService.redo.mockResolvedValue({
         success: true,
-        action: { type: 'move' },
+        action: { type: 'move' }
       });
 
       const handler = handlers['undo-redo:redo'];
@@ -181,7 +180,7 @@ describe('Undo/Redo IPC Handlers', () => {
       setupHandlers();
       const history = [
         { id: 1, type: 'move' },
-        { id: 2, type: 'copy' },
+        { id: 2, type: 'copy' }
       ];
       mockUndoRedoService.getHistory.mockResolvedValue(history);
 

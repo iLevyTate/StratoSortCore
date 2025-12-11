@@ -10,13 +10,13 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock config
 jest.mock('../src/shared/config/index', () => ({
-  get: jest.fn((key, defaultValue) => defaultValue),
+  get: jest.fn((key, defaultValue) => defaultValue)
 }));
 
 // Mock llmOptimization
@@ -25,23 +25,23 @@ const mockBatchProcessor = {
   processBatch: jest.fn(),
   getStats: jest.fn().mockReturnValue({
     totalProcessed: 0,
-    totalErrors: 0,
-  }),
+    totalErrors: 0
+  })
 };
 
 jest.mock('../src/main/utils/llmOptimization', () => ({
-  globalBatchProcessor: mockBatchProcessor,
+  globalBatchProcessor: mockBatchProcessor
 }));
 
 // Mock analysis modules
 jest.mock('../src/main/analysis/ollamaDocumentAnalysis', () => ({
   analyzeDocumentFile: jest.fn(),
-  flushAllEmbeddings: jest.fn().mockResolvedValue(undefined),
+  flushAllEmbeddings: jest.fn().mockResolvedValue(undefined)
 }));
 
 jest.mock('../src/main/analysis/ollamaImageAnalysis', () => ({
   analyzeImageFile: jest.fn(),
-  flushAllEmbeddings: jest.fn().mockResolvedValue(undefined),
+  flushAllEmbeddings: jest.fn().mockResolvedValue(undefined)
 }));
 
 // Mock ParallelEmbeddingService
@@ -50,13 +50,13 @@ const mockEmbeddingService = {
   getStats: jest.fn().mockReturnValue({
     processed: 0,
     failed: 0,
-    pending: 0,
+    pending: 0
   }),
-  setConcurrencyLimit: jest.fn(),
+  setConcurrencyLimit: jest.fn()
 };
 
 jest.mock('../src/main/services/ParallelEmbeddingService', () => ({
-  getInstance: jest.fn(() => mockEmbeddingService),
+  getInstance: jest.fn(() => mockEmbeddingService)
 }));
 
 // Mock embeddingQueue
@@ -65,11 +65,11 @@ const mockEmbeddingQueue = {
     queueLength: 0,
     failedItemsCount: 0,
     deadLetterCount: 0,
-    capacityPercent: 0,
+    capacityPercent: 0
   }),
   onProgress: jest.fn().mockReturnValue(() => {}),
   forceFlush: jest.fn().mockResolvedValue(undefined),
-  shutdown: jest.fn().mockResolvedValue(undefined),
+  shutdown: jest.fn().mockResolvedValue(undefined)
 };
 
 jest.mock('../src/main/analysis/embeddingQueue', () => mockEmbeddingQueue);
@@ -86,47 +86,44 @@ describe('BatchAnalysisService', () => {
 
     analyzeDocumentFile =
       require('../src/main/analysis/ollamaDocumentAnalysis').analyzeDocumentFile;
-    analyzeImageFile =
-      require('../src/main/analysis/ollamaImageAnalysis').analyzeImageFile;
+    analyzeImageFile = require('../src/main/analysis/ollamaImageAnalysis').analyzeImageFile;
     BatchAnalysisService = require('../src/main/services/BatchAnalysisService');
 
     // Reset mock implementations
-    mockBatchProcessor.processBatch.mockImplementation(
-      async (items, processor, options) => {
-        const results = [];
-        const errors = [];
-        let successful = 0;
+    mockBatchProcessor.processBatch.mockImplementation(async (items, processor, options) => {
+      const results = [];
+      const errors = [];
+      let successful = 0;
 
-        for (let i = 0; i < items.length; i++) {
-          try {
-            const result = await processor(items[i], i);
-            results.push(result);
-            if (result.success) successful++;
-          } catch (error) {
-            errors.push({ item: items[i], error });
-          }
-
-          if (options.onProgress) {
-            options.onProgress({
-              completed: i + 1,
-              total: items.length,
-              percent: ((i + 1) / items.length) * 100,
-            });
-          }
+      for (let i = 0; i < items.length; i++) {
+        try {
+          const result = await processor(items[i], i);
+          results.push(result);
+          if (result.success) successful++;
+        } catch (error) {
+          errors.push({ item: items[i], error });
         }
 
-        return { results, errors, successful };
-      },
-    );
+        if (options.onProgress) {
+          options.onProgress({
+            completed: i + 1,
+            total: items.length,
+            percent: ((i + 1) / items.length) * 100
+          });
+        }
+      }
+
+      return { results, errors, successful };
+    });
 
     analyzeDocumentFile.mockResolvedValue({
       category: 'document',
-      confidence: 85,
+      confidence: 85
     });
 
     analyzeImageFile.mockResolvedValue({
       category: 'photo',
-      confidence: 90,
+      confidence: 90
     });
 
     service = new BatchAnalysisService();
@@ -216,38 +213,36 @@ describe('BatchAnalysisService', () => {
       expect(onProgress).toHaveBeenCalled();
       expect(onProgress).toHaveBeenCalledWith(
         expect.objectContaining({
-          phase: expect.any(String),
-        }),
+          phase: expect.any(String)
+        })
       );
     });
 
     test('handles analysis errors gracefully', async () => {
       // The mock processor catches errors and marks them as failed results
-      mockBatchProcessor.processBatch.mockImplementation(
-        async (items, processor) => {
-          const results = [];
-          const errors = [];
-          let successful = 0;
+      mockBatchProcessor.processBatch.mockImplementation(async (items, processor) => {
+        const results = [];
+        const errors = [];
+        let successful = 0;
 
-          for (let i = 0; i < items.length; i++) {
-            try {
-              const result = await processor(items[i], i);
-              results.push(result);
-              if (result.success) successful++;
-              else errors.push({ item: items[i], error: result.error });
-            } catch (error) {
-              results.push({
-                filePath: items[i],
-                success: false,
-                error: error.message,
-              });
-              errors.push({ item: items[i], error });
-            }
+        for (let i = 0; i < items.length; i++) {
+          try {
+            const result = await processor(items[i], i);
+            results.push(result);
+            if (result.success) successful++;
+            else errors.push({ item: items[i], error: result.error });
+          } catch (error) {
+            results.push({
+              filePath: items[i],
+              success: false,
+              error: error.message
+            });
+            errors.push({ item: items[i], error });
           }
+        }
 
-          return { results, errors, successful };
-        },
-      );
+        return { results, errors, successful };
+      });
 
       analyzeDocumentFile
         .mockRejectedValueOnce(new Error('Analysis failed'))
@@ -269,10 +264,7 @@ describe('BatchAnalysisService', () => {
 
       await service.analyzeFiles(files, smartFolders);
 
-      expect(analyzeDocumentFile).toHaveBeenCalledWith(
-        '/path/to/doc.pdf',
-        smartFolders,
-      );
+      expect(analyzeDocumentFile).toHaveBeenCalledWith('/path/to/doc.pdf', smartFolders);
     });
 
     test('validates and clamps concurrency', async () => {
@@ -290,10 +282,10 @@ describe('BatchAnalysisService', () => {
 
     test('flushes embeddings after analysis', async () => {
       const {
-        flushAllEmbeddings: flushDoc,
+        flushAllEmbeddings: flushDoc
       } = require('../src/main/analysis/ollamaDocumentAnalysis');
       const {
-        flushAllEmbeddings: flushImage,
+        flushAllEmbeddings: flushImage
       } = require('../src/main/analysis/ollamaImageAnalysis');
 
       const files = ['/path/to/doc.pdf'];
@@ -322,19 +314,13 @@ describe('BatchAnalysisService', () => {
 
       await service.analyzeFiles(files, [], { onEmbeddingProgress });
 
-      expect(mockEmbeddingQueue.onProgress).toHaveBeenCalledWith(
-        onEmbeddingProgress,
-      );
+      expect(mockEmbeddingQueue.onProgress).toHaveBeenCalledWith(onEmbeddingProgress);
     });
   });
 
   describe('analyzeFilesGrouped', () => {
     test('groups files by type before processing', async () => {
-      const files = [
-        '/path/to/doc.pdf',
-        '/path/to/image.jpg',
-        '/path/to/doc2.txt',
-      ];
+      const files = ['/path/to/doc.pdf', '/path/to/image.jpg', '/path/to/doc2.txt'];
 
       const result = await service.analyzeFilesGrouped(files);
 
@@ -498,7 +484,7 @@ describe('BatchAnalysisService', () => {
 
       // Subscribe to progress
       await service.analyzeFiles(['/test.pdf'], [], {
-        onEmbeddingProgress: jest.fn(),
+        onEmbeddingProgress: jest.fn()
       });
 
       // Shutdown

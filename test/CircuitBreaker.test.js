@@ -10,14 +10,14 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 const {
   CircuitBreaker,
   CircuitState,
-  DEFAULT_CONFIG,
+  DEFAULT_CONFIG
 } = require('../src/main/utils/CircuitBreaker');
 
 describe('CircuitBreaker', () => {
@@ -28,7 +28,7 @@ describe('CircuitBreaker', () => {
       failureThreshold: 3,
       successThreshold: 2,
       timeout: 100, // Short timeout for tests
-      resetTimeout: 200,
+      resetTimeout: 200
     });
   });
 
@@ -43,12 +43,8 @@ describe('CircuitBreaker', () => {
 
     test('initializes with default config', () => {
       const defaultBreaker = new CircuitBreaker('default');
-      expect(defaultBreaker.config.failureThreshold).toBe(
-        DEFAULT_CONFIG.failureThreshold,
-      );
-      expect(defaultBreaker.config.successThreshold).toBe(
-        DEFAULT_CONFIG.successThreshold,
-      );
+      expect(defaultBreaker.config.failureThreshold).toBe(DEFAULT_CONFIG.failureThreshold);
+      expect(defaultBreaker.config.successThreshold).toBe(DEFAULT_CONFIG.successThreshold);
       defaultBreaker.cleanup();
     });
 
@@ -187,7 +183,7 @@ describe('CircuitBreaker', () => {
       await expect(
         breaker.execute(async () => {
           throw new Error('Operation failed');
-        }),
+        })
       ).rejects.toThrow('Operation failed');
 
       expect(breaker.getStats().failedRequests).toBe(1);
@@ -200,7 +196,7 @@ describe('CircuitBreaker', () => {
       await expect(breaker.execute(async () => 'test')).rejects.toMatchObject({
         code: 'CIRCUIT_OPEN',
         serviceName: 'test-service',
-        state: CircuitState.OPEN,
+        state: CircuitState.OPEN
       });
     });
 
@@ -209,8 +205,7 @@ describe('CircuitBreaker', () => {
       expect(breaker.halfOpenInFlight).toBe(0);
 
       const promise = breaker.execute(
-        async () =>
-          new Promise((resolve) => setTimeout(() => resolve('done'), 50)),
+        async () => new Promise((resolve) => setTimeout(() => resolve('done'), 50))
       );
       expect(breaker.halfOpenInFlight).toBe(1);
 
@@ -237,9 +232,7 @@ describe('CircuitBreaker', () => {
     });
 
     test('throws on invalid state', () => {
-      expect(() => breaker.forceState('INVALID')).toThrow(
-        'Invalid circuit state',
-      );
+      expect(() => breaker.forceState('INVALID')).toThrow('Invalid circuit state');
     });
   });
 
@@ -272,8 +265,8 @@ describe('CircuitBreaker', () => {
         expect.objectContaining({
           serviceName: 'test-service',
           previousState: CircuitState.CLOSED,
-          currentState: CircuitState.OPEN,
-        }),
+          currentState: CircuitState.OPEN
+        })
       );
     });
 
@@ -288,8 +281,8 @@ describe('CircuitBreaker', () => {
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({
           serviceName: 'test-service',
-          failureCount: 3,
-        }),
+          failureCount: 3
+        })
       );
     });
 
@@ -303,8 +296,8 @@ describe('CircuitBreaker', () => {
 
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({
-          serviceName: 'test-service',
-        }),
+          serviceName: 'test-service'
+        })
       );
     });
 
@@ -320,8 +313,8 @@ describe('CircuitBreaker', () => {
 
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({
-          serviceName: 'test-service',
-        }),
+          serviceName: 'test-service'
+        })
       );
     });
   });
@@ -345,8 +338,8 @@ describe('CircuitBreaker', () => {
       expect(stats.stateChanges[0]).toEqual(
         expect.objectContaining({
           from: CircuitState.CLOSED,
-          to: CircuitState.OPEN,
-        }),
+          to: CircuitState.OPEN
+        })
       );
     });
 
@@ -375,8 +368,8 @@ describe('CircuitBreaker', () => {
           totalRequests: 2,
           successfulRequests: 1,
           failedRequests: 1,
-          config: expect.any(Object),
-        }),
+          config: expect.any(Object)
+        })
       );
     });
   });

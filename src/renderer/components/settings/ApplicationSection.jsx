@@ -15,14 +15,12 @@ function ApplicationSection({ settings, setSettings }) {
           onChange={(e) =>
             setSettings((prev) => ({
               ...prev,
-              launchOnStartup: e.target.checked,
+              launchOnStartup: e.target.checked
             }))
           }
           className="form-checkbox accent-stratosort-blue"
         />
-        <span className="text-sm text-system-gray-700">
-          Launch StratoSort on system startup
-        </span>
+        <span className="text-sm text-system-gray-700">Launch StratoSort on system startup</span>
       </label>
     </div>
   );
@@ -30,7 +28,7 @@ function ApplicationSection({ settings, setSettings }) {
 
 ApplicationSection.propTypes = {
   settings: PropTypes.object.isRequired,
-  setSettings: PropTypes.func.isRequired,
+  setSettings: PropTypes.func.isRequired
 };
 
 export default ApplicationSection;

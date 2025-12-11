@@ -29,8 +29,7 @@ function sortEntries(entries, sortBy, sortOrder) {
         comparison = a.fileName.localeCompare(b.fileName);
         break;
       case 'confidence':
-        comparison =
-          (a.analysis.confidence || 0) - (b.analysis.confidence || 0);
+        comparison = (a.analysis.confidence || 0) - (b.analysis.confidence || 0);
         break;
       case 'fileSize':
         comparison = (a.fileSize || 0) - (b.fileSize || 0);
@@ -70,14 +69,9 @@ function getAnalysisByCategory(
   cache,
   cacheTTL,
   category,
-  options = {},
+  options = {}
 ) {
-  const {
-    limit = 100,
-    offset = 0,
-    sortBy = 'timestamp',
-    sortOrder = 'desc',
-  } = options;
+  const { limit = 100, offset = 0, sortBy = 'timestamp', sortOrder = 'desc' } = options;
   const cacheKey = `${category}:${sortBy}:${sortOrder}`;
   const now = Date.now();
 
@@ -89,16 +83,14 @@ function getAnalysisByCategory(
       return {
         results: paginatedResults,
         total: cached.results.length,
-        hasMore: offset + limit < cached.results.length,
+        hasMore: offset + limit < cached.results.length
       };
     }
     cache.categoryResults.delete(cacheKey);
   }
 
   const entryIds = analysisIndex.categoryIndex[category] || [];
-  let entries = entryIds
-    .map((id) => analysisHistory.entries[id])
-    .filter(Boolean);
+  let entries = entryIds.map((id) => analysisHistory.entries[id]).filter(Boolean);
 
   // Sort entries
   entries = sortEntries(entries, sortBy, sortOrder);
@@ -106,7 +98,7 @@ function getAnalysisByCategory(
   // Cache sorted results
   cache.categoryResults.set(cacheKey, {
     results: entries,
-    time: now,
+    time: now
   });
   maintainCacheSize(cache.categoryResults, 20);
 
@@ -115,7 +107,7 @@ function getAnalysisByCategory(
   return {
     results: paginatedResults,
     total: entries.length,
-    hasMore: offset + limit < entries.length,
+    hasMore: offset + limit < entries.length
   };
 }
 
@@ -129,20 +121,8 @@ function getAnalysisByCategory(
  * @param {Object} options - Query options
  * @returns {{results: Array, total: number, hasMore: boolean}}
  */
-function getAnalysisByTag(
-  analysisHistory,
-  analysisIndex,
-  cache,
-  cacheTTL,
-  tag,
-  options = {},
-) {
-  const {
-    limit = 100,
-    offset = 0,
-    sortBy = 'timestamp',
-    sortOrder = 'desc',
-  } = options;
+function getAnalysisByTag(analysisHistory, analysisIndex, cache, cacheTTL, tag, options = {}) {
+  const { limit = 100, offset = 0, sortBy = 'timestamp', sortOrder = 'desc' } = options;
   const cacheKey = `${tag}:${sortBy}:${sortOrder}`;
   const now = Date.now();
 
@@ -154,16 +134,14 @@ function getAnalysisByTag(
       return {
         results: paginatedResults,
         total: cached.results.length,
-        hasMore: offset + limit < cached.results.length,
+        hasMore: offset + limit < cached.results.length
       };
     }
     cache.tagResults.delete(cacheKey);
   }
 
   const entryIds = analysisIndex.tagIndex[tag] || [];
-  let entries = entryIds
-    .map((id) => analysisHistory.entries[id])
-    .filter(Boolean);
+  let entries = entryIds.map((id) => analysisHistory.entries[id]).filter(Boolean);
 
   // Sort entries
   entries = sortEntries(entries, sortBy, sortOrder);
@@ -171,7 +149,7 @@ function getAnalysisByTag(
   // Cache sorted results
   cache.tagResults.set(cacheKey, {
     results: entries,
-    time: now,
+    time: now
   });
   maintainCacheSize(cache.tagResults, 20);
 
@@ -180,7 +158,7 @@ function getAnalysisByTag(
   return {
     results: paginatedResults,
     total: entries.length,
-    hasMore: offset + limit < entries.length,
+    hasMore: offset + limit < entries.length
   };
 }
 
@@ -194,26 +172,16 @@ function getAnalysisByTag(
  * @param {number} offset - Offset for pagination (default: 0)
  * @returns {{results: Array, total: number, hasMore: boolean}}
  */
-function getRecentAnalysis(
-  analysisHistory,
-  cache,
-  cacheTTL,
-  limit = 50,
-  offset = 0,
-) {
+function getRecentAnalysis(analysisHistory, cache, cacheTTL, limit = 50, offset = 0) {
   const now = Date.now();
 
   // Check if sorted cache is valid
-  if (
-    cache.sortedEntriesValid &&
-    cache.sortedEntries &&
-    now - cache.sortedEntriesTime < cacheTTL
-  ) {
+  if (cache.sortedEntriesValid && cache.sortedEntries && now - cache.sortedEntriesTime < cacheTTL) {
     const results = cache.sortedEntries.slice(offset, offset + limit);
     return {
       results,
       total: cache.sortedEntries.length,
-      hasMore: offset + limit < cache.sortedEntries.length,
+      hasMore: offset + limit < cache.sortedEntries.length
     };
   }
 
@@ -221,9 +189,7 @@ function getRecentAnalysis(
   const entries = Object.values(analysisHistory.entries);
 
   // Sort by timestamp descending (most recent first)
-  cache.sortedEntries = entries.sort(
-    (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
-  );
+  cache.sortedEntries = entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   cache.sortedEntriesValid = true;
   cache.sortedEntriesTime = now;
 
@@ -231,7 +197,7 @@ function getRecentAnalysis(
   return {
     results,
     total: cache.sortedEntries.length,
-    hasMore: offset + limit < cache.sortedEntries.length,
+    hasMore: offset + limit < cache.sortedEntries.length
   };
 }
 
@@ -245,19 +211,8 @@ function getRecentAnalysis(
  * @param {Object} options - Query options (limit, offset, sortBy, sortOrder)
  * @returns {{results: Array, total: number, hasMore: boolean}}
  */
-function getAnalysisByDateRange(
-  analysisHistory,
-  analysisIndex,
-  startDate,
-  endDate,
-  options = {},
-) {
-  const {
-    limit = 100,
-    offset = 0,
-    sortBy = 'timestamp',
-    sortOrder = 'desc',
-  } = options;
+function getAnalysisByDateRange(analysisHistory, analysisIndex, startDate, endDate, options = {}) {
+  const { limit = 100, offset = 0, sortBy = 'timestamp', sortOrder = 'desc' } = options;
   const start = new Date(startDate);
   const end = new Date(endDate);
 
@@ -302,7 +257,7 @@ function getAnalysisByDateRange(
   return {
     results: paginatedResults,
     total: entries.length,
-    hasMore: offset + limit < entries.length,
+    hasMore: offset + limit < entries.length
   };
 }
 
@@ -338,5 +293,5 @@ module.exports = {
   getRecentAnalysis,
   getAnalysisByDateRange,
   getCategories,
-  getTags,
+  getTags
 };

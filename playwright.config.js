@@ -29,7 +29,7 @@ module.exports = defineConfig({
 
   // Maximum time for expect() assertions (30 seconds)
   expect: {
-    timeout: 30000,
+    timeout: 30000
   },
 
   // Fail the build on CI if test.only is accidentally left in source code
@@ -56,7 +56,7 @@ module.exports = defineConfig({
     actionTimeout: 15000,
 
     // Navigation timeout
-    navigationTimeout: 30000,
+    navigationTimeout: 30000
   },
 
   // Output folder for test artifacts (screenshots, videos, traces)
@@ -66,7 +66,7 @@ module.exports = defineConfig({
   reporter: [
     ['list'],
     ['html', { outputFolder: './test-results/e2e-report', open: 'never' }],
-    ...(process.env.CI ? [['github']] : []),
+    ...(process.env.CI ? [['github']] : [])
   ],
 
   // Global setup/teardown
@@ -80,7 +80,7 @@ module.exports = defineConfig({
       name: 'electron',
       use: {
         // No browser launch options needed - we launch Electron directly
-      },
-    },
-  ],
+      }
+    }
+  ]
 });

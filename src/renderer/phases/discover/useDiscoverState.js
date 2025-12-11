@@ -13,14 +13,14 @@ import {
   setSelectedFiles as setSelectedFilesAction,
   updateFileState as updateFileStateAction,
   setFileStates as setFileStatesAction,
-  setNamingConvention as setNamingConventionAction,
+  setNamingConvention as setNamingConventionAction
 } from '../../store/slices/filesSlice';
 import {
   startAnalysis as startAnalysisAction,
   updateProgress as updateProgressAction,
   stopAnalysis as stopAnalysisAction,
   setAnalysisResults as setAnalysisResultsAction,
-  resetAnalysisState as resetAnalysisStateAction,
+  resetAnalysisState as resetAnalysisStateAction
 } from '../../store/slices/analysisSlice';
 import { setPhase, setAnalyzing } from '../../store/slices/uiSlice';
 import { logger } from '../../../shared/logger';
@@ -38,16 +38,10 @@ export function useDiscoverState() {
   const selectedFiles = useAppSelector((state) => state.files.selectedFiles);
   const analysisResults = useAppSelector((state) => state.analysis.results);
   const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
-  const analysisProgress = useAppSelector(
-    (state) => state.analysis.analysisProgress,
-  );
-  const currentAnalysisFile = useAppSelector(
-    (state) => state.analysis.currentAnalysisFile,
-  );
+  const analysisProgress = useAppSelector((state) => state.analysis.analysisProgress);
+  const currentAnalysisFile = useAppSelector((state) => state.analysis.currentAnalysisFile);
   const fileStates = useAppSelector((state) => state.files.fileStates);
-  const namingConventionState = useAppSelector(
-    (state) => state.files.namingConvention,
-  );
+  const namingConventionState = useAppSelector((state) => state.files.namingConvention);
 
   // Destructure naming convention
   const namingConvention = namingConventionState.convention;
@@ -86,7 +80,7 @@ export function useDiscoverState() {
         dispatch(setSelectedFilesAction(files));
       }
     },
-    [dispatch],
+    [dispatch]
   );
 
   const setAnalysisResults = useCallback(
@@ -97,52 +91,47 @@ export function useDiscoverState() {
         dispatch(setAnalysisResultsAction(results));
       }
     },
-    [dispatch],
+    [dispatch]
   );
 
   const setIsAnalyzing = useCallback(
     (val) => {
       if (val) {
-        dispatch(
-          startAnalysisAction({ total: analysisProgressRef.current.total }),
-        );
+        dispatch(startAnalysisAction({ total: analysisProgressRef.current.total }));
         dispatch(setAnalyzing(true));
       } else {
         dispatch(stopAnalysisAction());
         dispatch(setAnalyzing(false));
       }
     },
-    [dispatch],
+    [dispatch]
   );
 
-  const setAnalysisProgress = useCallback(
-    (val) => dispatch(updateProgressAction(val)),
-    [dispatch],
-  );
+  const setAnalysisProgress = useCallback((val) => dispatch(updateProgressAction(val)), [dispatch]);
 
   const setCurrentAnalysisFile = useCallback(
     (val) => dispatch(updateProgressAction({ currentFile: val })),
-    [dispatch],
+    [dispatch]
   );
 
   const setNamingConvention = useCallback(
     (val) => dispatch(setNamingConventionAction({ convention: val })),
-    [dispatch],
+    [dispatch]
   );
 
   const setDateFormat = useCallback(
     (val) => dispatch(setNamingConventionAction({ dateFormat: val })),
-    [dispatch],
+    [dispatch]
   );
 
   const setCaseConvention = useCallback(
     (val) => dispatch(setNamingConventionAction({ caseConvention: val })),
-    [dispatch],
+    [dispatch]
   );
 
   const setSeparator = useCallback(
     (val) => dispatch(setNamingConventionAction({ separator: val })),
-    [dispatch],
+    [dispatch]
   );
 
   const setFileStates = useCallback(
@@ -153,7 +142,7 @@ export function useDiscoverState() {
         dispatch(setFileStatesAction(val));
       }
     },
-    [dispatch],
+    [dispatch]
   );
 
   const updateFileState = useCallback(
@@ -162,11 +151,11 @@ export function useDiscoverState() {
         updateFileStateAction({
           path: filePath,
           state,
-          metadata,
-        }),
+          metadata
+        })
       );
     },
-    [dispatch],
+    [dispatch]
   );
 
   const resetAnalysisState = useCallback(
@@ -182,7 +171,7 @@ export function useDiscoverState() {
         // Non-fatal
       }
     },
-    [dispatch],
+    [dispatch]
   );
 
   // Memoized actions object
@@ -194,14 +183,13 @@ export function useDiscoverState() {
         if (key === 'currentAnalysisFile') setCurrentAnalysisFile(value);
         if (key === 'selectedFiles') setSelectedFiles(value);
         if (key === 'analysisResults') setAnalysisResults(value);
-        if (key === 'namingConvention')
-          dispatch(setNamingConventionAction(value));
+        if (key === 'namingConvention') dispatch(setNamingConventionAction(value));
         if (key === 'fileStates') setFileStates(value);
         if (key === 'failedFileCount') {
           logger.debug('Failed file count updated', { count: value });
         }
       },
-      advancePhase: (phase) => dispatch(setPhase(phase)),
+      advancePhase: (phase) => dispatch(setPhase(phase))
     }),
     [
       dispatch,
@@ -210,30 +198,29 @@ export function useDiscoverState() {
       setCurrentAnalysisFile,
       setSelectedFiles,
       setAnalysisResults,
-      setFileStates,
-    ],
+      setFileStates
+    ]
   );
 
   // Memoized computed values
   const successfulAnalysisCount = useMemo(
     () => analysisResults.filter((r) => r.analysis).length,
-    [analysisResults],
+    [analysisResults]
   );
 
   const failedAnalysisCount = useMemo(
     () => analysisResults.filter((r) => r.error).length,
-    [analysisResults],
+    [analysisResults]
   );
 
   const readyAnalysisCount = useMemo(
     () => analysisResults.filter((r) => r.analysis && !r.error).length,
-    [analysisResults],
+    [analysisResults]
   );
 
   const readySelectedFilesCount = useMemo(
-    () =>
-      selectedFiles.filter((f) => fileStates[f.path]?.state === 'ready').length,
-    [selectedFiles, fileStates],
+    () => selectedFiles.filter((f) => fileStates[f.path]?.state === 'ready').length,
+    [selectedFiles, fileStates]
   );
 
   // Naming settings object for hooks
@@ -242,9 +229,9 @@ export function useDiscoverState() {
       convention: namingConvention,
       separator,
       dateFormat,
-      caseConvention,
+      caseConvention
     }),
-    [namingConvention, separator, dateFormat, caseConvention],
+    [namingConvention, separator, dateFormat, caseConvention]
   );
 
   return {
@@ -284,7 +271,7 @@ export function useDiscoverState() {
     successfulAnalysisCount,
     failedAnalysisCount,
     readyAnalysisCount,
-    readySelectedFilesCount,
+    readySelectedFilesCount
   };
 }
 

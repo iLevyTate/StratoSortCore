@@ -1,6 +1,8 @@
 # Stratosort Code Examples
 
-This guide provides concrete code snippets for common patterns and tasks within the Stratosort codebase. It is designed to bridge the gap between the architectural diagrams and the actual implementation.
+This guide provides concrete code snippets for common patterns and tasks within the Stratosort
+codebase. It is designed to bridge the gap between the architectural diagrams and the actual
+implementation.
 
 ## 1. Backend Services (Main Process)
 
@@ -129,10 +131,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('my-feature:progress', subscription);
 
       // Return unsubscribe function
-      return () =>
-        ipcRenderer.removeListener('my-feature:progress', subscription);
-    },
-  },
+      return () => ipcRenderer.removeListener('my-feature:progress', subscription);
+    }
+  }
 });
 ```
 
@@ -192,7 +193,7 @@ async function summarizeText(text) {
   const response = await ollamaService.generateCompletion({
     model: 'llama3',
     prompt: `Summarize this: ${text}`,
-    stream: false,
+    stream: false
   });
 
   return response.response; // The generated text
@@ -237,7 +238,7 @@ async function findSimilarFolders(fileContent) {
   const collection = await chromaService.getCollection('folders');
   const results = await collection.query({
     queryEmbeddings: [queryVector],
-    nResults: 5, // Top 5 matches
+    nResults: 5 // Top 5 matches
   });
 
   return results;
@@ -263,8 +264,8 @@ const mySlice = createSlice({
     },
     addItems: (state, action) => {
       state.items.push(...action.payload);
-    },
-  },
+    }
+  }
 });
 
 export const { setLoading, addItems } = mySlice.actions;

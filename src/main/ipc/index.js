@@ -11,10 +11,7 @@ const registerWindowIpc = require('./window');
 const { registerSuggestionsIpc } = require('./suggestions');
 const { registerOrganizeIpc } = require('./organize');
 const { registerChromaDBIpc } = require('./chromadb');
-const {
-  ServiceContainer,
-  createFromLegacyParams,
-} = require('./ServiceContainer');
+const { ServiceContainer, createFromLegacyParams } = require('./ServiceContainer');
 
 // Export IPC utilities for handler creation
 const {
@@ -25,7 +22,7 @@ const {
   withServiceCheck,
   createErrorResponse,
   createSuccessResponse,
-  ERROR_CODES,
+  ERROR_CODES
 } = require('./ipcWrappers');
 const { schemas, z } = require('./validationSchemas');
 
@@ -76,22 +73,15 @@ function registerAllIpc(servicesOrParams) {
   // Validate container
   const validation = container.validate();
   if (!validation.valid) {
-    throw new Error(
-      `ServiceContainer missing required services: ${validation.missing.join(', ')}`,
-    );
+    throw new Error(`ServiceContainer missing required services: ${validation.missing.join(', ')}`);
   }
 
   // Extract commonly used services for local use
   const { ipcMain, IPC_CHANNELS, logger } = container.core;
   const { dialog, shell, getMainWindow } = container.electron || {};
-  const {
-    getCustomFolders,
-    setCustomFolders,
-    saveCustomFolders,
-    scanDirectory,
-  } = container.folders || {};
-  const { analyzeDocumentFile, analyzeImageFile, tesseract } =
-    container.analysis || {};
+  const { getCustomFolders, setCustomFolders, saveCustomFolders, scanDirectory } =
+    container.folders || {};
+  const { analyzeDocumentFile, analyzeImageFile, tesseract } = container.analysis || {};
   const {
     getOllama,
     getOllamaModel,
@@ -102,7 +92,7 @@ function registerAllIpc(servicesOrParams) {
     setOllamaModel,
     setOllamaVisionModel,
     setOllamaEmbeddingModel,
-    buildOllamaOptions,
+    buildOllamaOptions
   } = container.ollama || {};
   const { settingsService, onSettingsChanged } = container.settings || {};
   const systemAnalytics = container.systemAnalytics;
@@ -116,7 +106,7 @@ function registerAllIpc(servicesOrParams) {
     dialog,
     shell,
     getMainWindow,
-    getServiceIntegration,
+    getServiceIntegration
   });
   registerSmartFoldersIpc({
     ipcMain,
@@ -128,21 +118,21 @@ function registerAllIpc(servicesOrParams) {
     buildOllamaOptions,
     getOllamaModel,
     getOllamaEmbeddingModel,
-    scanDirectory,
+    scanDirectory
   });
   registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegration });
   registerAnalysisHistoryIpc({
     ipcMain,
     IPC_CHANNELS,
     logger,
-    getServiceIntegration,
+    getServiceIntegration
   });
   registerSystemIpc({
     ipcMain,
     IPC_CHANNELS,
     logger,
     systemAnalytics,
-    getServiceIntegration,
+    getServiceIntegration
   });
   registerOllamaIpc({
     ipcMain,
@@ -154,7 +144,7 @@ function registerAllIpc(servicesOrParams) {
     getOllamaModel,
     getOllamaVisionModel,
     getOllamaEmbeddingModel,
-    getOllamaHost,
+    getOllamaHost
   });
   registerAnalysisIpc({
     ipcMain,
@@ -165,7 +155,7 @@ function registerAllIpc(servicesOrParams) {
     analyzeDocumentFile,
     analyzeImageFile,
     getServiceIntegration,
-    getCustomFolders,
+    getCustomFolders
   });
   registerSettingsIpc({
     ipcMain,
@@ -176,21 +166,21 @@ function registerAllIpc(servicesOrParams) {
     setOllamaModel,
     setOllamaVisionModel,
     setOllamaEmbeddingModel,
-    onSettingsChanged,
+    onSettingsChanged
   });
   registerEmbeddingsIpc({
     ipcMain,
     IPC_CHANNELS,
     logger,
     getCustomFolders,
-    getServiceIntegration,
+    getServiceIntegration
   });
   registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow });
   registerChromaDBIpc({
     ipcMain,
     IPC_CHANNELS,
     logger,
-    getMainWindow,
+    getMainWindow
   });
 
   // Register suggestions IPC - ALWAYS register handlers even if services unavailable
@@ -200,12 +190,11 @@ function registerAllIpc(servicesOrParams) {
 
     // Get services (may be null if ChromaDB unavailable)
     const chromaDbService = serviceIntegration?.chromaDbService || null;
-    const folderMatchingService =
-      serviceIntegration?.folderMatchingService || null;
+    const folderMatchingService = serviceIntegration?.folderMatchingService || null;
 
     if (!chromaDbService || !folderMatchingService) {
       logger.warn(
-        '[IPC] Some services unavailable (ChromaDB or FolderMatching), suggestions will have limited functionality',
+        '[IPC] Some services unavailable (ChromaDB or FolderMatching), suggestions will have limited functionality'
       );
     }
 
@@ -217,7 +206,7 @@ function registerAllIpc(servicesOrParams) {
       chromaDbService,
       folderMatchingService,
       settingsService,
-      getCustomFolders,
+      getCustomFolders
     });
 
     // Register organize IPC - ALWAYS register handlers
@@ -225,16 +214,14 @@ function registerAllIpc(servicesOrParams) {
       ipcMain,
       IPC_CHANNELS,
       getServiceIntegration,
-      getCustomFolders,
+      getCustomFolders
     });
 
     logger.info('[IPC] Suggestions and organize handlers registered');
   } else {
     // FIX: Register fallback handlers even when services are unavailable
     // This prevents "No handler registered" errors in the renderer
-    logger.error(
-      '[IPC] getServiceIntegration not provided, registering fallback handlers',
-    );
+    logger.error('[IPC] getServiceIntegration not provided, registering fallback handlers');
 
     // Register fallback suggestions handlers
     registerSuggestionsIpc({
@@ -243,7 +230,7 @@ function registerAllIpc(servicesOrParams) {
       chromaDbService: null,
       folderMatchingService: null,
       settingsService: null,
-      getCustomFolders: () => [],
+      getCustomFolders: () => []
     });
 
     // Register fallback organize handlers
@@ -251,12 +238,10 @@ function registerAllIpc(servicesOrParams) {
       ipcMain,
       IPC_CHANNELS,
       getServiceIntegration: () => null,
-      getCustomFolders: () => [],
+      getCustomFolders: () => []
     });
 
-    logger.warn(
-      '[IPC] Fallback handlers registered - functionality will be limited',
-    );
+    logger.warn('[IPC] Fallback handlers registered - functionality will be limited');
   }
 }
 
@@ -280,5 +265,5 @@ module.exports = {
 
   // Validation schemas
   schemas,
-  z,
+  z
 };

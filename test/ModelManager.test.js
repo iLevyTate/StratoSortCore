@@ -9,16 +9,16 @@ const fs = require('fs').promises;
 // Mock electron app
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/mock/user/data'),
-  },
+    getPath: jest.fn(() => '/mock/user/data')
+  }
 }));
 
 // Mock Ollama client
 jest.mock('ollama', () => ({
   Ollama: jest.fn().mockImplementation(() => ({
     list: jest.fn(),
-    generate: jest.fn(),
-  })),
+    generate: jest.fn()
+  }))
 }));
 
 // Mock ollamaUtils - getOllamaHost returns null so constructor param is used
@@ -26,17 +26,17 @@ let mockOllamaHost = null;
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(() => ({
     list: jest.fn(),
-    generate: jest.fn(),
+    generate: jest.fn()
   })),
-  getOllamaHost: jest.fn(() => mockOllamaHost),
+  getOllamaHost: jest.fn(() => mockOllamaHost)
 }));
 
 // Mock PerformanceService
 jest.mock('../src/main/services/PerformanceService', () => ({
   buildOllamaOptions: jest.fn().mockResolvedValue({
     num_ctx: 2048,
-    num_thread: 4,
-  }),
+    num_thread: 4
+  })
 }));
 
 describe('ModelManager', () => {
@@ -89,9 +89,7 @@ describe('ModelManager', () => {
 
   describe('initialize', () => {
     test('successfully initializes with available models', async () => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' },
-      ];
+      const mockModels = [{ name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' }];
 
       mockOllamaClient.list.mockResolvedValue({ models: mockModels });
       mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
@@ -111,11 +109,9 @@ describe('ModelManager', () => {
     });
 
     test('loads saved configuration on initialize', async () => {
-      fs.readFile.mockResolvedValue(
-        JSON.stringify({ selectedModel: 'llama3.2' }),
-      );
+      fs.readFile.mockResolvedValue(JSON.stringify({ selectedModel: 'llama3.2' }));
       mockOllamaClient.list.mockResolvedValue({
-        models: [{ name: 'llama3.2', size: 4000000000 }],
+        models: [{ name: 'llama3.2', size: 4000000000 }]
       });
       mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
 
@@ -129,7 +125,7 @@ describe('ModelManager', () => {
     test('discovers available models successfully', async () => {
       const mockModels = [
         { name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' },
-        { name: 'mistral', size: 7000000000, modified_at: '2024-01-02' },
+        { name: 'mistral', size: 7000000000, modified_at: '2024-01-02' }
       ];
 
       mockOllamaClient.list.mockResolvedValue({ models: mockModels });
@@ -152,9 +148,7 @@ describe('ModelManager', () => {
     test('handles Ollama connection failure', async () => {
       mockOllamaClient.list.mockRejectedValue(new Error('Connection refused'));
 
-      await expect(modelManager.discoverModels()).rejects.toThrow(
-        'Connection refused',
-      );
+      await expect(modelManager.discoverModels()).rejects.toThrow('Connection refused');
       expect(modelManager.availableModels).toEqual([]);
     });
 
@@ -162,7 +156,7 @@ describe('ModelManager', () => {
       const mockModels = [
         { name: 'llama3.2', size: 4000000000 },
         { name: 'llava', size: 5000000000 },
-        { name: 'codellama', size: 6000000000 },
+        { name: 'codellama', size: 6000000000 }
       ];
 
       mockOllamaClient.list.mockResolvedValue({ models: mockModels });
@@ -214,7 +208,7 @@ describe('ModelManager', () => {
       const model = {
         name: 'llama3.2',
         size: 4000000000,
-        modified_at: '2024-01-01T00:00:00Z',
+        modified_at: '2024-01-01T00:00:00Z'
       };
 
       const caps = modelManager.analyzeModelCapabilities(model);
@@ -274,7 +268,7 @@ describe('ModelManager', () => {
       modelManager.availableModels = [];
 
       await expect(modelManager.ensureWorkingModel()).rejects.toThrow(
-        'No working Ollama models found',
+        'No working Ollama models found'
       );
     });
 
@@ -288,7 +282,7 @@ describe('ModelManager', () => {
       mockOllamaClient.generate.mockRejectedValue(new Error('Model error'));
 
       await expect(modelManager.ensureWorkingModel()).rejects.toThrow(
-        'No working Ollama models found',
+        'No working Ollama models found'
       );
     });
   });
@@ -305,7 +299,7 @@ describe('ModelManager', () => {
     test('prefers models from fallback preferences', async () => {
       const mockModels = [
         { name: 'random-model:7b', size: 3000000000 },
-        { name: 'llama3.2', size: 4000000000 },
+        { name: 'llama3.2', size: 4000000000 }
       ];
       modelManager.availableModels = mockModels;
       mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
@@ -320,7 +314,7 @@ describe('ModelManager', () => {
     test('tries preferred models in order', async () => {
       const mockModels = [
         { name: 'llama3', size: 4000000000 },
-        { name: 'llama3.2', size: 4500000000 },
+        { name: 'llama3.2', size: 4500000000 }
       ];
       modelManager.availableModels = mockModels;
       mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
@@ -342,7 +336,7 @@ describe('ModelManager', () => {
         text: true,
         chat: true,
         code: false,
-        vision: false,
+        vision: false
       });
 
       mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
@@ -361,7 +355,7 @@ describe('ModelManager', () => {
         text: false,
         chat: false,
         code: false,
-        vision: false,
+        vision: false
       });
 
       mockOllamaClient.generate.mockResolvedValue({ response: 'test' });
@@ -374,7 +368,7 @@ describe('ModelManager', () => {
     test('skips models that fail testing', async () => {
       const mockModels = [
         { name: 'llama3.2', size: 4000000000 },
-        { name: 'mistral', size: 7000000000 },
+        { name: 'mistral', size: 7000000000 }
       ];
       modelManager.availableModels = mockModels;
       mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
@@ -424,10 +418,7 @@ describe('ModelManager', () => {
     test('respects timeout parameter', async () => {
       // Simulate a slow response
       mockOllamaClient.generate.mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve({ response: 'test' }), 15000),
-          ),
+        () => new Promise((resolve) => setTimeout(() => resolve({ response: 'test' }), 15000))
       );
 
       const result = await modelManager.testModel('slow-model', 100);
@@ -444,9 +435,9 @@ describe('ModelManager', () => {
         expect.objectContaining({
           options: expect.objectContaining({
             num_ctx: 2048,
-            num_thread: 4,
-          }),
-        }),
+            num_thread: 4
+          })
+        })
       );
     });
 
@@ -458,9 +449,9 @@ describe('ModelManager', () => {
       expect(mockOllamaClient.generate).toHaveBeenCalledWith(
         expect.objectContaining({
           options: expect.objectContaining({
-            num_predict: 5,
-          }),
-        }),
+            num_predict: 5
+          })
+        })
       );
     });
   });
@@ -470,7 +461,7 @@ describe('ModelManager', () => {
       const mockModels = [
         { name: 'llama3.2', size: 4000000000 },
         { name: 'llava:7b', size: 5000000000 },
-        { name: 'codellama:13b', size: 6000000000 },
+        { name: 'codellama:13b', size: 6000000000 }
       ];
       modelManager.availableModels = mockModels;
       mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
@@ -506,7 +497,7 @@ describe('ModelManager', () => {
     test('falls back to selected model if no vision model available', () => {
       // Remove vision model
       modelManager.availableModels = modelManager.availableModels.filter(
-        (m) => m.name !== 'llava:7b',
+        (m) => m.name !== 'llava:7b'
       );
 
       const result = modelManager.getBestModelForTask('vision');
@@ -517,7 +508,7 @@ describe('ModelManager', () => {
     test('falls back to selected model if no code model available', () => {
       // Remove code model
       modelManager.availableModels = modelManager.availableModels.filter(
-        (m) => m.name !== 'codellama:13b',
+        (m) => m.name !== 'codellama:13b'
       );
 
       const result = modelManager.getBestModelForTask('code');
@@ -552,9 +543,9 @@ describe('ModelManager', () => {
     test('throws error for unavailable model', async () => {
       modelManager.availableModels = [{ name: 'llama3.2', size: 4000000000 }];
 
-      await expect(
-        modelManager.setSelectedModel('nonexistent-model'),
-      ).rejects.toThrow('Model nonexistent-model is not available');
+      await expect(modelManager.setSelectedModel('nonexistent-model')).rejects.toThrow(
+        'Model nonexistent-model is not available'
+      );
     });
 
     test('saves configuration after setting model', async () => {
@@ -564,7 +555,7 @@ describe('ModelManager', () => {
 
       expect(fs.writeFile).toHaveBeenCalledWith(
         expect.any(String),
-        expect.stringContaining('llama3.2'),
+        expect.stringContaining('llama3.2')
       );
     });
   });
@@ -575,8 +566,8 @@ describe('ModelManager', () => {
         {
           name: 'llama3.2',
           size: 4000000000,
-          modified_at: '2024-01-01T00:00:00Z',
-        },
+          modified_at: '2024-01-01T00:00:00Z'
+        }
       ];
       modelManager.availableModels = mockModels;
       modelManager.analyzeModelCapabilities(mockModels[0]);
@@ -591,7 +582,7 @@ describe('ModelManager', () => {
         size: 4000000000,
         modified: '2024-01-01T00:00:00Z',
         capabilities: expect.any(Object),
-        isSelected: true,
+        isSelected: true
       });
     });
 
@@ -631,7 +622,7 @@ describe('ModelManager', () => {
     beforeEach(() => {
       const mockModels = [
         { name: 'llama3.2', size: 4000000000 },
-        { name: 'mistral', size: 7000000000 },
+        { name: 'mistral', size: 7000000000 }
       ];
       modelManager.availableModels = mockModels;
       modelManager.selectedModel = 'llama3.2';
@@ -639,7 +630,7 @@ describe('ModelManager', () => {
 
     test('generates with selected model successfully', async () => {
       mockOllamaClient.generate.mockResolvedValue({
-        response: 'Generated text',
+        response: 'Generated text'
       });
 
       const result = await modelManager.generateWithFallback('Test prompt');
@@ -663,9 +654,9 @@ describe('ModelManager', () => {
     test('throws error when all models fail', async () => {
       mockOllamaClient.generate.mockRejectedValue(new Error('All failed'));
 
-      await expect(
-        modelManager.generateWithFallback('Test prompt'),
-      ).rejects.toThrow('All models failed to generate response');
+      await expect(modelManager.generateWithFallback('Test prompt')).rejects.toThrow(
+        'All models failed to generate response'
+      );
     });
 
     test('passes custom options to generate', async () => {
@@ -673,16 +664,16 @@ describe('ModelManager', () => {
 
       await modelManager.generateWithFallback('Test', {
         temperature: 0.5,
-        num_predict: 100,
+        num_predict: 100
       });
 
       expect(mockOllamaClient.generate).toHaveBeenCalledWith(
         expect.objectContaining({
           options: expect.objectContaining({
             temperature: 0.5,
-            num_predict: 100,
-          }),
-        }),
+            num_predict: 100
+          })
+        })
       );
     });
 
@@ -700,9 +691,7 @@ describe('ModelManager', () => {
 
   describe('loadConfig', () => {
     test('loads configuration successfully', async () => {
-      fs.readFile.mockResolvedValue(
-        JSON.stringify({ selectedModel: 'llama3.2' }),
-      );
+      fs.readFile.mockResolvedValue(JSON.stringify({ selectedModel: 'llama3.2' }));
 
       await modelManager.loadConfig();
 
@@ -744,7 +733,7 @@ describe('ModelManager', () => {
 
       expect(fs.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('model-config.json'),
-        expect.stringContaining('llama3.2'),
+        expect.stringContaining('llama3.2')
       );
     });
 
@@ -811,7 +800,7 @@ describe('ModelManager', () => {
     test('returns all models with their capabilities', () => {
       const mockModels = [
         { name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' },
-        { name: 'llava:7b', size: 5000000000, modified_at: '2024-01-02' },
+        { name: 'llava:7b', size: 5000000000, modified_at: '2024-01-02' }
       ];
       modelManager.availableModels = mockModels;
       mockModels.forEach((m) => modelManager.analyzeModelCapabilities(m));
@@ -835,9 +824,7 @@ describe('ModelManager', () => {
     });
 
     test('includes size and modified date', () => {
-      const mockModels = [
-        { name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' },
-      ];
+      const mockModels = [{ name: 'llama3.2', size: 4000000000, modified_at: '2024-01-01' }];
       modelManager.availableModels = mockModels;
       modelManager.analyzeModelCapabilities(mockModels[0]);
 
@@ -861,7 +848,7 @@ describe('ModelManager', () => {
       const results = await Promise.all([
         modelManager.initialize(),
         modelManager.initialize(),
-        modelManager.initialize(),
+        modelManager.initialize()
       ]);
 
       expect(results).toEqual([false, false, false]);

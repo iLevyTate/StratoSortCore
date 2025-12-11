@@ -10,8 +10,8 @@ jest.mock('child_process', () => ({
     stderr: { on: jest.fn() },
     on: jest.fn(),
     kill: jest.fn(),
-    pid: 12345,
-  }),
+    pid: 12345
+  })
 }));
 
 jest.mock('axios');
@@ -22,18 +22,18 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  axiosWithRetry: jest.fn(),
+  axiosWithRetry: jest.fn()
 }));
 
 jest.mock('../src/shared/performanceConstants', () => ({
   TIMEOUTS: {
-    DELAY_MEDIUM: 100,
-  },
+    DELAY_MEDIUM: 100
+  }
 }));
 
 describe('ollamaService', () => {
@@ -83,10 +83,7 @@ describe('ollamaService', () => {
 
       await ollamaService.checkOllamaHealth();
 
-      expect(axios.get).toHaveBeenCalledWith(
-        'http://127.0.0.1:11434/api/tags',
-        expect.any(Object),
-      );
+      expect(axios.get).toHaveBeenCalledWith('http://127.0.0.1:11434/api/tags', expect.any(Object));
     });
 
     test('uses OLLAMA_BASE_URL when set', async () => {
@@ -102,7 +99,7 @@ describe('ollamaService', () => {
 
       expect(freshAxios.get).toHaveBeenCalledWith(
         'http://custom:8080/api/tags',
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -121,7 +118,7 @@ describe('ollamaService', () => {
 
       expect(axios.get).toHaveBeenCalledWith(
         expect.any(String),
-        expect.objectContaining({ timeout: 2000 }),
+        expect.objectContaining({ timeout: 2000 })
       );
     });
   });
@@ -153,8 +150,8 @@ describe('ollamaService', () => {
         expect.objectContaining({
           maxRetries: 2,
           initialDelay: 500,
-          maxDelay: 2000,
-        }),
+          maxDelay: 2000
+        })
       );
     });
   });
@@ -164,7 +161,7 @@ describe('ollamaService', () => {
 
     beforeEach(() => {
       serviceStatus = {
-        ollama: { status: 'stopped', health: 'unknown' },
+        ollama: { status: 'stopped', health: 'unknown' }
       };
     });
 
@@ -191,8 +188,8 @@ describe('ollamaService', () => {
         ['serve'],
         expect.objectContaining({
           detached: false,
-          stdio: 'pipe',
-        }),
+          stdio: 'pipe'
+        })
       );
       expect(result.process).toBeDefined();
     });
@@ -219,7 +216,7 @@ describe('ollamaService', () => {
         stderr: { on: jest.fn() },
         on: jest.fn(),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -229,10 +226,7 @@ describe('ollamaService', () => {
 
       await promise;
 
-      expect(mockProcess.stdout.on).toHaveBeenCalledWith(
-        'data',
-        expect.any(Function),
-      );
+      expect(mockProcess.stdout.on).toHaveBeenCalledWith('data', expect.any(Function));
     });
 
     test('sets up stderr handler', async () => {
@@ -243,7 +237,7 @@ describe('ollamaService', () => {
         stderr: { on: jest.fn() },
         on: jest.fn(),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -253,10 +247,7 @@ describe('ollamaService', () => {
 
       await promise;
 
-      expect(mockProcess.stderr.on).toHaveBeenCalledWith(
-        'data',
-        expect.any(Function),
-      );
+      expect(mockProcess.stderr.on).toHaveBeenCalledWith('data', expect.any(Function));
     });
 
     test('detects port-in-use error and returns external', async () => {
@@ -268,11 +259,11 @@ describe('ollamaService', () => {
         stderr: {
           on: jest.fn((event, cb) => {
             if (event === 'data') stderrHandler = cb;
-          }),
+          })
         },
         on: jest.fn(),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -302,11 +293,11 @@ describe('ollamaService', () => {
         stderr: {
           on: jest.fn((event, cb) => {
             if (event === 'data') stderrHandler = cb;
-          }),
+          })
         },
         on: jest.fn(),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -333,11 +324,11 @@ describe('ollamaService', () => {
         stderr: {
           on: jest.fn((event, cb) => {
             if (event === 'data') stderrHandler = cb;
-          }),
+          })
         },
         on: jest.fn(),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -363,7 +354,7 @@ describe('ollamaService', () => {
         stderr: { on: jest.fn() },
         on: jest.fn(),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -373,10 +364,7 @@ describe('ollamaService', () => {
 
       await promise;
 
-      expect(mockProcess.on).toHaveBeenCalledWith(
-        'error',
-        expect.any(Function),
-      );
+      expect(mockProcess.on).toHaveBeenCalledWith('error', expect.any(Function));
     });
 
     test('throws on startup error', async () => {
@@ -390,7 +378,7 @@ describe('ollamaService', () => {
           if (event === 'error') errorHandler = cb;
         }),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 
@@ -420,7 +408,7 @@ describe('ollamaService', () => {
           if (event === 'exit') exitHandler = cb;
         }),
         kill: jest.fn(),
-        pid: 12345,
+        pid: 12345
       };
       spawn.mockReturnValue(mockProcess);
 

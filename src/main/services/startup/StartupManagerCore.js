@@ -13,16 +13,8 @@ const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
 const { withTimeout, delay } = require('../../../shared/promiseUtils');
 
 const { runPreflightChecks, isPortAvailable } = require('./preflightChecks');
-const {
-  startChromaDB,
-  isChromaDBRunning,
-  checkChromaDBHealth,
-} = require('./chromaService');
-const {
-  startOllama,
-  isOllamaRunning,
-  checkOllamaHealth,
-} = require('./ollamaService');
+const { startChromaDB, isChromaDBRunning, checkChromaDBHealth } = require('./chromaService');
+const { startOllama, isOllamaRunning, checkOllamaHealth } = require('./ollamaService');
 const { createHealthMonitor } = require('./healthMonitoring');
 const { shutdown, shutdownProcess } = require('./shutdownHandler');
 
@@ -50,7 +42,7 @@ class StartupManager {
     this.healthMonitor = null;
     this.healthCheckState = {
       inProgress: false,
-      startedAt: null,
+      startedAt: null
     };
     this.startupState = 'initializing';
     this.errors = [];
@@ -63,13 +55,12 @@ class StartupManager {
       baseRetryDelay: options.baseRetryDelay || 1000,
       axiosTimeout: options.axiosTimeout || 5000,
       circuitBreakerThreshold: options.circuitBreakerThreshold || 5,
-      circuitBreakerConsecutiveFailures:
-        options.circuitBreakerConsecutiveFailures || 3,
+      circuitBreakerConsecutiveFailures: options.circuitBreakerConsecutiveFailures || 3
     };
 
     this.serviceStatus = {
       chromadb: { status: 'not_started', required: false, health: 'unknown' },
-      ollama: { status: 'not_started', required: false, health: 'unknown' },
+      ollama: { status: 'not_started', required: false, health: 'unknown' }
     };
 
     this.startupPhase = 'idle';
@@ -77,7 +68,7 @@ class StartupManager {
     this.chromadbDependencyMissing = false;
     this.restartLocks = {
       chromadb: false,
-      ollama: false,
+      ollama: false
     };
     this.cachedChromaSpawnPlan = null;
     this.container = container;
@@ -106,7 +97,7 @@ class StartupManager {
         progress,
         serviceStatus: { ...this.serviceStatus },
         errors: [...this.errors],
-        details,
+        details
       });
     }
   }
@@ -118,7 +109,7 @@ class StartupManager {
   async runPreflightChecks() {
     return runPreflightChecks({
       reportProgress: this.reportProgress.bind(this),
-      errors: this.errors,
+      errors: this.errors
     });
   }
 
@@ -135,7 +126,7 @@ class StartupManager {
       status: 'starting',
       required,
       health: 'unknown',
-      attempts: 0,
+      attempts: 0
     };
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -144,14 +135,11 @@ class StartupManager {
         this.reportProgress(
           'service-startup',
           `Starting ${serviceName}... (attempt ${attempt + 1}/${maxRetries})`,
-          20 + (serviceName === 'chromadb' ? attempt * 10 : attempt * 15),
+          20 + (serviceName === 'chromadb' ? attempt * 10 : attempt * 15)
         );
 
         if (attempt > 0) {
-          const delayMs = Math.min(
-            this.config.baseRetryDelay * Math.pow(2, attempt),
-            10000,
-          );
+          const delayMs = Math.min(this.config.baseRetryDelay * Math.pow(2, attempt), 10000);
           logger.info(`[STARTUP] Waiting ${delayMs}ms before retry...`);
           await delay(delayMs);
         }
@@ -191,9 +179,7 @@ class StartupManager {
           isRunning = await checkFunc();
           if (isRunning) {
             const elapsedTime = Date.now() - startTime;
-            logger.info(
-              `[STARTUP] ${serviceName} started successfully in ${elapsedTime}ms`,
-            );
+            logger.info(`[STARTUP] ${serviceName} started successfully in ${elapsedTime}ms`);
             this.serviceStatus[serviceName].status = 'running';
             this.serviceStatus[serviceName].health = 'healthy';
             return { success: true, alreadyRunning: false };
@@ -211,15 +197,10 @@ class StartupManager {
           await delay(pollInterval);
         }
 
-        throw new Error(
-          `${serviceName} failed to respond within ${verifyTimeout}ms`,
-        );
+        throw new Error(`${serviceName} failed to respond within ${verifyTimeout}ms`);
       } catch (error) {
         lastError = error;
-        logger.warn(
-          `[STARTUP] ${serviceName} attempt ${attempt + 1} failed:`,
-          error.message,
-        );
+        logger.warn(`[STARTUP] ${serviceName} attempt ${attempt + 1} failed:`, error.message);
         this.serviceStatus[serviceName].lastError = error.message;
       }
     }
@@ -230,20 +211,16 @@ class StartupManager {
     const errorInfo = {
       service: serviceName,
       error: lastError?.message || 'Unknown error',
-      critical: required,
+      critical: required
     };
 
     this.errors.push(errorInfo);
 
     if (required) {
-      throw new Error(
-        `Critical service ${serviceName} failed to start: ${lastError?.message}`,
-      );
+      throw new Error(`Critical service ${serviceName} failed to start: ${lastError?.message}`);
     }
 
-    logger.warn(
-      `[STARTUP] ${serviceName} failed to start but is not required. Continuing...`,
-    );
+    logger.warn(`[STARTUP] ${serviceName} failed to start but is not required. Continuing...`);
     return { success: false, error: lastError, fallbackMode: true };
   }
 
@@ -255,7 +232,7 @@ class StartupManager {
       cachedChromaSpawnPlan: this.cachedChromaSpawnPlan,
       setCachedSpawnPlan: (plan) => {
         this.cachedChromaSpawnPlan = plan;
-      },
+      }
     });
 
     if (result.setDependencyMissing) {
@@ -266,15 +243,10 @@ class StartupManager {
       return result;
     }
 
-    return await this.startServiceWithRetry(
-      'chromadb',
-      async () => result,
-      isChromaDBRunning,
-      {
-        required: false,
-        verifyTimeout: 12000,
-      },
-    );
+    return await this.startServiceWithRetry('chromadb', async () => result, isChromaDBRunning, {
+      required: false,
+      verifyTimeout: 12000
+    });
   }
 
   async startOllama() {
@@ -282,7 +254,7 @@ class StartupManager {
       'ollama',
       async () => startOllama({ serviceStatus: this.serviceStatus }),
       isOllamaRunning,
-      { required: false, verifyTimeout: 8000 },
+      { required: false, verifyTimeout: 8000 }
     );
   }
 
@@ -312,38 +284,28 @@ class StartupManager {
             logger.error('Ollama startup error', { error: error.message });
             return { success: false, error };
           }
-        })(),
+        })()
       ]);
 
       const allSuccess = chromaResult.success && ollamaResult.success;
       const partialSuccess = chromaResult.success || ollamaResult.success;
 
       if (allSuccess) {
-        this.reportProgress(
-          'services',
-          'All services initialized successfully',
-          65,
-          {
-            chromadb: chromaResult.success,
-            ollama: ollamaResult.success,
-          },
-        );
+        this.reportProgress('services', 'All services initialized successfully', 65, {
+          chromadb: chromaResult.success,
+          ollama: ollamaResult.success
+        });
       } else if (partialSuccess) {
-        this.reportProgress(
-          'services',
-          'Services initialized with limitations',
-          65,
-          {
-            chromadb: chromaResult.success,
-            ollama: ollamaResult.success,
-            warning: true,
-          },
-        );
+        this.reportProgress('services', 'Services initialized with limitations', 65, {
+          chromadb: chromaResult.success,
+          ollama: ollamaResult.success,
+          warning: true
+        });
       } else {
         this.reportProgress('services', 'Service initialization failed', 65, {
           chromadb: chromaResult.success,
           ollama: ollamaResult.success,
-          error: true,
+          error: true
         });
       }
 
@@ -352,7 +314,7 @@ class StartupManager {
       logger.error('[STARTUP] Service initialization failed:', error);
       this.reportProgress('services', 'Service initialization error', 65, {
         error: error.message,
-        critical: true,
+        critical: true
       });
       throw error;
     }
@@ -363,64 +325,39 @@ class StartupManager {
 
     if (result.success) {
       if (result.external) {
-        this.reportProgress(
-          'services',
-          `${serviceName} detected (external instance)`,
-          progress,
-          {
-            service: serviceName,
-            status: 'external',
-          },
-        );
+        this.reportProgress('services', `${serviceName} detected (external instance)`, progress, {
+          service: serviceName,
+          status: 'external'
+        });
       } else if (result.alreadyRunning) {
-        this.reportProgress(
-          'services',
-          `${serviceName} already running`,
-          progress,
-          {
-            service: serviceName,
-            status: 'running',
-          },
-        );
+        this.reportProgress('services', `${serviceName} already running`, progress, {
+          service: serviceName,
+          status: 'running'
+        });
       } else {
-        this.reportProgress(
-          'services',
-          `${serviceName} started successfully`,
-          progress,
-          {
-            service: serviceName,
-            status: 'started',
-          },
-        );
+        this.reportProgress('services', `${serviceName} started successfully`, progress, {
+          service: serviceName,
+          status: 'started'
+        });
       }
     } else if (result.disabled) {
-      this.reportProgress(
-        'services',
-        `${serviceName} disabled (dependency missing)`,
-        progress,
-        {
-          service: serviceName,
-          status: 'disabled',
-          error: result.reason,
-        },
-      );
+      this.reportProgress('services', `${serviceName} disabled (dependency missing)`, progress, {
+        service: serviceName,
+        status: 'disabled',
+        error: result.reason
+      });
     } else if (result.fallbackMode) {
       this.reportProgress('services', `${serviceName} unavailable`, progress, {
         service: serviceName,
         status: 'failed',
-        error: result.error?.message,
+        error: result.error?.message
       });
     } else {
-      this.reportProgress(
-        'services',
-        `${serviceName} failed to start`,
-        progress,
-        {
-          service: serviceName,
-          status: 'failed',
-          error: result.error?.message,
-        },
-      );
+      this.reportProgress('services', `${serviceName} failed to start`, progress, {
+        service: serviceName,
+        status: 'failed',
+        error: result.error?.message
+      });
     }
   }
 
@@ -456,7 +393,7 @@ class StartupManager {
       this.errors.push({
         phase: 'startup',
         error: error.message,
-        critical: true,
+        critical: true
       });
 
       await this.enableGracefulDegradation();
@@ -482,17 +419,13 @@ class StartupManager {
     }
 
     logger.info('[STARTUP] Phase 4: Initializing application services');
-    this.reportProgress(
-      'app-services',
-      'Initializing application services...',
-      85,
-    );
+    this.reportProgress('app-services', 'Initializing application services...', 85);
 
     logger.info('[STARTUP] Internal startup sequence complete');
     return {
       preflight: preflightResults,
       services: serviceResults,
-      degraded: this.errors.length > 0,
+      degraded: this.errors.length > 0
     };
   }
 
@@ -502,29 +435,17 @@ class StartupManager {
     global.degradedMode = {
       enabled: true,
       missingServices: [],
-      limitations: [],
+      limitations: []
     };
 
-    const chromaUnavailableStatuses = [
-      'failed',
-      'permanently_failed',
-      'disabled',
-    ];
-    if (
-      chromaUnavailableStatuses.includes(this.serviceStatus.chromadb.status)
-    ) {
+    const chromaUnavailableStatuses = ['failed', 'permanently_failed', 'disabled'];
+    if (chromaUnavailableStatuses.includes(this.serviceStatus.chromadb.status)) {
       global.degradedMode.missingServices.push('chromadb');
       global.degradedMode.limitations.push('Semantic search disabled');
-      global.degradedMode.limitations.push(
-        'Smart folder matching may be limited',
-      );
+      global.degradedMode.limitations.push('Smart folder matching may be limited');
     }
 
-    const ollamaUnavailableStatuses = [
-      'failed',
-      'permanently_failed',
-      'disabled',
-    ];
+    const ollamaUnavailableStatuses = ['failed', 'permanently_failed', 'disabled'];
     if (ollamaUnavailableStatuses.includes(this.serviceStatus.ollama.status)) {
       global.degradedMode.missingServices.push('ollama');
       global.degradedMode.limitations.push('AI analysis disabled');
@@ -541,17 +462,15 @@ class StartupManager {
 
     for (const [serviceName, process] of this.serviceProcesses.entries()) {
       const status = this.serviceStatus[serviceName]?.status;
-      const shouldStop =
-        status !== 'running' && status !== 'disabled' && status !== 'stopped';
+      const shouldStop = status !== 'running' && status !== 'disabled' && status !== 'stopped';
 
       if (shouldStop) {
         stopPromises.push(
           shutdownProcess(serviceName, process).catch((error) => {
-            logger.warn(
-              `[STARTUP] Failed to stop ${serviceName} during degradation`,
-              { error: error.message },
-            );
-          }),
+            logger.warn(`[STARTUP] Failed to stop ${serviceName} during degradation`, {
+              error: error.message
+            });
+          })
         );
       }
     }
@@ -580,7 +499,7 @@ class StartupManager {
       restartLocks: this.restartLocks,
       startChromaDB: this.startChromaDB.bind(this),
       startOllama: this.startOllama.bind(this),
-      healthCheckState: this.healthCheckState,
+      healthCheckState: this.healthCheckState
     });
   }
 
@@ -598,7 +517,7 @@ class StartupManager {
       phase: this.startupPhase,
       services: { ...this.serviceStatus },
       errors: [...this.errors],
-      degraded: global.degradedMode?.enabled || false,
+      degraded: global.degradedMode?.enabled || false
     };
   }
 
@@ -607,7 +526,7 @@ class StartupManager {
       serviceProcesses: this.serviceProcesses,
       serviceStatus: this.serviceStatus,
       healthMonitor: this.healthMonitor,
-      healthCheckState: this.healthCheckState,
+      healthCheckState: this.healthCheckState
     });
   }
 

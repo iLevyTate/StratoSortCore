@@ -38,19 +38,11 @@ class ModelManager {
         'neural-chat',
         'orca',
         'vicuna',
-        'alpaca',
+        'alpaca'
       ],
       vision: ['llava', 'bakllava', 'moondream', 'gemma3'],
       code: ['codellama', 'codegemma', 'starcoder', 'deepseek-coder'],
-      chat: [
-        'llama',
-        'mistral',
-        'phi',
-        'gemma',
-        'neural-chat',
-        'orca',
-        'vicuna',
-      ],
+      chat: ['llama', 'mistral', 'phi', 'gemma', 'neural-chat', 'orca', 'vicuna']
     };
 
     // Fallback model preferences (in order of preference)
@@ -68,7 +60,7 @@ class ModelManager {
       'qwen2',
       'qwen',
       'neural-chat',
-      'orca-mini',
+      'orca-mini'
     ];
   }
 
@@ -129,10 +121,7 @@ class ModelManager {
         } catch (error) {
           // Cleanup on error
           cleanup();
-          logger.error(
-            '[ModelManager] Error setting up initialization wait:',
-            error,
-          );
+          logger.error('[ModelManager] Error setting up initialization wait:', error);
           resolve(false);
         }
       });
@@ -153,10 +142,7 @@ class ModelManager {
         const discoverPromise = this.discoverModels();
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error('Model discovery timeout')),
-            5000,
-          );
+          timeoutId = setTimeout(() => reject(new Error('Model discovery timeout')), 5000);
           // Ensure timeout doesn't keep process alive
           if (timeoutId && timeoutId.unref) {
             timeoutId.unref();
@@ -167,7 +153,7 @@ class ModelManager {
           await Promise.race([discoverPromise, timeoutPromise]);
         } catch (error) {
           logger.warn('[ModelManager] Model discovery failed or timed out', {
-            error: error.message,
+            error: error.message
           });
         } finally {
           // Clean up timeout
@@ -183,13 +169,11 @@ class ModelManager {
         this.initialized = true;
         this._isInitializing = false;
 
-        logger.info(
-          `[ModelManager] Initialized with model: ${this.selectedModel}`,
-        );
+        logger.info(`[ModelManager] Initialized with model: ${this.selectedModel}`);
         return true;
       } catch (error) {
         logger.error('[ModelManager] Initialization failed', {
-          error: error.message,
+          error: error.message
         });
 
         // Clear initialization state on failure
@@ -217,13 +201,11 @@ class ModelManager {
         this.analyzeModelCapabilities(model);
       }
 
-      logger.info(
-        `[ModelManager] Discovered ${this.availableModels.length} models`,
-      );
+      logger.info(`[ModelManager] Discovered ${this.availableModels.length} models`);
       return this.availableModels;
     } catch (error) {
       logger.error('[ModelManager] Failed to discover models', {
-        error: error.message,
+        error: error.message
       });
       this.availableModels = [];
       throw error;
@@ -241,13 +223,13 @@ class ModelManager {
       code: false,
       chat: false,
       size: model.size || 0,
-      modified: model.modified_at || null,
+      modified: model.modified_at || null
     };
 
     // Check capabilities based on model name patterns
     for (const [capability, patterns] of Object.entries(this.modelCategories)) {
       capabilities[capability] = patterns.some((pattern) =>
-        modelName.includes(pattern.toLowerCase()),
+        modelName.includes(pattern.toLowerCase())
       );
     }
 
@@ -280,13 +262,9 @@ class ModelManager {
   async ensureWorkingModel() {
     // If we have a selected model, verify it still exists
     if (this.selectedModel) {
-      const modelExists = this.availableModels.some(
-        (m) => m.name === this.selectedModel,
-      );
+      const modelExists = this.availableModels.some((m) => m.name === this.selectedModel);
       if (modelExists && (await this.testModel(this.selectedModel))) {
-        logger.info(
-          `[ModelManager] Using existing model: ${this.selectedModel}`,
-        );
+        logger.info(`[ModelManager] Using existing model: ${this.selectedModel}`);
         return this.selectedModel;
       }
     }
@@ -312,7 +290,7 @@ class ModelManager {
     // Try preferred models first
     for (const preferred of this.fallbackPreferences) {
       const model = this.availableModels.find((m) =>
-        m.name.toLowerCase().includes(preferred.toLowerCase()),
+        m.name.toLowerCase().includes(preferred.toLowerCase())
       );
 
       if (model && (await this.testModel(model.name))) {
@@ -335,9 +313,7 @@ class ModelManager {
     // Last resort: try the first available model
     const firstModel = this.availableModels[0];
     if (await this.testModel(firstModel.name)) {
-      logger.info(
-        `[ModelManager] Selected first available model: ${firstModel.name}`,
-      );
+      logger.info(`[ModelManager] Selected first available model: ${firstModel.name}`);
       return firstModel.name;
     }
 
@@ -366,10 +342,10 @@ class ModelManager {
         options: {
           ...perfOptions,
           num_predict: 5,
-          temperature: 0.1,
+          temperature: 0.1
         },
         // Pass abort signal if ollama client supports it
-        signal: abortController.signal,
+        signal: abortController.signal
       });
 
       // HIGH PRIORITY FIX #5: Implement timeout with proper cleanup
@@ -403,9 +379,7 @@ class ModelManager {
         abortController.abort();
       }
 
-      logger.debug(
-        `[ModelManager] Model ${modelName} failed test: ${error.message}`,
-      );
+      logger.debug(`[ModelManager] Model ${modelName} failed test: ${error.message}`);
       return false;
     } finally {
       // HIGH PRIORITY FIX #5: Guarantee cleanup in finally block
@@ -487,7 +461,7 @@ class ModelManager {
       size: model?.size || 0,
       modified: model?.modified_at || null,
       capabilities: capabilities || {},
-      isSelected: targetModel === this.selectedModel,
+      isSelected: targetModel === this.selectedModel
     };
   }
 
@@ -498,8 +472,8 @@ class ModelManager {
     const modelsToTry = [
       this.selectedModel,
       ...this.fallbackPreferences.filter((p) =>
-        this.availableModels.some((m) => m.name.includes(p)),
-      ),
+        this.availableModels.some((m) => m.name.includes(p))
+      )
     ].filter(Boolean);
 
     for (const modelName of modelsToTry) {
@@ -515,21 +489,19 @@ class ModelManager {
             ...perfOptions,
             temperature: 0.1,
             num_predict: 500,
-            ...options,
-          },
+            ...options
+          }
         });
 
         if (response.response && response.response.trim()) {
           return {
             response: response.response,
             model: modelName,
-            success: true,
+            success: true
           };
         }
       } catch (error) {
-        logger.debug(
-          `[ModelManager] Model ${modelName} failed: ${error.message}`,
-        );
+        logger.debug(`[ModelManager] Model ${modelName} failed: ${error.message}`);
         continue;
       }
     }
@@ -549,7 +521,7 @@ class ModelManager {
     } catch (error) {
       if (error.code !== 'ENOENT') {
         logger.error('[ModelManager] Error loading config', {
-          error: error.message,
+          error: error.message
         });
       }
     }
@@ -562,7 +534,7 @@ class ModelManager {
     try {
       const config = {
         selectedModel: this.selectedModel,
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
       };
       // FIX: Use atomic write (temp + rename) to prevent corruption on crash
       const tempPath = `${this.configPath}.tmp.${Date.now()}`;
@@ -579,7 +551,7 @@ class ModelManager {
       }
     } catch (error) {
       logger.error('[ModelManager] Error saving config', {
-        error: error.message,
+        error: error.message
       });
     }
   }
@@ -590,16 +562,14 @@ class ModelManager {
   async getHealthStatus() {
     try {
       const models = await this.discoverModels();
-      const selectedWorking = this.selectedModel
-        ? await this.testModel(this.selectedModel)
-        : false;
+      const selectedWorking = this.selectedModel ? await this.testModel(this.selectedModel) : false;
 
       return {
         connected: true,
         modelsAvailable: models.length,
         selectedModel: this.selectedModel,
         selectedModelWorking: selectedWorking,
-        lastCheck: new Date().toISOString(),
+        lastCheck: new Date().toISOString()
       };
     } catch (error) {
       return {
@@ -608,7 +578,7 @@ class ModelManager {
         modelsAvailable: 0,
         selectedModel: null,
         selectedModelWorking: false,
-        lastCheck: new Date().toISOString(),
+        lastCheck: new Date().toISOString()
       };
     }
   }
@@ -622,7 +592,7 @@ class ModelManager {
       size: model.size,
       modified: model.modified_at,
       capabilities: this.modelCapabilities.get(model.name) || {},
-      isSelected: model.name === this.selectedModel,
+      isSelected: model.name === this.selectedModel
     }));
   }
 

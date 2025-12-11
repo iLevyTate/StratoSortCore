@@ -22,7 +22,7 @@ function generateDummyFiles(count, options = {}) {
     extensions = ['.pdf', '.docx', '.txt', '.jpg', '.png'],
     includeAnalysis = true,
     includeEmbedding = false,
-    embeddingDimensions = 768,
+    embeddingDimensions = 1024
   } = options;
 
   const files = [];
@@ -33,7 +33,7 @@ function generateDummyFiles(count, options = {}) {
     'Personal',
     'Technical',
     'Medical',
-    'Marketing',
+    'Marketing'
   ];
 
   for (let i = 0; i < count; i++) {
@@ -47,7 +47,7 @@ function generateDummyFiles(count, options = {}) {
       path: `/test/files/${category.toLowerCase()}/${fileName}`,
       extension: ext,
       size: Math.floor(Math.random() * 1000000) + 1000, // 1KB - 1MB
-      mtime: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000), // Last 30 days
+      mtime: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) // Last 30 days
     };
 
     if (includeAnalysis) {
@@ -56,7 +56,7 @@ function generateDummyFiles(count, options = {}) {
         purpose: `Test ${category.toLowerCase()} document ${i}`,
         keywords: [`keyword${i}`, category.toLowerCase(), 'test'],
         confidence: 0.7 + Math.random() * 0.3,
-        suggestedFolder: `${category}/Documents`,
+        suggestedFolder: `${category}/Documents`
       };
     }
 
@@ -75,7 +75,7 @@ function generateDummyFiles(count, options = {}) {
  * @param {number} dimensions - Vector dimensions
  * @returns {Array<number>} Random vector normalized to unit length
  */
-function generateRandomVector(dimensions = 768) {
+function generateRandomVector(dimensions = 1024) {
   const vector = [];
   let sumSquares = 0;
 
@@ -97,7 +97,7 @@ function generateRandomVector(dimensions = 768) {
  * @returns {Array<Object>} Array of folder objects
  */
 function generateDummyFolders(count, options = {}) {
-  const { includeEmbedding = true, embeddingDimensions = 768 } = options;
+  const { includeEmbedding = true, embeddingDimensions = 1024 } = options;
 
   const folderTypes = [
     'Documents',
@@ -106,7 +106,7 @@ function generateDummyFolders(count, options = {}) {
     'Contracts',
     'Invoices',
     'Receipts',
-    'Projects',
+    'Projects'
   ];
   const folders = [];
 
@@ -117,8 +117,8 @@ function generateDummyFolders(count, options = {}) {
       name: `${type} ${i}`,
       path: `/smart-folders/${type.toLowerCase()}_${i}`,
       description: `Smart folder for ${type.toLowerCase()} - instance ${i}`,
-      model: 'nomic-embed-text',
-      updatedAt: new Date().toISOString(),
+      model: 'mxbai-embed-large',
+      updatedAt: new Date().toISOString()
     };
 
     if (includeEmbedding) {
@@ -209,7 +209,7 @@ function createMockService(serviceName, methods = {}) {
     getCallStats() {
       return {
         counts: { ...this._callCounts },
-        history: [...this._callHistory],
+        history: [...this._callHistory]
       };
     },
 
@@ -217,7 +217,7 @@ function createMockService(serviceName, methods = {}) {
     resetStats() {
       this._callCounts = {};
       this._callHistory = [];
-    },
+    }
   };
 
   // Wrap each method with failure checking and call tracking
@@ -228,7 +228,7 @@ function createMockService(serviceName, methods = {}) {
       this._callHistory.push({
         method: methodName,
         args,
-        timestamp: Date.now(),
+        timestamp: Date.now()
       });
 
       // Check for active failure
@@ -289,7 +289,7 @@ function createMockChromaDBService() {
         results.push({
           folderId: folder.id,
           name: folder.name,
-          score: 0.9 - count * 0.1,
+          score: 0.9 - count * 0.1
         });
         count++;
       }
@@ -303,13 +303,13 @@ function createMockChromaDBService() {
     async getStats() {
       return {
         files: files.size,
-        folders: folders.size,
+        folders: folders.size
       };
     },
 
     async checkHealth() {
       return true;
-    },
+    }
   });
 
   // Define isOnline as a getter after createMockService (getters can't be passed via Object.entries)
@@ -318,7 +318,7 @@ function createMockChromaDBService() {
       return !this.isFailureActive();
     },
     enumerable: true,
-    configurable: true,
+    configurable: true
   });
 
   return service;
@@ -337,7 +337,7 @@ function measureMemory() {
     rss: usage.rss,
     heapUsedMB: Math.round((usage.heapUsed / 1024 / 1024) * 100) / 100,
     heapTotalMB: Math.round((usage.heapTotal / 1024 / 1024) * 100) / 100,
-    rssMB: Math.round((usage.rss / 1024 / 1024) * 100) / 100,
+    rssMB: Math.round((usage.rss / 1024 / 1024) * 100) / 100
   };
 }
 
@@ -387,7 +387,7 @@ function createResourceTracker() {
       checkpoints.push({
         label,
         time: Number(process.hrtime.bigint() - startTime) / 1_000_000,
-        memory: measureMemory(),
+        memory: measureMemory()
       });
     },
 
@@ -400,13 +400,13 @@ function createResourceTracker() {
         memoryDelta: {
           heapUsed: endMemory.heapUsed - startMemory.heapUsed,
           heapUsedMB: endMemory.heapUsedMB - startMemory.heapUsedMB,
-          heapTotal: endMemory.heapTotal - startMemory.heapTotal,
+          heapTotal: endMemory.heapTotal - startMemory.heapTotal
         },
         startMemory,
         endMemory,
-        checkpoints,
+        checkpoints
       };
-    },
+    }
   };
 }
 
@@ -417,23 +417,19 @@ function createResourceTracker() {
  * @returns {Array<Object>} Array of queue items
  */
 function generateQueueItems(count, options = {}) {
-  const {
-    type = 'file',
-    includeVector = true,
-    vectorDimensions = 768,
-  } = options;
+  const { type = 'file', includeVector = true, vectorDimensions = 1024 } = options;
 
   const items = [];
 
   for (let i = 0; i < count; i++) {
     const item = {
       id: `${type}:item_${i}_${Date.now()}`,
-      model: 'nomic-embed-text',
+      model: 'mxbai-embed-large',
       updatedAt: new Date().toISOString(),
       meta: {
         name: `item_${i}.pdf`,
-        path: `/test/items/item_${i}.pdf`,
-      },
+        path: `/test/items/item_${i}.pdf`
+      }
     };
 
     if (includeVector) {
@@ -486,7 +482,7 @@ async function benchmark(operation, options = {}) {
     medianMs: Math.round(median * 100) / 100,
     p95Ms: Math.round(p95 * 100) / 100,
     totalMs: Math.round(sum * 100) / 100,
-    timesMs: times.map((t) => Math.round(t * 100) / 100),
+    timesMs: times.map((t) => Math.round(t * 100) / 100)
   };
 }
 
@@ -509,5 +505,5 @@ module.exports = {
   // Timing utilities
   delay,
   createTimer,
-  benchmark,
+  benchmark
 };

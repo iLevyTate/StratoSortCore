@@ -16,8 +16,8 @@ jest.mock('../../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('Timeout and Rate Limit Tests', () => {
@@ -167,7 +167,7 @@ describe('Timeout and Rate Limit Tests', () => {
               fn(...args);
               pendingCall = null;
             },
-            limitMs - (now - lastCall),
+            limitMs - (now - lastCall)
           );
         }
       };
@@ -240,11 +240,7 @@ describe('Timeout and Rate Limit Tests', () => {
     /**
      * Create a promise with timeout
      */
-    function withTimeout(
-      promise,
-      timeoutMs,
-      errorMessage = 'Operation timed out',
-    ) {
+    function withTimeout(promise, timeoutMs, errorMessage = 'Operation timed out') {
       let timeoutId;
 
       const timeoutPromise = new Promise((_, reject) => {
@@ -287,17 +283,17 @@ describe('Timeout and Rate Limit Tests', () => {
 
       const op1 = withTimeout(
         new Promise((resolve) => setTimeout(() => resolve('op1'), 500)),
-        1000,
+        1000
       );
 
       const op2 = withTimeout(
         new Promise((resolve) => setTimeout(() => resolve('op2'), 1500)),
-        1000,
+        1000
       );
 
       const op3 = withTimeout(
         new Promise((resolve) => setTimeout(() => resolve('op3'), 300)),
-        1000,
+        1000
       );
 
       // Advance enough for op3 and op1
@@ -349,7 +345,7 @@ describe('Timeout and Rate Limit Tests', () => {
         reset() {
           tokens = bucketSize;
           lastRefill = Date.now();
-        },
+        }
       };
     }
 
@@ -413,12 +409,7 @@ describe('Timeout and Rate Limit Tests', () => {
      * Calculate exponential backoff delay
      */
     function calculateBackoff(attempt, options = {}) {
-      const {
-        initialDelay = 1000,
-        maxDelay = 30000,
-        multiplier = 2,
-        jitter = 0.1,
-      } = options;
+      const { initialDelay = 1000, maxDelay = 30000, multiplier = 2, jitter = 0.1 } = options;
 
       let delay = initialDelay * Math.pow(multiplier, attempt);
       delay = Math.min(delay, maxDelay);
@@ -437,8 +428,8 @@ describe('Timeout and Rate Limit Tests', () => {
           calculateBackoff(i, {
             initialDelay: 1000,
             multiplier: 2,
-            jitter: 0,
-          }),
+            jitter: 0
+          })
         );
       }
 
@@ -454,7 +445,7 @@ describe('Timeout and Rate Limit Tests', () => {
       const delay = calculateBackoff(10, {
         initialDelay: 1000,
         maxDelay: 5000,
-        jitter: 0,
+        jitter: 0
       });
 
       expect(delay).toBe(5000);
@@ -464,7 +455,7 @@ describe('Timeout and Rate Limit Tests', () => {
       const delays = new Set();
       const baseOptions = {
         initialDelay: 1000,
-        jitter: 0.2,
+        jitter: 0.2
       };
 
       // Generate multiple delays and verify they vary
@@ -518,7 +509,7 @@ describe('Timeout and Rate Limit Tests', () => {
 
         getWaiting() {
           return queue.length;
-        },
+        }
       };
     }
 
@@ -609,7 +600,7 @@ describe('Timeout and Rate Limit Tests', () => {
 
         isEmpty() {
           return items.length === 0;
-        },
+        }
       };
     }
 

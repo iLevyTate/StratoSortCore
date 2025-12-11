@@ -24,8 +24,8 @@ describe('per-file analysis cache (image)', () => {
         category: 'image',
         keywords: ['a', 'b', 'c'],
         confidence: 90,
-        suggestedName: 'img_file',
-      }),
+        suggestedName: 'img_file'
+      })
     }));
 
     const mockClient = { generate: generateMock };
@@ -36,14 +36,12 @@ describe('per-file analysis cache (image)', () => {
         getOllamaVisionModel: () => 'mock-vision',
         getOllamaEmbeddingModel: () => 'mock-embed',
         getOllamaHost: () => 'http://127.0.0.1:11434',
-        loadOllamaConfig: async () => ({ selectedVisionModel: 'mock-vision' }),
+        loadOllamaConfig: async () => ({ selectedVisionModel: 'mock-vision' })
       }),
-      { virtual: false },
+      { virtual: false }
     );
 
-    const {
-      analyzeImageFile,
-    } = require('../src/main/analysis/ollamaImageAnalysis');
+    const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
 
     const r1 = await analyzeImageFile(tmp, []);
     const r2 = await analyzeImageFile(tmp, []);

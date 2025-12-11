@@ -37,12 +37,19 @@ test.describe('File Import', () => {
 
   test('should display file drop zone on Discover phase', async () => {
     // Look for drag-drop zone or file selection area
-    const dropZone = window.locator('[data-testid="drag-drop-zone"], .drag-drop-zone, [class*="drop"]');
+    const dropZone = window.locator(
+      '[data-testid="drag-drop-zone"], .drag-drop-zone, [class*="drop"]'
+    );
     const dropZoneVisible = await dropZone.isVisible().catch(() => false);
 
     // Also check for alternative file selection UI
-    const selectButton = window.locator('button:has-text("Select"), button:has-text("Choose"), button:has-text("Browse")');
-    const selectButtonVisible = await selectButton.first().isVisible().catch(() => false);
+    const selectButton = window.locator(
+      'button:has-text("Select"), button:has-text("Choose"), button:has-text("Browse")'
+    );
+    const selectButtonVisible = await selectButton
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] Drop zone visible:', dropZoneVisible);
     console.log('[Test] Select button visible:', selectButtonVisible);
@@ -88,8 +95,13 @@ test.describe('File Import', () => {
     expect(fileCount).toBe(0);
 
     // Should show empty state or prompt
-    const emptyState = window.locator('text=no files, text=add files, text=get started, text=select files');
-    const hasEmptyState = await emptyState.first().isVisible().catch(() => false);
+    const emptyState = window.locator(
+      'text=no files, text=add files, text=get started, text=select files'
+    );
+    const hasEmptyState = await emptyState
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] Empty state visible:', hasEmptyState);
   });
@@ -160,7 +172,7 @@ test.describe('File Import - Programmatic Testing', () => {
       return {
         hasAnalyzeDocument: typeof api?.analysis?.document === 'function',
         hasAnalyzeImage: typeof api?.analysis?.image === 'function',
-        hasFileAnalyze: typeof api?.files?.analyze === 'function',
+        hasFileAnalyze: typeof api?.files?.analyze === 'function'
       };
     });
 
@@ -195,8 +207,13 @@ test.describe('File Import - Directory Selection', () => {
     await window.waitForTimeout(500);
 
     // Look for folder/directory selection option
-    const folderOption = window.locator('button:has-text("Folder"), button:has-text("Directory"), button:has-text("Browse Folder")');
-    const exists = await folderOption.first().isVisible().catch(() => false);
+    const folderOption = window.locator(
+      'button:has-text("Folder"), button:has-text("Directory"), button:has-text("Browse Folder")'
+    );
+    const exists = await folderOption
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] Folder selection option visible:', exists);
     // This is informational - folder selection might be combined with file selection
@@ -243,14 +260,22 @@ test.describe('File Import - UI State', () => {
 
   test('should show analyze button (may be disabled initially)', async () => {
     // Look for analyze/process button
-    const analyzeButton = window.locator('button:has-text("Analyze"), button:has-text("Process"), button:has-text("Start")');
-    const exists = await analyzeButton.first().isVisible().catch(() => false);
+    const analyzeButton = window.locator(
+      'button:has-text("Analyze"), button:has-text("Process"), button:has-text("Start")'
+    );
+    const exists = await analyzeButton
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] Analyze button visible:', exists);
 
     if (exists) {
       // Check if disabled (no files selected)
-      const isDisabled = await analyzeButton.first().isDisabled().catch(() => true);
+      const isDisabled = await analyzeButton
+        .first()
+        .isDisabled()
+        .catch(() => true);
       console.log('[Test] Analyze button disabled:', isDisabled);
     }
   });
@@ -258,7 +283,10 @@ test.describe('File Import - UI State', () => {
   test('should show file count indicator', async () => {
     // Look for file count display
     const countIndicator = window.locator('text=/\\d+\\s*(file|item|document)/i');
-    const exists = await countIndicator.first().isVisible().catch(() => false);
+    const exists = await countIndicator
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] File count indicator visible:', exists);
     // This might show "0 files" or similar
@@ -267,7 +295,10 @@ test.describe('File Import - UI State', () => {
   test('should have selection controls', async () => {
     // Look for selection-related controls
     const selectAll = window.locator('button:has-text("Select All"), input[type="checkbox"]');
-    const exists = await selectAll.first().isVisible().catch(() => false);
+    const exists = await selectAll
+      .first()
+      .isVisible()
+      .catch(() => false);
 
     console.log('[Test] Selection controls visible:', exists);
     // Selection controls might only appear when files are present

@@ -7,12 +7,7 @@
 const { createHandler, createErrorResponse } = require('./ipcWrappers');
 const { schemas } = require('./validationSchemas');
 
-function registerAnalysisHistoryIpc({
-  ipcMain,
-  IPC_CHANNELS,
-  logger,
-  getServiceIntegration,
-}) {
+function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegration }) {
   const context = 'AnalysisHistory';
 
   // Helper to get analysis history service
@@ -34,8 +29,8 @@ function registerAnalysisHistoryIpc({
           logger.error('Failed to get analysis statistics:', error);
           return {};
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get analysis history with pagination
@@ -54,8 +49,7 @@ function registerAnalysisHistoryIpc({
 
           // Handle "get all" request
           if (all || limit === 'all') {
-            const full =
-              (await service.getRecentAnalysis(Number.MAX_SAFE_INTEGER)) || [];
+            const full = (await service.getRecentAnalysis(Number.MAX_SAFE_INTEGER)) || [];
             // FIX H1: Ensure result is always an array
             const result = Array.isArray(full) ? full : [];
             return offset > 0 ? result.slice(offset) : result;
@@ -65,8 +59,7 @@ function registerAnalysisHistoryIpc({
           const effLimit = typeof limit === 'number' && limit > 0 ? limit : 50;
 
           if (offset > 0) {
-            const interim =
-              (await service.getRecentAnalysis(effLimit + offset)) || [];
+            const interim = (await service.getRecentAnalysis(effLimit + offset)) || [];
             // FIX H1: Ensure result is always an array
             const result = Array.isArray(interim) ? interim : [];
             return result.slice(offset, offset + effLimit);
@@ -79,8 +72,8 @@ function registerAnalysisHistoryIpc({
           logger.error('Failed to get analysis history:', error);
           return [];
         }
-      },
-    }),
+      }
+    })
   );
 
   // Search analysis history
@@ -99,8 +92,8 @@ function registerAnalysisHistoryIpc({
           logger.error('Failed to search analysis history:', error);
           return [];
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get analysis history for specific file
@@ -120,8 +113,8 @@ function registerAnalysisHistoryIpc({
           logger.error('Failed to get file analysis history:', error);
           return null;
         }
-      },
-    }),
+      }
+    })
   );
 
   // Clear analysis history
@@ -141,8 +134,8 @@ function registerAnalysisHistoryIpc({
           logger.error('Failed to clear analysis history:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Export analysis history
@@ -163,35 +156,21 @@ function registerAnalysisHistoryIpc({
               success: true,
               data: JSON.stringify(history, null, 2),
               mime: 'application/json',
-              filename: 'analysis-history.json',
+              filename: 'analysis-history.json'
             };
           }
 
           if (format === 'csv') {
-            const headers = [
-              'fileName',
-              'originalPath',
-              'category',
-              'confidence',
-              'timestamp',
-            ];
+            const headers = ['fileName', 'originalPath', 'category', 'confidence', 'timestamp'];
             const lines = [headers.join(',')];
 
             for (const entry of history) {
               const row = [
                 JSON.stringify(entry.fileName || ''),
                 JSON.stringify(entry.originalPath || ''),
-                JSON.stringify(
-                  entry.analysis?.category || entry.category || '',
-                ),
-                JSON.stringify(
-                  String(entry.analysis?.confidence ?? entry.confidence ?? ''),
-                ),
-                JSON.stringify(
-                  entry.timestamp
-                    ? new Date(entry.timestamp).toISOString()
-                    : '',
-                ),
+                JSON.stringify(entry.analysis?.category || entry.category || ''),
+                JSON.stringify(String(entry.analysis?.confidence ?? entry.confidence ?? '')),
+                JSON.stringify(entry.timestamp ? new Date(entry.timestamp).toISOString() : '')
               ];
               lines.push(row.join(','));
             }
@@ -200,7 +179,7 @@ function registerAnalysisHistoryIpc({
               success: true,
               data: lines.join('\n'),
               mime: 'text/csv',
-              filename: 'analysis-history.csv',
+              filename: 'analysis-history.csv'
             };
           }
 
@@ -210,8 +189,8 @@ function registerAnalysisHistoryIpc({
           logger.error('Failed to export analysis history:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 }
 

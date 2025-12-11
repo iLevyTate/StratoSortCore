@@ -9,8 +9,8 @@ jest.mock('../src/shared/constants', () => ({
     PENDING: 'pending',
     ANALYZING: 'analyzing',
     CATEGORIZED: 'categorized',
-    ERROR: 'error',
-  },
+    ERROR: 'error'
+  }
 }));
 
 import analysisReducer, {
@@ -21,7 +21,7 @@ import analysisReducer, {
   stopAnalysis,
   setAnalysisResults,
   setAnalysisStats,
-  resetAnalysisState,
+  resetAnalysisState
 } from '../src/renderer/store/slices/analysisSlice';
 
 describe('analysisSlice', () => {
@@ -31,10 +31,10 @@ describe('analysisSlice', () => {
     analysisProgress: {
       current: 0,
       total: 0,
-      lastActivity: 0,
+      lastActivity: 0
     },
     results: [],
-    stats: null,
+    stats: null
   };
 
   describe('initial state', () => {
@@ -60,13 +60,10 @@ describe('analysisSlice', () => {
     test('clears previous results when requested', () => {
       const state = {
         ...initialState,
-        results: [{ path: '/old.pdf' }],
+        results: [{ path: '/old.pdf' }]
       };
 
-      const result = analysisReducer(
-        state,
-        startAnalysis({ total: 1, clearPrevious: true }),
-      );
+      const result = analysisReducer(state, startAnalysis({ total: 1, clearPrevious: true }));
 
       expect(result.results).toEqual([]);
     });
@@ -74,13 +71,10 @@ describe('analysisSlice', () => {
     test('preserves results when clearPrevious is false', () => {
       const state = {
         ...initialState,
-        results: [{ path: '/old.pdf' }],
+        results: [{ path: '/old.pdf' }]
       };
 
-      const result = analysisReducer(
-        state,
-        startAnalysis({ total: 1, clearPrevious: false }),
-      );
+      const result = analysisReducer(state, startAnalysis({ total: 1, clearPrevious: false }));
 
       expect(result.results).toHaveLength(1);
     });
@@ -98,13 +92,10 @@ describe('analysisSlice', () => {
       const state = {
         ...initialState,
         isAnalyzing: true,
-        analysisProgress: { current: 0, total: 5, lastActivity: 0 },
+        analysisProgress: { current: 0, total: 5, lastActivity: 0 }
       };
 
-      const result = analysisReducer(
-        state,
-        updateProgress({ current: 3 }),
-      );
+      const result = analysisReducer(state, updateProgress({ current: 3 }));
 
       expect(result.analysisProgress.current).toBe(3);
       expect(result.analysisProgress.total).toBe(5);
@@ -114,13 +105,10 @@ describe('analysisSlice', () => {
     test('updates current file when provided', () => {
       const state = {
         ...initialState,
-        currentAnalysisFile: '',
+        currentAnalysisFile: ''
       };
 
-      const result = analysisReducer(
-        state,
-        updateProgress({ currentFile: '/current.pdf' }),
-      );
+      const result = analysisReducer(state, updateProgress({ currentFile: '/current.pdf' }));
 
       expect(result.currentAnalysisFile).toBe('/current.pdf');
     });
@@ -128,13 +116,10 @@ describe('analysisSlice', () => {
     test('preserves current file when not provided', () => {
       const state = {
         ...initialState,
-        currentAnalysisFile: '/existing.pdf',
+        currentAnalysisFile: '/existing.pdf'
       };
 
-      const result = analysisReducer(
-        state,
-        updateProgress({ current: 1 }),
-      );
+      const result = analysisReducer(state, updateProgress({ current: 1 }));
 
       expect(result.currentAnalysisFile).toBe('/existing.pdf');
     });
@@ -145,10 +130,7 @@ describe('analysisSlice', () => {
       const file = { path: '/new.pdf', name: 'new.pdf' };
       const analysis = { category: 'documents', confidence: 0.9 };
 
-      const result = analysisReducer(
-        initialState,
-        analysisSuccess({ file, analysis }),
-      );
+      const result = analysisReducer(initialState, analysisSuccess({ file, analysis }));
 
       expect(result.results).toHaveLength(1);
       expect(result.results[0].path).toBe('/new.pdf');
@@ -160,16 +142,13 @@ describe('analysisSlice', () => {
     test('updates existing result', () => {
       const state = {
         ...initialState,
-        results: [{ path: '/existing.pdf', status: 'pending' }],
+        results: [{ path: '/existing.pdf', status: 'pending' }]
       };
 
       const file = { path: '/existing.pdf', name: 'existing.pdf' };
       const analysis = { category: 'images', confidence: 0.85 };
 
-      const result = analysisReducer(
-        state,
-        analysisSuccess({ file, analysis }),
-      );
+      const result = analysisReducer(state, analysisSuccess({ file, analysis }));
 
       expect(result.results).toHaveLength(1);
       expect(result.results[0].analysis).toEqual(analysis);
@@ -182,10 +161,7 @@ describe('analysisSlice', () => {
       const file = { path: '/failed.pdf', name: 'failed.pdf' };
       const error = 'Analysis failed';
 
-      const result = analysisReducer(
-        initialState,
-        analysisFailure({ file, error }),
-      );
+      const result = analysisReducer(initialState, analysisFailure({ file, error }));
 
       expect(result.results).toHaveLength(1);
       expect(result.results[0].path).toBe('/failed.pdf');
@@ -197,16 +173,13 @@ describe('analysisSlice', () => {
     test('updates existing result with failure', () => {
       const state = {
         ...initialState,
-        results: [{ path: '/file.pdf', status: 'analyzing' }],
+        results: [{ path: '/file.pdf', status: 'analyzing' }]
       };
 
       const file = { path: '/file.pdf', name: 'file.pdf' };
       const error = 'Timeout';
 
-      const result = analysisReducer(
-        state,
-        analysisFailure({ file, error }),
-      );
+      const result = analysisReducer(state, analysisFailure({ file, error }));
 
       expect(result.results).toHaveLength(1);
       expect(result.results[0].error).toBe('Timeout');
@@ -219,7 +192,7 @@ describe('analysisSlice', () => {
       const state = {
         ...initialState,
         isAnalyzing: true,
-        currentAnalysisFile: '/current.pdf',
+        currentAnalysisFile: '/current.pdf'
       };
 
       const result = analysisReducer(state, stopAnalysis());
@@ -233,13 +206,10 @@ describe('analysisSlice', () => {
     test('sets analysis results', () => {
       const results = [
         { path: '/file1.pdf', analysis: { category: 'docs' } },
-        { path: '/file2.pdf', analysis: { category: 'images' } },
+        { path: '/file2.pdf', analysis: { category: 'images' } }
       ];
 
-      const result = analysisReducer(
-        initialState,
-        setAnalysisResults(results),
-      );
+      const result = analysisReducer(initialState, setAnalysisResults(results));
 
       expect(result.results).toEqual(results);
     });
@@ -247,15 +217,12 @@ describe('analysisSlice', () => {
     test('replaces existing results', () => {
       const state = {
         ...initialState,
-        results: [{ path: '/old.pdf' }],
+        results: [{ path: '/old.pdf' }]
       };
 
       const newResults = [{ path: '/new.pdf' }];
 
-      const result = analysisReducer(
-        state,
-        setAnalysisResults(newResults),
-      );
+      const result = analysisReducer(state, setAnalysisResults(newResults));
 
       expect(result.results).toEqual(newResults);
     });
@@ -266,13 +233,10 @@ describe('analysisSlice', () => {
       const stats = {
         totalAnalyses: 100,
         successRate: 0.95,
-        averageConfidence: 0.85,
+        averageConfidence: 0.85
       };
 
-      const result = analysisReducer(
-        initialState,
-        setAnalysisStats(stats),
-      );
+      const result = analysisReducer(initialState, setAnalysisStats(stats));
 
       expect(result.stats).toEqual(stats);
     });
@@ -285,7 +249,7 @@ describe('analysisSlice', () => {
         currentAnalysisFile: '/file.pdf',
         analysisProgress: { current: 5, total: 10, lastActivity: Date.now() },
         results: [{ path: '/file.pdf' }],
-        stats: { total: 100 },
+        stats: { total: 100 }
       };
 
       const result = analysisReducer(modifiedState, resetAnalysisState());

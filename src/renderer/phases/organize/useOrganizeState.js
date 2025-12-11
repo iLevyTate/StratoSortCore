@@ -12,12 +12,9 @@ import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import {
   setSmartFolders as setSmartFoldersAction,
   setOrganizedFiles as setOrganizedFilesAction,
-  setFileStates as setFileStatesAction,
+  setFileStates as setFileStatesAction
 } from '../../store/slices/filesSlice';
-import {
-  selectFilesWithAnalysis,
-  selectFileStats,
-} from '../../store/selectors';
+import { selectFilesWithAnalysis, selectFileStats } from '../../store/selectors';
 import { setPhase, setOrganizing } from '../../store/slices/uiSlice';
 import { fetchDocumentsPath } from '../../store/slices/systemSlice';
 import { logger } from '../../../shared/logger';
@@ -37,9 +34,7 @@ export function useOrganizeState() {
   const fileStats = useAppSelector(selectFileStats);
   const analysisResults = useAppSelector((state) => state.analysis.results);
   const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
-  const analysisProgress = useAppSelector(
-    (state) => state.analysis.analysisProgress,
-  );
+  const analysisProgress = useAppSelector((state) => state.analysis.analysisProgress);
   const smartFolders = useAppSelector((state) => state.files.smartFolders);
   const fileStates = useAppSelector((state) => state.files.fileStates);
   const documentsPath = useAppSelector((state) => state.system.documentsPath);
@@ -61,11 +56,10 @@ export function useOrganizeState() {
   // Action dispatchers
   const setOrganizedFiles = useCallback(
     (value) => {
-      const nextValue =
-        typeof value === 'function' ? value(organizedFiles) : value;
+      const nextValue = typeof value === 'function' ? value(organizedFiles) : value;
       dispatch(setOrganizedFilesAction(nextValue));
     },
-    [dispatch, organizedFiles],
+    [dispatch, organizedFiles]
   );
 
   const setFileStates = useCallback(
@@ -76,23 +70,20 @@ export function useOrganizeState() {
         dispatch(setFileStatesAction(states));
       }
     },
-    [dispatch, fileStates],
+    [dispatch, fileStates]
   );
 
   const setSmartFolders = useCallback(
     (folders) => dispatch(setSmartFoldersAction(folders)),
-    [dispatch],
+    [dispatch]
   );
 
   const setOrganizingState = useCallback(
     (isOrganizing) => dispatch(setOrganizing(isOrganizing)),
-    [dispatch],
+    [dispatch]
   );
 
-  const advancePhase = useCallback(
-    (phase) => dispatch(setPhase(phase)),
-    [dispatch],
-  );
+  const advancePhase = useCallback((phase) => dispatch(setPhase(phase)), [dispatch]);
 
   // Compatibility object for legacy code
   const phaseData = useMemo(
@@ -102,16 +93,9 @@ export function useOrganizeState() {
       organizedFiles,
       fileStates,
       isAnalyzing,
-      analysisProgress,
+      analysisProgress
     }),
-    [
-      analysisResults,
-      smartFolders,
-      organizedFiles,
-      fileStates,
-      isAnalyzing,
-      analysisProgress,
-    ],
+    [analysisResults, smartFolders, organizedFiles, fileStates, isAnalyzing, analysisProgress]
   );
 
   // Memoized actions object for legacy compatibility
@@ -122,9 +106,9 @@ export function useOrganizeState() {
         if (key === 'organizedFiles') setOrganizedFiles(value);
         if (key === 'fileStates') setFileStates(value);
       },
-      advancePhase: (phase) => dispatch(setPhase(phase)),
+      advancePhase: (phase) => dispatch(setPhase(phase))
     }),
-    [dispatch, setOrganizedFiles, setFileStates],
+    [dispatch, setOrganizedFiles, setFileStates]
   );
 
   // Failed count from stats
@@ -158,7 +142,7 @@ export function useOrganizeState() {
 
     // Compatibility
     phaseData,
-    actions,
+    actions
   };
 }
 
@@ -176,23 +160,20 @@ export function useLoadInitialData(refs, addNotification) {
   const loadSmartFoldersIfMissing = useCallback(async () => {
     try {
       const currentSmartFolders = smartFoldersRef.current;
-      if (
-        !Array.isArray(currentSmartFolders) ||
-        currentSmartFolders.length === 0
-      ) {
+      if (!Array.isArray(currentSmartFolders) || currentSmartFolders.length === 0) {
         const folders = await window.electronAPI.smartFolders.get();
         if (Array.isArray(folders) && folders.length > 0) {
           dispatchRef.current(setSmartFoldersAction(folders));
           addNotification(
             `Loaded ${folders.length} smart folder${folders.length > 1 ? 's' : ''}`,
-            'info',
+            'info'
           );
         }
       }
     } catch (error) {
       logger.error('Failed to load smart folders in Organize phase', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
     }
   }, [addNotification, smartFoldersRef, dispatchRef]);

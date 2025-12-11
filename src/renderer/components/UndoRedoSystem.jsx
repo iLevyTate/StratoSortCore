@@ -1,11 +1,5 @@
 // Undo/Redo System - Implementing Shneiderman's Golden Rule #6: Action Reversal Infrastructure
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
 import { ConfirmModal } from './Modal';
@@ -40,7 +34,7 @@ function useSimpleNotifications() {
       if (process.env.NODE_ENV === 'development') {
         logger.debug('Undo/Redo info', { title, description });
       }
-    },
+    }
   };
 }
 
@@ -53,48 +47,48 @@ const ACTION_METADATA = {
   [ACTION_TYPES.FILE_MOVE]: {
     description: 'Move file',
     icon: '📁',
-    category: 'File Operations',
+    category: 'File Operations'
   },
   [ACTION_TYPES.FILE_DELETE]: {
     description: 'Delete file',
     icon: '🗑️',
-    category: 'File Operations',
+    category: 'File Operations'
   },
   [ACTION_TYPES.FILE_RENAME]: {
     description: 'Rename file',
     icon: '✏️',
-    category: 'File Operations',
+    category: 'File Operations'
   },
   [ACTION_TYPES.FOLDER_CREATE]: {
     description: 'Create folder',
     icon: '📂',
-    category: 'Folder Operations',
+    category: 'Folder Operations'
   },
   [ACTION_TYPES.FOLDER_DELETE]: {
     description: 'Delete folder',
     icon: '🗂️',
-    category: 'Folder Operations',
+    category: 'Folder Operations'
   },
   [ACTION_TYPES.FOLDER_RENAME]: {
     description: 'Rename folder',
     icon: '📝',
-    category: 'Folder Operations',
+    category: 'Folder Operations'
   },
   [ACTION_TYPES.SETTINGS_CHANGE]: {
     description: 'Change settings',
     icon: '⚙️',
-    category: 'Configuration',
+    category: 'Configuration'
   },
   [ACTION_TYPES.ANALYSIS_RESULT]: {
     description: 'File analysis',
     icon: '🔍',
-    category: 'Analysis',
+    category: 'Analysis'
   },
   [ACTION_TYPES.BATCH_OPERATION]: {
     description: 'Batch operation',
     icon: '📦',
-    category: 'Batch Operations',
-  },
+    category: 'Batch Operations'
+  }
 };
 
 // Undo Stack Manager
@@ -114,7 +108,7 @@ class UndoStack {
     this.stack.push({
       ...action,
       id: generateSecureId(),
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
 
     // Maintain max size
@@ -212,7 +206,7 @@ export function UndoRedoProvider({ children }) {
     cancelText: 'Cancel',
     variant: 'default',
     onConfirm: null,
-    onClose: null,
+    onClose: null
   });
 
   const showConfirm = useCallback(
@@ -221,7 +215,7 @@ export function UndoRedoProvider({ children }) {
       message = '',
       confirmText = 'Confirm',
       cancelText = 'Cancel',
-      variant = 'default',
+      variant = 'default'
     }) => {
       return new Promise((resolve) => {
         setConfirmState({
@@ -238,11 +232,11 @@ export function UndoRedoProvider({ children }) {
           onClose: () => {
             resolve(false);
             setConfirmState((prev) => ({ ...prev, isOpen: false }));
-          },
+          }
         });
       });
     },
-    [],
+    []
   );
 
   // Update state when stack changes
@@ -271,19 +265,16 @@ export function UndoRedoProvider({ children }) {
         undo: actionConfig.undo,
         redo: actionConfig.redo || actionConfig.execute,
         metadata: actionConfig.metadata || {},
-        result,
+        result
       });
 
-      showSuccess(
-        'Action Completed',
-        `${actionConfig.description} completed successfully`,
-      );
+      showSuccess('Action Completed', `${actionConfig.description} completed successfully`);
 
       return result;
     } catch (error) {
       showError(
         'Action Failed',
-        `Failed to ${actionConfig.description.toLowerCase()}: ${error.message}`,
+        `Failed to ${actionConfig.description.toLowerCase()}: ${error.message}`
       );
       throw error;
     }
@@ -305,18 +296,15 @@ export function UndoRedoProvider({ children }) {
         title: 'Undo Operation',
         message: (
           <>
-            <p>
-              Are you sure you want to undo: &quot;{action.description}&quot;?
-            </p>
+            <p>Are you sure you want to undo: &quot;{action.description}&quot;?</p>
             <p className="mt-2">
-              This will reverse the file operation and move files back to their
-              original locations.
+              This will reverse the file operation and move files back to their original locations.
             </p>
           </>
         ),
         confirmText: 'Undo',
         cancelText: 'Cancel',
-        variant: 'warning',
+        variant: 'warning'
       });
       if (!confirmed) {
         return; // User cancelled the undo
@@ -332,10 +320,7 @@ export function UndoRedoProvider({ children }) {
     } catch (error) {
       // If undo fails, restore the action to the stack
       undoStack.push(undoAction);
-      showError(
-        'Undo Failed',
-        `Failed to undo ${undoAction.description}: ${error.message}`,
-      );
+      showError('Undo Failed', `Failed to undo ${undoAction.description}: ${error.message}`);
     }
   };
 
@@ -351,10 +336,7 @@ export function UndoRedoProvider({ children }) {
       // If redo fails, move pointer back
       undoStack.pointer--;
       undoStack.notifyListeners();
-      showError(
-        'Redo Failed',
-        `Failed to redo ${action.description}: ${error.message}`,
-      );
+      showError('Redo Failed', `Failed to redo ${action.description}: ${error.message}`);
     }
   };
 
@@ -385,7 +367,7 @@ export function UndoRedoProvider({ children }) {
     getActionDescription,
     clearHistory,
     isHistoryVisible,
-    setIsHistoryVisible,
+    setIsHistoryVisible
   };
 
   return (
@@ -396,12 +378,10 @@ export function UndoRedoProvider({ children }) {
       <ConfirmModal
         isOpen={confirmState.isOpen}
         onClose={
-          confirmState.onClose ||
-          (() => setConfirmState((prev) => ({ ...prev, isOpen: false })))
+          confirmState.onClose || (() => setConfirmState((prev) => ({ ...prev, isOpen: false })))
         }
         onConfirm={
-          confirmState.onConfirm ||
-          (() => setConfirmState((prev) => ({ ...prev, isOpen: false })))
+          confirmState.onConfirm || (() => setConfirmState((prev) => ({ ...prev, isOpen: false })))
         }
         title={confirmState.title}
         message={confirmState.message}
@@ -414,7 +394,7 @@ export function UndoRedoProvider({ children }) {
 }
 
 UndoRedoProvider.propTypes = {
-  children: PropTypes.node.isRequired,
+  children: PropTypes.node.isRequired
 };
 
 // Hook to use undo/redo
@@ -441,14 +421,12 @@ function HistoryModal() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 2147483645,
+        zIndex: 2147483645
       }}
     >
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-system-gray-900">
-            Action History
-          </h2>
+          <h2 className="text-xl font-semibold text-system-gray-900">Action History</h2>
           <div className="flex items-center space-x-2">
             <button
               onClick={clearHistory}
@@ -460,12 +438,7 @@ function HistoryModal() {
               onClick={() => setIsHistoryVisible(false)}
               className="text-system-gray-400 hover:text-system-gray-600 transition-colors"
             >
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -506,21 +479,15 @@ function HistoryModal() {
                     className="flex items-center justify-between p-3 bg-system-gray-50 rounded-lg"
                   >
                     <div className="flex items-center space-x-3">
-                      <span className="text-lg">
-                        {ACTION_METADATA[action.type]?.icon || '📄'}
-                      </span>
+                      <span className="text-lg">{ACTION_METADATA[action.type]?.icon || '📄'}</span>
                       <div>
-                        <div className="font-medium text-system-gray-900">
-                          {action.description}
-                        </div>
+                        <div className="font-medium text-system-gray-900">{action.description}</div>
                         <div className="text-sm text-system-gray-500">
                           {new Date(action.timestamp).toLocaleString()}
                         </div>
                       </div>
                     </div>
-                    <div className="text-sm text-system-gray-400">
-                      #{history.length - index}
-                    </div>
+                    <div className="text-sm text-system-gray-400">#{history.length - index}</div>
                   </div>
                 ))}
             </div>
@@ -541,7 +508,7 @@ export function UndoRedoToolbar({ className = '' }) {
     peek,
     peekRedo,
     getActionDescription,
-    setIsHistoryVisible,
+    setIsHistoryVisible
   } = useUndoRedo();
 
   const lastAction = peek();
@@ -574,12 +541,7 @@ export function UndoRedoToolbar({ className = '' }) {
             : 'Nothing to undo'
         }
       >
-        <svg
-          className="w-6 h-6"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -600,18 +562,9 @@ export function UndoRedoToolbar({ className = '' }) {
               : 'text-system-gray-300 cursor-not-allowed'
           }
         `}
-        title={
-          nextAction
-            ? `Redo: ${getActionDescription(nextAction)}`
-            : 'Nothing to redo'
-        }
+        title={nextAction ? `Redo: ${getActionDescription(nextAction)}` : 'Nothing to redo'}
       >
-        <svg
-          className="w-6 h-6"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -650,17 +603,12 @@ export function UndoRedoToolbar({ className = '' }) {
 }
 
 UndoRedoToolbar.propTypes = {
-  className: PropTypes.string,
+  className: PropTypes.string
 };
 
 // Helper functions for common actions
 // Update createFileAction to conform to main IPC payloads
-export const createFileAction = ({
-  actionType,
-  description,
-  source,
-  destination,
-}) => ({
+export const createFileAction = ({ actionType, description, source, destination }) => ({
   type: actionType,
   description,
   execute: async () => {
@@ -669,7 +617,7 @@ export const createFileAction = ({
       return await window.electronAPI.files.performOperation({
         type: 'move',
         source,
-        destination,
+        destination
       });
     }
     throw new Error('Unsupported operation: destination required for move');
@@ -679,19 +627,15 @@ export const createFileAction = ({
       return await window.electronAPI.files.performOperation({
         type: 'move',
         source: destination,
-        destination: source,
+        destination: source
       });
     }
     throw new Error('Unsupported undo operation');
   },
-  metadata: { source, destination },
+  metadata: { source, destination }
 });
 
-export const createSettingsAction = (
-  description,
-  newSettings,
-  oldSettings,
-) => ({
+export const createSettingsAction = (description, newSettings, oldSettings) => ({
   type: ACTION_TYPES.SETTINGS_CHANGE,
   description,
   execute: async () => {
@@ -700,21 +644,17 @@ export const createSettingsAction = (
   undo: async () => {
     return await window.electronAPI.settings.save(oldSettings);
   },
-  metadata: { newSettings, oldSettings },
+  metadata: { newSettings, oldSettings }
 });
 
 // Batch organize action that uses main process to perform and record undo/redo
-export const createOrganizeBatchAction = (
-  description,
-  operations,
-  stateCallbacks = {},
-) => ({
+export const createOrganizeBatchAction = (description, operations, stateCallbacks = {}) => ({
   type: ACTION_TYPES.BATCH_OPERATION,
   description,
   execute: async () => {
     const result = await window.electronAPI.files.performOperation({
       type: 'batch_organize',
-      operations,
+      operations
     });
     if (stateCallbacks.onExecute) {
       try {
@@ -748,8 +688,8 @@ export const createOrganizeBatchAction = (
     return result;
   },
   metadata: {
-    operationCount: Array.isArray(operations) ? operations.length : 0,
-  },
+    operationCount: Array.isArray(operations) ? operations.length : 0
+  }
 });
 
 export const createBatchAction = (description, actions) => ({
@@ -770,7 +710,7 @@ export const createBatchAction = (description, actions) => ({
     }
     return results;
   },
-  metadata: { actionCount: actions.length },
+  metadata: { actionCount: actions.length }
 });
 
 export default {
@@ -781,5 +721,5 @@ export default {
   createFileAction,
   createSettingsAction,
   createOrganizeBatchAction,
-  createBatchAction,
+  createBatchAction
 };

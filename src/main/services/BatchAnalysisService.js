@@ -3,9 +3,7 @@ const { logger } = require('../../shared/logger');
 logger.setContext('BatchAnalysisService');
 const { analyzeDocumentFile } = require('../analysis/ollamaDocumentAnalysis');
 const { analyzeImageFile } = require('../analysis/ollamaImageAnalysis');
-const {
-  getInstance: getParallelEmbeddingService,
-} = require('./ParallelEmbeddingService');
+const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
 const embeddingQueue = require('../analysis/embeddingQueue');
 const path = require('path');
 const os = require('os');
@@ -26,15 +24,14 @@ class BatchAnalysisService {
 
     // Calculate optimal concurrency based on CPU cores if not specified
     this.concurrency =
-      options.concurrency ||
-      Math.min(this.calculateOptimalConcurrency(), configMaxConcurrency);
+      options.concurrency || Math.min(this.calculateOptimalConcurrency(), configMaxConcurrency);
     this.batchProcessor = globalBatchProcessor;
     this.batchProcessor.concurrencyLimit = this.concurrency;
 
     // FIX: Initialize parallel embedding service for batch embedding operations
     this.parallelEmbeddingService = getParallelEmbeddingService({
       concurrencyLimit: Math.min(this.concurrency, 5), // Embedding concurrency capped at 5
-      maxRetries: configRetryAttempts,
+      maxRetries: configRetryAttempts
     });
 
     // FIX: Track embedding progress for comprehensive reporting
@@ -43,7 +40,7 @@ class BatchAnalysisService {
     logger.info('[BATCH-ANALYSIS] Service initialized', {
       concurrency: this.concurrency,
       embeddingConcurrency: this.parallelEmbeddingService.concurrencyLimit,
-      cpuCores: os.cpus().length,
+      cpuCores: os.cpus().length
     });
   }
 
@@ -56,8 +53,7 @@ class BatchAnalysisService {
     const freeMem = os.freemem();
     const totalMem = os.totalmem();
     // FIX: Prevent division by zero and clamp to valid range (VMs/containers may report freeMem > totalMem)
-    const memUsage =
-      totalMem > 0 ? Math.max(0, Math.min(1, 1 - freeMem / totalMem)) : 0.5;
+    const memUsage = totalMem > 0 ? Math.max(0, Math.min(1, 1 - freeMem / totalMem)) : 0.5;
 
     // Base concurrency on CPU cores (75% utilization to leave headroom)
     let concurrency = Math.max(2, Math.floor(cpuCores * 0.75));
@@ -65,13 +61,10 @@ class BatchAnalysisService {
     // Reduce if memory pressure is high (>85% usage)
     if (memUsage > 0.85) {
       concurrency = Math.max(2, Math.floor(concurrency * 0.5));
-      logger.warn(
-        '[BATCH-ANALYSIS] High memory usage detected, reducing concurrency',
-        {
-          memUsage: `${(memUsage * 100).toFixed(1)}%`,
-          reducedConcurrency: concurrency,
-        },
-      );
+      logger.warn('[BATCH-ANALYSIS] High memory usage detected, reducing concurrency', {
+        memUsage: `${(memUsage * 100).toFixed(1)}%`,
+        reducedConcurrency: concurrency
+      });
     }
 
     // Cap at reasonable maximum to avoid overwhelming Ollama
@@ -80,7 +73,7 @@ class BatchAnalysisService {
     logger.debug('[BATCH-ANALYSIS] Calculated optimal concurrency', {
       cpuCores,
       memUsage: `${(memUsage * 100).toFixed(1)}%`,
-      concurrency,
+      concurrency
     });
 
     return concurrency;
@@ -99,7 +92,7 @@ class BatchAnalysisService {
       onProgress = null,
       onEmbeddingProgress = null,
       stopOnError = false,
-      concurrency: rawConcurrency = this.concurrency,
+      concurrency: rawConcurrency = this.concurrency
     } = options;
 
     // FIX: Validate concurrency to prevent invalid values (0, negative, NaN)
@@ -107,8 +100,8 @@ class BatchAnalysisService {
       1,
       Math.min(
         Number.isFinite(rawConcurrency) ? rawConcurrency : this.concurrency,
-        8, // Cap at 8 to prevent overwhelming system
-      ),
+        8 // Cap at 8 to prevent overwhelming system
+      )
     );
 
     if (!Array.isArray(filePaths) || filePaths.length === 0) {
@@ -116,28 +109,27 @@ class BatchAnalysisService {
         success: true,
         results: [],
         errors: [],
-        total: 0,
+        total: 0
       };
     }
 
     logger.info('[BATCH-ANALYSIS] Starting batch file analysis', {
       fileCount: filePaths.length,
       concurrency,
-      smartFolders: smartFolders.length,
+      smartFolders: smartFolders.length
     });
 
     const startTime = Date.now();
 
     // FIX: Subscribe to embedding queue progress if callback provided
     if (onEmbeddingProgress) {
-      this._embeddingProgressUnsubscribe =
-        embeddingQueue.onProgress(onEmbeddingProgress);
+      this._embeddingProgressUnsubscribe = embeddingQueue.onProgress(onEmbeddingProgress);
     }
 
     // FIX: Track embedding statistics for this batch
     const embeddingStats = {
       startQueueSize: embeddingQueue.getStats().queueLength,
-      embeddings: 0,
+      embeddings: 0
     };
 
     // Process each file
@@ -149,7 +141,7 @@ class BatchAnalysisService {
         logger.debug('[BATCH-ANALYSIS] Processing file', {
           index,
           path: filePath,
-          type: isImage ? 'image' : 'document',
+          type: isImage ? 'image' : 'document'
         });
 
         let result;
@@ -166,45 +158,41 @@ class BatchAnalysisService {
           filePath,
           success: true,
           result,
-          type: isImage ? 'image' : 'document',
+          type: isImage ? 'image' : 'document'
         };
       } catch (error) {
         logger.error('[BATCH-ANALYSIS] File analysis failed', {
           index,
           path: filePath,
-          error: error.message,
+          error: error.message
         });
 
         return {
           filePath,
           success: false,
           error: error.message,
-          result: null,
+          result: null
         };
       }
     };
 
     // Use batch processor for parallel processing
-    const batchResult = await this.batchProcessor.processBatch(
-      filePaths,
-      processFile,
-      {
-        concurrency,
-        onProgress: onProgress
-          ? (progress) => {
-              // FIX: Enhanced progress with embedding info
-              const queueStats = embeddingQueue.getStats();
-              onProgress({
-                ...progress,
-                phase: 'analysis',
-                embeddingQueueSize: queueStats.queueLength,
-                embeddingQueueCapacity: queueStats.capacityPercent,
-              });
-            }
-          : null,
-        stopOnError,
-      },
-    );
+    const batchResult = await this.batchProcessor.processBatch(filePaths, processFile, {
+      concurrency,
+      onProgress: onProgress
+        ? (progress) => {
+            // FIX: Enhanced progress with embedding info
+            const queueStats = embeddingQueue.getStats();
+            onProgress({
+              ...progress,
+              phase: 'analysis',
+              embeddingQueueSize: queueStats.queueLength,
+              embeddingQueueCapacity: queueStats.capacityPercent
+            });
+          }
+        : null,
+      stopOnError
+    });
 
     const analysisDuration = Date.now() - startTime;
 
@@ -215,7 +203,7 @@ class BatchAnalysisService {
         completed: filePaths.length,
         total: filePaths.length,
         percent: 100,
-        message: 'Flushing embeddings to database...',
+        message: 'Flushing embeddings to database...'
       });
     }
 
@@ -224,29 +212,29 @@ class BatchAnalysisService {
     const flushStartTime = Date.now();
     try {
       const {
-        flushAllEmbeddings: flushDocumentEmbeddings,
+        flushAllEmbeddings: flushDocumentEmbeddings
       } = require('../analysis/ollamaDocumentAnalysis');
       const {
-        flushAllEmbeddings: flushImageEmbeddings,
+        flushAllEmbeddings: flushImageEmbeddings
       } = require('../analysis/ollamaImageAnalysis');
 
       // Flush both queues to ensure all embeddings are persisted
       await Promise.allSettled([
         flushDocumentEmbeddings().catch((error) => {
           logger.warn('[BATCH-ANALYSIS] Failed to flush document embeddings', {
-            error: error.message,
+            error: error.message
           });
         }),
         flushImageEmbeddings().catch((error) => {
           logger.warn('[BATCH-ANALYSIS] Failed to flush image embeddings', {
-            error: error.message,
+            error: error.message
           });
-        }),
+        })
       ]);
     } catch (error) {
       // Non-fatal - log but don't fail batch
       logger.warn('[BATCH-ANALYSIS] Error flushing embedding queues', {
-        error: error.message,
+        error: error.message
       });
     }
     const flushDuration = Date.now() - flushStartTime;
@@ -270,17 +258,14 @@ class BatchAnalysisService {
       .map((r) => ({
         file: r.filePath || r.path || r.name,
         error: r.error?.message || r.error || 'Unknown error',
-        code: r.error?.code,
+        code: r.error?.code
       }));
 
     if (errorDetails.length > 0) {
-      logger.warn(
-        `[BATCH-ANALYSIS] ${errorDetails.length} files failed analysis`,
-        {
-          failedCount: errorDetails.length,
-          errors: errorDetails.slice(0, 10), // Log first 10 for brevity
-        },
-      );
+      logger.warn(`[BATCH-ANALYSIS] ${errorDetails.length} files failed analysis`, {
+        failedCount: errorDetails.length,
+        errors: errorDetails.slice(0, 10) // Log first 10 for brevity
+      });
     }
 
     logger.info('[BATCH-ANALYSIS] Batch analysis complete', {
@@ -293,11 +278,10 @@ class BatchAnalysisService {
       avgPerFile: `${Math.round(avgTime)}ms`,
       throughput: `${(filePaths.length / (totalDuration / 1000)).toFixed(2)} files/sec`,
       embeddingStats: {
-        queueProcessed:
-          embeddingStats.startQueueSize - finalQueueStats.queueLength,
+        queueProcessed: embeddingStats.startQueueSize - finalQueueStats.queueLength,
         remainingInQueue: finalQueueStats.queueLength,
-        failedItems: finalQueueStats.failedItemsCount,
-      },
+        failedItems: finalQueueStats.failedItemsCount
+      }
     });
 
     return {
@@ -318,9 +302,9 @@ class BatchAnalysisService {
           queueSize: finalQueueStats.queueLength,
           failedItems: finalQueueStats.failedItemsCount,
           deadLetterItems: finalQueueStats.deadLetterCount,
-          serviceStats: embeddingServiceStats,
-        },
-      },
+          serviceStats: embeddingServiceStats
+        }
+      }
     };
   }
 
@@ -334,20 +318,20 @@ class BatchAnalysisService {
 
     logger.info('[BATCH-ANALYSIS] Analyzing files in groups', {
       totalFiles: filePaths.length,
-      groups: Object.keys(groups).length,
+      groups: Object.keys(groups).length
     });
 
     const allResults = {
       results: [],
       errors: [],
       successful: 0,
-      total: filePaths.length,
+      total: filePaths.length
     };
 
     // Process each group
     for (const [type, files] of Object.entries(groups)) {
       logger.info(`[BATCH-ANALYSIS] Processing ${type} group`, {
-        count: files.length,
+        count: files.length
       });
 
       const groupResult = await this.analyzeFiles(files, smartFolders, options);
@@ -360,7 +344,7 @@ class BatchAnalysisService {
 
     return {
       success: allResults.errors.length === 0,
-      ...allResults,
+      ...allResults
     };
   }
 
@@ -396,7 +380,7 @@ class BatchAnalysisService {
       '.webp',
       '.svg',
       '.tiff',
-      '.tif',
+      '.tif'
     ];
     const documentExtensions = ['.pdf', '.doc', '.docx', '.txt', '.rtf'];
     const spreadsheetExtensions = ['.xlsx', '.xls', '.csv'];
@@ -423,7 +407,7 @@ class BatchAnalysisService {
       '.webp',
       '.svg',
       '.tiff',
-      '.tif',
+      '.tif'
     ];
     return imageExtensions.includes(extension.toLowerCase());
   }
@@ -435,7 +419,7 @@ class BatchAnalysisService {
     this.concurrency = Math.max(1, Math.min(concurrency, 10)); // Limit 1-10
     this.batchProcessor.concurrencyLimit = this.concurrency;
     logger.info('[BATCH-ANALYSIS] Concurrency updated', {
-      concurrency: this.concurrency,
+      concurrency: this.concurrency
     });
   }
 
@@ -452,8 +436,8 @@ class BatchAnalysisService {
       ...this.batchProcessor.getStats(),
       embedding: {
         queue: queueStats,
-        service: embeddingServiceStats,
-      },
+        service: embeddingServiceStats
+      }
     };
   }
 
@@ -480,7 +464,7 @@ class BatchAnalysisService {
   setEmbeddingConcurrency(limit) {
     this.parallelEmbeddingService.setConcurrencyLimit(limit);
     logger.info('[BATCH-ANALYSIS] Embedding concurrency updated', {
-      embeddingConcurrency: this.parallelEmbeddingService.concurrencyLimit,
+      embeddingConcurrency: this.parallelEmbeddingService.concurrencyLimit
     });
   }
 

@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock errorHandlingUtils
@@ -20,13 +20,13 @@ jest.mock('../src/shared/errorHandlingUtils', () => ({
   ERROR_CODES: {
     UNKNOWN_ERROR: 'UNKNOWN_ERROR',
     SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
-    VALIDATION_ERROR: 'VALIDATION_ERROR',
-  },
+    VALIDATION_ERROR: 'VALIDATION_ERROR'
+  }
 }));
 
 // Mock ipcRegistry
 jest.mock('../src/main/core/ipcRegistry', () => ({
-  registerHandler: jest.fn(),
+  registerHandler: jest.fn()
 }));
 
 describe('IPC Wrappers', () => {
@@ -81,7 +81,7 @@ describe('IPC Wrappers', () => {
     test('includes validation errors if present', () => {
       const error = {
         message: 'Validation failed',
-        validationErrors: ['field1 required'],
+        validationErrors: ['field1 required']
       };
       const result = ipcWrappers.createErrorResponse(error);
 
@@ -136,14 +136,11 @@ describe('IPC Wrappers', () => {
       const handler = jest.fn().mockRejectedValue(error);
 
       const wrapped = ipcWrappers.withErrorLogging(mockLogger, handler, {
-        context: 'TestContext',
+        context: 'TestContext'
       });
 
       await expect(wrapped()).rejects.toThrow('Handler failed');
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        '[TestContext] Handler error:',
-        error,
-      );
+      expect(mockLogger.error).toHaveBeenCalledWith('[TestContext] Handler error:', error);
     });
 
     test('uses default context when not provided', async () => {
@@ -153,17 +150,14 @@ describe('IPC Wrappers', () => {
       const wrapped = ipcWrappers.withErrorLogging(mockLogger, handler);
 
       await expect(wrapped()).rejects.toThrow();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        '[IPC] Handler error:',
-        expect.any(Error),
-      );
+      expect(mockLogger.error).toHaveBeenCalledWith('[IPC] Handler error:', expect.any(Error));
     });
 
     test('handles logger failure gracefully', async () => {
       const mockLogger = {
         error: jest.fn().mockImplementation(() => {
           throw new Error('Logger broken');
-        }),
+        })
       };
       const handler = jest.fn().mockRejectedValue(new Error('Handler fail'));
 
@@ -185,7 +179,7 @@ describe('IPC Wrappers', () => {
         serviceName: 'testService',
         getService: () => mockService,
         handler,
-        context: 'Test',
+        context: 'Test'
       });
 
       const result = await wrapped('event', 'data');
@@ -203,7 +197,7 @@ describe('IPC Wrappers', () => {
         serviceName: 'testService',
         getService: () => null,
         handler,
-        context: 'Test',
+        context: 'Test'
       });
 
       const result = await wrapped();
@@ -221,7 +215,7 @@ describe('IPC Wrappers', () => {
         serviceName: 'testService',
         getService: () => null,
         handler: jest.fn(),
-        fallbackResponse: { items: [], count: 0 },
+        fallbackResponse: { items: [], count: 0 }
       });
 
       const result = await wrapped();
@@ -234,7 +228,7 @@ describe('IPC Wrappers', () => {
     test('throws if logger not provided', () => {
       expect(() => {
         ipcWrappers.createHandler({
-          handler: () => {},
+          handler: () => {}
         });
       }).toThrow('createHandler requires a logger');
     });
@@ -242,7 +236,7 @@ describe('IPC Wrappers', () => {
     test('throws if handler not provided', () => {
       expect(() => {
         ipcWrappers.createHandler({
-          logger: { error: jest.fn() },
+          logger: { error: jest.fn() }
         });
       }).toThrow('createHandler requires a handler function');
     });
@@ -253,7 +247,7 @@ describe('IPC Wrappers', () => {
 
       const wrapped = ipcWrappers.createHandler({
         logger: mockLogger,
-        handler,
+        handler
       });
 
       const result = await wrapped('event', 'data');
@@ -268,7 +262,7 @@ describe('IPC Wrappers', () => {
       const wrapped = ipcWrappers.createHandler({
         logger: mockLogger,
         handler,
-        wrapResponse: true,
+        wrapResponse: true
       });
 
       const result = await wrapped();
@@ -284,7 +278,7 @@ describe('IPC Wrappers', () => {
       const wrapped = ipcWrappers.createHandler({
         logger: mockLogger,
         handler,
-        wrapResponse: true,
+        wrapResponse: true
       });
 
       const result = await wrapped();
@@ -301,7 +295,7 @@ describe('IPC Wrappers', () => {
         logger: mockLogger,
         handler,
         serviceName: 'myService',
-        getService: () => mockService,
+        getService: () => mockService
       });
 
       await wrapped('event');
@@ -317,7 +311,7 @@ describe('IPC Wrappers', () => {
         handler: jest.fn(),
         serviceName: 'myService',
         getService: () => null,
-        fallbackResponse: [],
+        fallbackResponse: []
       });
 
       const result = await wrapped();
@@ -338,20 +332,20 @@ describe('IPC Wrappers', () => {
         context: 'Test',
         handlers: {
           'channel:one': { handler: () => 'one' },
-          'channel:two': { handler: () => 'two' },
-        },
+          'channel:two': { handler: () => 'two' }
+        }
       });
 
       expect(registerHandler).toHaveBeenCalledTimes(2);
       expect(registerHandler).toHaveBeenCalledWith(
         mockIpcMain,
         'channel:one',
-        expect.any(Function),
+        expect.any(Function)
       );
       expect(registerHandler).toHaveBeenCalledWith(
         mockIpcMain,
         'channel:two',
-        expect.any(Function),
+        expect.any(Function)
       );
     });
   });

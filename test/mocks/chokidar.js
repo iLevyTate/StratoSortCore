@@ -107,5 +107,5 @@ module.exports = {
   watch,
   getLastWatcher,
   reset,
-  MockWatcher,
+  MockWatcher
 };

@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 const {
@@ -24,7 +24,7 @@ const {
   safeAwait,
   debounce,
   throttle,
-  batchProcess,
+  batchProcess
 } = require('../src/shared/promiseUtils');
 
 describe('promiseUtils', () => {
@@ -67,7 +67,7 @@ describe('promiseUtils', () => {
       const slowPromise = new Promise((resolve) => setTimeout(resolve, 2000));
 
       await expect(withTimeout(slowPromise, 100, 'SlowOp')).rejects.toThrow(
-        'SlowOp timed out after 100ms',
+        'SlowOp timed out after 100ms'
       );
     });
 
@@ -132,7 +132,7 @@ describe('promiseUtils', () => {
       const retryFn = withRetry(fn, {
         maxRetries: 3,
         initialDelay: 10,
-        shouldRetry: (error) => !error.message.includes('AUTH'),
+        shouldRetry: (error) => !error.message.includes('AUTH')
       });
 
       await expect(retryFn()).rejects.toThrow('AUTH_FAILED');
@@ -140,16 +140,13 @@ describe('promiseUtils', () => {
     });
 
     test('calls onRetry callback', async () => {
-      const fn = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('fail'))
-        .mockResolvedValue('success');
+      const fn = jest.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('success');
       const onRetry = jest.fn();
 
       const retryFn = withRetry(fn, {
         maxRetries: 3,
         initialDelay: 10,
-        onRetry,
+        onRetry
       });
 
       await retryFn();
@@ -162,7 +159,7 @@ describe('promiseUtils', () => {
       const retryFn = withRetry(fn, {
         maxAttempts: 2,
         delay: 10,
-        backoffFactor: 1.5,
+        backoffFactor: 1.5
       });
 
       await retryFn();
@@ -190,7 +187,7 @@ describe('promiseUtils', () => {
 
       const result = await retry(operation, {
         maxRetries: 3,
-        initialDelay: 10,
+        initialDelay: 10
       });
 
       expect(result).toBe('result');
@@ -270,10 +267,7 @@ describe('promiseUtils', () => {
     });
 
     test('returns default on rejection', async () => {
-      const result = await safeAwait(
-        Promise.reject(new Error('error')),
-        'default',
-      );
+      const result = await safeAwait(Promise.reject(new Error('error')), 'default');
 
       expect(result).toBe('default');
     });
@@ -400,9 +394,7 @@ describe('promiseUtils', () => {
 
     test('maintains order of results', async () => {
       const items = ['a', 'b', 'c'];
-      const fn = jest
-        .fn()
-        .mockImplementation((item) => Promise.resolve(item.toUpperCase()));
+      const fn = jest.fn().mockImplementation((item) => Promise.resolve(item.toUpperCase()));
 
       const results = await batchProcess(items, fn, 2);
 

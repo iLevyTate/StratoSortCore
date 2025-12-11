@@ -10,36 +10,36 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/mock/documents'),
-  },
+    getPath: jest.fn().mockReturnValue('/mock/documents')
+  }
 }));
 
 // Mock fs
 const mockFs = {
   mkdir: jest.fn().mockResolvedValue(undefined),
-  lstat: jest.fn().mockRejectedValue({ code: 'ENOENT' }),
+  lstat: jest.fn().mockRejectedValue({ code: 'ENOENT' })
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock ollamaDocumentAnalysis
 jest.mock('../src/main/analysis/ollamaDocumentAnalysis', () => ({
   analyzeDocumentFile: jest.fn().mockResolvedValue({
     category: 'Reports',
-    confidence: 0.9,
+    confidence: 0.9
   }),
   analyzeImageFile: jest.fn().mockResolvedValue({
     category: 'Photos',
-    confidence: 0.85,
-  }),
+    confidence: 0.85
+  })
 }));
 
 describe('AutoOrganize File Processor', () => {
@@ -60,13 +60,13 @@ describe('AutoOrganize File Processor', () => {
         success: true,
         primary: { folder: 'Documents', path: '/docs/Documents' },
         confidence: 0.9,
-        alternatives: [],
+        alternatives: []
       }),
-      recordFeedback: jest.fn().mockResolvedValue(undefined),
+      recordFeedback: jest.fn().mockResolvedValue(undefined)
     };
 
     mockUndoRedo = {
-      recordAction: jest.fn().mockResolvedValue(undefined),
+      recordAction: jest.fn().mockResolvedValue(undefined)
     };
 
     const module = require('../src/main/services/autoOrganize/fileProcessor');
@@ -90,18 +90,13 @@ describe('AutoOrganize File Processor', () => {
     test('processes files to default folder', async () => {
       const files = [
         { name: 'file1.txt', path: '/src/file1.txt' },
-        { name: 'file2.txt', path: '/src/file2.txt' },
+        { name: 'file2.txt', path: '/src/file2.txt' }
       ];
       const smartFolders = [];
       const defaultLocation = '/docs';
       const results = { organized: [], failed: [], operations: [] };
 
-      await processFilesWithoutAnalysis(
-        files,
-        smartFolders,
-        defaultLocation,
-        results,
-      );
+      await processFilesWithoutAnalysis(files, smartFolders, defaultLocation, results);
 
       expect(results.organized).toHaveLength(2);
       expect(results.organized[0].method).toBe('no-analysis-default');
@@ -114,8 +109,8 @@ describe('AutoOrganize File Processor', () => {
         {
           name: 'Uncategorized',
           path: '/docs/Uncategorized',
-          isDefault: true,
-        },
+          isDefault: true
+        }
       ];
       const results = { organized: [], failed: [], operations: [] };
 
@@ -142,20 +137,18 @@ describe('AutoOrganize File Processor', () => {
 
   describe('processFilesIndividually', () => {
     test('processes files with high confidence suggestions', async () => {
-      const files = [
-        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
-      ];
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
       const smartFolders = [];
       const options = {
         confidenceThreshold: 0.7,
         defaultLocation: '/docs',
-        preserveNames: true,
+        preserveNames: true
       };
       const results = {
         organized: [],
         needsReview: [],
         failed: [],
-        operations: [],
+        operations: []
       };
       const thresholds = { requireReview: 0.5 };
 
@@ -165,7 +158,7 @@ describe('AutoOrganize File Processor', () => {
         options,
         results,
         mockSuggestionService,
-        thresholds,
+        thresholds
       );
 
       expect(results.organized).toHaveLength(1);
@@ -179,18 +172,16 @@ describe('AutoOrganize File Processor', () => {
         primary: { folder: 'Documents' },
         confidence: 0.6,
         alternatives: [],
-        explanation: 'Medium confidence match',
+        explanation: 'Medium confidence match'
       });
 
-      const files = [
-        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
-      ];
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
       const results = {
         organized: [],
         needsReview: [],
         failed: [],
-        operations: [],
+        operations: []
       };
       const thresholds = { requireReview: 0.5 };
 
@@ -200,7 +191,7 @@ describe('AutoOrganize File Processor', () => {
         options,
         results,
         mockSuggestionService,
-        thresholds,
+        thresholds
       );
 
       expect(results.needsReview).toHaveLength(1);
@@ -211,18 +202,16 @@ describe('AutoOrganize File Processor', () => {
       mockSuggestionService.getSuggestionsForFile.mockResolvedValueOnce({
         success: true,
         primary: { folder: 'Documents' },
-        confidence: 0.3,
+        confidence: 0.3
       });
 
-      const files = [
-        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
-      ];
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
       const results = {
         organized: [],
         needsReview: [],
         failed: [],
-        operations: [],
+        operations: []
       };
       const thresholds = { requireReview: 0.5 };
 
@@ -232,7 +221,7 @@ describe('AutoOrganize File Processor', () => {
         options,
         results,
         mockSuggestionService,
-        thresholds,
+        thresholds
       );
 
       expect(results.organized).toHaveLength(1);
@@ -242,18 +231,16 @@ describe('AutoOrganize File Processor', () => {
     test('uses fallback when no suggestion', async () => {
       mockSuggestionService.getSuggestionsForFile.mockResolvedValueOnce({
         success: false,
-        primary: null,
+        primary: null
       });
 
-      const files = [
-        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
-      ];
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
       const results = {
         organized: [],
         needsReview: [],
         failed: [],
-        operations: [],
+        operations: []
       };
       const thresholds = { requireReview: 0.5 };
 
@@ -263,7 +250,7 @@ describe('AutoOrganize File Processor', () => {
         options,
         results,
         mockSuggestionService,
-        thresholds,
+        thresholds
       );
 
       expect(results.organized).toHaveLength(1);
@@ -272,18 +259,16 @@ describe('AutoOrganize File Processor', () => {
 
     test('uses fallback on suggestion error', async () => {
       mockSuggestionService.getSuggestionsForFile.mockRejectedValueOnce(
-        new Error('Suggestion failed'),
+        new Error('Suggestion failed')
       );
 
-      const files = [
-        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
-      ];
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
       const results = {
         organized: [],
         needsReview: [],
         failed: [],
-        operations: [],
+        operations: []
       };
       const thresholds = { requireReview: 0.5 };
 
@@ -293,7 +278,7 @@ describe('AutoOrganize File Processor', () => {
         options,
         results,
         mockSuggestionService,
-        thresholds,
+        thresholds
       );
 
       expect(results.organized).toHaveLength(1);
@@ -303,32 +288,21 @@ describe('AutoOrganize File Processor', () => {
     test('handles processing errors with sync throw', async () => {
       // Mock getSuggestionsForFile to throw synchronously in a way that's caught by the outer try-catch
       const badSuggestionService = {
-        getSuggestionsForFile: jest
-          .fn()
-          .mockRejectedValue(new Error('Suggestion failed')),
-        recordFeedback: jest.fn().mockResolvedValue(undefined),
+        getSuggestionsForFile: jest.fn().mockRejectedValue(new Error('Suggestion failed')),
+        recordFeedback: jest.fn().mockResolvedValue(undefined)
       };
 
-      const files = [
-        { name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' },
-      ];
+      const files = [{ name: 'doc.pdf', path: '/src/doc.pdf', extension: 'pdf' }];
       const options = { confidenceThreshold: 0.8, defaultLocation: '/docs' };
       const results = {
         organized: [],
         needsReview: [],
         failed: [],
-        operations: [],
+        operations: []
       };
       const thresholds = { requireReview: 0.5 };
 
-      await processFilesIndividually(
-        files,
-        [],
-        options,
-        results,
-        badSuggestionService,
-        thresholds,
-      );
+      await processFilesIndividually(files, [], options, results, badSuggestionService, thresholds);
 
       // Since there's inner try-catch for suggestions, it uses suggestion-error-fallback instead
       expect(results.organized).toHaveLength(1);
@@ -343,7 +317,7 @@ describe('AutoOrganize File Processor', () => {
         [],
         { autoOrganizeEnabled: false },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(result).toBeNull();
@@ -356,10 +330,10 @@ describe('AutoOrganize File Processor', () => {
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,
-          defaultLocation: '/docs',
+          defaultLocation: '/docs'
         },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(result).toBeDefined();
@@ -374,19 +348,19 @@ describe('AutoOrganize File Processor', () => {
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,
-          defaultLocation: '/docs',
+          defaultLocation: '/docs'
         },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(mockUndoRedo.recordAction).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'FILE_MOVE',
           data: expect.objectContaining({
-            originalPath: '/path/to/file.pdf',
-          }),
-        }),
+            originalPath: '/path/to/file.pdf'
+          })
+        })
       );
     });
 
@@ -394,7 +368,7 @@ describe('AutoOrganize File Processor', () => {
       mockSuggestionService.getSuggestionsForFile.mockResolvedValueOnce({
         success: true,
         primary: { folder: 'Documents' },
-        confidence: 0.5,
+        confidence: 0.5
       });
 
       const result = await processNewFile(
@@ -402,19 +376,17 @@ describe('AutoOrganize File Processor', () => {
         [],
         {
           autoOrganizeEnabled: true,
-          confidenceThreshold: 0.9,
+          confidenceThreshold: 0.9
         },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(result).toBeNull();
     });
 
     test('returns null on analysis error', async () => {
-      const {
-        analyzeDocumentFile,
-      } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
       analyzeDocumentFile.mockResolvedValueOnce({ error: 'Analysis failed' });
 
       const result = await processNewFile(
@@ -422,22 +394,20 @@ describe('AutoOrganize File Processor', () => {
         [],
         {
           autoOrganizeEnabled: true,
-          confidenceThreshold: 0.8,
+          confidenceThreshold: 0.8
         },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(result).toBeNull();
     });
 
     test('handles image files', async () => {
-      const {
-        analyzeImageFile,
-      } = require('../src/main/analysis/ollamaDocumentAnalysis');
+      const { analyzeImageFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
       analyzeImageFile.mockResolvedValueOnce({
         category: 'Photos',
-        confidence: 0.9,
+        confidence: 0.9
       });
 
       await processNewFile(
@@ -446,29 +416,27 @@ describe('AutoOrganize File Processor', () => {
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,
-          defaultLocation: '/docs',
+          defaultLocation: '/docs'
         },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(analyzeImageFile).toHaveBeenCalled();
     });
 
     test('handles errors gracefully', async () => {
-      mockSuggestionService.getSuggestionsForFile.mockRejectedValueOnce(
-        new Error('Failed'),
-      );
+      mockSuggestionService.getSuggestionsForFile.mockRejectedValueOnce(new Error('Failed'));
 
       const result = await processNewFile(
         '/path/to/file.pdf',
         [],
         {
           autoOrganizeEnabled: true,
-          confidenceThreshold: 0.8,
+          confidenceThreshold: 0.8
         },
         mockSuggestionService,
-        mockUndoRedo,
+        mockUndoRedo
       );
 
       expect(result).toBeNull();
@@ -481,10 +449,10 @@ describe('AutoOrganize File Processor', () => {
         {
           autoOrganizeEnabled: true,
           confidenceThreshold: 0.8,
-          defaultLocation: '/docs',
+          defaultLocation: '/docs'
         },
         mockSuggestionService,
-        null, // No undo service
+        null // No undo service
       );
 
       expect(result).toBeDefined();

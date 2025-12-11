@@ -31,13 +31,12 @@ async function processItemsInParallel({
   totalBatchSize,
   concurrency,
   onProgress,
-  onItemFailed,
+  onItemFailed
 }) {
   let processedCount = startProcessedCount;
 
   // Try batch upsert first if available
-  const batchMethod =
-    type === 'file' ? 'batchUpsertFiles' : 'batchUpsertFolders';
+  const batchMethod = type === 'file' ? 'batchUpsertFiles' : 'batchUpsertFolders';
   const singleMethod = type === 'file' ? 'upsertFile' : 'upsertFolder';
 
   if (typeof chromaDbService[batchMethod] === 'function') {
@@ -50,7 +49,7 @@ async function processItemsInParallel({
           name: item.meta?.name || item.id,
           path: item.meta?.path,
           model: item.model,
-          updatedAt: item.updatedAt,
+          updatedAt: item.updatedAt
         }));
         await chromaDbService[batchMethod](formattedItems);
       } else {
@@ -63,18 +62,15 @@ async function processItemsInParallel({
         phase: 'processing',
         total: totalBatchSize,
         completed: processedCount,
-        percent:
-          totalBatchSize > 0
-            ? Math.round((processedCount / totalBatchSize) * 100)
-            : 0,
-        itemType: type,
+        percent: totalBatchSize > 0 ? Math.round((processedCount / totalBatchSize) * 100) : 0,
+        itemType: type
       });
 
       return processedCount;
     } catch (batchError) {
       logger.warn(
         `[EmbeddingQueue] Batch ${type} upsert failed, falling back to parallel individual:`,
-        batchError.message,
+        batchError.message
       );
       // Fall through to parallel individual processing
     }
@@ -82,7 +78,7 @@ async function processItemsInParallel({
 
   // Semaphore-based parallel processing
   logger.debug(
-    `[EmbeddingQueue] Processing ${items.length} ${type}s with concurrency ${concurrency}`,
+    `[EmbeddingQueue] Processing ${items.length} ${type}s with concurrency ${concurrency}`
   );
 
   let activeCount = 0;
@@ -118,14 +114,14 @@ async function processItemsInParallel({
               name: item.meta?.name || item.id,
               path: item.meta?.path,
               model: item.model,
-              updatedAt: item.updatedAt,
+              updatedAt: item.updatedAt
             }
           : {
               id: item.id,
               vector: item.vector,
               meta: item.meta,
               model: item.model,
-              updatedAt: item.updatedAt,
+              updatedAt: item.updatedAt
             };
 
       await chromaDbService[singleMethod](payload);
@@ -134,18 +130,12 @@ async function processItemsInParallel({
         phase: 'processing',
         total: totalBatchSize,
         completed: ++processedCount,
-        percent:
-          totalBatchSize > 0
-            ? Math.round((processedCount / totalBatchSize) * 100)
-            : 0,
+        percent: totalBatchSize > 0 ? Math.round((processedCount / totalBatchSize) * 100) : 0,
         itemType: type,
-        currentItem: item.id,
+        currentItem: item.id
       });
     } catch (itemError) {
-      logger.warn(
-        `[EmbeddingQueue] Failed to upsert ${type} ${item.id}:`,
-        itemError.message,
-      );
+      logger.warn(`[EmbeddingQueue] Failed to upsert ${type} ${item.id}:`, itemError.message);
       failedItemIds.add(item.id);
       onItemFailed(item, itemError.message);
     } finally {

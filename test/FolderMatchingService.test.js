@@ -9,7 +9,7 @@ const FolderMatchingService = require('../src/main/services/FolderMatchingServic
 // Mock ollama utils
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(),
-  getOllamaEmbeddingModel: jest.fn().mockReturnValue('mxbai-embed-large'),
+  getOllamaEmbeddingModel: jest.fn().mockReturnValue('mxbai-embed-large')
 }));
 
 // Mock logger
@@ -19,8 +19,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('FolderMatchingService', () => {
@@ -38,20 +38,20 @@ describe('FolderMatchingService', () => {
       querySimilarFiles: jest.fn().mockResolvedValue([]),
       fileCollection: {
         get: jest.fn().mockResolvedValue({
-          embeddings: [[0.1, 0.2, 0.3]],
-        }),
+          embeddings: [[0.1, 0.2, 0.3]]
+        })
       },
       getStats: jest.fn().mockResolvedValue({
         folders: 10,
-        files: 50,
-      }),
+        files: 50
+      })
     };
 
     // Setup mock Ollama
     mockOllama = {
       embeddings: jest.fn().mockResolvedValue({
-        embedding: new Array(1024).fill(0.1),
-      }),
+        embedding: new Array(1024).fill(0.1)
+      })
     };
 
     const { getOllama } = require('../src/main/ollamaUtils');
@@ -60,7 +60,7 @@ describe('FolderMatchingService', () => {
     // Create service instance with small cache for testing
     service = new FolderMatchingService(mockChromaDBService, {
       maxSize: 10,
-      ttl: 1000,
+      ttl: 1000
     });
     service.initialize();
   });
@@ -81,7 +81,7 @@ describe('FolderMatchingService', () => {
       expect(result.model).toBe('mxbai-embed-large');
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: text,
+        prompt: text
       });
     });
 
@@ -105,14 +105,12 @@ describe('FolderMatchingService', () => {
       expect(result.vector).toBeInstanceOf(Array);
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: '',
+        prompt: ''
       });
     });
 
     test('should return fallback vector on error', async () => {
-      mockOllama.embeddings.mockRejectedValueOnce(
-        new Error('Ollama connection failed'),
-      );
+      mockOllama.embeddings.mockRejectedValueOnce(new Error('Ollama connection failed'));
 
       const result = await service.embedText('test text');
 
@@ -130,14 +128,14 @@ describe('FolderMatchingService', () => {
       // First model
       getOllamaEmbeddingModel.mockReturnValueOnce('model1');
       mockOllama.embeddings.mockResolvedValueOnce({
-        embedding: new Array(1024).fill(0.1),
+        embedding: new Array(1024).fill(0.1)
       });
       const result1 = await service.embedText(text);
 
       // Second model - should not use cache
       getOllamaEmbeddingModel.mockReturnValueOnce('model2');
       mockOllama.embeddings.mockResolvedValueOnce({
-        embedding: new Array(1024).fill(0.2),
+        embedding: new Array(1024).fill(0.2)
       });
       const result2 = await service.embedText(text);
 
@@ -152,7 +150,7 @@ describe('FolderMatchingService', () => {
       const folder = {
         name: 'Invoices',
         path: '/docs/Invoices',
-        description: 'Financial invoices',
+        description: 'Financial invoices'
       };
 
       const id1 = service.generateFolderId(folder);
@@ -166,12 +164,12 @@ describe('FolderMatchingService', () => {
       const folder1 = {
         name: 'Invoices',
         path: '/docs/Invoices',
-        description: 'Financial invoices',
+        description: 'Financial invoices'
       };
       const folder2 = {
         name: 'Projects',
         path: '/docs/Projects',
-        description: 'Project files',
+        description: 'Project files'
       };
 
       const id1 = service.generateFolderId(folder1);
@@ -194,7 +192,7 @@ describe('FolderMatchingService', () => {
       const folder = {
         name: 'Invoices',
         path: '/docs/Invoices',
-        description: 'Financial invoices and receipts',
+        description: 'Financial invoices and receipts'
       };
 
       const result = await service.upsertFolderEmbedding(folder);
@@ -212,8 +210,8 @@ describe('FolderMatchingService', () => {
         expect.objectContaining({
           name: 'Invoices',
           path: '/docs/Invoices',
-          vector: expect.any(Array),
-        }),
+          vector: expect.any(Array)
+        })
       );
     });
 
@@ -221,7 +219,7 @@ describe('FolderMatchingService', () => {
       const folder = {
         id: 'custom-folder-id',
         name: 'Custom',
-        description: 'Custom folder',
+        description: 'Custom folder'
       };
 
       const result = await service.upsertFolderEmbedding(folder);
@@ -229,28 +227,28 @@ describe('FolderMatchingService', () => {
       expect(result.id).toBe('custom-folder-id');
       expect(mockChromaDBService.upsertFolder).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: 'custom-folder-id',
-        }),
+          id: 'custom-folder-id'
+        })
       );
     });
 
     test('should combine name and description for embedding', async () => {
       const folder = {
         name: 'Projects',
-        description: 'Active development projects',
+        description: 'Active development projects'
       };
 
       await service.upsertFolderEmbedding(folder);
 
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: 'Projects - Active development projects',
+        prompt: 'Projects - Active development projects'
       });
     });
 
     test('should handle missing description', async () => {
       const folder = {
-        name: 'SimpleFolder',
+        name: 'SimpleFolder'
       };
 
       const result = await service.upsertFolderEmbedding(folder);
@@ -258,20 +256,16 @@ describe('FolderMatchingService', () => {
       expect(result.description).toBe('');
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: 'SimpleFolder',
+        prompt: 'SimpleFolder'
       });
     });
 
     test('should propagate errors from ChromaDB', async () => {
-      mockChromaDBService.upsertFolder.mockRejectedValueOnce(
-        new Error('Database error'),
-      );
+      mockChromaDBService.upsertFolder.mockRejectedValueOnce(new Error('Database error'));
 
       const folder = { name: 'Test' };
 
-      await expect(service.upsertFolderEmbedding(folder)).rejects.toThrow(
-        'Database error',
-      );
+      await expect(service.upsertFolderEmbedding(folder)).rejects.toThrow('Database error');
     });
   });
 
@@ -282,14 +276,14 @@ describe('FolderMatchingService', () => {
       const fileMeta = {
         path: '/downloads/invoice.pdf',
         name: 'invoice.pdf',
-        extension: 'pdf',
+        extension: 'pdf'
       };
 
       await service.upsertFileEmbedding(fileId, contentSummary, fileMeta);
 
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: contentSummary,
+        prompt: contentSummary
       });
 
       expect(mockChromaDBService.upsertFile).toHaveBeenCalledWith({
@@ -297,7 +291,7 @@ describe('FolderMatchingService', () => {
         vector: expect.any(Array),
         model: 'mxbai-embed-large',
         meta: fileMeta,
-        updatedAt: expect.any(String),
+        updatedAt: expect.any(String)
       });
     });
 
@@ -306,7 +300,7 @@ describe('FolderMatchingService', () => {
 
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: '',
+        prompt: ''
       });
     });
 
@@ -315,18 +309,16 @@ describe('FolderMatchingService', () => {
 
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: '',
+        prompt: ''
       });
     });
 
     test('should propagate errors from ChromaDB', async () => {
-      mockChromaDBService.upsertFile.mockRejectedValueOnce(
-        new Error('Database error'),
-      );
+      mockChromaDBService.upsertFile.mockRejectedValueOnce(new Error('Database error'));
 
-      await expect(
-        service.upsertFileEmbedding('file-123', 'content', {}),
-      ).rejects.toThrow('Database error');
+      await expect(service.upsertFileEmbedding('file-123', 'content', {})).rejects.toThrow(
+        'Database error'
+      );
     });
   });
 
@@ -337,14 +329,14 @@ describe('FolderMatchingService', () => {
           folderId: 'folder-1',
           name: 'Invoices',
           score: 0.85,
-          path: '/docs/Invoices',
+          path: '/docs/Invoices'
         },
         {
           folderId: 'folder-2',
           name: 'Financial',
           score: 0.75,
-          path: '/docs/Financial',
-        },
+          path: '/docs/Financial'
+        }
       ];
 
       mockChromaDBService.queryFolders.mockResolvedValue(mockResults);
@@ -352,25 +344,17 @@ describe('FolderMatchingService', () => {
       const results = await service.matchFileToFolders('file-123', 5);
 
       expect(results).toEqual(mockResults);
-      expect(mockChromaDBService.queryFolders).toHaveBeenCalledWith(
-        'file-123',
-        5,
-      );
+      expect(mockChromaDBService.queryFolders).toHaveBeenCalledWith('file-123', 5);
     });
 
     test('should use default topK value', async () => {
       await service.matchFileToFolders('file-123');
 
-      expect(mockChromaDBService.queryFolders).toHaveBeenCalledWith(
-        'file-123',
-        5,
-      );
+      expect(mockChromaDBService.queryFolders).toHaveBeenCalledWith('file-123', 5);
     });
 
     test('should return empty array on error', async () => {
-      mockChromaDBService.queryFolders.mockRejectedValue(
-        new Error('Query failed'),
-      );
+      mockChromaDBService.queryFolders.mockRejectedValue(new Error('Query failed'));
 
       const results = await service.matchFileToFolders('file-123');
 
@@ -382,7 +366,7 @@ describe('FolderMatchingService', () => {
     test('should find similar files', async () => {
       const mockSimilarFiles = [
         { fileId: 'file-2', score: 0.9, name: 'similar-doc.pdf' },
-        { fileId: 'file-3', score: 0.8, name: 'another-doc.pdf' },
+        { fileId: 'file-3', score: 0.8, name: 'another-doc.pdf' }
       ];
 
       mockChromaDBService.querySimilarFiles.mockResolvedValue(mockSimilarFiles);
@@ -391,12 +375,9 @@ describe('FolderMatchingService', () => {
 
       expect(results).toEqual(mockSimilarFiles);
       expect(mockChromaDBService.fileCollection.get).toHaveBeenCalledWith({
-        ids: ['file-1'],
+        ids: ['file-1']
       });
-      expect(mockChromaDBService.querySimilarFiles).toHaveBeenCalledWith(
-        [0.1, 0.2, 0.3],
-        10,
-      );
+      expect(mockChromaDBService.querySimilarFiles).toHaveBeenCalledWith([0.1, 0.2, 0.3], 10);
     });
 
     test('should use default topK value', async () => {
@@ -404,15 +385,12 @@ describe('FolderMatchingService', () => {
 
       await service.findSimilarFiles('file-1');
 
-      expect(mockChromaDBService.querySimilarFiles).toHaveBeenCalledWith(
-        expect.any(Array),
-        10,
-      );
+      expect(mockChromaDBService.querySimilarFiles).toHaveBeenCalledWith(expect.any(Array), 10);
     });
 
     test('should handle file not found', async () => {
       mockChromaDBService.fileCollection.get.mockResolvedValue({
-        embeddings: [],
+        embeddings: []
       });
 
       const results = await service.findSimilarFiles('nonexistent-file');
@@ -422,9 +400,7 @@ describe('FolderMatchingService', () => {
     });
 
     test('should return empty array on error', async () => {
-      mockChromaDBService.fileCollection.get.mockRejectedValue(
-        new Error('Database error'),
-      );
+      mockChromaDBService.fileCollection.get.mockRejectedValue(new Error('Database error'));
 
       const results = await service.findSimilarFiles('file-1');
 
@@ -437,7 +413,7 @@ describe('FolderMatchingService', () => {
       const mockStats = {
         folders: 15,
         files: 75,
-        totalSize: 1024000,
+        totalSize: 1024000
       };
 
       mockChromaDBService.getStats.mockResolvedValue(mockStats);
@@ -524,12 +500,10 @@ describe('FolderMatchingService', () => {
       const folders = Array.from({ length: 20 }, (_, i) => ({
         name: `Folder ${i}`,
         description: `Description ${i}`,
-        path: `/docs/Folder${i}`,
+        path: `/docs/Folder${i}`
       }));
 
-      const results = await Promise.all(
-        folders.map((f) => service.upsertFolderEmbedding(f)),
-      );
+      const results = await Promise.all(folders.map((f) => service.upsertFolderEmbedding(f)));
 
       expect(results).toHaveLength(20);
       expect(mockChromaDBService.upsertFolder).toHaveBeenCalledTimes(20);
@@ -550,7 +524,7 @@ describe('FolderMatchingService', () => {
       expect(result).toBeDefined();
       expect(mockOllama.embeddings).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: longText,
+        prompt: longText
       });
     });
 

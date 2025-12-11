@@ -4,8 +4,8 @@ const path = require('path');
 
 jest.mock('fast-xml-parser', () => ({
   XMLParser: jest.fn(() => ({
-    parse: jest.fn(() => ({})),
-  })),
+    parse: jest.fn(() => ({}))
+  }))
 }));
 
 describe('per-file analysis cache (document)', () => {
@@ -23,7 +23,7 @@ describe('per-file analysis cache (document)', () => {
       category: 'document',
       keywords: ['k1', 'k2', 'k3'],
       confidence: 90,
-      suggestedName: 'spy_doc',
+      suggestedName: 'spy_doc'
     }));
 
     jest.doMock(
@@ -33,17 +33,15 @@ describe('per-file analysis cache (document)', () => {
         AppConfig: {
           ai: {
             textAnalysis: {
-              defaultModel: 'mock-model',
-            },
-          },
-        },
+              defaultModel: 'mock-model'
+            }
+          }
+        }
       }),
-      { virtual: false },
+      { virtual: false }
     );
 
-    const {
-      analyzeDocumentFile,
-    } = require('../src/main/analysis/ollamaDocumentAnalysis');
+    const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
 
     const tmp = path.join(os.tmpdir(), `doc-cache-${Date.now()}.txt`);
     await fs.writeFile(tmp, 'Sample document contents');

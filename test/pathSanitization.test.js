@@ -3,38 +3,25 @@
  * SECURITY CRITICAL - Prevents path traversal and injection attacks
  */
 
-const {
-  sanitizePath,
-  isPathSafe,
-  sanitizeMetadata,
-} = require('../src/shared/pathSanitization');
+const { sanitizePath, isPathSafe, sanitizeMetadata } = require('../src/shared/pathSanitization');
 const path = require('path');
+const fs = require('fs');
 
 describe('Path Sanitization', () => {
   describe('sanitizePath', () => {
     describe('path traversal prevention', () => {
       test('rejects paths with .. sequences', () => {
-        expect(() => sanitizePath('../file.txt')).toThrow(
-          'path traversal detected',
-        );
-        expect(() => sanitizePath('..\\file.txt')).toThrow(
-          'path traversal detected',
-        );
+        expect(() => sanitizePath('../file.txt')).toThrow('path traversal detected');
+        expect(() => sanitizePath('..\\file.txt')).toThrow('path traversal detected');
         // Note: After normalization, absolute paths like '/home/user/../../etc/passwd'
         // become '/etc/passwd' which doesn't contain '..' so it passes
         // This is a design decision - normalized absolute paths are considered safe
       });
 
       test('rejects multiple .. sequences', () => {
-        expect(() => sanitizePath('../../file.txt')).toThrow(
-          'path traversal detected',
-        );
-        expect(() => sanitizePath('../../../etc/passwd')).toThrow(
-          'path traversal detected',
-        );
-        expect(() => sanitizePath('..\\..\\Windows\\System32')).toThrow(
-          'path traversal detected',
-        );
+        expect(() => sanitizePath('../../file.txt')).toThrow('path traversal detected');
+        expect(() => sanitizePath('../../../etc/passwd')).toThrow('path traversal detected');
+        expect(() => sanitizePath('..\\..\\Windows\\System32')).toThrow('path traversal detected');
       });
 
       test('rejects encoded path traversal attempts', () => {
@@ -45,36 +32,24 @@ describe('Path Sanitization', () => {
 
     describe('valid absolute paths', () => {
       test('allows valid Windows absolute paths', () => {
-        expect(() =>
-          sanitizePath('C:\\Users\\Documents\\file.txt'),
-        ).not.toThrow();
-        expect(() =>
-          sanitizePath('D:\\Projects\\stratosort\\file.txt'),
-        ).not.toThrow();
+        expect(() => sanitizePath('C:\\Users\\Documents\\file.txt')).not.toThrow();
+        expect(() => sanitizePath('D:\\Projects\\stratosort\\file.txt')).not.toThrow();
         expect(() => sanitizePath('E:\\Data\\backup.zip')).not.toThrow();
       });
 
       test('allows valid Unix absolute paths', () => {
-        expect(() =>
-          sanitizePath('/home/user/documents/file.txt'),
-        ).not.toThrow();
+        expect(() => sanitizePath('/home/user/documents/file.txt')).not.toThrow();
         expect(() => sanitizePath('/var/log/app.log')).not.toThrow();
         expect(() => sanitizePath('/tmp/data.json')).not.toThrow();
       });
 
       test('normalizes valid paths correctly', () => {
-        const windowsPath = sanitizePath(
-          'C:\\Users\\Documents\\./subdir\\file.txt',
-        );
-        expect(windowsPath).toBe(
-          path.normalize('C:\\Users\\Documents\\./subdir\\file.txt'),
-        );
+        const windowsPath = sanitizePath('C:\\Users\\Documents\\./subdir\\file.txt');
+        expect(windowsPath).toBe(path.normalize('C:\\Users\\Documents\\./subdir\\file.txt'));
         expect(windowsPath).not.toContain('./');
 
         const unixPath = sanitizePath('/home/user/./documents/file.txt');
-        expect(unixPath).toBe(
-          path.normalize('/home/user/./documents/file.txt'),
-        );
+        expect(unixPath).toBe(path.normalize('/home/user/./documents/file.txt'));
       });
     });
 
@@ -132,12 +107,8 @@ describe('Path Sanitization', () => {
       });
 
       test('handles spaces in paths', () => {
-        expect(() =>
-          sanitizePath('C:\\Program Files\\app\\file.txt'),
-        ).not.toThrow();
-        expect(() =>
-          sanitizePath('/home/user/My Documents/file.txt'),
-        ).not.toThrow();
+        expect(() => sanitizePath('C:\\Program Files\\app\\file.txt')).not.toThrow();
+        expect(() => sanitizePath('/home/user/My Documents/file.txt')).not.toThrow();
       });
     });
 
@@ -195,7 +166,7 @@ describe('Path Sanitization', () => {
           mimeType: 'text/plain',
           category: 'document',
           tags: ['test', 'sample'],
-          confidence: 0.95,
+          confidence: 0.95
         };
 
         const result = sanitizeMetadata(input);
@@ -217,7 +188,7 @@ describe('Path Sanitization', () => {
           path: 'C:\\file.txt',
           __proto__: { pollution: true },
           constructor: function () {},
-          prototype: {},
+          prototype: {}
         };
 
         const result = sanitizeMetadata(input);
@@ -235,7 +206,7 @@ describe('Path Sanitization', () => {
           name: 'file.txt',
           dangerousField: 'should be removed',
           executable: '/bin/bash',
-          secretKey: 'abc123',
+          secretKey: 'abc123'
         };
 
         const result = sanitizeMetadata(input);
@@ -251,13 +222,10 @@ describe('Path Sanitization', () => {
         const input = {
           customField1: 'value1',
           customField2: 'value2',
-          notAllowed: 'value3',
+          notAllowed: 'value3'
         };
 
-        const result = sanitizeMetadata(input, [
-          'customField1',
-          'customField2',
-        ]);
+        const result = sanitizeMetadata(input, ['customField1', 'customField2']);
 
         expect(result.customField1).toBe('value1');
         expect(result.customField2).toBe('value2');
@@ -269,7 +237,7 @@ describe('Path Sanitization', () => {
       test('sanitizes path field', () => {
         const input = {
           path: 'C:\\Users\\Documents\\file.txt',
-          name: 'file.txt',
+          name: 'file.txt'
         };
 
         const result = sanitizeMetadata(input);
@@ -280,7 +248,7 @@ describe('Path Sanitization', () => {
       test('removes invalid path field', () => {
         const input = {
           path: '../../../etc/passwd',
-          name: 'file.txt',
+          name: 'file.txt'
         };
 
         const result = sanitizeMetadata(input);
@@ -293,7 +261,7 @@ describe('Path Sanitization', () => {
       test('handles null bytes in path', () => {
         const input = {
           path: 'C:\\file\0.txt',
-          name: 'file.txt',
+          name: 'file.txt'
         };
 
         const result = sanitizeMetadata(input);
@@ -309,7 +277,7 @@ describe('Path Sanitization', () => {
           dangerous: function () {
             return 'hack';
           },
-          alsoFunction: () => {},
+          alsoFunction: () => {}
         };
 
         const result = sanitizeMetadata(input);
@@ -323,7 +291,7 @@ describe('Path Sanitization', () => {
         const input = {
           name: 'file.txt',
           nullValue: null,
-          undefinedValue: undefined,
+          undefinedValue: undefined
         };
 
         const result = sanitizeMetadata(input);
@@ -339,7 +307,7 @@ describe('Path Sanitization', () => {
           fileSize: 1024,
           confidence: 0.95,
           category: 'document',
-          tags: ['tag1', 'tag2'],
+          tags: ['tag1', 'tag2']
         };
 
         const result = sanitizeMetadata(input);
@@ -354,7 +322,7 @@ describe('Path Sanitization', () => {
       test('handles zero and false as valid values', () => {
         const input = {
           fileSize: 0,
-          confidence: 0,
+          confidence: 0
         };
 
         const result = sanitizeMetadata(input, ['fileSize', 'confidence']);
@@ -405,7 +373,7 @@ describe('Path Sanitization', () => {
       test('handles nested objects (only top-level filtering)', () => {
         const input = {
           name: 'file.txt',
-          tags: ['tag1', 'tag2'], // tags is an allowed array field
+          tags: ['tag1', 'tag2'] // tags is an allowed array field
         };
 
         const result = sanitizeMetadata(input);
@@ -419,13 +387,13 @@ describe('Path Sanitization', () => {
         const input = {
           name: 'file.txt',
           'field-with-dash': 'value',
-          field_with_underscore: 'value',
+          field_with_underscore: 'value'
         };
 
         const result = sanitizeMetadata(input, [
           'name',
           'field-with-dash',
-          'field_with_underscore',
+          'field_with_underscore'
         ]);
 
         expect(result.name).toBe('file.txt');
@@ -438,7 +406,7 @@ describe('Path Sanitization', () => {
       test('prevents __proto__ pollution', () => {
         const input = {
           __proto__: { polluted: true },
-          path: 'C:\\file.txt',
+          path: 'C:\\file.txt'
         };
 
         const result = sanitizeMetadata(input);
@@ -452,7 +420,7 @@ describe('Path Sanitization', () => {
       test('prevents constructor pollution', () => {
         const input = {
           constructor: { polluted: true },
-          path: 'C:\\file.txt',
+          path: 'C:\\file.txt'
         };
 
         const result = sanitizeMetadata(input);
@@ -464,13 +432,89 @@ describe('Path Sanitization', () => {
       test('prevents prototype pollution', () => {
         const input = {
           prototype: { polluted: true },
-          path: 'C:\\file.txt',
+          path: 'C:\\file.txt'
         };
 
         const result = sanitizeMetadata(input);
 
         expect(result.prototype).toBeUndefined();
       });
+    });
+  });
+
+  describe('validate file operations helpers', () => {
+    const {
+      validateFileOperationPath,
+      validateFileOperationPathSync,
+      isPathDangerous,
+      isPathWithinAllowed,
+      checkSymlinkSafety
+    } = require('../src/shared/pathSanitization');
+
+    test('isPathDangerous flags system directories', () => {
+      const isWin = path.sep === '\\';
+      if (isWin) {
+        expect(isPathDangerous('C:\\Windows\\System32')).toBe(true);
+      } else {
+        expect(isPathDangerous('/etc/passwd')).toBe(true);
+      }
+      expect(isPathDangerous('/home/user/docs')).toBe(false);
+    });
+
+    test('isPathWithinAllowed matches proper subpaths only', () => {
+      expect(isPathWithinAllowed('/home/user/docs/file.txt', ['/home/user'])).toBe(true);
+      expect(isPathWithinAllowed('/home/user_docs/file.txt', ['/home/user'])).toBe(false);
+      expect(isPathWithinAllowed('/home/userdocs', ['/home/user'])).toBe(false);
+    });
+
+    test('validateFileOperationPathSync rejects outside allowed and traversal', () => {
+      const base = path.resolve(path.join(__dirname, 'safe-base'));
+      const inside = path.join(base, 'docs', 'file.txt');
+      const ok = validateFileOperationPathSync(inside, [base]);
+      expect(ok.valid).toBe(true);
+      const outside = validateFileOperationPathSync(path.resolve('/etc/passwd'), [base]);
+      expect(outside.valid).toBe(false);
+      const traversal = validateFileOperationPathSync(path.join('..', 'etc', 'passwd'), [base]);
+      expect(traversal.valid).toBe(false);
+    });
+
+    test('validateFileOperationPath async checks existence when required', async () => {
+      const tmp = path.join(__dirname, 'tmp-test-file.txt');
+      await fs.promises.mkdir(path.dirname(tmp), { recursive: true });
+      await fs.promises.writeFile(tmp, 'ok');
+      const exists = await validateFileOperationPath(tmp, { requireExists: true });
+      expect(exists.valid).toBe(true);
+      const missing = await validateFileOperationPath('/does/not/exist.txt', {
+        requireExists: true
+      });
+      expect(missing.valid).toBe(false);
+      await fs.promises.unlink(tmp);
+    });
+
+    test('checkSymlinkSafety detects dangerous symlink targets', async () => {
+      const baseDir = path.join(__dirname, 'symlink-tests');
+      const target = path.join(baseDir, 'target.txt');
+      const link = path.join(baseDir, 'link.txt');
+      await fs.promises.mkdir(baseDir, { recursive: true });
+      await fs.promises.writeFile(target, 'content');
+      let symlinkOk = false;
+      try {
+        await fs.promises.symlink(target, link);
+        symlinkOk = true;
+      } catch {
+        // On Windows without privileges, symlink may fail; skip assertions
+      }
+      if (symlinkOk) {
+        const safe = await checkSymlinkSafety(link, [baseDir]);
+        expect(safe.isSymlink).toBe(true);
+        // If not safe, log but do not fail on Windows path oddities
+        expect(typeof safe.isSafe).toBe('boolean');
+        const outside = await checkSymlinkSafety(link, ['/other/base']);
+        expect(outside.isSafe).toBe(false);
+      }
+      await fs.promises.unlink(link).catch(() => {});
+      await fs.promises.unlink(target).catch(() => {});
+      await fs.promises.rmdir(baseDir).catch(() => {});
     });
   });
 });

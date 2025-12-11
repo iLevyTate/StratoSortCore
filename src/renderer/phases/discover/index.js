@@ -14,7 +14,7 @@ export {
   validateProgressState,
   getFileStateDisplayInfo,
   extractExtension,
-  extractFileName,
+  extractFileName
 } from './namingUtils';
 
 // Custom hooks

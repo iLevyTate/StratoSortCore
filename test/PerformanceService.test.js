@@ -20,15 +20,15 @@ jest.mock('child_process', () => ({
         }
       }),
       killed: false,
-      kill: jest.fn(),
+      kill: jest.fn()
     };
     return proc;
-  }),
+  })
 }));
 
 // Mock shared/platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
-  getNvidiaSmiCommand: jest.fn().mockReturnValue('nvidia-smi'),
+  getNvidiaSmiCommand: jest.fn().mockReturnValue('nvidia-smi')
 }));
 
 // Mock logger
@@ -38,8 +38,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('PerformanceService', () => {

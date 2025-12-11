@@ -52,7 +52,7 @@ const REQUIRED_HANDLERS = [
 
   // Ollama - AI features
   'get-ollama-models',
-  'test-ollama-connection',
+  'test-ollama-connection'
 ];
 
 /**
@@ -63,7 +63,7 @@ const WINDOWS_HANDLERS = [
   'window-maximize',
   'window-toggle-maximize',
   'window-is-maximized',
-  'window-close',
+  'window-close'
 ];
 
 /**
@@ -91,10 +91,7 @@ function hasInvokeHandler(channel) {
  * @returns {{allRegistered: boolean, missing: string[]}}
  */
 function checkHandlers() {
-  const requiredHandlers = [
-    ...REQUIRED_HANDLERS,
-    ...(isWindows ? WINDOWS_HANDLERS : []),
-  ];
+  const requiredHandlers = [...REQUIRED_HANDLERS, ...(isWindows ? WINDOWS_HANDLERS : [])];
 
   const missing = [];
   for (const handler of requiredHandlers) {
@@ -106,14 +103,14 @@ function checkHandlers() {
       logger.debug(
         `[IPC-VERIFY] Handler verified: ${handler} (${listenerCount} listener${listenerCount > 1 ? 's' : ''}${
           listenerCount === 0 ? ', invoke handler' : ''
-        })`,
+        })`
       );
     }
   }
 
   return {
     allRegistered: missing.length === 0,
-    missing,
+    missing
   };
 }
 
@@ -129,22 +126,19 @@ async function verifyIpcHandlersRegistered() {
   const maxDelay = 500; // Cap at 500ms
   const startTime = Date.now();
 
-  const requiredHandlers = [
-    ...REQUIRED_HANDLERS,
-    ...(isWindows ? WINDOWS_HANDLERS : []),
-  ];
+  const requiredHandlers = [...REQUIRED_HANDLERS, ...(isWindows ? WINDOWS_HANDLERS : [])];
 
   // Initial check
   let checkResult = checkHandlers();
   if (checkResult.allRegistered) {
     logger.info(
-      `[IPC-VERIFY] Verified ${requiredHandlers.length} critical handlers are registered`,
+      `[IPC-VERIFY] Verified ${requiredHandlers.length} critical handlers are registered`
     );
     return true;
   }
 
   logger.warn(
-    `[IPC-VERIFY] Missing ${checkResult.missing.length} handlers: ${checkResult.missing.join(', ')}`,
+    `[IPC-VERIFY] Missing ${checkResult.missing.length} handlers: ${checkResult.missing.join(', ')}`
   );
   logger.info('[IPC-VERIFY] Starting retry logic with exponential backoff...');
 
@@ -154,7 +148,7 @@ async function verifyIpcHandlersRegistered() {
     const elapsed = Date.now() - startTime;
     if (elapsed >= maxTimeout) {
       logger.error(
-        `[IPC-VERIFY] Timeout after ${elapsed}ms. Still missing ${checkResult.missing.length} handlers: ${checkResult.missing.join(', ')}`,
+        `[IPC-VERIFY] Timeout after ${elapsed}ms. Still missing ${checkResult.missing.length} handlers: ${checkResult.missing.join(', ')}`
       );
       return false;
     }
@@ -171,7 +165,7 @@ async function verifyIpcHandlersRegistered() {
     if (checkResult.allRegistered) {
       const totalTime = Date.now() - startTime;
       logger.info(
-        `[IPC-VERIFY] All handlers registered after ${attempt + 1} attempt(s) in ${totalTime}ms`,
+        `[IPC-VERIFY] All handlers registered after ${attempt + 1} attempt(s) in ${totalTime}ms`
       );
       return true;
     }
@@ -179,7 +173,7 @@ async function verifyIpcHandlersRegistered() {
     // Log progress every 2 attempts
     if (attempt % 2 === 1) {
       logger.debug(
-        `[IPC-VERIFY] Attempt ${attempt + 1}/${maxRetries}: Still missing ${checkResult.missing.length} handlers`,
+        `[IPC-VERIFY] Attempt ${attempt + 1}/${maxRetries}: Still missing ${checkResult.missing.length} handlers`
       );
     }
   }
@@ -192,7 +186,7 @@ async function verifyIpcHandlersRegistered() {
   }
 
   logger.error(
-    `[IPC-VERIFY] Failed to register all handlers after ${maxRetries} attempts. Missing: ${checkResult.missing.join(', ')}`,
+    `[IPC-VERIFY] Failed to register all handlers after ${maxRetries} attempts. Missing: ${checkResult.missing.join(', ')}`
   );
   return false;
 }
@@ -201,5 +195,5 @@ module.exports = {
   verifyIpcHandlersRegistered,
   checkHandlers,
   REQUIRED_HANDLERS,
-  WINDOWS_HANDLERS,
+  WINDOWS_HANDLERS
 };

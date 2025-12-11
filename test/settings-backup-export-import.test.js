@@ -12,13 +12,13 @@ const { DEFAULT_SETTINGS } = require('../src/shared/defaultSettings');
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn(() => '/mock/user/data'),
-    getVersion: jest.fn(() => '1.0.0'),
-  },
+    getVersion: jest.fn(() => '1.0.0')
+  }
 }));
 
 // Mock atomic file operations
 jest.mock('../src/shared/atomicFileOperations', () => ({
-  backupAndReplace: jest.fn().mockResolvedValue({ success: true }),
+  backupAndReplace: jest.fn().mockResolvedValue({ success: true })
 }));
 
 describe('Settings Backup, Export, and Import', () => {
@@ -88,16 +88,14 @@ describe('Settings Backup, Export, and Import', () => {
         const filePath = writeCall[0];
 
         expect(filePath).toContain('settings-backups');
-        expect(filePath).toMatch(
-          /settings-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}.*\.json$/,
-        );
+        expect(filePath).toMatch(/settings-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}.*\.json$/);
       });
 
       test('creates backup directory if it does not exist', async () => {
         await settingsService.createBackup();
 
         expect(fs.mkdir).toHaveBeenCalledWith(mockBackupDir, {
-          recursive: true,
+          recursive: true
         });
       });
     });
@@ -133,8 +131,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock 10 existing backups (using settings- prefix) with proper timestamps
         const existingBackups = Array.from(
           { length: 10 },
-          (_, i) =>
-            `settings-2024-01-${String(i + 1).padStart(2, '0')}T10-00-00-000Z.json`,
+          (_, i) => `settings-2024-01-${String(i + 1).padStart(2, '0')}T10-00-00-000Z.json`
         );
 
         let allBackups = [...existingBackups];
@@ -142,10 +139,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock writeFile to add new backup to the list
         fs.writeFile.mockImplementation(async (filePath) => {
           const filename = path.basename(filePath);
-          if (
-            filename.startsWith('settings-') &&
-            !allBackups.includes(filename)
-          ) {
+          if (filename.startsWith('settings-') && !allBackups.includes(filename)) {
             allBackups.push(filename);
           }
         });
@@ -157,7 +151,7 @@ describe('Settings Backup, Export, and Import', () => {
         jest.spyOn(fs, 'stat').mockImplementation(async () => ({
           size: 1024,
           mtime: new Date('2024-01-01T10:00:00.000Z'),
-          isFile: () => true,
+          isFile: () => true
         }));
 
         // Mock reading backup files with proper timestamps for sorting
@@ -169,7 +163,7 @@ describe('Settings Backup, Export, and Import', () => {
               return JSON.stringify({
                 timestamp: `2024-01-${day}T10:00:00.000Z`,
                 appVersion: '1.0.0',
-                settings: DEFAULT_SETTINGS,
+                settings: DEFAULT_SETTINGS
               });
             }
           }
@@ -177,7 +171,7 @@ describe('Settings Backup, Export, and Import', () => {
           return JSON.stringify({
             timestamp: new Date().toISOString(),
             appVersion: '1.0.0',
-            settings: DEFAULT_SETTINGS,
+            settings: DEFAULT_SETTINGS
           });
         });
 
@@ -191,8 +185,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('does not delete backups when under limit', async () => {
         const existingBackups = Array.from(
           { length: 5 },
-          (_, i) =>
-            `settings-2024-01-${String(i + 1).padStart(2, '0')}T10-00-00-000Z.json`,
+          (_, i) => `settings-2024-01-${String(i + 1).padStart(2, '0')}T10-00-00-000Z.json`
         );
 
         fs.readdir.mockResolvedValueOnce(existingBackups);
@@ -200,7 +193,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock fs.stat
         jest.spyOn(fs, 'stat').mockResolvedValue({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         });
 
         // Mock reading backup files
@@ -209,7 +202,7 @@ describe('Settings Backup, Export, and Import', () => {
             return JSON.stringify({
               timestamp: '2024-01-01T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: DEFAULT_SETTINGS,
+              settings: DEFAULT_SETTINGS
             });
           }
           return JSON.stringify(DEFAULT_SETTINGS);
@@ -235,7 +228,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('returns list of backups with metadata', async () => {
         const mockBackups = [
           'settings-2024-01-15T10-00-00-000Z.json',
-          'settings-2024-01-14T10-00-00-000Z.json',
+          'settings-2024-01-14T10-00-00-000Z.json'
         ];
 
         fs.readdir.mockResolvedValueOnce(mockBackups);
@@ -243,7 +236,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock fs.stat for file metadata
         jest.spyOn(fs, 'stat').mockImplementation(async () => ({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         }));
 
         fs.readFile.mockImplementation(async (filePath) => {
@@ -251,14 +244,14 @@ describe('Settings Backup, Export, and Import', () => {
             return JSON.stringify({
               timestamp: '2024-01-15T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           if (filePath.includes('settings-2024-01-14')) {
             return JSON.stringify({
               timestamp: '2024-01-14T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           throw new Error('ENOENT');
@@ -267,9 +260,7 @@ describe('Settings Backup, Export, and Import', () => {
         const backups = await settingsService.listBackups();
 
         expect(backups).toHaveLength(2);
-        expect(backups[0].filename).toBe(
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        expect(backups[0].filename).toBe('settings-2024-01-15T10-00-00-000Z.json');
         expect(backups[0].timestamp).toBe('2024-01-15T10:00:00.000Z');
         expect(backups[0].path).toBeDefined();
         expect(backups[0].appVersion).toBe('1.0.0');
@@ -280,7 +271,7 @@ describe('Settings Backup, Export, and Import', () => {
         const mockBackups = [
           'settings-2024-01-10T10-00-00-000Z.json',
           'settings-2024-01-15T10-00-00-000Z.json',
-          'settings-2024-01-12T10-00-00-000Z.json',
+          'settings-2024-01-12T10-00-00-000Z.json'
         ];
 
         fs.readdir.mockResolvedValueOnce(mockBackups);
@@ -288,7 +279,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock fs.stat
         jest.spyOn(fs, 'stat').mockResolvedValue({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         });
 
         fs.readFile.mockImplementation(async (filePath) => {
@@ -296,21 +287,21 @@ describe('Settings Backup, Export, and Import', () => {
             return JSON.stringify({
               timestamp: '2024-01-10T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           if (filePath.includes('2024-01-15')) {
             return JSON.stringify({
               timestamp: '2024-01-15T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           if (filePath.includes('2024-01-12')) {
             return JSON.stringify({
               timestamp: '2024-01-12T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           throw new Error('ENOENT');
@@ -319,22 +310,16 @@ describe('Settings Backup, Export, and Import', () => {
         const backups = await settingsService.listBackups();
 
         // Should be sorted by timestamp descending
-        expect(backups[0].filename).toBe(
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
-        expect(backups[1].filename).toBe(
-          'settings-2024-01-12T10-00-00-000Z.json',
-        );
-        expect(backups[2].filename).toBe(
-          'settings-2024-01-10T10-00-00-000Z.json',
-        );
+        expect(backups[0].filename).toBe('settings-2024-01-15T10-00-00-000Z.json');
+        expect(backups[1].filename).toBe('settings-2024-01-12T10-00-00-000Z.json');
+        expect(backups[2].filename).toBe('settings-2024-01-10T10-00-00-000Z.json');
       });
 
       test('filters out non-backup files', async () => {
         const mockFiles = [
           'settings-2024-01-15T10-00-00-000Z.json',
           'other-file.txt',
-          'settings.json',
+          'settings.json'
         ];
 
         fs.readdir.mockResolvedValueOnce(mockFiles);
@@ -342,7 +327,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock fs.stat
         jest.spyOn(fs, 'stat').mockResolvedValue({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         });
 
         fs.readFile.mockImplementation(async (filePath) => {
@@ -350,7 +335,7 @@ describe('Settings Backup, Export, and Import', () => {
             return JSON.stringify({
               timestamp: '2024-01-15T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           throw new Error('ENOENT');
@@ -359,31 +344,26 @@ describe('Settings Backup, Export, and Import', () => {
         const backups = await settingsService.listBackups();
 
         expect(backups).toHaveLength(1);
-        expect(backups[0].filename).toBe(
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        expect(backups[0].filename).toBe('settings-2024-01-15T10-00-00-000Z.json');
       });
 
       test('filters out directories', async () => {
-        const mockEntries = [
-          'settings-2024-01-15T10-00-00-000Z.json',
-          'subdirectory',
-        ];
+        const mockEntries = ['settings-2024-01-15T10-00-00-000Z.json', 'subdirectory'];
 
         fs.readdir.mockResolvedValueOnce(mockEntries);
 
         // Mock fs.stat - directories aren't processed because they don't match the pattern
         jest.spyOn(fs, 'stat').mockResolvedValue({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         });
 
         fs.readFile.mockResolvedValueOnce(
           JSON.stringify({
             timestamp: '2024-01-15T10:00:00.000Z',
             appVersion: '1.0.0',
-            settings: {},
-          }),
+            settings: {}
+          })
         );
 
         const backups = await settingsService.listBackups();
@@ -404,7 +384,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('handles corrupted backup file gracefully', async () => {
         const mockBackups = [
           'settings-2024-01-15T10-00-00-000Z.json',
-          'settings-2024-01-14T10-00-00-000Z.json',
+          'settings-2024-01-14T10-00-00-000Z.json'
         ];
 
         fs.readdir.mockResolvedValueOnce(mockBackups);
@@ -412,7 +392,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock fs.stat
         jest.spyOn(fs, 'stat').mockResolvedValue({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         });
 
         fs.readFile.mockImplementation(async (filePath) => {
@@ -423,7 +403,7 @@ describe('Settings Backup, Export, and Import', () => {
             return JSON.stringify({
               timestamp: '2024-01-14T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: {},
+              settings: {}
             });
           }
           throw new Error('ENOENT');
@@ -433,9 +413,7 @@ describe('Settings Backup, Export, and Import', () => {
 
         // Should skip corrupted backup, only return valid one
         expect(backups).toHaveLength(1);
-        expect(backups[0].filename).toBe(
-          'settings-2024-01-14T10-00-00-000Z.json',
-        );
+        expect(backups[0].filename).toBe('settings-2024-01-14T10-00-00-000Z.json');
       });
 
       test('handles readdir permission errors', async () => {
@@ -454,12 +432,9 @@ describe('Settings Backup, Export, and Import', () => {
         const backupSettings = {
           ...DEFAULT_SETTINGS,
           theme: 'dark',
-          notifications: false,
+          notifications: false
         };
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
 
         // Clear previous mocks and setup new ones
         fs.readFile.mockReset();
@@ -468,7 +443,7 @@ describe('Settings Backup, Export, and Import', () => {
             return JSON.stringify({
               timestamp: '2024-01-15T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: backupSettings,
+              settings: backupSettings
             });
           }
           if (filePath === mockSettingsPath) {
@@ -480,7 +455,7 @@ describe('Settings Backup, Export, and Import', () => {
         // Mock stat for backup files (needed by listBackups in cleanup)
         jest.spyOn(fs, 'stat').mockResolvedValue({
           size: 1024,
-          mtime: new Date(),
+          mtime: new Date()
         });
 
         const result = await settingsService.restoreFromBackup(backupPath);
@@ -490,17 +465,14 @@ describe('Settings Backup, Export, and Import', () => {
       });
 
       test('creates new backup before restoring', async () => {
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
 
         fs.readFile.mockImplementation(async (filePath) => {
           if (filePath === backupPath) {
             return JSON.stringify({
               timestamp: '2024-01-15T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: DEFAULT_SETTINGS,
+              settings: DEFAULT_SETTINGS
             });
           }
           return JSON.stringify(DEFAULT_SETTINGS);
@@ -515,17 +487,14 @@ describe('Settings Backup, Export, and Import', () => {
 
       test('validates restored settings', async () => {
         const invalidSettings = { ...DEFAULT_SETTINGS, theme: 'invalid-theme' };
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
 
         fs.readFile.mockImplementation(async (filePath) => {
           if (filePath === backupPath) {
             return JSON.stringify({
               timestamp: '2024-01-15T10:00:00.000Z',
               appVersion: '1.0.0',
-              settings: invalidSettings,
+              settings: invalidSettings
             });
           }
           return JSON.stringify(DEFAULT_SETTINGS);
@@ -534,9 +503,7 @@ describe('Settings Backup, Export, and Import', () => {
         const result = await settingsService.restoreFromBackup(backupPath);
 
         // Should have validation errors or warnings
-        expect(
-          result.validationWarnings || result.validationErrors,
-        ).toBeDefined();
+        expect(result.validationWarnings || result.validationErrors).toBeDefined();
       });
     });
 
@@ -555,20 +522,14 @@ describe('Settings Backup, Export, and Import', () => {
       test('rejects non-existent backup', async () => {
         fs.readFile.mockRejectedValueOnce({ code: 'ENOENT' });
 
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-nonexistent.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-nonexistent.json');
         const result = await settingsService.restoreFromBackup(backupPath);
 
         expect(result.success).toBe(false);
       });
 
       test('handles corrupted backup file', async () => {
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
         fs.readFile.mockResolvedValueOnce('invalid json{');
 
         const result = await settingsService.restoreFromBackup(backupPath);
@@ -576,15 +537,12 @@ describe('Settings Backup, Export, and Import', () => {
       });
 
       test('handles missing settings field in backup', async () => {
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
         fs.readFile.mockResolvedValueOnce(
           JSON.stringify({
-            timestamp: '2024-01-15T10:00:00.000Z',
+            timestamp: '2024-01-15T10:00:00.000Z'
             // Missing settings field
-          }),
+          })
         );
 
         const result = await settingsService.restoreFromBackup(backupPath);
@@ -597,10 +555,7 @@ describe('Settings Backup, Export, and Import', () => {
   describe('deleteBackup', () => {
     describe('successful deletion', () => {
       test('deletes specified backup file', async () => {
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
 
         const result = await settingsService.deleteBackup(backupPath);
 
@@ -609,10 +564,7 @@ describe('Settings Backup, Export, and Import', () => {
       });
 
       test('returns success when deleting valid backup', async () => {
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
 
         const result = await settingsService.deleteBackup(backupPath);
 
@@ -638,10 +590,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('handles non-existent backup gracefully', async () => {
         fs.unlink.mockRejectedValueOnce({ code: 'ENOENT' });
 
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-nonexistent.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-nonexistent.json');
         const result = await settingsService.deleteBackup(backupPath);
 
         expect(result.success).toBe(false);
@@ -650,10 +599,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('handles permission errors', async () => {
         fs.unlink.mockRejectedValueOnce(new Error('Permission denied'));
 
-        const backupPath = path.join(
-          mockBackupDir,
-          'settings-2024-01-15T10-00-00-000Z.json',
-        );
+        const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
         const result = await settingsService.deleteBackup(backupPath);
 
         expect(result.success).toBe(false);
@@ -687,19 +633,15 @@ describe('Settings Backup, Export, and Import', () => {
           version: '1.0.0',
           exportDate: new Date().toISOString(),
           appVersion: '1.0.0',
-          settings: currentSettings,
+          settings: currentSettings
         };
 
-        await fs.writeFile(
-          exportPath,
-          JSON.stringify(exportData, null, 2),
-          'utf8',
-        );
+        await fs.writeFile(exportPath, JSON.stringify(exportData, null, 2), 'utf8');
 
         expect(fs.writeFile).toHaveBeenCalledWith(
           exportPath,
           expect.stringContaining('"theme": "dark"'),
-          'utf8',
+          'utf8'
         );
       });
 
@@ -711,7 +653,7 @@ describe('Settings Backup, Export, and Import', () => {
           version: '1.0.0',
           exportDate: new Date().toISOString(),
           appVersion: '1.0.0',
-          settings: currentSettings,
+          settings: currentSettings
         };
 
         expect(exportData.version).toBe('1.0.0');
@@ -723,7 +665,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('formats JSON with proper indentation', async () => {
         const exportData = {
           version: '1.0.0',
-          settings: DEFAULT_SETTINGS,
+          settings: DEFAULT_SETTINGS
         };
 
         const formatted = JSON.stringify(exportData, null, 2);
@@ -737,25 +679,23 @@ describe('Settings Backup, Export, and Import', () => {
       test('handles invalid export path', async () => {
         fs.writeFile.mockRejectedValueOnce(new Error('Invalid path'));
 
-        await expect(fs.writeFile('', 'data', 'utf8')).rejects.toThrow(
-          'Invalid path',
-        );
+        await expect(fs.writeFile('', 'data', 'utf8')).rejects.toThrow('Invalid path');
       });
 
       test('handles permission errors on export', async () => {
         fs.writeFile.mockRejectedValueOnce(new Error('Permission denied'));
 
-        await expect(
-          fs.writeFile('/readonly/settings.json', 'data', 'utf8'),
-        ).rejects.toThrow('Permission denied');
+        await expect(fs.writeFile('/readonly/settings.json', 'data', 'utf8')).rejects.toThrow(
+          'Permission denied'
+        );
       });
 
       test('handles disk full errors', async () => {
         fs.writeFile.mockRejectedValueOnce(new Error('ENOSPC: no space left'));
 
-        await expect(
-          fs.writeFile('/export/settings.json', 'data', 'utf8'),
-        ).rejects.toThrow('no space left');
+        await expect(fs.writeFile('/export/settings.json', 'data', 'utf8')).rejects.toThrow(
+          'no space left'
+        );
       });
     });
   });
@@ -769,7 +709,7 @@ describe('Settings Backup, Export, and Import', () => {
           version: '1.0.0',
           exportDate: '2024-01-15T10:00:00.000Z',
           appVersion: '1.0.0',
-          settings: importedSettings,
+          settings: importedSettings
         };
 
         fs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -784,7 +724,7 @@ describe('Settings Backup, Export, and Import', () => {
         const importedSettings = { ...DEFAULT_SETTINGS, theme: 'invalid' };
         const importData = {
           version: '1.0.0',
-          settings: importedSettings,
+          settings: importedSettings
         };
 
         fs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -799,7 +739,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('creates backup before importing', async () => {
         const importData = {
           version: '1.0.0',
-          settings: DEFAULT_SETTINGS,
+          settings: DEFAULT_SETTINGS
         };
 
         fs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -815,9 +755,9 @@ describe('Settings Backup, Export, and Import', () => {
       test('rejects non-existent file', async () => {
         fs.readFile.mockRejectedValueOnce({ code: 'ENOENT' });
 
-        await expect(
-          fs.readFile('/nonexistent/settings.json', 'utf8'),
-        ).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(fs.readFile('/nonexistent/settings.json', 'utf8')).rejects.toMatchObject({
+          code: 'ENOENT'
+        });
       });
 
       test('rejects invalid JSON', async () => {
@@ -830,7 +770,7 @@ describe('Settings Backup, Export, and Import', () => {
 
       test('rejects file missing settings field', async () => {
         const invalidData = {
-          version: '1.0.0',
+          version: '1.0.0'
           // Missing settings
         };
 
@@ -845,9 +785,9 @@ describe('Settings Backup, Export, and Import', () => {
       test('handles permission errors on import', async () => {
         fs.readFile.mockRejectedValueOnce(new Error('Permission denied'));
 
-        await expect(
-          fs.readFile('/protected/settings.json', 'utf8'),
-        ).rejects.toThrow('Permission denied');
+        await expect(fs.readFile('/protected/settings.json', 'utf8')).rejects.toThrow(
+          'Permission denied'
+        );
       });
 
       test('rejects malformed export format', async () => {
@@ -866,7 +806,7 @@ describe('Settings Backup, Export, and Import', () => {
         const importData = {
           version: '1.0.0',
           appVersion: '1.0.0',
-          settings: DEFAULT_SETTINGS,
+          settings: DEFAULT_SETTINGS
         };
 
         fs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -880,7 +820,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('handles missing version field', async () => {
         const importData = {
           // Missing version
-          settings: DEFAULT_SETTINGS,
+          settings: DEFAULT_SETTINGS
         };
 
         fs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -894,7 +834,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('includes version warning for older exports', async () => {
         const importData = {
           version: '0.9.0',
-          settings: DEFAULT_SETTINGS,
+          settings: DEFAULT_SETTINGS
         };
 
         fs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -914,7 +854,7 @@ describe('Settings Backup, Export, and Import', () => {
         ...DEFAULT_SETTINGS,
         theme: 'dark',
         notifications: false,
-        maxFileSize: 50 * 1024 * 1024,
+        maxFileSize: 50 * 1024 * 1024
       };
 
       // Set cache to override load()
@@ -935,14 +875,14 @@ describe('Settings Backup, Export, and Import', () => {
         ...DEFAULT_SETTINGS,
         theme: 'dark',
         notifications: false,
-        maxConcurrentAnalysis: 5,
+        maxConcurrentAnalysis: 5
       };
 
       // Export
       const exportData = {
         version: '1.0.0',
         exportDate: new Date().toISOString(),
-        settings: originalSettings,
+        settings: originalSettings
       };
 
       const exported = JSON.stringify(exportData, null, 2);
@@ -956,7 +896,7 @@ describe('Settings Backup, Export, and Import', () => {
     test('handles special characters in settings values', async () => {
       const settingsWithSpecialChars = {
         ...DEFAULT_SETTINGS,
-        customPath: 'C:\\Users\\Test\\Documents',
+        customPath: 'C:\\Users\\Test\\Documents'
       };
 
       settingsService._cache = settingsWithSpecialChars;
@@ -974,7 +914,7 @@ describe('Settings Backup, Export, and Import', () => {
       const settingsWithFalse = {
         ...DEFAULT_SETTINGS,
         notifications: false,
-        autoOrganize: false,
+        autoOrganize: false
       };
 
       settingsService._cache = settingsWithFalse;
@@ -991,7 +931,7 @@ describe('Settings Backup, Export, and Import', () => {
     test('preserves zero values correctly', async () => {
       const settingsWithZero = {
         ...DEFAULT_SETTINGS,
-        maxConcurrentAnalysis: 3, // Can't use 0 as it's below the minimum in validation
+        maxConcurrentAnalysis: 3 // Can't use 0 as it's below the minimum in validation
       };
 
       settingsService._cache = settingsWithZero;

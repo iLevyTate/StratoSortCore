@@ -7,10 +7,10 @@ const initialState = {
   analysisProgress: {
     current: 0,
     total: 0,
-    lastActivity: 0,
+    lastActivity: 0
   },
   results: [], // Analysis results
-  stats: null, // Historical stats
+  stats: null // Historical stats
 };
 
 const analysisSlice = createSlice({
@@ -22,7 +22,7 @@ const analysisSlice = createSlice({
       state.analysisProgress = {
         current: 0,
         total: action.payload?.total || 0,
-        lastActivity: Date.now(),
+        lastActivity: Date.now()
       };
       // Optionally clear previous results if new batch
       if (action.payload?.clearPrevious) {
@@ -33,7 +33,7 @@ const analysisSlice = createSlice({
       state.analysisProgress = {
         ...state.analysisProgress,
         ...action.payload,
-        lastActivity: Date.now(),
+        lastActivity: Date.now()
       };
       if (action.payload.currentFile) {
         state.currentAnalysisFile = action.payload.currentFile;
@@ -48,7 +48,7 @@ const analysisSlice = createSlice({
         ...file,
         analysis,
         status: FILE_STATES.CATEGORIZED,
-        analyzedAt: new Date().toISOString(),
+        analyzedAt: new Date().toISOString()
       };
 
       if (index >= 0) {
@@ -65,7 +65,7 @@ const analysisSlice = createSlice({
         analysis: null,
         error: error,
         status: FILE_STATES.ERROR,
-        analyzedAt: new Date().toISOString(),
+        analyzedAt: new Date().toISOString()
       };
 
       if (index >= 0) {
@@ -86,8 +86,8 @@ const analysisSlice = createSlice({
     },
     resetAnalysisState: () => {
       return initialState;
-    },
-  },
+    }
+  }
 });
 
 export const {
@@ -98,7 +98,7 @@ export const {
   stopAnalysis,
   setAnalysisResults,
   setAnalysisStats,
-  resetAnalysisState,
+  resetAnalysisState
 } = analysisSlice.actions;
 
 export default analysisSlice.reducer;

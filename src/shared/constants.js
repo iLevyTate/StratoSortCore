@@ -11,7 +11,7 @@ const PHASES = {
   SETUP: 'setup',
   DISCOVER: 'discover',
   ORGANIZE: 'organize',
-  COMPLETE: 'complete',
+  COMPLETE: 'complete'
 };
 
 // Phase transition rules - defines valid navigation paths
@@ -21,7 +21,7 @@ const PHASE_TRANSITIONS = {
   [PHASES.SETUP]: [PHASES.DISCOVER, PHASES.WELCOME],
   [PHASES.DISCOVER]: [PHASES.ORGANIZE, PHASES.SETUP, PHASES.WELCOME],
   [PHASES.ORGANIZE]: [PHASES.COMPLETE, PHASES.DISCOVER, PHASES.WELCOME],
-  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.ORGANIZE, PHASES.DISCOVER], // Allow going back without losing data
+  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.ORGANIZE, PHASES.DISCOVER] // Allow going back without losing data
 };
 
 // Phase metadata for UI display
@@ -30,32 +30,32 @@ const PHASE_METADATA = {
     title: 'Welcome to StratoSort',
     navLabel: 'Welcome',
     icon: '🚀',
-    progress: 0,
+    progress: 0
   },
   [PHASES.SETUP]: {
     title: 'Configure Smart Folders',
     navLabel: 'Smart Folders',
     icon: '⚙️',
-    progress: 20,
+    progress: 20
   },
   [PHASES.DISCOVER]: {
     title: 'Discover & Analyze Files',
     navLabel: 'Discover Files',
     icon: '🔎',
-    progress: 50,
+    progress: 50
   },
   [PHASES.ORGANIZE]: {
     title: 'Review & Organize',
     navLabel: 'Review Organize',
     icon: '📂',
-    progress: 80,
+    progress: 80
   },
   [PHASES.COMPLETE]: {
     title: 'Organization Complete',
     navLabel: 'Complete',
     icon: '✅',
-    progress: 100,
-  },
+    progress: 100
+  }
 };
 
 // IPC Channel constants - centralized to avoid magic strings
@@ -74,7 +74,7 @@ const IPC_CHANNELS = {
     REVEAL_FILE: 'reveal-file',
     COPY_FILE: 'copy-file',
     OPEN_FOLDER: 'open-folder',
-    PERFORM_OPERATION: 'perform-file-operation',
+    PERFORM_OPERATION: 'perform-file-operation'
   },
 
   // Smart Folders
@@ -87,14 +87,14 @@ const IPC_CHANNELS = {
     ADD: 'add-smart-folder',
     EDIT: 'edit-smart-folder',
     DELETE: 'delete-smart-folder',
-    MATCH: 'match-smart-folder',
+    MATCH: 'match-smart-folder'
   },
 
   // Analysis
   ANALYSIS: {
     ANALYZE_DOCUMENT: 'analyze-document',
     ANALYZE_IMAGE: 'analyze-image',
-    EXTRACT_IMAGE_TEXT: 'extract-text-from-image',
+    EXTRACT_IMAGE_TEXT: 'extract-text-from-image'
   },
 
   // Organization Suggestions
@@ -107,7 +107,7 @@ const IPC_CHANNELS = {
     GET_USER_PATTERNS: 'get-user-patterns',
     CLEAR_PATTERNS: 'clear-user-patterns',
     ANALYZE_FOLDER_STRUCTURE: 'analyze-folder-structure',
-    SUGGEST_NEW_FOLDER: 'suggest-new-folder',
+    SUGGEST_NEW_FOLDER: 'suggest-new-folder'
   },
 
   // Auto-Organize
@@ -116,7 +116,7 @@ const IPC_CHANNELS = {
     BATCH: 'batch-organize-files',
     PROCESS_NEW: 'process-new-file',
     GET_STATS: 'get-organize-stats',
-    UPDATE_THRESHOLDS: 'update-organize-thresholds',
+    UPDATE_THRESHOLDS: 'update-organize-thresholds'
   },
 
   // Settings
@@ -130,7 +130,7 @@ const IPC_CHANNELS = {
     CREATE_BACKUP: 'settings-create-backup',
     LIST_BACKUPS: 'settings-list-backups',
     RESTORE_BACKUP: 'settings-restore-backup',
-    DELETE_BACKUP: 'settings-delete-backup',
+    DELETE_BACKUP: 'settings-delete-backup'
   },
 
   // Embeddings / Semantic Matching
@@ -139,7 +139,7 @@ const IPC_CHANNELS = {
     REBUILD_FILES: 'embeddings-rebuild-files',
     CLEAR_STORE: 'embeddings-clear-store',
     GET_STATS: 'embeddings-get-stats',
-    FIND_SIMILAR: 'embeddings-find-similar',
+    FIND_SIMILAR: 'embeddings-find-similar'
   },
 
   // Ollama
@@ -147,7 +147,7 @@ const IPC_CHANNELS = {
     GET_MODELS: 'get-ollama-models',
     TEST_CONNECTION: 'test-ollama-connection',
     PULL_MODELS: 'ollama-pull-models',
-    DELETE_MODEL: 'ollama-delete-model',
+    DELETE_MODEL: 'ollama-delete-model'
   },
 
   // Undo/Redo
@@ -157,7 +157,7 @@ const IPC_CHANNELS = {
     UNDO: 'undo-action',
     REDO: 'redo-action',
     GET_HISTORY: 'get-action-history',
-    CLEAR_HISTORY: 'clear-action-history',
+    CLEAR_HISTORY: 'clear-action-history'
   },
 
   // Analysis History
@@ -167,7 +167,7 @@ const IPC_CHANNELS = {
     GET_STATISTICS: 'get-analysis-statistics',
     GET_FILE_HISTORY: 'get-file-analysis-history',
     CLEAR: 'clear-analysis-history',
-    EXPORT: 'export-analysis-history',
+    EXPORT: 'export-analysis-history'
   },
 
   // System Monitoring
@@ -176,7 +176,7 @@ const IPC_CHANNELS = {
     GET_METRICS: 'get-system-metrics',
     APPLY_UPDATE: 'apply-update',
     GET_CONFIG: 'get-app-config',
-    GET_CONFIG_VALUE: 'get-config-value',
+    GET_CONFIG_VALUE: 'get-config-value'
   },
 
   // Window Controls
@@ -186,14 +186,14 @@ const IPC_CHANNELS = {
     UNMAXIMIZE: 'window-unmaximize',
     TOGGLE_MAXIMIZE: 'window-toggle-maximize',
     IS_MAXIMIZED: 'window-is-maximized',
-    CLOSE: 'window-close',
+    CLOSE: 'window-close'
   },
 
   // Menu Actions
   MENU: {
     NEW_ANALYSIS: 'menu-new-analysis',
     UNDO: 'menu-undo',
-    REDO: 'menu-redo',
+    REDO: 'menu-redo'
   },
 
   // ChromaDB Service Status
@@ -204,8 +204,8 @@ const IPC_CHANNELS = {
     FORCE_RECOVERY: 'chromadb-force-recovery',
     HEALTH_CHECK: 'chromadb-health-check',
     // Events (sent from main to renderer)
-    STATUS_CHANGED: 'chromadb-status-changed',
-  },
+    STATUS_CHANGED: 'chromadb-status-changed'
+  }
 };
 
 // System status constants
@@ -213,7 +213,7 @@ const SYSTEM_STATUS = {
   CHECKING: 'checking',
   HEALTHY: 'healthy',
   UNHEALTHY: 'unhealthy',
-  OFFLINE: 'offline',
+  OFFLINE: 'offline'
 };
 
 // Notification types
@@ -221,7 +221,7 @@ const NOTIFICATION_TYPES = {
   INFO: 'info',
   SUCCESS: 'success',
   WARNING: 'warning',
-  ERROR: 'error',
+  ERROR: 'error'
 };
 
 // File processing states
@@ -233,7 +233,7 @@ const FILE_STATES = {
   PROCESSING: 'processing',
   COMPLETED: 'completed',
   ERROR: 'error',
-  CANCELLED: 'cancelled',
+  CANCELLED: 'cancelled'
 };
 
 // Error types
@@ -245,7 +245,7 @@ const ERROR_TYPES = {
   AI_UNAVAILABLE: 'AI_UNAVAILABLE',
   INVALID_FORMAT: 'INVALID_FORMAT',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
-  PROCESSING_FAILED: 'PROCESSING_FAILED',
+  PROCESSING_FAILED: 'PROCESSING_FAILED'
 };
 
 // File system error codes - comprehensive codes for file operations
@@ -307,7 +307,7 @@ const FILE_SYSTEM_ERROR_CODES = {
   NETWORK_ERROR: 'NETWORK_ERROR',
 
   // Generic
-  UNKNOWN_ERROR: 'UNKNOWN_ERROR',
+  UNKNOWN_ERROR: 'UNKNOWN_ERROR'
 };
 
 // Action types for undo/redo
@@ -320,7 +320,7 @@ const ACTION_TYPES = {
   FOLDER_RENAME: 'FOLDER_RENAME',
   BATCH_OPERATION: 'BATCH_OPERATION',
   SETTINGS_CHANGE: 'SETTINGS_CHANGE',
-  ANALYSIS_RESULT: 'ANALYSIS_RESULT',
+  ANALYSIS_RESULT: 'ANALYSIS_RESULT'
 };
 
 // Theme constants
@@ -328,7 +328,7 @@ const THEMES = {
   LIGHT: 'light',
   DARK: 'dark',
   SYSTEM: 'system',
-  AUTO: 'auto', // Alias for 'system' - follow system theme
+  AUTO: 'auto' // Alias for 'system' - follow system theme
 };
 
 // Keyboard shortcuts
@@ -340,14 +340,14 @@ const SHORTCUTS = {
   ESCAPE: 'Escape',
   ENTER: 'Enter',
   TAB: 'Tab',
-  SPACE: 'Space',
+  SPACE: 'Space'
 };
 
 // File size limits
 const LIMITS = {
   MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
   MAX_PATH_LENGTH: 260,
-  MAX_FILENAME_LENGTH: 255,
+  MAX_FILENAME_LENGTH: 255
 };
 
 // Note: TIMEOUTS moved to performanceConstants.js - use that as single source of truth
@@ -383,7 +383,7 @@ const SUPPORTED_TEXT_EXTENSIONS = [
   '.yml',
   '.ini',
   '.conf',
-  '.log',
+  '.log'
 ];
 
 const SUPPORTED_DOCUMENT_EXTENSIONS = [
@@ -405,7 +405,7 @@ const SUPPORTED_DOCUMENT_EXTENSIONS = [
   '.msg',
   // Geospatial packages (treat as documents for analysis)
   '.kml',
-  '.kmz',
+  '.kmz'
 ];
 
 const SUPPORTED_IMAGE_EXTENSIONS = [
@@ -416,7 +416,7 @@ const SUPPORTED_IMAGE_EXTENSIONS = [
   '.bmp',
   '.webp',
   '.tiff',
-  '.svg',
+  '.svg'
 ];
 
 const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv'];
@@ -429,20 +429,14 @@ const ALL_SUPPORTED_EXTENSIONS = [
   ...SUPPORTED_DOCUMENT_EXTENSIONS,
   ...SUPPORTED_IMAGE_EXTENSIONS,
   ...SUPPORTED_VIDEO_EXTENSIONS,
-  ...SUPPORTED_ARCHIVE_EXTENSIONS,
+  ...SUPPORTED_ARCHIVE_EXTENSIONS
 ];
 
 // AI Model configurations - Optimized for speed with smallest available models
 const DEFAULT_AI_MODELS = {
   TEXT_ANALYSIS: 'llama3.2:latest', // 2.0GB - Fastest text model
   IMAGE_ANALYSIS: 'llava:latest', // 4.7GB - Vision capable model
-  FALLBACK_MODELS: [
-    'llama3.2:latest',
-    'gemma3:4b',
-    'llama3',
-    'mistral',
-    'phi3',
-  ],
+  FALLBACK_MODELS: ['llama3.2:latest', 'gemma3:4b', 'llama3', 'mistral', 'phi3']
 };
 
 // AI defaults centralized for analyzers
@@ -452,14 +446,14 @@ const AI_DEFAULTS = {
     HOST: 'http://127.0.0.1:11434',
     MAX_CONTENT_LENGTH: 12000,
     TEMPERATURE: 0.1,
-    MAX_TOKENS: 800,
+    MAX_TOKENS: 800
   },
   IMAGE: {
     MODEL: 'llava:latest',
     HOST: 'http://127.0.0.1:11434',
     TEMPERATURE: 0.2,
-    MAX_TOKENS: 1000,
-  },
+    MAX_TOKENS: 1000
+  }
 };
 
 // File size limits
@@ -467,7 +461,7 @@ const FILE_SIZE_LIMITS = {
   MAX_TEXT_FILE_SIZE: 50 * 1024 * 1024, // 50MB
   MAX_IMAGE_FILE_SIZE: 100 * 1024 * 1024, // 100MB
   MAX_AUDIO_FILE_SIZE: 500 * 1024 * 1024, // 500MB
-  MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024, // 200MB
+  MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024 // 200MB
 };
 
 // Processing limits - Optimized for faster models
@@ -477,18 +471,18 @@ const PROCESSING_LIMITS = {
   MAX_BATCH_OPERATION_SIZE: 1000, // Security limit for batch file operations
   MAX_BATCH_OPERATION_TIME: 600000, // 10 minutes timeout for batch operations
   ANALYSIS_TIMEOUT: 60000, // 1 minute for faster models
-  RETRY_ATTEMPTS: 3,
+  RETRY_ATTEMPTS: 3
 };
 
 // Renderer/UI specific constants
 const UI_WORKFLOW = {
   RESTORE_MAX_AGE_MS: 60 * 60 * 1000, // 1 hour
-  SAVE_DEBOUNCE_MS: 1000, // 1s
+  SAVE_DEBOUNCE_MS: 1000 // 1s
 };
 
 const RENDERER_LIMITS = {
   FILE_STATS_BATCH_SIZE: 25,
-  ANALYSIS_TIMEOUT_MS: 3 * 60 * 1000, // 3 minutes
+  ANALYSIS_TIMEOUT_MS: 3 * 60 * 1000 // 3 minutes
 };
 
 // Export both CommonJS (for main process) and ES6 (for renderer with webpack)
@@ -517,7 +511,7 @@ const exports_object = {
   FILE_SIZE_LIMITS,
   PROCESSING_LIMITS,
   UI_WORKFLOW,
-  RENDERER_LIMITS,
+  RENDERER_LIMITS
 };
 
 // CommonJS export for both Node.js (main process) and webpack (renderer)

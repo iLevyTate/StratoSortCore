@@ -2,10 +2,7 @@ const path = require('path');
 const { performance } = require('perf_hooks');
 const { withErrorLogging, withValidation } = require('./ipcWrappers');
 const { safeFilePath } = require('../utils/safeAccess');
-const {
-  mapFoldersToCategories,
-  getFolderNamesString,
-} = require('../../shared/folderUtils');
+const { mapFoldersToCategories, getFolderNamesString } = require('../../shared/folderUtils');
 const { logger: moduleLogger } = require('../../shared/logger');
 let z;
 try {
@@ -26,14 +23,13 @@ function registerAnalysisIpc({
   analyzeDocumentFile,
   analyzeImageFile,
   getServiceIntegration,
-  getCustomFolders,
+  getCustomFolders
 }) {
   const stringSchema = z ? z.string().min(1) : null;
   const analyzeDocumentHandler =
     z && stringSchema
       ? withValidation(logger, stringSchema, async (event, filePath) => {
-          const serviceIntegration =
-            getServiceIntegration && getServiceIntegration();
+          const serviceIntegration = getServiceIntegration && getServiceIntegration();
           let analysisStarted = false;
           let cleanPath = null;
 
@@ -45,45 +41,29 @@ function registerAnalysisIpc({
             }
 
             const startTime = performance.now();
-            logger.info(
-              `[IPC-ANALYSIS] Starting document analysis for: ${cleanPath}`,
-            );
+            logger.info(`[IPC-ANALYSIS] Starting document analysis for: ${cleanPath}`);
 
             // RESOURCE FIX #8: Mark analysis start and track with flag for cleanup
             try {
-              await serviceIntegration?.processingState?.markAnalysisStart(
-                filePath,
-              );
+              await serviceIntegration?.processingState?.markAnalysisStart(filePath);
               analysisStarted = true;
             } catch (stateError) {
               // Non-fatal if processing state fails to update, but log it
-              logger.warn(
-                '[IPC-ANALYSIS] Failed to mark analysis start:',
-                stateError.message,
-              );
+              logger.warn('[IPC-ANALYSIS] Failed to mark analysis start:', stateError.message);
             }
             // HIGH FIX: Wrap getCustomFolders in try-catch to handle potential errors
             let folders = [];
             try {
-              folders =
-                typeof getCustomFolders === 'function'
-                  ? getCustomFolders()
-                  : [];
+              folders = typeof getCustomFolders === 'function' ? getCustomFolders() : [];
             } catch (folderError) {
-              logger.warn(
-                '[IPC-ANALYSIS] Failed to get custom folders:',
-                folderError.message,
-              );
+              logger.warn('[IPC-ANALYSIS] Failed to get custom folders:', folderError.message);
             }
             const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              getFolderNamesString(folderCategories),
+              getFolderNamesString(folderCategories)
             );
-            const result = await analyzeDocumentFile(
-              filePath,
-              folderCategories,
-            );
+            const result = await analyzeDocumentFile(filePath, folderCategories);
             const duration = performance.now() - startTime;
             systemAnalytics.recordProcessingTime(duration);
             try {
@@ -92,42 +72,36 @@ function registerAnalysisIpc({
                 path: filePath,
                 size: stats.size,
                 lastModified: stats.mtimeMs,
-                mimeType: null,
+                mimeType: null
               };
               const normalized = {
                 subject: result.suggestedName || path.basename(filePath),
                 category: result.category || 'uncategorized',
                 tags: Array.isArray(result.keywords) ? result.keywords : [],
-                confidence:
-                  typeof result.confidence === 'number' ? result.confidence : 0,
+                confidence: typeof result.confidence === 'number' ? result.confidence : 0,
                 summary: result.purpose || result.summary || '',
                 extractedText: result.extractedText || null,
                 model: result.model || 'llm',
                 processingTime: duration,
                 smartFolder: result.smartFolder || null,
                 newName: result.suggestedName || null,
-                renamed: Boolean(result.suggestedName),
+                renamed: Boolean(result.suggestedName)
               };
-              await serviceIntegration?.analysisHistory?.recordAnalysis(
-                fileInfo,
-                normalized,
-              );
+              await serviceIntegration?.analysisHistory?.recordAnalysis(fileInfo, normalized);
             } catch (historyError) {
               logger.warn(
                 '[ANALYSIS-HISTORY] Failed to record document analysis:',
-                historyError.message,
+                historyError.message
               );
             }
 
             // FIX: Mark analysis complete on success (not just cleanup analyzing state)
             try {
-              await serviceIntegration?.processingState?.markAnalysisComplete?.(
-                filePath,
-              );
+              await serviceIntegration?.processingState?.markAnalysisComplete?.(filePath);
             } catch (completeError) {
               logger.debug(
                 '[IPC-ANALYSIS] Failed to mark analysis complete:',
-                completeError.message,
+                completeError.message
               );
             }
 
@@ -142,28 +116,21 @@ function registerAnalysisIpc({
               timestamp: new Date().toISOString(),
               error: error.message,
               errorStack: error.stack,
-              errorCode: error.code,
+              errorCode: error.code
             };
 
-            logger.error(
-              '[IPC-ANALYSIS] Document analysis failed with context:',
-              errorContext,
-            );
+            logger.error('[IPC-ANALYSIS] Document analysis failed with context:', errorContext);
             systemAnalytics.recordFailure(error);
 
             // RESOURCE FIX #8: Mark error in processing state
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisError(
-                filePath,
-                error.message,
-              );
+              await serviceIntegration?.processingState?.markAnalysisError(filePath, error.message);
             } catch (stateError) {
               // Non-fatal if processing state fails to update
               logger.warn('[IPC-ANALYSIS] Failed to mark analysis error:', {
                 filePath,
-                error: stateError.message,
+                error: stateError.message
               });
             }
             return {
@@ -171,33 +138,26 @@ function registerAnalysisIpc({
               suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
               category: 'documents',
               keywords: [],
-              confidence: 0,
+              confidence: 0
             };
           } finally {
             // RESOURCE FIX #8: Guaranteed cleanup in finally block
             // Ensure processing state is cleaned up even if error handling fails
             if (analysisStarted && cleanPath) {
               try {
-                const serviceIntegration =
-                  getServiceIntegration && getServiceIntegration();
+                const serviceIntegration = getServiceIntegration && getServiceIntegration();
                 // Only clean up if the state exists and wasn't already marked as error/complete
-                const currentState =
-                  serviceIntegration?.processingState?.getState?.(filePath);
+                const currentState = serviceIntegration?.processingState?.getState?.(filePath);
                 if (currentState === 'in_progress') {
                   // State is still analyzing, clean it up
-                  await serviceIntegration?.processingState?.clearState?.(
-                    filePath,
-                  );
-                  logger.debug(
-                    '[IPC-ANALYSIS] Cleaned up processing state for:',
-                    filePath,
-                  );
+                  await serviceIntegration?.processingState?.clearState?.(filePath);
+                  logger.debug('[IPC-ANALYSIS] Cleaned up processing state for:', filePath);
                 }
               } catch (cleanupError) {
                 // Log but don't throw - cleanup is best-effort
                 logger.warn(
                   '[IPC-ANALYSIS] Failed to cleanup processing state:',
-                  cleanupError.message,
+                  cleanupError.message
                 );
               }
             }
@@ -206,30 +166,21 @@ function registerAnalysisIpc({
       : withErrorLogging(logger, async (event, filePath) => {
           try {
             const startTime = performance.now();
-            logger.info(
-              `[IPC-ANALYSIS] Starting document analysis for: ${filePath}`,
-            );
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            logger.info(`[IPC-ANALYSIS] Starting document analysis for: ${filePath}`);
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisStart(
-                filePath,
-              );
+              await serviceIntegration?.processingState?.markAnalysisStart(filePath);
             } catch {
               // Non-fatal if processing state fails to update
             }
             // Add null check for getCustomFolders
-            const folders =
-              typeof getCustomFolders === 'function' ? getCustomFolders() : [];
+            const folders = typeof getCustomFolders === 'function' ? getCustomFolders() : [];
             const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              getFolderNamesString(folderCategories),
+              getFolderNamesString(folderCategories)
             );
-            const result = await analyzeDocumentFile(
-              filePath,
-              folderCategories,
-            );
+            const result = await analyzeDocumentFile(filePath, folderCategories);
             const duration = performance.now() - startTime;
             systemAnalytics.recordProcessingTime(duration);
             try {
@@ -238,47 +189,36 @@ function registerAnalysisIpc({
                 path: filePath,
                 size: stats.size,
                 lastModified: stats.mtimeMs,
-                mimeType: null,
+                mimeType: null
               };
               const normalized = {
                 subject: result.suggestedName || path.basename(filePath),
                 category: result.category || 'uncategorized',
                 tags: Array.isArray(result.keywords) ? result.keywords : [],
-                confidence:
-                  typeof result.confidence === 'number' ? result.confidence : 0,
+                confidence: typeof result.confidence === 'number' ? result.confidence : 0,
                 summary: result.purpose || result.summary || '',
                 extractedText: result.extractedText || null,
                 model: result.model || 'llm',
                 processingTime: duration,
                 smartFolder: result.smartFolder || null,
                 newName: result.suggestedName || null,
-                renamed: Boolean(result.suggestedName),
+                renamed: Boolean(result.suggestedName)
               };
-              await serviceIntegration?.analysisHistory?.recordAnalysis(
-                fileInfo,
-                normalized,
-              );
+              await serviceIntegration?.analysisHistory?.recordAnalysis(fileInfo, normalized);
             } catch (historyError) {
               logger.warn(
                 '[ANALYSIS-HISTORY] Failed to record document analysis:',
-                historyError.message,
+                historyError.message
               );
             }
 
             return result;
           } catch (error) {
-            logger.error(
-              `[IPC] Document analysis failed for ${filePath}:`,
-              error,
-            );
+            logger.error(`[IPC] Document analysis failed for ${filePath}:`, error);
             systemAnalytics.recordFailure(error);
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisError(
-                filePath,
-                error.message,
-              );
+              await serviceIntegration?.processingState?.markAnalysisError(filePath, error.message);
             } catch {
               // Non-fatal if processing state fails to update
             }
@@ -287,14 +227,11 @@ function registerAnalysisIpc({
               suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
               category: 'documents',
               keywords: [],
-              confidence: 0,
+              confidence: 0
             };
           }
         });
-  ipcMain.handle(
-    IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT,
-    analyzeDocumentHandler,
-  );
+  ipcMain.handle(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, analyzeDocumentHandler);
 
   const analyzeImageHandler =
     z && stringSchema
@@ -307,27 +244,23 @@ function registerAnalysisIpc({
             logger.info(`[IPC] Starting image analysis for: ${cleanPath}`);
 
             // RESOURCE FIX #8: Mark analysis start and track with flag for cleanup
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisStart(
-                filePath,
-              );
+              await serviceIntegration?.processingState?.markAnalysisStart(filePath);
               analysisStarted = true;
             } catch (stateError) {
               // Non-fatal if processing state fails to update, but log it
               logger.warn(
                 '[IPC-IMAGE-ANALYSIS] Failed to mark analysis start:',
-                stateError.message,
+                stateError.message
               );
             }
             // Add null check for getCustomFolders
-            const folders =
-              typeof getCustomFolders === 'function' ? getCustomFolders() : [];
+            const folders = typeof getCustomFolders === 'function' ? getCustomFolders() : [];
             const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-IMAGE-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              getFolderNamesString(folderCategories),
+              getFolderNamesString(folderCategories)
             );
             const result = await analyzeImageFile(filePath, folderCategories);
             try {
@@ -336,42 +269,36 @@ function registerAnalysisIpc({
                 path: filePath,
                 size: stats.size,
                 lastModified: stats.mtimeMs,
-                mimeType: null,
+                mimeType: null
               };
               const normalized = {
                 subject: result.suggestedName || path.basename(filePath),
                 category: result.category || 'uncategorized',
                 tags: Array.isArray(result.keywords) ? result.keywords : [],
-                confidence:
-                  typeof result.confidence === 'number' ? result.confidence : 0,
+                confidence: typeof result.confidence === 'number' ? result.confidence : 0,
                 summary: result.purpose || result.summary || '',
                 extractedText: result.extractedText || null,
                 model: result.model || 'vision',
                 processingTime: 0,
                 smartFolder: result.smartFolder || null,
                 newName: result.suggestedName || null,
-                renamed: Boolean(result.suggestedName),
+                renamed: Boolean(result.suggestedName)
               };
-              await serviceIntegration?.analysisHistory?.recordAnalysis(
-                fileInfo,
-                normalized,
-              );
+              await serviceIntegration?.analysisHistory?.recordAnalysis(fileInfo, normalized);
             } catch (historyError) {
               logger.warn(
                 '[ANALYSIS-HISTORY] Failed to record image analysis:',
-                historyError.message,
+                historyError.message
               );
             }
 
             // FIX: Mark analysis complete on success
             try {
-              await serviceIntegration?.processingState?.markAnalysisComplete?.(
-                filePath,
-              );
+              await serviceIntegration?.processingState?.markAnalysisComplete?.(filePath);
             } catch (completeError) {
               logger.debug(
                 '[IPC-IMAGE-ANALYSIS] Failed to mark analysis complete:',
-                completeError.message,
+                completeError.message
               );
             }
 
@@ -386,64 +313,47 @@ function registerAnalysisIpc({
               timestamp: new Date().toISOString(),
               error: error.message,
               errorStack: error.stack,
-              errorCode: error.code,
+              errorCode: error.code
             };
 
-            logger.error(
-              '[IPC-IMAGE-ANALYSIS] Image analysis failed with context:',
-              errorContext,
-            );
+            logger.error('[IPC-IMAGE-ANALYSIS] Image analysis failed with context:', errorContext);
 
             // RESOURCE FIX #8: Mark error in processing state
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisError(
-                filePath,
-                error.message,
-              );
+              await serviceIntegration?.processingState?.markAnalysisError(filePath, error.message);
             } catch (stateError) {
               // Non-fatal if processing state fails to update
-              logger.warn(
-                '[IPC-IMAGE-ANALYSIS] Failed to mark analysis error:',
-                {
-                  filePath,
-                  error: stateError.message,
-                },
-              );
+              logger.warn('[IPC-IMAGE-ANALYSIS] Failed to mark analysis error:', {
+                filePath,
+                error: stateError.message
+              });
             }
             return {
               error: error.message,
               suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
               category: 'images',
               keywords: [],
-              confidence: 0,
+              confidence: 0
             };
           } finally {
             // RESOURCE FIX #8: Guaranteed cleanup in finally block
             // Ensure processing state is cleaned up even if error handling fails
             if (analysisStarted && cleanPath) {
               try {
-                const serviceIntegration =
-                  getServiceIntegration && getServiceIntegration();
+                const serviceIntegration = getServiceIntegration && getServiceIntegration();
                 // Only clean up if the state exists and wasn't already marked as error/complete
-                const currentState =
-                  serviceIntegration?.processingState?.getState?.(filePath);
+                const currentState = serviceIntegration?.processingState?.getState?.(filePath);
                 if (currentState === 'in_progress') {
                   // State is still analyzing, clean it up
-                  await serviceIntegration?.processingState?.clearState?.(
-                    filePath,
-                  );
-                  logger.debug(
-                    '[IPC-IMAGE-ANALYSIS] Cleaned up processing state for:',
-                    filePath,
-                  );
+                  await serviceIntegration?.processingState?.clearState?.(filePath);
+                  logger.debug('[IPC-IMAGE-ANALYSIS] Cleaned up processing state for:', filePath);
                 }
               } catch (cleanupError) {
                 // Log but don't throw - cleanup is best-effort
                 logger.warn(
                   '[IPC-IMAGE-ANALYSIS] Failed to cleanup processing state:',
-                  cleanupError.message,
+                  cleanupError.message
                 );
               }
             }
@@ -456,27 +366,23 @@ function registerAnalysisIpc({
             logger.info(`[IPC] Starting image analysis for: ${filePath}`);
 
             // RESOURCE FIX #8: Mark analysis start and track with flag for cleanup
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisStart(
-                filePath,
-              );
+              await serviceIntegration?.processingState?.markAnalysisStart(filePath);
               analysisStarted = true;
             } catch (stateError) {
               // Non-fatal if processing state fails to update, but log it
               logger.warn(
                 '[IPC-IMAGE-ANALYSIS] Failed to mark analysis start:',
-                stateError.message,
+                stateError.message
               );
             }
             // Add null check for getCustomFolders
-            const folders =
-              typeof getCustomFolders === 'function' ? getCustomFolders() : [];
+            const folders = typeof getCustomFolders === 'function' ? getCustomFolders() : [];
             const folderCategories = mapFoldersToCategories(folders);
             logger.info(
               `[IPC-IMAGE-ANALYSIS] Using ${folderCategories.length} smart folders for context:`,
-              getFolderNamesString(folderCategories),
+              getFolderNamesString(folderCategories)
             );
             const result = await analyzeImageFile(filePath, folderCategories);
             try {
@@ -485,30 +391,26 @@ function registerAnalysisIpc({
                 path: filePath,
                 size: stats.size,
                 lastModified: stats.mtimeMs,
-                mimeType: null,
+                mimeType: null
               };
               const normalized = {
                 subject: result.suggestedName || path.basename(filePath),
                 category: result.category || 'uncategorized',
                 tags: Array.isArray(result.keywords) ? result.keywords : [],
-                confidence:
-                  typeof result.confidence === 'number' ? result.confidence : 0,
+                confidence: typeof result.confidence === 'number' ? result.confidence : 0,
                 summary: result.purpose || result.summary || '',
                 extractedText: result.extractedText || null,
                 model: result.model || 'vision',
                 processingTime: 0,
                 smartFolder: result.smartFolder || null,
                 newName: result.suggestedName || null,
-                renamed: Boolean(result.suggestedName),
+                renamed: Boolean(result.suggestedName)
               };
-              await serviceIntegration?.analysisHistory?.recordAnalysis(
-                fileInfo,
-                normalized,
-              );
+              await serviceIntegration?.analysisHistory?.recordAnalysis(fileInfo, normalized);
             } catch (historyError) {
               logger.warn(
                 '[ANALYSIS-HISTORY] Failed to record image analysis:',
-                historyError.message,
+                historyError.message
               );
             }
 
@@ -523,64 +425,47 @@ function registerAnalysisIpc({
               timestamp: new Date().toISOString(),
               error: error.message,
               errorStack: error.stack,
-              errorCode: error.code,
+              errorCode: error.code
             };
 
-            logger.error(
-              '[IPC-IMAGE-ANALYSIS] Image analysis failed with context:',
-              errorContext,
-            );
+            logger.error('[IPC-IMAGE-ANALYSIS] Image analysis failed with context:', errorContext);
 
             // RESOURCE FIX #8: Mark error in processing state
-            const serviceIntegration =
-              getServiceIntegration && getServiceIntegration();
+            const serviceIntegration = getServiceIntegration && getServiceIntegration();
             try {
-              await serviceIntegration?.processingState?.markAnalysisError(
-                filePath,
-                error.message,
-              );
+              await serviceIntegration?.processingState?.markAnalysisError(filePath, error.message);
             } catch (stateError) {
               // Non-fatal if processing state fails to update
-              logger.warn(
-                '[IPC-IMAGE-ANALYSIS] Failed to mark analysis error:',
-                {
-                  filePath,
-                  error: stateError.message,
-                },
-              );
+              logger.warn('[IPC-IMAGE-ANALYSIS] Failed to mark analysis error:', {
+                filePath,
+                error: stateError.message
+              });
             }
             return {
               error: error.message,
               suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
               category: 'images',
               keywords: [],
-              confidence: 0,
+              confidence: 0
             };
           } finally {
             // RESOURCE FIX #8: Guaranteed cleanup in finally block
             // Ensure processing state is cleaned up even if error handling fails
             if (analysisStarted) {
               try {
-                const serviceIntegration =
-                  getServiceIntegration && getServiceIntegration();
+                const serviceIntegration = getServiceIntegration && getServiceIntegration();
                 // Only clean up if the state exists and wasn't already marked as error/complete
-                const currentState =
-                  serviceIntegration?.processingState?.getState?.(filePath);
+                const currentState = serviceIntegration?.processingState?.getState?.(filePath);
                 if (currentState === 'in_progress') {
                   // State is still analyzing, clean it up
-                  await serviceIntegration?.processingState?.clearState?.(
-                    filePath,
-                  );
-                  logger.debug(
-                    '[IPC-IMAGE-ANALYSIS] Cleaned up processing state for:',
-                    filePath,
-                  );
+                  await serviceIntegration?.processingState?.clearState?.(filePath);
+                  logger.debug('[IPC-IMAGE-ANALYSIS] Cleaned up processing state for:', filePath);
                 }
               } catch (cleanupError) {
                 // Log but don't throw - cleanup is best-effort
                 logger.warn(
                   '[IPC-IMAGE-ANALYSIS] Failed to cleanup processing state:',
-                  cleanupError.message,
+                  cleanupError.message
                 );
               }
             }
@@ -596,7 +481,7 @@ function registerAnalysisIpc({
             const text = await tesseract.recognize(filePath, {
               lang: 'eng',
               oem: 1,
-              psm: 3,
+              psm: 3
             });
             const duration = performance.now() - start;
             systemAnalytics.recordProcessingTime(duration);
@@ -613,7 +498,7 @@ function registerAnalysisIpc({
             const text = await tesseract.recognize(filePath, {
               lang: 'eng',
               oem: 1,
-              psm: 3,
+              psm: 3
             });
             const duration = performance.now() - start;
             systemAnalytics.recordProcessingTime(duration);
@@ -624,10 +509,7 @@ function registerAnalysisIpc({
             return { success: false, error: error.message };
           }
         });
-  ipcMain.handle(
-    IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT,
-    extractImageTextHandler,
-  );
+  ipcMain.handle(IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT, extractImageTextHandler);
 }
 
 module.exports = registerAnalysisIpc;

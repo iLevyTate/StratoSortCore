@@ -2,14 +2,10 @@ import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 const VARIANT_TO_CLASS = {
-  default:
-    'surface-card',
-  compact:
-    'surface-card p-[calc(var(--panel-padding)*0.75)]',
-  elevated:
-    'surface-card shadow-lg',
-  hero:
-    'glass-panel rounded-2xl shadow-2xl border border-white/30 p-[calc(var(--panel-padding)*1.35)]',
+  default: 'surface-card',
+  compact: 'surface-card p-[calc(var(--panel-padding)*0.75)]',
+  elevated: 'surface-card shadow-lg',
+  hero: 'glass-panel rounded-2xl shadow-2xl border border-white/30 p-[calc(var(--panel-padding)*1.35)]',
   success:
     'bg-gradient-to-br from-emerald-50 to-green-50 border border-stratosort-success/30 rounded-xl p-[var(--panel-padding)] shadow-sm',
   error:
@@ -17,7 +13,7 @@ const VARIANT_TO_CLASS = {
   warning:
     'bg-gradient-to-br from-amber-50 to-yellow-50 border border-stratosort-warning/30 rounded-xl p-[var(--panel-padding)] shadow-sm',
   interactive:
-    'surface-card transition-transform [transition-duration:var(--duration-fast)] hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]',
+    'surface-card transition-transform [transition-duration:var(--duration-fast)] hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]'
 };
 
 const Card = memo(function Card({
@@ -51,8 +47,8 @@ Card.propTypes = {
     'success',
     'error',
     'warning',
-    'interactive',
+    'interactive'
   ]),
   className: PropTypes.string,
-  children: PropTypes.node,
+  children: PropTypes.node
 };

@@ -22,7 +22,7 @@ describe('Analysis Utils', () => {
         confidence: 0.95,
         suggestedName: 'Q4_Report.pdf',
         extractionMethod: 'text',
-        contentLength: 5000,
+        contentLength: 5000
       };
 
       const result = normalizeAnalysisResult(raw);
@@ -175,7 +175,7 @@ describe('Analysis Utils', () => {
       const raw = {
         category: 'Reports',
         customProperty: 'custom-value',
-        anotherProp: 123,
+        anotherProp: 123
       };
 
       const result = normalizeAnalysisResult(raw);
@@ -187,7 +187,7 @@ describe('Analysis Utils', () => {
     test('normalized values override raw values', () => {
       const raw = {
         category: 'ValidCategory',
-        keywords: ['valid'],
+        keywords: ['valid']
       };
 
       const result = normalizeAnalysisResult(raw);

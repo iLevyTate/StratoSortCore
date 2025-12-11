@@ -13,9 +13,7 @@ const { validateServiceUrl } = require('../configDefaults');
  */
 class ConfigValidationError extends Error {
   constructor(key, value, message) {
-    super(
-      `Configuration error for '${key}': ${message} (got: ${JSON.stringify(value)})`,
-    );
+    super(`Configuration error for '${key}': ${message} (got: ${JSON.stringify(value)})`);
     this.name = 'ConfigValidationError';
     this.key = key;
     this.value = value;
@@ -110,13 +108,13 @@ function validateValue(key, value, schemaDef) {
       if (schemaDef.min !== undefined && value < schemaDef.min) {
         return {
           valid: false,
-          error: `Value ${value} is below minimum ${schemaDef.min}`,
+          error: `Value ${value} is below minimum ${schemaDef.min}`
         };
       }
       if (schemaDef.max !== undefined && value > schemaDef.max) {
         return {
           valid: false,
-          error: `Value ${value} exceeds maximum ${schemaDef.max}`,
+          error: `Value ${value} exceeds maximum ${schemaDef.max}`
         };
       }
       break;
@@ -134,7 +132,7 @@ function validateValue(key, value, schemaDef) {
       if (typeof value !== 'string') {
         return {
           valid: false,
-          error: `Expected URL string, got ${typeof value}`,
+          error: `Expected URL string, got ${typeof value}`
         };
       }
       const urlValidation = validateServiceUrl(value);
@@ -148,7 +146,7 @@ function validateValue(key, value, schemaDef) {
       if (!schemaDef.values.includes(value)) {
         return {
           valid: false,
-          error: `Value must be one of: ${schemaDef.values.join(', ')}`,
+          error: `Value must be one of: ${schemaDef.values.join(', ')}`
         };
       }
       break;
@@ -167,5 +165,5 @@ module.exports = {
   ConfigValidationError,
   parseEnvValue,
   getEnvVar,
-  validateValue,
+  validateValue
 };

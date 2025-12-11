@@ -7,13 +7,8 @@
  * @module analysisHistory/search
  */
 
-const {
-  getSearchCacheKey,
-  maintainCacheSize,
-} = require('./cacheManager');
-const {
-  getInstance: getParallelEmbedding,
-} = require('../ParallelEmbeddingService');
+const { getSearchCacheKey, maintainCacheSize } = require('./cacheManager');
+const { getInstance: getParallelEmbedding } = require('../ParallelEmbeddingService');
 
 // Simple cosine similarity helper
 function cosineSimilarity(a, b) {
@@ -70,31 +65,16 @@ function buildEntryText(entry) {
  * @param {boolean} options.skipCache - Force bypass cache (default: false)
  * @returns {{results: Array, total: number, hasMore: boolean, fromCache: boolean}}
  */
-function searchAnalysis(
-  analysisHistory,
-  cache,
-  searchCacheTTL,
-  query,
-  options = {},
-) {
+function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options = {}) {
   const cacheStore = cache || {};
   cacheStore.entryEmbeddings =
-    cacheStore.entryEmbeddings instanceof Map
-      ? cacheStore.entryEmbeddings
-      : new Map();
+    cacheStore.entryEmbeddings instanceof Map ? cacheStore.entryEmbeddings : new Map();
   cacheStore.searchResults =
-    cacheStore.searchResults instanceof Map
-      ? cacheStore.searchResults
-      : new Map();
+    cacheStore.searchResults instanceof Map ? cacheStore.searchResults : new Map();
   cacheStore.searchResultsMaxSize =
     cacheStore.searchResultsMaxSize || cache?.searchResultsMaxSize || 100;
 
-  const {
-    limit = 100,
-    offset = 0,
-    skipCache = false,
-    semantic = true,
-  } = options;
+  const { limit = 100, offset = 0, skipCache = false, semantic = true } = options;
   const cacheKey = getSearchCacheKey(query, { limit: 1000, offset: 0 }); // Cache full results
   const now = Date.now();
 
@@ -107,7 +87,7 @@ function searchAnalysis(
         results: paginatedResults,
         total: cached.results.length,
         hasMore: offset + limit < cached.results.length,
-        fromCache: true,
+        fromCache: true
       };
     }
     // Cache expired, remove it
@@ -200,10 +180,7 @@ function searchAnalysis(
       }
     }
 
-    if (
-      entry.analysis.category &&
-      entry.analysis.category.toLowerCase().includes(queryLower)
-    ) {
+    if (entry.analysis.category && entry.analysis.category.toLowerCase().includes(queryLower)) {
       score += 5;
     }
 
@@ -219,7 +196,7 @@ function searchAnalysis(
       allResults.push({
         ...entry,
         searchScore: score,
-        semanticScore: sim || 0,
+        semanticScore: sim || 0
       });
     }
   }
@@ -235,7 +212,7 @@ function searchAnalysis(
   // Cache the full results for future pagination requests
   cacheStore.searchResults.set(cacheKey, {
     results: allResults,
-    time: now,
+    time: now
   });
   maintainCacheSize(cacheStore.searchResults, cacheStore.searchResultsMaxSize);
 
@@ -245,10 +222,10 @@ function searchAnalysis(
     results: paginatedResults,
     total: allResults.length,
     hasMore: offset + limit < allResults.length,
-    fromCache: false,
+    fromCache: false
   };
 }
 
 module.exports = {
-  searchAnalysis,
+  searchAnalysis
 };

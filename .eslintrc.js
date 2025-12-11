@@ -64,27 +64,10 @@ module.exports = {
       }
     },
     {
-      // Enforce CommonJS in renderer utility files (non-React)
+      // Allow ES modules in renderer utility files
       files: ['src/renderer/utils/**/*.js'],
       parserOptions: {
-        sourceType: 'script'
-      },
-      rules: {
-        'no-restricted-syntax': [
-          'error',
-          {
-            selector: 'ImportDeclaration',
-            message: 'Use require() instead of ES6 imports in utility files.'
-          },
-          {
-            selector: 'ExportNamedDeclaration',
-            message: 'Use module.exports instead of ES6 exports in utility files.'
-          },
-          {
-            selector: 'ExportDefaultDeclaration',
-            message: 'Use module.exports instead of ES6 exports in utility files.'
-          }
-        ]
+        sourceType: 'module'
       }
     },
     {

@@ -12,7 +12,7 @@ const ICON_SIZES = {
   // Linux and general PNG sizes
   png: [16, 24, 32, 48, 64, 128, 256, 512, 1024],
   // Favicon sizes for web
-  favicon: [16, 32, 48, 64, 96, 128, 192, 256, 512],
+  favicon: [16, 32, 48, 64, 96, 128, 192, 256, 512]
 };
 
 async function ensureDir(dir) {
@@ -24,7 +24,7 @@ async function generatePngIcon(sourcePath, outputPath, size) {
   await sharp(sourcePath)
     .resize(size, size, {
       fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
     })
     .png()
     .toFile(outputPath);
@@ -53,9 +53,7 @@ async function generateWindowsIco(sourcePath, outputDir) {
     require.resolve('png-to-ico');
     const pngToIco = require('png-to-ico');
 
-    const buffers = await Promise.all(
-      pngFiles.map((file) => fs.readFile(file)),
-    );
+    const buffers = await Promise.all(pngFiles.map((file) => fs.readFile(file)));
 
     const icoBuffer = await pngToIco(buffers);
     await fs.writeFile(icoPath, icoBuffer);
@@ -63,9 +61,7 @@ async function generateWindowsIco(sourcePath, outputDir) {
   } catch (e) {
     // Fallback: copy the 256x256 PNG and rename as ICO (basic fallback)
     console.log('  ⚠ png-to-ico not found, using fallback ICO generation');
-    console.log(
-      '  Run "npm install --save-dev png-to-ico" for better ICO support',
-    );
+    console.log('  Run "npm install --save-dev png-to-ico" for better ICO support');
 
     // At minimum, ensure we have an ICO file even if it's not multi-resolution
     const fallbackPng = path.join(tempDir, 'icon_256x256.png');
@@ -99,7 +95,7 @@ async function generateMacIcns(sourcePath, outputDir) {
     { size: 256, name: 'icon_256x256.png' },
     { size: 512, name: 'icon_256x256@2x.png' },
     { size: 512, name: 'icon_512x512.png' },
-    { size: 1024, name: 'icon_512x512@2x.png' },
+    { size: 1024, name: 'icon_512x512@2x.png' }
   ];
 
   for (const { size, name } of sizes) {
@@ -120,9 +116,7 @@ async function generateMacIcns(sourcePath, outputDir) {
     }
   } else {
     console.log('  ⚠ Not on macOS, cannot generate ICNS file');
-    console.log(
-      '    The iconset folder has been created for manual conversion',
-    );
+    console.log('    The iconset folder has been created for manual conversion');
     // Copy largest PNG as placeholder
     const fallbackPng = path.join(iconsetDir, 'icon_512x512@2x.png');
     const placeholderIcns = path.join(icnsDir, 'icon.png');
@@ -193,14 +187,14 @@ async function generateDmgBackground(sourcePath, outputDir) {
   await sharp(sourcePath)
     .resize(200, 200, {
       fit: 'contain',
-      background: { r: 245, g: 245, b: 247, alpha: 1 },
+      background: { r: 245, g: 245, b: 247, alpha: 1 }
     })
     .extend({
       top: 90,
       bottom: 90,
       left: 170,
       right: 170,
-      background: { r: 245, g: 245, b: 247, alpha: 1 },
+      background: { r: 245, g: 245, b: 247, alpha: 1 }
     })
     .png()
     .toFile(dmgBgPath);

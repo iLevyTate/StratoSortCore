@@ -12,23 +12,12 @@ import { PHASES } from '../../shared/constants';
 const serializeLoadedFile = (file) => {
   if (!file || typeof file !== 'object') return file;
   const serialized = { ...file };
-  [
-    'created',
-    'modified',
-    'accessed',
-    'birthtime',
-    'mtime',
-    'atime',
-    'ctime',
-  ].forEach((key) => {
+  ['created', 'modified', 'accessed', 'birthtime', 'mtime', 'atime', 'ctime'].forEach((key) => {
     if (serialized[key]) {
       // Handle both Date objects and date strings that might parse as Date
       if (serialized[key] instanceof Date) {
         serialized[key] = serialized[key].toISOString();
-      } else if (
-        typeof serialized[key] === 'string' &&
-        !serialized[key].endsWith('Z')
-      ) {
+      } else if (typeof serialized[key] === 'string' && !serialized[key].endsWith('Z')) {
         // Already a string but might be invalid format - normalize it
         try {
           const date = new Date(serialized[key]);
@@ -66,35 +55,29 @@ const loadState = () => {
               sidebarOpen: true,
               showSettings: false,
               isLoading: false,
-              activeModal: null,
+              activeModal: null
             },
             files: {
               // Serialize dates in legacy state
-              selectedFiles: serializeLoadedFiles(
-                parsedLegacy.phaseData?.selectedFiles || [],
-              ),
+              selectedFiles: serializeLoadedFiles(parsedLegacy.phaseData?.selectedFiles || []),
               smartFolders: parsedLegacy.phaseData?.smartFolders || [],
-              organizedFiles: serializeLoadedFiles(
-                parsedLegacy.phaseData?.organizedFiles || [],
-              ),
+              organizedFiles: serializeLoadedFiles(parsedLegacy.phaseData?.organizedFiles || []),
               fileStates: parsedLegacy.phaseData?.fileStates || {},
               namingConvention: parsedLegacy.phaseData?.namingConvention || {
                 convention: 'subject-date',
                 dateFormat: 'YYYY-MM-DD',
                 caseConvention: 'kebab-case',
-                separator: '-',
+                separator: '-'
               },
-              watchPaths: [],
+              watchPaths: []
             },
             analysis: {
-              results: serializeLoadedFiles(
-                parsedLegacy.phaseData?.analysisResults || [],
-              ),
+              results: serializeLoadedFiles(parsedLegacy.phaseData?.analysisResults || []),
               isAnalyzing: false,
               analysisProgress: { current: 0, total: 0 },
               currentAnalysisFile: '',
-              stats: null,
-            },
+              stats: null
+            }
           };
         } catch {
           return undefined;
@@ -116,22 +99,22 @@ const loadState = () => {
     return {
       ui: {
         ...parsed.ui,
-        isLoading: false, // Reset loading state
+        isLoading: false // Reset loading state
       },
       files: {
         ...parsed.files,
         // Ensure arrays and serialize dates
         selectedFiles: serializeLoadedFiles(parsed.files.selectedFiles || []),
         organizedFiles: serializeLoadedFiles(parsed.files.organizedFiles || []),
-        smartFolders: parsed.files.smartFolders || [],
+        smartFolders: parsed.files.smartFolders || []
       },
       analysis: {
         ...parsed.analysis,
         isAnalyzing: false, // Reset analysis state on reload
         analysisProgress: { current: 0, total: 0 },
         // Serialize dates in analysis results too
-        results: serializeLoadedFiles(parsed.analysis.results || []),
-      },
+        results: serializeLoadedFiles(parsed.analysis.results || [])
+      }
     };
   } catch (err) {
     return undefined;
@@ -145,7 +128,7 @@ const store = configureStore({
     ui: uiReducer,
     files: filesReducer,
     analysis: analysisReducer,
-    system: systemReducer,
+    system: systemReducer
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -155,7 +138,7 @@ const store = configureStore({
           'analysis/analysisFailure',
           'files/setSelectedFiles',
           'files/addSelectedFiles',
-          'files/setFileStates',
+          'files/setFileStates'
         ],
         // Ignore date fields that might have Date objects from IPC responses
         ignoredActionPaths: [
@@ -166,18 +149,18 @@ const store = configureStore({
           'payload.mtime',
           'payload.atime',
           'payload.ctime',
-          'meta.arg',
+          'meta.arg'
         ],
         ignoredPaths: [
           'analysis.results.error',
           // File date fields - these are serialized but might briefly contain Date objects during IPC
           /files\.selectedFiles\.\d+\.(created|modified|accessed|birthtime|mtime|atime|ctime)/,
           /files\.organizedFiles\.\d+\.(created|modified|accessed|birthtime|mtime|atime|ctime)/,
-          /analysis\.results\.\d+\.(created|modified|accessed|birthtime|mtime|atime|ctime)/,
-        ],
-      },
+          /analysis\.results\.\d+\.(created|modified|accessed|birthtime|mtime|atime|ctime)/
+        ]
+      }
     }).concat(ipcMiddleware, persistenceMiddleware),
-  preloadedState,
+  preloadedState
 });
 
 export default store;

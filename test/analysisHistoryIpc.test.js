@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('registerAnalysisHistoryIpc', () => {
@@ -34,33 +34,33 @@ describe('registerAnalysisHistoryIpc', () => {
     mockIpcMain = {
       handle: jest.fn((channel, handler) => {
         handlers[channel] = handler;
-      }),
+      })
     };
 
     mockAnalysisHistory = {
       getStatistics: jest.fn().mockResolvedValue({
         totalAnalyses: 100,
         successRate: 0.95,
-        averageConfidence: 0.85,
+        averageConfidence: 0.85
       }),
       getRecentAnalysis: jest.fn().mockResolvedValue([
         { id: '1', fileName: 'doc1.pdf', category: 'documents' },
-        { id: '2', fileName: 'img1.jpg', category: 'images' },
+        { id: '2', fileName: 'img1.jpg', category: 'images' }
       ]),
-      searchAnalysis: jest.fn().mockResolvedValue([
-        { id: '1', fileName: 'doc1.pdf', category: 'documents' },
-      ]),
+      searchAnalysis: jest
+        .fn()
+        .mockResolvedValue([{ id: '1', fileName: 'doc1.pdf', category: 'documents' }]),
       getAnalysisByPath: jest.fn().mockResolvedValue({
         id: '1',
         fileName: 'doc1.pdf',
         originalPath: '/test/doc1.pdf',
-        analysis: { category: 'documents', confidence: 0.9 },
+        analysis: { category: 'documents', confidence: 0.9 }
       }),
-      createDefaultStructures: jest.fn().mockResolvedValue(undefined),
+      createDefaultStructures: jest.fn().mockResolvedValue(undefined)
     };
 
     mockGetServiceIntegration = jest.fn().mockReturnValue({
-      analysisHistory: mockAnalysisHistory,
+      analysisHistory: mockAnalysisHistory
     });
 
     mockLogger = {
@@ -68,7 +68,7 @@ describe('registerAnalysisHistoryIpc', () => {
       info: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: jest.fn()
     };
 
     registerAnalysisHistoryIpc = require('../src/main/ipc/analysisHistory');
@@ -79,7 +79,7 @@ describe('registerAnalysisHistoryIpc', () => {
       ipcMain: mockIpcMain,
       IPC_CHANNELS,
       logger: mockLogger,
-      getServiceIntegration: mockGetServiceIntegration,
+      getServiceIntegration: mockGetServiceIntegration
     });
 
     expect(mockIpcMain.handle).toHaveBeenCalledTimes(6);
@@ -91,7 +91,7 @@ describe('registerAnalysisHistoryIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
+        getServiceIntegration: mockGetServiceIntegration
       });
     });
 
@@ -103,9 +103,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns empty object on error', async () => {
-      mockAnalysisHistory.getStatistics.mockRejectedValueOnce(
-        new Error('DB error'),
-      );
+      mockAnalysisHistory.getStatistics.mockRejectedValueOnce(new Error('DB error'));
 
       const result = await handlers[HISTORY_CHANNELS.GET_STATISTICS]({});
 
@@ -127,7 +125,7 @@ describe('registerAnalysisHistoryIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
+        getServiceIntegration: mockGetServiceIntegration
       });
     });
 
@@ -141,17 +139,13 @@ describe('registerAnalysisHistoryIpc', () => {
     test('returns all history when requested', async () => {
       await handlers[HISTORY_CHANNELS.GET]({}, { all: true });
 
-      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(
-        Number.MAX_SAFE_INTEGER,
-      );
+      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(Number.MAX_SAFE_INTEGER);
     });
 
     test('handles limit: "all"', async () => {
       await handlers[HISTORY_CHANNELS.GET]({}, { limit: 'all' });
 
-      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(
-        Number.MAX_SAFE_INTEGER,
-      );
+      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(Number.MAX_SAFE_INTEGER);
     });
 
     test('applies pagination with offset', async () => {
@@ -159,21 +153,16 @@ describe('registerAnalysisHistoryIpc', () => {
         { id: '1' },
         { id: '2' },
         { id: '3' },
-        { id: '4' },
+        { id: '4' }
       ]);
 
-      const result = await handlers[HISTORY_CHANNELS.GET](
-        {},
-        { limit: 2, offset: 1 },
-      );
+      const result = await handlers[HISTORY_CHANNELS.GET]({}, { limit: 2, offset: 1 });
 
       expect(result).toHaveLength(2);
     });
 
     test('returns empty array on error', async () => {
-      mockAnalysisHistory.getRecentAnalysis.mockRejectedValueOnce(
-        new Error('Failed'),
-      );
+      mockAnalysisHistory.getRecentAnalysis.mockRejectedValueOnce(new Error('Failed'));
 
       const result = await handlers[HISTORY_CHANNELS.GET]({}, {});
 
@@ -195,7 +184,7 @@ describe('registerAnalysisHistoryIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
+        getServiceIntegration: mockGetServiceIntegration
       });
     });
 
@@ -207,9 +196,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns empty array on error', async () => {
-      mockAnalysisHistory.searchAnalysis.mockRejectedValueOnce(
-        new Error('Search failed'),
-      );
+      mockAnalysisHistory.searchAnalysis.mockRejectedValueOnce(new Error('Search failed'));
 
       const result = await handlers[HISTORY_CHANNELS.SEARCH]({}, 'query', {});
 
@@ -223,31 +210,21 @@ describe('registerAnalysisHistoryIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
+        getServiceIntegration: mockGetServiceIntegration
       });
     });
 
     test('returns file history', async () => {
-      const result = await handlers[HISTORY_CHANNELS.GET_FILE_HISTORY](
-        {},
-        '/test/doc1.pdf',
-      );
+      const result = await handlers[HISTORY_CHANNELS.GET_FILE_HISTORY]({}, '/test/doc1.pdf');
 
-      expect(mockAnalysisHistory.getAnalysisByPath).toHaveBeenCalledWith(
-        '/test/doc1.pdf',
-      );
+      expect(mockAnalysisHistory.getAnalysisByPath).toHaveBeenCalledWith('/test/doc1.pdf');
       expect(result.fileName).toBe('doc1.pdf');
     });
 
     test('returns null on error', async () => {
-      mockAnalysisHistory.getAnalysisByPath.mockRejectedValueOnce(
-        new Error('Not found'),
-      );
+      mockAnalysisHistory.getAnalysisByPath.mockRejectedValueOnce(new Error('Not found'));
 
-      const result = await handlers[HISTORY_CHANNELS.GET_FILE_HISTORY](
-        {},
-        '/unknown.pdf',
-      );
+      const result = await handlers[HISTORY_CHANNELS.GET_FILE_HISTORY]({}, '/unknown.pdf');
 
       expect(result).toBeNull();
     });
@@ -259,7 +236,7 @@ describe('registerAnalysisHistoryIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
+        getServiceIntegration: mockGetServiceIntegration
       });
     });
 
@@ -271,9 +248,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns error response on failure', async () => {
-      mockAnalysisHistory.createDefaultStructures.mockRejectedValueOnce(
-        new Error('Clear failed'),
-      );
+      mockAnalysisHistory.createDefaultStructures.mockRejectedValueOnce(new Error('Clear failed'));
 
       const result = await handlers[HISTORY_CHANNELS.CLEAR]({});
 
@@ -288,7 +263,7 @@ describe('registerAnalysisHistoryIpc', () => {
         ipcMain: mockIpcMain,
         IPC_CHANNELS,
         logger: mockLogger,
-        getServiceIntegration: mockGetServiceIntegration,
+        getServiceIntegration: mockGetServiceIntegration
       });
 
       mockAnalysisHistory.getRecentAnalysis.mockResolvedValue([
@@ -296,8 +271,8 @@ describe('registerAnalysisHistoryIpc', () => {
           fileName: 'doc1.pdf',
           originalPath: '/test/doc1.pdf',
           analysis: { category: 'documents', confidence: 0.9 },
-          timestamp: Date.now(),
-        },
+          timestamp: Date.now()
+        }
       ]);
     });
 
@@ -327,9 +302,7 @@ describe('registerAnalysisHistoryIpc', () => {
     });
 
     test('returns error on failure', async () => {
-      mockAnalysisHistory.getRecentAnalysis.mockRejectedValueOnce(
-        new Error('Export failed'),
-      );
+      mockAnalysisHistory.getRecentAnalysis.mockRejectedValueOnce(new Error('Export failed'));
 
       const result = await handlers[HISTORY_CHANNELS.EXPORT]({}, 'json');
 

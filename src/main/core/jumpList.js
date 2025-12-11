@@ -37,7 +37,7 @@ function handleCommandLineTasks(args) {
         try {
           win.webContents.send('operation-progress', {
             type: 'hint',
-            message: 'Use Select Directory to analyze a folder',
+            message: 'Use Select Directory to analyze a folder'
           });
           logger.info('[JUMP-LIST] Sent analyze folder hint to renderer');
         } catch (error) {
@@ -71,7 +71,7 @@ function setupWindowsJumpList() {
             program: process.execPath,
             args: '--analyze-folder',
             iconPath: process.execPath,
-            iconIndex: 0,
+            iconIndex: 0
           },
           {
             type: 'task',
@@ -79,10 +79,10 @@ function setupWindowsJumpList() {
             program: process.execPath,
             args: '--open-documents',
             iconPath: process.execPath,
-            iconIndex: 0,
-          },
-        ],
-      },
+            iconIndex: 0
+          }
+        ]
+      }
     ]);
     logger.info('[JUMP-LIST] Windows Jump List configured');
   } catch (error) {
@@ -104,5 +104,5 @@ function initializeJumpList() {
 module.exports = {
   initializeJumpList,
   handleCommandLineTasks,
-  setupWindowsJumpList,
+  setupWindowsJumpList
 };

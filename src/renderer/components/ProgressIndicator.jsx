@@ -12,7 +12,7 @@ function ProgressIndicator() {
   const metadata = PHASE_METADATA[currentPhase] || {
     title: 'Unknown',
     icon: '?',
-    progress: 0,
+    progress: 0
   };
   const phases = Object.values(PHASES);
   const currentIndex = phases.indexOf(currentPhase);
@@ -22,12 +22,7 @@ function ProgressIndicator() {
       case PHASES.SETUP:
         return ['setup-current-folders', 'setup-add-folder'];
       case PHASES.DISCOVER:
-        return [
-          'discover-naming',
-          'discover-selection',
-          'discover-dnd',
-          'discover-results',
-        ];
+        return ['discover-naming', 'discover-selection', 'discover-dnd', 'discover-results'];
       case PHASES.ORGANIZE:
         return [
           'organize-target-folders',
@@ -35,7 +30,7 @@ function ProgressIndicator() {
           'organize-bulk',
           'organize-ready-list',
           'organize-history',
-          'organize-action',
+          'organize-action'
         ];
       case PHASES.COMPLETE:
         return ['complete-summary', 'complete-next-steps'];
@@ -49,15 +44,12 @@ function ProgressIndicator() {
       const keys = getPersistKeysForPhase();
       if (!keys.length) return;
       keys.forEach((k) =>
-        window.localStorage.setItem(
-          `collapsible:${k}`,
-          expand ? 'true' : 'false',
-        ),
+        window.localStorage.setItem(`collapsible:${k}`, expand ? 'true' : 'false')
       );
       window.dispatchEvent(new Event('storage'));
     } catch (error) {
       logger.error('Failed to toggle collapsible sections', {
-        error: error.message,
+        error: error.message
       });
     }
   };
@@ -69,9 +61,7 @@ function ProgressIndicator() {
           <div className="flex items-center gap-[var(--section-gap)]">
             <span className="text-2xl">{metadata.icon}</span>
             <div>
-              <div className="heading-tertiary">
-                {metadata.title}
-              </div>
+              <div className="heading-tertiary">{metadata.title}</div>
               <div className="text-sm text-system-gray-600">
                 Step {currentIndex + 1} of {phases.length}
               </div>
@@ -142,9 +132,7 @@ function ProgressIndicator() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-[var(--section-gap)]">
-              <div className="text-sm text-system-gray-600">
-                {metadata.progress}%
-              </div>
+              <div className="text-sm text-system-gray-600">{metadata.progress}%</div>
               <div className="w-32 h-2 bg-system-gray-200 rounded-[var(--radius-full)] overflow-hidden">
                 <div
                   className="h-full bg-stratosort-blue transition-all [transition-duration:var(--duration-slow)]"

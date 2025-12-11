@@ -6,9 +6,7 @@ import { logger } from '../../../shared/logger';
 const VALID_PHASES = Object.values(PHASES);
 
 function isValidPhase(phase) {
-  return (
-    phase != null && typeof phase === 'string' && VALID_PHASES.includes(phase)
-  );
+  return phase != null && typeof phase === 'string' && VALID_PHASES.includes(phase);
 }
 
 function canTransitionTo(fromPhase, toPhase) {
@@ -61,22 +59,19 @@ const NAVIGATION_RULES = {
   getAllowedTransitions: (fromPhase) => {
     if (!isValidPhase(fromPhase)) return [];
     return PHASE_TRANSITIONS[fromPhase] || [];
-  },
+  }
 };
 
 // Thunk to fetch settings (only once, then cached)
-export const fetchSettings = createAsyncThunk(
-  'ui/fetchSettings',
-  async (_, { getState }) => {
-    const { ui } = getState();
-    // Return cached value if already fetched
-    if (ui.settings) {
-      return ui.settings;
-    }
-    const settings = await window.electronAPI?.settings?.get?.();
-    return settings || {};
-  },
-);
+export const fetchSettings = createAsyncThunk('ui/fetchSettings', async (_, { getState }) => {
+  const { ui } = getState();
+  // Return cached value if already fetched
+  if (ui.settings) {
+    return ui.settings;
+  }
+  const settings = await window.electronAPI?.settings?.get?.();
+  return settings || {};
+});
 
 const initialState = {
   currentPhase: PHASES.WELCOME || 'welcome',
@@ -92,7 +87,7 @@ const initialState = {
   // Navigation state tracking for consistent button states
   isOrganizing: false, // True during file organization operations
   isAnalyzing: false, // True during analysis operations
-  navigationError: null, // Last navigation error for debugging
+  navigationError: null // Last navigation error for debugging
 };
 
 const uiSlice = createSlice({
@@ -111,7 +106,7 @@ const uiSlice = createSlice({
         const error = `Invalid phase attempted: ${String(newPhase)}`;
         logger.error(`[uiSlice] ${error}`, {
           phase: newPhase,
-          validPhases: VALID_PHASES,
+          validPhases: VALID_PHASES
         });
         state.navigationError = error;
         // Reset to safe state instead of corrupting the store
@@ -121,15 +116,12 @@ const uiSlice = createSlice({
       }
 
       // Validate that the transition is allowed (unless it's the same phase)
-      if (
-        state.currentPhase !== newPhase &&
-        !canTransitionTo(state.currentPhase, newPhase)
-      ) {
+      if (state.currentPhase !== newPhase && !canTransitionTo(state.currentPhase, newPhase)) {
         const warning = `Invalid phase transition: ${state.currentPhase} -> ${newPhase}`;
         logger.warn(`[uiSlice] ${warning}`, {
           from: state.currentPhase,
           to: newPhase,
-          allowedTransitions: PHASE_TRANSITIONS[state.currentPhase] || [],
+          allowedTransitions: PHASE_TRANSITIONS[state.currentPhase] || []
         });
         // Still allow the transition but track the warning for debugging
         // This allows flexibility while tracking potential issues
@@ -175,7 +167,7 @@ const uiSlice = createSlice({
     resetUi: () => {
       // Reset to initial state but preserve theme preference
       return {
-        ...initialState,
+        ...initialState
         // Theme persisted separately, so we don't reset it
       };
     },
@@ -199,7 +191,7 @@ const uiSlice = createSlice({
     updateSettings: (state, action) => {
       // CRITICAL FIX: Handle case where settings is null before first fetch
       state.settings = { ...(state.settings || {}), ...action.payload };
-    },
+    }
   },
   extraReducers: (builder) => {
     builder
@@ -216,7 +208,7 @@ const uiSlice = createSlice({
         state.settings = {};
         state.settingsLoading = false;
       });
-  },
+  }
 });
 
 export const {
@@ -231,7 +223,7 @@ export const {
   setOrganizing,
   setAnalyzing,
   clearNavigationError,
-  goBack,
+  goBack
 } = uiSlice.actions;
 
 // Export navigation rules for use in components

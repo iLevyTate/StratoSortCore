@@ -21,16 +21,12 @@ const {
   getStrategyBasedSuggestions,
   getApplicableStrategies,
   selectBestStrategy,
-  getFallbackSuggestion,
+  getFallbackSuggestion
 } = require('./strategies');
 
 const { PatternMatcher } = require('./patternMatcher');
 
-const {
-  rankSuggestions,
-  calculateConfidence,
-  generateExplanation,
-} = require('./suggestionRanker');
+const { rankSuggestions, calculateConfidence, generateExplanation } = require('./suggestionRanker');
 
 const {
   calculateFolderFitScore,
@@ -38,7 +34,7 @@ const {
   suggestNewSmartFolder,
   analyzeFolderStructure,
   identifyMissingCategories,
-  findOverlappingFolders,
+  findOverlappingFolders
 } = require('./folderAnalyzer');
 
 const { getLLMAlternativeSuggestions } = require('./llmSuggester');
@@ -48,7 +44,7 @@ const { PatternPersistence } = require('./persistence');
 const {
   analyzeFilePatterns,
   generateBatchRecommendations,
-  generateFileSummary,
+  generateFileSummary
 } = require('./filePatternAnalyzer');
 
 logger.setContext('OrganizationSuggestionService');
@@ -72,12 +68,7 @@ class OrganizationSuggestionServiceCore {
    * @param {Object} dependencies.settingsService - Settings service
    * @param {Object} dependencies.config - Configuration options
    */
-  constructor({
-    chromaDbService,
-    folderMatchingService,
-    settingsService,
-    config = {},
-  }) {
+  constructor({ chromaDbService, folderMatchingService, settingsService, config = {} }) {
     this.chromaDb = chromaDbService;
     this.folderMatcher = folderMatchingService;
     this.settings = settingsService;
@@ -91,7 +82,7 @@ class OrganizationSuggestionServiceCore {
       maxFeedbackHistory: config.maxFeedbackHistory || 1000,
       llmTemperature: config.llmTemperature || 0.7,
       llmMaxTokens: config.llmMaxTokens || 500,
-      ...config,
+      ...config
     };
 
     // Strategy definitions (from extracted module)
@@ -102,13 +93,13 @@ class OrganizationSuggestionServiceCore {
       maxUserPatterns: config.maxUserPatterns || 5000,
       maxMemoryMB: config.maxMemoryMB || 50,
       patternSimilarityThreshold: this.config.patternSimilarityThreshold,
-      maxFeedbackHistory: this.config.maxFeedbackHistory,
+      maxFeedbackHistory: this.config.maxFeedbackHistory
     });
 
     // Initialize persistence
     this.persistence = new PatternPersistence({
       filename: 'user-patterns.json',
-      saveThrottleMs: 5000,
+      saveThrottleMs: 5000
     });
 
     // Load patterns on initialization
@@ -156,8 +147,7 @@ class OrganizationSuggestionServiceCore {
    * Get organization suggestions for a single file
    */
   async getSuggestionsForFile(file, smartFolders = [], options = {}) {
-    const { includeStructureAnalysis = true, includeAlternatives = true } =
-      options;
+    const { includeStructureAnalysis = true, includeAlternatives = true } = options;
 
     // Validate inputs
     if (!file || typeof file !== 'object') {
@@ -176,9 +166,7 @@ class OrganizationSuggestionServiceCore {
       throw new Error('Invalid file object: file.name exceeds maximum length');
     }
     if (file.extension.length > 50) {
-      throw new Error(
-        'Invalid file object: file.extension exceeds maximum length',
-      );
+      throw new Error('Invalid file object: file.extension exceeds maximum length');
     }
     if (!file.path || typeof file.path !== 'string') {
       throw new Error('Invalid file object: file.path is required');
@@ -191,26 +179,15 @@ class OrganizationSuggestionServiceCore {
       }
 
       // Get suggestions from all sources
-      const semanticMatches = await this.getSemanticFolderMatches(
-        file,
-        smartFolders,
-      );
+      const semanticMatches = await this.getSemanticFolderMatches(file, smartFolders);
       const strategyMatches = getStrategyBasedSuggestions(
         file,
         smartFolders,
-        this.config.strategyMatchThreshold,
+        this.config.strategyMatchThreshold
       );
-      const patternMatches =
-        this.patternMatcher.getPatternBasedSuggestions(file);
-      const llmSuggestions = await getLLMAlternativeSuggestions(
-        file,
-        smartFolders,
-        this.config,
-      );
-      const improvementSuggestions = await this.getImprovementSuggestions(
-        file,
-        smartFolders,
-      );
+      const patternMatches = this.patternMatcher.getPatternBasedSuggestions(file);
+      const llmSuggestions = await getLLMAlternativeSuggestions(file, smartFolders, this.config);
+      const improvementSuggestions = await this.getImprovementSuggestions(file, smartFolders);
 
       // Combine and tag suggestions
       const allSuggestions = [];
@@ -240,10 +217,7 @@ class OrganizationSuggestionServiceCore {
 
       // Ensure files always get a folder
       if (rankedSuggestions.length === 0) {
-        const defaultSuggestion = await this._getDefaultFolderSuggestion(
-          file,
-          smartFolders,
-        );
+        const defaultSuggestion = await this._getDefaultFolderSuggestion(file, smartFolders);
         if (defaultSuggestion) {
           rankedSuggestions.push(defaultSuggestion);
         }
@@ -255,7 +229,7 @@ class OrganizationSuggestionServiceCore {
         folderImprovements = analyzeFolderStructure(
           smartFolders,
           [file],
-          this.patternMatcher.folderUsageStats,
+          this.patternMatcher.folderUsageStats
         );
       }
 
@@ -266,17 +240,14 @@ class OrganizationSuggestionServiceCore {
         strategies: getApplicableStrategies(file),
         confidence: calculateConfidence(rankedSuggestions[0]),
         explanation: generateExplanation(rankedSuggestions[0], file),
-        folderImprovements,
+        folderImprovements
       };
     } catch (error) {
-      logger.error(
-        '[OrganizationSuggestionService] Failed to get suggestions:',
-        error,
-      );
+      logger.error('[OrganizationSuggestionService] Failed to get suggestions:', error);
       return {
         success: false,
         error: error.message,
-        fallback: getFallbackSuggestion(file, smartFolders),
+        fallback: getFallbackSuggestion(file, smartFolders)
       };
     }
   }
@@ -287,20 +258,14 @@ class OrganizationSuggestionServiceCore {
    */
   async _getDefaultFolderSuggestion(file, smartFolders) {
     let defaultFolder = smartFolders.find(
-      (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized',
+      (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized'
     );
 
     if (!defaultFolder) {
-      logger.warn(
-        '[OrganizationSuggestionService] No default folder, creating fallback',
-      );
+      logger.warn('[OrganizationSuggestionService] No default folder, creating fallback');
       try {
         const documentsDir = app.getPath('documents');
-        const defaultFolderPath = path.join(
-          documentsDir,
-          'StratoSort',
-          'Uncategorized',
-        );
+        const defaultFolderPath = path.join(documentsDir, 'StratoSort', 'Uncategorized');
         await fs.mkdir(defaultFolderPath, { recursive: true });
 
         defaultFolder = {
@@ -310,20 +275,17 @@ class OrganizationSuggestionServiceCore {
           description: 'Emergency fallback folder',
           keywords: [],
           isDefault: true,
-          createdAt: new Date().toISOString(),
+          createdAt: new Date().toISOString()
         };
         smartFolders.push(defaultFolder);
       } catch (error) {
-        logger.error(
-          '[OrganizationSuggestionService] Failed to create default folder:',
-          error,
-        );
+        logger.error('[OrganizationSuggestionService] Failed to create default folder:', error);
         const documentsDir = app.getPath('documents');
         defaultFolder = {
           name: 'Uncategorized',
           path: path.join(documentsDir, 'StratoSort', 'Uncategorized'),
           description: 'Default folder for unmatched files',
-          isDefault: true,
+          isDefault: true
         };
       }
     }
@@ -334,10 +296,9 @@ class OrganizationSuggestionServiceCore {
       score: 0.1,
       confidence: 0.1,
       method: 'default_fallback',
-      description:
-        defaultFolder.description || 'Default folder for unmatched files',
+      description: defaultFolder.description || 'Default folder for unmatched files',
       source: 'default',
-      isSmartFolder: true,
+      isSmartFolder: true
     };
   }
 
@@ -352,20 +313,16 @@ class OrganizationSuggestionServiceCore {
       const optimalConcurrency = calculateOptimalConcurrency();
       logger.info('[OrganizationSuggestionService] Processing batch', {
         fileCount: files.length,
-        concurrency: optimalConcurrency,
+        concurrency: optimalConcurrency
       });
 
       const batchResult = await globalBatchProcessor.processBatch(
         files,
         async (file) => {
-          const suggestion = await this.getSuggestionsForFile(
-            file,
-            smartFolders,
-            options,
-          );
+          const suggestion = await this.getSuggestionsForFile(file, smartFolders, options);
           return { file, suggestion };
         },
-        { concurrency: optimalConcurrency, stopOnError: false },
+        { concurrency: optimalConcurrency, stopOnError: false }
       );
 
       // Group results
@@ -373,17 +330,16 @@ class OrganizationSuggestionServiceCore {
         if (result.error) {
           logger.warn('[OrganizationSuggestionService] File failed', {
             file: result.file?.name,
-            error: result.error,
+            error: result.error
           });
           continue;
         }
 
         const { file, suggestion } = result;
         if (!suggestion?.success || !suggestion.primary) {
-          logger.warn(
-            '[OrganizationSuggestionService] Skipping file with no primary suggestion',
-            { file: file?.name },
-          );
+          logger.warn('[OrganizationSuggestionService] Skipping file with no primary suggestion', {
+            file: file?.name
+          });
           continue;
         }
 
@@ -395,7 +351,7 @@ class OrganizationSuggestionServiceCore {
             path: suggestion.primary?.path, // Include path for destination building
             files: [],
             confidence: 0,
-            strategy: suggestion.primary?.strategy,
+            strategy: suggestion.primary?.strategy
           });
         }
 
@@ -403,7 +359,7 @@ class OrganizationSuggestionServiceCore {
         group.files.push({
           ...file,
           suggestion: suggestion.primary,
-          alternatives: suggestion.alternatives,
+          alternatives: suggestion.alternatives
         });
 
         const currentTotal = group.confidence * (group.files.length - 1);
@@ -418,14 +374,14 @@ class OrganizationSuggestionServiceCore {
         groups: Array.from(groups.values()),
         patterns,
         recommendations,
-        suggestedStrategy: selectBestStrategy(patterns, files),
+        suggestedStrategy: selectBestStrategy(patterns, files)
       };
     } catch (error) {
       logger.error('[OrganizationSuggestionService] Batch failed:', error);
       return {
         success: false,
         error: error.message,
-        groups: [],
+        groups: []
       };
     }
   }
@@ -441,13 +397,9 @@ class OrganizationSuggestionServiceCore {
 
       const embeddingPromises = smartFolders.map(async (folder) => {
         try {
-          const folderText = [folder.name, folder.description]
-            .filter(Boolean)
-            .join(' - ');
-          const { vector, model } =
-            await this.folderMatcher.embedText(folderText);
-          const folderId =
-            folder.id || this.folderMatcher.generateFolderId(folder);
+          const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
+          const { vector, model } = await this.folderMatcher.embedText(folderText);
+          const folderId = folder.id || this.folderMatcher.generateFolderId(folder);
 
           return {
             id: folderId,
@@ -456,13 +408,10 @@ class OrganizationSuggestionServiceCore {
             path: folder.path || '',
             vector,
             model,
-            updatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
           };
         } catch (error) {
-          logger.warn(
-            '[OrganizationSuggestionService] Failed to embed folder:',
-            folder.name,
-          );
+          logger.warn('[OrganizationSuggestionService] Failed to embed folder:', folder.name);
           return null;
         }
       });
@@ -476,15 +425,10 @@ class OrganizationSuggestionServiceCore {
       }
 
       const successful = await this.chromaDb.batchUpsertFolders(folderPayloads);
-      logger.debug(
-        `[OrganizationSuggestionService] Upserted ${successful} folder embeddings`,
-      );
+      logger.debug(`[OrganizationSuggestionService] Upserted ${successful} folder embeddings`);
       return successful;
     } catch (error) {
-      logger.warn(
-        '[OrganizationSuggestionService] Failed to ensure embeddings:',
-        error,
-      );
+      logger.warn('[OrganizationSuggestionService] Failed to ensure embeddings:', error);
       return 0;
     }
   }
@@ -500,21 +444,18 @@ class OrganizationSuggestionServiceCore {
       await this.folderMatcher.upsertFileEmbedding(fileId, summary, {
         path: file.path,
         name: file.name,
-        analysis: file.analysis,
+        analysis: file.analysis
       });
 
       const matches = await this.folderMatcher.matchFileToFolders(
         fileId,
-        this.config.topKSemanticMatches,
+        this.config.topKSemanticMatches
       );
 
       const suggestions = [];
       for (const match of matches) {
         const smartFolder = smartFolders.find(
-          (f) =>
-            f.id === match.folderId ||
-            f.name === match.name ||
-            f.path === match.path,
+          (f) => f.id === match.folderId || f.name === match.name || f.path === match.path
         );
 
         if (smartFolder || match.score > this.config.semanticMatchThreshold) {
@@ -525,17 +466,14 @@ class OrganizationSuggestionServiceCore {
             confidence: match.score,
             description: smartFolder?.description || match.description,
             method: 'semantic_embedding',
-            isSmartFolder: !!smartFolder,
+            isSmartFolder: !!smartFolder
           });
         }
       }
 
       return suggestions;
     } catch (error) {
-      logger.warn(
-        '[OrganizationSuggestionService] Semantic matching failed:',
-        error,
-      );
+      logger.warn('[OrganizationSuggestionService] Semantic matching failed:', error);
       return [];
     }
   }
@@ -557,17 +495,13 @@ class OrganizationSuggestionServiceCore {
           confidence: fitScore,
           description: folder.description,
           improvement: suggestFolderImprovement(file, folder),
-          method: 'folder_improvement',
+          method: 'folder_improvement'
         });
       }
     }
 
     if (suggestions.length === 0) {
-      const newFolderSuggestion = suggestNewSmartFolder(
-        file,
-        smartFolders,
-        getFileTypeCategory,
-      );
+      const newFolderSuggestion = suggestNewSmartFolder(file, smartFolders, getFileTypeCategory);
       if (newFolderSuggestion) {
         suggestions.push(newFolderSuggestion);
       }
@@ -589,11 +523,7 @@ class OrganizationSuggestionServiceCore {
    * Analyze folder structure
    */
   async analyzeFolderStructure(smartFolders, files = []) {
-    return analyzeFolderStructure(
-      smartFolders,
-      files,
-      this.patternMatcher.folderUsageStats,
-    );
+    return analyzeFolderStructure(smartFolders, files, this.patternMatcher.folderUsageStats);
   }
 
   /**

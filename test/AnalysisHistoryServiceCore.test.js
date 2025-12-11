@@ -6,8 +6,8 @@
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/mock/userData'),
-  },
+    getPath: jest.fn(() => '/mock/userData')
+  }
 }));
 
 // Mock logger
@@ -17,15 +17,15 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   LIMITS: {
-    MAX_HISTORY_ENTRIES: 10000,
-  },
+    MAX_HISTORY_ENTRIES: 10000
+  }
 }));
 
 // Mock cacheManager
@@ -35,7 +35,7 @@ const mockCacheStore = {
   search: new Map(),
   category: new Map(),
   tag: new Map(),
-  incrementalStats: null,
+  incrementalStats: null
 };
 
 jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
@@ -43,12 +43,12 @@ jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
   getCacheTTLs: jest.fn(() => ({
     CACHE_TTL_MS: 60000,
     STATS_CACHE_TTL_MS: 30000,
-    SEARCH_CACHE_TTL_MS: 10000,
+    SEARCH_CACHE_TTL_MS: 10000
   })),
   invalidateCachesOnAdd: jest.fn(),
   updateIncrementalStatsOnAdd: jest.fn(),
   clearCaches: jest.fn(),
-  warmCache: jest.fn(),
+  warmCache: jest.fn()
 }));
 
 // Mock persistence
@@ -60,7 +60,7 @@ jest.mock('../src/main/services/analysisHistory/persistence', () => ({
     entries: {},
     totalAnalyzed: 0,
     totalSize: 0,
-    metadata: { totalEntries: 0 },
+    metadata: { totalEntries: 0 }
   }),
   saveHistory: jest.fn().mockResolvedValue(undefined),
   loadIndex: jest.fn().mockResolvedValue({
@@ -68,14 +68,14 @@ jest.mock('../src/main/services/analysisHistory/persistence', () => ({
     byPath: {},
     byCategory: {},
     byTag: {},
-    byDate: {},
+    byDate: {}
   }),
   saveIndex: jest.fn().mockResolvedValue(undefined),
   createDefaultStructures: jest.fn().mockResolvedValue({
     config: { schemaVersion: '1.0.0' },
     history: { entries: {}, totalAnalyzed: 0, totalSize: 0, metadata: {} },
-    index: { byPath: {}, byCategory: {}, byTag: {}, byDate: {} },
-  }),
+    index: { byPath: {}, byCategory: {}, byTag: {}, byDate: {} }
+  })
 }));
 
 // Mock indexManager
@@ -85,17 +85,15 @@ jest.mock('../src/main/services/analysisHistory/indexManager', () => ({
     byPath: {},
     byCategory: {},
     byTag: {},
-    byDate: {},
+    byDate: {}
   })),
-  generateFileHash: jest.fn(
-    (path, size, lastModified) => `hash-${path}-${size}-${lastModified}`,
-  ),
-  updateIndexes: jest.fn(),
+  generateFileHash: jest.fn((path, size, lastModified) => `hash-${path}-${size}-${lastModified}`),
+  updateIndexes: jest.fn()
 }));
 
 // Mock search
 jest.mock('../src/main/services/analysisHistory/search', () => ({
-  searchAnalysis: jest.fn().mockResolvedValue([]),
+  searchAnalysis: jest.fn().mockResolvedValue([])
 }));
 
 // Mock statistics
@@ -103,12 +101,12 @@ jest.mock('../src/main/services/analysisHistory/statistics', () => ({
   getStatistics: jest.fn().mockResolvedValue({
     totalFiles: 0,
     totalSize: 0,
-    categories: {},
+    categories: {}
   }),
   getQuickStats: jest.fn().mockResolvedValue({
     totalFiles: 0,
-    recentCount: 0,
-  }),
+    recentCount: 0
+  })
 }));
 
 // Mock queries
@@ -119,13 +117,13 @@ jest.mock('../src/main/services/analysisHistory/queries', () => ({
   getRecentAnalysis: jest.fn().mockResolvedValue([]),
   getAnalysisByDateRange: jest.fn().mockResolvedValue([]),
   getCategories: jest.fn().mockResolvedValue([]),
-  getTags: jest.fn().mockResolvedValue([]),
+  getTags: jest.fn().mockResolvedValue([])
 }));
 
 // Mock maintenance
 jest.mock('../src/main/services/analysisHistory/maintenance', () => ({
   performMaintenanceIfNeeded: jest.fn().mockResolvedValue(undefined),
-  migrateHistory: jest.fn((history) => history),
+  migrateHistory: jest.fn((history) => history)
 }));
 
 describe('AnalysisHistoryServiceCore', () => {
@@ -203,16 +201,14 @@ describe('AnalysisHistoryServiceCore', () => {
 
       await service.initialize();
 
-      const {
-        loadConfig,
-      } = require('../src/main/services/analysisHistory/persistence');
+      const { loadConfig } = require('../src/main/services/analysisHistory/persistence');
       expect(loadConfig).not.toHaveBeenCalled();
     });
 
     test('creates default structures on error', async () => {
       const {
         loadConfig,
-        createDefaultStructures,
+        createDefaultStructures
       } = require('../src/main/services/analysisHistory/persistence');
       loadConfig.mockRejectedValueOnce(new Error('Load failed'));
 
@@ -228,7 +224,7 @@ describe('AnalysisHistoryServiceCore', () => {
       path: '/test/file.pdf',
       size: 1024,
       lastModified: '2024-01-01T00:00:00Z',
-      mimeType: 'application/pdf',
+      mimeType: 'application/pdf'
     };
 
     const mockAnalysisResults = {
@@ -238,7 +234,7 @@ describe('AnalysisHistoryServiceCore', () => {
       confidence: 0.85,
       summary: 'A test document',
       model: 'test-model',
-      processingTime: 500,
+      processingTime: 500
     };
 
     beforeEach(async () => {
@@ -246,10 +242,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('records analysis entry', async () => {
-      const id = await service.recordAnalysis(
-        mockFileInfo,
-        mockAnalysisResults,
-      );
+      const id = await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
 
       expect(id).toBeDefined();
       expect(typeof id).toBe('string');
@@ -263,9 +256,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('updates indexes', async () => {
-      const {
-        updateIndexes,
-      } = require('../src/main/services/analysisHistory/indexManager');
+      const { updateIndexes } = require('../src/main/services/analysisHistory/indexManager');
 
       await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
 
@@ -274,7 +265,7 @@ describe('AnalysisHistoryServiceCore', () => {
 
     test('invalidates caches', async () => {
       const {
-        invalidateCachesOnAdd,
+        invalidateCachesOnAdd
       } = require('../src/main/services/analysisHistory/cacheManager');
 
       await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
@@ -285,7 +276,7 @@ describe('AnalysisHistoryServiceCore', () => {
     test('saves history and index', async () => {
       const {
         saveHistory,
-        saveIndex,
+        saveIndex
       } = require('../src/main/services/analysisHistory/persistence');
 
       await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
@@ -296,7 +287,7 @@ describe('AnalysisHistoryServiceCore', () => {
 
     test('performs maintenance if needed', async () => {
       const {
-        performMaintenanceIfNeeded,
+        performMaintenanceIfNeeded
       } = require('../src/main/services/analysisHistory/maintenance');
 
       await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
@@ -311,9 +302,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('delegates to search helper', async () => {
-      const {
-        searchAnalysis,
-      } = require('../src/main/services/analysisHistory/search');
+      const { searchAnalysis } = require('../src/main/services/analysisHistory/search');
       searchAnalysis.mockResolvedValueOnce([{ id: 'result-1' }]);
 
       const results = await service.searchAnalysis('test query');
@@ -323,9 +312,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('passes options to search', async () => {
-      const {
-        searchAnalysis,
-      } = require('../src/main/services/analysisHistory/search');
+      const { searchAnalysis } = require('../src/main/services/analysisHistory/search');
 
       await service.searchAnalysis('query', { limit: 10 });
 
@@ -334,7 +321,7 @@ describe('AnalysisHistoryServiceCore', () => {
         expect.anything(),
         expect.anything(),
         'query',
-        { limit: 10 },
+        { limit: 10 }
       );
     });
   });
@@ -345,9 +332,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns analysis for path', async () => {
-      const {
-        getAnalysisByPath,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getAnalysisByPath } = require('../src/main/services/analysisHistory/queries');
       getAnalysisByPath.mockResolvedValueOnce({ id: 'entry-1' });
 
       const result = await service.getAnalysisByPath('/test/file.pdf');
@@ -362,9 +347,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns entries for category', async () => {
-      const {
-        getAnalysisByCategory,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getAnalysisByCategory } = require('../src/main/services/analysisHistory/queries');
       getAnalysisByCategory.mockResolvedValueOnce([{ id: 'entry-1' }]);
 
       const results = await service.getAnalysisByCategory('documents');
@@ -379,9 +362,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns entries for tag', async () => {
-      const {
-        getAnalysisByTag,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getAnalysisByTag } = require('../src/main/services/analysisHistory/queries');
       getAnalysisByTag.mockResolvedValueOnce([{ id: 'entry-1' }]);
 
       const results = await service.getAnalysisByTag('important');
@@ -396,9 +377,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns recent entries with defaults', async () => {
-      const {
-        getRecentAnalysis,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getRecentAnalysis } = require('../src/main/services/analysisHistory/queries');
       getRecentAnalysis.mockResolvedValueOnce([{ id: 'recent-1' }]);
 
       const results = await service.getRecentAnalysis();
@@ -408,15 +387,13 @@ describe('AnalysisHistoryServiceCore', () => {
         expect.anything(),
         expect.anything(),
         50,
-        0,
+        0
       );
       expect(results).toEqual([{ id: 'recent-1' }]);
     });
 
     test('respects limit and offset', async () => {
-      const {
-        getRecentAnalysis,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getRecentAnalysis } = require('../src/main/services/analysisHistory/queries');
 
       await service.getRecentAnalysis(20, 10);
 
@@ -425,7 +402,7 @@ describe('AnalysisHistoryServiceCore', () => {
         expect.anything(),
         expect.anything(),
         20,
-        10,
+        10
       );
     });
   });
@@ -436,9 +413,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns statistics', async () => {
-      const {
-        getStatistics,
-      } = require('../src/main/services/analysisHistory/statistics');
+      const { getStatistics } = require('../src/main/services/analysisHistory/statistics');
       getStatistics.mockResolvedValueOnce({ totalFiles: 100 });
 
       const stats = await service.getStatistics();
@@ -453,9 +428,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns quick stats', async () => {
-      const {
-        getQuickStats,
-      } = require('../src/main/services/analysisHistory/statistics');
+      const { getQuickStats } = require('../src/main/services/analysisHistory/statistics');
       getQuickStats.mockResolvedValueOnce({ totalFiles: 50 });
 
       const stats = await service.getQuickStats();
@@ -470,14 +443,12 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns entries in date range', async () => {
-      const {
-        getAnalysisByDateRange,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getAnalysisByDateRange } = require('../src/main/services/analysisHistory/queries');
       getAnalysisByDateRange.mockResolvedValueOnce([{ id: 'entry-1' }]);
 
       const results = await service.getAnalysisByDateRange(
         new Date('2024-01-01'),
-        new Date('2024-12-31'),
+        new Date('2024-12-31')
       );
 
       expect(results).toEqual([{ id: 'entry-1' }]);
@@ -490,9 +461,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns available categories', async () => {
-      const {
-        getCategories,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getCategories } = require('../src/main/services/analysisHistory/queries');
       getCategories.mockResolvedValueOnce(['documents', 'images']);
 
       const categories = await service.getCategories();
@@ -507,9 +476,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('returns available tags', async () => {
-      const {
-        getTags,
-      } = require('../src/main/services/analysisHistory/queries');
+      const { getTags } = require('../src/main/services/analysisHistory/queries');
       getTags.mockResolvedValueOnce(['important', 'work']);
 
       const tags = await service.getTags();
@@ -524,9 +491,7 @@ describe('AnalysisHistoryServiceCore', () => {
     });
 
     test('warms cache', async () => {
-      const {
-        warmCache,
-      } = require('../src/main/services/analysisHistory/cacheManager');
+      const { warmCache } = require('../src/main/services/analysisHistory/cacheManager');
 
       await service.warmCache();
 
@@ -536,9 +501,7 @@ describe('AnalysisHistoryServiceCore', () => {
 
   describe('clearCaches', () => {
     test('clears all caches', () => {
-      const {
-        clearCaches,
-      } = require('../src/main/services/analysisHistory/cacheManager');
+      const { clearCaches } = require('../src/main/services/analysisHistory/cacheManager');
 
       service.clearCaches();
 

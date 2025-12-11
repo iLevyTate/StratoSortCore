@@ -7,18 +7,9 @@ module.exports = {
   displayName: 'Stratosort Tests',
   testEnvironment: 'jsdom',
   roots: ['<rootDir>'],
-  testMatch: [
-    '**/__tests__/**/*.+(js|ts|tsx)',
-    '**/*.(test|spec).+(js|ts|tsx)',
-  ],
+  testMatch: ['**/__tests__/**/*.+(js|ts|tsx)', '**/*.(test|spec).+(js|ts|tsx)'],
   // Exclude specialized test directories (they have their own configs)
-  testPathIgnorePatterns: [
-    '/node_modules/',
-    '/stress/',
-    '/performance/',
-    '/e2e/',
-    '/manual/',
-  ],
+  testPathIgnorePatterns: ['/node_modules/', '/stress/', '/performance/', '/e2e/', '/manual/'],
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': [
       'babel-jest',
@@ -26,10 +17,10 @@ module.exports = {
         presets: [
           ['@babel/preset-env', { targets: { node: 'current' } }],
           '@babel/preset-react',
-          '@babel/preset-typescript',
-        ],
-      },
-    ],
+          '@babel/preset-typescript'
+        ]
+      }
+    ]
   },
   // No transforms needed for plain JS
   collectCoverageFrom: ['../src/**/*.js', '!../src/**/node_modules/**'],
@@ -56,9 +47,9 @@ module.exports = {
     '(.*)services/StartupManager$': '$1services/startup',
     '(.*)analysis/EmbeddingQueue$': '$1analysis/embeddingQueue',
     '(.*)shared/config$': '$1shared/config',
-    '(.*)shared/utils$': '$1shared/edgeCaseUtils',
+    '(.*)shared/utils$': '$1shared/edgeCaseUtils'
   },
 
   // Global setup for DOM-dependent packages
-  setupFiles: ['<rootDir>/test-globals.js'],
+  setupFiles: ['<rootDir>/test-globals.js']
 };

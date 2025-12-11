@@ -6,7 +6,7 @@
 // Mock dependencies
 jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
   getSearchCacheKey: jest.fn((query, options) => `${query}:${options.limit}:${options.offset}`),
-  maintainCacheSize: jest.fn(),
+  maintainCacheSize: jest.fn()
 }));
 
 describe('search', () => {
@@ -29,8 +29,8 @@ describe('search', () => {
             subject: 'Monthly invoice',
             summary: 'Invoice for services rendered',
             tags: ['billing', 'finance'],
-            category: 'financial',
-          },
+            category: 'financial'
+          }
         },
         2: {
           fileName: 'report.pdf',
@@ -39,8 +39,8 @@ describe('search', () => {
             subject: 'Quarterly report',
             summary: 'Q4 2023 financial summary',
             tags: ['quarterly', 'finance'],
-            category: 'reports',
-          },
+            category: 'reports'
+          }
         },
         3: {
           fileName: 'contract.pdf',
@@ -50,17 +50,17 @@ describe('search', () => {
             summary: 'Legal contract for consulting services',
             tags: ['legal', 'agreement'],
             category: 'legal',
-            extractedText: 'This is a long contract text',
-          },
-        },
-      },
+            extractedText: 'This is a long contract text'
+          }
+        }
+      }
     });
 
     test('finds entries by fileName', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'invoice');
@@ -74,7 +74,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'quarterly');
@@ -87,7 +87,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'consulting');
@@ -100,7 +100,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'legal');
@@ -113,7 +113,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       // Search for category 'legal' which only appears in one entry
@@ -127,7 +127,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'contract text');
@@ -140,7 +140,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'finance');
@@ -152,26 +152,24 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'finance');
 
       // Results should be sorted by search score
-      expect(result.results[0].searchScore).toBeGreaterThanOrEqual(
-        result.results[1].searchScore
-      );
+      expect(result.results[0].searchScore).toBeGreaterThanOrEqual(result.results[1].searchScore);
     });
 
     test('respects limit parameter', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'finance', {
-        limit: 1,
+        limit: 1
       });
 
       expect(result.results.length).toBe(1);
@@ -183,12 +181,12 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'finance', {
         limit: 1,
-        offset: 1,
+        offset: 1
       });
 
       expect(result.results.length).toBe(1);
@@ -199,10 +197,8 @@ describe('search', () => {
       const history = createHistory();
       const cachedResults = [{ fileName: 'cached.pdf', searchScore: 10 }];
       const cache = {
-        searchResults: new Map([
-          ['test:1000:0', { results: cachedResults, time: Date.now() }],
-        ]),
-        searchResultsMaxSize: 50,
+        searchResults: new Map([['test:1000:0', { results: cachedResults, time: Date.now() }]]),
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'test');
@@ -215,14 +211,12 @@ describe('search', () => {
       const history = createHistory();
       const cachedResults = [{ fileName: 'cached.pdf', searchScore: 10 }];
       const cache = {
-        searchResults: new Map([
-          ['invoice:1000:0', { results: cachedResults, time: Date.now() }],
-        ]),
-        searchResultsMaxSize: 50,
+        searchResults: new Map([['invoice:1000:0', { results: cachedResults, time: Date.now() }]]),
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'invoice', {
-        skipCache: true,
+        skipCache: true
       });
 
       expect(result.fromCache).toBe(false);
@@ -233,9 +227,9 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map([
-          ['test:1000:0', { results: [], time: Date.now() - 120000 }], // Expired
+          ['test:1000:0', { results: [], time: Date.now() - 120000 }] // Expired
         ]),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       search.searchAnalysis(history, cache, 60000, 'test');
@@ -247,7 +241,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'nonexistent');
@@ -263,18 +257,18 @@ describe('search', () => {
           1: {
             fileName: 'test',
             timestamp: '2024-01-15T10:00:00Z',
-            analysis: { subject: 'test file', tags: [] },
+            analysis: { subject: 'test file', tags: [] }
           },
           2: {
             fileName: 'test.pdf',
             timestamp: '2024-01-20T10:00:00Z',
-            analysis: { subject: 'another', tags: [] },
-          },
-        },
+            analysis: { subject: 'another', tags: [] }
+          }
+        }
       };
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'test');
@@ -289,13 +283,13 @@ describe('search', () => {
           1: {
             fileName: 'test.pdf',
             timestamp: '2024-01-15T10:00:00Z',
-            analysis: { subject: 'test', tags: null },
-          },
-        },
+            analysis: { subject: 'test', tags: null }
+          }
+        }
       };
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'test');
@@ -309,13 +303,13 @@ describe('search', () => {
           1: {
             fileName: 'test.pdf',
             timestamp: '2024-01-15T10:00:00Z',
-            analysis: { subject: 'test', tags: [] },
-          },
-        },
+            analysis: { subject: 'test', tags: [] }
+          }
+        }
       };
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'test');
@@ -327,7 +321,7 @@ describe('search', () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
-        searchResultsMaxSize: 50,
+        searchResultsMaxSize: 50
       };
 
       const result = search.searchAnalysis(history, cache, 60000, 'INVOICE');

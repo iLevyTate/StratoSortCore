@@ -5,15 +5,15 @@
 
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/tmp/mock-electron'),
-  },
+    getPath: jest.fn().mockReturnValue('/tmp/mock-electron')
+  }
 }));
 
 // Mock ollama
 jest.mock('ollama', () => ({
   Ollama: jest.fn().mockImplementation(() => ({
-    list: jest.fn().mockResolvedValue({ models: [] }),
-  })),
+    list: jest.fn().mockResolvedValue({ models: [] })
+  }))
 }));
 
 // Mock fs
@@ -22,8 +22,8 @@ jest.mock('fs', () => ({
     readFile: jest.fn(),
     writeFile: jest.fn().mockResolvedValue(),
     rename: jest.fn().mockResolvedValue(),
-    unlink: jest.fn().mockResolvedValue(),
-  },
+    unlink: jest.fn().mockResolvedValue()
+  }
 }));
 
 describe('ollamaUtils', () => {
@@ -148,8 +148,8 @@ describe('ollamaUtils', () => {
         JSON.stringify({
           selectedTextModel: 'llama3',
           selectedVisionModel: 'llava',
-          host: 'http://localhost:11434',
-        }),
+          host: 'http://localhost:11434'
+        })
       );
 
       const config = await ollamaUtils.loadOllamaConfig();
@@ -177,14 +177,61 @@ describe('ollamaUtils', () => {
     test('supports legacy selectedModel key', async () => {
       fs.readFile.mockResolvedValue(
         JSON.stringify({
-          selectedModel: 'llama2',
-        }),
+          selectedModel: 'llama2'
+        })
       );
 
       await ollamaUtils.loadOllamaConfig();
 
       // The function migrates legacy selectedModel to internal state
       expect(ollamaUtils.getOllamaModel()).toBe('llama2');
+    });
+
+    test('does not update state when applySideEffects is false', async () => {
+      fs.readFile.mockResolvedValue(
+        JSON.stringify({
+          selectedTextModel: 'new-model',
+          host: 'http://new-host:11434'
+        })
+      );
+
+      // Set initial state via setter (which updates state)
+      // Note: setters mock internal fs calls so we need to be careful with mocks here
+      // But we just want to verify state doesn't change after loadOllamaConfig(false)
+
+      const config = await ollamaUtils.loadOllamaConfig(false);
+
+      expect(config.selectedTextModel).toBe('new-model');
+      expect(config.host).toBe('http://new-host:11434');
+
+      // Verify state was NOT updated from file
+      // Since we didn't explicitly set state before, checking against what's in file vs what's in memory
+      // We need to ensure memory != file for this test to be valid.
+      // However, since we can't easily reset module state, let's rely on the fact that
+      // previous tests might have set it or it's default.
+      // Let's explicitly set it first.
+
+      // Reset mocks for this specific flow to avoid recursion issues if any
+      fs.readFile.mockResolvedValue(
+        JSON.stringify({
+          selectedTextModel: 'new-model',
+          host: 'http://new-host:11434'
+        })
+      );
+
+      // Check that calling with false doesn't change global variable
+      // (Assuming current global is NOT new-host, which it shouldn't be unless previous test set it)
+      const currentHost = ollamaUtils.getOllamaHost();
+      if (currentHost === 'http://new-host:11434') {
+        // If it is, we can't test "no change". But normally it defaults to localhost or what previous test set.
+        // Let's force set it to something else first?
+        // But setOllamaHost calls loadOllamaConfig... circular dependency in test setup?
+        // No, setOllamaHost calls loadOllamaConfig(false) now, so it's safe.
+      }
+
+      await ollamaUtils.setOllamaHost('http://safe-host:11434');
+      await ollamaUtils.loadOllamaConfig(false);
+      expect(ollamaUtils.getOllamaHost()).toBe('http://safe-host:11434');
     });
   });
 

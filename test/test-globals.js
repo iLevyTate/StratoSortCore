@@ -27,8 +27,8 @@ global.window = global.window || {
   addEventListener: jest.fn(),
   removeEventListener: jest.fn(),
   navigator: {
-    userAgent: 'Test',
-  },
+    userAgent: 'Test'
+  }
 };
 
 global.document = global.document || {
@@ -40,16 +40,16 @@ global.document = global.document || {
     removeEventListener: jest.fn(),
     style: {},
     setAttribute: jest.fn(),
-    getAttribute: jest.fn(),
+    getAttribute: jest.fn()
   })),
   body: {
     appendChild: jest.fn(),
-    removeChild: jest.fn(),
+    removeChild: jest.fn()
   },
   head: {
     appendChild: jest.fn(),
-    removeChild: jest.fn(),
-  },
+    removeChild: jest.fn()
+  }
 };
 
 // Mock Element constructor that officeparser checks for
@@ -83,7 +83,7 @@ global.console = {
   error: jest.fn((message) => {
     if (typeof message === 'string' && message.includes('pdfjs')) return;
     originalConsole.error(message);
-  }),
+  })
 };
 
 // Mock fetch for any network-dependent packages
@@ -92,6 +92,6 @@ global.fetch = jest.fn(() =>
     ok: true,
     json: () => Promise.resolve({}),
     text: () => Promise.resolve(''),
-    blob: () => Promise.resolve(new Blob()),
-  }),
+    blob: () => Promise.resolve(new Blob())
+  })
 );

@@ -21,8 +21,7 @@ async function testBasicFileMove() {
 
     // Create a test file
     const sourceFile = path.join(testDir, 'test-document.txt');
-    const testContent =
-      'This is a test document.\nCreated at: ' + new Date().toISOString();
+    const testContent = 'This is a test document.\nCreated at: ' + new Date().toISOString();
     await fs.writeFile(sourceFile, testContent);
     console.log('✅ Created test file:', sourceFile);
 
@@ -125,20 +124,12 @@ async function runFileTests() {
   const documentsResult = await testDocumentsDirectory();
 
   console.log('\n📊 TEST SUMMARY:');
-  console.log(
-    '  Basic File Move:',
-    basicMoveResult ? '✅ WORKING' : '❌ FAILED',
-  );
-  console.log(
-    '  Documents Access:',
-    documentsResult ? '✅ WORKING' : '❌ FAILED',
-  );
+  console.log('  Basic File Move:', basicMoveResult ? '✅ WORKING' : '❌ FAILED');
+  console.log('  Documents Access:', documentsResult ? '✅ WORKING' : '❌ FAILED');
 
   if (basicMoveResult && documentsResult) {
     console.log('\n✅ File system operations are working correctly!');
-    console.log(
-      'The issue is likely in the Electron app logic, not file operations.',
-    );
+    console.log('The issue is likely in the Electron app logic, not file operations.');
   } else {
     console.log('\n❌ File system issues detected!');
     if (!basicMoveResult) {

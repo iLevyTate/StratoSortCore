@@ -1,9 +1,5 @@
 const path = require('path');
-const {
-  getOllamaModel,
-  loadOllamaConfig,
-  getOllama,
-} = require('../ollamaUtils');
+const { getOllamaModel, loadOllamaConfig, getOllama } = require('../ollamaUtils');
 const { buildOllamaOptions } = require('../services/PerformanceService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
@@ -22,9 +18,9 @@ const AppConfig = {
       timeout: 60000,
       maxContentLength: AI_DEFAULTS.TEXT.MAX_CONTENT_LENGTH,
       temperature: AI_DEFAULTS.TEXT.TEMPERATURE,
-      maxTokens: AI_DEFAULTS.TEXT.MAX_TOKENS,
-    },
-  },
+      maxTokens: AI_DEFAULTS.TEXT.MAX_TOKENS
+    }
+  }
 };
 
 // Use shared client from ollamaUtils
@@ -38,9 +34,7 @@ function getCacheKey(textContent, model, smartFolders) {
   // FIXED Bug #44: Limit input size to prevent excessive hash computation
   const MAX_TEXT_LENGTH = 50000; // 50KB max for hash key
   const truncatedText =
-    textContent?.length > MAX_TEXT_LENGTH
-      ? textContent.slice(0, MAX_TEXT_LENGTH)
-      : textContent;
+    textContent?.length > MAX_TEXT_LENGTH ? textContent.slice(0, MAX_TEXT_LENGTH) : textContent;
 
   const hasher = crypto.createHash('sha1');
   // MEDIUM PRIORITY FIX (MED-12): Include original length to prevent hash collision
@@ -52,15 +46,13 @@ function getCacheKey(textContent, model, smartFolders) {
   hasher.update('|');
   try {
     const foldersKey = Array.isArray(smartFolders)
-      ? smartFolders
-          .map((f) => `${f?.name || ''}:${(f?.description || '').slice(0, 64)}`)
-          .join(',')
+      ? smartFolders.map((f) => `${f?.name || ''}:${(f?.description || '').slice(0, 64)}`).join(',')
       : '';
     hasher.update(foldersKey);
   } catch (error) {
     // Expected: Continue with partial key if folder data is malformed
     logger.debug('Error generating cache key from folder data', {
-      error: error.message,
+      error: error.message
     });
   }
   return hasher.digest('hex');
@@ -91,7 +83,7 @@ function setCache(key, value) {
 
   analysisCache.set(key, {
     value,
-    timestamp: Date.now(),
+    timestamp: Date.now()
   });
 }
 
@@ -113,11 +105,7 @@ function normalizeTextForModel(input, maxLen) {
   return text;
 }
 
-async function analyzeTextWithOllama(
-  textContent,
-  originalFileName,
-  smartFolders = [],
-) {
+async function analyzeTextWithOllama(textContent, originalFileName, smartFolders = []) {
   try {
     const cfg = await loadOllamaConfig();
     const modelToUse =
@@ -129,24 +117,17 @@ async function analyzeTextWithOllama(
     // Normalize and chunk text to reduce truncation loss
     const normalized = normalizeTextForModel(
       textContent,
-      AppConfig.ai.textAnalysis.maxContentLength * 4,
+      AppConfig.ai.textAnalysis.maxContentLength * 4
     );
-    const { combined: combinedChunks, chunks } = chunkTextForAnalysis(
-      normalized,
-      {
-        chunkSize: Math.min(4000, AppConfig.ai.textAnalysis.maxContentLength),
-        overlap: 400,
-        maxTotalLength: AppConfig.ai.textAnalysis.maxContentLength,
-      },
-    );
+    const { combined: combinedChunks, chunks } = chunkTextForAnalysis(normalized, {
+      chunkSize: Math.min(4000, AppConfig.ai.textAnalysis.maxContentLength),
+      overlap: 400,
+      maxTotalLength: AppConfig.ai.textAnalysis.maxContentLength
+    });
     const truncated =
       combinedChunks ||
-      normalizeTextForModel(
-        normalized,
-        AppConfig.ai.textAnalysis.maxContentLength,
-      );
-    const chunkCount =
-      Array.isArray(chunks) && chunks.length > 0 ? chunks.length : 1;
+      normalizeTextForModel(normalized, AppConfig.ai.textAnalysis.maxContentLength);
+    const chunkCount = Array.isArray(chunks) && chunks.length > 0 ? chunks.length : 1;
 
     // Fast-path: return cached result if available
     const cacheKey = getCacheKey(truncated, modelToUse, smartFolders);
@@ -159,18 +140,15 @@ async function analyzeTextWithOllama(
     let folderCategoriesStr = '';
     if (smartFolders && smartFolders.length > 0) {
       const validFolders = smartFolders
-        .filter(
-          (f) => f && typeof f.name === 'string' && f.name.trim().length > 0,
-        )
+        .filter((f) => f && typeof f.name === 'string' && f.name.trim().length > 0)
         .slice(0, 10)
         .map((f) => ({
           name: f.name.trim().slice(0, 50),
-          description: (f.description || '').trim().slice(0, 140),
+          description: (f.description || '').trim().slice(0, 140)
         }));
       if (validFolders.length > 0) {
         const folderListParts = validFolders.map(
-          (f, i) =>
-            `${i + 1}. "${f.name}" — ${f.description || 'no description provided'}`,
+          (f, i) => `${i + 1}. "${f.name}" — ${f.description || 'no description provided'}`
         );
         const folderListDetailed = folderListParts.join('\n');
         folderCategoriesStr = `\n\nAVAILABLE SMART FOLDERS (name — description):\n${folderListDetailed}\n\nSELECTION RULES (CRITICAL):\n- Choose the category by comparing the document's CONTENT to the folder DESCRIPTIONS above.\n- Output the category EXACTLY as one of the folder names above (verbatim).\n- Do NOT invent new categories. If unsure, choose the closest match by description or use the first folder as a fallback.`;
@@ -205,47 +183,45 @@ ${truncated}`;
     const deduplicationKey = globalDeduplicator.generateKey({
       text: truncated,
       model: modelToUse,
-      folders: smartFolders.map((f) => f.name).join(','),
+      folders: smartFolders.map((f) => f.name).join(',')
     });
 
     const client = await getOllama();
     const perfOptions = await buildOllamaOptions('text');
-    const generatePromise = globalDeduplicator.deduplicate(
-      deduplicationKey,
-      () =>
-        generateWithRetry(
-          client,
-          {
-            model: modelToUse,
-            prompt,
-            options: {
-              temperature: AppConfig.ai.textAnalysis.temperature,
-              num_predict: AppConfig.ai.textAnalysis.maxTokens,
-              ...perfOptions,
-            },
-            format: 'json',
+    const generatePromise = globalDeduplicator.deduplicate(deduplicationKey, () =>
+      generateWithRetry(
+        client,
+        {
+          model: modelToUse,
+          prompt,
+          options: {
+            temperature: AppConfig.ai.textAnalysis.temperature,
+            num_predict: AppConfig.ai.textAnalysis.maxTokens,
+            ...perfOptions
           },
-          {
-            operation: `Document analysis for ${originalFileName}`,
-            maxRetries: 3,
-            initialDelay: 1000,
-            maxDelay: 4000,
-          },
-        ),
+          format: 'json'
+        },
+        {
+          operation: `Document analysis for ${originalFileName}`,
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 4000
+        }
+      )
     );
     const response = await Promise.race([
       generatePromise,
       new Promise((_, reject) => {
         const t = setTimeout(
           () => reject(new Error('LLM request timed out')),
-          AppConfig.ai.textAnalysis.timeout,
+          AppConfig.ai.textAnalysis.timeout
         );
         try {
           t.unref();
         } catch {
           // Expected: unref() may fail on non-Node timers or if already cleared
         }
-      }),
+      })
     ]);
 
     if (response.response) {
@@ -257,14 +233,12 @@ ${truncated}`;
           logger.warn('[documentLlm] JSON extraction failed', {
             responseLength: response.response.length,
             responsePreview: response.response.substring(0, 500),
-            responseEnd: response.response.substring(
-              Math.max(0, response.response.length - 200),
-            ),
+            responseEnd: response.response.substring(Math.max(0, response.response.length - 200))
           });
           return {
             error: 'Failed to parse document analysis JSON from Ollama.',
             keywords: [],
-            confidence: 65,
+            confidence: 65
           };
         }
 
@@ -274,16 +248,14 @@ ${truncated}`;
           return {
             error: 'Invalid document analysis response structure.',
             keywords: [],
-            confidence: 65,
+            confidence: 65
           };
         }
 
         // Validate and sanitize date field
         if (parsedJson.date) {
           try {
-            parsedJson.date = new Date(parsedJson.date)
-              .toISOString()
-              .split('T')[0];
+            parsedJson.date = new Date(parsedJson.date).toISOString().split('T')[0];
           } catch {
             delete parsedJson.date;
           }
@@ -291,9 +263,7 @@ ${truncated}`;
 
         // Validate keywords array
         const finalKeywords = Array.isArray(parsedJson.keywords)
-          ? parsedJson.keywords.filter(
-              (kw) => typeof kw === 'string' && kw.length > 0,
-            )
+          ? parsedJson.keywords.filter((kw) => typeof kw === 'string' && kw.length > 0)
           : [];
 
         // FIXED Bug #41 & #43: Calculate meaningful confidence based on response quality
@@ -347,18 +317,9 @@ ${truncated}`;
         const result = {
           rawText: textContent.substring(0, 2000),
           date: parsedJson.date || undefined,
-          project:
-            typeof parsedJson.project === 'string'
-              ? parsedJson.project
-              : undefined,
-          purpose:
-            typeof parsedJson.purpose === 'string'
-              ? parsedJson.purpose
-              : undefined,
-          category:
-            typeof parsedJson.category === 'string'
-              ? parsedJson.category
-              : 'document',
+          project: typeof parsedJson.project === 'string' ? parsedJson.project : undefined,
+          purpose: typeof parsedJson.purpose === 'string' ? parsedJson.purpose : undefined,
+          category: typeof parsedJson.category === 'string' ? parsedJson.category : 'document',
           suggestedName: (() => {
             if (typeof parsedJson.suggestedName !== 'string') return undefined;
             // Ensure the original file extension is preserved
@@ -370,33 +331,30 @@ ${truncated}`;
             return parsedJson.suggestedName;
           })(),
           keywords: finalKeywords,
-          confidence: parsedJson.confidence,
+          confidence: parsedJson.confidence
         };
 
         setCache(cacheKey, result);
         return result;
       } catch (e) {
-        logger.error(
-          '[documentLlm] Unexpected error processing response:',
-          e.message,
-        );
+        logger.error('[documentLlm] Unexpected error processing response:', e.message);
         return {
           error: 'Failed to parse document analysis from Ollama.',
           keywords: [],
-          confidence: 65,
+          confidence: 65
         };
       }
     }
     return {
       error: 'No content in Ollama response for document',
       keywords: [],
-      confidence: 60,
+      confidence: 60
     };
   } catch (error) {
     return {
       error: `Ollama API error for document: ${error.message}`,
       keywords: [],
-      confidence: 60,
+      confidence: 60
     };
   }
 }
@@ -404,5 +362,5 @@ ${truncated}`;
 module.exports = {
   AppConfig,
   getOllama,
-  analyzeTextWithOllama,
+  analyzeTextWithOllama
 };

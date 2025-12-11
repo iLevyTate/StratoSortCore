@@ -68,7 +68,7 @@ const WINDOWS_EXECUTABLE_EXTENSIONS = {
   pnpm: '.cmd',
   chromadb: '.cmd',
   pip: '.exe',
-  pip3: '.exe',
+  pip3: '.exe'
   // Most Python-related tools installed via pip
 };
 
@@ -125,12 +125,12 @@ function getPythonCandidates() {
     return [
       { command: 'py', args: ['-3'] },
       { command: 'python3', args: [] },
-      { command: 'python', args: [] },
+      { command: 'python', args: [] }
     ];
   }
   return [
     { command: 'python3', args: [] },
-    { command: 'python', args: [] },
+    { command: 'python', args: [] }
   ];
 }
 
@@ -153,7 +153,7 @@ function getNvidiaSmiExecutable() {
 const DEFAULT_SPAWN_OPTIONS = {
   windowsHide: true, // Hide console window on Windows
   timeout: 30000, // 30 second default timeout
-  encoding: 'utf8',
+  encoding: 'utf8'
 };
 
 /**
@@ -211,7 +211,7 @@ async function crossSpawn(command, args = [], options = {}) {
     const finalOptions = {
       windowsHide: DEFAULT_SPAWN_OPTIONS.windowsHide,
       shell,
-      ...spawnOptions,
+      ...spawnOptions
     };
 
     let stdout = '';
@@ -231,7 +231,7 @@ async function crossSpawn(command, args = [], options = {}) {
             status: null,
             stdout: '',
             stderr: '',
-            error: spawnError,
+            error: spawnError
           });
         }
         return;
@@ -249,7 +249,7 @@ async function crossSpawn(command, args = [], options = {}) {
                   const { spawnSync } = require('child_process');
                   spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
                     windowsHide: true,
-                    timeout: 1000,
+                    timeout: 1000
                   });
                 } catch (e) {
                   child.kill('SIGTERM');
@@ -265,7 +265,7 @@ async function crossSpawn(command, args = [], options = {}) {
               stdout,
               stderr,
               error: new Error(`Command timed out after ${timeout}ms`),
-              timedOut: true,
+              timedOut: true
             });
           }
         }, timeout);
@@ -302,7 +302,7 @@ async function crossSpawn(command, args = [], options = {}) {
             status: code,
             stdout,
             stderr,
-            signal,
+            signal
           });
         }
       });
@@ -316,7 +316,7 @@ async function crossSpawn(command, args = [], options = {}) {
             status: null,
             stdout,
             stderr,
-            error,
+            error
           });
         }
       });
@@ -328,7 +328,7 @@ async function crossSpawn(command, args = [], options = {}) {
           status: null,
           stdout: '',
           stderr: '',
-          error,
+          error
         });
       }
     }
@@ -348,7 +348,7 @@ function getSpawnOptions(options = {}) {
   return {
     windowsHide: true,
     shell: useShell,
-    ...rest,
+    ...rest
   };
 }
 
@@ -542,14 +542,12 @@ function getKillCommand(pid, force = false) {
   if (isWindows) {
     return {
       command: 'taskkill',
-      args: force
-        ? ['/pid', String(pid), '/f', '/t']
-        : ['/pid', String(pid), '/t'],
+      args: force ? ['/pid', String(pid), '/f', '/t'] : ['/pid', String(pid), '/t']
     };
   }
   return {
     command: 'kill',
-    args: force ? ['-KILL', String(pid)] : ['-TERM', String(pid)],
+    args: force ? ['-KILL', String(pid)] : ['-TERM', String(pid)]
   };
 }
 
@@ -563,12 +561,12 @@ function getSleepCommand(seconds) {
   if (isWindows) {
     return {
       command: 'timeout',
-      args: ['/t', String(Math.ceil(seconds)), '/nobreak'],
+      args: ['/t', String(Math.ceil(seconds)), '/nobreak']
     };
   }
   return {
     command: 'sleep',
-    args: [String(seconds)],
+    args: [String(seconds)]
   };
 }
 
@@ -586,7 +584,7 @@ function getTrayIconConfig(iconsBasePath) {
   if (isWindows) {
     return {
       iconPath: path.join(iconsBasePath, 'win', 'icon.ico'),
-      isTemplate: false,
+      isTemplate: false
     };
   }
 
@@ -594,14 +592,14 @@ function getTrayIconConfig(iconsBasePath) {
     return {
       // macOS template images for menu bar
       iconPath: path.join(iconsBasePath, 'png', '24x24.png'),
-      isTemplate: true,
+      isTemplate: true
     };
   }
 
   // Linux
   return {
     iconPath: path.join(iconsBasePath, 'png', '16x16.png'),
-    isTemplate: false,
+    isTemplate: false
   };
 }
 
@@ -639,7 +637,7 @@ function isFeatureSupported(feature) {
     trafficLightPosition: isMacOS,
     // Cross-platform with platform-specific behavior
     tray: true,
-    autoUpdater: true,
+    autoUpdater: true
   };
 
   return featureMap[feature] ?? false;
@@ -661,7 +659,7 @@ function getFeatureDocumentation(feature) {
       : 'macOS iconutil is not available. Use alternative icon generation for this platform.',
     dockMenu: isMacOS
       ? 'macOS Dock menu is supported.'
-      : 'macOS Dock menu is not available on this platform.',
+      : 'macOS Dock menu is not available on this platform.'
   };
 
   return docs[feature] || `No documentation available for feature: ${feature}`;
@@ -713,5 +711,5 @@ module.exports = {
 
   // Feature Detection
   isFeatureSupported,
-  getFeatureDocumentation,
+  getFeatureDocumentation
 };

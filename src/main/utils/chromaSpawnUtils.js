@@ -2,14 +2,8 @@ const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
 logger.setContext('ChromaSpawnUtils');
-const {
-  findPythonLauncherAsync,
-  checkChromaExecutableAsync,
-} = require('./asyncSpawnUtils');
-const {
-  getChromaDbBinName,
-  shouldUseShell,
-} = require('../../shared/platformUtils');
+const { findPythonLauncherAsync, checkChromaExecutableAsync } = require('./asyncSpawnUtils');
+const { getChromaDbBinName, shouldUseShell } = require('../../shared/platformUtils');
 
 /**
  * Utility functions for ChromaDB spawning
@@ -20,10 +14,7 @@ async function resolveChromaCliExecutable() {
   try {
     // Use cross-platform utility for chromadb binary name
     const binName = getChromaDbBinName();
-    const nodeModulesPath = path.resolve(
-      __dirname,
-      '../../../node_modules/.bin',
-    );
+    const nodeModulesPath = path.resolve(__dirname, '../../../node_modules/.bin');
     const cliPath = path.join(nodeModulesPath, binName);
 
     // Validate path is within node_modules (prevent traversal)
@@ -42,10 +33,7 @@ async function resolveChromaCliExecutable() {
       return null;
     }
   } catch (error) {
-    logger.warn(
-      '[ChromaDB] Failed to resolve local CLI executable:',
-      error?.message || error,
-    );
+    logger.warn('[ChromaDB] Failed to resolve local CLI executable:', error?.message || error);
   }
   return null;
 }
@@ -69,7 +57,7 @@ async function buildChromaSpawnPlan(config) {
         command: parts[0],
         args: parts.slice(1),
         source: 'custom-command',
-        options: { windowsHide: true },
+        options: { windowsHide: true }
       };
     }
   }
@@ -78,17 +66,9 @@ async function buildChromaSpawnPlan(config) {
   if (localCli) {
     return {
       command: localCli,
-      args: [
-        'run',
-        '--path',
-        config.dbPath,
-        '--host',
-        config.host,
-        '--port',
-        String(config.port),
-      ],
+      args: ['run', '--path', config.dbPath, '--host', config.host, '--port', String(config.port)],
       source: 'local-cli',
-      options: { windowsHide: true },
+      options: { windowsHide: true }
     };
   }
 
@@ -102,21 +82,13 @@ async function buildChromaSpawnPlan(config) {
     logger.info('[ChromaDB] Found system chroma executable');
     return {
       command: chromaExecutable,
-      args: [
-        'run',
-        '--path',
-        config.dbPath,
-        '--host',
-        config.host,
-        '--port',
-        String(config.port),
-      ],
+      args: ['run', '--path', config.dbPath, '--host', config.host, '--port', String(config.port)],
       source: 'system-chroma',
       options: {
         windowsHide: true,
         // Use cross-platform shell detection
-        shell: shouldUseShell(),
-      },
+        shell: shouldUseShell()
+      }
     };
   }
 
@@ -125,7 +97,7 @@ async function buildChromaSpawnPlan(config) {
   const pythonLauncher = await findPythonLauncher();
   if (pythonLauncher) {
     logger.warn(
-      '[ChromaDB] Attempting to use Python -m chromadb (may not work with ChromaDB 1.0.x+)',
+      '[ChromaDB] Attempting to use Python -m chromadb (may not work with ChromaDB 1.0.x+)'
     );
     return {
       command: pythonLauncher.command,
@@ -139,10 +111,10 @@ async function buildChromaSpawnPlan(config) {
         '--host',
         config.host,
         '--port',
-        String(config.port),
+        String(config.port)
       ],
       source: 'python',
-      options: { windowsHide: true },
+      options: { windowsHide: true }
     };
   }
 
@@ -152,5 +124,5 @@ async function buildChromaSpawnPlan(config) {
 module.exports = {
   buildChromaSpawnPlan,
   resolveChromaCliExecutable,
-  findPythonLauncher,
+  findPythonLauncher
 };

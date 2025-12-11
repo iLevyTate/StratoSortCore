@@ -5,10 +5,10 @@ module.exports = {
       artist: 'Mock Artist',
       album: 'Mock Album',
       year: 2025,
-      genre: ['Mock Genre'],
+      genre: ['Mock Genre']
     },
     format: {
-      duration: 180,
-    },
-  }),
+      duration: 180
+    }
+  })
 };

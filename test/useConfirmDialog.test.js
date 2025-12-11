@@ -4,13 +4,7 @@
  */
 
 import React from 'react';
-import {
-  renderHook,
-  act,
-  render,
-  screen,
-  fireEvent,
-} from '@testing-library/react';
+import { renderHook, act, render, screen, fireEvent } from '@testing-library/react';
 
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
@@ -19,21 +13,13 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock Modal component with testable buttons
 jest.mock('../src/renderer/components/Modal', () => ({
-  ConfirmModal: ({
-    isOpen,
-    onConfirm,
-    onClose,
-    title,
-    confirmText,
-    cancelText,
-    variant,
-  }) => {
+  ConfirmModal: ({ isOpen, onConfirm, onClose, title, confirmText, cancelText, variant }) => {
     if (!isOpen) return null;
     return (
       <div data-testid="confirm-modal">
@@ -47,7 +33,7 @@ jest.mock('../src/renderer/components/Modal', () => ({
         </button>
       </div>
     );
-  },
+  }
 }));
 
 // Import after mocks
@@ -76,7 +62,7 @@ describe('useConfirmDialog', () => {
     act(() => {
       confirmPromise = result.current.showConfirm({
         title: 'Test',
-        message: 'Are you sure?',
+        message: 'Are you sure?'
       });
     });
 
@@ -89,7 +75,7 @@ describe('useConfirmDialog', () => {
     act(() => {
       result.current.showConfirm({
         title: 'Delete File',
-        message: 'Are you sure?',
+        message: 'Are you sure?'
       });
     });
 
@@ -107,7 +93,7 @@ describe('useConfirmDialog', () => {
     act(() => {
       confirmPromise = result.current.showConfirm({
         title: 'Test',
-        message: 'Confirm?',
+        message: 'Confirm?'
       });
     });
 
@@ -130,7 +116,7 @@ describe('useConfirmDialog', () => {
     act(() => {
       confirmPromise = result.current.showConfirm({
         title: 'Test',
-        message: 'Confirm?',
+        message: 'Confirm?'
       });
     });
 
@@ -151,7 +137,7 @@ describe('useConfirmDialog', () => {
 
     act(() => {
       result.current.showConfirm({
-        message: 'Just a message',
+        message: 'Just a message'
       });
     });
 

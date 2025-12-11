@@ -8,14 +8,14 @@ const VARIANT_TO_CLASS = {
   danger: 'btn-danger',
   ghost: 'btn-ghost',
   outline: 'btn-outline',
-  subtle: 'btn-subtle',
+  subtle: 'btn-subtle'
 };
 
 // Size variants - sm size uses px-3 py-1.5 for compact buttons in file action rows
 const SIZE_TO_CLASS = {
   sm: 'text-sm px-3 py-1.5',
   md: 'text-base px-6 py-2.5',
-  lg: 'text-lg px-8 py-3',
+  lg: 'text-lg px-8 py-3'
 };
 
 const Spinner = memo(function Spinner({ className = '' }) {
@@ -27,14 +27,7 @@ const Spinner = memo(function Spinner({ className = '' }) {
       viewBox="0 0 24 24"
       aria-hidden="true"
     >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path
         className="opacity-75"
         fill="currentColor"
@@ -44,7 +37,7 @@ const Spinner = memo(function Spinner({ className = '' }) {
   );
 });
 Spinner.propTypes = {
-  className: PropTypes.string,
+  className: PropTypes.string
 };
 
 const Button = memo(function Button({
@@ -63,14 +56,12 @@ const Button = memo(function Button({
   const classes = useMemo(() => {
     const variantClass = VARIANT_TO_CLASS[variant] || VARIANT_TO_CLASS.primary;
     const sizeClass = SIZE_TO_CLASS[size] || SIZE_TO_CLASS.md;
-    const disabledClass =
-      disabled || isLoading ? 'opacity-50 cursor-not-allowed' : '';
+    const disabledClass = disabled || isLoading ? 'opacity-50 cursor-not-allowed' : '';
     return `${variantClass} ${sizeClass} ${disabledClass} ${className}`.trim();
   }, [variant, size, disabled, isLoading, className]);
 
   // Bug #39: Ensure button has accessible label
-  const accessibleLabel =
-    ariaLabel || (typeof children === 'string' ? children : undefined);
+  const accessibleLabel = ariaLabel || (typeof children === 'string' ? children : undefined);
 
   return (
     <button
@@ -109,7 +100,7 @@ Button.propTypes = {
     'danger',
     'ghost',
     'outline',
-    'subtle',
+    'subtle'
   ]),
   size: PropTypes.oneOf(['sm', 'md', 'lg']),
   className: PropTypes.string,
@@ -119,5 +110,5 @@ Button.propTypes = {
   disabled: PropTypes.bool,
   leftIcon: PropTypes.node,
   rightIcon: PropTypes.node,
-  'aria-label': PropTypes.string,
+  'aria-label': PropTypes.string
 };

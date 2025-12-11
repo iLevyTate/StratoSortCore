@@ -71,7 +71,9 @@ test.describe('App Launch', () => {
     await waitForAppReady(window);
 
     // Look for the connection status indicator
-    const statusIndicator = window.locator('.text-stratosort-success, .text-green-500, :has-text("Connected")');
+    const statusIndicator = window.locator(
+      '.text-stratosort-success, .text-green-500, :has-text("Connected")'
+    );
     // Connection status might show as connected or disconnected depending on Ollama availability
     const isVisible = await statusIndicator.isVisible().catch(() => false);
 
@@ -147,7 +149,7 @@ test.describe('App Launch', () => {
         hasFiles: typeof api.files !== 'undefined',
         hasSettings: typeof api.settings !== 'undefined',
         hasAnalysis: typeof api.analysis !== 'undefined',
-        hasEvents: typeof api.events !== 'undefined',
+        hasEvents: typeof api.events !== 'undefined'
       };
     });
 
@@ -167,8 +169,8 @@ test.describe('App Launch - Error Handling', () => {
       env: {
         NODE_ENV: 'development',
         // Disable some features to test graceful degradation
-        ELECTRON_DISABLE_GPU: '1',
-      },
+        ELECTRON_DISABLE_GPU: '1'
+      }
     });
 
     try {

@@ -10,21 +10,21 @@ const mockFs = {
   stat: jest.fn(),
   access: jest.fn(),
   mkdir: jest.fn().mockResolvedValue(undefined),
-  rename: jest.fn().mockResolvedValue(undefined),
+  rename: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
   promises: mockFs,
-  constants: { R_OK: 4 },
+  constants: { R_OK: 4 }
 }));
 
 // Mock chokidar
 const mockWatcher = {
   on: jest.fn().mockReturnThis(),
   close: jest.fn(),
-  removeAllListeners: jest.fn(),
+  removeAllListeners: jest.fn()
 };
 jest.mock('chokidar', () => ({
-  watch: jest.fn().mockReturnValue(mockWatcher),
+  watch: jest.fn().mockReturnValue(mockWatcher)
 }));
 
 // Mock logger
@@ -34,8 +34,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock FileSystemError
@@ -84,12 +84,12 @@ jest.mock('../src/main/errors/FileSystemError', () => ({
     toJSON() {
       return { message: this.message };
     }
-  },
+  }
 }));
 
 // Mock atomicFileOperations
 jest.mock('../src/shared/atomicFileOperations', () => ({
-  crossDeviceMove: jest.fn().mockResolvedValue(undefined),
+  crossDeviceMove: jest.fn().mockResolvedValue(undefined)
 }));
 
 describe('DownloadWatcher', () => {
@@ -110,7 +110,7 @@ describe('DownloadWatcher', () => {
       return {
         id,
         unref: jest.fn(),
-        [Symbol.toPrimitive]: () => id,
+        [Symbol.toPrimitive]: () => id
       };
     });
 
@@ -123,28 +123,28 @@ describe('DownloadWatcher', () => {
     mockDependencies = {
       analyzeDocumentFile: jest.fn().mockResolvedValue({
         category: 'Documents',
-        suggestedName: 'test-file',
+        suggestedName: 'test-file'
       }),
       analyzeImageFile: jest.fn().mockResolvedValue({
         category: 'Images',
-        suggestedName: 'test-image',
+        suggestedName: 'test-image'
       }),
       getCustomFolders: jest.fn().mockReturnValue([
         { id: '1', name: 'Documents', path: '/custom/docs' },
-        { id: '2', name: 'Images', path: '/custom/images' },
+        { id: '2', name: 'Images', path: '/custom/images' }
       ]),
       autoOrganizeService: {
         processNewFile: jest.fn().mockResolvedValue({
           destination: '/custom/docs/test.txt',
-          confidence: 0.95,
-        }),
+          confidence: 0.95
+        })
       },
       settingsService: {
         load: jest.fn().mockResolvedValue({
           autoOrganize: true,
-          downloadConfidenceThreshold: 0.9,
-        }),
-      },
+          downloadConfidenceThreshold: 0.9
+        })
+      }
     };
 
     watcher = new DownloadWatcher(mockDependencies);
@@ -158,9 +158,7 @@ describe('DownloadWatcher', () => {
 
   describe('constructor', () => {
     test('initializes with dependencies', () => {
-      expect(watcher.analyzeDocumentFile).toBe(
-        mockDependencies.analyzeDocumentFile,
-      );
+      expect(watcher.analyzeDocumentFile).toBe(mockDependencies.analyzeDocumentFile);
       expect(watcher.analyzeImageFile).toBe(mockDependencies.analyzeImageFile);
       expect(watcher.watcher).toBeNull();
       expect(watcher.isStarting).toBe(false);
@@ -183,8 +181,8 @@ describe('DownloadWatcher', () => {
         expect.stringContaining('Downloads'),
         expect.objectContaining({
           ignoreInitial: true,
-          depth: 0,
-        }),
+          depth: 0
+        })
       );
     });
 
@@ -211,14 +209,8 @@ describe('DownloadWatcher', () => {
       await new Promise((r) => originalSetTimeout(r, 100));
 
       expect(mockWatcher.on).toHaveBeenCalledWith('add', expect.any(Function));
-      expect(mockWatcher.on).toHaveBeenCalledWith(
-        'error',
-        expect.any(Function),
-      );
-      expect(mockWatcher.on).toHaveBeenCalledWith(
-        'ready',
-        expect.any(Function),
-      );
+      expect(mockWatcher.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockWatcher.on).toHaveBeenCalledWith('ready', expect.any(Function));
     });
   });
 
@@ -227,7 +219,7 @@ describe('DownloadWatcher', () => {
       watcher.watcher = mockWatcher;
       watcher.debounceTimers.set(
         'test',
-        setTimeout(() => {}, 1000),
+        setTimeout(() => {}, 1000)
       );
 
       watcher.stop();
@@ -257,7 +249,7 @@ describe('DownloadWatcher', () => {
         '/downloads/file.tmp',
         '/downloads/file.crdownload',
         '/downloads/file.part',
-        '/downloads/.hidden',
+        '/downloads/.hidden'
       ];
 
       for (const file of tempFiles) {
@@ -274,12 +266,7 @@ describe('DownloadWatcher', () => {
 
     test('skips files in node_modules', async () => {
       // Use path.join to get proper path separators for the current OS
-      const filePath = path.join(
-        'downloads',
-        'node_modules',
-        'package',
-        'index.js',
-      );
+      const filePath = path.join('downloads', 'node_modules', 'package', 'index.js');
       const result = await watcher._validateFile(filePath);
 
       expect(result).toBe(false);
@@ -319,10 +306,7 @@ describe('DownloadWatcher', () => {
     test('moves file to destination', async () => {
       await watcher._attemptAutoOrganize('/downloads/test.pdf');
 
-      expect(mockFs.rename).toHaveBeenCalledWith(
-        '/downloads/test.pdf',
-        '/custom/docs/test.txt',
-      );
+      expect(mockFs.rename).toHaveBeenCalledWith('/downloads/test.pdf', '/custom/docs/test.txt');
     });
 
     test('returns shouldFallback=true when service unavailable', async () => {
@@ -336,7 +320,7 @@ describe('DownloadWatcher', () => {
 
     test('returns shouldFallback=true on error', async () => {
       mockDependencies.autoOrganizeService.processNewFile.mockRejectedValueOnce(
-        new Error('Service failed'),
+        new Error('Service failed')
       );
 
       const result = await watcher._attemptAutoOrganize('/downloads/test.pdf');
@@ -346,12 +330,10 @@ describe('DownloadWatcher', () => {
     });
 
     test('handles low confidence results', async () => {
-      mockDependencies.autoOrganizeService.processNewFile.mockResolvedValueOnce(
-        {
-          destination: null,
-          confidence: 0.5,
-        },
-      );
+      mockDependencies.autoOrganizeService.processNewFile.mockResolvedValueOnce({
+        destination: null,
+        confidence: 0.5
+      });
 
       const result = await watcher._attemptAutoOrganize('/downloads/test.pdf');
 
@@ -366,7 +348,7 @@ describe('DownloadWatcher', () => {
 
       expect(mockDependencies.analyzeDocumentFile).toHaveBeenCalledWith(
         '/downloads/document.pdf',
-        expect.any(Array),
+        expect.any(Array)
       );
     });
 
@@ -375,7 +357,7 @@ describe('DownloadWatcher', () => {
 
       expect(mockDependencies.analyzeImageFile).toHaveBeenCalledWith(
         '/downloads/photo.jpg',
-        expect.any(Array),
+        expect.any(Array)
       );
     });
 
@@ -388,20 +370,16 @@ describe('DownloadWatcher', () => {
     });
 
     test('handles analysis errors gracefully', async () => {
-      mockDependencies.analyzeDocumentFile.mockRejectedValueOnce(
-        new Error('Analysis failed'),
-      );
+      mockDependencies.analyzeDocumentFile.mockRejectedValueOnce(new Error('Analysis failed'));
 
-      await expect(
-        watcher._fallbackOrganize('/downloads/document.pdf'),
-      ).resolves.toBeUndefined();
+      await expect(watcher._fallbackOrganize('/downloads/document.pdf')).resolves.toBeUndefined();
     });
   });
 
   describe('resolveDestinationFolder', () => {
     const folders = [
       { id: '1', name: 'Documents', path: '/docs' },
-      { id: '2', name: 'Images', path: '/images' },
+      { id: '2', name: 'Images', path: '/images' }
     ];
 
     test('returns folder by smartFolder id', () => {
@@ -414,7 +392,7 @@ describe('DownloadWatcher', () => {
 
     test('returns folder by folderMatchCandidates', () => {
       const result = {
-        folderMatchCandidates: [{ id: '2', name: 'Images' }],
+        folderMatchCandidates: [{ id: '2', name: 'Images' }]
       };
 
       const folder = watcher.resolveDestinationFolder(result, folders);
@@ -449,10 +427,7 @@ describe('DownloadWatcher', () => {
     test('uses rename for same device', async () => {
       await watcher._moveFile('/source/file.txt', '/dest/file.txt');
 
-      expect(mockFs.rename).toHaveBeenCalledWith(
-        '/source/file.txt',
-        '/dest/file.txt',
-      );
+      expect(mockFs.rename).toHaveBeenCalledWith('/source/file.txt', '/dest/file.txt');
     });
 
     test('uses crossDeviceMove for different devices', async () => {
@@ -474,24 +449,18 @@ describe('DownloadWatcher', () => {
       mockFs.rename.mockRejectedValueOnce(existsError);
       mockFs.access.mockRejectedValueOnce({ code: 'ENOENT' }); // Check unique name exists
 
-      await watcher._moveFileWithConflictHandling(
-        '/source/file.txt',
-        '/dest/file.txt',
-        '.txt',
-      );
+      await watcher._moveFileWithConflictHandling('/source/file.txt', '/dest/file.txt', '.txt');
 
       expect(mockFs.rename).toHaveBeenLastCalledWith(
         '/source/file.txt',
-        expect.stringContaining('file_1.txt'),
+        expect.stringContaining('file_1.txt')
       );
     });
   });
 
   describe('_debouncedHandleFile', () => {
     test('debounces rapid file events', async () => {
-      const handleFileSpy = jest
-        .spyOn(watcher, 'handleFile')
-        .mockResolvedValue();
+      const handleFileSpy = jest.spyOn(watcher, 'handleFile').mockResolvedValue();
 
       watcher._debouncedHandleFile('/test/file.txt');
       watcher._debouncedHandleFile('/test/file.txt');
@@ -500,9 +469,7 @@ describe('DownloadWatcher', () => {
       expect(watcher.debounceTimers.size).toBe(1);
 
       // Wait for debounce to complete
-      await new Promise((r) =>
-        originalSetTimeout(r, watcher.debounceDelay + 100),
-      );
+      await new Promise((r) => originalSetTimeout(r, watcher.debounceDelay + 100));
 
       expect(handleFileSpy).toHaveBeenCalledTimes(1);
     });
@@ -516,9 +483,7 @@ describe('DownloadWatcher', () => {
       watcher._debouncedHandleFile('/test/file.txt');
 
       // Wait for debounce and file processing
-      await new Promise((r) =>
-        originalSetTimeout(r, watcher.debounceDelay + 100),
-      );
+      await new Promise((r) => originalSetTimeout(r, watcher.debounceDelay + 100));
 
       expect(checkedProcessing).toBe(true);
     });
@@ -559,7 +524,7 @@ describe('DownloadWatcher', () => {
         code: 'WATCHER_FAILED',
         getUserFriendlyMessage: () => 'Watcher error',
         shouldRetry: () => true,
-        toJSON: () => ({ message: 'test' }),
+        toJSON: () => ({ message: 'test' })
       };
 
       // Prevent actual restart by maxing out attempts
@@ -579,7 +544,7 @@ describe('DownloadWatcher', () => {
         code: 'WATCHER_FAILED',
         getUserFriendlyMessage: () => 'Watcher error',
         shouldRetry: () => true,
-        toJSON: () => ({ message: 'test' }),
+        toJSON: () => ({ message: 'test' })
       };
 
       watcher._handleWatcherError(mockError);

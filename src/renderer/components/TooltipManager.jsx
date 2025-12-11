@@ -42,8 +42,7 @@ export default function TooltipManager() {
         if (tooltipRef.current) {
           tooltipRef.current.classList.remove('show');
           tooltipRef.current.style.opacity = '0';
-          tooltipRef.current.style.transform =
-            'translate3d(-10000px, -10000px, 0)';
+          tooltipRef.current.style.transform = 'translate3d(-10000px, -10000px, 0)';
         }
         currentTargetRef.current = null;
       }
@@ -65,8 +64,7 @@ export default function TooltipManager() {
      */
     const showTooltip = (target) => {
       if (!tooltipRef.current || !titleCacheRef.current) return;
-      const title =
-        target.getAttribute('data-tooltip') || target.getAttribute('title');
+      const title = target.getAttribute('data-tooltip') || target.getAttribute('title');
       if (!title) return;
 
       // Prevent native tooltip by clearing title temporarily

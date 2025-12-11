@@ -8,10 +8,7 @@
  */
 
 const { logger } = require('../../../shared/logger');
-const {
-  updateIncrementalStatsOnRemove,
-  invalidateCachesOnRemove,
-} = require('./cacheManager');
+const { updateIncrementalStatsOnRemove, invalidateCachesOnRemove } = require('./cacheManager');
 const { removeFromIndexes } = require('./indexManager');
 
 logger.setContext('AnalysisHistory-Maintenance');
@@ -33,7 +30,7 @@ async function performMaintenanceIfNeeded(
   state,
   config,
   saveHistory,
-  saveIndex,
+  saveIndex
 ) {
   // Cleanup old entries if we exceed the limit
   const entryCount = Object.keys(analysisHistory.entries).length;
@@ -45,7 +42,7 @@ async function performMaintenanceIfNeeded(
       state,
       config,
       saveHistory,
-      saveIndex,
+      saveIndex
     );
   }
 
@@ -59,7 +56,7 @@ async function performMaintenanceIfNeeded(
     state,
     cutoffDate,
     saveHistory,
-    saveIndex,
+    saveIndex
   );
 }
 
@@ -80,17 +77,12 @@ async function cleanupOldEntries(
   state,
   config,
   saveHistory,
-  saveIndex,
+  saveIndex
 ) {
   const entries = Object.entries(analysisHistory.entries);
-  const sortedEntries = entries.sort(
-    (a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp),
-  );
+  const sortedEntries = entries.sort((a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp));
 
-  const toRemove = sortedEntries.slice(
-    0,
-    entries.length - config.maxHistoryEntries,
-  );
+  const toRemove = sortedEntries.slice(0, entries.length - config.maxHistoryEntries);
 
   for (const [id, entry] of toRemove) {
     delete analysisHistory.entries[id];
@@ -126,7 +118,7 @@ async function removeExpiredEntries(
   state,
   cutoffDate,
   saveHistory,
-  saveIndex,
+  saveIndex
 ) {
   const entries = Object.entries(analysisHistory.entries);
   let removedCount = 0;
@@ -144,9 +136,7 @@ async function removeExpiredEntries(
   if (removedCount > 0) {
     // Invalidate caches after bulk removal
     invalidateCachesOnRemove(cache, state);
-    logger.info(
-      `[AnalysisHistoryService] Removed ${removedCount} expired analysis entries`,
-    );
+    logger.info(`[AnalysisHistoryService] Removed ${removedCount} expired analysis entries`);
     await saveHistory();
     await saveIndex();
   }
@@ -166,5 +156,5 @@ module.exports = {
   performMaintenanceIfNeeded,
   cleanupOldEntries,
   removeExpiredEntries,
-  migrateHistory,
+  migrateHistory
 };

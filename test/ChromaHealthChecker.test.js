@@ -5,16 +5,16 @@
 
 // Mock axios
 const mockAxios = {
-  get: jest.fn(),
+  get: jest.fn()
 };
 jest.mock('axios', () => mockAxios);
 
 // Mock chromadb
 const mockChromaClient = {
-  heartbeat: jest.fn(),
+  heartbeat: jest.fn()
 };
 jest.mock('chromadb', () => ({
-  ChromaClient: jest.fn(() => mockChromaClient),
+  ChromaClient: jest.fn(() => mockChromaClient)
 }));
 
 // Mock logger
@@ -24,13 +24,13 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock config
 jest.mock('../src/shared/config/index', () => ({
-  get: jest.fn((key, defaultVal) => defaultVal),
+  get: jest.fn((key, defaultVal) => defaultVal)
 }));
 
 describe('ChromaHealthChecker', () => {
@@ -62,7 +62,7 @@ describe('ChromaHealthChecker', () => {
     test('returns healthy when v2 heartbeat succeeds', async () => {
       mockAxios.get.mockResolvedValueOnce({
         status: 200,
-        data: { nanosecond_heartbeat: 123456789 },
+        data: { nanosecond_heartbeat: 123456789 }
       });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -76,7 +76,7 @@ describe('ChromaHealthChecker', () => {
         .mockRejectedValueOnce(new Error('Not found')) // v2 fails
         .mockResolvedValueOnce({
           status: 200,
-          data: { 'nanosecond heartbeat': 123456789 },
+          data: { 'nanosecond heartbeat': 123456789 }
         });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -87,7 +87,7 @@ describe('ChromaHealthChecker', () => {
     test('returns healthy with status ok response', async () => {
       mockAxios.get.mockResolvedValueOnce({
         status: 200,
-        data: { status: 'ok' },
+        data: { status: 'ok' }
       });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -98,7 +98,7 @@ describe('ChromaHealthChecker', () => {
     test('returns healthy with version response', async () => {
       mockAxios.get.mockResolvedValueOnce({
         status: 200,
-        data: { version: '1.0.0' },
+        data: { version: '1.0.0' }
       });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -109,7 +109,7 @@ describe('ChromaHealthChecker', () => {
     test('returns healthy with generic 200 response', async () => {
       mockAxios.get.mockResolvedValueOnce({
         status: 200,
-        data: {},
+        data: {}
       });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -120,7 +120,7 @@ describe('ChromaHealthChecker', () => {
     test('returns unhealthy when response contains error', async () => {
       mockAxios.get.mockResolvedValue({
         status: 200,
-        data: { error: 'Server error' },
+        data: { error: 'Server error' }
       });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -140,7 +140,7 @@ describe('ChromaHealthChecker', () => {
     test('returns unhealthy for non-200 status', async () => {
       mockAxios.get.mockResolvedValue({
         status: 500,
-        data: {},
+        data: {}
       });
 
       const result = await checkHealthViaHttp('http://localhost:8000');
@@ -152,7 +152,7 @@ describe('ChromaHealthChecker', () => {
   describe('checkHealthViaClient', () => {
     test('returns true when client heartbeat succeeds', async () => {
       mockChromaClient.heartbeat.mockResolvedValueOnce({
-        nanosecond_heartbeat: 123456789,
+        nanosecond_heartbeat: 123456789
       });
 
       const result = await checkHealthViaClient(mockChromaClient);
@@ -162,7 +162,7 @@ describe('ChromaHealthChecker', () => {
 
     test('returns true with legacy heartbeat format', async () => {
       mockChromaClient.heartbeat.mockResolvedValueOnce({
-        'nanosecond heartbeat': 123456789,
+        'nanosecond heartbeat': 123456789
       });
 
       const result = await checkHealthViaClient(mockChromaClient);
@@ -206,14 +206,14 @@ describe('ChromaHealthChecker', () => {
       jest.useRealTimers();
 
       mockChromaClient.heartbeat.mockResolvedValueOnce({
-        nanosecond_heartbeat: 123456789,
+        nanosecond_heartbeat: 123456789
       });
 
       const result = await isServerAvailable({
         serverUrl: 'http://localhost:8000',
         client: mockChromaClient,
         timeoutMs: 1000,
-        maxRetries: 1,
+        maxRetries: 1
       });
 
       expect(result).toBe(true);
@@ -230,7 +230,7 @@ describe('ChromaHealthChecker', () => {
         serverUrl: 'http://localhost:8000',
         client: mockChromaClient,
         timeoutMs: 100,
-        maxRetries: 2,
+        maxRetries: 2
       });
 
       expect(result).toBe(true);
@@ -251,7 +251,7 @@ describe('ChromaHealthChecker', () => {
         serverUrl: 'http://localhost:8000',
         client: mockChromaClient,
         timeoutMs: 100,
-        maxRetries: 2,
+        maxRetries: 2
       });
 
       expect(result).toBe(true);
@@ -269,7 +269,7 @@ describe('ChromaHealthChecker', () => {
         serverUrl: 'http://localhost:8000',
         client: mockChromaClient,
         timeoutMs: 100,
-        maxRetries: 2,
+        maxRetries: 2
       });
 
       expect(result).toBe(false);
@@ -285,7 +285,7 @@ describe('ChromaHealthChecker', () => {
         serverUrl: 'http://localhost:8000',
         client: mockChromaClient,
         timeoutMs: 100,
-        maxRetries: 1,
+        maxRetries: 1
       });
 
       expect(result).toBe(false);
@@ -296,13 +296,13 @@ describe('ChromaHealthChecker', () => {
       const { ChromaClient } = require('chromadb');
 
       mockChromaClient.heartbeat.mockResolvedValueOnce({
-        nanosecond_heartbeat: 123,
+        nanosecond_heartbeat: 123
       });
 
       await isServerAvailable({
         serverUrl: 'http://localhost:8000',
         timeoutMs: 100,
-        maxRetries: 1,
+        maxRetries: 1
       });
 
       expect(ChromaClient).toHaveBeenCalled();
@@ -315,7 +315,7 @@ describe('ChromaHealthChecker', () => {
 
       createHealthCheckInterval({
         checkFn,
-        intervalMs: 30000,
+        intervalMs: 30000
       });
 
       expect(checkFn).toHaveBeenCalledTimes(1);
@@ -326,7 +326,7 @@ describe('ChromaHealthChecker', () => {
 
       createHealthCheckInterval({
         checkFn,
-        intervalMs: 1000,
+        intervalMs: 1000
       });
 
       // Initial call
@@ -345,7 +345,7 @@ describe('ChromaHealthChecker', () => {
 
       const { stop } = createHealthCheckInterval({
         checkFn,
-        intervalMs: 1000,
+        intervalMs: 1000
       });
 
       expect(checkFn).toHaveBeenCalledTimes(1);
@@ -363,8 +363,8 @@ describe('ChromaHealthChecker', () => {
       expect(() =>
         createHealthCheckInterval({
           checkFn,
-          intervalMs: 1000,
-        }),
+          intervalMs: 1000
+        })
       ).not.toThrow();
 
       // Allow promise rejection to be handled
@@ -376,7 +376,7 @@ describe('ChromaHealthChecker', () => {
 
       const { intervalId } = createHealthCheckInterval({
         checkFn,
-        intervalMs: 1000,
+        intervalMs: 1000
       });
 
       expect(intervalId).toBeDefined();

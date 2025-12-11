@@ -10,57 +10,57 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock ServiceContainer
 jest.mock('../src/main/services/ServiceContainer', () => ({
   container: {
     get: jest.fn(),
-    register: jest.fn(),
-  },
+    register: jest.fn()
+  }
 }));
 
 // Mock asyncSpawnUtils
 jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
-  hasPythonModuleAsync: jest.fn().mockResolvedValue(true),
+  hasPythonModuleAsync: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock promiseUtils
 jest.mock('../src/shared/promiseUtils', () => ({
   withTimeout: jest.fn((promise) => promise),
-  delay: jest.fn().mockResolvedValue(undefined),
+  delay: jest.fn().mockResolvedValue(undefined)
 }));
 
 // Mock preflightChecks
 jest.mock('../src/main/services/startup/preflightChecks', () => ({
   runPreflightChecks: jest.fn().mockResolvedValue({ success: true }),
-  isPortAvailable: jest.fn().mockResolvedValue(true),
+  isPortAvailable: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock chromaService
 jest.mock('../src/main/services/startup/chromaService', () => ({
   startChromaDB: jest.fn().mockResolvedValue({ success: true }),
   isChromaDBRunning: jest.fn().mockResolvedValue(true),
-  checkChromaDBHealth: jest.fn().mockResolvedValue(true),
+  checkChromaDBHealth: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock ollamaService
 jest.mock('../src/main/services/startup/ollamaService', () => ({
   startOllama: jest.fn().mockResolvedValue({ success: true }),
   isOllamaRunning: jest.fn().mockResolvedValue(true),
-  checkOllamaHealth: jest.fn().mockResolvedValue(true),
+  checkOllamaHealth: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock healthMonitoring
 jest.mock('../src/main/services/startup/healthMonitoring', () => ({
-  createHealthMonitor: jest.fn().mockReturnValue(setInterval(() => {}, 100000)),
+  createHealthMonitor: jest.fn().mockReturnValue(setInterval(() => {}, 100000))
 }));
 
 // Mock shutdownHandler
 jest.mock('../src/main/services/startup/shutdownHandler', () => ({
-  shutdown: jest.fn().mockResolvedValue(undefined),
+  shutdown: jest.fn().mockResolvedValue(undefined)
 }));
 
 describe('StartupManagerCore', () => {
@@ -97,7 +97,7 @@ describe('StartupManagerCore', () => {
     test('accepts custom options', () => {
       const customManager = new StartupManager({
         startupTimeout: 30000,
-        maxRetries: 5,
+        maxRetries: 5
       });
 
       expect(customManager.config.startupTimeout).toBe(30000);
@@ -118,9 +118,7 @@ describe('StartupManagerCore', () => {
 
   describe('hasPythonModule', () => {
     test('checks for python module', async () => {
-      const {
-        hasPythonModuleAsync,
-      } = require('../src/main/utils/asyncSpawnUtils');
+      const { hasPythonModuleAsync } = require('../src/main/utils/asyncSpawnUtils');
 
       const result = await manager.hasPythonModule('chromadb');
 
@@ -150,7 +148,7 @@ describe('StartupManagerCore', () => {
       manager.setProgressCallback(callback);
 
       manager.reportProgress('services', 'Starting services', 50, {
-        detail: 'test',
+        detail: 'test'
       });
 
       expect(callback).toHaveBeenCalledWith({
@@ -159,7 +157,7 @@ describe('StartupManagerCore', () => {
         progress: 50,
         serviceStatus: expect.any(Object),
         errors: expect.any(Array),
-        details: { detail: 'test' },
+        details: { detail: 'test' }
       });
     });
 
@@ -174,9 +172,7 @@ describe('StartupManagerCore', () => {
 
   describe('runPreflightChecks', () => {
     test('delegates to preflightChecks module', async () => {
-      const {
-        runPreflightChecks,
-      } = require('../src/main/services/startup/preflightChecks');
+      const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
 
       await manager.runPreflightChecks();
 
@@ -186,9 +182,7 @@ describe('StartupManagerCore', () => {
 
   describe('isPortAvailable', () => {
     test('checks port availability', async () => {
-      const {
-        isPortAvailable,
-      } = require('../src/main/services/startup/preflightChecks');
+      const { isPortAvailable } = require('../src/main/services/startup/preflightChecks');
 
       const result = await manager.isPortAvailable('localhost', 8000);
 
@@ -202,12 +196,9 @@ describe('StartupManagerCore', () => {
       const startFunc = jest.fn().mockResolvedValue({ success: true });
       const checkFunc = jest.fn().mockResolvedValue(true);
 
-      const result = await manager.startServiceWithRetry(
-        'testService',
-        startFunc,
-        checkFunc,
-        { required: false },
-      );
+      const result = await manager.startServiceWithRetry('testService', startFunc, checkFunc, {
+        required: false
+      });
 
       expect(result.success).toBe(true);
       expect(manager.serviceStatus.testService.status).toBe('running');
@@ -217,11 +208,7 @@ describe('StartupManagerCore', () => {
       const startFunc = jest.fn();
       const checkFunc = jest.fn().mockResolvedValue(true);
 
-      const result = await manager.startServiceWithRetry(
-        'testService',
-        startFunc,
-        checkFunc,
-      );
+      const result = await manager.startServiceWithRetry('testService', startFunc, checkFunc);
 
       expect(result.success).toBe(true);
       expect(result.alreadyRunning).toBe(true);
@@ -239,12 +226,10 @@ describe('StartupManagerCore', () => {
       // Need to use real timers for retry delays
       jest.useRealTimers();
 
-      const result = await manager.startServiceWithRetry(
-        'testService',
-        startFunc,
-        checkFunc,
-        { required: false, verifyTimeout: 100 },
-      );
+      const result = await manager.startServiceWithRetry('testService', startFunc, checkFunc, {
+        required: false,
+        verifyTimeout: 100
+      });
 
       jest.useFakeTimers();
 
@@ -255,11 +240,7 @@ describe('StartupManagerCore', () => {
       const startFunc = jest.fn().mockResolvedValue({ external: true });
       const checkFunc = jest.fn().mockResolvedValue(false);
 
-      const result = await manager.startServiceWithRetry(
-        'testService',
-        startFunc,
-        checkFunc,
-      );
+      const result = await manager.startServiceWithRetry('testService', startFunc, checkFunc);
 
       expect(result.success).toBe(true);
       expect(result.external).toBe(true);
@@ -273,8 +254,8 @@ describe('StartupManagerCore', () => {
       await expect(
         manager.startServiceWithRetry('testService', startFunc, checkFunc, {
           required: true,
-          maxRetries: 1,
-        }),
+          maxRetries: 1
+        })
       ).rejects.toThrow('Critical service');
     });
 
@@ -282,12 +263,10 @@ describe('StartupManagerCore', () => {
       const startFunc = jest.fn().mockRejectedValue(new Error('Start failed'));
       const checkFunc = jest.fn().mockResolvedValue(false);
 
-      const result = await manager.startServiceWithRetry(
-        'testService',
-        startFunc,
-        checkFunc,
-        { required: false, maxRetries: 1 },
-      );
+      const result = await manager.startServiceWithRetry('testService', startFunc, checkFunc, {
+        required: false,
+        maxRetries: 1
+      });
 
       expect(result.success).toBe(false);
       expect(result.fallbackMode).toBe(true);
@@ -296,15 +275,12 @@ describe('StartupManagerCore', () => {
     test('stores process reference', async () => {
       const mockProcess = { pid: 12345 };
       const startFunc = jest.fn().mockResolvedValue({ process: mockProcess });
-      const checkFunc = jest
-        .fn()
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true);
+      const checkFunc = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
       jest.useRealTimers();
 
       await manager.startServiceWithRetry('testService', startFunc, checkFunc, {
-        verifyTimeout: 500,
+        verifyTimeout: 500
       });
 
       jest.useFakeTimers();
@@ -317,7 +293,7 @@ describe('StartupManagerCore', () => {
     test('starts ChromaDB service', async () => {
       const {
         startChromaDB,
-        isChromaDBRunning,
+        isChromaDBRunning
       } = require('../src/main/services/startup/chromaService');
       startChromaDB.mockResolvedValue({ success: true });
       isChromaDBRunning.mockResolvedValue(true);
@@ -328,12 +304,10 @@ describe('StartupManagerCore', () => {
     });
 
     test('handles disabled ChromaDB', async () => {
-      const {
-        startChromaDB,
-      } = require('../src/main/services/startup/chromaService');
+      const { startChromaDB } = require('../src/main/services/startup/chromaService');
       startChromaDB.mockResolvedValue({
         disabled: true,
-        reason: 'Missing dependency',
+        reason: 'Missing dependency'
       });
 
       const result = await manager.startChromaDB();
@@ -342,12 +316,10 @@ describe('StartupManagerCore', () => {
     });
 
     test('sets dependency missing flag', async () => {
-      const {
-        startChromaDB,
-      } = require('../src/main/services/startup/chromaService');
+      const { startChromaDB } = require('../src/main/services/startup/chromaService');
       startChromaDB.mockResolvedValue({
         setDependencyMissing: true,
-        disabled: true,
+        disabled: true
       });
 
       await manager.startChromaDB();
@@ -360,7 +332,7 @@ describe('StartupManagerCore', () => {
     test('starts Ollama service', async () => {
       const {
         startOllama,
-        isOllamaRunning,
+        isOllamaRunning
       } = require('../src/main/services/startup/ollamaService');
       startOllama.mockResolvedValue({ success: true });
       isOllamaRunning.mockResolvedValue(true);
@@ -375,11 +347,11 @@ describe('StartupManagerCore', () => {
     test('initializes both services in parallel', async () => {
       const {
         startChromaDB,
-        isChromaDBRunning,
+        isChromaDBRunning
       } = require('../src/main/services/startup/chromaService');
       const {
         startOllama,
-        isOllamaRunning,
+        isOllamaRunning
       } = require('../src/main/services/startup/ollamaService');
 
       startChromaDB.mockResolvedValue({ success: true });
@@ -405,11 +377,11 @@ describe('StartupManagerCore', () => {
     test('handles partial failures', async () => {
       const {
         startChromaDB,
-        isChromaDBRunning,
+        isChromaDBRunning
       } = require('../src/main/services/startup/chromaService');
       const {
         startOllama,
-        isOllamaRunning,
+        isOllamaRunning
       } = require('../src/main/services/startup/ollamaService');
 
       startChromaDB.mockResolvedValue({ success: true });
@@ -428,11 +400,11 @@ describe('StartupManagerCore', () => {
     beforeEach(() => {
       const {
         startChromaDB,
-        isChromaDBRunning,
+        isChromaDBRunning
       } = require('../src/main/services/startup/chromaService');
       const {
         startOllama,
-        isOllamaRunning,
+        isOllamaRunning
       } = require('../src/main/services/startup/ollamaService');
 
       startChromaDB.mockResolvedValue({ success: true });
@@ -456,9 +428,7 @@ describe('StartupManagerCore', () => {
     test('starts health monitoring on success', async () => {
       jest.useRealTimers();
 
-      const {
-        createHealthMonitor,
-      } = require('../src/main/services/startup/healthMonitoring');
+      const { createHealthMonitor } = require('../src/main/services/startup/healthMonitoring');
 
       await manager.startup();
 
@@ -470,11 +440,9 @@ describe('StartupManagerCore', () => {
     test('handles startup timeout', async () => {
       manager.config.startupTimeout = 10;
 
-      const {
-        runPreflightChecks,
-      } = require('../src/main/services/startup/preflightChecks');
+      const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
       runPreflightChecks.mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 100)),
+        () => new Promise((resolve) => setTimeout(resolve, 100))
       );
 
       jest.useRealTimers();
@@ -485,9 +453,7 @@ describe('StartupManagerCore', () => {
     });
 
     test('enables graceful degradation on failure', async () => {
-      const {
-        runPreflightChecks,
-      } = require('../src/main/services/startup/preflightChecks');
+      const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
       runPreflightChecks.mockRejectedValue(new Error('Preflight failed'));
 
       jest.useRealTimers();
@@ -517,17 +483,13 @@ describe('StartupManagerCore', () => {
 
       await manager.enableGracefulDegradation();
 
-      expect(global.degradedMode.limitations).toContain(
-        'Semantic search disabled',
-      );
+      expect(global.degradedMode.limitations).toContain('Semantic search disabled');
     });
   });
 
   describe('startHealthMonitoring', () => {
     test('creates health monitor', () => {
-      const {
-        createHealthMonitor,
-      } = require('../src/main/services/startup/healthMonitoring');
+      const { createHealthMonitor } = require('../src/main/services/startup/healthMonitoring');
 
       manager.startHealthMonitoring();
 
@@ -548,9 +510,7 @@ describe('StartupManagerCore', () => {
 
   describe('checkChromaDBHealth', () => {
     test('delegates to chromaService', async () => {
-      const {
-        checkChromaDBHealth,
-      } = require('../src/main/services/startup/chromaService');
+      const { checkChromaDBHealth } = require('../src/main/services/startup/chromaService');
 
       await manager.checkChromaDBHealth();
 
@@ -560,9 +520,7 @@ describe('StartupManagerCore', () => {
 
   describe('checkOllamaHealth', () => {
     test('delegates to ollamaService', async () => {
-      const {
-        checkOllamaHealth,
-      } = require('../src/main/services/startup/ollamaService');
+      const { checkOllamaHealth } = require('../src/main/services/startup/ollamaService');
 
       await manager.checkOllamaHealth();
 
@@ -595,9 +553,7 @@ describe('StartupManagerCore', () => {
 
   describe('shutdown', () => {
     test('delegates to shutdown handler', async () => {
-      const {
-        shutdown,
-      } = require('../src/main/services/startup/shutdownHandler');
+      const { shutdown } = require('../src/main/services/startup/shutdownHandler');
 
       await manager.shutdown();
 

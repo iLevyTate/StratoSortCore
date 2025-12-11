@@ -11,7 +11,7 @@ jest.mock('../src/renderer/utils/performance', () => ({
     const debouncedFn = (...args) => fn(...args);
     debouncedFn.cancel = jest.fn();
     return debouncedFn;
-  },
+  }
 }));
 
 describe('useFileEditing hooks', () => {
@@ -31,7 +31,7 @@ describe('useFileEditing hooks', () => {
 
     test('returns correct state for known file', () => {
       const fileStates = {
-        '/file.txt': { state: 'analyzing' },
+        '/file.txt': { state: 'analyzing' }
       };
       const { result } = renderHook(() => hooks.useFileStateDisplay(fileStates));
 
@@ -114,7 +114,7 @@ describe('useFileEditing hooks', () => {
       const { result } = renderHook(() => hooks.useFileEditing());
       const file = {
         path: '/file.txt',
-        analysis: { suggestedName: 'original.txt', category: 'old' },
+        analysis: { suggestedName: 'original.txt', category: 'old' }
       };
 
       act(() => {
@@ -233,23 +233,21 @@ describe('useFileEditing hooks', () => {
     });
 
     test('getFilteredFiles separates processed and unprocessed', () => {
-      const organizedFiles = [
-        { originalPath: '/file1.txt' },
-        { originalPath: '/file2.txt' },
-      ];
+      const organizedFiles = [{ originalPath: '/file1.txt' }, { originalPath: '/file2.txt' }];
       const { result } = renderHook(() => hooks.useProcessedFiles(organizedFiles));
 
       const filesWithAnalysis = [
         { path: '/file1.txt', analysis: {} },
         { path: '/file2.txt', analysis: {} },
-        { path: '/file3.txt', analysis: {} },
+        { path: '/file3.txt', analysis: {} }
       ];
 
       act(() => {
         result.current.markFilesAsProcessed(['/file1.txt']);
       });
 
-      const { unprocessedFiles, processedFiles } = result.current.getFilteredFiles(filesWithAnalysis);
+      const { unprocessedFiles, processedFiles } =
+        result.current.getFilteredFiles(filesWithAnalysis);
 
       expect(unprocessedFiles.length).toBe(2);
       expect(processedFiles.length).toBe(1);
@@ -260,7 +258,7 @@ describe('useFileEditing hooks', () => {
 
       const filesWithAnalysis = [
         { path: '/file1.txt', analysis: {} },
-        { path: '/file2.txt' }, // No analysis
+        { path: '/file2.txt' } // No analysis
       ];
 
       const { unprocessedFiles } = result.current.getFilteredFiles(filesWithAnalysis);

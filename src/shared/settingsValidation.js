@@ -13,153 +13,154 @@ const VALIDATION_RULES = {
   theme: {
     type: 'string',
     enum: ['light', 'dark', 'system'],
-    required: false,
+    required: false
   },
   notifications: {
     type: 'boolean',
-    required: false,
+    required: false
   },
   defaultSmartFolderLocation: {
     type: 'string',
     minLength: 1,
     maxLength: 500,
-    required: false,
+    required: false
   },
   maxConcurrentAnalysis: {
     type: 'number',
     min: 1,
     max: 10,
     integer: true,
-    required: false,
+    required: false
   },
   autoOrganize: {
     type: 'boolean',
-    required: false,
+    required: false
   },
   backgroundMode: {
     type: 'boolean',
-    required: false,
+    required: false
   },
   launchOnStartup: {
     type: 'boolean',
-    required: false,
+    required: false
   },
   autoApproveThreshold: {
     type: 'number',
     min: 0,
     max: 1,
-    required: false,
+    required: false
   },
   downloadConfidenceThreshold: {
     type: 'number',
     min: 0,
     max: 1,
-    required: false,
+    required: false
   },
   reviewThreshold: {
     type: 'number',
     min: 0,
     max: 1,
-    required: false,
+    required: false
   },
   ollamaHost: {
     type: 'string',
     // CRITICAL FIX: Allow URLs with or without protocol
     // setOllamaHost will normalize it by adding http:// if missing
     // Pattern: optional http(s)://, then hostname with optional port
-    pattern:
-      /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/,
+    pattern: /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/,
     maxLength: 500,
-    required: false,
+    required: false
   },
   textModel: {
     type: 'string',
     minLength: 1,
     maxLength: 200,
-    required: false,
+    required: false
   },
   visionModel: {
     type: 'string',
     minLength: 1,
     maxLength: 200,
-    required: false,
+    required: false
   },
   embeddingModel: {
     type: 'string',
     minLength: 1,
     maxLength: 200,
     required: false,
+    // Lock to the vetted embedding model to keep vector dimensions consistent
+    enum: ['mxbai-embed-large']
   },
   maxFileSize: {
     type: 'number',
     min: 1024 * 1024, // 1MB minimum
     max: 1024 * 1024 * 1024, // 1GB maximum
     integer: true,
-    required: false,
+    required: false
   },
   maxImageFileSize: {
     type: 'number',
     min: 1024 * 1024, // 1MB minimum
     max: 500 * 1024 * 1024, // 500MB maximum
     integer: true,
-    required: false,
+    required: false
   },
   maxDocumentFileSize: {
     type: 'number',
     min: 1024 * 1024, // 1MB minimum
     max: 500 * 1024 * 1024, // 500MB maximum
     integer: true,
-    required: false,
+    required: false
   },
   maxTextFileSize: {
     type: 'number',
     min: 1024 * 1024, // 1MB minimum
     max: 200 * 1024 * 1024, // 200MB maximum
     integer: true,
-    required: false,
+    required: false
   },
   analysisTimeout: {
     type: 'number',
     min: 10000, // 10 seconds minimum
     max: 600000, // 10 minutes maximum
     integer: true,
-    required: false,
+    required: false
   },
   fileOperationTimeout: {
     type: 'number',
     min: 1000, // 1 second minimum
     max: 60000, // 60 seconds maximum
     integer: true,
-    required: false,
+    required: false
   },
   maxBatchSize: {
     type: 'number',
     min: 1,
     max: 1000,
     integer: true,
-    required: false,
+    required: false
   },
   retryAttempts: {
     type: 'number',
     min: 0,
     max: 10,
     integer: true,
-    required: false,
+    required: false
   },
   workflowRestoreMaxAge: {
     type: 'number',
     min: 60000, // 1 minute minimum
     max: 24 * 60 * 60 * 1000, // 24 hours maximum
     integer: true,
-    required: false,
+    required: false
   },
   saveDebounceMs: {
     type: 'number',
     min: 100,
     max: 5000,
     integer: true,
-    required: false,
-  },
+    required: false
+  }
 };
 
 /**
@@ -176,9 +177,7 @@ function validateSetting(key, value, rule) {
 
   // Enum validation
   if (rule.enum && !rule.enum.includes(value)) {
-    errors.push(
-      `${key} must be one of [${rule.enum.join(', ')}], got "${value}"`,
-    );
+    errors.push(`${key} must be one of [${rule.enum.join(', ')}], got "${value}"`);
   }
 
   // Number validations
@@ -197,19 +196,13 @@ function validateSetting(key, value, rule) {
   // String validations
   if (rule.type === 'string') {
     if (rule.minLength !== undefined && value.length < rule.minLength) {
-      errors.push(
-        `${key} must be at least ${rule.minLength} characters, got ${value.length}`,
-      );
+      errors.push(`${key} must be at least ${rule.minLength} characters, got ${value.length}`);
     }
     if (rule.maxLength !== undefined && value.length > rule.maxLength) {
-      errors.push(
-        `${key} must be at most ${rule.maxLength} characters, got ${value.length}`,
-      );
+      errors.push(`${key} must be at most ${rule.maxLength} characters, got ${value.length}`);
     }
     if (rule.pattern && !rule.pattern.test(value)) {
-      errors.push(
-        `${key} does not match the required pattern: ${rule.pattern}`,
-      );
+      errors.push(`${key} does not match the required pattern: ${rule.pattern}`);
     }
   }
 
@@ -234,10 +227,7 @@ function validateSettings(settings) {
   const hasUnsafeCtor =
     Object.prototype.hasOwnProperty.call(settings, 'constructor') &&
     settings.constructor !== Object;
-  const hasUnsafePrototype = Object.prototype.hasOwnProperty.call(
-    settings,
-    'prototype',
-  );
+  const hasUnsafePrototype = Object.prototype.hasOwnProperty.call(settings, 'prototype');
   if (hasUnsafeProto) warnings.push('Rejected unsafe key: __proto__');
   if (hasUnsafeCtor) warnings.push('Rejected unsafe key: constructor');
   if (hasUnsafePrototype) warnings.push('Rejected unsafe key: prototype');
@@ -273,9 +263,7 @@ function validateSettings(settings) {
     settings.reviewThreshold !== null &&
     settings.autoApproveThreshold < settings.reviewThreshold
   ) {
-    errors.push(
-      'autoApproveThreshold must be greater than or equal to reviewThreshold',
-    );
+    errors.push('autoApproveThreshold must be greater than or equal to reviewThreshold');
   }
 
   if (
@@ -286,14 +274,14 @@ function validateSettings(settings) {
     settings.downloadConfidenceThreshold < settings.autoApproveThreshold
   ) {
     errors.push(
-      'downloadConfidenceThreshold must be greater than or equal to autoApproveThreshold',
+      'downloadConfidenceThreshold must be greater than or equal to autoApproveThreshold'
     );
   }
 
   return {
     valid: errors.length === 0,
     errors,
-    warnings,
+    warnings
   };
 }
 
@@ -330,10 +318,16 @@ function sanitizeSettings(settings) {
       continue;
     }
 
+    // Normalize special fields before validation
+    let normalizedValue = value;
+    if (key === 'ollamaHost' && typeof value === 'string') {
+      normalizedValue = value.trim();
+    }
+
     // Validate and sanitize
-    const fieldErrors = validateSetting(key, value, rule);
+    const fieldErrors = validateSetting(key, normalizedValue, rule);
     if (fieldErrors.length === 0) {
-      sanitized[key] = value;
+      sanitized[key] = normalizedValue;
     }
     // Invalid values are dropped (will use defaults)
   }
@@ -362,34 +356,24 @@ function getConfigurableLimits(settings) {
   return {
     fileSizeLimits: {
       maxFileSize: safeSettings.maxFileSize ?? DEFAULT_SETTINGS.maxFileSize,
-      maxImageFileSize:
-        safeSettings.maxImageFileSize ?? DEFAULT_SETTINGS.maxImageFileSize,
-      maxDocumentFileSize:
-        safeSettings.maxDocumentFileSize ??
-        DEFAULT_SETTINGS.maxDocumentFileSize,
-      maxTextFileSize:
-        safeSettings.maxTextFileSize ?? DEFAULT_SETTINGS.maxTextFileSize,
+      maxImageFileSize: safeSettings.maxImageFileSize ?? DEFAULT_SETTINGS.maxImageFileSize,
+      maxDocumentFileSize: safeSettings.maxDocumentFileSize ?? DEFAULT_SETTINGS.maxDocumentFileSize,
+      maxTextFileSize: safeSettings.maxTextFileSize ?? DEFAULT_SETTINGS.maxTextFileSize
     },
     processingLimits: {
       maxConcurrentAnalysis:
-        safeSettings.maxConcurrentAnalysis ??
-        DEFAULT_SETTINGS.maxConcurrentAnalysis,
-      analysisTimeout:
-        safeSettings.analysisTimeout ?? DEFAULT_SETTINGS.analysisTimeout,
+        safeSettings.maxConcurrentAnalysis ?? DEFAULT_SETTINGS.maxConcurrentAnalysis,
+      analysisTimeout: safeSettings.analysisTimeout ?? DEFAULT_SETTINGS.analysisTimeout,
       fileOperationTimeout:
-        safeSettings.fileOperationTimeout ??
-        DEFAULT_SETTINGS.fileOperationTimeout,
+        safeSettings.fileOperationTimeout ?? DEFAULT_SETTINGS.fileOperationTimeout,
       maxBatchSize: safeSettings.maxBatchSize ?? DEFAULT_SETTINGS.maxBatchSize,
-      retryAttempts:
-        safeSettings.retryAttempts ?? DEFAULT_SETTINGS.retryAttempts,
+      retryAttempts: safeSettings.retryAttempts ?? DEFAULT_SETTINGS.retryAttempts
     },
     uiLimits: {
       workflowRestoreMaxAge:
-        safeSettings.workflowRestoreMaxAge ??
-        DEFAULT_SETTINGS.workflowRestoreMaxAge,
-      saveDebounceMs:
-        safeSettings.saveDebounceMs ?? DEFAULT_SETTINGS.saveDebounceMs,
-    },
+        safeSettings.workflowRestoreMaxAge ?? DEFAULT_SETTINGS.workflowRestoreMaxAge,
+      saveDebounceMs: safeSettings.saveDebounceMs ?? DEFAULT_SETTINGS.saveDebounceMs
+    }
   };
 }
 
@@ -399,5 +383,5 @@ module.exports = {
   validateSetting,
   sanitizeSettings,
   getDefaultValue,
-  getConfigurableLimits,
+  getConfigurableLimits
 };

@@ -10,20 +10,20 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   BATCH: {
-    AUTO_ORGANIZE_BATCH_SIZE: 10,
+    AUTO_ORGANIZE_BATCH_SIZE: 10
   },
   THRESHOLDS: {
     CONFIDENCE_HIGH: 0.8,
     MIN_SIMILARITY_SCORE: 0.5,
-    CONFIDENCE_LOW: 0.3,
-  },
+    CONFIDENCE_LOW: 0.3
+  }
 }));
 
 // Mock fileTypeUtils
@@ -32,28 +32,28 @@ jest.mock('../src/main/services/autoOrganize/fileTypeUtils', () => ({
     const categories = {
       '.pdf': 'documents',
       '.jpg': 'images',
-      '.mp3': 'audio',
+      '.mp3': 'audio'
     };
     return categories[ext] || 'other';
   }),
   sanitizeFile: jest.fn((file) => ({
     name: file.name,
     path: file.path,
-    extension: file.extension,
-  })),
+    extension: file.extension
+  }))
 }));
 
 // Mock folderOperations
 jest.mock('../src/main/services/autoOrganize/folderOperations', () => ({
   getFallbackDestination: jest.fn((file, folders, defaultLoc) => ({
     folder: defaultLoc,
-    path: `/mock/${defaultLoc}`,
+    path: `/mock/${defaultLoc}`
   })),
   buildDestinationPath: jest.fn((file, suggestion, defaultLoc, preserveNames) => ({
     folder: suggestion?.folder || defaultLoc,
     path: suggestion?.path || `/mock/${defaultLoc}/${file.name}`,
-    newName: preserveNames ? file.name : suggestion?.newName || file.name,
-  })),
+    newName: preserveNames ? file.name : suggestion?.newName || file.name
+  }))
 }));
 
 // Mock batchProcessor
@@ -62,8 +62,8 @@ jest.mock('../src/main/services/autoOrganize/batchProcessor', () => ({
   batchOrganize: jest.fn().mockResolvedValue({
     organized: [],
     needsReview: [],
-    failed: [],
-  }),
+    failed: []
+  })
 }));
 
 // Mock fileProcessor
@@ -72,8 +72,8 @@ jest.mock('../src/main/services/autoOrganize/fileProcessor', () => ({
   processFilesIndividually: jest.fn().mockResolvedValue(undefined),
   processNewFile: jest.fn().mockResolvedValue({
     success: true,
-    destination: '/mock/destination',
-  }),
+    destination: '/mock/destination'
+  })
 }));
 
 describe('AutoOrganizeServiceCore', () => {
@@ -95,29 +95,29 @@ describe('AutoOrganizeServiceCore', () => {
         groups: [
           {
             folder: 'Documents',
-            files: [{ name: 'test.pdf', suggestion: { folder: 'Documents' } }],
-          },
-        ],
+            files: [{ name: 'test.pdf', suggestion: { folder: 'Documents' } }]
+          }
+        ]
       }),
       getSuggestionsForFile: jest.fn().mockResolvedValue({
         success: true,
-        primary: { folder: 'Documents', confidence: 0.9 },
+        primary: { folder: 'Documents', confidence: 0.9 }
       }),
       userPatterns: new Map(),
       feedbackHistory: [],
-      folderUsageStats: new Map(),
+      folderUsageStats: new Map()
     };
 
     mockSettingsService = {
-      get: jest.fn().mockReturnValue({}),
+      get: jest.fn().mockReturnValue({})
     };
 
     mockFolderMatchingService = {
-      matchFileToFolders: jest.fn().mockResolvedValue([]),
+      matchFileToFolders: jest.fn().mockResolvedValue([])
     };
 
     mockUndoRedoService = {
-      recordOperation: jest.fn(),
+      recordOperation: jest.fn()
     };
 
     AutoOrganizeServiceCore = require('../src/main/services/autoOrganize/AutoOrganizeServiceCore');
@@ -125,7 +125,7 @@ describe('AutoOrganizeServiceCore', () => {
       suggestionService: mockSuggestionService,
       settingsService: mockSettingsService,
       folderMatchingService: mockFolderMatchingService,
-      undoRedoService: mockUndoRedoService,
+      undoRedoService: mockUndoRedoService
     });
   });
 
@@ -150,7 +150,7 @@ describe('AutoOrganizeServiceCore', () => {
         name: 'test.pdf',
         path: '/path/to/test.pdf',
         extension: '.pdf',
-        extraField: 'should be removed',
+        extraField: 'should be removed'
       };
 
       const result = service._sanitizeFile(file);
@@ -163,12 +163,22 @@ describe('AutoOrganizeServiceCore', () => {
 
   describe('organizeFiles', () => {
     const mockFiles = [
-      { name: 'doc1.pdf', path: '/test/doc1.pdf', extension: '.pdf', analysis: { category: 'documents' } },
-      { name: 'doc2.pdf', path: '/test/doc2.pdf', extension: '.pdf', analysis: { category: 'documents' } },
+      {
+        name: 'doc1.pdf',
+        path: '/test/doc1.pdf',
+        extension: '.pdf',
+        analysis: { category: 'documents' }
+      },
+      {
+        name: 'doc2.pdf',
+        path: '/test/doc2.pdf',
+        extension: '.pdf',
+        analysis: { category: 'documents' }
+      }
     ];
 
     const mockSmartFolders = [
-      { name: 'Documents', path: '/folders/Documents', keywords: ['document'] },
+      { name: 'Documents', path: '/folders/Documents', keywords: ['document'] }
     ];
 
     test('returns results structure', async () => {
@@ -182,11 +192,18 @@ describe('AutoOrganizeServiceCore', () => {
 
     test('separates files with and without analysis', async () => {
       const filesWithMixed = [
-        { name: 'with.pdf', path: '/test/with.pdf', extension: '.pdf', analysis: { category: 'docs' } },
-        { name: 'without.pdf', path: '/test/without.pdf', extension: '.pdf' },
+        {
+          name: 'with.pdf',
+          path: '/test/with.pdf',
+          extension: '.pdf',
+          analysis: { category: 'docs' }
+        },
+        { name: 'without.pdf', path: '/test/without.pdf', extension: '.pdf' }
       ];
 
-      const { processFilesWithoutAnalysis } = require('../src/main/services/autoOrganize/fileProcessor');
+      const {
+        processFilesWithoutAnalysis
+      } = require('../src/main/services/autoOrganize/fileProcessor');
 
       await service.organizeFiles(filesWithMixed, mockSmartFolders);
 
@@ -199,7 +216,7 @@ describe('AutoOrganizeServiceCore', () => {
         name: `file${i}.pdf`,
         path: `/test/file${i}.pdf`,
         extension: '.pdf',
-        analysis: { category: 'documents' },
+        analysis: { category: 'documents' }
       }));
 
       await service.organizeFiles(manyFiles, mockSmartFolders, { batchSize: 10 });
@@ -211,10 +228,12 @@ describe('AutoOrganizeServiceCore', () => {
     test('falls back to individual processing on batch failure', async () => {
       mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
         success: false,
-        groups: [],
+        groups: []
       });
 
-      const { processFilesIndividually } = require('../src/main/services/autoOrganize/fileProcessor');
+      const {
+        processFilesIndividually
+      } = require('../src/main/services/autoOrganize/fileProcessor');
 
       await service.organizeFiles(mockFiles, mockSmartFolders);
 
@@ -222,11 +241,11 @@ describe('AutoOrganizeServiceCore', () => {
     });
 
     test('handles batch processing errors', async () => {
-      mockSuggestionService.getBatchSuggestions.mockRejectedValueOnce(
-        new Error('Batch failed'),
-      );
+      mockSuggestionService.getBatchSuggestions.mockRejectedValueOnce(new Error('Batch failed'));
 
-      const { processFilesIndividually } = require('../src/main/services/autoOrganize/fileProcessor');
+      const {
+        processFilesIndividually
+      } = require('../src/main/services/autoOrganize/fileProcessor');
 
       await service.organizeFiles(mockFiles, mockSmartFolders);
 
@@ -238,7 +257,7 @@ describe('AutoOrganizeServiceCore', () => {
         confidenceThreshold: 0.9,
         defaultLocation: 'Inbox',
         preserveNames: true,
-        batchSize: 5,
+        batchSize: 5
       });
 
       expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalled();
@@ -251,7 +270,7 @@ describe('AutoOrganizeServiceCore', () => {
       batchOrganize.mockResolvedValueOnce({
         organized: [{ name: 'file.pdf' }],
         needsReview: [],
-        failed: [],
+        failed: []
       });
 
       const files = [{ name: 'file.pdf', path: '/test/file.pdf' }];
@@ -311,13 +330,12 @@ describe('AutoOrganizeServiceCore', () => {
       const { processNewFile } = require('../src/main/services/autoOrganize/fileProcessor');
       processNewFile.mockResolvedValueOnce({
         success: true,
-        destination: '/docs/file.pdf',
+        destination: '/docs/file.pdf'
       });
 
-      const result = await service.processNewFile(
-        '/downloads/file.pdf',
-        [{ name: 'Documents', path: '/docs' }],
-      );
+      const result = await service.processNewFile('/downloads/file.pdf', [
+        { name: 'Documents', path: '/docs' }
+      ]);
 
       expect(processNewFile).toHaveBeenCalled();
       expect(result.success).toBe(true);
@@ -351,7 +369,7 @@ describe('AutoOrganizeServiceCore', () => {
     test('merges with existing thresholds', () => {
       service.updateThresholds({
         autoApprove: 0.9,
-        requireReview: 0.6,
+        requireReview: 0.6
       });
 
       expect(service.thresholds.autoApprove).toBe(0.9);

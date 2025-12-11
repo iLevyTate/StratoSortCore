@@ -87,10 +87,7 @@ async function initializeAutoUpdater(isDev) {
     const cleanup = () => {
       autoUpdater.removeListener('error', handleError);
       autoUpdater.removeListener('update-available', handleUpdateAvailable);
-      autoUpdater.removeListener(
-        'update-not-available',
-        handleUpdateNotAvailable,
-      );
+      autoUpdater.removeListener('update-not-available', handleUpdateNotAvailable);
       autoUpdater.removeListener('update-downloaded', handleUpdateDownloaded);
       logger.debug('[UPDATER] Listeners cleaned up');
     };
@@ -104,7 +101,7 @@ async function initializeAutoUpdater(isDev) {
     } catch (e) {
       logger.error('[UPDATER] Update check failed:', {
         error: e.message,
-        stack: e.stack,
+        stack: e.stack
       });
     }
 
@@ -152,5 +149,5 @@ module.exports = {
   initializeAutoUpdater,
   cleanupAutoUpdater,
   checkForUpdates,
-  quitAndInstall,
+  quitAndInstall
 };

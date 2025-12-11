@@ -7,8 +7,8 @@
  * @module renderer/utils/reactEdgeCaseUtils
  */
 
-const { useEffect, useRef, useState } = require('react');
-const { debounce } = require('../../shared/promiseUtils');
+import { useEffect, useRef, useState } from 'react';
+import { debounce } from '../../shared/promiseUtils';
 
 /**
  * Hook to safely execute a callback only if the component is still mounted
@@ -36,7 +36,8 @@ function useSafeState(initialValue) {
   return [state, setSafeState];
 }
 
-module.exports = {
+export { useSafeState, debounce };
+export default {
   useSafeState,
-  debounce,
+  debounce
 };

@@ -7,35 +7,20 @@
  * @module phases/DiscoverPhase
  */
 
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
-import {
-  useConfirmDialog,
-  useDragAndDrop,
-  useSettingsSubscription,
-} from '../hooks';
+import { useConfirmDialog, useDragAndDrop, useSettingsSubscription } from '../hooks';
 import { Button } from '../components/ui';
-import {
-  FolderOpenIcon,
-  SettingsIcon,
-  AlertTriangleIcon,
-  CloseIcon,
-} from '../components/icons';
+import { FolderOpenIcon, SettingsIcon } from '../components/icons';
 import {
   NamingSettingsModal,
   SelectionControls,
-  DragAndDropZone,
   AnalysisResultsList,
-  AnalysisProgress,
+  AnalysisProgress
 } from '../components/discover';
 
 // Extracted hooks and utilities
@@ -44,7 +29,7 @@ import {
   useAnalysis,
   useFileHandlers,
   useFileActions,
-  getFileStateDisplayInfo,
+  getFileStateDisplayInfo
 } from './discover';
 
 logger.setContext('DiscoverPhase');
@@ -76,7 +61,7 @@ function DiscoverPhase() {
     updateFileState,
     resetAnalysisState,
     actions,
-    readySelectedFilesCount,
+    readySelectedFilesCount
   } = useDiscoverState();
 
   const { addNotification } = useNotification();
@@ -92,25 +77,22 @@ function DiscoverPhase() {
   // Filter out results for files no longer selected (e.g., moved/cleared)
   const selectedPaths = useMemo(
     () => new Set((selectedFiles || []).map((f) => f.path)),
-    [selectedFiles],
+    [selectedFiles]
   );
 
   const visibleAnalysisResults = useMemo(
-    () =>
-      (analysisResults || []).filter((result) =>
-        selectedPaths.has(result.path),
-      ),
-    [analysisResults, selectedPaths],
+    () => (analysisResults || []).filter((result) => selectedPaths.has(result.path)),
+    [analysisResults, selectedPaths]
   );
 
   const visibleReadyCount = useMemo(
     () => visibleAnalysisResults.filter((r) => r.analysis && !r.error).length,
-    [visibleAnalysisResults],
+    [visibleAnalysisResults]
   );
 
   const visibleFailedCount = useMemo(
     () => visibleAnalysisResults.filter((r) => r.error).length,
-    [visibleAnalysisResults],
+    [visibleAnalysisResults]
   );
 
   // Build phaseData for compatibility
@@ -125,9 +107,9 @@ function DiscoverPhase() {
       convention: namingConvention,
       dateFormat,
       caseConvention,
-      separator,
+      separator
     },
-    totalAnalysisFailure,
+    totalAnalysisFailure
   };
 
   // Extended actions with totalAnalysisFailure setter
@@ -140,44 +122,43 @@ function DiscoverPhase() {
         } else {
           actions.setPhaseData(key, value);
         }
-      },
+      }
     }),
-    [actions],
+    [actions]
   );
 
   // Analysis hook
-  const { analyzeFiles, analyzeFilesRef, cancelAnalysis, clearAnalysisQueue } =
-    useAnalysis({
-      selectedFiles,
-      fileStates,
-      analysisResults,
-      isAnalyzing,
-      analysisProgress,
-      namingSettings,
-      setters: {
-        setIsAnalyzing,
-        setAnalysisProgress,
-        setCurrentAnalysisFile,
-        setAnalysisResults,
-        setFileStates,
-      },
-      updateFileState,
-      addNotification,
-      actions: extendedActions,
-    });
+  const { analyzeFiles, analyzeFilesRef, cancelAnalysis, clearAnalysisQueue } = useAnalysis({
+    selectedFiles,
+    fileStates,
+    analysisResults,
+    isAnalyzing,
+    analysisProgress,
+    namingSettings,
+    setters: {
+      setIsAnalyzing,
+      setAnalysisProgress,
+      setCurrentAnalysisFile,
+      setAnalysisResults,
+      setFileStates
+    },
+    updateFileState,
+    addNotification,
+    actions: extendedActions
+  });
 
   // File handlers hook
   const {
     isScanning,
     handleFileSelection,
     handleFolderSelection,
-    handleFileDrop: fileHandlersDrop,
+    handleFileDrop: fileHandlersDrop
   } = useFileHandlers({
     selectedFiles,
     setSelectedFiles,
     updateFileState,
     addNotification,
-    analyzeFiles,
+    analyzeFiles
   });
 
   // File actions hook
@@ -187,7 +168,7 @@ function DiscoverPhase() {
     setFileStates,
     addNotification,
     showConfirm,
-    phaseData,
+    phaseData
   });
 
   // Drag and drop with file handler
@@ -197,7 +178,7 @@ function DiscoverPhase() {
         await fileHandlersDrop(files);
       }
     },
-    [fileHandlersDrop],
+    [fileHandlersDrop]
   );
 
   const { isDragging, dragProps } = useDragAndDrop(handleFileDrop);
@@ -207,25 +188,22 @@ function DiscoverPhase() {
   useSettingsSubscription(
     useCallback(
       (changedSettings) => {
-        logger.info(
-          'Settings changed externally:',
-          Object.keys(changedSettings),
-        );
+        logger.info('Settings changed externally:', Object.keys(changedSettings));
         if (changedSettings.ollamaHost && !isAnalyzing) {
           addNotification(
             'Ollama settings updated. New analyses will use the updated configuration.',
             'info',
             3000,
-            'settings-changed',
+            'settings-changed'
           );
         }
       },
-      [isAnalyzing, addNotification],
+      [isAnalyzing, addNotification]
     ),
     {
       enabled: true,
-      watchKeys: ['ollamaHost', 'ollamaModels', 'analysisSettings'],
-    },
+      watchKeys: ['ollamaHost', 'ollamaModels', 'analysisSettings']
+    }
   );
 
   // Check for stuck analysis on mount
@@ -265,7 +243,7 @@ function DiscoverPhase() {
           `Resuming analysis of ${remaining.length} files...`,
           'info',
           3000,
-          'analysis-resume',
+          'analysis-resume'
         );
         const runAnalysis = analyzeFilesRef.current;
         if (runAnalysis) {
@@ -283,7 +261,7 @@ function DiscoverPhase() {
     fileStates,
     addNotification,
     resetAnalysisState,
-    analyzeFilesRef,
+    analyzeFilesRef
   ]);
 
   // Auto-reset stuck/stalled analysis
@@ -301,7 +279,7 @@ function DiscoverPhase() {
         'Analysis stalled with no progress - auto-resetting',
         'warning',
         5000,
-        'analysis-stalled',
+        'analysis-stalled'
       );
       resetAnalysisState('Analysis stalled with no progress after 2 minutes');
       return;
@@ -312,7 +290,7 @@ function DiscoverPhase() {
         'Detected stuck analysis state - auto-resetting',
         'warning',
         5000,
-        'analysis-auto-reset',
+        'analysis-auto-reset'
       );
       resetAnalysisState('Stuck analysis state after 5 minutes of inactivity');
     }
@@ -324,34 +302,15 @@ function DiscoverPhase() {
       const state = fileStates[filePath]?.state || 'pending';
       return getFileStateDisplayInfo(state, hasAnalysis);
     },
-    [fileStates],
+    [fileStates]
   );
 
   return (
-    <div
-      className="phase-container bg-system-gray-50/30"
-      style={{ paddingBottom: 'var(--spacing-spacious)' }}
-    >
-      <div
-        className="container-responsive flex flex-col flex-1 min-h-0"
-        style={{
-          gap: 'var(--spacing-default)',
-          paddingTop: 'var(--spacing-default)',
-          paddingBottom: 'var(--spacing-default)',
-        }}
-      >
+    <div className="phase-container bg-system-gray-50/30 pb-spacious">
+      <div className="container-responsive flex flex-col flex-1 min-h-0 py-default gap-default">
         {/* Header Section */}
-        <div
-          className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-shrink-0"
-          style={{ gap: 'var(--spacing-cozy)' }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 'var(--spacing-compact)',
-            }}
-          >
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-shrink-0 gap-cozy">
+          <div className="flex flex-col gap-compact">
             <h1 className="heading-primary">Discover & Analyze</h1>
             <p className="text-base text-system-gray-600 max-w-2xl">
               Add your files and configure how StratoSort should name them.
@@ -359,29 +318,13 @@ function DiscoverPhase() {
           </div>
         </div>
 
-        <div
-          className="flex-1 min-h-0 flex flex-col"
-          style={{ gap: 'var(--spacing-default)' }}
-        >
+        <div className="flex-1 min-h-0 flex flex-col gap-default">
           {/* Primary Content Selection Card */}
-          <section
-            className="surface-panel flex flex-col flex-shrink-0"
-            style={{ gap: 'var(--spacing-default)' }}
-          >
-            <div
-              className="flex items-center justify-between flex-wrap"
-              style={{ gap: 'var(--spacing-cozy)' }}
-            >
-              <div
-                className="flex items-center"
-                style={{ gap: 'var(--spacing-cozy)' }}
-              >
-                <h3
-                  className="heading-tertiary m-0 flex items-center"
-                  style={{ gap: 'var(--spacing-compact)' }}
-                >
-                  <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" />{' '}
-                  Select Content
+          <section className="surface-panel flex flex-col flex-shrink-0 gap-default">
+            <div className="flex items-center justify-between flex-wrap gap-cozy">
+              <div className="flex items-center gap-cozy">
+                <h3 className="heading-tertiary m-0 flex items-center gap-compact">
+                  <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" /> Select Content
                 </h3>
                 {selectedFiles.length > 0 && (
                   <span className="status-chip info">
@@ -394,48 +337,51 @@ function DiscoverPhase() {
                 variant="secondary"
                 size="sm"
                 onClick={() => setShowNamingSettings(true)}
-                className="text-sm"
-                style={{ gap: 'var(--spacing-compact)' }}
+                className="text-sm gap-compact"
               >
                 <SettingsIcon className="w-4 h-4" /> Naming Strategy
               </Button>
             </div>
 
             <div
-              className="flex flex-col items-center justify-center"
-              style={{
-                gap: 'var(--spacing-default)',
-                padding: 'var(--spacing-default) 0',
-              }}
+              className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-content-md p-spacious transition-colors duration-200 border-2 border-dashed rounded-xl ${
+                isDragging ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-transparent'
+              }`}
+              {...dragProps}
             >
-              <DragAndDropZone
-                isDragging={isDragging}
-                dragProps={dragProps}
-                className="w-full max-w-2xl flex flex-col justify-center items-center min-h-[180px] bg-white/70 hover:bg-white transition-all border-system-gray-200"
-                style={{ borderRadius: 'var(--radius-md)' }}
-              />
+              <div className="w-16 h-16 bg-gradient-to-br from-stratosort-blue to-stratosort-indigo shadow-lg flex items-center justify-center transform transition-transform hover:scale-105 duration-300 rounded-xl mb-relaxed">
+                <FolderOpenIcon className="w-8 h-8 text-white" />
+              </div>
+
+              <h2 className="heading-primary text-xl md:text-2xl tracking-tight mb-compact">
+                {isDragging ? 'Drop Files Here' : 'Add Files to Organize'}
+              </h2>
+              <p className="text-system-gray-500 max-w-sm leading-relaxed text-sm md:text-base mb-spacious">
+                {isDragging
+                  ? 'Release to add these files to your analysis queue.'
+                  : 'Select documents or scan folders to let AI analyze your content and suggest the perfect organization structure.'}
+              </p>
+
               <SelectionControls
                 onSelectFiles={handleFileSelection}
                 onSelectFolder={handleFolderSelection}
                 isScanning={isScanning}
-                className="justify-center"
+                className="w-full max-w-sm justify-center"
               />
+
+              {isScanning && (
+                <div className="flex items-center text-xs font-medium text-stratosort-blue bg-stratosort-blue/5 mt-relaxed px-cozy py-compact rounded-full">
+                  <span className="animate-spin h-3 w-3 border-2 border-current border-t-transparent rounded-full mr-compact" />
+                  Scanning files...
+                </div>
+              )}
             </div>
           </section>
 
           {/* Middle Section - Queue & Status Actions */}
           {(selectedFiles.length > 0 || isAnalyzing) && (
-            <div
-              className="surface-panel flex items-center justify-between bg-white/85 backdrop-blur-md animate-fade-in"
-              style={{
-                padding: 'var(--spacing-default)',
-                gap: 'var(--spacing-default)',
-              }}
-            >
-              <div
-                className="flex items-center flex-1"
-                style={{ gap: 'var(--spacing-default)' }}
-              >
+            <div className="surface-panel flex items-center justify-between bg-white/85 backdrop-blur-md animate-fade-in p-default gap-default">
+              <div className="flex items-center flex-1 gap-default">
                 {isAnalyzing ? (
                   <div className="flex-1 max-w-2xl">
                     <AnalysisProgress
@@ -444,32 +390,23 @@ function DiscoverPhase() {
                     />
                   </div>
                 ) : (
-                  <div
-                    className="text-sm text-system-gray-600 flex items-center"
-                    style={{ gap: 'var(--spacing-compact)' }}
-                  >
+                  <div className="text-sm text-system-gray-600 flex items-center gap-compact">
                     <span className="status-dot success animate-pulse"></span>
                     Ready to analyze {selectedFiles.length} files
                   </div>
                 )}
               </div>
 
-              <div
-                className="flex items-center"
-                style={{ gap: 'var(--spacing-cozy)' }}
-              >
+              <div className="flex items-center gap-cozy">
                 {isAnalyzing ? (
                   <>
                     <Button onClick={cancelAnalysis} variant="danger" size="sm">
                       Stop Analysis
                     </Button>
                     {analysisProgress.lastActivity &&
-                      Date.now() - analysisProgress.lastActivity >
-                        2 * 60 * 1000 && (
+                      Date.now() - analysisProgress.lastActivity > 2 * 60 * 1000 && (
                         <Button
-                          onClick={() =>
-                            resetAnalysisState('User forced reset')
-                          }
+                          onClick={() => resetAnalysisState('User forced reset')}
                           variant="secondary"
                           size="sm"
                           className="status-chip warning"
@@ -495,10 +432,7 @@ function DiscoverPhase() {
           {/* Bottom Section - Results */}
           {visibleAnalysisResults.length > 0 && (
             <div className="flex-1 min-h-content-md max-h-viewport-lg surface-panel flex flex-col overflow-hidden animate-slide-up">
-              <div
-                className="border-b border-border-soft/70 bg-white/70 flex items-center justify-between"
-                style={{ padding: 'var(--spacing-default)' }}
-              >
+              <div className="border-b border-border-soft/70 bg-white/70 flex items-center justify-between p-default">
                 <h3 className="heading-tertiary m-0 text-sm uppercase tracking-wider text-system-gray-500">
                   Analysis Results
                 </h3>
@@ -506,10 +440,7 @@ function DiscoverPhase() {
                   {visibleReadyCount} successful, {visibleFailedCount} failed
                 </div>
               </div>
-              <div
-                className="flex-1 min-h-0 p-0 bg-white/10 overflow-y-auto modern-scrollbar"
-                style={{ paddingBottom: 'var(--spacing-default)' }}
-              >
+              <div className="flex-1 min-h-0 p-0 bg-white/10 overflow-y-auto modern-scrollbar pb-default">
                 <AnalysisResultsList
                   results={visibleAnalysisResults}
                   onFileAction={handleFileAction}
@@ -522,35 +453,19 @@ function DiscoverPhase() {
 
         {/* Analysis Failure Recovery Banner */}
         {totalAnalysisFailure && (
-          <div
-            className="flex-shrink-0 glass-panel border border-stratosort-warning/30 bg-stratosort-warning/10 backdrop-blur-md animate-fade-in"
-            style={{ padding: 'var(--spacing-default)' }}
-          >
-            <div
-              className="flex items-start"
-              style={{ gap: 'var(--spacing-cozy)' }}
-            >
-              <AlertTriangleIcon className="w-6 h-6 text-stratosort-warning flex-shrink-0" />
+          <div className="flex-shrink-0 glass-panel border border-stratosort-warning/30 bg-stratosort-warning/10 backdrop-blur-md animate-fade-in p-default">
+            <div className="flex items-start gap-cozy">
+              <AlertTriangle className="w-6 h-6 text-stratosort-warning flex-shrink-0" />
               <div className="flex-1">
-                <h4
-                  className="heading-tertiary text-stratosort-warning"
-                  style={{ marginBottom: 'var(--spacing-compact)' }}
-                >
+                <h4 className="heading-tertiary text-stratosort-warning mb-compact">
                   All File Analyses Failed
                 </h4>
-                <p
-                  className="text-xs text-system-gray-700"
-                  style={{ marginBottom: 'var(--spacing-cozy)' }}
-                >
-                  AI analysis could not process your files. This may be due to
-                  network issues, unsupported file types, or API limits. You can
-                  still proceed to organize your files manually, or try adding
-                  different files.
+                <p className="text-xs text-system-gray-700 mb-cozy">
+                  AI analysis could not process your files. This may be due to network issues,
+                  unsupported file types, or API limits. You can still proceed to organize your
+                  files manually, or try adding different files.
                 </p>
-                <div
-                  className="flex flex-wrap"
-                  style={{ gap: 'var(--spacing-compact)' }}
-                >
+                <div className="flex flex-wrap gap-compact">
                   <Button
                     onClick={() => {
                       setTotalAnalysisFailure(false);
@@ -579,24 +494,17 @@ function DiscoverPhase() {
                 onClick={() => setTotalAnalysisFailure(false)}
                 variant="ghost"
                 size="sm"
-                className="text-stratosort-warning hover:text-stratosort-warning/80"
-                style={{ padding: 'var(--spacing-compact)' }}
+                className="text-stratosort-warning hover:text-stratosort-warning/80 p-compact"
                 aria-label="Dismiss warning"
               >
-                <CloseIcon className="w-4 h-4" />
+                <X className="w-4 h-4" />
               </Button>
             </div>
           </div>
         )}
 
         {/* Footer Navigation */}
-        <div
-          className="mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0"
-          style={{
-            paddingTop: 'var(--spacing-default)',
-            gap: 'var(--spacing-cozy)',
-          }}
-        >
+        <div className="mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0 pt-default gap-cozy">
           <Button
             onClick={() => actions.advancePhase(PHASES.SETUP)}
             variant="secondary"
@@ -630,11 +538,7 @@ function DiscoverPhase() {
               <Button
                 onClick={() => {
                   if (isAnalyzing) {
-                    addNotification(
-                      'Please wait for analysis to complete',
-                      'warning',
-                      3000,
-                    );
+                    addNotification('Please wait for analysis to complete', 'warning', 3000);
                     return;
                   }
                   if (visibleReadyCount === 0 && !totalAnalysisFailure) {
@@ -643,7 +547,7 @@ function DiscoverPhase() {
                         ? 'All files failed analysis. Use the recovery options above or click "Continue Without Analysis".'
                         : 'Please analyze files first',
                       'warning',
-                      4000,
+                      4000
                     );
                     return;
                   }
@@ -662,14 +566,10 @@ function DiscoverPhase() {
                 }
                 title={disabledReason || undefined}
                 aria-label={
-                  disabledReason
-                    ? `Continue button disabled: ${disabledReason}`
-                    : undefined
+                  disabledReason ? `Continue button disabled: ${disabledReason}` : undefined
                 }
               >
-                {totalAnalysisFailure
-                  ? 'Continue Without Analysis →'
-                  : 'Continue to Organize →'}
+                {totalAnalysisFailure ? 'Continue Without Analysis →' : 'Continue to Organize →'}
               </Button>
             );
           })()}

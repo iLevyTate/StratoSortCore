@@ -26,7 +26,7 @@ const commonCategories = [
   'Financial',
   'Legal',
   'Media',
-  'Downloads',
+  'Downloads'
 ];
 
 /**
@@ -42,7 +42,7 @@ function calculateFolderFitScore(file, folder) {
   // Check name similarity
   const nameSimilarity = calculateStringSimilarity(
     file.name.toLowerCase(),
-    folder.name.toLowerCase(),
+    folder.name.toLowerCase()
   );
   score += nameSimilarity * 0.3;
 
@@ -50,25 +50,19 @@ function calculateFolderFitScore(file, folder) {
   if (folder.description && analysis.purpose) {
     const descSimilarity = calculateStringSimilarity(
       analysis.purpose.toLowerCase(),
-      folder.description.toLowerCase(),
+      folder.description.toLowerCase()
     );
     score += descSimilarity * 0.3;
   }
 
   // Check category match
-  if (
-    analysis.category &&
-    folder.name.toLowerCase().includes(analysis.category.toLowerCase())
-  ) {
+  if (analysis.category && folder.name.toLowerCase().includes(analysis.category.toLowerCase())) {
     score += 0.2;
   }
 
   // Check keywords
   if (folder.keywords && analysis.keywords) {
-    const keywordMatch = calculateKeywordOverlap(
-      folder.keywords,
-      analysis.keywords,
-    );
+    const keywordMatch = calculateKeywordOverlap(folder.keywords, analysis.keywords);
     score += keywordMatch * 0.2;
   }
 
@@ -88,8 +82,7 @@ function suggestFolderImprovement(file, folder) {
   // Suggest adding keywords
   if (analysis.keywords && folder.keywords) {
     const newKeywords = analysis.keywords.filter(
-      (k) =>
-        !folder.keywords.some((fk) => fk.toLowerCase() === k.toLowerCase()),
+      (k) => !folder.keywords.some((fk) => fk.toLowerCase() === k.toLowerCase())
     );
     if (newKeywords.length > 0) {
       improvements.push(`Add keywords: ${newKeywords.slice(0, 3).join(', ')}`);
@@ -125,9 +118,7 @@ function suggestNewSmartFolder(file, existingFolders, getFileTypeCategory) {
   let folderName = analysis.category || getFileTypeCategory(file.extension);
 
   // Check if similar folder already exists
-  const exists = existingFolders.some(
-    (f) => f.name.toLowerCase() === folderName.toLowerCase(),
-  );
+  const exists = existingFolders.some((f) => f.name.toLowerCase() === folderName.toLowerCase());
 
   if (exists) {
     if (analysis.project) {
@@ -145,7 +136,7 @@ function suggestNewSmartFolder(file, existingFolders, getFileTypeCategory) {
     description: `Suggested new folder for ${analysis.purpose || `${file.extension} files`}`,
     isNew: true,
     method: 'new_folder_suggestion',
-    reasoning: 'No existing folder matches this file type well',
+    reasoning: 'No existing folder matches this file type well'
   };
 }
 
@@ -160,16 +151,13 @@ function identifyMissingCategories(smartFolders, files) {
   const missing = [];
 
   for (const category of commonCategories) {
-    const exists = existingNames.some((name) =>
-      name.includes(category.toLowerCase()),
-    );
+    const exists = existingNames.some((name) => name.includes(category.toLowerCase()));
 
     if (!exists) {
       const wouldBenefit = files.some((f) => {
         const analysis = f.analysis || {};
         return (
-          (analysis.category &&
-            analysis.category.toLowerCase().includes(category.toLowerCase())) ||
+          (analysis.category && analysis.category.toLowerCase().includes(category.toLowerCase())) ||
           (f.name && f.name.toLowerCase().includes(category.toLowerCase()))
         );
       });
@@ -178,7 +166,7 @@ function identifyMissingCategories(smartFolders, files) {
         missing.push({
           name: category,
           reason: `Files detected that would fit in ${category} folder`,
-          priority: 'high',
+          priority: 'high'
         });
       }
     }
@@ -206,9 +194,7 @@ function findOverlappingFolders(smartFolders) {
       descWords: folder.description
         ? new Set(folder.description.toLowerCase().split(/\s+/))
         : new Set(),
-      keywordSet: folder.keywords
-        ? new Set(folder.keywords.map((k) => k.toLowerCase()))
-        : new Set(),
+      keywordSet: folder.keywords ? new Set(folder.keywords.map((k) => k.toLowerCase())) : new Set()
     };
     folderSignatures.set(folder, signature);
   }
@@ -232,21 +218,13 @@ function findOverlappingFolders(smartFolders) {
       const sig2 = folderSignatures.get(folder2);
 
       // Quick rejection test
-      const hasCommonNameWords = [...sig1.nameWords].some((w) =>
-        sig2.nameWords.has(w),
-      );
-      if (
-        !hasCommonNameWords &&
-        sig1.descWords.size === 0 &&
-        sig2.descWords.size === 0
-      ) {
+      const hasCommonNameWords = [...sig1.nameWords].some((w) => sig2.nameWords.has(w));
+      if (!hasCommonNameWords && sig1.descWords.size === 0 && sig2.descWords.size === 0) {
         continue;
       }
 
       if (sig1.keywordSet.size > 0 && sig2.keywordSet.size > 0) {
-        const hasCommonKeywords = [...sig1.keywordSet].some((k) =>
-          sig2.keywordSet.has(k),
-        );
+        const hasCommonKeywords = [...sig1.keywordSet].some((k) => sig2.keywordSet.has(k));
         if (!hasCommonKeywords && !hasCommonNameWords) {
           continue;
         }
@@ -258,7 +236,7 @@ function findOverlappingFolders(smartFolders) {
         overlaps.push({
           folders: [folder1.name, folder2.name],
           similarity,
-          suggestion: `Consider merging '${folder1.name}' and '${folder2.name}'`,
+          suggestion: `Consider merging '${folder1.name}' and '${folder2.name}'`
         });
       }
     }
@@ -286,7 +264,7 @@ function findUnderutilizedFolders(smartFolders, folderUsageStats) {
         suggestion:
           usageCount === 0
             ? `'${folder.name}' has never been used - consider removing or broadening its scope`
-            : `'${folder.name}' is rarely used - consider merging with related folders`,
+            : `'${folder.name}' is rarely used - consider merging with related folders`
       });
     }
   }
@@ -315,16 +293,14 @@ function suggestHierarchyImprovements(smartFolders) {
 
   for (const [parent, folders] of Object.entries(groups)) {
     if (folders.length > 2) {
-      const parentExists = smartFolders.some(
-        (f) => f.name.toLowerCase() === parent.toLowerCase(),
-      );
+      const parentExists = smartFolders.some((f) => f.name.toLowerCase() === parent.toLowerCase());
 
       if (!parentExists) {
         suggestions.push({
           type: 'create_parent',
           parent,
           children: folders.map((f) => f.name),
-          suggestion: `Create parent folder '${parent}' for related folders`,
+          suggestion: `Create parent folder '${parent}' for related folders`
         });
       }
     }
@@ -340,11 +316,7 @@ function suggestHierarchyImprovements(smartFolders) {
  * @param {Map} folderUsageStats - Usage statistics
  * @returns {Array} All improvement suggestions
  */
-function analyzeFolderStructure(
-  smartFolders,
-  files = [],
-  folderUsageStats = new Map(),
-) {
+function analyzeFolderStructure(smartFolders, files = [], folderUsageStats = new Map()) {
   const improvements = [];
 
   const missingCategories = identifyMissingCategories(smartFolders, files);
@@ -353,7 +325,7 @@ function analyzeFolderStructure(
       type: 'missing_categories',
       description: 'Suggested new folders for better organization',
       suggestions: missingCategories,
-      priority: 'high',
+      priority: 'high'
     });
   }
 
@@ -363,20 +335,17 @@ function analyzeFolderStructure(
       type: 'folder_overlaps',
       description: 'Folders with similar purposes that could be merged',
       suggestions: overlaps,
-      priority: 'medium',
+      priority: 'medium'
     });
   }
 
-  const underutilized = findUnderutilizedFolders(
-    smartFolders,
-    folderUsageStats,
-  );
+  const underutilized = findUnderutilizedFolders(smartFolders, folderUsageStats);
   if (underutilized.length > 0) {
     improvements.push({
       type: 'underutilized_folders',
       description: 'Folders that might be too specific or rarely used',
       suggestions: underutilized,
-      priority: 'low',
+      priority: 'low'
     });
   }
 
@@ -386,7 +355,7 @@ function analyzeFolderStructure(
       type: 'hierarchy_improvements',
       description: 'Suggestions for better folder hierarchy',
       suggestions: hierarchySuggestions,
-      priority: 'medium',
+      priority: 'medium'
     });
   }
 
@@ -403,22 +372,18 @@ function calculateFolderSimilarity(folder1, folder2) {
   let similarity = 0;
 
   similarity +=
-    calculateStringSimilarity(
-      folder1.name.toLowerCase(),
-      folder2.name.toLowerCase(),
-    ) * 0.4;
+    calculateStringSimilarity(folder1.name.toLowerCase(), folder2.name.toLowerCase()) * 0.4;
 
   if (folder1.description && folder2.description) {
     similarity +=
       calculateStringSimilarity(
         folder1.description.toLowerCase(),
-        folder2.description.toLowerCase(),
+        folder2.description.toLowerCase()
       ) * 0.3;
   }
 
   if (folder1.keywords && folder2.keywords) {
-    similarity +=
-      calculateKeywordOverlap(folder1.keywords, folder2.keywords) * 0.3;
+    similarity += calculateKeywordOverlap(folder1.keywords, folder2.keywords) * 0.3;
   }
 
   return similarity;
@@ -468,5 +433,5 @@ module.exports = {
   analyzeFolderStructure,
   calculateFolderSimilarity,
   calculateStringSimilarity,
-  calculateKeywordOverlap,
+  calculateKeywordOverlap
 };

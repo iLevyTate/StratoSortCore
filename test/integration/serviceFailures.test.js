@@ -15,8 +15,8 @@ const { generateDummyFiles } = require('../utils/testUtilities');
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/tmp/test-app'),
-  },
+    getPath: jest.fn(() => '/tmp/test-app')
+  }
 }));
 
 // Mock logger
@@ -26,13 +26,13 @@ jest.mock('../../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock config
 jest.mock('../../src/shared/config', () => ({
-  get: jest.fn((key, defaultValue) => defaultValue),
+  get: jest.fn((key, defaultValue) => defaultValue)
 }));
 
 describe('Service Failure Integration Tests', () => {
@@ -57,7 +57,7 @@ describe('Service Failure Integration Tests', () => {
     it('should queue operations when ChromaDB is unavailable', async () => {
       const queue = new OfflineQueue({
         maxQueueSize: 100,
-        persistPath: '/tmp/test-queue.json',
+        persistPath: '/tmp/test-queue.json'
       });
 
       // Enqueue operations
@@ -76,7 +76,7 @@ describe('Service Failure Integration Tests', () => {
     it('should process queued operations when service recovers', async () => {
       const queue = new OfflineQueue({
         maxQueueSize: 100,
-        persistPath: '/tmp/test-queue-recovery.json',
+        persistPath: '/tmp/test-queue-recovery.json'
       });
 
       let isServiceUp = false;
@@ -113,7 +113,7 @@ describe('Service Failure Integration Tests', () => {
       const queue = new OfflineQueue({
         maxQueueSize: 100,
         persistPath: '/tmp/test-queue-partial.json',
-        maxRetries: 2,
+        maxRetries: 2
       });
 
       const processedOps = [];
@@ -123,7 +123,7 @@ describe('Service Failure Integration Tests', () => {
       for (let i = 0; i < 10; i++) {
         queue.enqueue(OperationType.UPSERT_FILE, {
           id: `file:${i}`,
-          shouldFail: i % 3 === 0, // Every 3rd operation fails
+          shouldFail: i % 3 === 0 // Every 3rd operation fails
         });
       }
 
@@ -139,7 +139,7 @@ describe('Service Failure Integration Tests', () => {
       const result = await queue.flush(processor);
 
       console.log(
-        `[TEST] Processed: ${result.processed}, Failed: ${result.failed}, Remaining: ${result.remaining}`,
+        `[TEST] Processed: ${result.processed}, Failed: ${result.failed}, Remaining: ${result.remaining}`
       );
 
       // Some operations should succeed, some should be retried
@@ -150,14 +150,14 @@ describe('Service Failure Integration Tests', () => {
       const queue = new OfflineQueue({
         maxQueueSize: 100,
         persistPath: '/tmp/test-queue-dedup.json',
-        deduplicateByKey: true,
+        deduplicateByKey: true
       });
 
       // Enqueue same file multiple times
       for (let i = 0; i < 5; i++) {
         queue.enqueue(OperationType.UPSERT_FILE, {
           id: 'file:same-file',
-          version: i,
+          version: i
         });
       }
 
@@ -176,13 +176,13 @@ describe('Service Failure Integration Tests', () => {
       const queue = new OfflineQueue({
         maxQueueSize: 5,
         persistPath: '/tmp/test-queue-full.json',
-        deduplicateByKey: false,
+        deduplicateByKey: false
       });
 
       // Fill queue with batch operations (lower priority)
       for (let i = 0; i < 5; i++) {
         queue.enqueue(OperationType.BATCH_UPSERT_FILES, {
-          files: [{ id: `file:${i}` }],
+          files: [{ id: `file:${i}` }]
         });
       }
 
@@ -249,7 +249,7 @@ describe('Service Failure Integration Tests', () => {
       const promise = withOllamaRetry(mockApi, {
         operation: 'test',
         maxRetries: 3,
-        initialDelay: 100,
+        initialDelay: 100
       });
 
       // Advance timers
@@ -269,7 +269,7 @@ describe('Service Failure Integration Tests', () => {
       const promise = withOllamaRetry(mockApi, {
         operation: 'test',
         maxRetries: 2,
-        initialDelay: 100,
+        initialDelay: 100
       }).catch((err) => {
         caughtError = err;
       });
@@ -283,15 +283,13 @@ describe('Service Failure Integration Tests', () => {
     }, 10000);
 
     it('should not retry non-retryable errors', async () => {
-      const mockApi = jest
-        .fn()
-        .mockRejectedValue(new Error('Validation error'));
+      const mockApi = jest.fn().mockRejectedValue(new Error('Validation error'));
 
       await expect(
         withOllamaRetry(mockApi, {
           operation: 'test',
-          maxRetries: 3,
-        }),
+          maxRetries: 3
+        })
       ).rejects.toThrow('Validation error');
 
       expect(mockApi).toHaveBeenCalledTimes(1);
@@ -310,7 +308,7 @@ describe('Service Failure Integration Tests', () => {
         operation: 'test',
         maxRetries: 3,
         initialDelay: 1000,
-        maxDelay: 5000,
+        maxDelay: 5000
       }).catch((err) => {
         caughtError = err;
       });
@@ -344,7 +342,7 @@ describe('Service Failure Integration Tests', () => {
     it('should open circuit after failure threshold', () => {
       const cb = new CircuitBreaker('TestService', {
         failureThreshold: 3,
-        timeout: 5000,
+        timeout: 5000
       });
 
       expect(cb.getState()).toBe(CircuitState.CLOSED);
@@ -361,7 +359,7 @@ describe('Service Failure Integration Tests', () => {
     it('should transition to half-open after timeout', async () => {
       const cb = new CircuitBreaker('TestService', {
         failureThreshold: 2,
-        timeout: 1000,
+        timeout: 1000
       });
 
       // Open the circuit
@@ -381,7 +379,7 @@ describe('Service Failure Integration Tests', () => {
       const cb = new CircuitBreaker('TestService', {
         failureThreshold: 2,
         successThreshold: 1,
-        timeout: 1000,
+        timeout: 1000
       });
 
       // Open the circuit
@@ -401,7 +399,7 @@ describe('Service Failure Integration Tests', () => {
     it('should re-open circuit on failure in half-open state', async () => {
       const cb = new CircuitBreaker('TestService', {
         failureThreshold: 2,
-        timeout: 1000,
+        timeout: 1000
       });
 
       // Open the circuit
@@ -421,7 +419,7 @@ describe('Service Failure Integration Tests', () => {
     it('should emit state change events', () => {
       const cb = new CircuitBreaker('TestService', {
         failureThreshold: 2,
-        timeout: 1000,
+        timeout: 1000
       });
 
       const events = [];
@@ -433,16 +431,14 @@ describe('Service Failure Integration Tests', () => {
       cb.recordFailure(new Error('Failure 2'));
 
       expect(events.length).toBeGreaterThan(0);
-      expect(
-        events.some(
-          (e) => e.type === 'open' || e.currentState === CircuitState.OPEN,
-        ),
-      ).toBe(true);
+      expect(events.some((e) => e.type === 'open' || e.currentState === CircuitState.OPEN)).toBe(
+        true
+      );
     });
 
     it('should provide accurate statistics', () => {
       const cb = new CircuitBreaker('TestService', {
-        failureThreshold: 5,
+        failureThreshold: 5
       });
 
       // Record some successes and failures
@@ -462,7 +458,7 @@ describe('Service Failure Integration Tests', () => {
 
     it('should execute operations through circuit breaker', async () => {
       const cb = new CircuitBreaker('TestService', {
-        failureThreshold: 3,
+        failureThreshold: 3
       });
 
       const successOp = jest.fn().mockResolvedValue('success');
@@ -485,7 +481,7 @@ describe('Service Failure Integration Tests', () => {
       const operations = {
         chromaDbUp: false,
         ollamaUp: false,
-        queuedOperations: [],
+        queuedOperations: []
       };
 
       // Queue operations while services are down
@@ -493,7 +489,7 @@ describe('Service Failure Integration Tests', () => {
         operations.queuedOperations.push({
           type: 'upsert',
           id: `file:${i}`,
-          timestamp: Date.now(),
+          timestamp: Date.now()
         });
       }
 
@@ -520,7 +516,7 @@ describe('Service Failure Integration Tests', () => {
       const serviceState = {
         ollama: true,
         chromaDb: true,
-        failureCount: 0,
+        failureCount: 0
       };
 
       const processFile = async () => {
@@ -587,7 +583,7 @@ describe('Service Failure Integration Tests', () => {
           id: `op:${i}`,
           cancel: () => {
             cancelled = true;
-          },
+          }
         });
       }
 

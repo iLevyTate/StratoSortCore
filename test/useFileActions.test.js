@@ -12,8 +12,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock window.electronAPI
@@ -22,8 +22,8 @@ const mockElectronAPI = {
     open: jest.fn(),
     reveal: jest.fn(),
     delete: jest.fn(),
-    getStats: jest.fn(),
-  },
+    getStats: jest.fn()
+  }
 };
 
 describe('useFileActions', () => {
@@ -41,9 +41,9 @@ describe('useFileActions', () => {
     addNotification: mockAddNotification,
     showConfirm: mockShowConfirm,
     phaseData: {
-      organizedFiles: [],
+      organizedFiles: []
     },
-    ...overrides,
+    ...overrides
   });
 
   beforeEach(() => {
@@ -139,10 +139,10 @@ describe('useFileActions', () => {
               organizedFiles: [
                 {
                   path: '/new/path/file.txt',
-                  originalPath: '/original/path/file.txt',
-                },
-              ],
-            },
+                  originalPath: '/original/path/file.txt'
+                }
+              ]
+            }
           })
         )
       );
@@ -151,9 +151,7 @@ describe('useFileActions', () => {
         await result.current.handleFileAction('reveal', '/new/path/file.txt');
       });
 
-      expect(mockElectronAPI.files.reveal).toHaveBeenCalledWith(
-        '/original/path/file.txt'
-      );
+      expect(mockElectronAPI.files.reveal).toHaveBeenCalledWith('/original/path/file.txt');
     });
 
     test('handles reveal errors', async () => {
@@ -201,10 +199,7 @@ describe('useFileActions', () => {
       });
 
       const filterFn = mockSetAnalysisResults.mock.calls[0][0];
-      const prev = [
-        { path: '/path/to/file.txt' },
-        { path: '/path/to/other.txt' },
-      ];
+      const prev = [{ path: '/path/to/file.txt' }, { path: '/path/to/other.txt' }];
       expect(filterFn(prev)).toEqual([{ path: '/path/to/other.txt' }]);
     });
 
@@ -218,7 +213,7 @@ describe('useFileActions', () => {
       const updateFn = mockSetFileStates.mock.calls[0][0];
       const prev = {
         '/path/to/file.txt': { state: 'ready' },
-        '/path/to/other.txt': { state: 'pending' },
+        '/path/to/other.txt': { state: 'pending' }
       };
       const next = updateFn(prev);
       expect(next['/path/to/file.txt']).toBeUndefined();
@@ -242,7 +237,7 @@ describe('useFileActions', () => {
         confirmText: 'Delete',
         cancelText: 'Cancel',
         variant: 'danger',
-        fileName: 'file.txt',
+        fileName: 'file.txt'
       });
     });
 

@@ -10,10 +10,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
-const {
-  ACTION_TYPES,
-  PROCESSING_LIMITS,
-} = require('../../../shared/constants');
+const { ACTION_TYPES, PROCESSING_LIMITS } = require('../../../shared/constants');
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { logger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
@@ -57,9 +54,7 @@ async function verifySourceFile(sourcePath) {
     if (typeof fs.stat === 'function') {
       const sourceStat = await fs.stat(sourcePath);
       if (!sourceStat.isFile()) {
-        throw new Error(
-          `Source is not a file (may be a directory): ${sourcePath}`,
-        );
+        throw new Error(`Source is not a file (may be a directory): ${sourcePath}`);
       }
     } else {
       // Fallback for mocked fs that does not implement stat
@@ -88,7 +83,7 @@ async function verifyMoveCompletion(source, destination, log) {
     await fs.access(destination);
   } catch {
     throw new Error(
-      `Move verification failed: destination does not exist after move: ${destination}`,
+      `Move verification failed: destination does not exist after move: ${destination}`
     );
   }
 
@@ -99,7 +94,7 @@ async function verifyMoveCompletion(source, destination, log) {
       await fs.access(source);
       // If we get here, source still exists - move may have failed silently
       const verificationError = new Error(
-        `Move verification failed: source file still exists at original location: ${source}`,
+        `Move verification failed: source file still exists at original location: ${source}`
       );
       verificationError.code = 'MOVE_VERIFICATION_SOURCE_EXISTS';
       throw verificationError;
@@ -110,7 +105,7 @@ async function verifyMoveCompletion(source, destination, log) {
       } else {
         log.warn('[FILE-OPS] Move verification: unexpected source state', {
           error: sourceCheckErr.message,
-          code: sourceCheckErr.code,
+          code: sourceCheckErr.code
         });
         throw sourceCheckErr;
       }
@@ -133,7 +128,7 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: 'Invalid batch: operations must be an array',
-      errorCode: 'INVALID_BATCH',
+      errorCode: 'INVALID_BATCH'
     };
   }
 
@@ -141,20 +136,20 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: 'Invalid batch: no operations provided',
-      errorCode: 'EMPTY_BATCH',
+      errorCode: 'EMPTY_BATCH'
     };
   }
 
   if (operation.operations.length > MAX_BATCH_SIZE) {
     log.warn(
-      `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`,
+      `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`
     );
     return {
       success: false,
       error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
       errorCode: 'BATCH_TOO_LARGE',
       maxAllowed: MAX_BATCH_SIZE,
-      provided: operation.operations.length,
+      provided: operation.operations.length
     };
   }
 
@@ -175,7 +170,7 @@ async function handleBatchOrganize({
   operation,
   logger: handlerLogger,
   getServiceIntegration,
-  getMainWindow,
+  getMainWindow
 }) {
   const log = handlerLogger || logger;
 
@@ -200,21 +195,16 @@ async function handleBatchOrganize({
     const svc = getServiceIntegration();
     let batch;
     if (svc?.processingState?.createOrLoadOrganizeBatch) {
-      batch = await svc.processingState.createOrLoadOrganizeBatch(
-        batchId,
-        operation.operations,
-      );
+      batch = await svc.processingState.createOrLoadOrganizeBatch(batchId, operation.operations);
     }
 
     if (!batch || !batch.operations) {
-      log.warn(
-        `[FILE-OPS] Batch service unavailable, using direct operations for ${batchId}`,
-      );
+      log.warn(`[FILE-OPS] Batch service unavailable, using direct operations for ${batchId}`);
       batch = {
         operations: operation.operations.map((op) => ({
           ...op,
-          status: 'pending',
-        })),
+          status: 'pending'
+        }))
       };
     }
 
@@ -222,29 +212,25 @@ async function handleBatchOrganize({
 
     if (totalOperations > MAX_BATCH_SIZE) {
       log.warn(
-        `[FILE-OPS] Batch size ${totalOperations} exceeds maximum ${MAX_BATCH_SIZE} after service load`,
+        `[FILE-OPS] Batch size ${totalOperations} exceeds maximum ${MAX_BATCH_SIZE} after service load`
       );
       return {
         success: false,
         error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
         errorCode: 'BATCH_TOO_LARGE',
         maxAllowed: MAX_BATCH_SIZE,
-        provided: totalOperations,
+        provided: totalOperations
       };
     }
 
-    log.info(
-      `[FILE-OPS] Starting batch operation ${batchId} with ${totalOperations} files`,
-    );
+    log.info(`[FILE-OPS] Starting batch operation ${batchId} with ${totalOperations} files`);
 
     // Process each operation
     for (let i = 0; i < batch.operations.length; i += 1) {
       // Check timeout
       if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
         log.error(`[FILE-OPS] Batch ${batchId} exceeded maximum time limit`);
-        throw new Error(
-          `Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`,
-        );
+        throw new Error(`Batch timeout exceeded (max: ${MAX_TOTAL_BATCH_TIME / 1000}s)`);
       }
 
       const op = batch.operations[i];
@@ -256,21 +242,18 @@ async function handleBatchOrganize({
           source: op.source,
           destination: op.destination,
           operation: op.type || 'move',
-          resumed: true,
+          resumed: true
         });
         successCount++;
         continue;
       }
 
       try {
-        await getServiceIntegration()?.processingState?.markOrganizeOpStarted(
-          batchId,
-          i,
-        );
+        await getServiceIntegration()?.processingState?.markOrganizeOpStarted(batchId, i);
 
         if (!op.source || !op.destination) {
           throw new Error(
-            `Invalid operation data: source="${op.source}", destination="${op.destination}"`,
+            `Invalid operation data: source="${op.source}", destination="${op.destination}"`
           );
         }
 
@@ -288,24 +271,22 @@ async function handleBatchOrganize({
         // Post-move verification: ensure destination exists and source is gone
         await verifyMoveCompletion(op.source, op.destination, log);
 
-        await getServiceIntegration()?.processingState?.markOrganizeOpDone(
-          batchId,
-          i,
-          { destination: op.destination },
-        );
+        await getServiceIntegration()?.processingState?.markOrganizeOpDone(batchId, i, {
+          destination: op.destination
+        });
 
         completedOperations.push({
           index: i,
           source: op.source,
           destination: op.destination,
-          originalDestination: operation.operations[i].destination,
+          originalDestination: operation.operations[i].destination
         });
 
         results.push({
           success: true,
           source: op.source,
           destination: op.destination,
-          operation: op.type || 'move',
+          operation: op.type || 'move'
         });
         successCount++;
 
@@ -316,14 +297,14 @@ async function handleBatchOrganize({
             type: 'batch_organize',
             current: i + 1,
             total: batch.operations.length,
-            currentFile: path.basename(op.source),
+            currentFile: path.basename(op.source)
           });
         }
       } catch (error) {
         await getServiceIntegration()?.processingState?.markOrganizeOpError(
           batchId,
           i,
-          error.message,
+          error.message
         );
 
         // Determine if critical error
@@ -334,7 +315,7 @@ async function handleBatchOrganize({
           rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
           log.error(
             `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
-            { error: error.message, errorCode: error.code, file: op.source },
+            { error: error.message, errorCode: error.code, file: op.source }
           );
         }
 
@@ -344,7 +325,7 @@ async function handleBatchOrganize({
           destination: op.destination,
           error: error.message,
           operation: op.type || 'move',
-          critical: isCriticalError,
+          critical: isCriticalError
         });
         failCount++;
 
@@ -360,13 +341,11 @@ async function handleBatchOrganize({
         failCount,
         rollbackReason,
         batchId,
-        log,
+        log
       );
     }
 
-    await getServiceIntegration()?.processingState?.completeOrganizeBatch(
-      batchId,
-    );
+    await getServiceIntegration()?.processingState?.completeOrganizeBatch(batchId);
 
     // Record undo and update database
     if (!shouldRollback) {
@@ -376,7 +355,7 @@ async function handleBatchOrganize({
         successCount,
         batchId,
         getServiceIntegration,
-        log,
+        log
       );
 
       // Check for database sync warnings
@@ -389,7 +368,7 @@ async function handleBatchOrganize({
       error: error.message,
       successCount,
       failCount,
-      completedOperations: completedOperations.length,
+      completedOperations: completedOperations.length
     });
 
     // If we have some successful operations, return partial success
@@ -404,7 +383,7 @@ async function handleBatchOrganize({
         completedOperations: completedOperations.length,
         summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed (batch error: ${error.message})`,
         batchId,
-        error: error.message,
+        error: error.message
       };
     }
 
@@ -416,7 +395,7 @@ async function handleBatchOrganize({
       successCount,
       failCount,
       completedOperations: completedOperations.length,
-      batchId,
+      batchId
     };
   }
 
@@ -428,7 +407,7 @@ async function handleBatchOrganize({
     completedOperations: completedOperations.length,
     summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
     batchId,
-    ...(dbSyncWarning && { warning: dbSyncWarning }),
+    ...(dbSyncWarning && { warning: dbSyncWarning })
   };
 }
 
@@ -454,8 +433,7 @@ async function performFileMove(op, log, checksumFn) {
   let uniqueDestination = op.destination;
   const ext = path.extname(op.destination);
   // When ext is empty, -ext.length is -0 which equals 0, causing slice(0,0) to return empty string
-  const baseName =
-    ext.length > 0 ? op.destination.slice(0, -ext.length) : op.destination;
+  const baseName = ext.length > 0 ? op.destination.slice(0, -ext.length) : op.destination;
   let operationComplete = false;
 
   while (!operationComplete && counter < MAX_NUMERIC_RETRIES) {
@@ -469,12 +447,7 @@ async function performFileMove(op, log, checksumFn) {
         continue;
       } else if (renameError.code === 'EXDEV') {
         // Cross-device move
-        await performCrossDeviceMove(
-          op.source,
-          uniqueDestination,
-          log,
-          checksumFn,
-        );
+        await performCrossDeviceMove(op.source, uniqueDestination, log, checksumFn);
         operationComplete = true;
       } else {
         throw renameError;
@@ -484,13 +457,7 @@ async function performFileMove(op, log, checksumFn) {
 
   // UUID fallback if numeric exhausted
   if (!operationComplete) {
-    uniqueDestination = await performUUIDFallback(
-      op,
-      baseName,
-      ext,
-      log,
-      checksumFn,
-    );
+    uniqueDestination = await performUUIDFallback(op, baseName, ext, log, checksumFn);
     operationComplete = true;
   }
 
@@ -504,7 +471,7 @@ async function performFileMove(op, log, checksumFn) {
 async function performCrossDeviceMove(source, destination, log, checksumFn) {
   await crossDeviceMove(source, destination, {
     verify: true,
-    checksumFn,
+    checksumFn
   });
 }
 
@@ -524,12 +491,7 @@ async function performUUIDFallback(op, baseName, ext, log, checksumFn) {
     } catch (error) {
       if (error.code === 'EEXIST') continue;
       if (error.code === 'EXDEV') {
-        await performCrossDeviceMove(
-          op.source,
-          uniqueDestination,
-          log,
-          checksumFn,
-        );
+        await performCrossDeviceMove(op.source, uniqueDestination, log, checksumFn);
         return uniqueDestination;
       }
       throw error;
@@ -548,7 +510,7 @@ async function executeRollback(
   failCount,
   rollbackReason,
   batchId,
-  log,
+  log
 ) {
   log.warn(`[FILE-OPS] Executing rollback for batch ${batchId}`);
 
@@ -565,7 +527,7 @@ async function executeRollback(
           const sourceDir = path.dirname(completedOp.source);
           await fs.mkdir(sourceDir, { recursive: true });
           await crossDeviceMove(completedOp.destination, completedOp.source, {
-            verify: true,
+            verify: true
           });
         } else {
           throw renameError;
@@ -578,7 +540,7 @@ async function executeRollback(
       rollbackResults.push({
         success: false,
         file: completedOp.source,
-        error: rollbackError.message,
+        error: rollbackError.message
       });
     }
   }
@@ -595,7 +557,7 @@ async function executeRollback(
     rollbackFailCount,
     summary: `Batch rolled back. ${rollbackSuccessCount}/${completedOperations.length} operations restored.`,
     batchId,
-    criticalError: true,
+    criticalError: true
   };
 }
 
@@ -608,7 +570,7 @@ async function recordUndoAndUpdateDatabase(
   successCount,
   batchId,
   getServiceIntegration,
-  log,
+  log
 ) {
   // FIX: Only record successful operations for undo - failed operations have
   // files still at their original location, not at the destination
@@ -618,14 +580,13 @@ async function recordUndoAndUpdateDatabase(
       .map((r) => ({
         type: 'move',
         originalPath: r.source,
-        newPath: r.destination,
+        newPath: r.destination
       }));
 
     if (undoOps.length > 0) {
-      await getServiceIntegration()?.undoRedo?.recordAction?.(
-        ACTION_TYPES.BATCH_OPERATION,
-        { operations: undoOps },
-      );
+      await getServiceIntegration()?.undoRedo?.recordAction?.(ACTION_TYPES.BATCH_OPERATION, {
+        operations: undoOps
+      });
     }
   } catch {
     // Non-fatal
@@ -645,8 +606,8 @@ async function recordUndoAndUpdateDatabase(
             newId: `file:${r.destination}`,
             newMeta: {
               path: r.destination,
-              name: path.basename(r.destination),
-            },
+              name: path.basename(r.destination)
+            }
           }));
 
         if (pathUpdates.length > 0) {
@@ -656,7 +617,7 @@ async function recordUndoAndUpdateDatabase(
     } catch (error) {
       log.warn('[FILE-OPS] Error updating database paths', {
         error: error.message,
-        batchId,
+        batchId
       });
     }
   }
@@ -675,5 +636,5 @@ module.exports = {
   handleBatchOrganize,
   computeFileChecksum,
   MAX_BATCH_SIZE,
-  MAX_TOTAL_BATCH_TIME,
+  MAX_TOTAL_BATCH_TIME
 };

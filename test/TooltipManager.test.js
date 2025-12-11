@@ -3,17 +3,10 @@
  * Verifies that the null reference error fix works correctly
  */
 
-const {
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} = require('@jest/globals');
+const { describe, it, expect, beforeEach, afterEach } = require('@jest/globals');
 const React = require('react');
 const { render, cleanup, fireEvent } = require('@testing-library/react');
-const TooltipManager =
-  require('../src/renderer/components/TooltipManager').default;
+const TooltipManager = require('../src/renderer/components/TooltipManager').default;
 
 // Mock requestAnimationFrame and cancelAnimationFrame
 global.requestAnimationFrame = (cb) => setTimeout(cb, 0);
@@ -122,7 +115,7 @@ describe('TooltipManager', () => {
     // Simulate visibility change
     Object.defineProperty(document, 'hidden', {
       writable: true,
-      value: true,
+      value: true
     });
 
     // Fire visibility change event
@@ -134,7 +127,7 @@ describe('TooltipManager', () => {
     // Reset document.hidden
     Object.defineProperty(document, 'hidden', {
       writable: true,
-      value: false,
+      value: false
     });
   });
 });

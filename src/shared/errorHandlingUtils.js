@@ -54,7 +54,7 @@ const ERROR_CODES = {
 
   // Generic errors
   UNKNOWN_ERROR: 'UNKNOWN_ERROR',
-  OPERATION_CANCELLED: 'OPERATION_CANCELLED',
+  OPERATION_CANCELLED: 'OPERATION_CANCELLED'
 };
 
 /**
@@ -65,7 +65,7 @@ const ERROR_CODES = {
 function createSuccessResponse(data) {
   return {
     success: true,
-    data,
+    data
   };
 }
 
@@ -83,5 +83,5 @@ const withRetry = consolidatedWithRetry;
 module.exports = {
   ERROR_CODES,
   createSuccessResponse,
-  withRetry,
+  withRetry
 };

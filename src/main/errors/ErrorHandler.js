@@ -27,14 +27,14 @@ function sanitizeLogData(data) {
     // Matches: C:\path\to\file.txt, D:\folder\subfolder\file.txt
     let sanitized = data.replace(
       /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*([^\\/:*?"<>|\r\n]+)/g,
-      (match, filename) => `[REDACTED_PATH]\\${filename}`,
+      (match, filename) => `[REDACTED_PATH]\\${filename}`
     );
 
     // Replace Unix absolute paths with just the filename
     // Matches: /path/to/file.txt, /home/user/documents/file.txt
     sanitized = sanitized.replace(
       /\/(?:[^/\s]+\/)+([^/\s]+)/g,
-      (match, filename) => `[REDACTED_PATH]/${filename}`,
+      (match, filename) => `[REDACTED_PATH]/${filename}`
     );
 
     return sanitized;
@@ -46,10 +46,7 @@ function sanitizeLogData(data) {
     for (const [key, value] of Object.entries(data)) {
       // Special handling for known path fields
       if (
-        (key === 'path' ||
-          key === 'filePath' ||
-          key === 'source' ||
-          key === 'destination') &&
+        (key === 'path' || key === 'filePath' || key === 'source' || key === 'destination') &&
         typeof value === 'string'
       ) {
         // For path fields, just keep the filename
@@ -86,10 +83,7 @@ class ErrorHandler {
 
       // Set up log file
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      this.currentLogFile = path.join(
-        this.logPath,
-        `stratosort-${timestamp}.log`,
-      );
+      this.currentLogFile = path.join(this.logPath, `stratosort-${timestamp}.log`);
 
       // Set up global error handlers
       this.setupGlobalHandlers();
@@ -99,7 +93,7 @@ class ErrorHandler {
     } catch (error) {
       logger.error('Failed to initialize ErrorHandler:', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
     }
   }
@@ -136,7 +130,7 @@ class ErrorHandler {
     await this.log(severity, errorInfo.message, {
       ...errorInfo,
       context,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
 
     // Handle based on severity
@@ -166,7 +160,7 @@ class ErrorHandler {
       type: ERROR_TYPES.UNKNOWN,
       message: 'An unexpected error occurred',
       details: {},
-      stack: error?.stack,
+      stack: error?.stack
     };
 
     if (error instanceof Error) {
@@ -179,16 +173,10 @@ class ErrorHandler {
       } else if (error.code === 'EACCES' || error.code === 'EPERM') {
         errorInfo.type = ERROR_TYPES.PERMISSION_DENIED;
         errorInfo.message = 'Permission denied';
-      } else if (
-        error.message.includes('network') ||
-        error.code === 'ENOTFOUND'
-      ) {
+      } else if (error.message.includes('network') || error.code === 'ENOTFOUND') {
         errorInfo.type = ERROR_TYPES.NETWORK_ERROR;
         errorInfo.message = 'Network connection error';
-      } else if (
-        error.message.includes('AI') ||
-        error.message.includes('Ollama')
-      ) {
+      } else if (error.message.includes('AI') || error.message.includes('Ollama')) {
         errorInfo.type = ERROR_TYPES.AI_UNAVAILABLE;
         errorInfo.message = 'AI service is unavailable';
       }
@@ -223,13 +211,13 @@ class ErrorHandler {
     logger.error('[CRITICAL ERROR]', {
       message,
       error: error?.toString(),
-      stack: error?.stack,
+      stack: error?.stack
     });
 
     // Log to file
     await this.log('critical', message, {
       error: error?.toString(),
-      stack: error?.stack,
+      stack: error?.stack
     });
 
     // Show error dialog
@@ -239,7 +227,7 @@ class ErrorHandler {
       message: 'Stratosort encountered a critical error',
       detail: `${message}\n\nWould you like to restart the application?`,
       buttons: ['Restart', 'Quit'],
-      defaultId: 0,
+      defaultId: 0
     });
 
     if (response.response === 0) {
@@ -259,7 +247,7 @@ class ErrorHandler {
       mainWindow.webContents.send('app:error', {
         message,
         type,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString()
       });
     } else {
       // Fallback to dialog
@@ -267,7 +255,7 @@ class ErrorHandler {
         type,
         title: type.charAt(0).toUpperCase() + type.slice(1),
         message,
-        buttons: ['OK'],
+        buttons: ['OK']
       });
     }
   }
@@ -282,11 +270,7 @@ class ErrorHandler {
     const sanitizedMessage = sanitizeLogData(message);
 
     if (!this.isInitialized) {
-      logger.log(
-        level,
-        `[${level.toUpperCase()}] ${sanitizedMessage}`,
-        sanitizedData,
-      );
+      logger.log(level, `[${level.toUpperCase()}] ${sanitizedMessage}`, sanitizedData);
       return;
     }
 
@@ -294,7 +278,7 @@ class ErrorHandler {
       timestamp: new Date().toISOString(),
       level: level.toUpperCase(),
       message: sanitizedMessage,
-      data: sanitizedData,
+      data: sanitizedData
     };
 
     try {
@@ -321,9 +305,7 @@ class ErrorHandler {
             return null;
           }
         })
-        .filter(
-          (entry) => entry && ['ERROR', 'CRITICAL'].includes(entry.level),
-        );
+        .filter((entry) => entry && ['ERROR', 'CRITICAL'].includes(entry.level));
 
       return errors;
     } catch (error) {

@@ -25,7 +25,7 @@ logger.setContext('CircuitBreaker');
 const CircuitState = {
   CLOSED: 'CLOSED',
   OPEN: 'OPEN',
-  HALF_OPEN: 'HALF_OPEN',
+  HALF_OPEN: 'HALF_OPEN'
 };
 
 // Default configuration
@@ -35,7 +35,7 @@ const DEFAULT_CONFIG = {
   timeout: 30000, // 30 seconds before attempting recovery
   resetTimeout: 60000, // 60 seconds to reset failure count in CLOSED
   maxQueueSize: 1000, // Maximum operations to queue when circuit is open
-  halfOpenMaxConcurrent: 1, // Max concurrent requests in HALF_OPEN state
+  halfOpenMaxConcurrent: 1 // Max concurrent requests in HALF_OPEN state
 };
 
 /**
@@ -72,11 +72,11 @@ class CircuitBreaker extends EventEmitter {
       failedRequests: 0,
       rejectedRequests: 0,
       timeoutsCount: 0,
-      stateChanges: [],
+      stateChanges: []
     };
 
     logger.info(`[CircuitBreaker:${serviceName}] Initialized`, {
-      config: this.config,
+      config: this.config
     });
   }
 
@@ -133,13 +133,10 @@ class CircuitBreaker extends EventEmitter {
         this.halfOpenInFlight = Math.max(0, this.halfOpenInFlight - 1);
         this.successCount++;
 
-        logger.debug(
-          `[CircuitBreaker:${this.serviceName}] Success in HALF_OPEN`,
-          {
-            successCount: this.successCount,
-            threshold: this.config.successThreshold,
-          },
-        );
+        logger.debug(`[CircuitBreaker:${this.serviceName}] Success in HALF_OPEN`, {
+          successCount: this.successCount,
+          threshold: this.config.successThreshold
+        });
 
         // Close circuit after enough successes
         if (this.successCount >= this.config.successThreshold) {
@@ -149,9 +146,7 @@ class CircuitBreaker extends EventEmitter {
 
       case CircuitState.OPEN:
         // Shouldn't happen, but handle gracefully
-        logger.warn(
-          `[CircuitBreaker:${this.serviceName}] Success recorded while OPEN`,
-        );
+        logger.warn(`[CircuitBreaker:${this.serviceName}] Success recorded while OPEN`);
         break;
     }
   }
@@ -169,23 +164,17 @@ class CircuitBreaker extends EventEmitter {
     const errorMessage = error?.message || 'Unknown error';
 
     // Check for timeout errors
-    if (
-      errorMessage.includes('timeout') ||
-      errorMessage.includes('ETIMEDOUT')
-    ) {
+    if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
       this.stats.timeoutsCount++;
     }
 
     switch (this.state) {
       case CircuitState.CLOSED:
-        logger.debug(
-          `[CircuitBreaker:${this.serviceName}] Failure in CLOSED`,
-          {
-            failureCount: this.failureCount,
-            threshold: this.config.failureThreshold,
-            error: errorMessage,
-          },
-        );
+        logger.debug(`[CircuitBreaker:${this.serviceName}] Failure in CLOSED`, {
+          failureCount: this.failureCount,
+          threshold: this.config.failureThreshold,
+          error: errorMessage
+        });
 
         // Open circuit after threshold failures
         if (this.failureCount >= this.config.failureThreshold) {
@@ -195,12 +184,9 @@ class CircuitBreaker extends EventEmitter {
 
       case CircuitState.HALF_OPEN:
         this.halfOpenInFlight = Math.max(0, this.halfOpenInFlight - 1);
-        logger.debug(
-          `[CircuitBreaker:${this.serviceName}] Failure in HALF_OPEN`,
-          {
-            error: errorMessage,
-          },
-        );
+        logger.debug(`[CircuitBreaker:${this.serviceName}] Failure in HALF_OPEN`, {
+          error: errorMessage
+        });
 
         // Immediately reopen circuit on failure in HALF_OPEN
         this._transitionTo(CircuitState.OPEN);
@@ -208,9 +194,7 @@ class CircuitBreaker extends EventEmitter {
 
       case CircuitState.OPEN:
         // Already open, update stats but don't change state
-        logger.debug(
-          `[CircuitBreaker:${this.serviceName}] Failure recorded while OPEN`,
-        );
+        logger.debug(`[CircuitBreaker:${this.serviceName}] Failure recorded while OPEN`);
         break;
     }
   }
@@ -221,7 +205,7 @@ class CircuitBreaker extends EventEmitter {
   recordRejection() {
     this.stats.rejectedRequests++;
     logger.debug(`[CircuitBreaker:${this.serviceName}] Request rejected`, {
-      state: this.state,
+      state: this.state
     });
   }
 
@@ -234,9 +218,7 @@ class CircuitBreaker extends EventEmitter {
   async execute(operation) {
     if (!this.isAllowed()) {
       this.recordRejection();
-      const error = new Error(
-        `Circuit breaker is ${this.state} for ${this.serviceName}`,
-      );
+      const error = new Error(`Circuit breaker is ${this.state} for ${this.serviceName}`);
       error.code = 'CIRCUIT_OPEN';
       error.serviceName = this.serviceName;
       error.state = this.state;
@@ -298,7 +280,7 @@ class CircuitBreaker extends EventEmitter {
       lastStateChange: this.lastStateChange,
       timeSinceLastStateChange: Date.now() - this.lastStateChange,
       config: { ...this.config },
-      ...this.stats,
+      ...this.stats
     };
   }
 
@@ -323,7 +305,7 @@ class CircuitBreaker extends EventEmitter {
       from: oldState,
       to: newState,
       timestamp: this.lastStateChange,
-      forced,
+      forced
     });
 
     // Keep only last 100 state changes
@@ -336,8 +318,8 @@ class CircuitBreaker extends EventEmitter {
       {
         forced,
         failureCount: this.failureCount,
-        successCount: this.successCount,
-      },
+        successCount: this.successCount
+      }
     );
 
     // Emit state change event
@@ -346,7 +328,7 @@ class CircuitBreaker extends EventEmitter {
       previousState: oldState,
       currentState: newState,
       forced,
-      timestamp: this.lastStateChange,
+      timestamp: this.lastStateChange
     });
 
     // Set up state-specific behavior
@@ -356,7 +338,7 @@ class CircuitBreaker extends EventEmitter {
         this._scheduleRecoveryTimer();
         this.emit('open', {
           serviceName: this.serviceName,
-          failureCount: this.failureCount,
+          failureCount: this.failureCount
         });
         break;
 
@@ -384,7 +366,7 @@ class CircuitBreaker extends EventEmitter {
 
     this.recoveryTimer = setTimeout(() => {
       logger.info(
-        `[CircuitBreaker:${this.serviceName}] Recovery timeout elapsed, transitioning to HALF_OPEN`,
+        `[CircuitBreaker:${this.serviceName}] Recovery timeout elapsed, transitioning to HALF_OPEN`
       );
       this._transitionTo(CircuitState.HALF_OPEN);
     }, this.config.timeout);
@@ -408,9 +390,7 @@ class CircuitBreaker extends EventEmitter {
 
     this.resetTimer = setTimeout(() => {
       if (this.state === CircuitState.CLOSED && this.failureCount > 0) {
-        logger.debug(
-          `[CircuitBreaker:${this.serviceName}] Resetting failure count`,
-        );
+        logger.debug(`[CircuitBreaker:${this.serviceName}] Resetting failure count`);
         this.failureCount = 0;
       }
     }, this.config.resetTimeout);
@@ -450,5 +430,5 @@ class CircuitBreaker extends EventEmitter {
 module.exports = {
   CircuitBreaker,
   CircuitState,
-  DEFAULT_CONFIG,
+  DEFAULT_CONFIG
 };

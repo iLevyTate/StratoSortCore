@@ -13,7 +13,7 @@ function BulkOperations({
   bulkCategory,
   setBulkCategory,
   onApplyBulkCategory,
-  smartFolders,
+  smartFolders
 }) {
   return (
     <div className="surface-quiet flex items-center justify-between flex-wrap gap-4">
@@ -29,11 +29,7 @@ function BulkOperations({
         </span>
         {selectedCount > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              onClick={onApproveSelected}
-              variant="primary"
-              className="text-sm"
-            >
+            <Button onClick={onApproveSelected} variant="primary" className="text-sm">
               ✓ Approve Selected
             </Button>
             <Button
@@ -97,9 +93,9 @@ BulkOperations.propTypes = {
   smartFolders: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-      name: PropTypes.string.isRequired,
-    }),
-  ),
+      name: PropTypes.string.isRequired
+    })
+  )
 };
 
 export default BulkOperations;

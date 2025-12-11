@@ -10,7 +10,9 @@
  * - Potential future support for environment-based overrides
  */
 
-const { PLATFORM } = require('./crossPlatformUtils');
+// Avoid pulling Node-only deps (e.g., child_process) into the renderer bundle.
+// We only need the platform string here, so read it directly from process.
+const PLATFORM = typeof process !== 'undefined' && process.platform ? process.platform : 'browser';
 
 /**
  * Path length limits by platform
@@ -19,7 +21,7 @@ const { PLATFORM } = require('./crossPlatformUtils');
 const MAX_PATH_LENGTHS = {
   win32: 260, // Windows MAX_PATH
   linux: 4096, // Linux PATH_MAX
-  darwin: 1024, // macOS PATH_MAX
+  darwin: 1024 // macOS PATH_MAX
 };
 
 /**
@@ -53,7 +55,7 @@ const RESERVED_WINDOWS_NAMES = new Set([
   'LPT6',
   'LPT7',
   'LPT8',
-  'LPT9',
+  'LPT9'
 ]);
 
 /**
@@ -62,32 +64,17 @@ const RESERVED_WINDOWS_NAMES = new Set([
  */
 const DANGEROUS_PATHS = {
   // Unix/Linux system directories
-  unix: [
-    '/etc',
-    '/sys',
-    '/proc',
-    '/dev',
-    '/boot',
-    '/sbin',
-    '/bin',
-    '/usr/sbin',
-  ],
+  unix: ['/etc', '/sys', '/proc', '/dev', '/boot', '/sbin', '/bin', '/usr/sbin'],
   // Windows system directories
   windows: [
     'C:\\Windows',
     'C:\\Program Files',
     'C:\\Program Files (x86)',
     'C:\\ProgramData',
-    'C:\\System Volume Information',
+    'C:\\System Volume Information'
   ],
   // macOS system directories
-  darwin: [
-    '/System',
-    '/Library/System',
-    '/private/etc',
-    '/private/var',
-    '/Library/Preferences',
-  ],
+  darwin: ['/System', '/Library/System', '/private/etc', '/private/var', '/Library/Preferences']
 };
 
 /**
@@ -130,7 +117,7 @@ const ALLOWED_APP_PATHS = [
   'pictures', // Pictures
   'videos', // Videos
   'music', // Music
-  'home', // Home directory
+  'home' // Home directory
 ];
 
 /**
@@ -152,19 +139,19 @@ const SETTINGS_VALIDATION = {
     'cacheSize',
     'maxBatchSize',
     'autoUpdateCheck',
-    'telemetryEnabled',
+    'telemetryEnabled'
   ]),
 
   // Valid values for enum fields
   enums: {
     theme: ['light', 'dark', 'auto', 'system'],
-    loggingLevel: ['error', 'warn', 'info', 'debug'],
+    loggingLevel: ['error', 'warn', 'info', 'debug']
   },
 
   // Numeric field constraints
   numericLimits: {
     cacheSize: { min: 0, max: 100000 },
-    maxBatchSize: { min: 1, max: 100000 },
+    maxBatchSize: { min: 1, max: 100000 }
   },
 
   // Regex patterns for string validation
@@ -173,8 +160,8 @@ const SETTINGS_VALIDATION = {
     // Matches: http://127.0.0.1:11434, https://localhost:11434, http://ollama.local:11434
     url: /^https?:\/\/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?)(:\d{1,5})?(\/.*)?$/,
     // Model name pattern (alphanumeric with some special chars)
-    modelName: /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*[a-zA-Z0-9]$/,
-  },
+    modelName: /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*[a-zA-Z0-9]$/
+  }
 };
 
 /**
@@ -191,7 +178,7 @@ const ALLOWED_METADATA_FIELDS = [
   'fileExtension',
   'category',
   'tags',
-  'confidence',
+  'confidence'
 ];
 
 /**
@@ -205,7 +192,7 @@ const RATE_LIMITS = {
   // Stale entry cleanup threshold (entries in rate limiter)
   staleEntryThreshold: 100,
   // Stale entry age (ms) before cleanup
-  staleEntryAge: 60000, // 1 minute
+  staleEntryAge: 60000 // 1 minute
 };
 
 /**
@@ -224,17 +211,13 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'operation-error',
   'operation-complete',
   'operation-failed',
-  'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
+  'chromadb-status-changed' // FIX: ChromaDB status events for UI integration
 ];
 
 /**
  * IPC send channels that renderer can use
  */
-const ALLOWED_SEND_CHANNELS = [
-  'renderer-error-report',
-  'startup-continue',
-  'startup-quit',
-];
+const ALLOWED_SEND_CHANNELS = ['renderer-error-report', 'startup-continue', 'startup-quit'];
 
 module.exports = {
   // Path security
@@ -255,5 +238,5 @@ module.exports = {
 
   // IPC security
   ALLOWED_RECEIVE_CHANNELS,
-  ALLOWED_SEND_CHANNELS,
+  ALLOWED_SEND_CHANNELS
 };

@@ -7,6 +7,7 @@ import { fetchDocumentsPath } from './store/slices/systemSlice';
 import { fetchSmartFolders } from './store/slices/filesSlice';
 import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
+import { applyPlatformClass } from './utils/platform';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
 import './tailwind.css';
 
@@ -14,6 +15,9 @@ import './tailwind.css';
 store.dispatch(fetchDocumentsPath());
 store.dispatch(fetchSmartFolders());
 store.dispatch(fetchSettings());
+
+// Add platform class to body for OS-specific styling hooks
+applyPlatformClass();
 
 // Set logger context for renderer entry point
 logger.setContext('Renderer');
@@ -23,7 +27,7 @@ logger.setContext('Renderer');
 const eventHandlers = {
   click: null,
   visibilitychange: null,
-  beforeunload: null,
+  beforeunload: null
 };
 
 // Remove any previously registered handlers (important for HMR)
@@ -32,10 +36,7 @@ function cleanupEventHandlers() {
     document.removeEventListener('click', eventHandlers.click);
   }
   if (eventHandlers.visibilitychange) {
-    document.removeEventListener(
-      'visibilitychange',
-      eventHandlers.visibilitychange,
-    );
+    document.removeEventListener('visibilitychange', eventHandlers.visibilitychange);
   }
   if (eventHandlers.beforeunload) {
     window.removeEventListener('beforeunload', eventHandlers.beforeunload);
@@ -62,7 +63,7 @@ if (typeof window !== 'undefined') {
         target.scrollIntoView({
           behavior: 'smooth',
           block: 'start',
-          inline: 'nearest',
+          inline: 'nearest'
         });
       }
     }
@@ -104,7 +105,7 @@ function initializeApp() {
     const container = document.getElementById('root');
     if (!container) {
       throw new Error(
-        'Root container not found! Make sure there is a div with id="root" in the HTML.',
+        'Root container not found! Make sure there is a div with id="root" in the HTML.'
       );
     }
 
@@ -124,7 +125,7 @@ function initializeApp() {
             <App />
           </Provider>
         </GlobalErrorBoundary>
-      </React.StrictMode>,
+      </React.StrictMode>
     );
 
     // Remove initial loading after first paint
@@ -140,7 +141,7 @@ function initializeApp() {
   } catch (error) {
     logger.error('Failed to initialize React application', {
       error: error.message,
-      stack: error.stack,
+      stack: error.stack
     });
 
     // Show error message in the initial loading screen

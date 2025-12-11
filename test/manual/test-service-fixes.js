@@ -21,7 +21,7 @@ const colors = {
   green: '\x1b[32m',
   red: '\x1b[31m',
   yellow: '\x1b[33m',
-  blue: '\x1b[36m',
+  blue: '\x1b[36m'
 };
 
 function log(message, color = 'reset') {
@@ -36,7 +36,7 @@ async function testOllamaDetection() {
     // Check if Ollama is running
     const response = await axios.get(`${OLLAMA_URL}/api/tags`, {
       timeout: 2000,
-      validateStatus: () => true,
+      validateStatus: () => true
     });
 
     if (response.status === 200) {
@@ -78,7 +78,7 @@ async function testOllamaPortConflict() {
 
     // Try to start another instance
     const ollamaProcess = spawn('ollama', ['serve'], {
-      stdio: 'pipe',
+      stdio: 'pipe'
     });
 
     return new Promise((resolve) => {
@@ -136,7 +136,7 @@ async function testChromaDBHealth() {
 
       const response = await axios.get(url, {
         timeout: 2000,
-        validateStatus: () => true,
+        validateStatus: () => true
       });
 
       if (response.status === 200) {
@@ -157,7 +157,7 @@ async function testChromaDBHealth() {
           } else {
             log(
               `    ⚠ Response data: ${JSON.stringify(response.data).substring(0, 100)}`,
-              'yellow',
+              'yellow'
             );
           }
         }
@@ -196,10 +196,7 @@ async function testStartupManager() {
           log(`    Error: ${event.details.error}`, 'red');
         }
         if (event.details.service) {
-          log(
-            `    Service: ${event.details.service} - ${event.details.status}`,
-            'yellow',
-          );
+          log(`    Service: ${event.details.service} - ${event.details.status}`, 'yellow');
         }
       }
     });
@@ -210,14 +207,8 @@ async function testStartupManager() {
 
     log('Pre-flight results:', 'green');
     preflightResults.forEach((check) => {
-      const icon =
-        check.status === 'ok' ? '✓' : check.status === 'warn' ? '⚠' : '✗';
-      const color =
-        check.status === 'ok'
-          ? 'green'
-          : check.status === 'warn'
-            ? 'yellow'
-            : 'red';
+      const icon = check.status === 'ok' ? '✓' : check.status === 'warn' ? '⚠' : '✗';
+      const color = check.status === 'ok' ? 'green' : check.status === 'warn' ? 'yellow' : 'red';
       log(`  ${icon} ${check.name}: ${check.status}`, color);
       if (check.error) {
         log(`    Error: ${check.error}`, 'red');
@@ -231,11 +222,11 @@ async function testStartupManager() {
     log(`  Current Phase: ${status.phase}`, 'yellow');
     log(
       `  ChromaDB: ${status.services.chromadb.status}`,
-      status.services.chromadb.status === 'running' ? 'green' : 'yellow',
+      status.services.chromadb.status === 'running' ? 'green' : 'yellow'
     );
     log(
       `  Ollama: ${status.services.ollama.status}`,
-      status.services.ollama.status === 'running' ? 'green' : 'yellow',
+      status.services.ollama.status === 'running' ? 'green' : 'yellow'
     );
 
     if (status.errors.length > 0) {
@@ -262,7 +253,7 @@ async function runAllTests() {
     ollamaDetection: false,
     ollamaPortConflict: false,
     chromadbHealth: false,
-    startupManager: false,
+    startupManager: false
   };
 
   // Run tests
@@ -280,7 +271,7 @@ async function runAllTests() {
     ollamaDetection: 'Ollama Detection',
     ollamaPortConflict: 'Port Conflict Handling',
     chromadbHealth: 'ChromaDB Health Check',
-    startupManager: 'StartupManager Integration',
+    startupManager: 'StartupManager Integration'
   };
 
   let passedCount = 0;
@@ -297,7 +288,7 @@ async function runAllTests() {
 
   log(
     `\nTotal: ${passedCount}/${totalCount} tests passed`,
-    passedCount === totalCount ? 'green' : passedCount > 0 ? 'yellow' : 'red',
+    passedCount === totalCount ? 'green' : passedCount > 0 ? 'yellow' : 'red'
   );
 
   // Exit with appropriate code

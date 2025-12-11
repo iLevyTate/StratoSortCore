@@ -28,7 +28,7 @@ async function testFolderCreation() {
       'Financial Documents',
       'Project Files',
       'Personal Documents',
-      'General Documents',
+      'General Documents'
     ];
 
     for (const folderName of testFolders) {
@@ -45,19 +45,15 @@ async function testFolderCreation() {
     console.log('\n📋 Verifying folder structure...');
     try {
       const items = await fs.readdir(stratosortBasePath, {
-        withFileTypes: true,
+        withFileTypes: true
       });
-      const folders = items
-        .filter((item) => item.isDirectory())
-        .map((item) => item.name);
+      const folders = items.filter((item) => item.isDirectory()).map((item) => item.name);
       console.log('📂 Found folders:', folders);
 
       if (folders.length === testFolders.length) {
         console.log('✅ All folders created successfully!');
       } else {
-        console.log(
-          `⚠️  Expected ${testFolders.length} folders, found ${folders.length}`,
-        );
+        console.log(`⚠️  Expected ${testFolders.length} folders, found ${folders.length}`);
       }
     } catch (error) {
       console.log(`❌ Error reading folder structure: ${error.message}`);
@@ -67,9 +63,7 @@ async function testFolderCreation() {
     console.log('\n🔍 Testing path resolution...');
     const testPath = path.join(stratosortBasePath, 'Test Folder');
     console.log(`Test Path: ${testPath}`);
-    console.log(
-      `Path exists: ${require('fs').existsSync(testPath) ? 'Yes' : 'No'}`,
-    );
+    console.log(`Path exists: ${require('fs').existsSync(testPath) ? 'Yes' : 'No'}`);
 
     console.log('\n🎉 Folder creation test completed!');
   } catch (error) {

@@ -12,7 +12,7 @@ function AppProviders({ children }) {
 }
 
 AppProviders.propTypes = {
-  children: PropTypes.node.isRequired,
+  children: PropTypes.node.isRequired
 };
 
 export default AppProviders;

@@ -17,32 +17,32 @@ const strategies = {
     name: 'Project-Based',
     description: 'Organize files by project or client',
     pattern: 'Projects/{project_name}/{file_type}',
-    priority: ['project', 'client', 'task'],
+    priority: ['project', 'client', 'task']
   },
   'date-based': {
     name: 'Date-Based',
     description: 'Organize files chronologically',
     pattern: 'Archive/{year}/{month}/{category}',
-    priority: ['date', 'time_period', 'category'],
+    priority: ['date', 'time_period', 'category']
   },
   'type-based': {
     name: 'Type-Based',
     description: 'Organize by file type and purpose',
     pattern: '{file_type}/{subcategory}/{project}',
-    priority: ['file_type', 'purpose', 'format'],
+    priority: ['file_type', 'purpose', 'format']
   },
   'workflow-based': {
     name: 'Workflow-Based',
     description: 'Organize by workflow stage',
     pattern: 'Workflow/{stage}/{project}/{file_type}',
-    priority: ['stage', 'status', 'version'],
+    priority: ['stage', 'status', 'version']
   },
   hierarchical: {
     name: 'Hierarchical',
     description: 'Multi-level categorization',
     pattern: '{main_category}/{subcategory}/{specific_folder}',
-    priority: ['category', 'subcategory', 'tags'],
-  },
+    priority: ['category', 'subcategory', 'tags']
+  }
 };
 
 /**
@@ -56,7 +56,7 @@ const fileTypeCategories = {
   videos: ['mp4', 'avi', 'mov', 'wmv', 'flv'],
   audio: ['mp3', 'wav', 'flac', 'aac', 'm4a'],
   code: ['js', 'py', 'java', 'cpp', 'html', 'css'],
-  archives: ['zip', 'rar', '7z', 'tar', 'gz'],
+  archives: ['zip', 'rar', '7z', 'tar', 'gz']
 };
 
 /**
@@ -109,9 +109,7 @@ function matchesStrategyPattern(filename, pattern) {
   const nameParts = filename.toLowerCase().split(/[_\-\s.]/);
 
   return patternParts.some((part) =>
-    nameParts.some(
-      (namePart) => namePart.includes(part) || part.includes(namePart),
-    ),
+    nameParts.some((namePart) => namePart.includes(part) || part.includes(namePart))
   );
 }
 
@@ -140,12 +138,12 @@ function mapFileToStrategy(file, strategy, smartFolders) {
 
   // Find matching smart folder or create suggestion
   const matchingFolder = smartFolders.find(
-    (f) => f.name.toLowerCase() === path.basename(folderPath).toLowerCase(),
+    (f) => f.name.toLowerCase() === path.basename(folderPath).toLowerCase()
   );
 
   return {
     name: matchingFolder?.name || path.basename(folderPath),
-    path: matchingFolder?.path || folderPath,
+    path: matchingFolder?.path || folderPath
   };
 }
 
@@ -172,7 +170,7 @@ function getStrategyBasedSuggestions(file, smartFolders, threshold = 0.3) {
         strategy: strategyId,
         strategyName: strategy.name,
         pattern: strategy.pattern,
-        method: 'strategy_based',
+        method: 'strategy_based'
       });
     }
   }
@@ -190,7 +188,7 @@ function getApplicableStrategies(file) {
     .map(([id, strategy]) => ({
       id,
       ...strategy,
-      applicability: scoreFileForStrategy(file, strategy),
+      applicability: scoreFileForStrategy(file, strategy)
     }))
     .filter((s) => s.applicability > 0.2)
     .sort((a, b) => b.applicability - a.applicability);
@@ -215,10 +213,7 @@ function selectBestStrategy(patterns, files = []) {
     if (patterns.hasDatePattern && strategy.priority.includes('date')) {
       score += 0.3;
     }
-    if (
-      patterns.commonTerms.length > 0 &&
-      strategy.priority.includes('category')
-    ) {
+    if (patterns.commonTerms.length > 0 && strategy.priority.includes('category')) {
       score += 0.2;
     }
 
@@ -243,7 +238,7 @@ function selectBestStrategy(patterns, files = []) {
     name: 'Adaptive Categorization',
     description: 'AI-assisted categorization based on detected patterns',
     pattern: 'Adaptive/{category}/{file_type}',
-    score: 0.75 + fileBoost,
+    score: 0.75 + fileBoost
   };
 }
 
@@ -256,14 +251,14 @@ function selectBestStrategy(patterns, files = []) {
 function getFallbackSuggestion(file, smartFolders) {
   const category = getFileTypeCategory(file.extension);
   const matchingFolder = smartFolders.find((f) =>
-    f.name.toLowerCase().includes(category.toLowerCase()),
+    f.name.toLowerCase().includes(category.toLowerCase())
   );
 
   return {
     folder: matchingFolder?.name || category,
     path: matchingFolder?.path || `Documents/${category}`,
     confidence: 0.3,
-    method: 'fallback',
+    method: 'fallback'
   };
 }
 
@@ -277,5 +272,5 @@ module.exports = {
   getStrategyBasedSuggestions,
   getApplicableStrategies,
   selectBestStrategy,
-  getFallbackSuggestion,
+  getFallbackSuggestion
 };

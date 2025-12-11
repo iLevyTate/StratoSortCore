@@ -16,8 +16,8 @@ const os = require('os');
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn(),
-    getVersion: jest.fn(() => '1.0.0'),
-  },
+    getVersion: jest.fn(() => '1.0.0')
+  }
 }));
 
 // Mock atomicFileOperations - backupAndReplace is used by save()
@@ -26,7 +26,7 @@ jest.mock('../src/shared/atomicFileOperations', () => {
   const actual = jest.requireActual('../src/shared/atomicFileOperations');
   return {
     ...actual,
-    backupAndReplace: mockBackupAndReplace,
+    backupAndReplace: mockBackupAndReplace
   };
 });
 
@@ -71,9 +71,7 @@ describe('SettingsService atomic save', () => {
     mockBackupAndReplace.mockRejectedValueOnce(new Error('simulated failure'));
 
     // Attempt to save should fail
-    await expect(service.save({ theme: 'light' })).rejects.toThrow(
-      'simulated failure',
-    );
+    await expect(service.save({ theme: 'light' })).rejects.toThrow('simulated failure');
 
     // Original file should still have the dark theme
     const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));

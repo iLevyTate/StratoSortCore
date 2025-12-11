@@ -16,7 +16,7 @@ class GlobalErrorBoundary extends Component {
       hasError: false,
       error: null,
       errorInfo: null,
-      errorCount: 0,
+      errorCount: 0
     };
     this.resetTimeoutId = null;
   }
@@ -33,7 +33,7 @@ class GlobalErrorBoundary extends Component {
       error: error?.toString(),
       stack: error?.stack,
       componentStack: errorInfo?.componentStack,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
 
     // FIX: Update error count and store error info
@@ -42,7 +42,7 @@ class GlobalErrorBoundary extends Component {
       (prevState) => ({
         error,
         errorInfo,
-        errorCount: prevState.errorCount + 1,
+        errorCount: prevState.errorCount + 1
       }),
       () => {
         // FIX: Schedule reset in setState callback to ensure state is updated first
@@ -50,7 +50,7 @@ class GlobalErrorBoundary extends Component {
         if (this.state.errorCount < 3) {
           this.scheduleReset();
         }
-      },
+      }
     );
 
     // Report to main process if available
@@ -60,14 +60,11 @@ class GlobalErrorBoundary extends Component {
           message: error?.message || 'Unknown error',
           stack: error?.stack,
           componentStack: errorInfo?.componentStack,
-          type: 'react-error-boundary',
+          type: 'react-error-boundary'
         });
       }
     } catch (reportError) {
-      logger.error(
-        '[GlobalErrorBoundary] Failed to report error to main:',
-        reportError,
-      );
+      logger.error('[GlobalErrorBoundary] Failed to report error to main:', reportError);
     }
   }
 
@@ -102,7 +99,7 @@ class GlobalErrorBoundary extends Component {
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null,
+      errorInfo: null
     });
 
     // Call optional reset callback
@@ -119,11 +116,7 @@ class GlobalErrorBoundary extends Component {
     if (this.state.hasError) {
       // Check if custom fallback provided
       if (this.props.fallback) {
-        return this.props.fallback(
-          this.state.error,
-          this.state.errorInfo,
-          this.resetErrorBoundary,
-        );
+        return this.props.fallback(this.state.error, this.state.errorInfo, this.resetErrorBoundary);
       }
 
       // Default fallback UI
@@ -142,14 +135,12 @@ class GlobalErrorBoundary extends Component {
               >
                 <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <h2 className="text-xl font-semibold text-system-gray-800">
-                Something went wrong
-              </h2>
+              <h2 className="text-xl font-semibold text-system-gray-800">Something went wrong</h2>
             </div>
 
             <p className="text-system-gray-600 mb-4">
-              An unexpected error occurred. The application has recovered
-              automatically, or you can try the options below.
+              An unexpected error occurred. The application has recovered automatically, or you can
+              try the options below.
             </p>
 
             {this.state.errorCount > 2 && (
@@ -198,7 +189,7 @@ class GlobalErrorBoundary extends Component {
 GlobalErrorBoundary.propTypes = {
   children: PropTypes.node.isRequired,
   fallback: PropTypes.func,
-  onReset: PropTypes.func,
+  onReset: PropTypes.func
 };
 
 export default GlobalErrorBoundary;

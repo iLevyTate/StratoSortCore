@@ -2,11 +2,7 @@ import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import { Download } from 'lucide-react';
 
-const DragAndDropZone = memo(function DragAndDropZone({
-  isDragging,
-  dragProps,
-  className = '',
-}) {
+const DragAndDropZone = memo(function DragAndDropZone({ isDragging, dragProps, className = '' }) {
   // Add keyboard affordance for accessibility: treat the zone as a button
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -31,9 +27,7 @@ const DragAndDropZone = memo(function DragAndDropZone({
       <div className="mb-4" aria-hidden="true">
         <Download className="w-8 h-8 text-system-gray-400" />
       </div>
-      <div className="text-sm text-system-gray-600">
-        Drop files or folders here
-      </div>
+      <div className="text-sm text-system-gray-600">Drop files or folders here</div>
     </div>
   );
 });
@@ -41,7 +35,7 @@ const DragAndDropZone = memo(function DragAndDropZone({
 DragAndDropZone.propTypes = {
   isDragging: PropTypes.bool,
   dragProps: PropTypes.object,
-  className: PropTypes.string,
+  className: PropTypes.string
 };
 
 export default DragAndDropZone;

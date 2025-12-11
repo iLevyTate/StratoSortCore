@@ -54,7 +54,7 @@ async function testEnhancedPaths() {
       'Personal Documents',
       'Technical Documentation',
       'Images & Screenshots',
-      'Media Files',
+      'Media Files'
     ];
 
     console.log('\n📂 Creating enhanced folder structure...');
@@ -74,7 +74,7 @@ async function testEnhancedPaths() {
       'Documents with Spaces',
       'Special-Characters_Folder',
       'Numbers123Folder',
-      '中文文件夹', // Unicode test
+      '中文文件夹' // Unicode test
     ];
 
     for (const testName of testPaths) {
@@ -83,9 +83,7 @@ async function testEnhancedPaths() {
         await fs.mkdir(testPath, { recursive: true });
         console.log(`✅ Cross-platform test: ${testName} → ${testPath}`);
       } catch (error) {
-        console.log(
-          `❌ Failed cross-platform test: ${testName} - ${error.message}`,
-        );
+        console.log(`❌ Failed cross-platform test: ${testName} - ${error.message}`);
       }
     }
 
@@ -93,20 +91,16 @@ async function testEnhancedPaths() {
     console.log('\n📋 Verifying enhanced folder structure...');
     try {
       const items = await fs.readdir(stratosortBasePath, {
-        withFileTypes: true,
+        withFileTypes: true
       });
-      const folders = items
-        .filter((item) => item.isDirectory())
-        .map((item) => item.name);
+      const folders = items.filter((item) => item.isDirectory()).map((item) => item.name);
       console.log('📂 Found folders:', folders);
 
       const expectedCount = enhancedFolders.length + testPaths.length;
       if (folders.length >= expectedCount) {
         console.log('✅ Enhanced folder structure created successfully!');
       } else {
-        console.log(
-          `⚠️  Expected at least ${expectedCount} folders, found ${folders.length}`,
-        );
+        console.log(`⚠️  Expected at least ${expectedCount} folders, found ${folders.length}`);
       }
     } catch (error) {
       console.log(`❌ Error reading folder structure: ${error.message}`);
@@ -116,11 +110,9 @@ async function testEnhancedPaths() {
     console.log('\n🔐 Testing path accessibility...');
     try {
       const stats = await fs.stat(stratosortBasePath);
+      console.log(`✅ Base path accessible: ${stats.isDirectory() ? 'Directory' : 'File'}`);
       console.log(
-        `✅ Base path accessible: ${stats.isDirectory() ? 'Directory' : 'File'}`,
-      );
-      console.log(
-        `📊 Permissions: Read ${stats.mode & 0o444 ? '✅' : '❌'} Write ${stats.mode & 0o222 ? '✅' : '❌'}`,
+        `📊 Permissions: Read ${stats.mode & 0o444 ? '✅' : '❌'} Write ${stats.mode & 0o222 ? '✅' : '❌'}`
       );
     } catch (error) {
       console.log(`❌ Path accessibility test failed: ${error.message}`);

@@ -6,8 +6,8 @@
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/tmp/test-app'),
-  },
+    getPath: jest.fn().mockReturnValue('/tmp/test-app')
+  }
 }));
 
 // Mock fs
@@ -15,10 +15,10 @@ const mockFs = {
   readFile: jest.fn(),
   writeFile: jest.fn().mockResolvedValue(undefined),
   unlink: jest.fn().mockResolvedValue(undefined),
-  rename: jest.fn().mockResolvedValue(undefined),
+  rename: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock logger
@@ -28,19 +28,19 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock ollama
 const mockOllama = {
   embeddings: jest.fn(),
   generate: jest.fn(),
-  list: jest.fn(),
+  list: jest.fn()
 };
 
 jest.mock('../src/main/ollamaUtils', () => ({
-  getOllama: jest.fn(() => mockOllama),
+  getOllama: jest.fn(() => mockOllama)
 }));
 
 describe('OllamaClient', () => {
@@ -83,7 +83,7 @@ describe('OllamaClient', () => {
     test('accepts custom options', () => {
       const client = new OllamaClient({
         maxRetries: 5,
-        maxConcurrentRequests: 10,
+        maxConcurrentRequests: 10
       });
 
       expect(client.config.maxRetries).toBe(5);
@@ -125,9 +125,7 @@ describe('OllamaClient', () => {
     });
 
     test('loads persisted offline queue', async () => {
-      const queueData = [
-        { type: 'embedding', payload: { model: 'test', prompt: 'hello' } },
-      ];
+      const queueData = [{ type: 'embedding', payload: { model: 'test', prompt: 'hello' } }];
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(queueData));
 
       const client = new OllamaClient();
@@ -173,7 +171,7 @@ describe('OllamaClient', () => {
       const client = new OllamaClient({
         initialRetryDelay: 1000,
         maxRetryDelay: 8000,
-        retryJitterFactor: 0,
+        retryJitterFactor: 0
       });
 
       const delay0 = client._calculateRetryDelay(0);
@@ -189,7 +187,7 @@ describe('OllamaClient', () => {
       const client = new OllamaClient({
         initialRetryDelay: 1000,
         maxRetryDelay: 5000,
-        retryJitterFactor: 0,
+        retryJitterFactor: 0
       });
 
       const delay = client._calculateRetryDelay(10);
@@ -202,13 +200,7 @@ describe('OllamaClient', () => {
     test('returns true for network error codes', () => {
       const client = new OllamaClient();
 
-      const codes = [
-        'ECONNREFUSED',
-        'ECONNRESET',
-        'ETIMEDOUT',
-        'ENOTFOUND',
-        'EHOSTUNREACH',
-      ];
+      const codes = ['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH'];
 
       codes.forEach((code) => {
         const error = new Error('test');
@@ -220,12 +212,7 @@ describe('OllamaClient', () => {
     test('returns true for network error messages', () => {
       const client = new OllamaClient();
 
-      const messages = [
-        'fetch failed',
-        'network error',
-        'timeout exceeded',
-        'connection refused',
-      ];
+      const messages = ['fetch failed', 'network error', 'timeout exceeded', 'connection refused'];
 
       messages.forEach((msg) => {
         expect(client._isRetryableError(new Error(msg))).toBe(true);
@@ -247,11 +234,7 @@ describe('OllamaClient', () => {
     test('returns true for Ollama temporary errors', () => {
       const client = new OllamaClient();
 
-      const messages = [
-        'model is loading',
-        'server busy',
-        'temporarily unavailable',
-      ];
+      const messages = ['model is loading', 'server busy', 'temporarily unavailable'];
 
       messages.forEach((msg) => {
         expect(client._isRetryableError(new Error(msg))).toBe(true);
@@ -266,7 +249,7 @@ describe('OllamaClient', () => {
         'validation failed',
         'not found',
         'unauthorized',
-        'bad request',
+        'bad request'
       ];
 
       messages.forEach((msg) => {
@@ -309,7 +292,7 @@ describe('OllamaClient', () => {
     test('throws when queue is full', async () => {
       const client = new OllamaClient({
         maxConcurrentRequests: 1,
-        maxQueuedRequests: 1,
+        maxQueuedRequests: 1
       });
 
       await client._acquireSlot();
@@ -326,7 +309,7 @@ describe('OllamaClient', () => {
 
       const result = await client.embeddings({
         model: 'test-model',
-        prompt: 'hello world',
+        prompt: 'hello world'
       });
 
       expect(result.embedding).toEqual([0.1, 0.2, 0.3]);
@@ -338,7 +321,7 @@ describe('OllamaClient', () => {
 
       await client.embeddings({
         model: 'test-model',
-        prompt: 'hello',
+        prompt: 'hello'
       });
 
       expect(client.initialized).toBe(true);
@@ -356,7 +339,7 @@ describe('OllamaClient', () => {
 
       const result = await client.embeddings({
         model: 'test',
-        prompt: 'hello',
+        prompt: 'hello'
       });
 
       expect(result.embedding).toEqual([0.1]);
@@ -370,9 +353,7 @@ describe('OllamaClient', () => {
       await client.initialize();
       client.isHealthy = false;
 
-      await expect(
-        client.embeddings({ model: 'test', prompt: 'hello' }),
-      ).rejects.toThrow();
+      await expect(client.embeddings({ model: 'test', prompt: 'hello' })).rejects.toThrow();
 
       expect(client.offlineQueue).toHaveLength(1);
     });
@@ -385,7 +366,7 @@ describe('OllamaClient', () => {
 
       const result = await client.generate({
         model: 'test-model',
-        prompt: 'hello',
+        prompt: 'hello'
       });
 
       expect(result.response).toBe('test');
@@ -399,7 +380,7 @@ describe('OllamaClient', () => {
       client.isHealthy = false;
 
       await expect(
-        client.generate({ model: 'test', prompt: 'hello', stream: true }),
+        client.generate({ model: 'test', prompt: 'hello', stream: true })
       ).rejects.toThrow();
 
       expect(client.offlineQueue).toHaveLength(0);
@@ -413,11 +394,11 @@ describe('OllamaClient', () => {
 
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       const { results, errors } = await client.batchEmbeddings(items, {
-        model: 'test',
+        model: 'test'
       });
 
       expect(results).toHaveLength(2);
@@ -431,12 +412,12 @@ describe('OllamaClient', () => {
       const progressUpdates = [];
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       await client.batchEmbeddings(items, {
         model: 'test',
-        onProgress: (p) => progressUpdates.push(p),
+        onProgress: (p) => progressUpdates.push(p)
       });
 
       expect(progressUpdates.length).toBeGreaterThan(0);
@@ -452,11 +433,11 @@ describe('OllamaClient', () => {
 
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       const { results, errors } = await client.batchEmbeddings(items, {
-        model: 'test',
+        model: 'test'
       });
 
       expect(results).toHaveLength(1);
@@ -509,7 +490,7 @@ describe('OllamaClient', () => {
 
       client._addToOfflineQueue({
         type: REQUEST_TYPES.EMBEDDING,
-        payload: { model: 'test', prompt: 'hello' },
+        payload: { model: 'test', prompt: 'hello' }
       });
 
       // Wait for async persist
@@ -525,11 +506,7 @@ describe('OllamaClient', () => {
       const client = new OllamaClient({ maxOfflineQueueSize: 3 });
       await client.initialize();
 
-      client.offlineQueue = [
-        { id: 1 },
-        { id: 2 },
-        { id: 3 },
-      ];
+      client.offlineQueue = [{ id: 1 }, { id: 2 }, { id: 3 }];
 
       client._addToOfflineQueue({ id: 4 });
 

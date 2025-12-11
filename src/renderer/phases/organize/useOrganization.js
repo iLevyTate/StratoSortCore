@@ -21,7 +21,7 @@ export function useProgressTracking() {
   const [batchProgress, setBatchProgress] = useState({
     current: 0,
     total: 0,
-    currentFile: '',
+    currentFile: ''
   });
   const [organizePreview, setOrganizePreview] = useState([]);
   const [isOrganizing, setIsOrganizing] = useState(false);
@@ -37,15 +37,13 @@ export function useProgressTracking() {
       if (abortController.signal.aborted) return;
 
       if (!window.electronAPI?.events?.onOperationProgress) {
-        logger.warn(
-          'Progress event system not available - progress updates will not be shown',
-        );
+        logger.warn('Progress event system not available - progress updates will not be shown');
         return;
       }
 
       try {
-        progressUnsubscribeRef.current =
-          window.electronAPI.events.onOperationProgress((payload) => {
+        progressUnsubscribeRef.current = window.electronAPI.events.onOperationProgress(
+          (payload) => {
             if (abortController.signal.aborted) return;
 
             try {
@@ -57,7 +55,7 @@ export function useProgressTracking() {
               if (!Number.isFinite(current) || !Number.isFinite(total)) {
                 logger.error('Invalid progress data', {
                   current: payload.current,
-                  total: payload.total,
+                  total: payload.total
                 });
                 return;
               }
@@ -65,26 +63,25 @@ export function useProgressTracking() {
               setBatchProgress({
                 current,
                 total,
-                currentFile: payload.currentFile || '',
+                currentFile: payload.currentFile || ''
               });
             } catch (error) {
               logger.error('Error processing progress update', {
                 error: error.message,
-                stack: error.stack,
+                stack: error.stack
               });
             }
-          });
+          }
+        );
 
         if (typeof progressUnsubscribeRef.current !== 'function') {
-          logger.error(
-            'Progress subscription failed - unsubscribe is not a function',
-          );
+          logger.error('Progress subscription failed - unsubscribe is not a function');
           progressUnsubscribeRef.current = null;
         }
       } catch (error) {
         logger.error('Failed to subscribe to progress events', {
           error: error.message,
-          stack: error.stack,
+          stack: error.stack
         });
       }
     };
@@ -101,7 +98,7 @@ export function useProgressTracking() {
         } catch (error) {
           logger.error('Error unsubscribing from progress events', {
             error: error.message,
-            stack: error.stack,
+            stack: error.stack
           });
         }
       }
@@ -114,7 +111,7 @@ export function useProgressTracking() {
     organizePreview,
     setOrganizePreview,
     isOrganizing,
-    setIsOrganizing,
+    setIsOrganizing
   };
 }
 
@@ -137,12 +134,11 @@ function processFileForOrganization({
   editingFiles,
   getFileWithEdits,
   findSmartFolderForCategory,
-  defaultLocation,
+  defaultLocation
 }) {
   const fileIndex = fileIndexMap.get(file.path) ?? -1;
   const edits = fileIndex >= 0 ? editingFiles[fileIndex] || {} : {};
-  const fileWithEdits =
-    fileIndex >= 0 ? getFileWithEdits(file, fileIndex) : file;
+  const fileWithEdits = fileIndex >= 0 ? getFileWithEdits(file, fileIndex) : file;
   let currentCategory = edits.category || fileWithEdits.analysis?.category;
 
   // Filter out "document" category if it's not a smart folder
@@ -157,19 +153,15 @@ function processFileForOrganization({
   const destinationDir = smartFolder
     ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
     : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
-  const suggestedName =
-    edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
+  const suggestedName = edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
 
   // Ensure extension is present - use lastIndexOf for more robust extension detection
   // Check for extensions up to 5 characters (e.g., .html, .jpeg, .xlsx)
   const originalExtIdx = file.name.lastIndexOf('.');
-  const originalExt =
-    originalExtIdx > 0 ? file.name.slice(originalExtIdx) : '';
+  const originalExt = originalExtIdx > 0 ? file.name.slice(originalExtIdx) : '';
   const suggestedExtIdx = suggestedName.lastIndexOf('.');
-  const hasExtension =
-    suggestedExtIdx > 0 && suggestedExtIdx > suggestedName.length - 6;
-  const newName =
-    hasExtension || !originalExt ? suggestedName : suggestedName + originalExt;
+  const hasExtension = suggestedExtIdx > 0 && suggestedExtIdx > suggestedName.length - 6;
+  const newName = hasExtension || !originalExt ? suggestedName : suggestedName + originalExt;
 
   const dest = `${destinationDir}/${newName}`;
   const normalized = window.electronAPI?.files?.normalizePath?.(dest) || dest;
@@ -203,7 +195,7 @@ function buildOperations({
   editingFiles,
   getFileWithEdits,
   findSmartFolderForCategory,
-  defaultLocation,
+  defaultLocation
 }) {
   const fileIndexMap = buildFileIndexMap(filesToProcess, unprocessedFiles);
 
@@ -214,7 +206,7 @@ function buildOperations({
       editingFiles,
       getFileWithEdits,
       findSmartFolderForCategory,
-      defaultLocation,
+      defaultLocation
     });
     return { type: 'move', source: file.path, destination: normalized };
   });
@@ -231,7 +223,7 @@ function buildPreview({
   editingFiles,
   getFileWithEdits,
   findSmartFolderForCategory,
-  defaultLocation,
+  defaultLocation
 }) {
   const fileIndexMap = buildFileIndexMap(filesToProcess, unprocessedFiles);
 
@@ -242,7 +234,7 @@ function buildPreview({
       editingFiles,
       getFileWithEdits,
       findSmartFolderForCategory,
-      defaultLocation,
+      defaultLocation
     });
     return { fileName: newName, destination: normalized };
   });
@@ -268,7 +260,7 @@ export function useOrganization({
   addNotification,
   executeAction,
   setOrganizedFiles,
-  setOrganizingState,
+  setOrganizingState
 }) {
   const {
     batchProgress,
@@ -276,36 +268,33 @@ export function useOrganization({
     organizePreview,
     setOrganizePreview,
     isOrganizing,
-    setIsOrganizing,
+    setIsOrganizing
   } = useProgressTracking();
 
   const handleOrganizeFiles = useCallback(
     async (filesToOrganize = null) => {
       // FIX: Ensure filesToOrganize is actually an array, not a React event
-      const actualFilesToOrganize = Array.isArray(filesToOrganize)
-        ? filesToOrganize
-        : null;
+      const actualFilesToOrganize = Array.isArray(filesToOrganize) ? filesToOrganize : null;
 
       logger.info('[ORGANIZE] handleOrganizeFiles called', {
         providedFiles: actualFilesToOrganize?.length ?? 'null',
-        unprocessedFilesCount: unprocessedFiles?.length ?? 0,
+        unprocessedFilesCount: unprocessedFiles?.length ?? 0
       });
 
       try {
         setIsOrganizing(true);
         setOrganizingState(true);
 
-        const filesToProcess =
-          actualFilesToOrganize || unprocessedFiles.filter((f) => f.analysis);
+        const filesToProcess = actualFilesToOrganize || unprocessedFiles.filter((f) => f.analysis);
 
         logger.info('[ORGANIZE] Files to process', {
-          count: filesToProcess.length,
+          count: filesToProcess.length
         });
 
         if (filesToProcess.length === 0) {
           addNotification(
             'No files ready to organize. Please ensure files have been analyzed.',
-            'warning',
+            'warning'
           );
           logger.warn('[ORGANIZE] No files to process - returning early');
           setIsOrganizing(false);
@@ -316,15 +305,12 @@ export function useOrganization({
         setBatchProgress({
           current: 0,
           total: filesToProcess.length,
-          currentFile: '',
+          currentFile: ''
         });
 
         // Check if auto-organize with suggestions is available
         const useAutoOrganize = window.electronAPI?.organize?.auto;
-        logger.info(
-          '[ORGANIZE] Auto-organize API available:',
-          !!useAutoOrganize,
-        );
+        logger.info('[ORGANIZE] Auto-organize API available:', !!useAutoOrganize);
 
         let operations;
         if (useAutoOrganize) {
@@ -335,14 +321,13 @@ export function useOrganization({
             options: {
               defaultLocation,
               confidenceThreshold: 0.7,
-              preserveNames: false,
-            },
+              preserveNames: false
+            }
           });
           logger.info('[ORGANIZE] Auto-organize result:', {
             success: result?.success,
-            operationsCount:
-              result?.operations?.length ?? result?.organized?.length ?? 0,
-            error: result?.error,
+            operationsCount: result?.operations?.length ?? result?.organized?.length ?? 0,
+            error: result?.error
           });
 
           if (result && result.success === false) {
@@ -350,7 +335,7 @@ export function useOrganization({
               result.error || 'Auto-organize service is not available',
               'error',
               5000,
-              'organize-service-error',
+              'organize-service-error'
             );
             logger.error('[ORGANIZE] Auto-organize failed:', result.error);
             setIsOrganizing(false);
@@ -363,15 +348,13 @@ export function useOrganization({
           if (result?.operations && result.operations.length > 0) {
             operations = result.operations;
           } else if (result?.organized && result.organized.length > 0) {
-            logger.warn(
-              '[ORGANIZE] Using organized array as fallback - converting format',
-            );
+            logger.warn('[ORGANIZE] Using organized array as fallback - converting format');
             // Convert organized format {file, destination, confidence} to operations format {type, source, destination}
             operations = result.organized
               .map((item) => ({
                 type: 'move',
                 source: item.file?.path || item.source || item.path,
-                destination: item.destination,
+                destination: item.destination
               }))
               .filter((op) => op.source && op.destination);
           } else {
@@ -383,7 +366,7 @@ export function useOrganization({
               `${result.needsReview.length} files need manual review due to low confidence`,
               'info',
               4000,
-              'organize-needs-review',
+              'organize-needs-review'
             );
           }
 
@@ -392,7 +375,7 @@ export function useOrganization({
               `${result.failed.length} files could not be organized`,
               'warning',
               4000,
-              'organize-failed-files',
+              'organize-failed-files'
             );
           }
         } else {
@@ -403,7 +386,7 @@ export function useOrganization({
             editingFiles,
             getFileWithEdits,
             findSmartFolderForCategory,
-            defaultLocation,
+            defaultLocation
           });
         }
 
@@ -412,7 +395,7 @@ export function useOrganization({
             'No confident file moves were generated. Review files manually before organizing.',
             'info',
             4000,
-            'organize-no-operations',
+            'organize-no-operations'
           );
           setIsOrganizing(false);
           setOrganizingState(false);
@@ -428,14 +411,11 @@ export function useOrganization({
             editingFiles,
             getFileWithEdits,
             findSmartFolderForCategory,
-            defaultLocation,
+            defaultLocation
           });
           setOrganizePreview(preview);
         } catch (previewError) {
-          logger.warn(
-            '[ORGANIZE] Preview generation failed (non-fatal):',
-            previewError.message,
-          );
+          logger.warn('[ORGANIZE] Preview generation failed (non-fatal):', previewError.message);
         }
 
         const sourcePathsSet = new Set(operations.map((op) => op.source));
@@ -443,25 +423,19 @@ export function useOrganization({
         const stateCallbacks = {
           onExecute: (result) => {
             try {
-              const resArray = Array.isArray(result?.results)
-                ? result.results
-                : [];
+              const resArray = Array.isArray(result?.results) ? result.results : [];
               const uiResults = resArray
                 .filter((r) => r.success)
                 .map((r) => {
-                  const original =
-                    analysisResults.find((a) => a.path === r.source) || {};
+                  const original = analysisResults.find((a) => a.path === r.source) || {};
                   return {
                     originalPath: r.source,
                     path: r.destination,
                     originalName:
-                      original.name ||
-                      (original.path ? original.path.split(/[\\/]/).pop() : ''),
-                    newName: r.destination
-                      ? r.destination.split(/[\\/]/).pop()
-                      : '',
+                      original.name || (original.path ? original.path.split(/[\\/]/).pop() : ''),
+                    newName: r.destination ? r.destination.split(/[\\/]/).pop() : '',
                     smartFolder: 'Organized',
-                    organizedAt: new Date().toISOString(),
+                    organizedAt: new Date().toISOString()
                   };
                 });
               if (uiResults.length > 0) {
@@ -469,71 +443,53 @@ export function useOrganization({
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
                 actions.setPhaseData('organizedFiles', [
                   ...(phaseData.organizedFiles || []),
-                  ...uiResults,
+                  ...uiResults
                 ]);
-                addNotification(
-                  `Organized ${uiResults.length} files`,
-                  'success',
-                );
+                addNotification(`Organized ${uiResults.length} files`, 'success');
                 setBatchProgress({
                   current: filesToProcess.length,
                   total: filesToProcess.length,
-                  currentFile: '',
+                  currentFile: ''
                 });
               } else {
-                logger.warn(
-                  '[ORGANIZE] onExecute: No successful results to process',
-                );
+                logger.warn('[ORGANIZE] onExecute: No successful results to process');
               }
             } catch (callbackError) {
-              logger.error(
-                '[ORGANIZE] onExecute callback failed:',
-                callbackError.message,
-              );
+              logger.error('[ORGANIZE] onExecute callback failed:', callbackError.message);
             }
           },
           onUndo: (result) => {
             try {
               // Use actual results from main process if available
               const successfulUndos = result?.results
-                ? result.results
-                    .filter((r) => r.success)
-                    .map((r) => r.originalPath || r.newPath)
+                ? result.results.filter((r) => r.success).map((r) => r.originalPath || r.newPath)
                 : Array.from(sourcePathsSet);
 
               const undoPathsSet = new Set(successfulUndos);
 
-              setOrganizedFiles((prev) =>
-                prev.filter((of) => !undoPathsSet.has(of.originalPath)),
-              );
+              setOrganizedFiles((prev) => prev.filter((of) => !undoPathsSet.has(of.originalPath)));
               unmarkFilesAsProcessed(Array.from(undoPathsSet));
               actions.setPhaseData(
                 'organizedFiles',
-                (phaseData.organizedFiles || []).filter(
-                  (of) => !undoPathsSet.has(of.originalPath),
-                ),
+                (phaseData.organizedFiles || []).filter((of) => !undoPathsSet.has(of.originalPath))
               );
 
-              const successCount =
-                result?.successCount ?? successfulUndos.length;
+              const successCount = result?.successCount ?? successfulUndos.length;
               const failCount = result?.failCount ?? 0;
 
               if (failCount > 0) {
                 addNotification(
                   `Undo partially complete: ${successCount} files restored, ${failCount} failed.`,
-                  'warning',
+                  'warning'
                 );
               } else {
                 addNotification(
                   `Undo complete. ${successCount} files restored to original locations.`,
-                  'info',
+                  'info'
                 );
               }
             } catch (undoError) {
-              logger.error(
-                '[ORGANIZE] onUndo callback failed:',
-                undoError.message,
-              );
+              logger.error('[ORGANIZE] onUndo callback failed:', undoError.message);
             }
           },
           onRedo: (result) => {
@@ -552,7 +508,7 @@ export function useOrganization({
                       originalName: r.source?.split(/[\\/]/).pop() || '',
                       newName: r.destination?.split(/[\\/]/).pop() || '',
                       smartFolder: 'Organized',
-                      organizedAt: new Date().toISOString(),
+                      organizedAt: new Date().toISOString()
                     }))
                   : operations.map((op) => ({
                       originalPath: op.source,
@@ -560,7 +516,7 @@ export function useOrganization({
                       originalName: op.source.split(/[\\/]/).pop(),
                       newName: op.destination.split(/[\\/]/).pop(),
                       smartFolder: 'Organized',
-                      organizedAt: new Date().toISOString(),
+                      organizedAt: new Date().toISOString()
                     }));
 
               if (uiResults.length > 0) {
@@ -568,7 +524,7 @@ export function useOrganization({
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
                 actions.setPhaseData('organizedFiles', [
                   ...(phaseData.organizedFiles || []),
-                  ...uiResults,
+                  ...uiResults
                 ]);
               }
 
@@ -578,38 +534,32 @@ export function useOrganization({
               if (failCount > 0) {
                 addNotification(
                   `Redo partially complete: ${successCount} files re-organized, ${failCount} failed.`,
-                  'warning',
+                  'warning'
                 );
               } else {
-                addNotification(
-                  `Redo complete. ${successCount} files re-organized.`,
-                  'info',
-                );
+                addNotification(`Redo complete. ${successCount} files re-organized.`, 'info');
               }
             } catch (redoError) {
-              logger.error(
-                '[ORGANIZE] onRedo callback failed:',
-                redoError.message,
-              );
+              logger.error('[ORGANIZE] onRedo callback failed:', redoError.message);
             }
-          },
+          }
         };
 
         logger.info('[ORGANIZE] Executing batch action with', {
-          operationsCount: operations.length,
+          operationsCount: operations.length
         });
 
         const result = await executeAction(
           createOrganizeBatchAction(
             `Organize ${operations.length} files`,
             operations,
-            stateCallbacks,
-          ),
+            stateCallbacks
+          )
         );
 
         logger.info('[ORGANIZE] Batch action result:', {
           success: result?.success,
-          resultsCount: result?.results?.length ?? 0,
+          resultsCount: result?.results?.length ?? 0
         });
 
         const successCount = Array.isArray(result?.results)
@@ -619,24 +569,22 @@ export function useOrganization({
         logger.info('[ORGANIZE] Final result:', {
           successCount,
           totalResults: result?.results?.length ?? 0,
-          willAdvancePhase: successCount > 0,
+          willAdvancePhase: successCount > 0
         });
 
         if (successCount > 0) {
           actions.advancePhase(PHASES.COMPLETE);
         } else {
-          logger.warn(
-            '[ORGANIZE] No successful operations - phase will not advance',
-          );
+          logger.warn('[ORGANIZE] No successful operations - phase will not advance');
           addNotification(
             'No files were organized successfully. Check the logs for details.',
-            'warning',
+            'warning'
           );
         }
       } catch (error) {
         logger.error('[ORGANIZE] Organization error:', {
           message: error.message,
-          stack: error.stack,
+          stack: error.stack
         });
         addNotification(`Organization failed: ${error.message}`, 'error');
       } finally {
@@ -663,8 +611,8 @@ export function useOrganization({
       setOrganizingState,
       setBatchProgress,
       setIsOrganizing,
-      setOrganizePreview,
-    ],
+      setOrganizePreview
+    ]
   );
 
   return {
@@ -672,7 +620,7 @@ export function useOrganization({
     batchProgress,
     organizePreview,
     handleOrganizeFiles,
-    setBatchProgress,
+    setBatchProgress
   };
 }
 

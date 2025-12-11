@@ -29,17 +29,12 @@ async function shutdownProcess(serviceName, process) {
     }
 
     if (typeof process !== 'object') {
-      logger.warn(
-        `[STARTUP] ${serviceName} process is not an object:`,
-        typeof process,
-      );
+      logger.warn(`[STARTUP] ${serviceName} process is not an object:`, typeof process);
       return;
     }
 
     if (!process.pid) {
-      logger.debug(
-        `[STARTUP] ${serviceName} process has no PID, likely already terminated`,
-      );
+      logger.debug(`[STARTUP] ${serviceName} process has no PID, likely already terminated`);
       return;
     }
 
@@ -49,9 +44,7 @@ async function shutdownProcess(serviceName, process) {
     }
 
     if (process.exitCode !== null && process.exitCode !== undefined) {
-      logger.debug(
-        `[STARTUP] ${serviceName} already exited with code ${process.exitCode}`,
-      );
+      logger.debug(`[STARTUP] ${serviceName} already exited with code ${process.exitCode}`);
       return;
     }
 
@@ -60,21 +53,14 @@ async function shutdownProcess(serviceName, process) {
       try {
         process.removeAllListeners();
       } catch (error) {
-        logger.warn(
-          `[STARTUP] Failed to remove listeners for ${serviceName}:`,
-          error.message,
-        );
+        logger.warn(`[STARTUP] Failed to remove listeners for ${serviceName}:`, error.message);
       }
     } else {
-      logger.warn(
-        `[STARTUP] ${serviceName} process does not have removeAllListeners method`,
-      );
+      logger.warn(`[STARTUP] ${serviceName} process does not have removeAllListeners method`);
     }
 
     if (typeof process.kill !== 'function') {
-      logger.error(
-        `[STARTUP] ${serviceName} process does not have kill method`,
-      );
+      logger.error(`[STARTUP] ${serviceName} process does not have kill method`);
       return;
     }
 
@@ -84,14 +70,11 @@ async function shutdownProcess(serviceName, process) {
     } catch (killError) {
       if (killError.code === 'ESRCH') {
         logger.debug(
-          `[STARTUP] ${serviceName} process not found (PID: ${process.pid}), already terminated`,
+          `[STARTUP] ${serviceName} process not found (PID: ${process.pid}), already terminated`
         );
         return;
       }
-      logger.warn(
-        `[STARTUP] Failed to send SIGTERM to ${serviceName}:`,
-        killError.message,
-      );
+      logger.warn(`[STARTUP] Failed to send SIGTERM to ${serviceName}:`, killError.message);
     }
 
     // Wait up to 5 seconds for graceful shutdown
@@ -102,9 +85,7 @@ async function shutdownProcess(serviceName, process) {
           resolved = true;
 
           if (!process || process.killed || process.exitCode !== null) {
-            logger.debug(
-              `[STARTUP] ${serviceName} already terminated, no force kill needed`,
-            );
+            logger.debug(`[STARTUP] ${serviceName} already terminated, no force kill needed`);
             resolve();
             return;
           }
@@ -115,7 +96,7 @@ async function shutdownProcess(serviceName, process) {
             if (isWindows && process.pid) {
               spawn('taskkill', ['/pid', process.pid.toString(), '/f', '/t'], {
                 windowsHide: true,
-                stdio: 'ignore',
+                stdio: 'ignore'
               });
             } else if (process.pid && typeof process.kill === 'function') {
               process.kill('SIGKILL');
@@ -123,13 +104,10 @@ async function shutdownProcess(serviceName, process) {
           } catch (e) {
             if (e.code === 'ESRCH') {
               logger.debug(
-                `[STARTUP] Process ${serviceName} not found during force kill, already terminated`,
+                `[STARTUP] Process ${serviceName} not found during force kill, already terminated`
               );
             } else {
-              logger.debug(
-                `[STARTUP] Process ${serviceName} may have already exited:`,
-                e.message,
-              );
+              logger.debug(`[STARTUP] Process ${serviceName} may have already exited:`, e.message);
             }
           }
           resolve();
@@ -137,9 +115,7 @@ async function shutdownProcess(serviceName, process) {
       }, 5000);
 
       if (!process || typeof process.once !== 'function') {
-        logger.warn(
-          `[STARTUP] ${serviceName} process does not support event listeners`,
-        );
+        logger.warn(`[STARTUP] ${serviceName} process does not support event listeners`);
         clearTimeout(timeout);
         resolved = true;
         resolve();
@@ -156,10 +132,7 @@ async function shutdownProcess(serviceName, process) {
           }
         });
       } catch (error) {
-        logger.warn(
-          `[STARTUP] Failed to attach exit listener to ${serviceName}:`,
-          error.message,
-        );
+        logger.warn(`[STARTUP] Failed to attach exit listener to ${serviceName}:`, error.message);
       }
 
       try {
@@ -168,29 +141,24 @@ async function shutdownProcess(serviceName, process) {
             resolved = true;
             clearTimeout(timeout);
             if (error.code === 'ESRCH') {
-              logger.debug(
-                `[STARTUP] ${serviceName} process not found, already terminated`,
-              );
+              logger.debug(`[STARTUP] ${serviceName} process not found, already terminated`);
             } else {
               logger.debug(
                 `[STARTUP] ${serviceName} process error during shutdown:`,
-                error.message,
+                error.message
               );
             }
             resolve();
           }
         });
       } catch (error) {
-        logger.warn(
-          `[STARTUP] Failed to attach error listener to ${serviceName}:`,
-          error.message,
-        );
+        logger.warn(`[STARTUP] Failed to attach error listener to ${serviceName}:`, error.message);
       }
     });
   } catch (error) {
     logger.error(`[STARTUP] Error stopping ${serviceName}:`, {
       error: error.message,
-      stack: error.stack,
+      stack: error.stack
     });
   }
 }
@@ -204,12 +172,7 @@ async function shutdownProcess(serviceName, process) {
  * @param {Object} options.healthCheckState - Health check state
  * @returns {Promise<void>}
  */
-async function shutdown({
-  serviceProcesses,
-  serviceStatus,
-  healthMonitor,
-  healthCheckState,
-}) {
+async function shutdown({ serviceProcesses, serviceStatus, healthMonitor, healthCheckState }) {
   logger.info('[STARTUP] Shutting down services...');
 
   // Stop health monitoring first
@@ -246,5 +209,5 @@ async function shutdown({
 
 module.exports = {
   shutdownProcess,
-  shutdown,
+  shutdown
 };

@@ -8,7 +8,7 @@ function BatchOrganizationSuggestions({
   batchSuggestions,
   onAcceptStrategy,
   onCustomizeGroup,
-  onRejectAll,
+  onRejectAll
 }) {
   const { addNotification } = useNotification();
   const [expandedGroups, setExpandedGroups] = useState(new Set());
@@ -16,7 +16,7 @@ function BatchOrganizationSuggestions({
 
   // FIX: Memoize toggleGroup to prevent unnecessary re-renders
   const toggleGroup = useCallback((groupIndex) => {
-    setExpandedGroups(prev => {
+    setExpandedGroups((prev) => {
       const newExpanded = new Set(prev);
       if (newExpanded.has(groupIndex)) {
         newExpanded.delete(groupIndex);
@@ -41,17 +41,14 @@ function BatchOrganizationSuggestions({
     return null;
   }
 
-  const { groups, patterns, recommendations } =
-    batchSuggestions;
+  const { groups, patterns, recommendations } = batchSuggestions;
 
   return (
     <div className="flex flex-col gap-[var(--spacing-default)]">
       {/* Pattern Analysis */}
       {patterns && (
         <Card className="p-4 bg-blue-50 border-stratosort-blue/30">
-          <h3 className="font-medium text-system-gray-900 mb-3">
-            Pattern Analysis
-          </h3>
+          <h3 className="font-medium text-system-gray-900 mb-3">Pattern Analysis</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[var(--spacing-cozy)] text-sm">
             {patterns.hasCommonProject && (
               <div>
@@ -62,9 +59,7 @@ function BatchOrganizationSuggestions({
             {patterns.dominantCategory && (
               <div>
                 <span className="text-system-gray-600">Main Category:</span>
-                <span className="ml-2 font-medium">
-                  {patterns.dominantCategory}
-                </span>
+                <span className="ml-2 font-medium">{patterns.dominantCategory}</span>
               </div>
             )}
             {patterns.fileTypes && patterns.fileTypes.length > 0 && (
@@ -78,10 +73,7 @@ function BatchOrganizationSuggestions({
                 <span className="text-system-gray-600">Common Terms:</span>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {patterns.commonTerms.map((term) => (
-                    <span
-                      key={term}
-                      className="px-2 py-1 bg-white rounded-md text-xs"
-                    >
+                    <span key={term} className="px-2 py-1 bg-white rounded-md text-xs">
                       {term}
                     </span>
                   ))}
@@ -95,9 +87,7 @@ function BatchOrganizationSuggestions({
       {/* Recommendations */}
       {recommendations && recommendations.length > 0 && (
         <Card className="p-4 border-green-200 bg-green-50">
-          <h3 className="font-medium text-system-gray-900 mb-3">
-            Recommendations
-          </h3>
+          <h3 className="font-medium text-system-gray-900 mb-3">Recommendations</h3>
           <div className="flex flex-col gap-[var(--spacing-cozy)]">
             {/* FIX: Use stable identifier instead of array index as key */}
             {recommendations.map((rec) => (
@@ -113,24 +103,20 @@ function BatchOrganizationSuggestions({
                 </div>
                 <div className="flex-1">
                   <div className="font-medium text-sm">{rec.description}</div>
-                  <div className="text-xs text-system-gray-600 mt-1">
-                    {rec.suggestion}
+                  <div className="text-xs text-system-gray-600 mt-1">{rec.suggestion}</div>
+                  <div className="text-xs text-system-gray-500 mt-1">
+                    Confidence:{' '}
+                    {Math.round(
+                      Math.min(
+                        100,
+                        Math.max(
+                          0,
+                          (rec.confidence || 0) > 1 ? rec.confidence : (rec.confidence || 0) * 100
+                        )
+                      )
+                    )}
+                    %
                   </div>
-                <div className="text-xs text-system-gray-500 mt-1">
-                  Confidence:{' '}
-                  {Math.round(
-                    Math.min(
-                      100,
-                      Math.max(
-                        0,
-                        (rec.confidence || 0) > 1
-                          ? rec.confidence
-                          : (rec.confidence || 0) * 100,
-                      ),
-                    ),
-                  )}
-                  %
-                </div>
                 </div>
               </div>
             ))}
@@ -142,9 +128,7 @@ function BatchOrganizationSuggestions({
       {suggestedStrategy && (
         <Card className="p-4 border-stratosort-blue/50 bg-stratosort-blue/5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-system-gray-900">
-              Suggested Organization Strategy
-            </h3>
+            <h3 className="font-medium text-system-gray-900">Suggested Organization Strategy</h3>
             <span className="text-sm text-stratosort-blue">
               {Math.round(
                 Math.min(
@@ -153,23 +137,19 @@ function BatchOrganizationSuggestions({
                     0,
                     (suggestedStrategy.score || 0) > 1
                       ? suggestedStrategy.score
-                      : (suggestedStrategy.score || 0) * 100,
-                  ),
-                ),
+                      : (suggestedStrategy.score || 0) * 100
+                  )
+                )
               )}
               % Match
             </span>
           </div>
           <div className="mb-4">
             <div className="font-medium">{suggestedStrategy.name}</div>
-            <div className="text-sm text-system-gray-600 mt-1">
-              {suggestedStrategy.description}
-            </div>
+            <div className="text-sm text-system-gray-600 mt-1">{suggestedStrategy.description}</div>
             <div className="text-xs text-system-gray-500 mt-2">
               Pattern:{' '}
-              <code className="bg-white px-2 py-1 rounded-md">
-                {suggestedStrategy.pattern}
-              </code>
+              <code className="bg-white px-2 py-1 rounded-md">{suggestedStrategy.pattern}</code>
             </div>
           </div>
           <div className="flex gap-2">
@@ -181,11 +161,7 @@ function BatchOrganizationSuggestions({
             >
               Apply This Strategy
             </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => setSelectedStrategy(null)}
-            >
+            <Button size="sm" variant="secondary" onClick={() => setSelectedStrategy(null)}>
               Choose Different
             </Button>
           </div>
@@ -200,7 +176,10 @@ function BatchOrganizationSuggestions({
         <div className="flex flex-col gap-[var(--spacing-cozy)] max-h-viewport-md overflow-y-auto modern-scrollbar">
           {/* FIX: Use stable identifier instead of array index as key */}
           {groups.map((group, groupIndex) => (
-            <Card key={group.folder || group.id || `group-${groupIndex}`} className="overflow-hidden">
+            <Card
+              key={group.folder || group.id || `group-${groupIndex}`}
+              className="overflow-hidden"
+            >
               <div
                 className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
                 onClick={() => toggleGroup(groupIndex)}
@@ -256,10 +235,7 @@ function BatchOrganizationSuggestions({
                         </div>
                         {file.suggestion && (
                           <span className="text-xs text-system-gray-500">
-                            {Math.round(
-                              (file.suggestion.confidence || 0) * 100,
-                            )}
-                            % match
+                            {Math.round((file.suggestion.confidence || 0) * 100)}% match
                           </span>
                         )}
                       </div>
@@ -267,33 +243,30 @@ function BatchOrganizationSuggestions({
                   </div>
 
                   {/* FIX: Use consistent optional chaining and add array length check */}
-                  {group.files?.length > 0 &&
-                    group.files[0]?.alternatives?.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-system-gray-200">
-                        <div className="text-xs text-system-gray-600 mb-2">
-                          Alternative folders for this group:
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {/* FIX: Use stable identifier instead of array index as key */}
-                          {group.files[0].alternatives
-                            .slice(0, 3)
-                            .map((alt) => (
-                              <button
-                                key={alt.folder || alt.id}
-                                className="px-2 py-1 text-xs bg-white border border-system-gray-300 rounded-md hover:border-stratosort-blue transition-colors"
-                                onClick={() =>
-                                  onCustomizeGroup(groupIndex, {
-                                    ...group,
-                                    folder: alt.folder,
-                                  })
-                                }
-                              >
-                                {alt.folder}
-                              </button>
-                            ))}
-                        </div>
+                  {group.files?.length > 0 && group.files[0]?.alternatives?.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-system-gray-200">
+                      <div className="text-xs text-system-gray-600 mb-2">
+                        Alternative folders for this group:
                       </div>
-                    )}
+                      <div className="flex flex-wrap gap-2">
+                        {/* FIX: Use stable identifier instead of array index as key */}
+                        {group.files[0].alternatives.slice(0, 3).map((alt) => (
+                          <button
+                            key={alt.folder || alt.id}
+                            className="px-2 py-1 text-xs bg-white border border-system-gray-300 rounded-md hover:border-stratosort-blue transition-colors"
+                            onClick={() =>
+                              onCustomizeGroup(groupIndex, {
+                                ...group,
+                                folder: alt.folder
+                              })
+                            }
+                          >
+                            {alt.folder}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -330,21 +303,21 @@ function BatchOrganizationSuggestions({
 
 const alternativeShape = PropTypes.shape({
   folder: PropTypes.string,
-  confidence: PropTypes.number,
+  confidence: PropTypes.number
 });
 
 const fileShape = PropTypes.shape({
   name: PropTypes.string.isRequired,
   suggestion: PropTypes.shape({
-    confidence: PropTypes.number,
+    confidence: PropTypes.number
   }),
-  alternatives: PropTypes.arrayOf(alternativeShape),
+  alternatives: PropTypes.arrayOf(alternativeShape)
 });
 
 const groupShape = PropTypes.shape({
   folder: PropTypes.string,
   files: PropTypes.arrayOf(fileShape).isRequired,
-  confidence: PropTypes.number,
+  confidence: PropTypes.number
 });
 
 const patternsShape = PropTypes.shape({
@@ -352,20 +325,20 @@ const patternsShape = PropTypes.shape({
   project: PropTypes.string,
   dominantCategory: PropTypes.string,
   fileTypes: PropTypes.arrayOf(PropTypes.string),
-  commonTerms: PropTypes.arrayOf(PropTypes.string),
+  commonTerms: PropTypes.arrayOf(PropTypes.string)
 });
 
 const recommendationShape = PropTypes.shape({
   description: PropTypes.string,
   suggestion: PropTypes.string,
-  confidence: PropTypes.number,
+  confidence: PropTypes.number
 });
 
 const strategyShape = PropTypes.shape({
   name: PropTypes.string,
   description: PropTypes.string,
   pattern: PropTypes.string,
-  score: PropTypes.number,
+  score: PropTypes.number
 });
 
 BatchOrganizationSuggestions.propTypes = {
@@ -373,11 +346,11 @@ BatchOrganizationSuggestions.propTypes = {
     groups: PropTypes.arrayOf(groupShape).isRequired,
     patterns: patternsShape,
     recommendations: PropTypes.arrayOf(recommendationShape),
-    suggestedStrategy: strategyShape,
+    suggestedStrategy: strategyShape
   }),
   onAcceptStrategy: PropTypes.func,
   onCustomizeGroup: PropTypes.func,
-  onRejectAll: PropTypes.func,
+  onRejectAll: PropTypes.func
 };
 
 export default BatchOrganizationSuggestions;

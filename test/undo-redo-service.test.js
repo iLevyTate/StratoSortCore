@@ -53,8 +53,8 @@ describe('UndoRedoService', () => {
       type: 'FILE_MOVE',
       data: {
         originalPath: src,
-        newPath: dest,
-      },
+        newPath: dest
+      }
     };
     await service.recordAction(action.type, action.data);
 
@@ -107,9 +107,9 @@ describe('UndoRedoService', () => {
       data: {
         operations: [
           { type: 'move', originalPath: aSrc, newPath: aDest },
-          { type: 'move', originalPath: bSrc, newPath: bDest },
-        ],
-      },
+          { type: 'move', originalPath: bSrc, newPath: bDest }
+        ]
+      }
     };
     await service.recordAction(batchAction.type, batchAction.data);
 

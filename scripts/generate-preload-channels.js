@@ -118,7 +118,7 @@ function findHardcodedChannels(preloadContent) {
   return {
     start: hardcodedStart,
     end: endIdx,
-    content: preloadContent.slice(hardcodedStart, endIdx),
+    content: preloadContent.slice(hardcodedStart, endIdx)
   };
 }
 
@@ -168,9 +168,7 @@ function updatePreload() {
     if (hardcoded) {
       // Replace hardcoded block with generated block
       preloadContent =
-        preloadContent.slice(0, hardcoded.start) +
-        newCode +
-        preloadContent.slice(hardcoded.end);
+        preloadContent.slice(0, hardcoded.start) + newCode + preloadContent.slice(hardcoded.end);
 
       console.log('Migrated hardcoded IPC_CHANNELS to generated block');
     } else {

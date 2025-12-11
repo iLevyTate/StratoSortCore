@@ -49,7 +49,7 @@ function createProgressTracker() {
   return {
     onProgress,
     notify,
-    clear,
+    clear
   };
 }
 

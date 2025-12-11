@@ -11,7 +11,7 @@ export const fetchSmartFolders = createAsyncThunk(
     }
     const folders = await window.electronAPI?.smartFolders?.get?.();
     return Array.isArray(folders) ? folders : [];
-  },
+  }
 );
 
 // Helper to serialize file objects - converts Date to ISO string for Redux compatibility
@@ -19,15 +19,7 @@ const serializeFile = (file) => {
   if (!file || typeof file !== 'object') return file;
   const serialized = { ...file };
   // Convert Date objects to ISO strings
-  [
-    'created',
-    'modified',
-    'accessed',
-    'birthtime',
-    'mtime',
-    'atime',
-    'ctime',
-  ].forEach((key) => {
+  ['created', 'modified', 'accessed', 'birthtime', 'mtime', 'atime', 'ctime'].forEach((key) => {
     if (serialized[key] instanceof Date) {
       serialized[key] = serialized[key].toISOString();
     }
@@ -50,9 +42,9 @@ const initialState = {
     convention: 'subject-date',
     dateFormat: 'YYYY-MM-DD',
     caseConvention: 'kebab-case',
-    separator: '-',
+    separator: '-'
   },
-  watchPaths: [], // Paths being watched (e.g. Downloads)
+  watchPaths: [] // Paths being watched (e.g. Downloads)
 };
 
 const filesSlice = createSlice({
@@ -65,14 +57,12 @@ const filesSlice = createSlice({
     addSelectedFiles: (state, action) => {
       // Filter duplicates and serialize
       const newFiles = serializeFiles(action.payload).filter(
-        (newFile) => !state.selectedFiles.some((f) => f.path === newFile.path),
+        (newFile) => !state.selectedFiles.some((f) => f.path === newFile.path)
       );
       state.selectedFiles = [...state.selectedFiles, ...newFiles];
     },
     removeSelectedFile: (state, action) => {
-      state.selectedFiles = state.selectedFiles.filter(
-        (f) => f.path !== action.payload,
-      );
+      state.selectedFiles = state.selectedFiles.filter((f) => f.path !== action.payload);
       // Also cleanup file state
       if (state.fileStates[action.payload]) {
         delete state.fileStates[action.payload];
@@ -83,7 +73,7 @@ const filesSlice = createSlice({
       state.fileStates[path] = {
         state: fileState,
         timestamp: new Date().toISOString(),
-        ...metadata,
+        ...metadata
       };
     },
     setFileStates: (state, action) => {
@@ -107,7 +97,7 @@ const filesSlice = createSlice({
     },
     resetFilesState: () => {
       return initialState;
-    },
+    }
   },
   extraReducers: (builder) => {
     builder
@@ -121,7 +111,7 @@ const filesSlice = createSlice({
       .addCase(fetchSmartFolders.rejected, (state) => {
         state.smartFoldersLoading = false;
       });
-  },
+  }
 });
 
 export const {
@@ -135,7 +125,7 @@ export const {
   setOrganizedFiles,
   setNamingConvention,
   clearFiles,
-  resetFilesState,
+  resetFilesState
 } = filesSlice.actions;
 
 export default filesSlice.reducer;

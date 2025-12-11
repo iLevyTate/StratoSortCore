@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock errorHandlingUtils
@@ -31,7 +31,7 @@ jest.mock('../src/shared/errorHandlingUtils', () => ({
       }
       throw lastError;
     };
-  }),
+  })
 }));
 
 describe('Ollama API Retry Utility', () => {
@@ -195,7 +195,7 @@ describe('Ollama API Retry Utility', () => {
 
       const result = await ollamaRetry.withOllamaRetry(apiCall, {
         operation: 'test',
-        maxRetries: 3,
+        maxRetries: 3
       });
 
       expect(result).toEqual({ data: 'success' });
@@ -203,7 +203,8 @@ describe('Ollama API Retry Utility', () => {
     });
 
     test('retries on retryable error', async () => {
-      const apiCall = jest.fn()
+      const apiCall = jest
+        .fn()
         .mockRejectedValueOnce({ code: 'ECONNRESET', message: 'Connection reset' })
         .mockResolvedValueOnce({ data: 'success' });
 
@@ -211,7 +212,7 @@ describe('Ollama API Retry Utility', () => {
         operation: 'test',
         maxRetries: 3,
         initialDelay: 10,
-        maxDelay: 100,
+        maxDelay: 100
       });
 
       expect(result).toEqual({ data: 'success' });
@@ -222,17 +223,20 @@ describe('Ollama API Retry Utility', () => {
       const error = { message: 'invalid request', code: 'INVALID' };
       const apiCall = jest.fn().mockRejectedValue(error);
 
-      await expect(ollamaRetry.withOllamaRetry(apiCall, {
-        operation: 'test',
-        maxRetries: 3,
-      })).rejects.toEqual(error);
+      await expect(
+        ollamaRetry.withOllamaRetry(apiCall, {
+          operation: 'test',
+          maxRetries: 3
+        })
+      ).rejects.toEqual(error);
 
       expect(apiCall).toHaveBeenCalledTimes(1);
     });
 
     test('calls onRetry callback', async () => {
       const onRetry = jest.fn();
-      const apiCall = jest.fn()
+      const apiCall = jest
+        .fn()
         .mockRejectedValueOnce({ code: 'ETIMEDOUT', message: 'Timeout' })
         .mockResolvedValueOnce({ data: 'success' });
 
@@ -241,7 +245,7 @@ describe('Ollama API Retry Utility', () => {
         maxRetries: 3,
         initialDelay: 10,
         maxDelay: 100,
-        onRetry,
+        onRetry
       });
 
       expect(onRetry).toHaveBeenCalled();
@@ -256,7 +260,7 @@ describe('Ollama API Retry Utility', () => {
           operation: 'test-op',
           maxRetries: 2,
           initialDelay: 10,
-          maxDelay: 100,
+          maxDelay: 100
         });
       } catch (e) {
         expect(e.retryContext).toBeDefined();
@@ -280,10 +284,14 @@ describe('Ollama API Retry Utility', () => {
       const mockResponse = { ok: true, json: () => ({ data: 'test' }) };
       global.fetch.mockResolvedValue(mockResponse);
 
-      const result = await ollamaRetry.fetchWithRetry('http://test.com', {}, {
-        operation: 'test',
-        maxRetries: 0,
-      });
+      const result = await ollamaRetry.fetchWithRetry(
+        'http://test.com',
+        {},
+        {
+          operation: 'test',
+          maxRetries: 0
+        }
+      );
 
       expect(result).toEqual(mockResponse);
     });
@@ -293,14 +301,20 @@ describe('Ollama API Retry Utility', () => {
         ok: false,
         status: 400,
         statusText: 'Bad Request',
-        text: () => Promise.resolve('{}'),
+        text: () => Promise.resolve('{}')
       };
       global.fetch.mockResolvedValue(mockResponse);
 
-      await expect(ollamaRetry.fetchWithRetry('http://test.com', {}, {
-        operation: 'test',
-        maxRetries: 0,
-      })).rejects.toThrow('HTTP 400');
+      await expect(
+        ollamaRetry.fetchWithRetry(
+          'http://test.com',
+          {},
+          {
+            operation: 'test',
+            maxRetries: 0
+          }
+        )
+      ).rejects.toThrow('HTTP 400');
     });
   });
 
@@ -311,13 +325,13 @@ describe('Ollama API Retry Utility', () => {
 
     test('calls client.generate with options', async () => {
       const mockClient = {
-        generate: jest.fn().mockResolvedValue({ response: 'test output' }),
+        generate: jest.fn().mockResolvedValue({ response: 'test output' })
       };
       const generateOptions = { model: 'llama2', prompt: 'test' };
 
       const result = await ollamaRetry.generateWithRetry(mockClient, generateOptions, {
         operation: 'test',
-        maxRetries: 0,
+        maxRetries: 0
       });
 
       expect(mockClient.generate).toHaveBeenCalledWith(generateOptions);
@@ -335,7 +349,7 @@ describe('Ollama API Retry Utility', () => {
 
       const result = await ollamaRetry.axiosWithRetry(axiosCall, {
         operation: 'test',
-        maxRetries: 0,
+        maxRetries: 0
       });
 
       expect(result).toEqual({ data: 'success' });
@@ -345,16 +359,18 @@ describe('Ollama API Retry Utility', () => {
       const axiosError = {
         response: {
           status: 500,
-          statusText: 'Internal Server Error',
+          statusText: 'Internal Server Error'
         },
-        code: 'ERR_BAD_RESPONSE',
+        code: 'ERR_BAD_RESPONSE'
       };
       const axiosCall = jest.fn().mockRejectedValue(axiosError);
 
-      await expect(ollamaRetry.axiosWithRetry(axiosCall, {
-        operation: 'test',
-        maxRetries: 0,
-      })).rejects.toThrow('HTTP 500');
+      await expect(
+        ollamaRetry.axiosWithRetry(axiosCall, {
+          operation: 'test',
+          maxRetries: 0
+        })
+      ).rejects.toThrow('HTTP 500');
     });
   });
 });

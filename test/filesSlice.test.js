@@ -15,7 +15,7 @@ import filesReducer, {
   setNamingConvention,
   clearFiles,
   resetFilesState,
-  fetchSmartFolders,
+  fetchSmartFolders
 } from '../src/renderer/store/slices/filesSlice';
 
 describe('filesSlice', () => {
@@ -29,9 +29,9 @@ describe('filesSlice', () => {
       convention: 'subject-date',
       dateFormat: 'YYYY-MM-DD',
       caseConvention: 'kebab-case',
-      separator: '-',
+      separator: '-'
     },
-    watchPaths: [],
+    watchPaths: []
   };
 
   describe('initial state', () => {
@@ -48,7 +48,7 @@ describe('filesSlice', () => {
     test('sets selected files', () => {
       const files = [
         { path: '/file1.pdf', name: 'file1.pdf' },
-        { path: '/file2.pdf', name: 'file2.pdf' },
+        { path: '/file2.pdf', name: 'file2.pdf' }
       ];
 
       const result = filesReducer(initialState, setSelectedFiles(files));
@@ -62,8 +62,8 @@ describe('filesSlice', () => {
         {
           path: '/file.pdf',
           created: new Date('2024-01-01'),
-          modified: new Date('2024-01-02'),
-        },
+          modified: new Date('2024-01-02')
+        }
       ];
 
       const result = filesReducer(initialState, setSelectedFiles(files));
@@ -77,7 +77,7 @@ describe('filesSlice', () => {
     test('adds new files', () => {
       const state = {
         ...initialState,
-        selectedFiles: [{ path: '/file1.pdf' }],
+        selectedFiles: [{ path: '/file1.pdf' }]
       };
       const newFiles = [{ path: '/file2.pdf' }];
 
@@ -89,7 +89,7 @@ describe('filesSlice', () => {
     test('filters duplicate files', () => {
       const state = {
         ...initialState,
-        selectedFiles: [{ path: '/file1.pdf' }],
+        selectedFiles: [{ path: '/file1.pdf' }]
       };
       const newFiles = [{ path: '/file1.pdf' }, { path: '/file2.pdf' }];
 
@@ -103,13 +103,10 @@ describe('filesSlice', () => {
     test('removes file by path', () => {
       const state = {
         ...initialState,
-        selectedFiles: [
-          { path: '/file1.pdf' },
-          { path: '/file2.pdf' },
-        ],
+        selectedFiles: [{ path: '/file1.pdf' }, { path: '/file2.pdf' }],
         fileStates: {
-          '/file1.pdf': { state: 'ready' },
-        },
+          '/file1.pdf': { state: 'ready' }
+        }
       };
 
       const result = filesReducer(state, removeSelectedFile('/file1.pdf'));
@@ -127,8 +124,8 @@ describe('filesSlice', () => {
         updateFileState({
           path: '/file.pdf',
           state: 'analyzing',
-          metadata: { progress: 50 },
-        }),
+          metadata: { progress: 50 }
+        })
       );
 
       expect(result.fileStates['/file.pdf'].state).toBe('analyzing');
@@ -141,7 +138,7 @@ describe('filesSlice', () => {
     test('replaces all file states', () => {
       const newStates = {
         '/file1.pdf': { state: 'ready' },
-        '/file2.pdf': { state: 'error' },
+        '/file2.pdf': { state: 'error' }
       };
 
       const result = filesReducer(initialState, setFileStates(newStates));
@@ -152,9 +149,7 @@ describe('filesSlice', () => {
 
   describe('setSmartFolders', () => {
     test('sets smart folders', () => {
-      const folders = [
-        { id: '1', name: 'Documents', path: '/docs' },
-      ];
+      const folders = [{ id: '1', name: 'Documents', path: '/docs' }];
 
       const result = filesReducer(initialState, setSmartFolders(folders));
 
@@ -189,8 +184,8 @@ describe('filesSlice', () => {
         initialState,
         setNamingConvention({
           convention: 'date-subject',
-          separator: '_',
-        }),
+          separator: '_'
+        })
       );
 
       expect(result.namingConvention.convention).toBe('date-subject');
@@ -205,7 +200,7 @@ describe('filesSlice', () => {
       const state = {
         ...initialState,
         selectedFiles: [{ path: '/file.pdf' }],
-        fileStates: { '/file.pdf': { state: 'ready' } },
+        fileStates: { '/file.pdf': { state: 'ready' } }
       };
 
       const result = filesReducer(state, clearFiles());
@@ -220,7 +215,7 @@ describe('filesSlice', () => {
       const state = {
         ...initialState,
         selectedFiles: [{ path: '/file.pdf' }],
-        smartFolders: [{ id: '1' }],
+        smartFolders: [{ id: '1' }]
       };
 
       const result = filesReducer(state, resetFilesState());
@@ -232,7 +227,7 @@ describe('filesSlice', () => {
   describe('fetchSmartFolders', () => {
     test('sets loading state on pending', () => {
       const result = filesReducer(initialState, {
-        type: fetchSmartFolders.pending.type,
+        type: fetchSmartFolders.pending.type
       });
 
       expect(result.smartFoldersLoading).toBe(true);
@@ -243,7 +238,7 @@ describe('filesSlice', () => {
 
       const result = filesReducer(initialState, {
         type: fetchSmartFolders.fulfilled.type,
-        payload: folders,
+        payload: folders
       });
 
       expect(result.smartFolders).toEqual(folders);
@@ -254,7 +249,7 @@ describe('filesSlice', () => {
       const state = { ...initialState, smartFoldersLoading: true };
 
       const result = filesReducer(state, {
-        type: fetchSmartFolders.rejected.type,
+        type: fetchSmartFolders.rejected.type
       });
 
       expect(result.smartFoldersLoading).toBe(false);

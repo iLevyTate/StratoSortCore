@@ -9,7 +9,7 @@ const {
   fetchWithRetry,
   generateWithRetry,
   axiosWithRetry,
-  isRetryableError,
+  isRetryableError
 } = require('../src/main/utils/ollamaApiRetry');
 
 describe('Ollama API Retry Logic', () => {
@@ -42,7 +42,7 @@ describe('Ollama API Retry Logic', () => {
         { code: 'ETIMEDOUT', message: 'Request timeout' },
         { code: 'ENOTFOUND', message: 'Host not found' },
         { message: 'fetch failed' },
-        { message: 'Network error occurred' },
+        { message: 'Network error occurred' }
       ];
 
       networkErrors.forEach((error) => {
@@ -66,7 +66,7 @@ describe('Ollama API Retry Logic', () => {
         { message: 'Unauthorized access' },
         { message: 'Forbidden' },
         { message: 'Bad request' },
-        { message: 'Zero length image' },
+        { message: 'Zero length image' }
       ];
 
       nonRetryableErrors.forEach((error) => {
@@ -89,7 +89,7 @@ describe('Ollama API Retry Logic', () => {
 
       const result = await withOllamaRetry(mockApiCall, {
         operation: 'Test operation',
-        maxRetries: 3,
+        maxRetries: 3
       });
 
       expect(result).toEqual({ success: true });
@@ -105,7 +105,7 @@ describe('Ollama API Retry Logic', () => {
       const promise = withOllamaRetry(mockApiCall, {
         operation: 'Test operation',
         maxRetries: 3,
-        initialDelay: 1000,
+        initialDelay: 1000
       });
 
       // Fast-forward all timers
@@ -129,7 +129,7 @@ describe('Ollama API Retry Logic', () => {
         operation: 'Test operation',
         maxRetries: 3,
         initialDelay: 1000,
-        maxDelay: 4000,
+        maxDelay: 4000
       });
 
       // Fast-forward all timers
@@ -149,7 +149,7 @@ describe('Ollama API Retry Logic', () => {
       const promise = withOllamaRetry(mockApiCall, {
         operation: 'Test operation',
         maxRetries: 2,
-        initialDelay: 100,
+        initialDelay: 100
       });
 
       // Use expect().rejects to properly catch the rejection
@@ -173,8 +173,8 @@ describe('Ollama API Retry Logic', () => {
       await expect(
         withOllamaRetry(mockApiCall, {
           operation: 'Test operation',
-          maxRetries: 3,
-        }),
+          maxRetries: 3
+        })
       ).rejects.toThrow('Validation failed');
 
       expect(mockApiCall).toHaveBeenCalledTimes(1);
@@ -191,7 +191,7 @@ describe('Ollama API Retry Logic', () => {
         operation: 'Test operation',
         maxRetries: 3,
         initialDelay: 100,
-        onRetry,
+        onRetry
       });
 
       // Advance timers to trigger retry
@@ -213,21 +213,19 @@ describe('Ollama API Retry Logic', () => {
     });
 
     it('should retry fetch on network error', async () => {
-      global.fetch
-        .mockRejectedValueOnce(new Error('fetch failed'))
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({ result: 'success' }),
-        });
+      global.fetch.mockRejectedValueOnce(new Error('fetch failed')).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ result: 'success' })
+      });
 
       const promise = fetchWithRetry(
         'http://localhost:11434/api/test',
         {},
         {
           maxRetries: 2,
-          initialDelay: 100,
-        },
+          initialDelay: 100
+        }
       );
 
       // Advance timers to trigger retry
@@ -245,7 +243,7 @@ describe('Ollama API Retry Logic', () => {
           ok: false,
           status: 500,
           statusText: 'Internal Server Error',
-          text: async () => '{"error": "Server error"}',
+          text: async () => '{"error": "Server error"}'
         });
       });
 
@@ -255,15 +253,13 @@ describe('Ollama API Retry Logic', () => {
         {},
         {
           maxRetries: 2,
-          initialDelay: 100,
-        },
+          initialDelay: 100
+        }
       );
 
       // Use expect().rejects to properly catch the rejection
       // eslint-disable-next-line jest/valid-expect
-      const assertionPromise = expect(promise).rejects.toThrow(
-        /HTTP 500|Server error/,
-      );
+      const assertionPromise = expect(promise).rejects.toThrow(/HTTP 500|Server error/);
 
       // Advance timers to trigger retries
       jest.advanceTimersByTime(1000); // Advance enough for all retries
@@ -281,13 +277,13 @@ describe('Ollama API Retry Logic', () => {
         generate: jest
           .fn()
           .mockRejectedValueOnce(new Error('Connection reset'))
-          .mockResolvedValueOnce({ response: '{"result": "success"}' }),
+          .mockResolvedValueOnce({ response: '{"result": "success"}' })
       };
 
       const promise = generateWithRetry(
         mockClient,
         { model: 'test-model', prompt: 'test' },
-        { maxRetries: 2, initialDelay: 100 },
+        { maxRetries: 2, initialDelay: 100 }
       );
 
       // Advance timers to trigger retry
@@ -306,16 +302,16 @@ describe('Ollama API Retry Logic', () => {
         .fn()
         .mockRejectedValueOnce({
           response: { status: 503, statusText: 'Service Unavailable' },
-          code: 'ECONNREFUSED',
+          code: 'ECONNREFUSED'
         })
         .mockResolvedValueOnce({
           status: 200,
-          data: { success: true },
+          data: { success: true }
         });
 
       const promise = axiosWithRetry(() => mockAxiosCall(), {
         maxRetries: 2,
-        initialDelay: 100,
+        initialDelay: 100
       });
 
       // Advance timers to trigger retry
@@ -340,7 +336,7 @@ describe('Ollama API Retry Logic', () => {
         operation: 'Complex test',
         maxRetries: 3,
         initialDelay: 500,
-        maxDelay: 4000,
+        maxDelay: 4000
       });
 
       // Advance through all retry delays
@@ -363,7 +359,7 @@ describe('Ollama API Retry Logic', () => {
         operation: 'Delay cap test',
         maxRetries: 5,
         initialDelay: 1000,
-        maxDelay: 3000,
+        maxDelay: 3000
       });
 
       // Create assertion promise BEFORE advancing timers to avoid unhandled rejection

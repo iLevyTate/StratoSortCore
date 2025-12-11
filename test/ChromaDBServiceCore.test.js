@@ -6,8 +6,8 @@
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/mock/userData'),
-  },
+    getPath: jest.fn(() => '/mock/userData')
+  }
 }));
 
 // Mock logger
@@ -17,29 +17,29 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock config
 jest.mock('../src/shared/config/index', () => ({
-  get: jest.fn((key, defaultValue) => defaultValue),
+  get: jest.fn((key, defaultValue) => defaultValue)
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   NETWORK: {
     MAX_PORT: 65535,
-    MIN_PORT: 1,
+    MIN_PORT: 1
   },
   TIMEOUTS: {
-    HEALTH_CHECK: 5000,
-  },
+    HEALTH_CHECK: 5000
+  }
 }));
 
 // Mock promiseUtils
 jest.mock('../src/shared/promiseUtils', () => ({
-  withTimeout: jest.fn((promise) => promise),
+  withTimeout: jest.fn((promise) => promise)
 }));
 
 // Mock fs
@@ -47,9 +47,9 @@ jest.mock('fs', () => ({
   promises: {
     mkdir: jest.fn().mockResolvedValue(undefined),
     readFile: jest.fn().mockResolvedValue(''),
-    rm: jest.fn().mockResolvedValue(undefined),
+    rm: jest.fn().mockResolvedValue(undefined)
   },
-  existsSync: jest.fn().mockReturnValue(false),
+  existsSync: jest.fn().mockReturnValue(false)
 }));
 
 // Mock chromadb
@@ -57,18 +57,16 @@ const mockCollection = {
   add: jest.fn().mockResolvedValue(undefined),
   upsert: jest.fn().mockResolvedValue(undefined),
   delete: jest.fn().mockResolvedValue(undefined),
-  query: jest
-    .fn()
-    .mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
+  query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
   get: jest.fn().mockResolvedValue({ ids: [], metadatas: [] }),
-  count: jest.fn().mockResolvedValue(0),
+  count: jest.fn().mockResolvedValue(0)
 };
 
 jest.mock('chromadb', () => ({
   ChromaClient: jest.fn().mockImplementation(() => ({
     getOrCreateCollection: jest.fn().mockResolvedValue(mockCollection),
-    deleteCollection: jest.fn().mockResolvedValue(undefined),
-  })),
+    deleteCollection: jest.fn().mockResolvedValue(undefined)
+  }))
 }));
 
 // Mock CircuitBreaker
@@ -82,7 +80,7 @@ const mockCircuitBreaker = {
   getStats: jest.fn().mockReturnValue({ failures: 0, successes: 0 }),
   reset: jest.fn(),
   cleanup: jest.fn(),
-  on: jest.fn(),
+  on: jest.fn()
 };
 
 jest.mock('../src/main/utils/CircuitBreaker', () => ({
@@ -90,8 +88,8 @@ jest.mock('../src/main/utils/CircuitBreaker', () => ({
   CircuitState: {
     CLOSED: 'CLOSED',
     OPEN: 'OPEN',
-    HALF_OPEN: 'HALF_OPEN',
-  },
+    HALF_OPEN: 'HALF_OPEN'
+  }
 }));
 
 // Mock OfflineQueue
@@ -103,7 +101,7 @@ const mockOfflineQueue = {
   size: jest.fn().mockReturnValue(0),
   getStats: jest.fn().mockReturnValue({ size: 0, pending: 0 }),
   cleanup: jest.fn().mockResolvedValue(undefined),
-  on: jest.fn(),
+  on: jest.fn()
 };
 
 jest.mock('../src/main/utils/OfflineQueue', () => ({
@@ -117,8 +115,8 @@ jest.mock('../src/main/utils/OfflineQueue', () => ({
     BATCH_UPSERT_FOLDERS: 'BATCH_UPSERT_FOLDERS',
     BATCH_DELETE_FILES: 'BATCH_DELETE_FILES',
     BATCH_DELETE_FOLDERS: 'BATCH_DELETE_FOLDERS',
-    UPDATE_FILE_PATHS: 'UPDATE_FILE_PATHS',
-  },
+    UPDATE_FILE_PATHS: 'UPDATE_FILE_PATHS'
+  }
 }));
 
 // Mock ChromaQueryCache
@@ -128,18 +126,18 @@ const mockQueryCache = {
   clear: jest.fn(),
   invalidateForFile: jest.fn(),
   invalidateForFolder: jest.fn(),
-  getStats: jest.fn().mockReturnValue({ hits: 0, misses: 0, size: 0 }),
+  getStats: jest.fn().mockReturnValue({ hits: 0, misses: 0, size: 0 })
 };
 
 jest.mock('../src/main/services/chromadb/ChromaQueryCache', () => ({
-  ChromaQueryCache: jest.fn().mockImplementation(() => mockQueryCache),
+  ChromaQueryCache: jest.fn().mockImplementation(() => mockQueryCache)
 }));
 
 // Mock health checker
 jest.mock('../src/main/services/chromadb/ChromaHealthChecker', () => ({
   checkHealthViaHttp: jest.fn().mockResolvedValue({ healthy: true }),
   checkHealthViaClient: jest.fn().mockResolvedValue(true),
-  isServerAvailable: jest.fn().mockResolvedValue(true),
+  isServerAvailable: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock file operations
@@ -150,20 +148,18 @@ jest.mock('../src/main/services/chromadb/fileOperations', () => ({
   batchDeleteFileEmbeddings: jest.fn().mockResolvedValue(3),
   updateFilePaths: jest.fn().mockResolvedValue({ updated: 2 }),
   querySimilarFiles: jest.fn().mockResolvedValue([]),
-  resetFiles: jest.fn().mockResolvedValue(mockCollection),
+  resetFiles: jest.fn().mockResolvedValue(mockCollection)
 }));
 
 // Mock folder operations
 jest.mock('../src/main/services/chromadb/folderOperations', () => ({
   directUpsertFolder: jest.fn().mockResolvedValue({ success: true }),
-  directBatchUpsertFolders: jest
-    .fn()
-    .mockResolvedValue({ count: 3, skipped: [] }),
+  directBatchUpsertFolders: jest.fn().mockResolvedValue({ count: 3, skipped: [] }),
   queryFoldersByEmbedding: jest.fn().mockResolvedValue([]),
   executeQueryFolders: jest.fn().mockResolvedValue([]),
   batchQueryFolders: jest.fn().mockResolvedValue(new Map()),
   getAllFolders: jest.fn().mockResolvedValue([]),
-  resetFolders: jest.fn().mockResolvedValue(mockCollection),
+  resetFolders: jest.fn().mockResolvedValue(mockCollection)
 }));
 
 describe('ChromaDBServiceCore', () => {
@@ -203,9 +199,7 @@ describe('ChromaDBServiceCore', () => {
     });
 
     test('initializes query cache', () => {
-      const {
-        ChromaQueryCache,
-      } = require('../src/main/services/chromadb/ChromaQueryCache');
+      const { ChromaQueryCache } = require('../src/main/services/chromadb/ChromaQueryCache');
       expect(ChromaQueryCache).toHaveBeenCalled();
     });
 
@@ -258,9 +252,7 @@ describe('ChromaDBServiceCore', () => {
     test('skips if already initialized and healthy', async () => {
       await service.initialize();
 
-      const {
-        checkHealthViaHttp,
-      } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
       checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
 
       await service.initialize();
@@ -272,9 +264,7 @@ describe('ChromaDBServiceCore', () => {
 
   describe('checkHealth', () => {
     test('returns true when healthy', async () => {
-      const {
-        checkHealthViaHttp,
-      } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
       checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
 
       const result = await service.checkHealth();
@@ -286,7 +276,7 @@ describe('ChromaDBServiceCore', () => {
     test('returns false when unhealthy', async () => {
       const {
         checkHealthViaHttp,
-        checkHealthViaClient,
+        checkHealthViaClient
       } = require('../src/main/services/chromadb/ChromaHealthChecker');
       checkHealthViaHttp.mockResolvedValueOnce({ healthy: false });
       checkHealthViaClient.mockResolvedValueOnce(false);
@@ -302,7 +292,7 @@ describe('ChromaDBServiceCore', () => {
     const mockFile = {
       id: 'file-1',
       vector: [0.1, 0.2, 0.3],
-      meta: { name: 'test.pdf' },
+      meta: { name: 'test.pdf' }
     };
 
     test('upserts file when circuit is closed', async () => {
@@ -323,16 +313,14 @@ describe('ChromaDBServiceCore', () => {
     });
 
     test('throws on invalid file data', async () => {
-      await expect(service.upsertFile({ id: 'no-vector' })).rejects.toThrow(
-        'Invalid file data',
-      );
+      await expect(service.upsertFile({ id: 'no-vector' })).rejects.toThrow('Invalid file data');
     });
   });
 
   describe('batchUpsertFiles', () => {
     const mockFiles = [
       { id: 'file-1', vector: [0.1, 0.2], meta: {} },
-      { id: 'file-2', vector: [0.3, 0.4], meta: {} },
+      { id: 'file-2', vector: [0.3, 0.4], meta: {} }
     ];
 
     test('batch upserts files', async () => {
@@ -363,9 +351,7 @@ describe('ChromaDBServiceCore', () => {
     test('deletes file embedding', async () => {
       await service.initialize();
 
-      const {
-        deleteFileEmbedding,
-      } = require('../src/main/services/chromadb/fileOperations');
+      const { deleteFileEmbedding } = require('../src/main/services/chromadb/fileOperations');
 
       await service.deleteFileEmbedding('file-1');
 
@@ -377,10 +363,7 @@ describe('ChromaDBServiceCore', () => {
     test('batch deletes file embeddings', async () => {
       await service.initialize();
 
-      const result = await service.batchDeleteFileEmbeddings([
-        'file-1',
-        'file-2',
-      ]);
+      const result = await service.batchDeleteFileEmbeddings(['file-1', 'file-2']);
 
       expect(result.count).toBe(3);
     });
@@ -396,7 +379,7 @@ describe('ChromaDBServiceCore', () => {
     const mockFolder = {
       id: 'folder-1',
       vector: [0.1, 0.2, 0.3],
-      name: 'Documents',
+      name: 'Documents'
     };
 
     test('upserts folder', async () => {
@@ -417,7 +400,7 @@ describe('ChromaDBServiceCore', () => {
 
     test('throws on invalid folder data', async () => {
       await expect(service.upsertFolder({ id: 'no-vector' })).rejects.toThrow(
-        'Invalid folder data',
+        'Invalid folder data'
       );
     });
   });
@@ -425,7 +408,7 @@ describe('ChromaDBServiceCore', () => {
   describe('batchUpsertFolders', () => {
     const mockFolders = [
       { id: 'folder-1', vector: [0.1, 0.2], name: 'Docs' },
-      { id: 'folder-2', vector: [0.3, 0.4], name: 'Images' },
+      { id: 'folder-2', vector: [0.3, 0.4], name: 'Images' }
     ];
 
     test('batch upserts folders', async () => {
@@ -447,12 +430,8 @@ describe('ChromaDBServiceCore', () => {
     test('queries folders for file', async () => {
       await service.initialize();
 
-      const {
-        executeQueryFolders,
-      } = require('../src/main/services/chromadb/folderOperations');
-      executeQueryFolders.mockResolvedValueOnce([
-        { id: 'folder-1', score: 0.9 },
-      ]);
+      const { executeQueryFolders } = require('../src/main/services/chromadb/folderOperations');
+      executeQueryFolders.mockResolvedValueOnce([{ id: 'folder-1', score: 0.9 }]);
 
       const results = await service.queryFolders('file-1', 5);
 
@@ -472,9 +451,7 @@ describe('ChromaDBServiceCore', () => {
     test('deduplicates concurrent queries', async () => {
       await service.initialize();
 
-      const {
-        executeQueryFolders,
-      } = require('../src/main/services/chromadb/folderOperations');
+      const { executeQueryFolders } = require('../src/main/services/chromadb/folderOperations');
 
       // Track how many times executeQueryFolders is called
       let callCount = 0;
@@ -486,7 +463,7 @@ describe('ChromaDBServiceCore', () => {
       // Make concurrent queries with same key
       const [result1, result2] = await Promise.all([
         service.queryFolders('file-1', 5),
-        service.queryFolders('file-1', 5),
+        service.queryFolders('file-1', 5)
       ]);
 
       // Both should return same results
@@ -501,9 +478,7 @@ describe('ChromaDBServiceCore', () => {
     test('queries folders by embedding vector', async () => {
       await service.initialize();
 
-      const {
-        queryFoldersByEmbedding,
-      } = require('../src/main/services/chromadb/folderOperations');
+      const { queryFoldersByEmbedding } = require('../src/main/services/chromadb/folderOperations');
       queryFoldersByEmbedding.mockResolvedValueOnce([{ id: 'folder-1' }]);
 
       const results = await service.queryFoldersByEmbedding([0.1, 0.2], 5);
@@ -517,13 +492,8 @@ describe('ChromaDBServiceCore', () => {
     test('gets all folders', async () => {
       await service.initialize();
 
-      const {
-        getAllFolders,
-      } = require('../src/main/services/chromadb/folderOperations');
-      getAllFolders.mockResolvedValueOnce([
-        { id: 'folder-1' },
-        { id: 'folder-2' },
-      ]);
+      const { getAllFolders } = require('../src/main/services/chromadb/folderOperations');
+      getAllFolders.mockResolvedValueOnce([{ id: 'folder-1' }, { id: 'folder-2' }]);
 
       const results = await service.getAllFolders();
 
@@ -535,9 +505,7 @@ describe('ChromaDBServiceCore', () => {
     test('queries similar files', async () => {
       await service.initialize();
 
-      const {
-        querySimilarFiles,
-      } = require('../src/main/services/chromadb/fileOperations');
+      const { querySimilarFiles } = require('../src/main/services/chromadb/fileOperations');
       querySimilarFiles.mockResolvedValueOnce([{ id: 'similar-1' }]);
 
       const results = await service.querySimilarFiles([0.1, 0.2], 10);
@@ -552,9 +520,7 @@ describe('ChromaDBServiceCore', () => {
 
       const pathUpdates = [{ id: 'file-1', newPath: '/new/path.pdf' }];
 
-      const {
-        updateFilePaths,
-      } = require('../src/main/services/chromadb/fileOperations');
+      const { updateFilePaths } = require('../src/main/services/chromadb/fileOperations');
 
       await service.updateFilePaths(pathUpdates);
 
@@ -566,9 +532,7 @@ describe('ChromaDBServiceCore', () => {
     test('resets file collection', async () => {
       await service.initialize();
 
-      const {
-        resetFiles,
-      } = require('../src/main/services/chromadb/fileOperations');
+      const { resetFiles } = require('../src/main/services/chromadb/fileOperations');
 
       await service.resetFiles();
 
@@ -580,9 +544,7 @@ describe('ChromaDBServiceCore', () => {
     test('resets folder collection', async () => {
       await service.initialize();
 
-      const {
-        resetFolders,
-      } = require('../src/main/services/chromadb/folderOperations');
+      const { resetFolders } = require('../src/main/services/chromadb/folderOperations');
 
       await service.resetFolders();
 
@@ -594,12 +556,8 @@ describe('ChromaDBServiceCore', () => {
     test('resets both collections', async () => {
       await service.initialize();
 
-      const {
-        resetFiles,
-      } = require('../src/main/services/chromadb/fileOperations');
-      const {
-        resetFolders,
-      } = require('../src/main/services/chromadb/folderOperations');
+      const { resetFiles } = require('../src/main/services/chromadb/fileOperations');
+      const { resetFolders } = require('../src/main/services/chromadb/folderOperations');
 
       await service.resetAll();
 

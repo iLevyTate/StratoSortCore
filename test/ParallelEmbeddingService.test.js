@@ -10,30 +10,30 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock ollamaUtils
 const mockOllama = {
   embeddings: jest.fn(),
-  list: jest.fn(),
+  list: jest.fn()
 };
 
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(() => mockOllama),
-  getOllamaEmbeddingModel: jest.fn(() => 'nomic-embed-text'),
+  getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large')
 }));
 
 // Mock ollamaApiRetry
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
   withOllamaRetry: jest.fn((fn) => fn()),
-  isRetryableError: jest.fn(() => false),
+  isRetryableError: jest.fn(() => false)
 }));
 
 // Mock config
 jest.mock('../src/shared/config/index', () => ({
-  get: jest.fn((key, defaultValue) => defaultValue),
+  get: jest.fn((key, defaultValue) => defaultValue)
 }));
 
 describe('ParallelEmbeddingService', () => {
@@ -88,7 +88,7 @@ describe('ParallelEmbeddingService', () => {
     test('accepts custom retry options', () => {
       const service = new ParallelEmbeddingService({
         maxRetries: 5,
-        initialRetryDelayMs: 500,
+        initialRetryDelayMs: 500
       });
 
       expect(service.maxRetries).toBe(5);
@@ -171,7 +171,7 @@ describe('ParallelEmbeddingService', () => {
       const result = await service.embedText('hello world');
 
       expect(result.vector).toEqual([0.1, 0.2, 0.3]);
-      expect(result.model).toBe('nomic-embed-text');
+      expect(result.model).toBe('mxbai-embed-large');
     });
 
     test('updates statistics on success', async () => {
@@ -212,7 +212,7 @@ describe('ParallelEmbeddingService', () => {
 
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       const { results, errors, stats } = await service.batchEmbedTexts(items);
@@ -237,11 +237,11 @@ describe('ParallelEmbeddingService', () => {
 
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       await service.batchEmbedTexts(items, {
-        onProgress: (p) => progressUpdates.push(p),
+        onProgress: (p) => progressUpdates.push(p)
       });
 
       expect(progressUpdates.length).toBe(2);
@@ -259,7 +259,7 @@ describe('ParallelEmbeddingService', () => {
 
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       const { results, errors } = await service.batchEmbedTexts(items);
@@ -277,7 +277,7 @@ describe('ParallelEmbeddingService', () => {
 
       const items = [
         { id: '1', text: 'hello' },
-        { id: '2', text: 'world' },
+        { id: '2', text: 'world' }
       ];
 
       // stopOnError would cause early termination, but since fallback catches errors,
@@ -304,9 +304,7 @@ describe('ParallelEmbeddingService', () => {
     test('converts file summaries to items', async () => {
       const service = new ParallelEmbeddingService();
 
-      const files = [
-        { fileId: 'f1', summary: 'A document', filePath: '/path/file1.pdf' },
-      ];
+      const files = [{ fileId: 'f1', summary: 'A document', filePath: '/path/file1.pdf' }];
 
       const { results } = await service.batchEmbedFileSummaries(files);
 
@@ -319,9 +317,7 @@ describe('ParallelEmbeddingService', () => {
     test('converts folders to items', async () => {
       const service = new ParallelEmbeddingService();
 
-      const folders = [
-        { id: 'folder1', name: 'Documents', description: 'My docs' },
-      ];
+      const folders = [{ id: 'folder1', name: 'Documents', description: 'My docs' }];
 
       const { results } = await service.batchEmbedFolders(folders);
 
@@ -339,10 +335,8 @@ describe('ParallelEmbeddingService', () => {
       await service.batchEmbedFolders(folders);
 
       expect(spy).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ id: 'folder:Photos' }),
-        ]),
-        expect.anything(),
+        expect.arrayContaining([expect.objectContaining({ id: 'folder:Photos' })]),
+        expect.anything()
       );
     });
   });
@@ -460,7 +454,7 @@ describe('ParallelEmbeddingService', () => {
 
       const available = await service.waitForService({
         maxWaitMs: 1000,
-        checkIntervalMs: 100,
+        checkIntervalMs: 100
       });
 
       expect(available).toBe(true);
@@ -473,7 +467,7 @@ describe('ParallelEmbeddingService', () => {
 
       const available = await service.waitForService({
         maxWaitMs: 100,
-        checkIntervalMs: 50,
+        checkIntervalMs: 50
       });
 
       expect(available).toBe(false);

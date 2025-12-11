@@ -59,7 +59,7 @@ class UndoRedoService {
       if (error && error.code === 'EXDEV') {
         // Cross-device move: use shared utility with verification
         await crossDeviceMove(normalizedSource, normalizedDestination, {
-          verify: true,
+          verify: true
         });
         return;
       }
@@ -77,14 +77,11 @@ class UndoRedoService {
 
       // FIX: Automatically cleanup orphaned backups on startup
       this.cleanupOldBackups().catch((error) => {
-        logger.warn(
-          '[UndoRedoService] Startup backup cleanup failed:',
-          error.message,
-        );
+        logger.warn('[UndoRedoService] Startup backup cleanup failed:', error.message);
       });
     } catch (error) {
       logger.error('[UndoRedoService] Failed to initialize', {
-        error: error.message,
+        error: error.message
       });
       this.actions = [];
       this.currentIndex = -1;
@@ -133,7 +130,7 @@ class UndoRedoService {
     const data = {
       actions: this.actions,
       currentIndex: this.currentIndex,
-      lastSaved: new Date().toISOString(),
+      lastSaved: new Date().toISOString()
     };
     await this.ensureParentDirectory(this.actionsPath);
     // FIX: Use atomic write (temp + rename) to prevent corruption on crash
@@ -150,9 +147,7 @@ class UndoRedoService {
         } catch (renameError) {
           lastError = renameError;
           if (renameError.code === 'EPERM' && attempt < 2) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 50 * (attempt + 1)),
-            );
+            await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
             continue;
           }
           throw renameError;
@@ -179,7 +174,7 @@ class UndoRedoService {
       actionData.operations.length > this.maxBatchSize
     ) {
       logger.warn(
-        `[UndoRedoService] Batch operation has ${actionData.operations.length} items, limiting to ${this.maxBatchSize}`,
+        `[UndoRedoService] Batch operation has ${actionData.operations.length} items, limiting to ${this.maxBatchSize}`
       );
       actionData.operations = actionData.operations.slice(0, this.maxBatchSize);
     }
@@ -189,7 +184,7 @@ class UndoRedoService {
       type: actionType,
       timestamp: new Date().toISOString(),
       data: actionData,
-      description: this.getActionDescription(actionType, actionData),
+      description: this.getActionDescription(actionType, actionData)
     };
 
     const actionSize = this._estimateActionSize(action);
@@ -221,8 +216,7 @@ class UndoRedoService {
 
     while (
       this.actions.length > 1 && // Must have more than 1 to remove
-      (this.actions.length > this.maxActions ||
-        this.currentMemoryEstimate > maxMemoryBytes) &&
+      (this.actions.length > this.maxActions || this.currentMemoryEstimate > maxMemoryBytes) &&
       pruneIterations < maxPruneIterations // ESCAPE CONDITION
     ) {
       const removedAction = this.actions.shift();
@@ -237,11 +231,9 @@ class UndoRedoService {
         `[UndoRedoService] Pruning loop hit safety limit at ${pruneIterations} iterations`,
         {
           actionsRemaining: this.actions.length,
-          memoryEstimateMB: (this.currentMemoryEstimate / 1024 / 1024).toFixed(
-            2,
-          ),
-          maxMemoryMB: this.maxMemoryMB,
-        },
+          memoryEstimateMB: (this.currentMemoryEstimate / 1024 / 1024).toFixed(2),
+          maxMemoryMB: this.maxMemoryMB
+        }
       );
     }
 
@@ -250,12 +242,9 @@ class UndoRedoService {
     // we have two options:
     // 1. Truncate the action data to fit within limits
     // 2. Clear the entire action history
-    if (
-      this.currentMemoryEstimate > maxMemoryBytes &&
-      this.actions.length === 1
-    ) {
+    if (this.currentMemoryEstimate > maxMemoryBytes && this.actions.length === 1) {
       logger.warn(
-        `[UndoRedoService] Single action exceeds memory limit (${(this.currentMemoryEstimate / 1024 / 1024).toFixed(2)}MB > ${this.maxMemoryMB}MB), truncating data`,
+        `[UndoRedoService] Single action exceeds memory limit (${(this.currentMemoryEstimate / 1024 / 1024).toFixed(2)}MB > ${this.maxMemoryMB}MB), truncating data`
       );
 
       // Truncate the action's data to prevent unbounded memory growth
@@ -267,7 +256,7 @@ class UndoRedoService {
         originalType: largeAction.type,
         originalOperationCount: operationCount,
         message: `Action data truncated due to size (${(this.currentMemoryEstimate / 1024 / 1024).toFixed(2)}MB)`,
-        timestamp: largeAction.timestamp,
+        timestamp: largeAction.timestamp
       };
 
       // Recalculate memory estimate after truncation
@@ -278,11 +267,9 @@ class UndoRedoService {
         logger.error(
           `[UndoRedoService] Even after truncation, action exceeds memory limit. Clearing all undo history.`,
           {
-            truncatedSizeMB: (this.currentMemoryEstimate / 1024 / 1024).toFixed(
-              2,
-            ),
-            maxMemoryMB: this.maxMemoryMB,
-          },
+            truncatedSizeMB: (this.currentMemoryEstimate / 1024 / 1024).toFixed(2),
+            maxMemoryMB: this.maxMemoryMB
+          }
         );
         this.actions = [];
         this.currentIndex = -1;
@@ -292,9 +279,7 @@ class UndoRedoService {
 
     // EDGE CASE: If we somehow have 0 actions but non-zero memory estimate, reset
     if (this.actions.length === 0 && this.currentMemoryEstimate !== 0) {
-      logger.warn(
-        '[UndoRedoService] Memory estimate desync detected, resetting to 0',
-      );
+      logger.warn('[UndoRedoService] Memory estimate desync detected, resetting to 0');
       this.currentMemoryEstimate = 0;
     }
 
@@ -326,20 +311,16 @@ class UndoRedoService {
           id: action.id,
           type: action.type,
           description: action.description,
-          timestamp: action.timestamp,
+          timestamp: action.timestamp
         },
-        message: `Undid: ${action.description}`,
+        message: `Undid: ${action.description}`
       };
 
       // Include operation results for batch operations (for UI state updates)
       if (action._operationResults) {
         response.results = action._operationResults;
-        response.successCount = action._operationResults.filter(
-          (r) => r.success,
-        ).length;
-        response.failCount = action._operationResults.filter(
-          (r) => !r.success,
-        ).length;
+        response.successCount = action._operationResults.filter((r) => r.success).length;
+        response.failCount = action._operationResults.filter((r) => !r.success).length;
         // Include original operation data for state reconstruction
         response.operations = action.data?.operations || [];
       }
@@ -347,7 +328,7 @@ class UndoRedoService {
       return response;
     } catch (error) {
       logger.error('[UndoRedoService] Failed to undo action', {
-        error: error.message,
+        error: error.message
       });
       throw new Error(`Failed to undo action: ${error.message}`);
     }
@@ -377,20 +358,16 @@ class UndoRedoService {
           id: action.id,
           type: action.type,
           description: action.description,
-          timestamp: action.timestamp,
+          timestamp: action.timestamp
         },
-        message: `Redid: ${action.description}`,
+        message: `Redid: ${action.description}`
       };
 
       // Include operation results for batch operations (for UI state updates)
       if (action._operationResults) {
         response.results = action._operationResults;
-        response.successCount = action._operationResults.filter(
-          (r) => r.success,
-        ).length;
-        response.failCount = action._operationResults.filter(
-          (r) => !r.success,
-        ).length;
+        response.successCount = action._operationResults.filter((r) => r.success).length;
+        response.failCount = action._operationResults.filter((r) => !r.success).length;
         // Include original operation data for state reconstruction
         response.operations = action.data?.operations || [];
       }
@@ -398,7 +375,7 @@ class UndoRedoService {
       return response;
     } catch (error) {
       logger.error('[UndoRedoService] Failed to redo action', {
-        error: error.message,
+        error: error.message
       });
       throw new Error(`Failed to redo action: ${error.message}`);
     }
@@ -418,20 +395,14 @@ class UndoRedoService {
         // Move file back to original location
         await this.safeMove(action.data.newPath, action.data.originalPath);
         // Update ChromaDB path
-        await this.updateChromaDbPath(
-          action.data.newPath,
-          action.data.originalPath,
-        );
+        await this.updateChromaDbPath(action.data.newPath, action.data.originalPath);
         break;
 
       case 'FILE_RENAME':
         // Rename file back to original name
         await this.safeMove(action.data.newPath, action.data.originalPath);
         // Update ChromaDB path
-        await this.updateChromaDbPath(
-          action.data.newPath,
-          action.data.originalPath,
-        );
+        await this.updateChromaDbPath(action.data.newPath, action.data.originalPath);
         break;
 
       case 'FILE_DELETE': {
@@ -442,7 +413,7 @@ class UndoRedoService {
           throw new Error(
             'Cannot restore deleted file - no backup path was recorded. ' +
               'File may have been permanently deleted without backup. ' +
-              `Original path: ${action.data.originalPath}`,
+              `Original path: ${action.data.originalPath}`
           );
         }
 
@@ -450,29 +421,26 @@ class UndoRedoService {
         if (!backupExists) {
           // CRITICAL: Backup path was recorded but file doesn't exist
           // This indicates either: backup failed, backup was deleted, or path is incorrect
-          logger.error(
-            '[UndoRedoService] Backup file not found at expected location',
-            {
-              backupPath: action.data.backupPath,
-              originalPath: action.data.originalPath,
-              actionId: action.id,
-              timestamp: action.timestamp,
-            },
-          );
+          logger.error('[UndoRedoService] Backup file not found at expected location', {
+            backupPath: action.data.backupPath,
+            originalPath: action.data.originalPath,
+            actionId: action.id,
+            timestamp: action.timestamp
+          });
 
           throw new Error(
             `Cannot restore deleted file - backup not found at expected location.\n` +
               `Original file: ${action.data.originalPath}\n` +
               `Expected backup: ${action.data.backupPath}\n` +
               `This may indicate the backup was never created, was deleted, or the path is incorrect.\n` +
-              `Action ID: ${action.id}, Timestamp: ${action.timestamp}`,
+              `Action ID: ${action.id}, Timestamp: ${action.timestamp}`
           );
         }
 
         // Restore file from backup
         logger.info('[UndoRedoService] Restoring file from backup', {
           from: action.data.backupPath,
-          to: action.data.originalPath,
+          to: action.data.originalPath
         });
 
         await this.safeMove(action.data.backupPath, action.data.originalPath);
@@ -486,7 +454,7 @@ class UndoRedoService {
         } catch (error) {
           // Folder might not be empty, try to restore to original state
           logger.warn(
-            `[UndoRedoService] Could not remove folder, might contain files: ${error.message}`,
+            `[UndoRedoService] Could not remove folder, might contain files: ${error.message}`
           );
         }
         break;
@@ -505,29 +473,26 @@ class UndoRedoService {
               ...result,
               originalPath: operation.originalPath,
               newPath: operation.newPath,
-              type: operation.type,
+              type: operation.type
             });
             // Collect path changes for batch ChromaDB update
-            if (
-              result.success &&
-              (operation.type === 'move' || operation.type === 'rename')
-            ) {
+            if (result.success && (operation.type === 'move' || operation.type === 'rename')) {
               pathChanges.push({
                 oldPath: operation.newPath,
-                newPath: operation.originalPath,
+                newPath: operation.originalPath
               });
             }
           } catch (error) {
             logger.warn('[UndoRedoService] Operation failed during undo', {
               operation,
-              error: error.message,
+              error: error.message
             });
             operationResults.push({
               success: false,
               originalPath: operation.originalPath,
               newPath: operation.newPath,
               type: operation.type,
-              error: error.message,
+              error: error.message
             });
           }
         }
@@ -549,20 +514,14 @@ class UndoRedoService {
         // Move file to new location
         await this.safeMove(action.data.originalPath, action.data.newPath);
         // Update ChromaDB path
-        await this.updateChromaDbPath(
-          action.data.originalPath,
-          action.data.newPath,
-        );
+        await this.updateChromaDbPath(action.data.originalPath, action.data.newPath);
         break;
 
       case 'FILE_RENAME':
         // Rename file to new name
         await this.safeMove(action.data.originalPath, action.data.newPath);
         // Update ChromaDB path
-        await this.updateChromaDbPath(
-          action.data.originalPath,
-          action.data.newPath,
-        );
+        await this.updateChromaDbPath(action.data.originalPath, action.data.newPath);
         break;
 
       case 'FILE_DELETE':
@@ -593,26 +552,26 @@ class UndoRedoService {
               success: true,
               source: operation.originalPath,
               destination: operation.newPath,
-              type: operation.type,
+              type: operation.type
             });
             // Collect path changes for batch ChromaDB update
             if (operation.type === 'move' || operation.type === 'rename') {
               pathChanges.push({
                 oldPath: operation.originalPath,
-                newPath: operation.newPath,
+                newPath: operation.newPath
               });
             }
           } catch (error) {
             logger.warn('[UndoRedoService] Operation failed during redo', {
               operation,
-              error: error.message,
+              error: error.message
             });
             operationResults.push({
               success: false,
               source: operation.originalPath,
               destination: operation.newPath,
               type: operation.type,
-              error: error.message,
+              error: error.message
             });
           }
         }
@@ -635,20 +594,17 @@ class UndoRedoService {
         return {
           success: true,
           source: operation.newPath,
-          destination: operation.originalPath,
+          destination: operation.originalPath
         };
       case 'rename':
         await this.safeMove(operation.newPath, operation.originalPath);
         return {
           success: true,
           source: operation.newPath,
-          destination: operation.originalPath,
+          destination: operation.originalPath
         };
       case 'delete':
-        if (
-          operation.backupPath &&
-          (await this.fileExists(operation.backupPath))
-        ) {
+        if (operation.backupPath && (await this.fileExists(operation.backupPath))) {
           await this.safeMove(operation.backupPath, operation.originalPath);
           return { success: true, restored: operation.originalPath };
         }
@@ -656,7 +612,7 @@ class UndoRedoService {
       default:
         return {
           success: false,
-          error: `Unknown operation type: ${operation.type}`,
+          error: `Unknown operation type: ${operation.type}`
         };
     }
   }
@@ -704,9 +660,9 @@ class UndoRedoService {
             newId: `file:${newPath}`,
             newMeta: {
               path: newPath,
-              name: path.basename(newPath),
-            },
-          },
+              name: path.basename(newPath)
+            }
+          }
         ]);
       }
     } catch (error) {
@@ -714,7 +670,7 @@ class UndoRedoService {
       logger.warn('[UndoRedoService] Failed to update ChromaDB path', {
         oldPath,
         newPath,
-        error: error.message,
+        error: error.message
       });
     }
   }
@@ -734,15 +690,15 @@ class UndoRedoService {
           newId: `file:${newPath}`,
           newMeta: {
             path: newPath,
-            name: path.basename(newPath),
-          },
+            name: path.basename(newPath)
+          }
         }));
         await chromaDb.updateFilePaths(updates);
       }
     } catch (error) {
       logger.warn('[UndoRedoService] Failed to batch update ChromaDB paths', {
         count: pathChanges.length,
-        error: error.message,
+        error: error.message
       });
     }
   }
@@ -756,9 +712,7 @@ class UndoRedoService {
    */
   async createBackup(filePath) {
     const normalizedPath = normalizePath(filePath);
-    const backupDir = normalizePath(
-      path.join(this.userDataPath, 'undo-backups'),
-    );
+    const backupDir = normalizePath(path.join(this.userDataPath, 'undo-backups'));
     await this.ensureParentDirectory(path.join(backupDir, 'dummy'));
 
     // Create unique backup filename with timestamp and secure random component
@@ -770,9 +724,7 @@ class UndoRedoService {
 
     // Verify source file exists before attempting backup
     if (!(await this.fileExists(normalizedPath))) {
-      throw new Error(
-        `Cannot create backup - source file does not exist: ${filePath}`,
-      );
+      throw new Error(`Cannot create backup - source file does not exist: ${filePath}`);
     }
 
     try {
@@ -782,25 +734,25 @@ class UndoRedoService {
       // Verify backup was created successfully
       const [sourceStats, backupStats] = await Promise.all([
         fs.stat(normalizedPath),
-        fs.stat(backupPath),
+        fs.stat(backupPath)
       ]);
 
       if (sourceStats.size !== backupStats.size) {
         await fs.unlink(backupPath).catch((unlinkError) => {
           logger.warn('Failed to cleanup backup file after size mismatch', {
             backupPath,
-            error: unlinkError.message,
+            error: unlinkError.message
           });
         });
         throw new Error(
-          `Backup verification failed - size mismatch (source: ${sourceStats.size}, backup: ${backupStats.size})`,
+          `Backup verification failed - size mismatch (source: ${sourceStats.size}, backup: ${backupStats.size})`
         );
       }
 
       logger.info('[UndoRedoService] Created backup successfully', {
         original: normalizedPath,
         backup: backupPath,
-        size: sourceStats.size,
+        size: sourceStats.size
       });
 
       // CRITICAL: Immediately persist the backup path to disk BEFORE deleting the original
@@ -811,13 +763,10 @@ class UndoRedoService {
     } catch (error) {
       // Clean up failed backup attempt
       await fs.unlink(backupPath).catch((unlinkError) => {
-        logger.warn(
-          'Failed to cleanup backup file after backup creation error',
-          {
-            backupPath,
-            error: unlinkError.message,
-          },
-        );
+        logger.warn('Failed to cleanup backup file after backup creation error', {
+          backupPath,
+          error: unlinkError.message
+        });
       });
       throw new Error(`Failed to create backup: ${error.message}`);
     }
@@ -865,16 +814,13 @@ class UndoRedoService {
           logger.info(`[UndoRedoService] Removed orphaned backup: ${file}`);
         } catch (error) {
           errors++;
-          logger.warn(
-            `[UndoRedoService] Failed to remove orphaned backup ${file}:`,
-            error.message,
-          );
+          logger.warn(`[UndoRedoService] Failed to remove orphaned backup ${file}:`, error.message);
         }
       }
     }
 
     logger.info(
-      `[UndoRedoService] Backup cleanup complete - removed ${removed} orphaned backups, ${errors} errors`,
+      `[UndoRedoService] Backup cleanup complete - removed ${removed} orphaned backups, ${errors} errors`
     );
     return { removed, errors };
   }
@@ -904,26 +850,23 @@ class UndoRedoService {
   getActionHistory(limit = 10) {
     const history = this.actions.slice(
       Math.max(0, this.currentIndex - limit + 1),
-      this.currentIndex + 1,
+      this.currentIndex + 1
     );
     return history.map((action) => ({
       id: action.id,
       description: action.description,
       timestamp: action.timestamp,
-      type: action.type,
+      type: action.type
     }));
   }
 
   getRedoHistory(limit = 10) {
-    const history = this.actions.slice(
-      this.currentIndex + 1,
-      this.currentIndex + 1 + limit,
-    );
+    const history = this.actions.slice(this.currentIndex + 1, this.currentIndex + 1 + limit);
     return history.map((action) => ({
       id: action.id,
       description: action.description,
       timestamp: action.timestamp,
-      type: action.type,
+      type: action.type
     }));
   }
 
@@ -947,7 +890,7 @@ class UndoRedoService {
       memoryUsageMB: (this.currentMemoryEstimate / (1024 * 1024)).toFixed(2),
       memoryLimitMB: this.maxMemoryMB,
       actionLimit: this.maxActions,
-      batchSizeLimit: this.maxBatchSize,
+      batchSizeLimit: this.maxBatchSize
     };
   }
 }

@@ -9,9 +9,7 @@
 const fs = require('fs').promises;
 const { withErrorLogging } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
-const {
-  validateFileOperationPath,
-} = require('../../../shared/pathSanitization');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 
 logger.setContext('IPC:Files:Shell');
 
@@ -34,23 +32,23 @@ function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           return {
             success: false,
             error: 'Invalid file path provided',
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
         const validation = await validateFileOperationPath(filePath, {
-          checkSymlinks: true,
+          checkSymlinks: true
         });
 
         if (!validation.valid) {
           logger.warn('[FILE-OPS] Open file path validation failed', {
             filePath,
-            error: validation.error,
+            error: validation.error
           });
           return {
             success: false,
             error: validation.error,
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
@@ -61,7 +59,7 @@ function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           return {
             success: false,
             error: 'File not found or inaccessible',
-            errorCode: 'FILE_NOT_FOUND',
+            errorCode: 'FILE_NOT_FOUND'
           };
         }
 
@@ -78,7 +76,7 @@ function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
         logger.error('[FILE-OPS] Error opening file:', error);
         return { success: false, error: error.message };
       }
-    }),
+    })
   );
 
   // Reveal file in file explorer
@@ -91,23 +89,23 @@ function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           return {
             success: false,
             error: 'Invalid file path provided',
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
         const validation = await validateFileOperationPath(filePath, {
-          checkSymlinks: true,
+          checkSymlinks: true
         });
 
         if (!validation.valid) {
           logger.warn('[FILE-OPS] Reveal file path validation failed', {
             filePath,
-            error: validation.error,
+            error: validation.error
           });
           return {
             success: false,
             error: validation.error,
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
@@ -118,21 +116,18 @@ function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           return {
             success: false,
             error: 'File not found or inaccessible',
-            errorCode: 'FILE_NOT_FOUND',
+            errorCode: 'FILE_NOT_FOUND'
           };
         }
 
         shell.showItemInFolder(validation.normalizedPath);
-        logger.info(
-          '[FILE-OPS] Revealed file in folder:',
-          validation.normalizedPath,
-        );
+        logger.info('[FILE-OPS] Revealed file in folder:', validation.normalizedPath);
         return { success: true };
       } catch (error) {
         logger.error('[FILE-OPS] Error revealing file:', error);
         return { success: false, error: error.message };
       }
-    }),
+    })
   );
 }
 

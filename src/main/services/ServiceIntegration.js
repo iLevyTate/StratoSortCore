@@ -7,9 +7,7 @@ const OrganizationSuggestionService = require('./organization');
 const AutoOrganizeService = require('./autoOrganize');
 const { getInstance: getOllamaService } = require('./OllamaService');
 const { getInstance: getOllamaClient } = require('./OllamaClient');
-const {
-  getInstance: getParallelEmbedding,
-} = require('./ParallelEmbeddingService');
+const { getInstance: getParallelEmbedding } = require('./ParallelEmbeddingService');
 const EmbeddingCache = require('./EmbeddingCache');
 const { container, ServiceIds } = require('./ServiceContainer');
 const { logger } = require('../../shared/logger');
@@ -78,7 +76,7 @@ class ServiceIntegration {
     this.chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
     if (!this.chromaDbService) {
       logger.warn(
-        '[ServiceIntegration] ChromaDB service is null, some features will be unavailable',
+        '[ServiceIntegration] ChromaDB service is null, some features will be unavailable'
       );
     }
 
@@ -87,14 +85,10 @@ class ServiceIntegration {
     // Initialize suggestion service
     const settingsService = container.resolve(ServiceIds.SETTINGS);
     if (!settingsService) {
-      logger.warn(
-        '[ServiceIntegration] Settings service is null, using defaults',
-      );
+      logger.warn('[ServiceIntegration] Settings service is null, using defaults');
     }
 
-    this.suggestionService = container.resolve(
-      ServiceIds.ORGANIZATION_SUGGESTION,
-    );
+    this.suggestionService = container.resolve(ServiceIds.ORGANIZATION_SUGGESTION);
 
     // Initialize auto-organize service
     this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
@@ -116,7 +110,7 @@ class ServiceIntegration {
         try {
           isChromaReady = await Promise.race([
             this.chromaDbService.isServerAvailable(2000),
-            timeoutPromise,
+            timeoutPromise
           ]);
         } finally {
           // FIX: Always clear timeout to prevent memory leak
@@ -124,16 +118,13 @@ class ServiceIntegration {
         }
       }
     } catch (error) {
-      logger.warn(
-        '[ServiceIntegration] ChromaDB availability check failed:',
-        error.message,
-      );
+      logger.warn('[ServiceIntegration] ChromaDB availability check failed:', error.message);
       isChromaReady = false;
     }
 
     if (!isChromaReady) {
       logger.warn(
-        '[ServiceIntegration] ChromaDB server is not available. Running in degraded mode.',
+        '[ServiceIntegration] ChromaDB server is not available. Running in degraded mode.'
       );
       // Continue without ChromaDB - don't block startup
     }
@@ -144,16 +135,11 @@ class ServiceIntegration {
       this.analysisHistory.initialize(),
       this.undoRedo.initialize(),
       this.processingState.initialize(),
-      isChromaReady ? this.chromaDbService.initialize() : Promise.resolve(),
+      isChromaReady ? this.chromaDbService.initialize() : Promise.resolve()
     ]);
 
     // Log any service initialization failures but continue
-    const serviceNames = [
-      'analysisHistory',
-      'undoRedo',
-      'processingState',
-      'chromaDb',
-    ];
+    const serviceNames = ['analysisHistory', 'undoRedo', 'processingState', 'chromaDb'];
     const failures = results
       .map((result, index) => ({ result, name: serviceNames[index] }))
       .filter(({ result }) => result.status === 'rejected');
@@ -234,7 +220,7 @@ class ServiceIntegration {
         return new OrganizationSuggestionService({
           chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
-          settingsService: c.resolve(ServiceIds.SETTINGS),
+          settingsService: c.resolve(ServiceIds.SETTINGS)
         });
       });
     }
@@ -246,7 +232,7 @@ class ServiceIntegration {
           suggestionService: c.resolve(ServiceIds.ORGANIZATION_SUGGESTION),
           settingsService: c.resolve(ServiceIds.SETTINGS),
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
-          undoRedoService: c.resolve(ServiceIds.UNDO_REDO),
+          undoRedoService: c.resolve(ServiceIds.UNDO_REDO)
         });
       });
     }
@@ -310,7 +296,7 @@ class ServiceIntegration {
       logger.info('[ServiceIntegration] All services shut down successfully');
     } catch (error) {
       logger.error('[ServiceIntegration] Error during shutdown', {
-        error: error.message,
+        error: error.message
       });
     }
   }

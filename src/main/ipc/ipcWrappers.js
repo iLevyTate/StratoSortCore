@@ -19,7 +19,7 @@
 
 const {
   createSuccessResponse: createStandardSuccessResponse,
-  ERROR_CODES,
+  ERROR_CODES
 } = require('../../shared/errorHandlingUtils');
 const { logger } = require('../../shared/logger');
 
@@ -30,10 +30,7 @@ try {
 } catch (error) {
   // FIX: Log warning instead of silently swallowing the error
   // This aids debugging when Zod fails to load (e.g., missing module)
-  logger.warn(
-    '[IPC] Zod not available, skipping schema validation:',
-    error.message,
-  );
+  logger.warn('[IPC] Zod not available, skipping schema validation:', error.message);
   z = null;
 }
 
@@ -63,19 +60,18 @@ try {
 function createErrorResponse(error, context = {}) {
   const errorMessage = error?.message || String(error || 'Unknown error');
   const errorName = error?.name || 'Error';
-  const errorCode =
-    error?.code || error?.errorCode || ERROR_CODES.UNKNOWN_ERROR;
+  const errorCode = error?.code || error?.errorCode || ERROR_CODES.UNKNOWN_ERROR;
 
   const details = {
     errorType: errorName,
     ...context,
     // Include validation errors/warnings if present
     ...(error?.validationErrors && {
-      validationErrors: error.validationErrors,
+      validationErrors: error.validationErrors
     }),
     ...(error?.validationWarnings && {
-      validationWarnings: error.validationWarnings,
-    }),
+      validationWarnings: error.validationWarnings
+    })
   };
 
   return {
@@ -83,8 +79,8 @@ function createErrorResponse(error, context = {}) {
     error: {
       code: errorCode,
       message: errorMessage,
-      details: Object.keys(details).length > 1 ? details : undefined,
-    },
+      details: Object.keys(details).length > 1 ? details : undefined
+    }
   };
 }
 
@@ -99,7 +95,7 @@ function createSuccessResponse(data = {}) {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     return {
       success: true,
-      ...data,
+      ...data
     };
   }
   return createStandardSuccessResponse(data);
@@ -155,35 +151,28 @@ function withValidation(logger, schema, handler, options = {}) {
       try {
         // Electron ipcMain.handle args: (event, ...payloadArgs)
         const payload = args.slice(1);
-        const parsed = schema.safeParse(
-          payload.length <= 1 ? payload[0] : payload,
-        );
+        const parsed = schema.safeParse(payload.length <= 1 ? payload[0] : payload);
 
         if (!parsed.success) {
           logger?.warn?.(`[${context}] Validation failed:`, parsed.error);
           return createErrorResponse(
             { message: 'Invalid input', name: 'ValidationError' },
             {
-              details: parsed.error.flatten
-                ? parsed.error.flatten()
-                : String(parsed.error),
-            },
+              details: parsed.error.flatten ? parsed.error.flatten() : String(parsed.error)
+            }
           );
         }
 
         const normalized = parsed.data;
         // Reconstruct the args: keep event as first, then validated payload
-        const nextArgs = [
-          args[0],
-          ...(Array.isArray(normalized) ? normalized : [normalized]),
-        ];
+        const nextArgs = [args[0], ...(Array.isArray(normalized) ? normalized : [normalized])];
         return await handler(...nextArgs);
       } catch (e) {
         logger?.error?.(`[${context}] Validation wrapper failed:`, e);
         throw e;
       }
     },
-    options,
+    options
   );
 }
 
@@ -205,7 +194,7 @@ function _createServiceCheckHandler({
   getService,
   handler,
   fallbackResponse = null,
-  context = 'IPC',
+  context = 'IPC'
 }) {
   return async (...args) => {
     const service = getService();
@@ -221,9 +210,9 @@ function _createServiceCheckHandler({
         {
           message: `${serviceName} service is not available`,
           name: 'ServiceUnavailableError',
-          code: ERROR_CODES.SERVICE_UNAVAILABLE,
+          code: ERROR_CODES.SERVICE_UNAVAILABLE
         },
-        { serviceName },
+        { serviceName }
       );
     }
 
@@ -248,7 +237,7 @@ function withServiceCheck({
   getService,
   handler,
   fallbackResponse = null,
-  context = 'IPC',
+  context = 'IPC'
 }) {
   // FIX: Reuse extracted helper function to avoid duplication
   const serviceCheckHandler = _createServiceCheckHandler({
@@ -257,7 +246,7 @@ function withServiceCheck({
     getService,
     handler,
     fallbackResponse,
-    context,
+    context
   });
   return withErrorLogging(logger, serviceCheckHandler, { context });
 }
@@ -321,7 +310,7 @@ function createHandler({
   getService = null,
   fallbackResponse = null,
   context = 'IPC',
-  wrapResponse = false,
+  wrapResponse = false
 }) {
   if (!logger) {
     throw new Error('createHandler requires a logger');
@@ -355,7 +344,7 @@ function createHandler({
       getService,
       handler: wrappedHandler,
       fallbackResponse,
-      context,
+      context
     });
   }
 
@@ -365,28 +354,21 @@ function createHandler({
     wrappedHandler = async (...args) => {
       // Electron ipcMain.handle args: (event, ...payloadArgs)
       const payload = args.slice(1);
-      const parsed = schema.safeParse(
-        payload.length <= 1 ? payload[0] : payload,
-      );
+      const parsed = schema.safeParse(payload.length <= 1 ? payload[0] : payload);
 
       if (!parsed.success) {
         logger?.warn?.(`[${context}] Validation failed:`, parsed.error);
         return createErrorResponse(
           { message: 'Invalid input', name: 'ValidationError' },
           {
-            validationErrors: parsed.error.flatten
-              ? parsed.error.flatten()
-              : String(parsed.error),
-          },
+            validationErrors: parsed.error.flatten ? parsed.error.flatten() : String(parsed.error)
+          }
         );
       }
 
       const normalized = parsed.data;
       // Reconstruct the args: keep event as first, then validated payload
-      const nextArgs = [
-        args[0],
-        ...(Array.isArray(normalized) ? normalized : [normalized]),
-      ];
+      const nextArgs = [args[0], ...(Array.isArray(normalized) ? normalized : [normalized])];
       return await innerHandler(...nextArgs);
     };
   }
@@ -428,7 +410,7 @@ function registerHandlers({ ipcMain, logger, handlers, context = 'IPC' }) {
     const handler = createHandler({
       logger,
       context,
-      ...config,
+      ...config
     });
     // CRITICAL FIX: Use registry for targeted cleanup instead of direct ipcMain.handle
     registerHandler(ipcMain, channel, handler);
@@ -454,5 +436,5 @@ module.exports = {
   ERROR_CODES,
 
   // Zod instance (may be null if not installed)
-  z,
+  z
 };

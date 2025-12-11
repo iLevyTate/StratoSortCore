@@ -11,7 +11,7 @@ const fs = require('fs').promises;
 const {
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_IMAGE_EXTENSIONS,
-  SUPPORTED_ARCHIVE_EXTENSIONS,
+  SUPPORTED_ARCHIVE_EXTENSIONS
 } = require('../../../shared/constants');
 const { withErrorLogging } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
@@ -22,15 +22,9 @@ logger.setContext('IPC:Files:Selection');
  * Build file filters for dialog
  */
 function buildFileFilters() {
-  const stripDot = (exts) =>
-    exts.map((e) => (e.startsWith('.') ? e.slice(1) : e));
+  const stripDot = (exts) => exts.map((e) => (e.startsWith('.') ? e.slice(1) : e));
 
-  const docs = stripDot([
-    ...SUPPORTED_DOCUMENT_EXTENSIONS,
-    '.txt',
-    '.md',
-    '.rtf',
-  ]);
+  const docs = stripDot([...SUPPORTED_DOCUMENT_EXTENSIONS, '.txt', '.md', '.rtf']);
   const images = stripDot(SUPPORTED_IMAGE_EXTENSIONS);
   const archives = stripDot(SUPPORTED_ARCHIVE_EXTENSIONS);
   const allSupported = Array.from(new Set([...docs, ...images, ...archives]));
@@ -40,20 +34,14 @@ function buildFileFilters() {
     { name: 'Documents', extensions: docs },
     { name: 'Images', extensions: images },
     { name: 'Archives', extensions: archives },
-    { name: 'All Files', extensions: ['*'] },
+    { name: 'All Files', extensions: ['*'] }
   ];
 }
 
 /**
  * Recursively scan folder for supported files
  */
-async function scanFolder(
-  folderPath,
-  supportedExts,
-  log,
-  depth = 0,
-  maxDepth = 3,
-) {
+async function scanFolder(folderPath, supportedExts, log, depth = 0, maxDepth = 3) {
   if (depth > maxDepth) return [];
 
   try {
@@ -73,23 +61,14 @@ async function scanFolder(
         !item.name.startsWith('.') &&
         !item.name.startsWith('node_modules')
       ) {
-        const subFiles = await scanFolder(
-          itemPath,
-          supportedExts,
-          log,
-          depth + 1,
-          maxDepth,
-        );
+        const subFiles = await scanFolder(itemPath, supportedExts, log, depth + 1, maxDepth);
         foundFiles.push(...subFiles);
       }
     }
 
     return foundFiles;
   } catch (error) {
-    log.warn(
-      `[FILE-SELECTION] Error scanning folder ${folderPath}:`,
-      error.message,
-    );
+    log.warn(`[FILE-SELECTION] Error scanning folder ${folderPath}:`, error.message);
     return [];
   }
 }
@@ -108,8 +87,8 @@ function getSupportedExtensions() {
       '.xml',
       '.txt',
       '.md',
-      '.rtf',
-    ]),
+      '.rtf'
+    ])
   );
 }
 
@@ -121,7 +100,7 @@ function registerFileSelectionHandlers({
   IPC_CHANNELS,
   logger: handlerLogger,
   dialog,
-  getMainWindow,
+  getMainWindow
 }) {
   const log = handlerLogger || logger;
   const supportedExts = getSupportedExtensions();
@@ -138,7 +117,7 @@ function registerFileSelectionHandlers({
         const result = await dialog.showOpenDialog(mainWindow || null, {
           properties: ['openDirectory', 'createDirectory'],
           title: 'Select Folder',
-          buttonLabel: 'Select Folder',
+          buttonLabel: 'Select Folder'
         });
 
         if (result.canceled || !result.filePaths.length) {
@@ -150,7 +129,7 @@ function registerFileSelectionHandlers({
         log.error('[FILE-SELECTION] Error selecting directory:', error);
         return { success: false, error: error.message, path: null };
       }
-    }),
+    })
   );
 
   // Get documents path handler
@@ -165,17 +144,14 @@ function registerFileSelectionHandlers({
         log.error('[FILE-SELECTION] Error getting documents path:', error);
         return { success: false, error: error.message, path: null };
       }
-    }),
+    })
   );
 
   // Get file stats handler
   ipcMain.handle(
     IPC_CHANNELS.FILES.GET_FILE_STATS,
     withErrorLogging(log, async (_event, filePath) => {
-      log.debug(
-        '[FILE-SELECTION] Get file stats handler called for:',
-        filePath,
-      );
+      log.debug('[FILE-SELECTION] Get file stats handler called for:', filePath);
       try {
         if (!filePath || typeof filePath !== 'string') {
           return { success: false, error: 'Invalid file path', stats: null };
@@ -189,24 +165,21 @@ function registerFileSelectionHandlers({
             isDirectory: stats.isDirectory(),
             created: stats.birthtime,
             modified: stats.mtime,
-            accessed: stats.atime,
-          },
+            accessed: stats.atime
+          }
         };
       } catch (error) {
         log.error('[FILE-SELECTION] Error getting file stats:', error);
         return { success: false, error: error.message, stats: null };
       }
-    }),
+    })
   );
 
   // Get files in directory handler
   ipcMain.handle(
     IPC_CHANNELS.FILES.GET_FILES_IN_DIRECTORY,
     withErrorLogging(log, async (_event, dirPath) => {
-      log.debug(
-        '[FILE-SELECTION] Get files in directory handler called for:',
-        dirPath,
-      );
+      log.debug('[FILE-SELECTION] Get files in directory handler called for:', dirPath);
       try {
         if (!dirPath || typeof dirPath !== 'string') {
           return { success: false, error: 'Invalid directory path', files: [] };
@@ -216,14 +189,14 @@ function registerFileSelectionHandlers({
           .filter((item) => item.isFile())
           .map((item) => ({
             name: item.name,
-            path: path.join(dirPath, item.name),
+            path: path.join(dirPath, item.name)
           }));
         return { success: true, files };
       } catch (error) {
         log.error('[FILE-SELECTION] Error getting files in directory:', error);
         return { success: false, error: error.message, files: [] };
       }
-    }),
+    })
   );
 
   // Select files handler
@@ -261,7 +234,7 @@ function registerFileSelectionHandlers({
           properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
           title: 'Select Files to Organize',
           buttonLabel: 'Select Files',
-          filters: buildFileFilters(),
+          filters: buildFileFilters()
         });
 
         log.info('[MAIN-FILE-SELECT] Dialog closed, result:', result);
@@ -284,38 +257,29 @@ function registerFileSelectionHandlers({
                 allFiles.push(selectedPath);
               }
             } else if (stats.isDirectory()) {
-              const folderFiles = await scanFolder(
-                selectedPath,
-                supportedExts,
-                log,
-              );
+              const folderFiles = await scanFolder(selectedPath, supportedExts, log);
               allFiles.push(...folderFiles);
             }
           } catch (err) {
-            log.warn(
-              `[FILE-SELECTION] Error checking path ${selectedPath}:`,
-              err.message,
-            );
+            log.warn(`[FILE-SELECTION] Error checking path ${selectedPath}:`, err.message);
           }
         }
 
-        log.info(
-          `[FILE-SELECTION] Total files after expansion: ${allFiles.length}`,
-        );
+        log.info(`[FILE-SELECTION] Total files after expansion: ${allFiles.length}`);
 
         return {
           success: true,
           files: allFiles.map((filePath) => ({
             path: filePath,
-            name: path.basename(filePath),
+            name: path.basename(filePath)
           })),
-          count: allFiles.length,
+          count: allFiles.length
         };
       } catch (error) {
         log.error('[FILE-SELECTION] Error in file selection:', error);
         return { success: false, error: error.message, files: [] };
       }
-    }),
+    })
   );
 }
 

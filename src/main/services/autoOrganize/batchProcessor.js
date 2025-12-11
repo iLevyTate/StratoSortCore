@@ -10,10 +10,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { logger } = require('../../../shared/logger');
 const { sanitizeFile } = require('./fileTypeUtils');
-const {
-  getFallbackDestination,
-  buildDestinationPath,
-} = require('./folderOperations');
+const { getFallbackDestination, buildDestinationPath } = require('./folderOperations');
 
 logger.setContext('AutoOrganize-Batch');
 
@@ -36,7 +33,7 @@ async function processBatchResults(
   options,
   results,
   suggestionService,
-  thresholds,
+  thresholds
 ) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
 
@@ -44,9 +41,7 @@ async function processBatchResults(
   const fileMap = new Map(files.map((f) => [f.path || f.name, f]));
 
   // Validate groups array defensively
-  const groups = Array.isArray(batchSuggestions?.groups)
-    ? batchSuggestions.groups
-    : [];
+  const groups = Array.isArray(batchSuggestions?.groups) ? batchSuggestions.groups : [];
 
   for (const group of groups) {
     for (const fileWithSuggestion of group.files) {
@@ -57,23 +52,19 @@ async function processBatchResults(
 
       if (!suggestion) {
         // Use fallback if no suggestion
-        const fallbackDestination = getFallbackDestination(
-          file,
-          [],
-          defaultLocation,
-        );
+        const fallbackDestination = getFallbackDestination(file, [], defaultLocation);
 
         results.organized.push({
           file,
           destination: fallbackDestination,
           confidence: 0.3,
-          method: 'batch-fallback',
+          method: 'batch-fallback'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination: fallbackDestination,
+          destination: fallbackDestination
         });
         continue;
       }
@@ -91,13 +82,13 @@ async function processBatchResults(
           path:
             typeof suggestion.path === 'string'
               ? suggestion.path
-              : suggestion.path?.path || undefined,
+              : suggestion.path?.path || undefined
         };
         const destination = buildDestinationPath(
           file,
           safeSuggestion,
           defaultLocation,
-          preserveNames,
+          preserveNames
         );
 
         results.organized.push({
@@ -105,27 +96,22 @@ async function processBatchResults(
           suggestion,
           destination,
           confidence,
-          method: 'batch-automatic',
+          method: 'batch-automatic'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination,
+          destination
         });
 
         // Record feedback for learning (non-blocking with error handling)
-        void suggestionService
-          .recordFeedback(file, suggestion, true)
-          .catch((err) => {
-            logger.warn(
-              '[AutoOrganize] Failed to record feedback (non-critical):',
-              {
-                file: file.path,
-                error: err.message,
-              },
-            );
+        void suggestionService.recordFeedback(file, suggestion, true).catch((err) => {
+          logger.warn('[AutoOrganize] Failed to record feedback (non-critical):', {
+            file: file.path,
+            error: err.message
           });
+        });
       } else if (confidence >= thresholds.requireReview) {
         // Medium confidence - needs review
         results.needsReview.push({
@@ -133,27 +119,23 @@ async function processBatchResults(
           suggestion,
           alternatives: fileWithSuggestion.alternatives,
           confidence,
-          explanation: `Batch suggestion with ${Math.round(confidence * 100)}% confidence`,
+          explanation: `Batch suggestion with ${Math.round(confidence * 100)}% confidence`
         });
       } else {
         // Low confidence - use fallback
-        const fallbackDestination = getFallbackDestination(
-          file,
-          [],
-          defaultLocation,
-        );
+        const fallbackDestination = getFallbackDestination(file, [], defaultLocation);
 
         results.organized.push({
           file: sanitizeFile(file),
           destination: fallbackDestination,
           confidence,
-          method: 'batch-low-confidence-fallback',
+          method: 'batch-low-confidence-fallback'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination: fallbackDestination,
+          destination: fallbackDestination
         });
       }
     }
@@ -176,19 +158,16 @@ async function batchOrganize(
   options,
   suggestionService,
   thresholds,
-  buildDestFn = buildDestinationPath,
+  buildDestFn = buildDestinationPath
 ) {
   const { autoApproveThreshold = thresholds.autoApprove } = options;
 
   logger.info('[AutoOrganize] Starting batch organization', {
-    fileCount: files.length,
+    fileCount: files.length
   });
 
   // Get batch suggestions
-  const batchSuggestions = await suggestionService.getBatchSuggestions(
-    files,
-    smartFolders,
-  );
+  const batchSuggestions = await suggestionService.getBatchSuggestions(files, smartFolders);
 
   if (!batchSuggestions.success) {
     throw new Error('Failed to get batch suggestions');
@@ -198,7 +177,7 @@ async function batchOrganize(
     operations: [],
     groups: [],
     skipped: [],
-    failed: [],
+    failed: []
   };
 
   // Process groups with error handling
@@ -217,39 +196,30 @@ async function batchOrganize(
                 ? group.folder
                 : group.folder?.name || 'Uncategorized';
             const folderPath =
-              typeof group.path === 'string'
-                ? group.path
-                : group.path?.path || undefined;
+              typeof group.path === 'string' ? group.path : group.path?.path || undefined;
 
             const destination = buildDestFn(
               file,
               { folder: folderName, path: folderPath },
               options.defaultLocation || 'Documents',
-              options.preserveNames,
+              options.preserveNames
             );
 
             groupOperations.push({
               type: 'move',
               source: file.path,
-              destination,
+              destination
             });
 
             // Record feedback with proper error handling
             if (file.suggestion) {
               try {
-                await suggestionService.recordFeedback(
-                  file,
-                  file.suggestion,
-                  true,
-                );
+                await suggestionService.recordFeedback(file, file.suggestion, true);
               } catch (feedbackError) {
-                logger.warn(
-                  '[AutoOrganize] Failed to record feedback for file:',
-                  {
-                    file: file.path,
-                    error: feedbackError.message,
-                  },
-                );
+                logger.warn('[AutoOrganize] Failed to record feedback for file:', {
+                  file: file.path,
+                  error: feedbackError.message
+                });
               }
             }
           } catch (fileError) {
@@ -259,19 +229,16 @@ async function batchOrganize(
               batchId: generateSecureId('batch'),
               timestamp: new Date().toISOString(),
               error: fileError.message,
-              errorStack: fileError.stack,
+              errorStack: fileError.stack
             };
 
-            logger.error(
-              '[AutoOrganize] Failed to process file in batch:',
-              errorDetails,
-            );
+            logger.error('[AutoOrganize] Failed to process file in batch:', errorDetails);
 
             groupFailures.push({
               file,
               error: fileError.message,
               filePath: file.path,
-              timestamp: errorDetails.timestamp,
+              timestamp: errorDetails.timestamp
             });
           }
         }
@@ -288,12 +255,10 @@ async function batchOrganize(
         if (groupOperations.length > 0) {
           results.groups.push({
             folder: group.folder,
-            files: group.files.filter(
-              (f) => !groupFailures.find((failure) => failure.file === f),
-            ),
+            files: group.files.filter((f) => !groupFailures.find((failure) => failure.file === f)),
             confidence: group.confidence,
             autoApproved: true,
-            partialSuccess: groupFailures.length > 0,
+            partialSuccess: groupFailures.length > 0
           });
         }
       } else {
@@ -302,7 +267,7 @@ async function batchOrganize(
           folder: group.folder,
           files: group.files,
           confidence: group.confidence,
-          reason: 'Low confidence',
+          reason: 'Low confidence'
         });
       }
     } catch (groupError) {
@@ -313,20 +278,17 @@ async function batchOrganize(
         batchId: generateSecureId('batch'),
         timestamp: new Date().toISOString(),
         error: groupError.message,
-        errorStack: groupError.stack,
+        errorStack: groupError.stack
       };
 
-      logger.error(
-        '[AutoOrganize] Failed to process group in batch:',
-        groupErrorDetails,
-      );
+      logger.error('[AutoOrganize] Failed to process group in batch:', groupErrorDetails);
 
       results.failed.push({
         group: group.folder,
         files: group.files,
         error: groupError.message,
         timestamp: groupErrorDetails.timestamp,
-        batchId: groupErrorDetails.batchId,
+        batchId: groupErrorDetails.batchId
       });
     }
   }
@@ -334,7 +296,7 @@ async function batchOrganize(
   logger.info('[AutoOrganize] Batch organization complete', {
     operationCount: results.operations.length,
     groupCount: results.groups.length,
-    skippedCount: results.skipped.length,
+    skippedCount: results.skipped.length
   });
 
   return results;
@@ -343,5 +305,5 @@ async function batchOrganize(
 module.exports = {
   generateSecureId,
   processBatchResults,
-  batchOrganize,
+  batchOrganize
 };

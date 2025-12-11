@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  ci:
     runs-on: windows-latest
 
     strategy:
@@ -15,10 +15,10 @@ jobs:
         node-version: [20.x]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -26,35 +26,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run linter
-        run: npm run lint
-
-      - name: Run tests
-        run: npm test
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        with:
-          file: ./coverage/lcov.info
-          fail_ci_if_error: false
-
-  build:
-    needs: test
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 20.x
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
+      - name: Run CI pipeline (format, lint, test, build)
+        run: npm run ci
 
       # Distributables are built in release workflow only to avoid publishing errors

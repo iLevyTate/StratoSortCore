@@ -1,13 +1,11 @@
 const { withErrorLogging, withValidation } = require('./ipcWrappers');
+const { optionalUrl: optionalUrlSchema } = require('./validationSchemas');
 const { app, dialog } = require('electron');
 const { getConfigurableLimits } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
 
 // Import centralized security configuration
-const {
-  SETTINGS_VALIDATION,
-  PROTOTYPE_POLLUTION_KEYS,
-} = require('../../shared/securityConfig');
+const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
 
 let z;
 try {
@@ -39,9 +37,7 @@ function validateImportedSettings(settings, logger) {
   // Check for prototype pollution attempts using centralized config
   for (const key of PROTOTYPE_POLLUTION_KEYS) {
     if (key in settings) {
-      throw new Error(
-        `Security: Prototype pollution attempt detected (${key})`,
-      );
+      throw new Error(`Security: Prototype pollution attempt detected (${key})`);
     }
   }
 
@@ -64,17 +60,9 @@ function validateImportedSettings(settings, logger) {
           throw new Error(`Invalid ${key}: must be a valid URL`);
         }
         // Block potentially dangerous localhost redirects
-        if (
-          value.includes('0.0.0.0') ||
-          value.includes('[::]') ||
-          value.includes('[::1]')
-        ) {
-          logger.warn(
-            `[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${value}`,
-          );
-          throw new Error(
-            `Invalid ${key}: potentially unsafe URL pattern detected`,
-          );
+        if (value.includes('0.0.0.0') || value.includes('[::]') || value.includes('[::1]')) {
+          logger.warn(`[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${value}`);
+          throw new Error(`Invalid ${key}: potentially unsafe URL pattern detected`);
         }
         break;
 
@@ -83,7 +71,7 @@ function validateImportedSettings(settings, logger) {
       case 'embeddingModel':
         if (typeof value !== 'string' || !MODEL_REGEX.test(value)) {
           throw new Error(
-            `Invalid ${key}: must be alphanumeric with hyphens, underscores, dots, @, or colons`,
+            `Invalid ${key}: must be alphanumeric with hyphens, underscores, dots, @, or colons`
           );
         }
         if (value.length > 100) {
@@ -102,13 +90,8 @@ function validateImportedSettings(settings, logger) {
         break;
 
       case 'theme':
-        if (
-          typeof value !== 'string' ||
-          !['light', 'dark', 'auto', 'system'].includes(value)
-        ) {
-          throw new Error(
-            `Invalid ${key}: must be 'light', 'dark', 'auto', or 'system'`,
-          );
+        if (typeof value !== 'string' || !['light', 'dark', 'auto', 'system'].includes(value)) {
+          throw new Error(`Invalid ${key}: must be 'light', 'dark', 'auto', or 'system'`);
         }
         break;
 
@@ -119,22 +102,15 @@ function validateImportedSettings(settings, logger) {
         break;
 
       case 'loggingLevel':
-        if (
-          typeof value !== 'string' ||
-          !['error', 'warn', 'info', 'debug'].includes(value)
-        ) {
-          throw new Error(
-            `Invalid ${key}: must be 'error', 'warn', 'info', or 'debug'`,
-          );
+        if (typeof value !== 'string' || !['error', 'warn', 'info', 'debug'].includes(value)) {
+          throw new Error(`Invalid ${key}: must be 'error', 'warn', 'info', or 'debug'`);
         }
         break;
 
       case 'cacheSize':
       case 'maxBatchSize':
         if (!Number.isInteger(value) || value < 0 || value > 100000) {
-          throw new Error(
-            `Invalid ${key}: must be integer between 0 and 100000`,
-          );
+          throw new Error(`Invalid ${key}: must be integer between 0 and 100000`);
         }
         break;
 
@@ -164,7 +140,7 @@ function registerSettingsIpc({
   setOllamaModel,
   setOllamaVisionModel,
   setOllamaEmbeddingModel,
-  onSettingsChanged,
+  onSettingsChanged
 }) {
   ipcMain.handle(
     IPC_CHANNELS.SETTINGS.GET,
@@ -176,7 +152,7 @@ function registerSettingsIpc({
         logger.error('Failed to get settings:', error);
         return {};
       }
-    }),
+    })
   );
 
   // Fixed: Add endpoint to get configurable limits
@@ -190,26 +166,20 @@ function registerSettingsIpc({
         logger.error('Failed to get configurable limits:', error);
         return getConfigurableLimits({});
       }
-    }),
+    })
   );
 
   const settingsSchema = z
     ? z
         .object({
-          // Fixed: Use regex for more permissive URL validation (optional protocol)
-          ollamaHost: z
-            .string()
-            .regex(
-              /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/,
-              'Invalid Ollama URL format',
-            )
-            .optional(),
+          // Shared optional URL validator (allows blank to clear value, optional protocol)
+          ollamaHost: optionalUrlSchema,
           textModel: z.string().optional(),
           visionModel: z.string().optional(),
           embeddingModel: z.string().optional(),
           launchOnStartup: z.boolean().optional(),
           autoOrganize: z.boolean().optional(),
-          backgroundMode: z.boolean().optional(),
+          backgroundMode: z.boolean().optional()
         })
         .partial()
     : null;
@@ -226,23 +196,16 @@ function registerSettingsIpc({
 
             if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
             if (merged.textModel) await setOllamaModel(merged.textModel);
-            if (merged.visionModel)
-              await setOllamaVisionModel(merged.visionModel);
-            if (
-              merged.embeddingModel &&
-              typeof setOllamaEmbeddingModel === 'function'
-            )
+            if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
+            if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
               await setOllamaEmbeddingModel(merged.embeddingModel);
             if (typeof merged.launchOnStartup === 'boolean') {
               try {
                 app.setLoginItemSettings({
-                  openAtLogin: merged.launchOnStartup,
+                  openAtLogin: merged.launchOnStartup
                 });
               } catch (error) {
-                logger.warn(
-                  '[SETTINGS] Failed to set login item settings:',
-                  error.message,
-                );
+                logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
               }
             }
             logger.info('[SETTINGS] Saved settings');
@@ -252,31 +215,23 @@ function registerSettingsIpc({
             try {
               if (typeof onSettingsChanged === 'function') {
                 await onSettingsChanged(merged);
-                logger.info(
-                  '[SETTINGS] Settings change notification sent successfully',
-                );
-              } else if (
-                onSettingsChanged !== undefined &&
-                onSettingsChanged !== null
-              ) {
+                logger.info('[SETTINGS] Settings change notification sent successfully');
+              } else if (onSettingsChanged !== undefined && onSettingsChanged !== null) {
                 logger.warn(
                   '[SETTINGS] onSettingsChanged is not a function:',
-                  typeof onSettingsChanged,
+                  typeof onSettingsChanged
                 );
               }
             } catch (error) {
               propagationSuccess = false;
-              logger.error(
-                '[SETTINGS] Settings change notification failed:',
-                error,
-              );
+              logger.error('[SETTINGS] Settings change notification failed:', error);
             }
 
             return {
               success: true,
               settings: merged,
               propagationSuccess,
-              validationWarnings,
+              validationWarnings
             };
           } catch (error) {
             logger.error('Failed to save settings:', error);
@@ -284,7 +239,7 @@ function registerSettingsIpc({
             // Include validation errors if available
             const response = {
               success: false,
-              error: error.message,
+              error: error.message
             };
 
             if (error.validationErrors) {
@@ -307,23 +262,16 @@ function registerSettingsIpc({
 
             if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
             if (merged.textModel) await setOllamaModel(merged.textModel);
-            if (merged.visionModel)
-              await setOllamaVisionModel(merged.visionModel);
-            if (
-              merged.embeddingModel &&
-              typeof setOllamaEmbeddingModel === 'function'
-            )
+            if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
+            if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
               await setOllamaEmbeddingModel(merged.embeddingModel);
             if (typeof merged.launchOnStartup === 'boolean') {
               try {
                 app.setLoginItemSettings({
-                  openAtLogin: merged.launchOnStartup,
+                  openAtLogin: merged.launchOnStartup
                 });
               } catch (error) {
-                logger.warn(
-                  '[SETTINGS] Failed to set login item settings:',
-                  error.message,
-                );
+                logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
               }
             }
             logger.info('[SETTINGS] Saved settings');
@@ -333,31 +281,23 @@ function registerSettingsIpc({
             try {
               if (typeof onSettingsChanged === 'function') {
                 await onSettingsChanged(merged);
-                logger.info(
-                  '[SETTINGS] Settings change notification sent successfully',
-                );
-              } else if (
-                onSettingsChanged !== undefined &&
-                onSettingsChanged !== null
-              ) {
+                logger.info('[SETTINGS] Settings change notification sent successfully');
+              } else if (onSettingsChanged !== undefined && onSettingsChanged !== null) {
                 logger.warn(
                   '[SETTINGS] onSettingsChanged is not a function:',
-                  typeof onSettingsChanged,
+                  typeof onSettingsChanged
                 );
               }
             } catch (error) {
               propagationSuccess = false;
-              logger.error(
-                '[SETTINGS] Settings change notification failed:',
-                error,
-              );
+              logger.error('[SETTINGS] Settings change notification failed:', error);
             }
 
             return {
               success: true,
               settings: merged,
               propagationSuccess,
-              validationWarnings,
+              validationWarnings
             };
           } catch (error) {
             logger.error('Failed to save settings:', error);
@@ -365,7 +305,7 @@ function registerSettingsIpc({
             // Include validation errors if available
             const response = {
               success: false,
-              error: error.message,
+              error: error.message
             };
 
             if (error.validationErrors) {
@@ -377,7 +317,7 @@ function registerSettingsIpc({
 
             return response;
           }
-        }),
+        })
   );
 
   // Fixed: Add config export handler
@@ -393,7 +333,7 @@ function registerSettingsIpc({
           version: '1.0.0',
           exportDate: new Date().toISOString(),
           appVersion: app.getVersion(),
-          settings,
+          settings
         };
 
         // If no path provided, show save dialog
@@ -404,8 +344,8 @@ function registerSettingsIpc({
             defaultPath: `stratosort-config-${new Date().toISOString().split('T')[0]}.json`,
             filters: [
               { name: 'JSON Files', extensions: ['json'] },
-              { name: 'All Files', extensions: ['*'] },
-            ],
+              { name: 'All Files', extensions: ['*'] }
+            ]
           });
 
           if (result.canceled) {
@@ -419,11 +359,7 @@ function registerSettingsIpc({
         // FIX: Use atomic write (temp + rename) to prevent corruption on crash
         const tempPath = `${filePath}.tmp.${Date.now()}`;
         try {
-          await fs.writeFile(
-            tempPath,
-            JSON.stringify(exportData, null, 2),
-            'utf8',
-          );
+          await fs.writeFile(tempPath, JSON.stringify(exportData, null, 2), 'utf8');
           await fs.rename(tempPath, filePath);
         } catch (writeError) {
           // Clean up temp file on failure
@@ -439,16 +375,16 @@ function registerSettingsIpc({
 
         return {
           success: true,
-          path: filePath,
+          path: filePath
         };
       } catch (error) {
         logger.error('[SETTINGS] Failed to export settings:', error);
         return {
           success: false,
-          error: error.message,
+          error: error.message
         };
       }
-    }),
+    })
   );
 
   // Fixed: Add config import handler
@@ -464,9 +400,9 @@ function registerSettingsIpc({
             title: 'Import Settings',
             filters: [
               { name: 'JSON Files', extensions: ['json'] },
-              { name: 'All Files', extensions: ['*'] },
+              { name: 'All Files', extensions: ['*'] }
             ],
-            properties: ['openFile'],
+            properties: ['openFile']
           });
 
           if (result.canceled) {
@@ -484,24 +420,17 @@ function registerSettingsIpc({
         try {
           importData = JSON.parse(fileContent);
         } catch (parseError) {
-          throw new Error(
-            `Invalid JSON in settings file: ${parseError.message}`,
-          );
+          throw new Error(`Invalid JSON in settings file: ${parseError.message}`);
         }
 
         // Validate import data structure
         if (!importData.settings || typeof importData.settings !== 'object') {
-          throw new Error(
-            'Invalid settings file: missing or invalid settings object',
-          );
+          throw new Error('Invalid settings file: missing or invalid settings object');
         }
 
         // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
         // Prevents prototype pollution, command injection, and data exfiltration
-        const sanitizedSettings = validateImportedSettings(
-          importData.settings,
-          logger,
-        );
+        const sanitizedSettings = validateImportedSettings(importData.settings, logger);
 
         // Save sanitized settings
         const saveResult = await settingsService.save(sanitizedSettings);
@@ -512,22 +441,16 @@ function registerSettingsIpc({
         if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
         if (merged.textModel) await setOllamaModel(merged.textModel);
         if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
-        if (
-          merged.embeddingModel &&
-          typeof setOllamaEmbeddingModel === 'function'
-        )
+        if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
           await setOllamaEmbeddingModel(merged.embeddingModel);
 
         if (typeof merged.launchOnStartup === 'boolean') {
           try {
             app.setLoginItemSettings({
-              openAtLogin: merged.launchOnStartup,
+              openAtLogin: merged.launchOnStartup
             });
           } catch (error) {
-            logger.warn(
-              '[SETTINGS] Failed to set login item settings:',
-              error.message,
-            );
+            logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
           }
         }
 
@@ -545,17 +468,17 @@ function registerSettingsIpc({
           importInfo: {
             version: importData.version,
             exportDate: importData.exportDate,
-            appVersion: importData.appVersion,
-          },
+            appVersion: importData.appVersion
+          }
         };
       } catch (error) {
         logger.error('[SETTINGS] Failed to import settings:', error);
         return {
           success: false,
-          error: error.message,
+          error: error.message
         };
       }
-    }),
+    })
   );
 
   // Fixed: Add backup management handlers
@@ -570,10 +493,10 @@ function registerSettingsIpc({
         logger.error('[SETTINGS] Failed to create backup:', error);
         return {
           success: false,
-          error: error.message,
+          error: error.message
         };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -583,17 +506,17 @@ function registerSettingsIpc({
         const backups = await settingsService.listBackups();
         return {
           success: true,
-          backups,
+          backups
         };
       } catch (error) {
         logger.error('[SETTINGS] Failed to list backups:', error);
         return {
           success: false,
           error: error.message,
-          backups: [],
+          backups: []
         };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -609,24 +532,17 @@ function registerSettingsIpc({
 
           if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
           if (merged.textModel) await setOllamaModel(merged.textModel);
-          if (merged.visionModel)
-            await setOllamaVisionModel(merged.visionModel);
-          if (
-            merged.embeddingModel &&
-            typeof setOllamaEmbeddingModel === 'function'
-          )
+          if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
+          if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
             await setOllamaEmbeddingModel(merged.embeddingModel);
 
           if (typeof merged.launchOnStartup === 'boolean') {
             try {
               app.setLoginItemSettings({
-                openAtLogin: merged.launchOnStartup,
+                openAtLogin: merged.launchOnStartup
               });
             } catch (error) {
-              logger.warn(
-                '[SETTINGS] Failed to set login item settings:',
-                error.message,
-              );
+              logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
             }
           }
 
@@ -643,10 +559,10 @@ function registerSettingsIpc({
         logger.error('[SETTINGS] Failed to restore backup:', error);
         return {
           success: false,
-          error: error.message,
+          error: error.message
         };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -663,10 +579,10 @@ function registerSettingsIpc({
         logger.error('[SETTINGS] Failed to delete backup:', error);
         return {
           success: false,
-          error: error.message,
+          error: error.message
         };
       }
-    }),
+    })
   );
 }
 

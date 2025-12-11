@@ -2,11 +2,7 @@ const { getInstance: getChromaDB } = require('../services/chromadb');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
-const {
-  BATCH,
-  TIMEOUTS,
-  LIMITS,
-} = require('../../shared/performanceConstants');
+const { BATCH, TIMEOUTS, LIMITS } = require('../../shared/performanceConstants');
 const { withErrorLogging } = require('./ipcWrappers');
 
 function registerEmbeddingsIpc({
@@ -14,7 +10,7 @@ function registerEmbeddingsIpc({
   IPC_CHANNELS,
   logger,
   getCustomFolders,
-  getServiceIntegration,
+  getServiceIntegration
 }) {
   // Use ChromaDB singleton instance
   const chromaDbService = getChromaDB();
@@ -40,9 +36,7 @@ function registerEmbeddingsIpc({
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          logger.info(
-            `[SEMANTIC] Starting initialization (attempt ${attempt}/${MAX_RETRIES})...`,
-          );
+          logger.info(`[SEMANTIC] Starting initialization (attempt ${attempt}/${MAX_RETRIES})...`);
 
           // FIX: Check if ChromaDB server is available before initializing
           const isServerReady = await chromaDbService.isServerAvailable(3000);
@@ -62,19 +56,13 @@ function registerEmbeddingsIpc({
           const filesPath = path.join(basePath, 'file-embeddings.jsonl');
           const foldersPath = path.join(basePath, 'folder-embeddings.jsonl');
 
-          const filesMigrated = await chromaDbService.migrateFromJsonl(
-            filesPath,
-            'file',
-          );
-          const foldersMigrated = await chromaDbService.migrateFromJsonl(
-            foldersPath,
-            'folder',
-          );
+          const filesMigrated = await chromaDbService.migrateFromJsonl(filesPath, 'file');
+          const foldersMigrated = await chromaDbService.migrateFromJsonl(foldersPath, 'folder');
 
           if (filesMigrated > 0 || foldersMigrated > 0) {
             logger.info('[SEMANTIC] Migration complete', {
               files: filesMigrated,
-              folders: foldersMigrated,
+              folders: foldersMigrated
             });
           }
 
@@ -82,21 +70,16 @@ function registerEmbeddingsIpc({
           isInitialized = true;
           return; // Success - exit retry loop
         } catch (error) {
-          logger.warn(
-            `[SEMANTIC] Initialization attempt ${attempt} failed:`,
-            error.message,
-          );
+          logger.warn(`[SEMANTIC] Initialization attempt ${attempt} failed:`, error.message);
 
           if (attempt < MAX_RETRIES) {
             // Exponential backoff with jitter
-            const delay =
-              RETRY_DELAY_BASE * Math.pow(2, attempt - 1) +
-              Math.random() * 1000;
+            const delay = RETRY_DELAY_BASE * Math.pow(2, attempt - 1) + Math.random() * 1000;
             logger.info(`[SEMANTIC] Retrying in ${Math.round(delay)}ms...`);
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
             logger.error(
-              '[SEMANTIC] All initialization attempts failed. ChromaDB features will be unavailable.',
+              '[SEMANTIC] All initialization attempts failed. ChromaDB features will be unavailable.'
             );
             initializationPromise = null; // Allow retry on next explicit call
             // Don't throw - allow the app to continue in degraded mode
@@ -120,10 +103,7 @@ function registerEmbeddingsIpc({
     // Use setImmediate to ensure IPC handlers are registered first
     setTimeout(() => {
       ensureInitialized().catch((error) => {
-        logger.warn(
-          '[SEMANTIC] Background pre-warm failed (non-fatal):',
-          error.message,
-        );
+        logger.warn('[SEMANTIC] Background pre-warm failed (non-fatal):', error.message);
         // Non-fatal - handlers will retry with proper backoff when called
       });
     }, 1000); // 1 second delay for pre-warming, handlers use retries if called earlier
@@ -139,9 +119,8 @@ function registerEmbeddingsIpc({
         logger.warn('[EMBEDDINGS] ChromaDB not available:', initError.message);
         return {
           success: false,
-          error:
-            'ChromaDB is not available. Please ensure the ChromaDB server is running.',
-          unavailable: true,
+          error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
+          unavailable: true
         };
       }
 
@@ -149,9 +128,8 @@ function registerEmbeddingsIpc({
       if (!isInitialized) {
         return {
           success: false,
-          error:
-            'ChromaDB initialization pending. Please try again in a few seconds.',
-          pending: true,
+          error: 'ChromaDB initialization pending. Please try again in a few seconds.',
+          pending: true
         };
       }
 
@@ -163,14 +141,10 @@ function registerEmbeddingsIpc({
         const folderPayloads = await Promise.all(
           smartFolders.map(async (folder) => {
             try {
-              const folderText = [folder.name, folder.description]
-                .filter(Boolean)
-                .join(' - ');
+              const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
 
-              const { vector, model } =
-                await folderMatcher.embedText(folderText);
-              const folderId =
-                folder.id || folderMatcher.generateFolderId(folder);
+              const { vector, model } = await folderMatcher.embedText(folderText);
+              const folderId = folder.id || folderMatcher.generateFolderId(folder);
 
               return {
                 id: folderId,
@@ -179,17 +153,17 @@ function registerEmbeddingsIpc({
                 path: folder.path || '',
                 vector,
                 model,
-                updatedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
               };
             } catch (error) {
               logger.warn(
                 '[EMBEDDINGS] Failed to generate folder embedding:',
                 folder.name,
-                error.message,
+                error.message
               );
               return null;
             }
-          }),
+          })
         );
 
         const validPayloads = folderPayloads.filter((p) => p !== null);
@@ -202,7 +176,7 @@ function registerEmbeddingsIpc({
         logger.error('[EMBEDDINGS] Rebuild folders failed:', e);
         return { success: false, error: e.message };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -215,9 +189,8 @@ function registerEmbeddingsIpc({
         logger.warn('[EMBEDDINGS] ChromaDB not available:', initError.message);
         return {
           success: false,
-          error:
-            'ChromaDB is not available. Please ensure the ChromaDB server is running.',
-          unavailable: true,
+          error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
+          unavailable: true
         };
       }
 
@@ -225,38 +198,31 @@ function registerEmbeddingsIpc({
       if (!isInitialized) {
         return {
           success: false,
-          error:
-            'ChromaDB initialization pending. Please try again in a few seconds.',
-          pending: true,
+          error: 'ChromaDB initialization pending. Please try again in a few seconds.',
+          pending: true
         };
       }
 
       try {
-        const serviceIntegration =
-          getServiceIntegration && getServiceIntegration();
+        const serviceIntegration = getServiceIntegration && getServiceIntegration();
         const historyService = serviceIntegration?.analysisHistory;
 
         if (!historyService?.getRecentAnalysis) {
           return {
             success: false,
-            error: 'Analysis history service unavailable',
+            error: 'Analysis history service unavailable'
           };
         }
 
         // Load all history entries (bounded by service defaults if any)
-        const allEntries = await historyService.getRecentAnalysis(
-          Number.MAX_SAFE_INTEGER,
-        );
+        const allEntries = await historyService.getRecentAnalysis(Number.MAX_SAFE_INTEGER);
 
         // FIX #17: Validate allEntries is an array to prevent crash
         if (!Array.isArray(allEntries)) {
-          logger.warn(
-            '[EMBEDDINGS] getRecentAnalysis returned non-array:',
-            typeof allEntries,
-          );
+          logger.warn('[EMBEDDINGS] getRecentAnalysis returned non-array:', typeof allEntries);
           return {
             success: false,
-            error: 'Failed to load analysis history - invalid data format',
+            error: 'Failed to load analysis history - invalid data format'
           };
         }
 
@@ -269,14 +235,10 @@ function registerEmbeddingsIpc({
           const folderPayloads = await Promise.all(
             smartFolders.map(async (folder) => {
               try {
-                const folderText = [folder.name, folder.description]
-                  .filter(Boolean)
-                  .join(' - ');
+                const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
 
-                const { vector, model } =
-                  await folderMatcher.embedText(folderText);
-                const folderId =
-                  folder.id || folderMatcher.generateFolderId(folder);
+                const { vector, model } = await folderMatcher.embedText(folderText);
+                const folderId = folder.id || folderMatcher.generateFolderId(folder);
 
                 return {
                   id: folderId,
@@ -285,16 +247,13 @@ function registerEmbeddingsIpc({
                   path: folder.path || '',
                   vector,
                   model,
-                  updatedAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
                 };
               } catch (error) {
-                logger.warn(
-                  '[EMBEDDINGS] Failed to generate folder embedding:',
-                  folder.name,
-                );
+                logger.warn('[EMBEDDINGS] Failed to generate folder embedding:', folder.name);
                 return null;
               }
-            }),
+            })
           );
 
           const validFolderPayloads = folderPayloads.filter((p) => p !== null);
@@ -316,12 +275,10 @@ function registerEmbeddingsIpc({
             const summary = [
               entry.analysis?.subject,
               entry.analysis?.summary,
-              Array.isArray(entry.analysis?.tags)
-                ? entry.analysis.tags.join(' ')
-                : '',
+              Array.isArray(entry.analysis?.tags) ? entry.analysis.tags.join(' ') : '',
               entry.analysis?.extractedText
                 ? String(entry.analysis.extractedText).slice(0, 2000)
-                : '',
+                : ''
             ]
               .filter(Boolean)
               .join('\n');
@@ -336,15 +293,12 @@ function registerEmbeddingsIpc({
               meta: {
                 path: filePath,
                 name: path.basename(filePath),
-                type: isImage ? 'image' : 'document',
+                type: isImage ? 'image' : 'document'
               },
-              updatedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
             });
           } catch (e) {
-            logger.warn(
-              '[EMBEDDINGS] Failed to prepare file entry:',
-              e.message,
-            );
+            logger.warn('[EMBEDDINGS] Failed to prepare file entry:', e.message);
             // continue on individual entry failure
           }
         }
@@ -358,10 +312,7 @@ function registerEmbeddingsIpc({
             const count = await chromaDbService.batchUpsertFiles(batch);
             rebuilt += count;
           } catch (e) {
-            logger.warn(
-              '[EMBEDDINGS] Failed to batch upsert files:',
-              e.message,
-            );
+            logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
           }
         }
 
@@ -370,7 +321,7 @@ function registerEmbeddingsIpc({
         logger.error('[EMBEDDINGS] Rebuild files failed:', e);
         return { success: false, error: e.message };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -383,14 +334,14 @@ function registerEmbeddingsIpc({
         return {
           success: false,
           error: 'ChromaDB is not available.',
-          unavailable: true,
+          unavailable: true
         };
       }
       if (!isInitialized) {
         return {
           success: false,
           error: 'ChromaDB initialization pending.',
-          pending: true,
+          pending: true
         };
       }
 
@@ -400,7 +351,7 @@ function registerEmbeddingsIpc({
       } catch (e) {
         return { success: false, error: e.message };
       }
-    }),
+    })
   );
 
   // New endpoint for getting vector DB statistics
@@ -414,14 +365,14 @@ function registerEmbeddingsIpc({
         return {
           success: false,
           error: 'ChromaDB is not available.',
-          unavailable: true,
+          unavailable: true
         };
       }
       if (!isInitialized) {
         return {
           success: false,
           error: 'ChromaDB initialization pending.',
-          pending: true,
+          pending: true
         };
       }
 
@@ -431,7 +382,7 @@ function registerEmbeddingsIpc({
       } catch (e) {
         return { success: false, error: e.message };
       }
-    }),
+    })
   );
 
   // New endpoint for finding similar documents
@@ -445,14 +396,14 @@ function registerEmbeddingsIpc({
         return {
           success: false,
           error: 'ChromaDB is not available.',
-          unavailable: true,
+          unavailable: true
         };
       }
       if (!isInitialized) {
         return {
           success: false,
           error: 'ChromaDB initialization pending.',
-          pending: true,
+          pending: true
         };
       }
 
@@ -469,7 +420,7 @@ function registerEmbeddingsIpc({
         if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
           return {
             success: false,
-            error: `topK must be between 1 and ${MAX_TOP_K}`,
+            error: `topK must be between 1 and ${MAX_TOP_K}`
           };
         }
 
@@ -477,10 +428,7 @@ function registerEmbeddingsIpc({
         // FIX: Store timeout ID to clear it after race resolves
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error('Query timeout exceeded')),
-            QUERY_TIMEOUT,
-          );
+          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
         });
 
         // Race query against timeout
@@ -488,7 +436,7 @@ function registerEmbeddingsIpc({
         try {
           similarFiles = await Promise.race([
             folderMatcher.findSimilarFiles(fileId, topK),
-            timeoutPromise,
+            timeoutPromise
           ]);
         } finally {
           // FIX: Always clear timeout to prevent memory leak
@@ -501,15 +449,15 @@ function registerEmbeddingsIpc({
           fileId,
           topK,
           error: e.message,
-          timeout: e.message.includes('timeout'),
+          timeout: e.message.includes('timeout')
         });
         return {
           success: false,
           error: e.message,
-          timeout: e.message.includes('timeout'),
+          timeout: e.message.includes('timeout')
         };
       }
-    }),
+    })
   );
 
   // Cleanup on app quit - FIX #15: Use once() to prevent multiple listener registration

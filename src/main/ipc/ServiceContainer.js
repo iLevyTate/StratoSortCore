@@ -238,7 +238,7 @@ class ServiceContainer {
     return {
       valid: missing.length === 0,
       missing,
-      warnings,
+      warnings
     };
   }
 
@@ -283,7 +283,7 @@ class ServiceContainer {
       buildOllamaOptions: this._ollama?.buildOllamaOptions,
       // Settings
       settingsService: this._settings?.settingsService,
-      onSettingsChanged: this._settings?.onSettingsChanged,
+      onSettingsChanged: this._settings?.onSettingsChanged
     };
   }
 }
@@ -298,23 +298,23 @@ function createFromLegacyParams(params) {
     .setCore({
       ipcMain: params.ipcMain,
       IPC_CHANNELS: params.IPC_CHANNELS,
-      logger: params.logger,
+      logger: params.logger
     })
     .setElectron({
       dialog: params.dialog,
       shell: params.shell,
-      getMainWindow: params.getMainWindow,
+      getMainWindow: params.getMainWindow
     })
     .setFolders({
       getCustomFolders: params.getCustomFolders,
       setCustomFolders: params.setCustomFolders,
       saveCustomFolders: params.saveCustomFolders,
-      scanDirectory: params.scanDirectory,
+      scanDirectory: params.scanDirectory
     })
     .setAnalysis({
       analyzeDocumentFile: params.analyzeDocumentFile,
       analyzeImageFile: params.analyzeImageFile,
-      tesseract: params.tesseract,
+      tesseract: params.tesseract
     })
     .setOllama({
       getOllama: params.getOllama,
@@ -326,11 +326,11 @@ function createFromLegacyParams(params) {
       setOllamaVisionModel: params.setOllamaVisionModel,
       getOllamaEmbeddingModel: params.getOllamaEmbeddingModel,
       setOllamaEmbeddingModel: params.setOllamaEmbeddingModel,
-      buildOllamaOptions: params.buildOllamaOptions,
+      buildOllamaOptions: params.buildOllamaOptions
     })
     .setSettings({
       settingsService: params.settingsService,
-      onSettingsChanged: params.onSettingsChanged,
+      onSettingsChanged: params.onSettingsChanged
     })
     .setSystemAnalytics(params.systemAnalytics)
     .setServiceIntegration(params.getServiceIntegration);
@@ -338,5 +338,5 @@ function createFromLegacyParams(params) {
 
 module.exports = {
   ServiceContainer,
-  createFromLegacyParams,
+  createFromLegacyParams
 };

@@ -16,14 +16,12 @@ function ModelManagementSection({
   isAddingModel,
   isDeletingModel,
   onAddModel,
-  onDeleteModel,
+  onDeleteModel
 }) {
   return (
     <div className="border-t border-system-gray-200 pt-6 mt-6 space-y-6">
       <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
-          Add Model
-        </label>
+        <label className="block text-sm font-medium text-system-gray-700 mb-2">Add Model</label>
         <div className="flex gap-3">
           <Input
             type="text"
@@ -44,9 +42,7 @@ function ModelManagementSection({
         </div>
       </div>
       <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
-          Delete Model
-        </label>
+        <label className="block text-sm font-medium text-system-gray-700 mb-2">Delete Model</label>
         <div className="flex gap-3">
           <Select
             value={modelToDelete}
@@ -86,7 +82,7 @@ ModelManagementSection.propTypes = {
   isAddingModel: PropTypes.bool.isRequired,
   isDeletingModel: PropTypes.bool.isRequired,
   onAddModel: PropTypes.func.isRequired,
-  onDeleteModel: PropTypes.func.isRequired,
+  onDeleteModel: PropTypes.func.isRequired
 };
 
 export default ModelManagementSection;

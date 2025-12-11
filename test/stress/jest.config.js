@@ -14,11 +14,9 @@ module.exports = {
     '^.+\\.(js|jsx)$': [
       'babel-jest',
       {
-        presets: [
-          ['@babel/preset-env', { targets: { node: 'current' } }],
-        ],
-      },
-    ],
+        presets: [['@babel/preset-env', { targets: { node: 'current' } }]]
+      }
+    ]
   },
 
   // Stress tests need more time
@@ -31,7 +29,7 @@ module.exports = {
   moduleNameMapper: {
     '^electron$': '<rootDir>/../mocks/electron.js',
     '^ollama$': '<rootDir>/../mocks/ollama.js',
-    '^chokidar$': '<rootDir>/../mocks/chokidar.js',
+    '^chokidar$': '<rootDir>/../mocks/chokidar.js'
   },
 
   // Setup files
@@ -41,5 +39,5 @@ module.exports = {
   collectCoverage: false,
 
   // Verbose output
-  verbose: true,
+  verbose: true
 };

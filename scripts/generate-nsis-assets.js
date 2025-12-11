@@ -11,7 +11,7 @@ async function toBmp(
   outBmpPath,
   width,
   height,
-  background = { r: 255, g: 255, b: 255, alpha: 1 },
+  background = { r: 255, g: 255, b: 255, alpha: 1 }
 ) {
   // Since sharp doesn't support BMP directly, we'll create high-quality PNGs
   // that NSIS can use (NSIS MUI2 accepts PNG files as well)

@@ -13,7 +13,7 @@ describe('store hooks', () => {
     // Mock react-redux
     jest.mock('react-redux', () => ({
       useDispatch: jest.fn(() => jest.fn()),
-      useSelector: jest.fn((selector) => selector({ test: 'state' })),
+      useSelector: jest.fn((selector) => selector({ test: 'state' }))
     }));
 
     const module = require('../src/renderer/store/hooks');

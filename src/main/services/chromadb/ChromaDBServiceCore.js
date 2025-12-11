@@ -20,10 +20,7 @@ const { NETWORK } = require('../../../shared/performanceConstants');
 const { withTimeout } = require('../../../shared/promiseUtils');
 
 // Timeout configuration for ChromaDB operations (prevents UI freeze on slow/unresponsive server)
-const CHROMADB_OPERATION_TIMEOUT_MS = getConfig(
-  'CHROMADB.operationTimeout',
-  30000,
-);
+const CHROMADB_OPERATION_TIMEOUT_MS = getConfig('CHROMADB.operationTimeout', 30000);
 const CHROMADB_INIT_TIMEOUT_MS = getConfig('CHROMADB.initTimeout', 60000);
 
 // Extracted modules
@@ -31,7 +28,7 @@ const { ChromaQueryCache } = require('./ChromaQueryCache');
 const {
   checkHealthViaHttp,
   checkHealthViaClient,
-  isServerAvailable,
+  isServerAvailable
 } = require('./ChromaHealthChecker');
 const {
   directUpsertFile,
@@ -40,7 +37,7 @@ const {
   batchDeleteFileEmbeddings: batchDeleteFileEmbeddingsOp,
   updateFilePaths: updateFilePathsOp,
   querySimilarFiles: querySimilarFilesOp,
-  resetFiles: resetFilesOp,
+  resetFiles: resetFilesOp
 } = require('./fileOperations');
 const {
   directUpsertFolder,
@@ -49,7 +46,7 @@ const {
   executeQueryFolders,
   batchQueryFolders: batchQueryFoldersOp,
   getAllFolders: getAllFoldersOp,
-  resetFolders: resetFoldersOp,
+  resetFolders: resetFoldersOp
 } = require('./folderOperations');
 
 logger.setContext('ChromaDBService');
@@ -94,7 +91,7 @@ class ChromaDBServiceCore extends EventEmitter {
     // Query cache
     this.queryCache = new ChromaQueryCache({
       maxSize: MAX_CACHE_SIZE,
-      ttlMs: QUERY_CACHE_TTL_MS,
+      ttlMs: QUERY_CACHE_TTL_MS
     });
 
     // Batch operation queues
@@ -109,17 +106,14 @@ class ChromaDBServiceCore extends EventEmitter {
     // Connection health monitoring
     this.isOnline = false;
     this.healthCheckInterval = null;
-    this.HEALTH_CHECK_INTERVAL_MS = getConfig(
-      'PERFORMANCE.healthCheckInterval',
-      30000,
-    );
+    this.HEALTH_CHECK_INTERVAL_MS = getConfig('PERFORMANCE.healthCheckInterval', 30000);
 
     // Circuit breaker configuration
     const circuitBreakerConfig = {
       failureThreshold: getConfig('CIRCUIT_BREAKER.failureThreshold', 5),
       successThreshold: getConfig('CIRCUIT_BREAKER.successThreshold', 2),
       timeout: getConfig('CIRCUIT_BREAKER.timeout', 30000),
-      resetTimeout: getConfig('CIRCUIT_BREAKER.resetTimeout', 60000),
+      resetTimeout: getConfig('CIRCUIT_BREAKER.resetTimeout', 60000)
     };
 
     // Initialize circuit breaker
@@ -133,7 +127,7 @@ class ChromaDBServiceCore extends EventEmitter {
       logger.warn('[ChromaDB] Circuit breaker opened due to failures', data);
       this.emit('offline', {
         reason: 'circuit_open',
-        failureCount: data.failureCount,
+        failureCount: data.failureCount
       });
     });
     this.circuitBreaker.on('close', () => {
@@ -149,14 +143,14 @@ class ChromaDBServiceCore extends EventEmitter {
     this.offlineQueue = new OfflineQueue({
       maxQueueSize: getConfig('CIRCUIT_BREAKER.maxQueueSize', 1000),
       flushBatchSize: 50,
-      flushDelayMs: 1000,
+      flushDelayMs: 1000
     });
 
     // Forward queue events
     this.offlineQueue.on('enqueued', (op) => {
       this.emit('operationQueued', {
         type: op.type,
-        queueSize: this.offlineQueue.size(),
+        queueSize: this.offlineQueue.size()
       });
     });
     this.offlineQueue.on('flushComplete', (result) => {
@@ -182,20 +176,13 @@ class ChromaDBServiceCore extends EventEmitter {
       try {
         const parsed = new URL(envUrl);
 
-        const protocol =
-          parsed.protocol?.replace(':', '') || DEFAULT_SERVER_PROTOCOL;
+        const protocol = parsed.protocol?.replace(':', '') || DEFAULT_SERVER_PROTOCOL;
         if (!VALID_PROTOCOLS.includes(protocol)) {
-          throw new Error(
-            `Invalid protocol "${protocol}". Must be http or https.`,
-          );
+          throw new Error(`Invalid protocol "${protocol}". Must be http or https.`);
         }
 
         const hostname = parsed.hostname || DEFAULT_SERVER_HOST;
-        if (
-          !hostname ||
-          typeof hostname !== 'string' ||
-          hostname.length > 253
-        ) {
+        if (!hostname || typeof hostname !== 'string' || hostname.length > 253) {
           throw new Error('Invalid hostname in CHROMA_SERVER_URL');
         }
 
@@ -205,7 +192,7 @@ class ChromaDBServiceCore extends EventEmitter {
         }
         if (isNaN(port) || port < MIN_PORT_NUMBER || port > MAX_PORT_NUMBER) {
           throw new Error(
-            `Invalid port number ${port}. Must be between ${MIN_PORT_NUMBER} and ${MAX_PORT_NUMBER}.`,
+            `Invalid port number ${port}. Must be between ${MIN_PORT_NUMBER} and ${MAX_PORT_NUMBER}.`
           );
         }
 
@@ -216,7 +203,7 @@ class ChromaDBServiceCore extends EventEmitter {
       } catch (error) {
         logger.warn('[ChromaDB] Invalid CHROMA_SERVER_URL, using defaults', {
           url: envUrl,
-          message: error?.message,
+          message: error?.message
         });
       }
     } else {
@@ -242,11 +229,7 @@ class ChromaDBServiceCore extends EventEmitter {
       }
 
       const envPort = Number(process.env.CHROMA_SERVER_PORT);
-      if (
-        !isNaN(envPort) &&
-        envPort >= MIN_PORT_NUMBER &&
-        envPort <= MAX_PORT_NUMBER
-      ) {
+      if (!isNaN(envPort) && envPort >= MIN_PORT_NUMBER && envPort <= MAX_PORT_NUMBER) {
         this.serverPort = envPort;
       }
 
@@ -283,15 +266,15 @@ class ChromaDBServiceCore extends EventEmitter {
           host: this.serverHost,
           port: this.serverPort,
           recommendation:
-            'Consider using HTTPS for remote ChromaDB connections to protect data in transit',
-        },
+            'Consider using HTTPS for remote ChromaDB connections to protect data in transit'
+        }
       );
       // Emit event so UI can display warning if needed
       this.emit('security-warning', {
         type: 'insecure_connection',
         message:
           'ChromaDB is configured to use HTTP for a remote server. Data may be transmitted unencrypted.',
-        host: this.serverHost,
+        host: this.serverHost
       });
     }
   }
@@ -315,14 +298,14 @@ class ChromaDBServiceCore extends EventEmitter {
 
     this.checkHealth().catch((err) => {
       logger.debug('[ChromaDB] Initial health check failed', {
-        error: err.message,
+        error: err.message
       });
     });
 
     this.healthCheckInterval = setInterval(() => {
       this.checkHealth().catch((err) => {
         logger.debug('[ChromaDB] Periodic health check failed', {
-          error: err.message,
+          error: err.message
         });
       });
     }, this.HEALTH_CHECK_INTERVAL_MS);
@@ -353,13 +336,10 @@ class ChromaDBServiceCore extends EventEmitter {
     if (this.inflightQueries.size >= this.MAX_INFLIGHT_QUERIES) {
       const oldestKey = this.inflightQueries.keys().next().value;
       if (oldestKey) {
-        logger.debug(
-          '[ChromaDB] Evicting oldest in-flight query due to capacity',
-          {
-            evictedKey: oldestKey,
-            currentSize: this.inflightQueries.size,
-          },
-        );
+        logger.debug('[ChromaDB] Evicting oldest in-flight query due to capacity', {
+          evictedKey: oldestKey,
+          currentSize: this.inflightQueries.size
+        });
         this.inflightQueries.delete(oldestKey);
       }
     }
@@ -373,20 +353,20 @@ class ChromaDBServiceCore extends EventEmitter {
   _onCircuitStateChange(data) {
     logger.info('[ChromaDB] Circuit state changed', {
       from: data.previousState,
-      to: data.currentState,
+      to: data.currentState
     });
 
     this.emit('circuitStateChange', {
       serviceName: 'chromadb',
       previousState: data.previousState,
       currentState: data.currentState,
-      timestamp: data.timestamp,
+      timestamp: data.timestamp
     });
 
     if (data.currentState === CircuitState.CLOSED) {
       this._flushOfflineQueue().catch((error) => {
         logger.error('[ChromaDB] Failed to flush offline queue', {
-          error: error.message,
+          error: error.message
         });
       });
     }
@@ -402,7 +382,7 @@ class ChromaDBServiceCore extends EventEmitter {
     }
 
     logger.info('[ChromaDB] Flushing offline queue', {
-      queueSize: this.offlineQueue.size(),
+      queueSize: this.offlineQueue.size()
     });
 
     const processor = async (operation) => {
@@ -436,7 +416,7 @@ class ChromaDBServiceCore extends EventEmitter {
           break;
         default:
           logger.warn('[ChromaDB] Unknown operation type in queue', {
-            type: operation.type,
+            type: operation.type
           });
       }
     };
@@ -525,7 +505,7 @@ class ChromaDBServiceCore extends EventEmitter {
       if (wasOnline) {
         this.emit('offline', {
           reason: 'health_check_error',
-          error: error.message,
+          error: error.message
         });
       }
       return false;
@@ -612,13 +592,12 @@ class ChromaDBServiceCore extends EventEmitter {
           this.client.getOrCreateCollection({
             name: 'file_embeddings',
             metadata: {
-              description:
-                'Document and image file embeddings for semantic search',
-              'hnsw:space': 'cosine',
-            },
+              description: 'Document and image file embeddings for semantic search',
+              'hnsw:space': 'cosine'
+            }
           }),
           CHROMADB_INIT_TIMEOUT_MS,
-          'ChromaDB file collection init',
+          'ChromaDB file collection init'
         );
 
         this.folderCollection = await withTimeout(
@@ -626,11 +605,11 @@ class ChromaDBServiceCore extends EventEmitter {
             name: 'folder_embeddings',
             metadata: {
               description: 'Smart folder embeddings for categorization',
-              'hnsw:space': 'cosine',
-            },
+              'hnsw:space': 'cosine'
+            }
           }),
           CHROMADB_INIT_TIMEOUT_MS,
-          'ChromaDB folder collection init',
+          'ChromaDB folder collection init'
         );
 
         this.initialized = true;
@@ -645,20 +624,20 @@ class ChromaDBServiceCore extends EventEmitter {
           withTimeout(
             this.fileCollection.count(),
             CHROMADB_OPERATION_TIMEOUT_MS,
-            'ChromaDB file count',
+            'ChromaDB file count'
           ),
           withTimeout(
             this.folderCollection.count(),
             CHROMADB_OPERATION_TIMEOUT_MS,
-            'ChromaDB folder count',
-          ),
+            'ChromaDB folder count'
+          )
         ]);
 
         logger.info('[ChromaDB] Successfully initialized vector database', {
           dbPath: this.dbPath,
           serverUrl: this.serverUrl,
           fileCount,
-          folderCount,
+          folderCount
         });
       } catch (error) {
         this._initPromise = null;
@@ -685,7 +664,7 @@ class ChromaDBServiceCore extends EventEmitter {
         if (isTenantError && !this._recoveryAttempted) {
           this._recoveryAttempted = true;
           logger.warn(
-            '[ChromaDB] Detected tenant/database error, attempting recovery by resetting data...',
+            '[ChromaDB] Detected tenant/database error, attempting recovery by resetting data...'
           );
 
           try {
@@ -701,17 +680,10 @@ class ChromaDBServiceCore extends EventEmitter {
 
             // Note: The ChromaDB server needs to be restarted to pick up the new database
             // For now, just log and let the next startup attempt succeed
-            logger.warn(
-              '[ChromaDB] Database reset complete. ChromaDB server may need restart.',
-            );
-            logger.warn(
-              '[ChromaDB] Please restart the application for changes to take effect.',
-            );
+            logger.warn('[ChromaDB] Database reset complete. ChromaDB server may need restart.');
+            logger.warn('[ChromaDB] Please restart the application for changes to take effect.');
           } catch (recoveryError) {
-            logger.error(
-              '[ChromaDB] Recovery attempt failed:',
-              recoveryError.message,
-            );
+            logger.error('[ChromaDB] Recovery attempt failed:', recoveryError.message);
           }
         }
 
@@ -731,23 +703,21 @@ class ChromaDBServiceCore extends EventEmitter {
 
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing folder upsert', {
-        folderId: folder.id,
+        folderId: folder.id
       });
       this.offlineQueue.enqueue(OperationType.UPSERT_FOLDER, folder);
       return { queued: true, folderId: folder.id };
     }
 
     await this.initialize();
-    return this.circuitBreaker.execute(async () =>
-      this._directUpsertFolder(folder),
-    );
+    return this.circuitBreaker.execute(async () => this._directUpsertFolder(folder));
   }
 
   async _directUpsertFolder(folder) {
     return directUpsertFolder({
       folder,
       folderCollection: this.folderCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -758,21 +728,21 @@ class ChromaDBServiceCore extends EventEmitter {
 
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing batch folder upsert', {
-        count: folders.length,
+        count: folders.length
       });
       this.offlineQueue.enqueue(OperationType.BATCH_UPSERT_FOLDERS, {
-        folders,
+        folders
       });
       this.emit('operationQueued', {
         type: 'batch_upsert_folders',
-        count: folders.length,
+        count: folders.length
       });
       return { queued: true, count: folders.length, skipped: [] };
     }
 
     await this.initialize();
     const result = await this.circuitBreaker.execute(async () =>
-      this._directBatchUpsertFolders(folders),
+      this._directBatchUpsertFolders(folders)
     );
     return { queued: false, ...result };
   }
@@ -781,7 +751,7 @@ class ChromaDBServiceCore extends EventEmitter {
     return directBatchUpsertFolders({
       folders,
       folderCollection: this.folderCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -792,10 +762,10 @@ class ChromaDBServiceCore extends EventEmitter {
       queryFoldersByEmbeddingOp({
         embedding,
         topK,
-        folderCollection: this.folderCollection,
+        folderCollection: this.folderCollection
       }),
       CHROMADB_OPERATION_TIMEOUT_MS,
-      'ChromaDB queryFoldersByEmbedding',
+      'ChromaDB queryFoldersByEmbedding'
     );
   }
 
@@ -820,10 +790,10 @@ class ChromaDBServiceCore extends EventEmitter {
         fileId,
         topK,
         fileCollection: this.fileCollection,
-        folderCollection: this.folderCollection,
+        folderCollection: this.folderCollection
       }),
       CHROMADB_OPERATION_TIMEOUT_MS,
-      'ChromaDB queryFolders',
+      'ChromaDB queryFolders'
     );
     // Use bounded helper to prevent memory exhaustion
     this._addInflightQuery(cacheKey, queryPromise);
@@ -846,10 +816,10 @@ class ChromaDBServiceCore extends EventEmitter {
         topK,
         fileCollection: this.fileCollection,
         folderCollection: this.folderCollection,
-        queryCache: this.queryCache,
+        queryCache: this.queryCache
       }),
       CHROMADB_OPERATION_TIMEOUT_MS * 2, // Double timeout for batch operations
-      'ChromaDB batchQueryFolders',
+      'ChromaDB batchQueryFolders'
     );
   }
 
@@ -872,23 +842,21 @@ class ChromaDBServiceCore extends EventEmitter {
 
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing file upsert', {
-        fileId: file.id,
+        fileId: file.id
       });
       this.offlineQueue.enqueue(OperationType.UPSERT_FILE, file);
       return { queued: true, fileId: file.id };
     }
 
     await this.initialize();
-    return this.circuitBreaker.execute(async () =>
-      this._directUpsertFile(file),
-    );
+    return this.circuitBreaker.execute(async () => this._directUpsertFile(file));
   }
 
   async _directUpsertFile(file) {
     return directUpsertFile({
       file,
       fileCollection: this.fileCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -899,19 +867,19 @@ class ChromaDBServiceCore extends EventEmitter {
 
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing batch file upsert', {
-        count: files.length,
+        count: files.length
       });
       this.offlineQueue.enqueue(OperationType.BATCH_UPSERT_FILES, { files });
       this.emit('operationQueued', {
         type: 'batch_upsert_files',
-        count: files.length,
+        count: files.length
       });
       return { queued: true, count: files.length };
     }
 
     await this.initialize();
     const count = await this.circuitBreaker.execute(async () =>
-      this._directBatchUpsertFiles(files),
+      this._directBatchUpsertFiles(files)
     );
     return { queued: false, count };
   }
@@ -920,7 +888,7 @@ class ChromaDBServiceCore extends EventEmitter {
     return directBatchUpsertFiles({
       files,
       fileCollection: this.fileCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -929,7 +897,7 @@ class ChromaDBServiceCore extends EventEmitter {
     return deleteFileEmbeddingOp({
       fileId,
       fileCollection: this.fileCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -941,12 +909,12 @@ class ChromaDBServiceCore extends EventEmitter {
     // Check circuit breaker - queue if service unavailable
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing batch file delete', {
-        count: fileIds.length,
+        count: fileIds.length
       });
       this.offlineQueue.enqueue(OperationType.BATCH_DELETE_FILES, { fileIds });
       this.emit('operationQueued', {
         type: 'batch_delete_files',
-        count: fileIds.length,
+        count: fileIds.length
       });
       return { queued: true, count: fileIds.length };
     }
@@ -964,7 +932,7 @@ class ChromaDBServiceCore extends EventEmitter {
     return batchDeleteFileEmbeddingsOp({
       fileIds,
       fileCollection: this.fileCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -979,7 +947,7 @@ class ChromaDBServiceCore extends EventEmitter {
     // Check circuit breaker - queue if service unavailable
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing folder delete', {
-        folderId,
+        folderId
       });
       this.offlineQueue.enqueue(OperationType.DELETE_FOLDER, { folderId });
       this.emit('operationQueued', { type: 'delete_folder', folderId });
@@ -1004,7 +972,7 @@ class ChromaDBServiceCore extends EventEmitter {
     } catch (error) {
       logger.warn('[ChromaDB] Failed to delete folder embedding', {
         folderId,
-        error: error.message,
+        error: error.message
       });
     }
   }
@@ -1020,14 +988,14 @@ class ChromaDBServiceCore extends EventEmitter {
     // Check circuit breaker - queue if service unavailable
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing batch folder delete', {
-        count: folderIds.length,
+        count: folderIds.length
       });
       this.offlineQueue.enqueue(OperationType.BATCH_DELETE_FOLDERS, {
-        folderIds,
+        folderIds
       });
       this.emit('operationQueued', {
         type: 'batch_delete_folders',
-        count: folderIds.length,
+        count: folderIds.length
       });
       return { queued: true, count: folderIds.length };
     }
@@ -1058,7 +1026,7 @@ class ChromaDBServiceCore extends EventEmitter {
     } catch (error) {
       logger.error('[ChromaDB] Batch folder delete failed', {
         count: folderIds.length,
-        error: error.message,
+        error: error.message
       });
       throw error;
     }
@@ -1069,7 +1037,7 @@ class ChromaDBServiceCore extends EventEmitter {
     return updateFilePathsOp({
       pathUpdates,
       fileCollection: this.fileCollection,
-      queryCache: this.queryCache,
+      queryCache: this.queryCache
     });
   }
 
@@ -1078,7 +1046,7 @@ class ChromaDBServiceCore extends EventEmitter {
     return querySimilarFilesOp({
       queryEmbedding,
       topK,
-      fileCollection: this.fileCollection,
+      fileCollection: this.fileCollection
     });
   }
 
@@ -1114,7 +1082,7 @@ class ChromaDBServiceCore extends EventEmitter {
               await this.upsertFile({
                 id: obj.id,
                 vector: obj.vector,
-                meta: obj.meta || {},
+                meta: obj.meta || {}
               });
             }
             migrated++;
@@ -1125,15 +1093,11 @@ class ChromaDBServiceCore extends EventEmitter {
         }
       }
 
-      logger.info(
-        `[ChromaDB] Migrated ${migrated} ${type} embeddings from JSONL`,
-      );
+      logger.info(`[ChromaDB] Migrated ${migrated} ${type} embeddings from JSONL`);
       return migrated;
     } catch (error) {
       if (error.code === 'ENOENT') {
-        logger.info(
-          `[ChromaDB] No existing JSONL file to migrate: ${jsonlPath}`,
-        );
+        logger.info(`[ChromaDB] No existing JSONL file to migrate: ${jsonlPath}`);
         return 0;
       }
       logger.error('[ChromaDB] Migration failed:', error);
@@ -1157,7 +1121,7 @@ class ChromaDBServiceCore extends EventEmitter {
         serverUrl: this.serverUrl,
         initialized: this.initialized,
         queryCache: this.queryCache.getStats(),
-        inflightQueries: this.inflightQueries.size,
+        inflightQueries: this.inflightQueries.size
       };
     } catch (error) {
       logger.error('[ChromaDB] Failed to get stats:', error);
@@ -1169,7 +1133,7 @@ class ChromaDBServiceCore extends EventEmitter {
         initialized: false,
         queryCache: this.queryCache.getStats(),
         inflightQueries: 0,
-        error: error.message,
+        error: error.message
       };
     }
   }
@@ -1208,20 +1172,15 @@ class ChromaDBServiceCore extends EventEmitter {
     }
 
     if (this.inflightQueries.size > 0) {
-      logger.info(
-        `[ChromaDB] Waiting for ${this.inflightQueries.size} in-flight queries...`,
-      );
+      logger.info(`[ChromaDB] Waiting for ${this.inflightQueries.size} in-flight queries...`);
       try {
         const { TIMEOUTS } = require('../../../shared/performanceConstants');
         await Promise.race([
           Promise.allSettled(Array.from(this.inflightQueries.values())),
-          new Promise((resolve) => setTimeout(resolve, TIMEOUTS.HEALTH_CHECK)),
+          new Promise((resolve) => setTimeout(resolve, TIMEOUTS.HEALTH_CHECK))
         ]);
       } catch (error) {
-        logger.warn(
-          '[ChromaDB] Error waiting for in-flight queries:',
-          error.message,
-        );
+        logger.warn('[ChromaDB] Error waiting for in-flight queries:', error.message);
       }
     }
 
@@ -1253,7 +1212,7 @@ class ChromaDBServiceCore extends EventEmitter {
       serverUrl: this.serverUrl,
       client: this.client,
       timeoutMs,
-      maxRetries,
+      maxRetries
     });
   }
 
@@ -1263,7 +1222,7 @@ class ChromaDBServiceCore extends EventEmitter {
       port: this.serverPort,
       protocol: this.serverProtocol,
       url: this.serverUrl,
-      dbPath: this.dbPath,
+      dbPath: this.dbPath
     };
   }
 }

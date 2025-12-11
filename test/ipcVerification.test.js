@@ -7,12 +7,12 @@
 jest.mock('electron', () => ({
   ipcMain: {
     listenerCount: jest.fn(),
-    _invokeHandlers: new Map(),
-  },
+    _invokeHandlers: new Map()
+  }
 }));
 
 jest.mock('../src/shared/platformUtils', () => ({
-  isWindows: false,
+  isWindows: false
 }));
 
 jest.mock('../src/shared/logger', () => ({
@@ -21,8 +21,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('ipcVerification', () => {
@@ -192,7 +192,7 @@ describe('ipcVerification', () => {
     test('includes Windows handlers on Windows platform', () => {
       jest.resetModules();
       jest.mock('../src/shared/platformUtils', () => ({
-        isWindows: true,
+        isWindows: true
       }));
 
       const windowsVerification = require('../src/main/core/ipcVerification');
@@ -208,7 +208,7 @@ describe('ipcVerification', () => {
       // Should check for Windows handlers
       if (result.missing.length > 0) {
         const hasWindowsHandler = result.missing.some((h) =>
-          windowsVerification.WINDOWS_HANDLERS.includes(h),
+          windowsVerification.WINDOWS_HANDLERS.includes(h)
         );
         expect(hasWindowsHandler).toBe(true);
       }

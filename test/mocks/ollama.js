@@ -9,8 +9,8 @@ class Ollama {
         category: 'General',
         keywords: ['mock'],
         confidence: 80,
-        suggestedName: 'mock_file',
-      }),
+        suggestedName: 'mock_file'
+      })
     };
   }
   async embeddings() {
@@ -23,7 +23,7 @@ class Ollama {
 
 const mockOllamaService = {
   analyze: jest.fn(),
-  isConnected: jest.fn(),
+  isConnected: jest.fn()
 };
 
 module.exports = { mockOllamaService, Ollama };

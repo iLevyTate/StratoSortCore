@@ -3,7 +3,7 @@
  */
 
 const {
-  OrganizationSuggestionServiceCore,
+  OrganizationSuggestionServiceCore
 } = require('../src/main/services/organization/OrganizationSuggestionServiceCore');
 
 describe('OrganizationSuggestionServiceCore validation', () => {
@@ -12,7 +12,7 @@ describe('OrganizationSuggestionServiceCore validation', () => {
       chromaDbService: {},
       folderMatchingService: {},
       settingsService: {},
-      config: {},
+      config: {}
     });
 
     // Stub heavy dependencies to avoid real work
@@ -21,15 +21,15 @@ describe('OrganizationSuggestionServiceCore validation', () => {
     service.getImprovementSuggestions = jest.fn().mockResolvedValue([]);
     service.patternMatcher = {
       getPatternBasedSuggestions: jest.fn().mockReturnValue([]),
-      folderUsageStats: {},
+      folderUsageStats: {}
     };
 
     await expect(
       service.getSuggestionsForFile(
         { name: 'file.pdf', extension: '.pdf' }, // missing path
         [],
-        {},
-      ),
+        {}
+      )
     ).rejects.toThrow('file.path is required');
   });
 });

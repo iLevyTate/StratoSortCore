@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock FileSystemError
@@ -46,14 +46,14 @@ jest.mock('../src/main/errors/FileSystemError', () => {
     WatcherError,
     FILE_SYSTEM_ERROR_CODES: {
       PARTIAL_WRITE: 'PARTIAL_WRITE',
-      ACCESS_DENIED: 'ACCESS_DENIED',
-    },
+      ACCESS_DENIED: 'ACCESS_DENIED'
+    }
   };
 });
 
 // Mock atomicFileOperations
 jest.mock('../src/shared/atomicFileOperations', () => ({
-  crossDeviceMove: jest.fn(),
+  crossDeviceMove: jest.fn()
 }));
 
 // Mock fs
@@ -67,12 +67,12 @@ const mockFsPromises = {
   copyFile: jest.fn(),
   rename: jest.fn(),
   unlink: jest.fn(),
-  rmdir: jest.fn(),
+  rmdir: jest.fn()
 };
 
 jest.mock('fs', () => ({
   promises: mockFsPromises,
-  watch: jest.fn(),
+  watch: jest.fn()
 }));
 
 describe('Async File Operations', () => {
@@ -90,7 +90,7 @@ describe('Async File Operations', () => {
     mockFsPromises.stat.mockResolvedValue({
       size: 12,
       isDirectory: () => false,
-      isFile: () => true,
+      isFile: () => true
     });
     mockFsPromises.readdir.mockResolvedValue([]);
     mockFsPromises.copyFile.mockResolvedValue(undefined);
@@ -237,7 +237,7 @@ describe('Async File Operations', () => {
     test('lists files in directory', async () => {
       mockFsPromises.readdir.mockResolvedValueOnce([
         { name: 'file1.txt', isFile: () => true, isDirectory: () => false },
-        { name: 'file2.txt', isFile: () => true, isDirectory: () => false },
+        { name: 'file2.txt', isFile: () => true, isDirectory: () => false }
       ]);
 
       const result = await asyncFileOps.listFiles('/path/to/dir');
@@ -249,14 +249,14 @@ describe('Async File Operations', () => {
       mockFsPromises.readdir
         .mockResolvedValueOnce([
           { name: 'file1.txt', isFile: () => true, isDirectory: () => false },
-          { name: 'subdir', isFile: () => false, isDirectory: () => true },
+          { name: 'subdir', isFile: () => false, isDirectory: () => true }
         ])
         .mockResolvedValueOnce([
-          { name: 'file2.txt', isFile: () => true, isDirectory: () => false },
+          { name: 'file2.txt', isFile: () => true, isDirectory: () => false }
         ]);
 
       const result = await asyncFileOps.listFiles('/path/to/dir', {
-        recursive: true,
+        recursive: true
       });
 
       expect(result).toHaveLength(2);
@@ -265,11 +265,11 @@ describe('Async File Operations', () => {
     test('filters files with custom function', async () => {
       mockFsPromises.readdir.mockResolvedValueOnce([
         { name: 'file1.txt', isFile: () => true, isDirectory: () => false },
-        { name: 'file2.pdf', isFile: () => true, isDirectory: () => false },
+        { name: 'file2.pdf', isFile: () => true, isDirectory: () => false }
       ]);
 
       const result = await asyncFileOps.listFiles('/path/to/dir', {
-        filter: (path) => path.endsWith('.txt'),
+        filter: (path) => path.endsWith('.txt')
       });
 
       expect(result).toHaveLength(1);
@@ -309,11 +309,7 @@ describe('Async File Operations', () => {
       mockFsPromises.access.mockResolvedValueOnce(undefined); // dest exists
       mockFsPromises.copyFile.mockResolvedValueOnce(undefined);
 
-      const result = await asyncFileOps.copyFile(
-        '/src/file.txt',
-        '/dest/file.txt',
-        true,
-      );
+      const result = await asyncFileOps.copyFile('/src/file.txt', '/dest/file.txt', true);
 
       expect(result).toBe(true);
     });
@@ -341,7 +337,7 @@ describe('Async File Operations', () => {
   describe('safeDelete', () => {
     test('deletes file successfully', async () => {
       mockFsPromises.stat.mockResolvedValueOnce({
-        isDirectory: () => false,
+        isDirectory: () => false
       });
       mockFsPromises.unlink.mockResolvedValueOnce(undefined);
 
@@ -352,7 +348,7 @@ describe('Async File Operations', () => {
 
     test('deletes directory with recursive', async () => {
       mockFsPromises.stat.mockResolvedValueOnce({
-        isDirectory: () => true,
+        isDirectory: () => true
       });
       mockFsPromises.rmdir.mockResolvedValueOnce(undefined);
 
@@ -385,7 +381,7 @@ describe('Async File Operations', () => {
       mockFsPromises.readFile.mockRejectedValueOnce(enoentError);
 
       const result = await asyncFileOps.readJSON('/path/to/missing.json', {
-        default: true,
+        default: true
       });
 
       expect(result).toEqual({ default: true });
@@ -409,7 +405,7 @@ describe('Async File Operations', () => {
 
       // writeJSON returns the result of safeWriteFile which is {success, error}
       const result = await asyncFileOps.writeJSON('/path/to/file.json', {
-        key: 'value',
+        key: 'value'
       });
 
       // Result is either {success: boolean, error: ...} or boolean depending on implementation

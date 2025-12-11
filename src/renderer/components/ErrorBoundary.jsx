@@ -25,7 +25,7 @@ class ErrorBoundary extends React.Component {
     logger.error('Unhandled error caught by ErrorBoundary', {
       error: error.message,
       stack: error.stack,
-      componentStack: info?.componentStack,
+      componentStack: info?.componentStack
     });
   }
 
@@ -70,17 +70,16 @@ class ErrorBoundary extends React.Component {
               <p className="text-sm font-mono text-system-gray-700 break-words">
                 {this.state.error?.message || 'Unknown error occurred'}
               </p>
-              {process.env.NODE_ENV === 'development' &&
-                this.state.error?.stack && (
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-xs text-system-gray-500 hover:text-system-gray-700">
-                      Show stack trace
-                    </summary>
-                    <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-40">
-                      {this.state.error.stack}
-                    </pre>
-                  </details>
-                )}
+              {process.env.NODE_ENV === 'development' && this.state.error?.stack && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs text-system-gray-500 hover:text-system-gray-700">
+                    Show stack trace
+                  </summary>
+                  <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-40">
+                    {this.state.error.stack}
+                  </pre>
+                </details>
+              )}
             </div>
 
             <div className="flex gap-3">
@@ -101,8 +100,7 @@ class ErrorBoundary extends React.Component {
             </div>
 
             <p className="text-xs text-center text-system-gray-500 mt-4">
-              If this problem persists, please check your settings or contact
-              support.
+              If this problem persists, please check your settings or contact support.
             </p>
           </div>
         </div>
@@ -114,7 +112,7 @@ class ErrorBoundary extends React.Component {
 }
 
 ErrorBoundary.propTypes = {
-  children: PropTypes.node.isRequired,
+  children: PropTypes.node.isRequired
 };
 
 export default ErrorBoundary;

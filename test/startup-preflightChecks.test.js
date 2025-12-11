@@ -10,15 +10,15 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/mock/userData'),
-  },
+    getPath: jest.fn().mockReturnValue('/mock/userData')
+  }
 }));
 
 // Mock fs
@@ -26,31 +26,31 @@ const mockFs = {
   access: jest.fn(),
   mkdir: jest.fn(),
   writeFile: jest.fn(),
-  unlink: jest.fn(),
+  unlink: jest.fn()
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock axios
 jest.mock('axios', () => ({
-  get: jest.fn(),
+  get: jest.fn()
 }));
 
 // Mock asyncSpawnUtils
 jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
-  asyncSpawn: jest.fn(),
+  asyncSpawn: jest.fn()
 }));
 
 // Mock platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
   isWindows: false,
-  shouldUseShell: jest.fn().mockReturnValue(false),
+  shouldUseShell: jest.fn().mockReturnValue(false)
 }));
 
 // Mock promiseUtils
 jest.mock('../src/shared/promiseUtils', () => ({
-  withTimeout: jest.fn((promise) => promise),
+  withTimeout: jest.fn((promise) => promise)
 }));
 
 describe('Preflight Checks', () => {
@@ -86,7 +86,7 @@ describe('Preflight Checks', () => {
       asyncSpawn.mockResolvedValueOnce({
         status: 0,
         stdout: 'Python 3.11.0',
-        stderr: '',
+        stderr: ''
       });
 
       const result = await checkPythonInstallation();
@@ -96,13 +96,11 @@ describe('Preflight Checks', () => {
     });
 
     test('tries multiple python commands', async () => {
-      asyncSpawn
-        .mockRejectedValueOnce(new Error('Not found'))
-        .mockResolvedValueOnce({
-          status: 0,
-          stdout: 'Python 3.10.0',
-          stderr: '',
-        });
+      asyncSpawn.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce({
+        status: 0,
+        stdout: 'Python 3.10.0',
+        stderr: ''
+      });
 
       const result = await checkPythonInstallation();
 
@@ -133,7 +131,7 @@ describe('Preflight Checks', () => {
       asyncSpawn.mockResolvedValueOnce({
         status: 0,
         stdout: 'ollama version 0.1.0',
-        stderr: '',
+        stderr: ''
       });
 
       const result = await checkOllamaInstallation();
@@ -155,7 +153,7 @@ describe('Preflight Checks', () => {
       asyncSpawn.mockResolvedValueOnce({
         status: 127,
         stdout: '',
-        stderr: 'command not found',
+        stderr: 'command not found'
       });
 
       const result = await checkOllamaInstallation();
@@ -220,7 +218,7 @@ describe('Preflight Checks', () => {
       asyncSpawn.mockResolvedValue({
         status: 0,
         stdout: 'Python 3.11.0',
-        stderr: '',
+        stderr: ''
       });
 
       const connRefused = new Error('Connection refused');
@@ -279,12 +277,12 @@ describe('Preflight Checks', () => {
         .mockResolvedValueOnce({
           status: 0,
           stdout: 'Python 3.11.0',
-          stderr: '',
+          stderr: ''
         })
         .mockResolvedValue({
           status: 0,
           stdout: 'ollama 0.1.0',
-          stderr: '',
+          stderr: ''
         });
 
       const reportProgress = jest.fn();
@@ -313,7 +311,7 @@ describe('Preflight Checks', () => {
       asyncSpawn.mockResolvedValue({
         status: 0,
         stdout: 'ollama version 0.1.0',
-        stderr: '',
+        stderr: ''
       });
 
       const reportProgress = jest.fn();

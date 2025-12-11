@@ -18,16 +18,14 @@ function analyzeFilePatterns(files) {
     dates: new Set(),
     types: new Set(),
     categories: new Set(),
-    commonWords: {},
+    commonWords: {}
   };
 
   for (const file of files) {
     if (file.analysis) {
       if (file.analysis.project) patterns.projects.add(file.analysis.project);
-      if (file.analysis.category)
-        patterns.categories.add(file.analysis.category);
-      if (file.analysis.documentDate)
-        patterns.dates.add(file.analysis.documentDate);
+      if (file.analysis.category) patterns.categories.add(file.analysis.category);
+      if (file.analysis.documentDate) patterns.dates.add(file.analysis.documentDate);
     }
 
     // Extract common words from filenames
@@ -43,15 +41,14 @@ function analyzeFilePatterns(files) {
 
   return {
     hasCommonProject: patterns.projects.size === 1,
-    project:
-      patterns.projects.size === 1 ? Array.from(patterns.projects)[0] : null,
+    project: patterns.projects.size === 1 ? Array.from(patterns.projects)[0] : null,
     hasDatePattern: patterns.dates.size > 0,
     dateRange: patterns.dates.size > 0 ? getDateRange(patterns.dates) : null,
     fileTypes: Array.from(patterns.types),
     dominantCategory: findDominantCategory(patterns.categories),
     commonTerms: Object.entries(patterns.commonWords)
       .filter(([, count]) => count > files.length * 0.3)
-      .map(([word]) => word),
+      .map(([word]) => word)
   };
 }
 
@@ -68,14 +65,14 @@ function getDateRange(dates) {
     return {
       start: dateArray[0],
       end: dateArray[0],
-      description: `Single date: ${dateArray[0]}`,
+      description: `Single date: ${dateArray[0]}`
     };
   }
 
   return {
     start: dateArray[0],
     end: dateArray[dateArray.length - 1],
-    description: `${dateArray[0]} to ${dateArray[dateArray.length - 1]}`,
+    description: `${dateArray[0]} to ${dateArray[dateArray.length - 1]}`
   };
 }
 
@@ -107,11 +104,7 @@ function findDominantCategory(categories) {
 function generateBatchRecommendations(groups, patterns) {
   const recommendations = [];
   const normalizedGroups =
-    groups instanceof Map
-      ? Array.from(groups.values())
-      : Array.isArray(groups)
-        ? groups
-        : [];
+    groups instanceof Map ? Array.from(groups.values()) : Array.isArray(groups) ? groups : [];
 
   // Check if files belong to same project
   if (patterns.hasCommonProject) {
@@ -119,7 +112,7 @@ function generateBatchRecommendations(groups, patterns) {
       type: 'project_grouping',
       description: `All files appear to be related to "${patterns.project}"`,
       suggestion: `Consider creating a dedicated project folder: Projects/${patterns.project}`,
-      confidence: 0.9,
+      confidence: 0.9
     });
   }
 
@@ -128,32 +121,23 @@ function generateBatchRecommendations(groups, patterns) {
     recommendations.push({
       type: 'temporal_organization',
       description: `Files span ${patterns.dateRange.description}`,
-      suggestion:
-        'Consider organizing by date for better chronological tracking',
-      confidence: 0.7,
+      suggestion: 'Consider organizing by date for better chronological tracking',
+      confidence: 0.7
     });
   }
 
   // Check for workflow patterns
-  const workflowIndicators = [
-    'draft',
-    'final',
-    'review',
-    'approved',
-    'v1',
-    'v2',
-  ];
+  const workflowIndicators = ['draft', 'final', 'review', 'approved', 'v1', 'v2'];
   const hasWorkflow = patterns.commonTerms.some((term) =>
-    workflowIndicators.includes(term.toLowerCase()),
+    workflowIndicators.includes(term.toLowerCase())
   );
 
   if (hasWorkflow) {
     recommendations.push({
       type: 'workflow_organization',
       description: 'Files show versioning or workflow stages',
-      suggestion:
-        'Consider organizing by workflow stage for better process management',
-      confidence: 0.8,
+      suggestion: 'Consider organizing by workflow stage for better process management',
+      confidence: 0.8
     });
   }
 
@@ -161,9 +145,8 @@ function generateBatchRecommendations(groups, patterns) {
     recommendations.push({
       type: 'batch_cleanup',
       description: 'Large number of destination folders detected',
-      suggestion:
-        'Consider consolidating folders or batching approvals to reduce fragmentation',
-      confidence: 0.6,
+      suggestion: 'Consider consolidating folders or batching approvals to reduce fragmentation',
+      confidence: 0.6
     });
   }
 
@@ -182,7 +165,7 @@ function generateFileSummary(file) {
     file.analysis?.project,
     file.analysis?.purpose,
     file.analysis?.category,
-    (file.analysis?.keywords || []).join(' '),
+    (file.analysis?.keywords || []).join(' ')
   ].filter(Boolean);
 
   return parts.join(' ');
@@ -193,5 +176,5 @@ module.exports = {
   getDateRange,
   findDominantCategory,
   generateBatchRecommendations,
-  generateFileSummary,
+  generateFileSummary
 };

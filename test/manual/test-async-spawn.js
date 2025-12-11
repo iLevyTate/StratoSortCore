@@ -7,7 +7,7 @@ const {
   asyncSpawn,
   hasPythonModuleAsync,
   findPythonLauncherAsync,
-  checkChromaExecutableAsync,
+  checkChromaExecutableAsync
 } = require('../../src/main/utils/asyncSpawnUtils');
 
 async function runTests() {
@@ -19,15 +19,13 @@ async function runTests() {
   try {
     const result = await asyncSpawn(
       process.platform === 'win32' ? 'cmd' : 'echo',
-      process.platform === 'win32'
-        ? ['/c', 'echo', 'Hello World']
-        : ['Hello World'],
+      process.platform === 'win32' ? ['/c', 'echo', 'Hello World'] : ['Hello World'],
       {
         stdio: 'pipe',
         timeout: 2000,
         encoding: 'utf8',
-        shell: process.platform === 'win32',
-      },
+        shell: process.platform === 'win32'
+      }
     );
     console.log('  ✓ Status:', result.status);
     console.log('  ✓ Output:', result.stdout.trim());
@@ -47,8 +45,8 @@ async function runTests() {
       {
         stdio: 'pipe',
         timeout: 100,
-        shell: process.platform === 'win32',
-      },
+        shell: process.platform === 'win32'
+      }
     );
     if (result.timedOut) {
       console.log('  ✓ Correctly timed out');
@@ -64,13 +62,10 @@ async function runTests() {
   try {
     const result = await asyncSpawn('this-command-does-not-exist-12345', [], {
       stdio: 'pipe',
-      timeout: 2000,
+      timeout: 2000
     });
     if (result.error) {
-      console.log(
-        '  ✓ Correctly caught error:',
-        result.error.code || result.error.message,
-      );
+      console.log('  ✓ Correctly caught error:', result.error.code || result.error.message);
     } else {
       console.log("  ✗ Should have errored but didn't");
     }
@@ -83,11 +78,7 @@ async function runTests() {
   try {
     const pythonLauncher = await findPythonLauncherAsync();
     if (pythonLauncher) {
-      console.log(
-        '  ✓ Found Python:',
-        pythonLauncher.command,
-        pythonLauncher.args,
-      );
+      console.log('  ✓ Found Python:', pythonLauncher.command, pythonLauncher.args);
     } else {
       console.log('  ⚠ Python not found (may not be installed)');
     }
@@ -102,14 +93,10 @@ async function runTests() {
     if (hasJson) {
       console.log('  ✓ Found built-in json module');
     } else {
-      console.log(
-        '  ⚠ Could not find json module (Python might not be installed)',
-      );
+      console.log('  ⚠ Could not find json module (Python might not be installed)');
     }
 
-    const hasNonExistent = await hasPythonModuleAsync(
-      'this_module_does_not_exist_12345',
-    );
+    const hasNonExistent = await hasPythonModuleAsync('this_module_does_not_exist_12345');
     if (!hasNonExistent) {
       console.log('  ✓ Correctly reported non-existent module as missing');
     } else {

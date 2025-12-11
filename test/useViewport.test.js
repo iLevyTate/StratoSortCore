@@ -12,8 +12,8 @@ jest.mock('../src/shared/performanceConstants', () => ({
     DESKTOP: 1024,
     WIDE_DESKTOP: 1440,
     ULTRA_WIDE: 2560,
-    FOUR_K: 3840,
-  },
+    FOUR_K: 3840
+  }
 }));
 
 describe('useViewport', () => {
@@ -24,11 +24,11 @@ describe('useViewport', () => {
     // Reset window dimensions
     Object.defineProperty(window, 'innerWidth', {
       writable: true,
-      value: 1920,
+      value: 1920
     });
     Object.defineProperty(window, 'innerHeight', {
       writable: true,
-      value: 1080,
+      value: 1080
     });
     jest.useFakeTimers();
   });
@@ -36,11 +36,11 @@ describe('useViewport', () => {
   afterEach(() => {
     Object.defineProperty(window, 'innerWidth', {
       writable: true,
-      value: originalInnerWidth,
+      value: originalInnerWidth
     });
     Object.defineProperty(window, 'innerHeight', {
       writable: true,
-      value: originalInnerHeight,
+      value: originalInnerHeight
     });
     jest.useRealTimers();
   });
@@ -137,10 +137,7 @@ describe('useViewport', () => {
     const { unmount } = renderHook(() => useViewport());
     unmount();
 
-    expect(removeEventListenerSpy).toHaveBeenCalledWith(
-      'resize',
-      expect.any(Function),
-    );
+    expect(removeEventListenerSpy).toHaveBeenCalledWith('resize', expect.any(Function));
 
     removeEventListenerSpy.mockRestore();
   });

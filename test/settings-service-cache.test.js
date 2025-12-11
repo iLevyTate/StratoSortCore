@@ -14,22 +14,20 @@ describe('SettingsService cache', () => {
   test('load uses cache within TTL and avoids extra disk reads', async () => {
     // Mock shared modules - using correct paths
     jest.doMock('../src/shared/atomicFileOperations', () => ({
-      backupAndReplace: jest.fn().mockResolvedValue({ success: true }),
+      backupAndReplace: jest.fn().mockResolvedValue({ success: true })
     }));
 
     jest.doMock('../src/shared/settingsValidation', () => ({
-      validateSettings: jest
-        .fn()
-        .mockReturnValue({ valid: true, errors: [], warnings: [] }),
-      sanitizeSettings: jest.fn((s) => s),
+      validateSettings: jest.fn().mockReturnValue({ valid: true, errors: [], warnings: [] }),
+      sanitizeSettings: jest.fn((s) => s)
     }));
 
     jest.doMock('../src/shared/defaultSettings', () => ({
       DEFAULT_SETTINGS: {
         notifications: true,
         theme: 'dark',
-        autoStart: false,
-      },
+        autoStart: false
+      }
     }));
 
     jest.doMock('../src/shared/logger', () => ({
@@ -37,15 +35,15 @@ describe('SettingsService cache', () => {
         setContext: jest.fn(),
         info: jest.fn(),
         warn: jest.fn(),
-        error: jest.fn(),
-      },
+        error: jest.fn()
+      }
     }));
 
     jest.doMock('electron', () => ({
       app: {
         getPath: () => path.join(os.tmpdir(), 'stratosort-test-settings'),
-        getVersion: () => '1.0.0',
-      },
+        getVersion: () => '1.0.0'
+      }
     }));
 
     const fs = require('fs');
@@ -57,7 +55,7 @@ describe('SettingsService cache', () => {
     // Mock createBackup method to avoid file system operations
     svc.createBackup = jest.fn().mockResolvedValue({
       success: true,
-      path: '/mock/backup/path',
+      path: '/mock/backup/path'
     });
 
     // First load: file may not exist -> defaults

@@ -10,8 +10,8 @@ const mockOfficeParser = {
       title: 'Mock Document Title',
       author: 'Mock Author',
       pages: 1,
-      wordCount: 10,
-    },
+      wordCount: 10
+    }
   }),
 
   parseOffice: jest.fn().mockReturnValue({
@@ -20,9 +20,9 @@ const mockOfficeParser = {
       title: 'Mock Document Title',
       author: 'Mock Author',
       pages: 1,
-      wordCount: 10,
-    },
-  }),
+      wordCount: 10
+    }
+  })
 };
 
 module.exports = mockOfficeParser;

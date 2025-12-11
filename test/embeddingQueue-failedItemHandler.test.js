@@ -10,21 +10,21 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock persistence
 jest.mock('../src/main/analysis/embeddingQueue/persistence', () => ({
   persistFailedItems: jest.fn().mockResolvedValue(undefined),
-  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined),
+  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined)
 }));
 
 // Mock performance constants
 jest.mock('../src/shared/performanceConstants', () => ({
   RETRY: {
-    BACKOFF_BASE_MS: 100, // Use small values for testing
-  },
+    BACKOFF_BASE_MS: 100 // Use small values for testing
+  }
 }));
 
 describe('Embedding Queue Failed Item Handler', () => {
@@ -46,7 +46,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       expect(handler).toBeDefined();
@@ -61,7 +61,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error message');
@@ -75,7 +75,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error 1');
@@ -89,7 +89,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 2,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
@@ -106,7 +106,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         maxDeadLetterSize: 100,
         maxFailedItemsSize: 2,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
@@ -123,14 +123,14 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
 
       expect(persistence.persistFailedItems).toHaveBeenCalledWith(
         '/path/failed.json',
-        handler.failedItems,
+        handler.failedItems
       );
     });
   });
@@ -141,7 +141,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.addToDeadLetterQueue({ id: 'item1' }, 'Error', 3);
@@ -156,7 +156,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 10,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       for (let i = 0; i < 12; i++) {
@@ -171,7 +171,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.addToDeadLetterQueue({ id: 'folder:test' }, 'Error', 3);
@@ -186,7 +186,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
@@ -205,7 +205,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
@@ -222,7 +222,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
@@ -246,7 +246,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.addToDeadLetterQueue({ id: 'item1' }, 'Error', 3);
@@ -262,7 +262,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       for (let i = 0; i < 5; i++) {
@@ -281,7 +281,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.addToDeadLetterQueue({ id: 'item1' }, 'Error', 3);
@@ -300,7 +300,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.addToDeadLetterQueue({ id: 'item1' }, 'Error', 3);
@@ -308,11 +308,7 @@ describe('Embedding Queue Failed Item Handler', () => {
       const queue = [];
       const persistQueue = jest.fn().mockResolvedValue(undefined);
 
-      const success = await handler.retryDeadLetterItem(
-        'item1',
-        queue,
-        persistQueue,
-      );
+      const success = await handler.retryDeadLetterItem('item1', queue, persistQueue);
 
       expect(success).toBe(true);
       expect(queue).toHaveLength(1);
@@ -324,17 +320,13 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       const queue = [];
       const persistQueue = jest.fn().mockResolvedValue(undefined);
 
-      const success = await handler.retryDeadLetterItem(
-        'nonexistent',
-        queue,
-        persistQueue,
-      );
+      const success = await handler.retryDeadLetterItem('nonexistent', queue, persistQueue);
 
       expect(success).toBe(false);
     });
@@ -346,7 +338,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.addToDeadLetterQueue({ id: 'item1' }, 'Error', 3);
@@ -367,7 +359,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       const count = await handler.retryAllDeadLetterItems([], jest.fn());
@@ -382,7 +374,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       const items = [{ itemId: 'item1' }, { itemId: 'item2' }];
@@ -398,7 +390,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         itemMaxRetries: 3,
         maxDeadLetterSize: 100,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');
@@ -417,7 +409,7 @@ describe('Embedding Queue Failed Item Handler', () => {
         maxDeadLetterSize: 100,
         maxFailedItemsSize: 500,
         failedItemsPath: '/path/failed.json',
-        deadLetterPath: '/path/dlq.json',
+        deadLetterPath: '/path/dlq.json'
       });
 
       handler.trackFailedItem({ id: 'item1' }, 'Error');

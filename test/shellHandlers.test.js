@@ -10,34 +10,32 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler),
+  withErrorLogging: jest.fn((logger, handler) => handler)
 }));
 
 // Mock fs.promises for path validation
 jest.mock('fs', () => ({
   promises: {
     access: jest.fn().mockResolvedValue(undefined),
-    lstat: jest.fn().mockResolvedValue({ isSymbolicLink: () => false }),
-  },
+    lstat: jest.fn().mockResolvedValue({ isSymbolicLink: () => false })
+  }
 }));
 
 // Mock pathSanitization - allow paths through validation
 jest.mock('../src/shared/pathSanitization', () => ({
   validateFileOperationPath: jest.fn().mockImplementation(async (filePath) => ({
     valid: true,
-    normalizedPath: filePath,
+    normalizedPath: filePath
   })),
   sanitizePath: jest.fn((p) => p),
   isPathDangerous: jest.fn(() => false),
-  checkSymlinkSafety: jest
-    .fn()
-    .mockResolvedValue({ isSymlink: false, isSafe: true }),
+  checkSymlinkSafety: jest.fn().mockResolvedValue({ isSymlink: false, isSafe: true })
 }));
 
 describe('Shell Handlers', () => {
@@ -51,12 +49,12 @@ describe('Shell Handlers', () => {
     jest.resetModules();
 
     mockIpcMain = {
-      handle: jest.fn(),
+      handle: jest.fn()
     };
 
     mockShell = {
       openPath: jest.fn().mockResolvedValue(''),
-      showItemInFolder: jest.fn(),
+      showItemInFolder: jest.fn()
     };
 
     handlers = {};
@@ -77,10 +75,10 @@ describe('Shell Handlers', () => {
         IPC_CHANNELS: {
           FILES: {
             OPEN_FILE: 'files:open-file',
-            REVEAL_FILE: 'files:reveal-file',
-          },
+            REVEAL_FILE: 'files:reveal-file'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
 
       expect(mockIpcMain.handle).toHaveBeenCalledTimes(2);
@@ -94,10 +92,10 @@ describe('Shell Handlers', () => {
         IPC_CHANNELS: {
           FILES: {
             OPEN_FILE: 'files:open-file',
-            REVEAL_FILE: 'files:reveal-file',
-          },
+            REVEAL_FILE: 'files:reveal-file'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
     });
 
@@ -140,10 +138,10 @@ describe('Shell Handlers', () => {
         IPC_CHANNELS: {
           FILES: {
             OPEN_FILE: 'files:open-file',
-            REVEAL_FILE: 'files:reveal-file',
-          },
+            REVEAL_FILE: 'files:reveal-file'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
     });
 
@@ -152,9 +150,7 @@ describe('Shell Handlers', () => {
       const result = await handler({}, '/path/to/file.pdf');
 
       expect(result.success).toBe(true);
-      expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
-        '/path/to/file.pdf',
-      );
+      expect(mockShell.showItemInFolder).toHaveBeenCalledWith('/path/to/file.pdf');
     });
 
     test('handles reveal error', async () => {
@@ -175,9 +171,7 @@ describe('Shell Handlers', () => {
       const result = await handler({}, '/path/to/file with spaces.pdf');
 
       expect(result.success).toBe(true);
-      expect(mockShell.showItemInFolder).toHaveBeenCalledWith(
-        '/path/to/file with spaces.pdf',
-      );
+      expect(mockShell.showItemInFolder).toHaveBeenCalledWith('/path/to/file with spaces.pdf');
     });
   });
 });

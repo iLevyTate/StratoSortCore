@@ -12,7 +12,7 @@ const Select = memo(
       children,
       ...rest
     },
-    ref,
+    ref
   ) {
     // Always call useId unconditionally to follow React hooks rules
     const generatedId = useId();
@@ -21,9 +21,7 @@ const Select = memo(
 
     const classes = useMemo(() => {
       const invalidClass =
-        invalid || error
-          ? 'border-stratosort-danger focus:ring-stratosort-danger/20'
-          : '';
+        invalid || error ? 'border-stratosort-danger focus:ring-stratosort-danger/20' : '';
       return `form-input-enhanced ${invalidClass} ${className}`.trim();
     }, [invalid, error, className]);
 
@@ -47,16 +45,10 @@ const Select = memo(
     return (
       <div className="flex flex-col gap-2">
         {label && (
-          <label
-            htmlFor={id}
-            className="text-sm font-medium text-system-gray-700"
-          >
+          <label htmlFor={id} className="text-sm font-medium text-system-gray-700">
             {label}
             {required && (
-              <span
-                className="text-stratosort-danger ml-1"
-                aria-label="required"
-              >
+              <span className="text-stratosort-danger ml-1" aria-label="required">
                 *
               </span>
             )}
@@ -76,17 +68,13 @@ const Select = memo(
           {children}
         </select>
         {error && (
-          <p
-            id={errorId}
-            className="text-sm text-stratosort-danger"
-            role="alert"
-          >
+          <p id={errorId} className="text-sm text-stratosort-danger" role="alert">
             {error}
           </p>
         )}
       </div>
     );
-  }),
+  })
 );
 
 Select.propTypes = {
@@ -95,7 +83,7 @@ Select.propTypes = {
   error: PropTypes.string,
   label: PropTypes.string,
   required: PropTypes.bool,
-  children: PropTypes.node,
+  children: PropTypes.node
 };
 
 export default Select;

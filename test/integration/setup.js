@@ -13,7 +13,10 @@ global.console = {
   ...originalConsole,
   log: jest.fn((...args) => {
     const message = args[0];
-    if (typeof message === 'string' && (message.includes('[TEST]') || message.includes('[INTEGRATION]'))) {
+    if (
+      typeof message === 'string' &&
+      (message.includes('[TEST]') || message.includes('[INTEGRATION]'))
+    ) {
       originalConsole.log(...args);
     }
   }),
@@ -22,7 +25,7 @@ global.console = {
     originalConsole.error(...args);
   }),
   debug: jest.fn(),
-  info: jest.fn(),
+  info: jest.fn()
 };
 
 // Integration test utilities
@@ -38,7 +41,7 @@ global.integrationTestUtils = {
       } catch (e) {
         // Continue waiting
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
     return false;
   },
@@ -46,7 +49,7 @@ global.integrationTestUtils = {
   // Log integration test metric
   logMetric: (name, value, unit = '') => {
     originalConsole.log(`[INTEGRATION] ${name}: ${value}${unit}`);
-  },
+  }
 };
 
 // Cleanup after each test

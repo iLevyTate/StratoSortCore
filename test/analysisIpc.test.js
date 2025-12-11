@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock zod as unavailable to test fallback path
@@ -24,16 +24,16 @@ jest.mock('fs', () => ({
   promises: {
     stat: jest.fn().mockResolvedValue({
       size: 1024,
-      mtimeMs: Date.now(),
-    }),
-  },
+      mtimeMs: Date.now()
+    })
+  }
 }));
 
 // Mock perf_hooks
 jest.mock('perf_hooks', () => ({
   performance: {
-    now: jest.fn().mockReturnValue(0),
-  },
+    now: jest.fn().mockReturnValue(0)
+  }
 }));
 
 describe('registerAnalysisIpc', () => {
@@ -60,7 +60,7 @@ describe('registerAnalysisIpc', () => {
     mockIpcMain = {
       handle: jest.fn((channel, handler) => {
         handlers[channel] = handler;
-      }),
+      })
     };
 
     mockAnalyzeDocumentFile = jest.fn().mockResolvedValue({
@@ -68,23 +68,23 @@ describe('registerAnalysisIpc', () => {
       category: 'documents',
       keywords: ['test', 'document'],
       confidence: 0.9,
-      purpose: 'Test document',
+      purpose: 'Test document'
     });
 
     mockAnalyzeImageFile = jest.fn().mockResolvedValue({
       suggestedName: 'analyzed-image.jpg',
       category: 'images',
       keywords: ['photo'],
-      confidence: 0.85,
+      confidence: 0.85
     });
 
     mockTesseract = {
-      recognize: jest.fn().mockResolvedValue('Extracted text'),
+      recognize: jest.fn().mockResolvedValue('Extracted text')
     };
 
     mockSystemAnalytics = {
       recordProcessingTime: jest.fn(),
-      recordFailure: jest.fn(),
+      recordFailure: jest.fn()
     };
 
     const mockProcessingState = {
@@ -92,21 +92,21 @@ describe('registerAnalysisIpc', () => {
       markAnalysisComplete: jest.fn().mockResolvedValue(undefined),
       markAnalysisError: jest.fn().mockResolvedValue(undefined),
       getState: jest.fn().mockReturnValue('in_progress'),
-      clearState: jest.fn().mockResolvedValue(undefined),
+      clearState: jest.fn().mockResolvedValue(undefined)
     };
 
     const mockAnalysisHistory = {
-      recordAnalysis: jest.fn().mockResolvedValue(undefined),
+      recordAnalysis: jest.fn().mockResolvedValue(undefined)
     };
 
     mockGetServiceIntegration = jest.fn().mockReturnValue({
       processingState: mockProcessingState,
-      analysisHistory: mockAnalysisHistory,
+      analysisHistory: mockAnalysisHistory
     });
 
     mockGetCustomFolders = jest.fn().mockReturnValue([
       { id: '1', name: 'Documents', description: 'Doc folder' },
-      { id: '2', name: 'Images', description: 'Image folder' },
+      { id: '2', name: 'Images', description: 'Image folder' }
     ]);
 
     mockLogger = {
@@ -114,7 +114,7 @@ describe('registerAnalysisIpc', () => {
       info: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: jest.fn()
     };
 
     registerAnalysisIpc = require('../src/main/ipc/analysis');
@@ -130,7 +130,7 @@ describe('registerAnalysisIpc', () => {
       analyzeDocumentFile: mockAnalyzeDocumentFile,
       analyzeImageFile: mockAnalyzeImageFile,
       getServiceIntegration: mockGetServiceIntegration,
-      getCustomFolders: mockGetCustomFolders,
+      getCustomFolders: mockGetCustomFolders
     });
 
     expect(mockIpcMain.handle).toHaveBeenCalledTimes(3);
@@ -150,20 +150,14 @@ describe('registerAnalysisIpc', () => {
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
         getServiceIntegration: mockGetServiceIntegration,
-        getCustomFolders: mockGetCustomFolders,
+        getCustomFolders: mockGetCustomFolders
       });
     });
 
     test('analyzes document successfully', async () => {
-      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
-        {},
-        '/test/doc.pdf',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
-      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith(
-        '/test/doc.pdf',
-        expect.any(Array),
-      );
+      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith('/test/doc.pdf', expect.any(Array));
       expect(result.suggestedName).toBe('analyzed-document.pdf');
       expect(result.category).toBe('documents');
     });
@@ -171,13 +165,10 @@ describe('registerAnalysisIpc', () => {
     test('passes custom folders to analysis', async () => {
       await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
-      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith(
-        '/test/doc.pdf',
-        [
-          { id: '1', name: 'Documents', description: 'Doc folder' },
-          { id: '2', name: 'Images', description: 'Image folder' },
-        ],
-      );
+      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith('/test/doc.pdf', [
+        { id: '1', name: 'Documents', description: 'Doc folder' },
+        { id: '2', name: 'Images', description: 'Image folder' }
+      ]);
     });
 
     test('records processing time', async () => {
@@ -189,10 +180,7 @@ describe('registerAnalysisIpc', () => {
     test('handles analysis error gracefully', async () => {
       mockAnalyzeDocumentFile.mockRejectedValueOnce(new Error('Analysis failed'));
 
-      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
-        {},
-        '/test/doc.pdf',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
       expect(result.error).toBe('Analysis failed');
       expect(result.category).toBe('documents');
@@ -217,13 +205,10 @@ describe('registerAnalysisIpc', () => {
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
         getServiceIntegration: mockGetServiceIntegration,
-        getCustomFolders: null,
+        getCustomFolders: null
       });
 
-      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
-        {},
-        '/test/doc.pdf',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
       expect(result.suggestedName).toBeDefined();
     });
@@ -233,10 +218,7 @@ describe('registerAnalysisIpc', () => {
         throw new Error('Folder error');
       });
 
-      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT](
-        {},
-        '/test/doc.pdf',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
       // Should still complete analysis
       expect(result.suggestedName).toBeDefined();
@@ -254,20 +236,14 @@ describe('registerAnalysisIpc', () => {
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
         getServiceIntegration: mockGetServiceIntegration,
-        getCustomFolders: mockGetCustomFolders,
+        getCustomFolders: mockGetCustomFolders
       });
     });
 
     test('analyzes image successfully', async () => {
-      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE](
-        {},
-        '/test/image.jpg',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE]({}, '/test/image.jpg');
 
-      expect(mockAnalyzeImageFile).toHaveBeenCalledWith(
-        '/test/image.jpg',
-        expect.any(Array),
-      );
+      expect(mockAnalyzeImageFile).toHaveBeenCalledWith('/test/image.jpg', expect.any(Array));
       expect(result.suggestedName).toBe('analyzed-image.jpg');
       expect(result.category).toBe('images');
     });
@@ -275,10 +251,7 @@ describe('registerAnalysisIpc', () => {
     test('handles image analysis error', async () => {
       mockAnalyzeImageFile.mockRejectedValueOnce(new Error('Vision failed'));
 
-      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE](
-        {},
-        '/test/image.jpg',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.ANALYZE_IMAGE]({}, '/test/image.jpg');
 
       expect(result.error).toBe('Vision failed');
       expect(result.category).toBe('images');
@@ -296,23 +269,20 @@ describe('registerAnalysisIpc', () => {
         analyzeDocumentFile: mockAnalyzeDocumentFile,
         analyzeImageFile: mockAnalyzeImageFile,
         getServiceIntegration: mockGetServiceIntegration,
-        getCustomFolders: mockGetCustomFolders,
+        getCustomFolders: mockGetCustomFolders
       });
     });
 
     test('extracts text from image', async () => {
-      const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT](
-        {},
-        '/test/scan.png',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]({}, '/test/scan.png');
 
       expect(mockTesseract.recognize).toHaveBeenCalledWith(
         '/test/scan.png',
         expect.objectContaining({
           lang: 'eng',
           oem: 1,
-          psm: 3,
-        }),
+          psm: 3
+        })
       );
       expect(result.success).toBe(true);
       expect(result.text).toBe('Extracted text');
@@ -321,10 +291,7 @@ describe('registerAnalysisIpc', () => {
     test('handles OCR error', async () => {
       mockTesseract.recognize.mockRejectedValueOnce(new Error('OCR failed'));
 
-      const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT](
-        {},
-        '/test/scan.png',
-      );
+      const result = await handlers[ANALYSIS_CHANNELS.EXTRACT_IMAGE_TEXT]({}, '/test/scan.png');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('OCR failed');

@@ -24,26 +24,26 @@ describe('AutoOrganizeService', () => {
       feedbackHistory: [],
       folderUsageStats: new Map([
         ['Documents', 10],
-        ['Images', 5],
-      ]),
+        ['Images', 5]
+      ])
     };
 
     mockSettingsService = {
       get: jest.fn((key) => {
         const settings = {
           autoApproveThreshold: 0.8,
-          reviewThreshold: 0.5,
+          reviewThreshold: 0.5
         };
         return settings[key];
-      }),
+      })
     };
 
     mockFolderMatchingService = {
-      matchFile: jest.fn(),
+      matchFile: jest.fn()
     };
 
     mockUndoRedoService = {
-      recordAction: jest.fn(),
+      recordAction: jest.fn()
     };
 
     // Mock smart folders
@@ -52,27 +52,27 @@ describe('AutoOrganizeService', () => {
         id: 'folder-1',
         name: 'Documents',
         path: '/base/Documents',
-        description: 'Document files',
+        description: 'Document files'
       },
       {
         id: 'folder-2',
         name: 'Images',
         path: '/base/Images',
-        description: 'Image files',
+        description: 'Image files'
       },
       {
         id: 'folder-3',
         name: 'Code',
         path: '/base/Code',
-        description: 'Source code files',
-      },
+        description: 'Source code files'
+      }
     ];
 
     service = new AutoOrganizeService({
       suggestionService: mockSuggestionService,
       settingsService: mockSettingsService,
       folderMatchingService: mockFolderMatchingService,
-      undoRedoService: mockUndoRedoService,
+      undoRedoService: mockUndoRedoService
     });
   });
 
@@ -104,17 +104,17 @@ describe('AutoOrganizeService', () => {
             name: 'document.pdf',
             path: '/downloads/document.pdf',
             extension: '.pdf',
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
           success: true,
           primary: {
             folder: 'Documents',
-            path: '/base/Documents',
+            path: '/base/Documents'
           },
-          confidence: 0.9,
+          confidence: 0.9
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -132,17 +132,17 @@ describe('AutoOrganizeService', () => {
             name: 'photo.jpg',
             path: '/downloads/photo.jpg',
             extension: '.jpg',
-            analysis: { category: 'image' },
-          },
+            analysis: { category: 'image' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
           success: true,
           primary: {
             folder: 'Images',
-            path: '/base/Images',
+            path: '/base/Images'
           },
-          confidence: 0.85,
+          confidence: 0.85
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -151,7 +151,7 @@ describe('AutoOrganizeService', () => {
         expect(result.operations[0]).toEqual({
           type: 'move',
           source: '/downloads/photo.jpg',
-          destination: expect.stringContaining('Images'),
+          destination: expect.stringContaining('Images')
         });
       });
 
@@ -159,25 +159,23 @@ describe('AutoOrganizeService', () => {
         const file = {
           name: 'document.pdf',
           path: '/downloads/document.pdf',
-          analysis: { category: 'document' },
+          analysis: { category: 'document' }
         };
 
         const suggestion = {
           success: true,
           primary: { folder: 'Documents', path: '/base/Documents' },
-          confidence: 0.9,
+          confidence: 0.9
         };
 
-        mockSuggestionService.getSuggestionsForFile.mockResolvedValue(
-          suggestion,
-        );
+        mockSuggestionService.getSuggestionsForFile.mockResolvedValue(suggestion);
 
         await service.organizeFiles([file], mockSmartFolders);
 
         expect(mockSuggestionService.recordFeedback).toHaveBeenCalledWith(
           file,
           suggestion.primary,
-          true,
+          true
         );
       });
     });
@@ -189,8 +187,8 @@ describe('AutoOrganizeService', () => {
             name: 'ambiguous.txt',
             path: '/downloads/ambiguous.txt',
             extension: '.txt',
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
@@ -198,7 +196,7 @@ describe('AutoOrganizeService', () => {
           primary: { folder: 'Documents', path: '/base/Documents' },
           confidence: 0.6,
           alternatives: [{ folder: 'Code', confidence: 0.55 }],
-          explanation: 'Could be a document or code file',
+          explanation: 'Could be a document or code file'
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -214,22 +212,20 @@ describe('AutoOrganizeService', () => {
           {
             name: 'file.txt',
             path: '/downloads/file.txt',
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
           success: true,
           primary: { folder: 'Documents' },
           confidence: 0.65,
-          explanation: 'Multiple possible folders',
+          explanation: 'Multiple possible folders'
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
 
-        expect(result.needsReview[0].explanation).toBe(
-          'Multiple possible folders',
-        );
+        expect(result.needsReview[0].explanation).toBe('Multiple possible folders');
       });
     });
 
@@ -240,14 +236,14 @@ describe('AutoOrganizeService', () => {
             name: 'unknown.xyz',
             path: '/downloads/unknown.xyz',
             extension: '.xyz',
-            analysis: { category: 'unknown' },
-          },
+            analysis: { category: 'unknown' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
           success: true,
           primary: { folder: 'Documents' },
-          confidence: 0.2,
+          confidence: 0.2
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -263,12 +259,12 @@ describe('AutoOrganizeService', () => {
             name: 'file.pdf',
             path: '/downloads/file.pdf',
             extension: '.pdf',
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
-          success: false,
+          success: false
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -284,9 +280,9 @@ describe('AutoOrganizeService', () => {
         const files = [
           {
             name: 'noanalysis.pdf',
-            path: '/downloads/noanalysis.pdf',
+            path: '/downloads/noanalysis.pdf'
             // Missing analysis field
-          },
+          }
         ];
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -305,12 +301,12 @@ describe('AutoOrganizeService', () => {
             name: 'error.pdf',
             path: '/downloads/error.pdf',
             extension: '.pdf', // FIXED: Added extension property for fallback logic
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockRejectedValue(
-          new Error('Service unavailable'),
+          new Error('Service unavailable')
         );
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -329,13 +325,13 @@ describe('AutoOrganizeService', () => {
           {
             name: 'error.pdf',
             path: '/downloads/error.pdf',
-            analysis: { category: 'document' },
+            analysis: { category: 'document' }
           },
           {
             name: 'success.pdf',
             path: '/downloads/success.pdf',
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile
@@ -343,7 +339,7 @@ describe('AutoOrganizeService', () => {
           .mockResolvedValueOnce({
             success: true,
             primary: { folder: 'Documents', path: '/base/Documents' },
-            confidence: 0.9,
+            confidence: 0.9
           });
 
         const result = await service.organizeFiles(files, mockSmartFolders);
@@ -359,25 +355,25 @@ describe('AutoOrganizeService', () => {
           {
             name: 'file.pdf',
             path: '/downloads/file.pdf',
-            analysis: { category: 'document' },
-          },
+            analysis: { category: 'document' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
           success: true,
           primary: { folder: 'Documents', path: '/base/Documents' },
-          confidence: 0.7,
+          confidence: 0.7
         });
 
         // With threshold 0.6, should auto-organize
         const result1 = await service.organizeFiles(files, mockSmartFolders, {
-          confidenceThreshold: 0.6,
+          confidenceThreshold: 0.6
         });
         expect(result1.organized).toHaveLength(1);
 
         // With threshold 0.8, should need review
         const result2 = await service.organizeFiles(files, mockSmartFolders, {
-          confidenceThreshold: 0.8,
+          confidenceThreshold: 0.8
         });
         expect(result2.needsReview).toHaveLength(1);
       });
@@ -388,16 +384,16 @@ describe('AutoOrganizeService', () => {
             name: 'file.xyz', // Use a file extension that doesn't match any smart folder
             path: '/downloads/file.xyz',
             extension: '.xyz',
-            analysis: { category: 'CustomType' },
-          },
+            analysis: { category: 'CustomType' }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
-          success: false,
+          success: false
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders, {
-          defaultLocation: '/custom/location',
+          defaultLocation: '/custom/location'
         });
 
         expect(result.organized.length).toBeGreaterThan(0);
@@ -415,19 +411,19 @@ describe('AutoOrganizeService', () => {
             path: '/downloads/original-name.pdf',
             analysis: {
               category: 'document',
-              suggestedName: 'suggested-name.pdf',
-            },
-          },
+              suggestedName: 'suggested-name.pdf'
+            }
+          }
         ];
 
         mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
           success: true,
           primary: { folder: 'Documents', path: '/base/Documents' },
-          confidence: 0.9,
+          confidence: 0.9
         });
 
         const result = await service.organizeFiles(files, mockSmartFolders, {
-          preserveNames: true,
+          preserveNames: true
         });
 
         expect(result.organized[0].destination).toContain('original-name.pdf');
@@ -440,7 +436,7 @@ describe('AutoOrganizeService', () => {
       test('auto-approves high confidence groups', async () => {
         const files = [
           { name: 'doc1.pdf', path: '/downloads/doc1.pdf', analysis: {} },
-          { name: 'doc2.pdf', path: '/downloads/doc2.pdf', analysis: {} },
+          { name: 'doc2.pdf', path: '/downloads/doc2.pdf', analysis: {} }
         ];
 
         mockSuggestionService.getBatchSuggestions.mockResolvedValue({
@@ -450,9 +446,9 @@ describe('AutoOrganizeService', () => {
               folder: 'Documents',
               path: '/base/Documents',
               files: files,
-              confidence: 0.9,
-            },
-          ],
+              confidence: 0.9
+            }
+          ]
         });
 
         const result = await service.batchOrganize(files, mockSmartFolders);
@@ -463,9 +459,7 @@ describe('AutoOrganizeService', () => {
       });
 
       test('skips low confidence groups', async () => {
-        const files = [
-          { name: 'doc1.pdf', path: '/downloads/doc1.pdf', analysis: {} },
-        ];
+        const files = [{ name: 'doc1.pdf', path: '/downloads/doc1.pdf', analysis: {} }];
 
         mockSuggestionService.getBatchSuggestions.mockResolvedValue({
           success: true,
@@ -474,9 +468,9 @@ describe('AutoOrganizeService', () => {
               folder: 'Documents',
               path: '/base/Documents',
               files: files,
-              confidence: 0.6,
-            },
-          ],
+              confidence: 0.6
+            }
+          ]
         });
 
         const result = await service.batchOrganize(files, mockSmartFolders);
@@ -491,7 +485,7 @@ describe('AutoOrganizeService', () => {
           name: 'doc1.pdf',
           path: '/downloads/doc1.pdf',
           analysis: {},
-          suggestion: { folder: 'Documents' },
+          suggestion: { folder: 'Documents' }
         };
 
         mockSuggestionService.getBatchSuggestions.mockResolvedValue({
@@ -501,9 +495,9 @@ describe('AutoOrganizeService', () => {
               folder: 'Documents',
               path: '/base/Documents',
               files: [file],
-              confidence: 0.9,
-            },
-          ],
+              confidence: 0.9
+            }
+          ]
         });
 
         await service.batchOrganize([file], mockSmartFolders);
@@ -511,7 +505,7 @@ describe('AutoOrganizeService', () => {
         expect(mockSuggestionService.recordFeedback).toHaveBeenCalledWith(
           file,
           file.suggestion,
-          true,
+          true
         );
       });
     });
@@ -519,19 +513,17 @@ describe('AutoOrganizeService', () => {
     describe('error handling and resilience', () => {
       test('handles batch suggestion service failure', async () => {
         mockSuggestionService.getBatchSuggestions.mockResolvedValue({
-          success: false,
+          success: false
         });
 
-        await expect(
-          service.batchOrganize([], mockSmartFolders),
-        ).rejects.toThrow('Failed to get batch suggestions');
+        await expect(service.batchOrganize([], mockSmartFolders)).rejects.toThrow(
+          'Failed to get batch suggestions'
+        );
       });
 
       test('continues batch after individual group error', async () => {
         const files1 = [{ name: 'error.pdf', path: '/downloads/error.pdf' }];
-        const files2 = [
-          { name: 'success.pdf', path: '/downloads/success.pdf' },
-        ];
+        const files2 = [{ name: 'success.pdf', path: '/downloads/success.pdf' }];
 
         mockSuggestionService.getBatchSuggestions.mockResolvedValue({
           success: true,
@@ -540,15 +532,15 @@ describe('AutoOrganizeService', () => {
               folder: 'Documents',
               path: '/base/Documents',
               files: files1,
-              confidence: 0.9,
+              confidence: 0.9
             },
             {
               folder: 'Images',
               path: '/base/Images',
               files: files2,
-              confidence: 0.9,
-            },
-          ],
+              confidence: 0.9
+            }
+          ]
         });
 
         // Mock buildDestinationPath to throw for first file
@@ -562,14 +554,11 @@ describe('AutoOrganizeService', () => {
             file,
             { folder: 'Images', path: '/base/Images' },
             'Documents',
-            false,
+            false
           );
         });
 
-        const result = await service.batchOrganize(
-          [...files1, ...files2],
-          mockSmartFolders,
-        );
+        const result = await service.batchOrganize([...files1, ...files2], mockSmartFolders);
 
         expect(result.failed.length).toBeGreaterThan(0);
         expect(result.operations.length).toBeGreaterThan(0);
@@ -580,7 +569,7 @@ describe('AutoOrganizeService', () => {
       test('tracks partial success in groups', async () => {
         const files = [
           { name: 'doc1.pdf', path: '/downloads/doc1.pdf' },
-          { name: 'doc2.pdf', path: '/downloads/doc2.pdf' },
+          { name: 'doc2.pdf', path: '/downloads/doc2.pdf' }
         ];
 
         mockSuggestionService.getBatchSuggestions.mockResolvedValue({
@@ -590,9 +579,9 @@ describe('AutoOrganizeService', () => {
               folder: 'Documents',
               path: '/base/Documents',
               files: files,
-              confidence: 0.9,
-            },
-          ],
+              confidence: 0.9
+            }
+          ]
         });
 
         const originalBuild = service.buildDestinationPath;
@@ -625,20 +614,20 @@ describe('AutoOrganizeService', () => {
               folder: 'Documents',
               path: '/base/Documents',
               files: files,
-              confidence: 0.7,
-            },
-          ],
+              confidence: 0.7
+            }
+          ]
         });
 
         // With threshold 0.6, should auto-approve
         const result1 = await service.batchOrganize(files, mockSmartFolders, {
-          autoApproveThreshold: 0.6,
+          autoApproveThreshold: 0.6
         });
         expect(result1.groups).toHaveLength(1);
 
         // With threshold 0.8, should skip
         const result2 = await service.batchOrganize(files, mockSmartFolders, {
-          autoApproveThreshold: 0.8,
+          autoApproveThreshold: 0.8
         });
         expect(result2.skipped).toHaveLength(1);
       });
@@ -649,14 +638,10 @@ describe('AutoOrganizeService', () => {
     test('matches file by type to existing smart folder', () => {
       const file = {
         name: 'photo.jpg',
-        extension: '.jpg',
+        extension: '.jpg'
       };
 
-      const destination = service.getFallbackDestination(
-        file,
-        mockSmartFolders,
-        'Documents',
-      );
+      const destination = service.getFallbackDestination(file, mockSmartFolders, 'Documents');
 
       expect(destination).toContain('Images');
       expect(destination).toContain('photo.jpg');
@@ -667,15 +652,11 @@ describe('AutoOrganizeService', () => {
         name: 'file.xyz', // Use an extension that doesn't match any type category
         extension: '.xyz',
         analysis: {
-          category: 'Code',
-        },
+          category: 'Code'
+        }
       };
 
-      const destination = service.getFallbackDestination(
-        file,
-        mockSmartFolders,
-        'Documents',
-      );
+      const destination = service.getFallbackDestination(file, mockSmartFolders, 'Documents');
 
       // Should find the Code folder from smart folders based on analysis category
       expect(destination.replace(/\\/g, '/')).toContain('Code');
@@ -686,15 +667,11 @@ describe('AutoOrganizeService', () => {
         name: 'file.xyz',
         extension: '.xyz',
         analysis: {
-          category: 'CustomType',
-        },
+          category: 'CustomType'
+        }
       };
 
-      const destination = service.getFallbackDestination(
-        file,
-        mockSmartFolders,
-        '/base',
-      );
+      const destination = service.getFallbackDestination(file, mockSmartFolders, '/base');
 
       expect(destination).toContain('CustomType');
       expect(destination).toContain('file.xyz');
@@ -703,14 +680,10 @@ describe('AutoOrganizeService', () => {
     test('falls back to file type category when no match', () => {
       const file = {
         name: 'unknown.xyz',
-        extension: '.xyz',
+        extension: '.xyz'
       };
 
-      const destination = service.getFallbackDestination(
-        file,
-        mockSmartFolders,
-        '/base',
-      );
+      const destination = service.getFallbackDestination(file, mockSmartFolders, '/base');
 
       expect(destination).toContain('Files');
     });
@@ -720,20 +693,15 @@ describe('AutoOrganizeService', () => {
     test('builds path from suggestion', () => {
       const file = {
         name: 'document.pdf',
-        analysis: {},
+        analysis: {}
       };
 
       const suggestion = {
         folder: 'Documents',
-        path: '/base/Documents',
+        path: '/base/Documents'
       };
 
-      const destination = service.buildDestinationPath(
-        file,
-        suggestion,
-        'Documents',
-        false,
-      );
+      const destination = service.buildDestinationPath(file, suggestion, 'Documents', false);
 
       expect(destination).toBe(path.join('/base/Documents', 'document.pdf'));
     });
@@ -742,20 +710,15 @@ describe('AutoOrganizeService', () => {
       const file = {
         name: 'document.pdf',
         analysis: {
-          suggestedName: 'better-name.pdf',
-        },
+          suggestedName: 'better-name.pdf'
+        }
       };
 
       const suggestion = {
-        path: '/base/Documents',
+        path: '/base/Documents'
       };
 
-      const destination = service.buildDestinationPath(
-        file,
-        suggestion,
-        'Documents',
-        false,
-      );
+      const destination = service.buildDestinationPath(file, suggestion, 'Documents', false);
 
       expect(destination).toContain('better-name.pdf');
     });
@@ -764,19 +727,19 @@ describe('AutoOrganizeService', () => {
       const file = {
         name: 'original.pdf',
         analysis: {
-          suggestedName: 'suggested.pdf',
-        },
+          suggestedName: 'suggested.pdf'
+        }
       };
 
       const suggestion = {
-        path: '/base/Documents',
+        path: '/base/Documents'
       };
 
       const destination = service.buildDestinationPath(
         file,
         suggestion,
         'Documents',
-        true, // preserveNames
+        true // preserveNames
       );
 
       expect(destination).toContain('original.pdf');
@@ -786,19 +749,14 @@ describe('AutoOrganizeService', () => {
     test('uses default location when suggestion has no path', () => {
       const file = {
         name: 'file.pdf',
-        analysis: {},
+        analysis: {}
       };
 
       const suggestion = {
-        folder: 'Documents',
+        folder: 'Documents'
       };
 
-      const destination = service.buildDestinationPath(
-        file,
-        suggestion,
-        '/custom/location',
-        false,
-      );
+      const destination = service.buildDestinationPath(file, suggestion, '/custom/location', false);
 
       // Normalize path separators for cross-platform testing
       const normalized = destination.replace(/\\/g, '/');
@@ -860,7 +818,7 @@ describe('AutoOrganizeService', () => {
       expect(stats.feedbackHistory).toBe(1);
       expect(stats.folderUsageStats).toEqual([
         ['Documents', 10],
-        ['Images', 5],
+        ['Images', 5]
       ]);
       expect(stats.thresholds).toEqual(service.thresholds);
     });
@@ -870,7 +828,7 @@ describe('AutoOrganizeService', () => {
     test('updates confidence thresholds', () => {
       const newThresholds = {
         autoApprove: 0.9,
-        requireReview: 0.6,
+        requireReview: 0.6
       };
 
       service.updateThresholds(newThresholds);

@@ -17,7 +17,7 @@ const {
   handleBatchOrganize,
   computeFileChecksum,
   MAX_BATCH_SIZE,
-  MAX_TOTAL_BATCH_TIME,
+  MAX_TOTAL_BATCH_TIME
 } = require('./batchOrganizeHandler');
 
 /**
@@ -39,7 +39,7 @@ function registerFilesIpc({
   dialog,
   shell,
   getMainWindow,
-  getServiceIntegration,
+  getServiceIntegration
 }) {
   // Register file selection handlers (SELECT dialog)
   registerFileSelectionHandlers({
@@ -47,7 +47,7 @@ function registerFilesIpc({
     IPC_CHANNELS,
     logger,
     dialog,
-    getMainWindow,
+    getMainWindow
   });
 
   // Register file operation handlers (PERFORM_OPERATION, DELETE_FILE, COPY_FILE)
@@ -56,21 +56,21 @@ function registerFilesIpc({
     IPC_CHANNELS,
     logger,
     getServiceIntegration,
-    getMainWindow,
+    getMainWindow
   });
 
   // Register folder handlers (OPEN_FOLDER, DELETE_FOLDER)
   registerFolderHandlers({
     ipcMain,
     IPC_CHANNELS,
-    shell,
+    shell
   });
 
   // Register shell handlers (OPEN_FILE, REVEAL_FILE)
   registerShellHandlers({
     ipcMain,
     IPC_CHANNELS,
-    shell,
+    shell
   });
 }
 

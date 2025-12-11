@@ -10,17 +10,17 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
   updateIncrementalStatsOnRemove: jest.fn(),
-  invalidateCachesOnRemove: jest.fn(),
+  invalidateCachesOnRemove: jest.fn()
 }));
 
 jest.mock('../src/main/services/analysisHistory/indexManager', () => ({
-  removeFromIndexes: jest.fn(),
+  removeFromIndexes: jest.fn()
 }));
 
 describe('maintenance', () => {
@@ -43,16 +43,16 @@ describe('maintenance', () => {
         entries: {
           1: { id: '1', timestamp: '2024-01-10' },
           2: { id: '2', timestamp: '2024-01-15' },
-          3: { id: '3', timestamp: '2024-01-20' },
+          3: { id: '3', timestamp: '2024-01-20' }
         },
-        metadata: {},
+        metadata: {}
       };
       const index = {};
       const cache = {};
       const state = {};
       const config = {
         maxHistoryEntries: 2,
-        retentionDays: 365,
+        retentionDays: 365
       };
       const saveHistory = jest.fn().mockResolvedValue();
       const saveIndex = jest.fn().mockResolvedValue();
@@ -76,13 +76,13 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { timestamp: recentDate },
-          2: { timestamp: recentDate },
+          2: { timestamp: recentDate }
         },
-        metadata: {},
+        metadata: {}
       };
       const config = {
         maxHistoryEntries: 100,
-        retentionDays: 365,
+        retentionDays: 365
       };
       const saveHistory = jest.fn();
       const saveIndex = jest.fn();
@@ -109,9 +109,9 @@ describe('maintenance', () => {
           1: { id: '1', timestamp: '2024-01-10' },
           2: { id: '2', timestamp: '2024-01-15' },
           3: { id: '3', timestamp: '2024-01-20' },
-          4: { id: '4', timestamp: '2024-01-25' },
+          4: { id: '4', timestamp: '2024-01-25' }
         },
-        metadata: {},
+        metadata: {}
       };
       const index = {};
       const cache = {};
@@ -141,22 +141,14 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: '2024-01-10' },
-          2: { id: '2', timestamp: '2024-01-20' },
+          2: { id: '2', timestamp: '2024-01-20' }
         },
-        metadata: {},
+        metadata: {}
       };
       const cache = {};
       const config = { maxHistoryEntries: 1 };
 
-      await maintenance.cleanupOldEntries(
-        history,
-        {},
-        cache,
-        {},
-        config,
-        jest.fn(),
-        jest.fn()
-      );
+      await maintenance.cleanupOldEntries(history, {}, cache, {}, config, jest.fn(), jest.fn());
 
       expect(cacheManager.updateIncrementalStatsOnRemove).toHaveBeenCalled();
     });
@@ -165,22 +157,14 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: '2024-01-10' },
-          2: { id: '2', timestamp: '2024-01-20' },
+          2: { id: '2', timestamp: '2024-01-20' }
         },
-        metadata: {},
+        metadata: {}
       };
       const index = {};
       const config = { maxHistoryEntries: 1 };
 
-      await maintenance.cleanupOldEntries(
-        history,
-        index,
-        {},
-        {},
-        config,
-        jest.fn(),
-        jest.fn()
-      );
+      await maintenance.cleanupOldEntries(history, index, {}, {}, config, jest.fn(), jest.fn());
 
       expect(indexManager.removeFromIndexes).toHaveBeenCalled();
     });
@@ -189,23 +173,15 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: '2024-01-10' },
-          2: { id: '2', timestamp: '2024-01-20' },
+          2: { id: '2', timestamp: '2024-01-20' }
         },
-        metadata: {},
+        metadata: {}
       };
       const cache = {};
       const state = {};
       const config = { maxHistoryEntries: 1 };
 
-      await maintenance.cleanupOldEntries(
-        history,
-        {},
-        cache,
-        state,
-        config,
-        jest.fn(),
-        jest.fn()
-      );
+      await maintenance.cleanupOldEntries(history, {}, cache, state, config, jest.fn(), jest.fn());
 
       expect(cacheManager.invalidateCachesOnRemove).toHaveBeenCalledWith(cache, state);
     });
@@ -214,21 +190,13 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: '2024-01-10' },
-          2: { id: '2', timestamp: '2024-01-20' },
+          2: { id: '2', timestamp: '2024-01-20' }
         },
-        metadata: {},
+        metadata: {}
       };
       const config = { maxHistoryEntries: 1 };
 
-      await maintenance.cleanupOldEntries(
-        history,
-        {},
-        {},
-        {},
-        config,
-        jest.fn(),
-        jest.fn()
-      );
+      await maintenance.cleanupOldEntries(history, {}, {}, {}, config, jest.fn(), jest.fn());
 
       expect(history.metadata.lastCleanup).toBeDefined();
     });
@@ -237,23 +205,15 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: '2024-01-10' },
-          2: { id: '2', timestamp: '2024-01-20' },
+          2: { id: '2', timestamp: '2024-01-20' }
         },
-        metadata: {},
+        metadata: {}
       };
       const saveHistory = jest.fn().mockResolvedValue();
       const saveIndex = jest.fn().mockResolvedValue();
       const config = { maxHistoryEntries: 1 };
 
-      await maintenance.cleanupOldEntries(
-        history,
-        {},
-        {},
-        {},
-        config,
-        saveHistory,
-        saveIndex
-      );
+      await maintenance.cleanupOldEntries(history, {}, {}, {}, config, saveHistory, saveIndex);
 
       expect(saveHistory).toHaveBeenCalled();
       expect(saveIndex).toHaveBeenCalled();
@@ -268,8 +228,8 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: oldDate.toISOString() },
-          2: { id: '2', timestamp: new Date().toISOString() },
-        },
+          2: { id: '2', timestamp: new Date().toISOString() }
+        }
       };
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 30);
@@ -296,8 +256,8 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: new Date().toISOString() },
-          2: { id: '2', timestamp: new Date().toISOString() },
-        },
+          2: { id: '2', timestamp: new Date().toISOString() }
+        }
       };
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 30);
@@ -325,21 +285,13 @@ describe('maintenance', () => {
 
       const history = {
         entries: {
-          1: { id: '1', timestamp: oldDate.toISOString() },
-        },
+          1: { id: '1', timestamp: oldDate.toISOString() }
+        }
       };
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 30);
 
-      await maintenance.removeExpiredEntries(
-        history,
-        {},
-        {},
-        {},
-        cutoffDate,
-        jest.fn(),
-        jest.fn()
-      );
+      await maintenance.removeExpiredEntries(history, {}, {}, {}, cutoffDate, jest.fn(), jest.fn());
 
       expect(cacheManager.updateIncrementalStatsOnRemove).toHaveBeenCalled();
     });
@@ -350,8 +302,8 @@ describe('maintenance', () => {
 
       const history = {
         entries: {
-          1: { id: '1', timestamp: oldDate.toISOString() },
-        },
+          1: { id: '1', timestamp: oldDate.toISOString() }
+        }
       };
       const cache = {};
       const state = {};
@@ -378,27 +330,17 @@ describe('maintenance', () => {
       const history = {
         entries: {
           1: { id: '1', timestamp: oldDate.toISOString() },
-          2: { id: '2', timestamp: oldDate.toISOString() },
-        },
+          2: { id: '2', timestamp: oldDate.toISOString() }
+        }
       };
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 30);
 
       const { logger } = require('../src/shared/logger');
 
-      await maintenance.removeExpiredEntries(
-        history,
-        {},
-        {},
-        {},
-        cutoffDate,
-        jest.fn(),
-        jest.fn()
-      );
+      await maintenance.removeExpiredEntries(history, {}, {}, {}, cutoffDate, jest.fn(), jest.fn());
 
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Removed 2 expired')
-      );
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Removed 2 expired'));
     });
   });
 

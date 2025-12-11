@@ -38,11 +38,7 @@ async function getLLMAlternativeSuggestions(file, smartFolders, config = {}) {
     const llmMaxTokens = config.llmMaxTokens || 500;
 
     // Limit analysis content size and avoid leaking excessive detail
-    const serializedAnalysis = JSON.stringify(
-      file.analysis || {},
-      null,
-      2,
-    ).slice(0, 800);
+    const serializedAnalysis = JSON.stringify(file.analysis || {}, null, 2).slice(0, 800);
 
     const prompt = `Given this file analysis, suggest 3 alternative organization approaches:
 
@@ -73,22 +69,20 @@ Return JSON: {
       fileName: file.name,
       analysis: JSON.stringify(file.analysis || {}),
       folders: smartFolders.map((f) => f.name).join(','),
-      type: 'organization-suggestions',
+      type: 'organization-suggestions'
     });
 
-    const response = await globalDeduplicator.deduplicate(
-      deduplicationKey,
-      () =>
-        ollama.generate({
-          model,
-          prompt,
-          format: 'json',
-          options: {
-            ...perfOptions,
-            temperature: llmTemperature,
-            num_predict: llmMaxTokens,
-          },
-        }),
+    const response = await globalDeduplicator.deduplicate(deduplicationKey, () =>
+      ollama.generate({
+        model,
+        prompt,
+        format: 'json',
+        options: {
+          ...perfOptions,
+          temperature: llmTemperature,
+          num_predict: llmMaxTokens
+        }
+      })
     );
 
     // Validate response size
@@ -99,7 +93,7 @@ Return JSON: {
       logger.warn('[LLMSuggester] Response exceeds maximum size limit', {
         size: responseSize,
         maxSize: MAX_RESPONSE_SIZE,
-        file: file.name,
+        file: file.name
       });
       return [];
     }
@@ -110,7 +104,7 @@ Return JSON: {
     if (!parsed) {
       logger.warn('[LLMSuggester] Failed to parse JSON response', {
         responseLength: responseText.length,
-        responsePreview: responseText.slice(0, 500),
+        responsePreview: responseText.slice(0, 500)
       });
       return [];
     }
@@ -124,13 +118,10 @@ Return JSON: {
       .filter((s) => {
         // Ensure folder is a valid string
         if (typeof s.folder !== 'string' || !s.folder.trim()) {
-          logger.warn(
-            '[LLMSuggester] Skipping suggestion with invalid folder',
-            {
-              folder: s.folder,
-              type: typeof s.folder,
-            },
-          );
+          logger.warn('[LLMSuggester] Skipping suggestion with invalid folder', {
+            folder: s.folder,
+            type: typeof s.folder
+          });
           return false;
         }
         return true;
@@ -141,7 +132,7 @@ Return JSON: {
         confidence: s.confidence || 0.5,
         reasoning: s.reasoning,
         strategy: s.strategy,
-        method: 'llm_creative',
+        method: 'llm_creative'
       }));
   } catch (error) {
     logger.warn('[LLMSuggester] LLM suggestions failed:', error.message);
@@ -151,5 +142,5 @@ Return JSON: {
 
 module.exports = {
   getLLMAlternativeSuggestions,
-  MAX_RESPONSE_SIZE,
+  MAX_RESPONSE_SIZE
 };

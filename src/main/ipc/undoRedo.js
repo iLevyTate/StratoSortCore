@@ -6,12 +6,7 @@
  */
 const { createHandler } = require('./ipcWrappers');
 
-function registerUndoRedoIpc({
-  ipcMain,
-  IPC_CHANNELS,
-  logger,
-  getServiceIntegration,
-}) {
+function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegration }) {
   const context = 'UndoRedo';
 
   // Helper to get undo/redo service
@@ -28,16 +23,18 @@ function registerUndoRedoIpc({
       fallbackResponse: { success: false, message: 'Undo service unavailable' },
       handler: async (event, service) => {
         try {
-          return (await service.undo()) || {
-            success: false,
-            message: 'Nothing to undo',
-          };
+          return (
+            (await service.undo()) || {
+              success: false,
+              message: 'Nothing to undo'
+            }
+          );
         } catch (error) {
           logger.error('Failed to execute undo:', error);
           return { success: false, message: error.message };
         }
-      },
-    }),
+      }
+    })
   );
 
   // Redo action
@@ -51,16 +48,18 @@ function registerUndoRedoIpc({
       fallbackResponse: { success: false, message: 'Redo service unavailable' },
       handler: async (event, service) => {
         try {
-          return (await service.redo()) || {
-            success: false,
-            message: 'Nothing to redo',
-          };
+          return (
+            (await service.redo()) || {
+              success: false,
+              message: 'Nothing to redo'
+            }
+          );
         } catch (error) {
           logger.error('Failed to execute redo:', error);
           return { success: false, message: error.message };
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get action history
@@ -79,8 +78,8 @@ function registerUndoRedoIpc({
           logger.error('Failed to get action history:', error);
           return [];
         }
-      },
-    }),
+      }
+    })
   );
 
   // Clear action history
@@ -99,8 +98,8 @@ function registerUndoRedoIpc({
           logger.error('Failed to clear action history:', error);
           return { success: false, message: error.message };
         }
-      },
-    }),
+      }
+    })
   );
 
   // Check if undo is available
@@ -119,8 +118,8 @@ function registerUndoRedoIpc({
           logger.error('Failed to check undo status:', error);
           return false;
         }
-      },
-    }),
+      }
+    })
   );
 
   // Check if redo is available
@@ -139,8 +138,8 @@ function registerUndoRedoIpc({
           logger.error('Failed to check redo status:', error);
           return false;
         }
-      },
-    }),
+      }
+    })
   );
 }
 

@@ -10,21 +10,21 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
   isWindows: process.platform === 'win32',
-  shouldUseShell: jest.fn().mockReturnValue(false),
+  shouldUseShell: jest.fn().mockReturnValue(false)
 }));
 
 // We need to create a mock spawn that can be controlled per-test
 let mockSpawnImplementation;
 
 jest.mock('child_process', () => ({
-  spawn: jest.fn((...args) => mockSpawnImplementation(...args)),
+  spawn: jest.fn((...args) => mockSpawnImplementation(...args))
 }));
 
 describe('asyncSpawnUtils', () => {
@@ -99,7 +99,7 @@ describe('asyncSpawnUtils', () => {
       // Don't emit close - let it timeout
 
       const result = await asyncSpawnUtils.asyncSpawn('slowcmd', [], {
-        timeout: 50,
+        timeout: 50
       });
 
       expect(result.timedOut).toBe(true);
@@ -139,7 +139,7 @@ describe('asyncSpawnUtils', () => {
       await asyncSpawnUtils.asyncSpawn('cmd', ['arg1'], {
         cwd: '/some/path',
         env: { TEST: 'value' },
-        windowsHide: true,
+        windowsHide: true
       });
 
       expect(capturedOptions.cwd).toBe('/some/path');
@@ -180,7 +180,7 @@ describe('asyncSpawnUtils', () => {
             setImmediate(() => callback(0, null));
           }
         }),
-        kill: jest.fn(),
+        kill: jest.fn()
       };
       mockSpawnImplementation = () => mockChild;
 
@@ -209,17 +209,13 @@ describe('asyncSpawnUtils', () => {
       const mockChild = createMockChild();
       mockSpawnImplementation = () => {
         setImmediate(() => {
-          mockChild.stderr.emit(
-            'data',
-            Buffer.from('No module named nonexistent_module'),
-          );
+          mockChild.stderr.emit('data', Buffer.from('No module named nonexistent_module'));
           mockChild.emit('close', 1, null);
         });
         return mockChild;
       };
 
-      const result =
-        await asyncSpawnUtils.hasPythonModuleAsync('nonexistent_module');
+      const result = await asyncSpawnUtils.hasPythonModuleAsync('nonexistent_module');
 
       expect(result).toBe(false);
     });
@@ -348,7 +344,7 @@ function createMockChild() {
     }),
     emit: (event, data) => {
       (events[`stdout_${event}`] || []).forEach((cb) => cb(data));
-    },
+    }
   };
 
   const stderr = {
@@ -358,7 +354,7 @@ function createMockChild() {
     }),
     emit: (event, data) => {
       (events[`stderr_${event}`] || []).forEach((cb) => cb(data));
-    },
+    }
   };
 
   return {
@@ -371,6 +367,6 @@ function createMockChild() {
     emit: (event, ...args) => {
       (events[event] || []).forEach((cb) => cb(...args));
     },
-    kill: jest.fn(),
+    kill: jest.fn()
   };
 }

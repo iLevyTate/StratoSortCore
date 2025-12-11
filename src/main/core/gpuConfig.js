@@ -16,8 +16,7 @@ logger.setContext('GPU');
  * Check if software rendering is forced
  */
 const forceSoftwareRenderer =
-  process.env.STRATOSORT_FORCE_SOFTWARE_GPU === '1' ||
-  process.env.ELECTRON_FORCE_SOFTWARE === '1';
+  process.env.STRATOSORT_FORCE_SOFTWARE_GPU === '1' || process.env.ELECTRON_FORCE_SOFTWARE === '1';
 
 /**
  * Time-based sliding window for GPU failure tracking
@@ -34,9 +33,7 @@ function initializeGpuConfig() {
   try {
     if (forceSoftwareRenderer) {
       app.disableHardwareAcceleration();
-      logger.warn(
-        '[GPU] Hardware acceleration disabled via STRATOSORT_FORCE_SOFTWARE_GPU',
-      );
+      logger.warn('[GPU] Hardware acceleration disabled via STRATOSORT_FORCE_SOFTWARE_GPU');
     } else {
       // Use ANGLE with D3D11 backend for better Windows compatibility
       const angleBackend = process.env.ANGLE_BACKEND || 'd3d11';
@@ -55,10 +52,7 @@ function initializeGpuConfig() {
       logger.info(`[GPU] Flags set: ANGLE=${angleBackend}`);
     }
   } catch (e) {
-    logger.warn(
-      '[GPU] Failed to apply GPU flags:',
-      e?.message || 'Unknown error',
-    );
+    logger.warn('[GPU] Failed to apply GPU flags:', e?.message || 'Unknown error');
   }
 }
 
@@ -84,15 +78,12 @@ function handleGpuProcessGone(event, details) {
       reason: details?.reason,
       exitCode: details?.exitCode,
       crashCount: gpuFailureCount,
-      lastFailure: new Date(lastGpuFailureTime).toISOString(),
+      lastFailure: new Date(lastGpuFailureTime).toISOString()
     });
 
-    if (
-      gpuFailureCount >= 2 &&
-      process.env.STRATOSORT_FORCE_SOFTWARE_GPU !== '1'
-    ) {
+    if (gpuFailureCount >= 2 && process.env.STRATOSORT_FORCE_SOFTWARE_GPU !== '1') {
       logger.warn(
-        '[GPU] Repeated GPU failures detected. Set STRATOSORT_FORCE_SOFTWARE_GPU=1 to force software rendering.',
+        '[GPU] Repeated GPU failures detected. Set STRATOSORT_FORCE_SOFTWARE_GPU=1 to force software rendering.'
       );
     }
   }
@@ -119,5 +110,5 @@ module.exports = {
   forceSoftwareRenderer,
   initializeGpuConfig,
   handleGpuProcessGone,
-  applyProductionOptimizations,
+  applyProductionOptimizations
 };

@@ -5,21 +5,16 @@ import { StatusBadge } from '../ui';
 
 const AnalysisProgress = memo(function AnalysisProgress({
   progress = { current: 0, total: 0 },
-  currentFile = '',
+  currentFile = ''
 }) {
   const total = Math.max(0, Number(progress.total) || 0);
   const current = Math.max(
     0,
-    Math.min(
-      Number(progress.current) || 0,
-      total || Number(progress.current) || 0,
-    ),
+    Math.min(Number(progress.current) || 0, total || Number(progress.current) || 0)
   );
   const hasTotals = total > 0;
   const isDone = hasTotals && current >= total;
-  const percent = hasTotals
-    ? Math.min(100, Math.round((current / total) * 100))
-    : 0;
+  const percent = hasTotals ? Math.min(100, Math.round((current / total) * 100)) : 0;
 
   return (
     <div className="surface-card p-5">
@@ -44,20 +39,13 @@ const AnalysisProgress = memo(function AnalysisProgress({
             </p>
           </div>
         </div>
-        {hasTotals && (
-          <StatusBadge variant="info">
-            {percent}%
-          </StatusBadge>
-        )}
+        {hasTotals && <StatusBadge variant="info">{percent}%</StatusBadge>}
       </div>
 
       <div className="space-y-3">
         {hasTotals ? (
           <div className="progress-enhanced">
-            <div
-              className="progress-bar-enhanced"
-              style={{ width: `${percent}%` }}
-            />
+            <div className="progress-bar-enhanced" style={{ width: `${percent}%` }} />
           </div>
         ) : (
           <div className="indeterminate-bar" />
@@ -76,9 +64,9 @@ const AnalysisProgress = memo(function AnalysisProgress({
 AnalysisProgress.propTypes = {
   progress: PropTypes.shape({
     current: PropTypes.number,
-    total: PropTypes.number,
+    total: PropTypes.number
   }),
-  currentFile: PropTypes.string,
+  currentFile: PropTypes.string
 };
 
 export default AnalysisProgress;

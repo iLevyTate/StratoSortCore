@@ -32,71 +32,35 @@ describe('indexManager', () => {
 
   describe('generateFileHash', () => {
     test('generates consistent hash for same input', () => {
-      const hash1 = indexManager.generateFileHash(
-        '/path/file.pdf',
-        1000,
-        '2024-01-15',
-      );
-      const hash2 = indexManager.generateFileHash(
-        '/path/file.pdf',
-        1000,
-        '2024-01-15',
-      );
+      const hash1 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
+      const hash2 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
 
       expect(hash1).toBe(hash2);
     });
 
     test('generates different hash for different path', () => {
-      const hash1 = indexManager.generateFileHash(
-        '/path/file1.pdf',
-        1000,
-        '2024-01-15',
-      );
-      const hash2 = indexManager.generateFileHash(
-        '/path/file2.pdf',
-        1000,
-        '2024-01-15',
-      );
+      const hash1 = indexManager.generateFileHash('/path/file1.pdf', 1000, '2024-01-15');
+      const hash2 = indexManager.generateFileHash('/path/file2.pdf', 1000, '2024-01-15');
 
       expect(hash1).not.toBe(hash2);
     });
 
     test('generates different hash for different size', () => {
-      const hash1 = indexManager.generateFileHash(
-        '/path/file.pdf',
-        1000,
-        '2024-01-15',
-      );
-      const hash2 = indexManager.generateFileHash(
-        '/path/file.pdf',
-        2000,
-        '2024-01-15',
-      );
+      const hash1 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
+      const hash2 = indexManager.generateFileHash('/path/file.pdf', 2000, '2024-01-15');
 
       expect(hash1).not.toBe(hash2);
     });
 
     test('generates different hash for different lastModified', () => {
-      const hash1 = indexManager.generateFileHash(
-        '/path/file.pdf',
-        1000,
-        '2024-01-15',
-      );
-      const hash2 = indexManager.generateFileHash(
-        '/path/file.pdf',
-        1000,
-        '2024-01-20',
-      );
+      const hash1 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
+      const hash2 = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-20');
 
       expect(hash1).not.toBe(hash2);
     });
 
     test('generates 16 character hash', () => {
-      const hash = indexManager.generateFileHash(
-        '/path/file.pdf',
-        1000,
-        '2024-01-15',
-      );
+      const hash = indexManager.generateFileHash('/path/file.pdf', 1000, '2024-01-15');
 
       expect(hash.length).toBe(16);
     });
@@ -138,7 +102,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.updateIndexes(index, entry);
@@ -154,7 +118,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.updateIndexes(index, entry);
@@ -170,7 +134,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: ['invoice', 'finance'], category: null },
+        analysis: { tags: ['invoice', 'finance'], category: null }
       };
 
       indexManager.updateIndexes(index, entry);
@@ -187,7 +151,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: 'documents' },
+        analysis: { tags: [], category: 'documents' }
       };
 
       indexManager.updateIndexes(index, entry);
@@ -203,7 +167,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.updateIndexes(index, entry);
@@ -219,7 +183,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 500,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.updateIndexes(index, entry);
@@ -237,7 +201,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       // Wait a bit to ensure timestamp changes
@@ -259,7 +223,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -277,7 +241,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -295,7 +259,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: ['invoice'], category: null },
+        analysis: { tags: ['invoice'], category: null }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -314,7 +278,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: ['invoice'], category: null },
+        analysis: { tags: ['invoice'], category: null }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -332,7 +296,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: 'documents' },
+        analysis: { tags: [], category: 'documents' }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -350,7 +314,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: 'documents' },
+        analysis: { tags: [], category: 'documents' }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -368,7 +332,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 1000,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.removeFromIndexes(index, entry);
@@ -386,7 +350,7 @@ describe('indexManager', () => {
         originalPath: '/path/file.pdf',
         timestamp: '2024-01-15T10:00:00Z',
         fileSize: 500,
-        analysis: { tags: [], category: null },
+        analysis: { tags: [], category: null }
       };
 
       indexManager.removeFromIndexes(index, entry);

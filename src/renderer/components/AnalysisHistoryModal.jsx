@@ -32,7 +32,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
     try {
       const [stats, history] = await Promise.all([
         window.electronAPI.analysisHistory.getStatistics(),
-        window.electronAPI.analysisHistory.get({ all: true }),
+        window.electronAPI.analysisHistory.get({ all: true })
       ]);
       // FIX: Check if still mounted before updating state
       if (!isMountedRef.current) return;
@@ -41,10 +41,10 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       if (Array.isArray(history)) {
         setHistoryData(history);
       } else {
-        logger.warn(
-          'History data is not an array, falling back to empty array',
-          { historyType: typeof history, history },
-        );
+        logger.warn('History data is not an array, falling back to empty array', {
+          historyType: typeof history,
+          history
+        });
         setHistoryData([]);
       }
     } catch (error) {
@@ -69,10 +69,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   const searchHistory = async () => {
     if (!searchQuery.trim()) return;
     try {
-      const results = await window.electronAPI.analysisHistory.search(
-        searchQuery,
-        { limit: 200 },
-      );
+      const results = await window.electronAPI.analysisHistory.search(searchQuery, { limit: 200 });
       // FIX: Check if still mounted before updating state
       if (!isMountedRef.current) return;
       // FIX H1: Validate results is an array before setting
@@ -85,35 +82,28 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
 
   const exportHistory = async (format) => {
     try {
-      const exportResponse =
-        await window.electronAPI.analysisHistory.export(format);
+      const exportResponse = await window.electronAPI.analysisHistory.export(format);
       if (!exportResponse || exportResponse.success === false)
         throw new Error(exportResponse?.error || 'Export failed');
       const blob = new Blob(
         [
           typeof exportResponse.data === 'string'
             ? exportResponse.data
-            : JSON.stringify(exportResponse.data),
+            : JSON.stringify(exportResponse.data)
         ],
         {
-          type:
-            exportResponse.mime ||
-            (format === 'csv' ? 'text/csv' : 'application/json'),
-        },
+          type: exportResponse.mime || (format === 'csv' ? 'text/csv' : 'application/json')
+        }
       );
       const url = URL.createObjectURL(blob);
       const downloadLink = document.createElement('a');
       downloadLink.href = url;
-      downloadLink.download =
-        exportResponse.filename || `analysis-history.${format}`;
+      downloadLink.download = exportResponse.filename || `analysis-history.${format}`;
       document.body.appendChild(downloadLink);
       downloadLink.click();
       downloadLink.remove();
       URL.revokeObjectURL(url);
-      addNotification(
-        `Analysis history exported as ${format.toUpperCase()}`,
-        'success',
-      );
+      addNotification(`Analysis history exported as ${format.toUpperCase()}`, 'success');
     } catch (error) {
       addNotification('Export failed', 'error');
     }
@@ -122,7 +112,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   const clearHistory = useCallback(async () => {
     if (isClearing) return;
     const confirmed = window.confirm(
-      'This will permanently clear all analysis history and statistics. Continue?',
+      'This will permanently clear all analysis history and statistics. Continue?'
     );
     if (!confirmed) return;
     setIsClearing(true);
@@ -155,8 +145,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
           if (folder) return folder;
         }
       }
-      if (entry?.organization?.smartFolder)
-        return entry.organization.smartFolder;
+      if (entry?.organization?.smartFolder) return entry.organization.smartFolder;
       if (entry?.analysis?.category) return entry.analysis.category;
     } catch (error) {
       logger.debug('Error generating category label', { error: error.message });
@@ -209,33 +198,25 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       <div className="text-2xl font-bold text-stratosort-blue">
                         {analysisStats.totalFiles || 0}
                       </div>
-                      <div className="text-sm text-system-gray-600">
-                        Total Files
-                      </div>
+                      <div className="text-sm text-system-gray-600">Total Files</div>
                     </div>
                     <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] text-center">
-                    <div className="text-2xl font-bold text-stratosort-success">
+                      <div className="text-2xl font-bold text-stratosort-success">
                         {Math.round(analysisStats.averageConfidence || 0)}%
                       </div>
-                      <div className="text-sm text-system-gray-600">
-                        Avg Confidence
-                      </div>
+                      <div className="text-sm text-system-gray-600">Avg Confidence</div>
                     </div>
                     <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] text-center">
-                    <div className="text-2xl font-bold text-stratosort-indigo">
+                      <div className="text-2xl font-bold text-stratosort-indigo">
                         {analysisStats.categoriesCount || 0}
                       </div>
-                      <div className="text-sm text-system-gray-600">
-                        Categories
-                      </div>
+                      <div className="text-sm text-system-gray-600">Categories</div>
                     </div>
                     <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)] text-center">
-                    <div className="text-2xl font-bold text-stratosort-warning">
+                      <div className="text-2xl font-bold text-stratosort-warning">
                         {Math.round(analysisStats.averageProcessingTime || 0)}ms
                       </div>
-                      <div className="text-sm text-system-gray-600">
-                        Avg Time
-                      </div>
+                      <div className="text-sm text-system-gray-600">Avg Time</div>
                     </div>
                   </div>
                   <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)]">
@@ -255,14 +236,14 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       >
                         Export CSV
                       </Button>
-                    <Button
-                      onClick={clearHistory}
-                      variant="danger"
-                      className="text-sm ml-auto"
-                      disabled={isClearing}
-                    >
-                      {isClearing ? 'Clearing...' : 'Clear History'}
-                    </Button>
+                      <Button
+                        onClick={clearHistory}
+                        variant="danger"
+                        className="text-sm ml-auto"
+                        disabled={isClearing}
+                      >
+                        {isClearing ? 'Clearing...' : 'Clear History'}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -281,7 +262,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                           searchHistory().catch((error) => {
                             logger.error('Search failed', {
                               error: error.message,
-                              stack: error.stack,
+                              stack: error.stack
                             });
                           });
                         }
@@ -297,78 +278,64 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                   <div className="space-y-4 max-h-[50vh] overflow-y-auto modern-scrollbar">
                     {/* FIX: Use stable identifier instead of array index as key */}
                     {/* FIX H1: Add defensive check for historyData being an array */}
-                    {(Array.isArray(historyData) ? historyData : []).map(
-                      (entry) => (
-                        <div
-                          key={
-                            entry.id ||
-                            entry.filePath ||
-                            entry.timestamp ||
-                            entry.fileName
-                          }
-                          className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-4"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="font-medium text-system-gray-900">
-                                {entry.fileName || 'Unknown File'}
-                              </div>
-                              <div className="text-sm text-system-gray-600 mt-1">
-                                <span className="text-stratosort-blue">
-                                  {getDestinationLabel(entry)}
+                    {(Array.isArray(historyData) ? historyData : []).map((entry) => (
+                      <div
+                        key={entry.id || entry.filePath || entry.timestamp || entry.fileName}
+                        className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-4"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="font-medium text-system-gray-900">
+                              {entry.fileName || 'Unknown File'}
+                            </div>
+                            <div className="text-sm text-system-gray-600 mt-1">
+                              <span className="text-stratosort-blue">
+                                {getDestinationLabel(entry)}
+                              </span>
+                              {(entry?.analysis?.confidence || entry?.confidence) && (
+                                <span className="ml-4">
+                                  Confidence: {entry?.analysis?.confidence ?? entry?.confidence}%
                                 </span>
-                                {(entry?.analysis?.confidence ||
-                                  entry?.confidence) && (
-                                  <span className="ml-4">
-                                    Confidence:{' '}
-                                    {entry?.analysis?.confidence ??
-                                      entry?.confidence}
-                                    %
+                              )}
+                            </div>
+                            {entry.keywords && entry.keywords.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {/* FIX: Use keyword value as key instead of array index for stable rendering */}
+                                {entry.keywords.slice(0, 5).map((keyword) => (
+                                  <span
+                                    key={`${entry.id || entry.filePath || entry.timestamp}-kw-${keyword}`}
+                                    className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
+                                  >
+                                    {keyword}
                                   </span>
-                                )}
+                                ))}
                               </div>
-                              {entry.keywords && entry.keywords.length > 0 && (
+                            )}
+                            {!entry.keywords &&
+                              entry?.analysis?.tags &&
+                              entry.analysis.tags.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mt-2">
-                                  {/* FIX: Use keyword value as key instead of array index for stable rendering */}
-                                  {entry.keywords.slice(0, 5).map((keyword) => (
+                                  {/* FIX: Use tag value as key instead of array index for stable rendering */}
+                                  {entry.analysis.tags.slice(0, 5).map((tag) => (
                                     <span
-                                      key={`${entry.id || entry.filePath || entry.timestamp}-kw-${keyword}`}
+                                      key={`${entry.id || entry.filePath || entry.timestamp}-tag-${tag}`}
                                       className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
                                     >
-                                      {keyword}
+                                      {tag}
                                     </span>
                                   ))}
                                 </div>
                               )}
-                              {!entry.keywords &&
-                                entry?.analysis?.tags &&
-                                entry.analysis.tags.length > 0 && (
-                                  <div className="flex flex-wrap gap-2 mt-2">
-                                    {/* FIX: Use tag value as key instead of array index for stable rendering */}
-                                    {entry.analysis.tags
-                                      .slice(0, 5)
-                                      .map((tag) => (
-                                        <span
-                                          key={`${entry.id || entry.filePath || entry.timestamp}-tag-${tag}`}
-                                          className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))}
-                                  </div>
-                                )}
-                            </div>
-                            <div className="text-xs text-system-gray-500">
-                              {entry.timestamp
-                                ? new Date(entry.timestamp).toLocaleDateString()
-                                : 'Unknown Date'}
-                            </div>
+                          </div>
+                          <div className="text-xs text-system-gray-500">
+                            {entry.timestamp
+                              ? new Date(entry.timestamp).toLocaleDateString()
+                              : 'Unknown Date'}
                           </div>
                         </div>
-                      ),
-                    )}
-                    {(Array.isArray(historyData) ? historyData : []).length ===
-                      0 && (
+                      </div>
+                    ))}
+                    {(Array.isArray(historyData) ? historyData : []).length === 0 && (
                       <div className="empty-state">
                         <div className="text-3xl">🗂️</div>
                         <div className="space-y-1">
@@ -376,8 +343,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                             No analysis history yet
                           </p>
                           <p className="text-system-gray-500 text-sm">
-                            Run an analysis to see recent activity and export
-                            options here.
+                            Run an analysis to see recent activity and export options here.
                           </p>
                         </div>
                       </div>
@@ -399,9 +365,9 @@ AnalysisHistoryModal.propTypes = {
     totalFiles: PropTypes.number,
     averageConfidence: PropTypes.number,
     categoriesCount: PropTypes.number,
-    averageProcessingTime: PropTypes.number,
+    averageProcessingTime: PropTypes.number
   }),
-  setAnalysisStats: PropTypes.func.isRequired,
+  setAnalysisStats: PropTypes.func.isRequired
 };
 
 export default AnalysisHistoryModal;

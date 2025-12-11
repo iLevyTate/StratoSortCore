@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
@@ -20,10 +20,10 @@ const mockFs = {
   readFile: jest.fn(),
   writeFile: jest.fn(),
   rename: jest.fn(),
-  unlink: jest.fn(),
+  unlink: jest.fn()
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 describe('Embedding Queue Persistence', () => {
@@ -85,7 +85,7 @@ describe('Embedding Queue Persistence', () => {
       expect(logger.error).toHaveBeenCalled();
       expect(mockFs.rename).toHaveBeenCalledWith(
         '/path/to/file.json',
-        expect.stringContaining('.corrupt.'),
+        expect.stringContaining('.corrupt.')
       );
     });
 
@@ -111,7 +111,7 @@ describe('Embedding Queue Persistence', () => {
       expect(mockFs.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('.tmp.'),
         JSON.stringify(data),
-        'utf8',
+        'utf8'
       );
       expect(mockFs.rename).toHaveBeenCalled();
     });
@@ -124,16 +124,14 @@ describe('Embedding Queue Persistence', () => {
       expect(mockFs.writeFile).toHaveBeenCalledWith(
         expect.any(String),
         JSON.stringify(data, null, 2),
-        'utf8',
+        'utf8'
       );
     });
 
     test('retries rename on EPERM error', async () => {
       const epermError = new Error('EPERM');
       epermError.code = 'EPERM';
-      mockFs.rename
-        .mockRejectedValueOnce(epermError)
-        .mockResolvedValueOnce(undefined);
+      mockFs.rename.mockRejectedValueOnce(epermError).mockResolvedValueOnce(undefined);
 
       const data = { key: 'value' };
       await atomicWriteFile('/path/to/file.json', data);
@@ -145,9 +143,9 @@ describe('Embedding Queue Persistence', () => {
       mockFs.writeFile.mockResolvedValueOnce(undefined);
       mockFs.rename.mockRejectedValueOnce(new Error('Rename failed'));
 
-      await expect(
-        atomicWriteFile('/path/to/file.json', { key: 'value' }),
-      ).rejects.toThrow('Rename failed');
+      await expect(atomicWriteFile('/path/to/file.json', { key: 'value' })).rejects.toThrow(
+        'Rename failed'
+      );
 
       expect(mockFs.unlink).toHaveBeenCalled();
     });
@@ -174,9 +172,7 @@ describe('Embedding Queue Persistence', () => {
       permError.code = 'EPERM';
       mockFs.unlink.mockRejectedValueOnce(permError);
 
-      await expect(safeUnlink('/path/to/file.json')).rejects.toThrow(
-        'Permission denied',
-      );
+      await expect(safeUnlink('/path/to/file.json')).rejects.toThrow('Permission denied');
     });
   });
 
@@ -201,7 +197,7 @@ describe('Embedding Queue Persistence', () => {
 
       // Should not throw
       await expect(
-        persistQueueData('/path/to/queue.json', [{ id: 'item' }]),
+        persistQueueData('/path/to/queue.json', [{ id: 'item' }])
       ).resolves.not.toThrow();
     });
   });
@@ -210,7 +206,7 @@ describe('Embedding Queue Persistence', () => {
     test('writes failed items as array of entries', async () => {
       const failedItems = new Map([
         ['id1', { item: { id: 'id1' }, retryCount: 1 }],
-        ['id2', { item: { id: 'id2' }, retryCount: 2 }],
+        ['id2', { item: { id: 'id2' }, retryCount: 2 }]
       ]);
 
       await persistFailedItems('/path/to/failed.json', failedItems);
@@ -234,7 +230,7 @@ describe('Embedding Queue Persistence', () => {
     test('writes dead letter queue with pretty printing', async () => {
       const deadLetterQueue = [
         { itemId: 'item1', error: 'Error 1' },
-        { itemId: 'item2', error: 'Error 2' },
+        { itemId: 'item2', error: 'Error 2' }
       ];
 
       await persistDeadLetterQueue('/path/to/dlq.json', deadLetterQueue);

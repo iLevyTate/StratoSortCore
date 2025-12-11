@@ -51,7 +51,7 @@ const REGEX_PATTERNS = {
 
   // JSON cleanup for PPTX fallback
   // eslint-disable-next-line no-useless-escape
-  jsonPunctuation: /[{}":,\[\]]/g,
+  jsonPunctuation: /[{}":,\[\]]/g
 };
 
 // Memory management constants
@@ -63,7 +63,7 @@ const xmlParser = new XMLParser({
   attributeNamePrefix: '',
   trimValues: true,
   allowBooleanAttributes: true,
-  ignoreDeclaration: true,
+  ignoreDeclaration: true
 });
 
 /**
@@ -79,14 +79,14 @@ async function checkFileSize(filePath, fileName) {
       throw new FileProcessingError('FILE_TOO_LARGE', fileName, {
         suggestion: `File size ${(stats.size / 1024 / 1024).toFixed(1)}MB exceeds limit of ${MAX_FILE_SIZE / 1024 / 1024}MB`,
         fileSize: stats.size,
-        maxSize: MAX_FILE_SIZE,
+        maxSize: MAX_FILE_SIZE
       });
     }
     return stats.size;
   } catch (error) {
     if (error.code === 'FILE_TOO_LARGE') throw error;
     throw new FileProcessingError('FILE_READ_ERROR', fileName, {
-      suggestion: error.message,
+      suggestion: error.message
     });
   }
 }
@@ -104,11 +104,7 @@ function truncateText(text) {
 
 function flattenXmlText(value, chunks) {
   if (value === null || value === undefined) return;
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     chunks.push(String(value));
     return;
   }
@@ -127,18 +123,12 @@ function extractPlainTextFromXml(xmlString) {
     const parsed = xmlParser.parse(xmlString);
     const chunks = [];
     flattenXmlText(parsed, chunks);
-    const text = chunks
-      .join(' ')
-      .replace(REGEX_PATTERNS.whitespace, ' ')
-      .trim();
+    const text = chunks.join(' ').replace(REGEX_PATTERNS.whitespace, ' ').trim();
     if (text) return truncateText(text);
   } catch (error) {
-    logger.warn(
-      '[XML] Failed to parse XML safely, falling back to tag stripping',
-      {
-        error: error.message,
-      },
-    );
+    logger.warn('[XML] Failed to parse XML safely, falling back to tag stripping', {
+      error: error.message
+    });
   }
   return extractPlainTextFromHtml(xmlString);
 }
@@ -152,7 +142,7 @@ async function extractTextFromCsv(filePath) {
       bom: true,
       skipEmptyLines: true,
       relaxColumnCount: true,
-      relaxQuotes: true,
+      relaxQuotes: true
     });
 
     if (!Array.isArray(records) || records.length === 0) {
@@ -180,7 +170,7 @@ async function extractTextFromCsv(filePath) {
     return truncateText(rows.join('\n'));
   } catch (error) {
     logger.warn('[CSV] Structured parse failed, returning raw text', {
-      error: error.message,
+      error: error.message
     });
     return truncateText(raw);
   }
@@ -198,7 +188,7 @@ async function extractContentWithSizeCheck(filePath) {
   if (stats.size > STREAM_THRESHOLD) {
     logger.info(
       `[EXTRACT] Using streaming for large file (${Math.round(stats.size / 1024 / 1024)}MB)`,
-      { filePath },
+      { filePath }
     );
     return extractContentStreaming(filePath);
   }
@@ -242,7 +232,7 @@ async function extractContentStreaming(filePath) {
 
     const stream = createReadStream(filePath, {
       encoding: 'utf8',
-      highWaterMark: 64 * 1024, // 64KB chunks
+      highWaterMark: 64 * 1024 // 64KB chunks
     });
 
     stream.on('data', (chunk) => {
@@ -268,7 +258,7 @@ async function extractContentStreaming(filePath) {
       if (totalLength >= MAX_CONTENT_LENGTH) {
         logger.debug('[EXTRACT] Truncated large file content', {
           filePath,
-          maxLength: MAX_CONTENT_LENGTH,
+          maxLength: MAX_CONTENT_LENGTH
         });
       }
       safeResolve(chunks.join(''));
@@ -300,10 +290,7 @@ async function extractTextFromPdf(filePath, fileName) {
           pdfText = textResult.text.trim();
         }
       } catch (v2Error) {
-        logger.warn(
-          '[PDF] pdf-parse 2.x extraction failed, error:',
-          v2Error.message,
-        );
+        logger.warn('[PDF] pdf-parse 2.x extraction failed, error:', v2Error.message);
         throw v2Error;
       } finally {
         // Always destroy parser to free memory (required by v2 API)
@@ -329,7 +316,7 @@ async function extractTextFromPdf(filePath, fileName) {
 
     if (!pdfText || pdfText.trim().length === 0) {
       throw new FileProcessingError('PDF_NO_TEXT_CONTENT', fileName, {
-        suggestion: 'PDF may be image-based or corrupted',
+        suggestion: 'PDF may be image-based or corrupted'
       });
     }
 
@@ -358,7 +345,7 @@ async function ocrPdfIfNeeded(filePath) {
       logger.info('[OCR] Skipping OCR - file exceeds 50MB limit', {
         filePath,
         fileSize: stats.size,
-        maxSize: 50 * 1024 * 1024,
+        maxSize: 50 * 1024 * 1024
       });
       return '';
     }
@@ -372,12 +359,11 @@ async function ocrPdfIfNeeded(filePath) {
     const ocrText = await tesseract.recognize(rasterPng, {
       lang: 'eng',
       oem: 1,
-      psm: 3,
+      psm: 3
     });
 
     // Fixed: Truncate OCR results and clean up
-    const result =
-      ocrText && ocrText.trim().length > 0 ? truncateText(ocrText) : '';
+    const result = ocrText && ocrText.trim().length > 0 ? truncateText(ocrText) : '';
     rasterPng = null;
     return result;
   } catch (error) {
@@ -385,7 +371,7 @@ async function ocrPdfIfNeeded(filePath) {
     logger.warn('[OCR] OCR processing failed', {
       filePath,
       error: error.message,
-      errorCode: error.code,
+      errorCode: error.code
     });
     return '';
   } finally {
@@ -411,8 +397,7 @@ async function extractTextFromDocx(filePath) {
   await checkFileSize(filePath, filePath);
 
   const result = await mammoth.extractRawText({ path: filePath });
-  if (!result.value || result.value.trim().length === 0)
-    throw new Error('No text content in DOCX');
+  if (!result.value || result.value.trim().length === 0) throw new Error('No text content in DOCX');
 
   // Fixed: Truncate result to prevent memory issues
   return truncateText(result.value);
@@ -430,9 +415,7 @@ async function extractTextFromXlsx(filePath) {
 
     // CRITICAL FIX: Validate workbook structure
     if (!workbook || typeof workbook.sheets !== 'function') {
-      throw new Error(
-        'Invalid workbook structure: sheets() method not available',
-      );
+      throw new Error('Invalid workbook structure: sheets() method not available');
     }
 
     const sheets = workbook.sheets();
@@ -448,7 +431,7 @@ async function extractTextFromXlsx(filePath) {
         // CRITICAL FIX: Add null checks and validate usedRange structure
         if (!sheet || typeof sheet.usedRange !== 'function') {
           logger.warn('[XLSX] Sheet missing usedRange method, skipping', {
-            sheetName: sheet?.name() || 'unknown',
+            sheetName: sheet?.name() || 'unknown'
           });
           continue;
         }
@@ -456,19 +439,16 @@ async function extractTextFromXlsx(filePath) {
         const usedRange = sheet.usedRange();
         if (!usedRange) {
           logger.debug('[XLSX] Sheet has no used range, skipping', {
-            sheetName: sheet?.name() || 'unknown',
+            sheetName: sheet?.name() || 'unknown'
           });
           continue;
         }
 
         // CRITICAL FIX: Validate that value() method exists and returns valid data
         if (typeof usedRange.value !== 'function') {
-          logger.warn(
-            '[XLSX] usedRange missing value() method, trying alternative extraction',
-            {
-              sheetName: sheet?.name() || 'unknown',
-            },
-          );
+          logger.warn('[XLSX] usedRange missing value() method, trying alternative extraction', {
+            sheetName: sheet?.name() || 'unknown'
+          });
 
           // Fallback: Try to extract cell values manually
           try {
@@ -480,11 +460,7 @@ async function extractTextFromXlsx(filePath) {
               const startCol = startCell.columnNumber();
               const endCol = endCell.columnNumber();
 
-              for (
-                let row = startRow;
-                row <= endRow && totalRows < MAX_XLSX_ROWS;
-                row++
-              ) {
+              for (let row = startRow; row <= endRow && totalRows < MAX_XLSX_ROWS; row++) {
                 const rowData = [];
                 for (let col = startCol; col <= endCol; col++) {
                   try {
@@ -508,7 +484,7 @@ async function extractTextFromXlsx(filePath) {
           } catch (fallbackError) {
             logger.warn('[XLSX] Fallback extraction failed', {
               error: fallbackError.message,
-              sheetName: sheet?.name() || 'unknown',
+              sheetName: sheet?.name() || 'unknown'
             });
           }
           continue;
@@ -518,7 +494,7 @@ async function extractTextFromXlsx(filePath) {
         if (!Array.isArray(values)) {
           logger.warn('[XLSX] usedRange.value() did not return array', {
             sheetName: sheet?.name() || 'unknown',
-            valueType: typeof values,
+            valueType: typeof values
           });
           continue;
         }
@@ -528,7 +504,7 @@ async function extractTextFromXlsx(filePath) {
         if (values.length > MAX_XLSX_ROWS) {
           logger.warn('[XLSX] Sheet row limit applied', {
             totalRows: values.length,
-            limit: MAX_XLSX_ROWS,
+            limit: MAX_XLSX_ROWS
           });
         }
 
@@ -567,7 +543,7 @@ async function extractTextFromXlsx(filePath) {
         // Log sheet-level errors but continue processing other sheets
         logger.warn('[XLSX] Error processing sheet', {
           error: sheetError.message,
-          sheetName: sheet?.name() || 'unknown',
+          sheetName: sheet?.name() || 'unknown'
         });
         continue;
       }
@@ -577,9 +553,7 @@ async function extractTextFromXlsx(filePath) {
     if (!allText) {
       // CRITICAL FIX: Try fallback extraction using officeParser before giving up
       try {
-        logger.info(
-          '[XLSX] Primary extraction failed, trying officeParser fallback',
-        );
+        logger.info('[XLSX] Primary extraction failed, trying officeParser fallback');
         const fallbackResult = await officeParser.parseOfficeAsync(filePath);
         const fallbackText =
           typeof fallbackResult === 'string'
@@ -590,7 +564,7 @@ async function extractTextFromXlsx(filePath) {
         }
       } catch (fallbackError) {
         logger.warn('[XLSX] Fallback extraction also failed', {
-          error: fallbackError.message,
+          error: fallbackError.message
         });
       }
       throw new Error('No text content in XLSX');
@@ -606,12 +580,11 @@ async function extractTextFromXlsx(filePath) {
     logger.error('[XLSX] Extraction failed', {
       filePath,
       error: errorMessage,
-      errorStack: error.stack,
+      errorStack: error.stack
     });
     throw new FileProcessingError('XLSX_EXTRACTION_FAILURE', filePath, {
       originalError: errorMessage,
-      suggestion:
-        'XLSX file may be corrupted, password-protected, or in an unsupported format',
+      suggestion: 'XLSX file may be corrupted, password-protected, or in an unsupported format'
     });
   } finally {
     // Explicit cleanup
@@ -660,9 +633,7 @@ async function extractTextFromPptx(filePath) {
 
     if (!text || text.trim().length === 0) {
       // CRITICAL FIX: Try alternative extraction method before giving up
-      logger.warn(
-        '[PPTX] Primary extraction returned no text, trying ZIP-based extraction',
-      );
+      logger.warn('[PPTX] Primary extraction returned no text, trying ZIP-based extraction');
       try {
         const zip = new AdmZip(filePath);
         const entries = zip.getEntries();
@@ -688,7 +659,7 @@ async function extractTextFromPptx(filePath) {
               // Skip individual entry errors
               logger.debug('[PPTX] Error processing slide entry', {
                 entry: name,
-                error: entryError.message,
+                error: entryError.message
               });
             }
           }
@@ -699,7 +670,7 @@ async function extractTextFromPptx(filePath) {
         }
       } catch (zipError) {
         logger.warn('[PPTX] ZIP-based extraction failed', {
-          error: zipError.message,
+          error: zipError.message
         });
       }
 
@@ -714,14 +685,13 @@ async function extractTextFromPptx(filePath) {
     logger.error('[PPTX] Extraction failed', {
       filePath,
       error: errorMessage,
-      errorStack: error.stack,
+      errorStack: error.stack
     });
 
     // Re-throw as FileProcessingError for consistent error handling
     throw new FileProcessingError('PPTX_EXTRACTION_FAILURE', filePath, {
       originalError: errorMessage,
-      suggestion:
-        'PPTX file may be corrupted, password-protected, or in an unsupported format',
+      suggestion: 'PPTX file may be corrupted, password-protected, or in an unsupported format'
     });
   }
 }
@@ -786,11 +756,7 @@ async function extractTextFromEpub(filePath) {
 
     for (const e of entries) {
       const name = e.entryName.toLowerCase();
-      if (
-        name.endsWith('.xhtml') ||
-        name.endsWith('.html') ||
-        name.endsWith('.htm')
-      ) {
+      if (name.endsWith('.xhtml') || name.endsWith('.html') || name.endsWith('.htm')) {
         try {
           const html = e.getData().toString('utf8');
           text += `${extractPlainTextFromHtml(html)}\n`;
@@ -804,7 +770,7 @@ async function extractTextFromEpub(filePath) {
         } catch (error) {
           // Expected: Skip corrupt entries in archive
           logger.debug('Skipping corrupt archive entry', {
-            error: error.message,
+            error: error.message
           });
         }
       }
@@ -839,8 +805,7 @@ async function extractTextFromMsg(filePath) {
   // Best-effort using officeparser; if unavailable, return empty string
   try {
     const result = await officeParser.parseOfficeAsync(filePath);
-    const text =
-      typeof result === 'string' ? result : (result && result.text) || '';
+    const text = typeof result === 'string' ? result : (result && result.text) || '';
     return text || '';
   } catch {
     return '';
@@ -867,8 +832,7 @@ async function extractTextFromXls(filePath) {
   const officeParser = require('officeparser');
   try {
     const result = await officeParser.parseOfficeAsync(filePath);
-    const text =
-      typeof result === 'string' ? result : (result && result.text) || '';
+    const text = typeof result === 'string' ? result : (result && result.text) || '';
     if (text && text.trim()) return text;
   } catch {
     // Fallback to empty string on parse failure
@@ -880,8 +844,7 @@ async function extractTextFromPpt(filePath) {
   const officeParser = require('officeparser');
   try {
     const result = await officeParser.parseOfficeAsync(filePath);
-    const text =
-      typeof result === 'string' ? result : (result && result.text) || '';
+    const text = typeof result === 'string' ? result : (result && result.text) || '';
     return text || '';
   } catch {
     return '';
@@ -900,17 +863,14 @@ async function extractTextFromPpt(filePath) {
  */
 function chunkTextForAnalysis(
   text,
-  { chunkSize = 4000, overlap = 400, maxTotalLength = 16000 } = {},
+  { chunkSize = 4000, overlap = 400, maxTotalLength = 16000 } = {}
 ) {
   if (!text || typeof text !== 'string') {
     return { chunks: [], combined: '' };
   }
 
   const safeChunkSize = Math.max(500, chunkSize);
-  const safeOverlap = Math.min(
-    Math.max(0, overlap),
-    Math.floor(safeChunkSize / 2),
-  );
+  const safeOverlap = Math.min(Math.max(0, overlap), Math.floor(safeChunkSize / 2));
 
   const chunks = [];
   let start = 0;
@@ -933,7 +893,7 @@ function chunkTextForAnalysis(
 
   return {
     chunks,
-    combined: combined.join('\n\n---\n\n'),
+    combined: combined.join('\n\n---\n\n')
   };
 }
 
@@ -960,5 +920,5 @@ module.exports = {
   extractContentWithSizeCheck,
   extractContentStreaming,
   extractContentBuffered,
-  chunkTextForAnalysis,
+  chunkTextForAnalysis
 };

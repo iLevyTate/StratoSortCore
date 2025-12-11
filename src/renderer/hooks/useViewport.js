@@ -12,7 +12,7 @@ export function useViewport() {
     isDesktop: window.innerWidth >= VIEWPORT.DESKTOP,
     isWideDesktop: window.innerWidth >= VIEWPORT.WIDE_DESKTOP,
     isUltraWide: window.innerWidth >= VIEWPORT.ULTRA_WIDE,
-    is4K: window.innerWidth >= VIEWPORT.FOUR_K,
+    is4K: window.innerWidth >= VIEWPORT.FOUR_K
   });
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function useViewport() {
           isDesktop: window.innerWidth >= VIEWPORT.DESKTOP,
           isWideDesktop: window.innerWidth >= VIEWPORT.WIDE_DESKTOP,
           isUltraWide: window.innerWidth >= VIEWPORT.ULTRA_WIDE,
-          is4K: window.innerWidth >= VIEWPORT.FOUR_K,
+          is4K: window.innerWidth >= VIEWPORT.FOUR_K
         });
       }, 150);
     };

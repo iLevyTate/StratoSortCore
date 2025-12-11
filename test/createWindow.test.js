@@ -24,18 +24,18 @@ jest.mock('electron', () => ({
       setWindowOpenHandler: jest.fn(),
       session: {
         webRequest: {
-          onHeadersReceived: jest.fn(),
+          onHeadersReceived: jest.fn()
         },
-        setPermissionRequestHandler: jest.fn(),
-      },
-    },
+        setPermissionRequestHandler: jest.fn()
+      }
+    }
   })),
   shell: {
-    openExternal: jest.fn(),
+    openExternal: jest.fn()
   },
   app: {
-    setAppUserModelId: jest.fn(),
-  },
+    setAppUserModelId: jest.fn()
+  }
 }));
 
 jest.mock('electron-window-state', () =>
@@ -45,7 +45,7 @@ jest.mock('electron-window-state', () =>
     width: 1440,
     height: 900,
     manage: jest.fn(),
-    unmanage: jest.fn(),
+    unmanage: jest.fn()
   })
 );
 
@@ -55,13 +55,13 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/shared/configDefaults', () => ({
   isDevelopment: jest.fn().mockReturnValue(false),
-  getEnvBool: jest.fn().mockReturnValue(false),
+  getEnvBool: jest.fn().mockReturnValue(false)
 }));
 
 describe('createWindow', () => {
@@ -86,19 +86,19 @@ describe('createWindow', () => {
         expect.objectContaining({
           width: 1440,
           height: 900,
-          minWidth: 1024,
-          minHeight: 768,
+          minWidth: 800,
+          minHeight: 600
         })
       );
     });
 
-    test('creates window with dark theme', () => {
+    test('creates window with light theme (default)', () => {
       createMainWindow();
 
       expect(BrowserWindow).toHaveBeenCalledWith(
         expect.objectContaining({
-          backgroundColor: '#0f0f10',
-          darkTheme: true,
+          backgroundColor: '#f8fafc',
+          darkTheme: false
         })
       );
     });
@@ -108,7 +108,7 @@ describe('createWindow', () => {
 
       expect(BrowserWindow).toHaveBeenCalledWith(
         expect.objectContaining({
-          show: false,
+          show: false
         })
       );
     });
@@ -120,7 +120,7 @@ describe('createWindow', () => {
         width: 1600,
         height: 1000,
         manage: jest.fn(),
-        unmanage: jest.fn(),
+        unmanage: jest.fn()
       });
 
       createMainWindow();
@@ -130,7 +130,7 @@ describe('createWindow', () => {
           x: 200,
           y: 300,
           width: 1600,
-          height: 1000,
+          height: 1000
         })
       );
     });
@@ -189,7 +189,7 @@ describe('createWindow', () => {
         width: 1440,
         height: 900,
         manage,
-        unmanage: jest.fn(),
+        unmanage: jest.fn()
       });
 
       const win = createMainWindow();
@@ -236,8 +236,8 @@ describe('createWindow', () => {
           responseHeaders: expect.objectContaining({
             'Content-Security-Policy': expect.any(Array),
             'X-Content-Type-Options': ['nosniff'],
-            'X-Frame-Options': ['DENY'],
-          }),
+            'X-Frame-Options': ['DENY']
+          })
         })
       );
     });
@@ -256,9 +256,7 @@ describe('createWindow', () => {
       const win = createMainWindow();
 
       // Find and call the ready-to-show handler
-      const readyToShowCall = win.once.mock.calls.find(
-        (call) => call[0] === 'ready-to-show'
-      );
+      const readyToShowCall = win.once.mock.calls.find((call) => call[0] === 'ready-to-show');
       const readyToShowHandler = readyToShowCall[1];
 
       readyToShowHandler();

@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('ServiceContainer', () => {
@@ -52,13 +52,13 @@ describe('ServiceContainer', () => {
 
     test('throws for empty service name', () => {
       expect(() => container.registerSingleton('', () => ({}))).toThrow(
-        'Service name must be a non-empty string',
+        'Service name must be a non-empty string'
       );
     });
 
     test('throws for non-function factory', () => {
       expect(() => container.registerSingleton('test', 'not a function')).toThrow(
-        'must be a function',
+        'must be a function'
       );
     });
   });
@@ -92,9 +92,7 @@ describe('ServiceContainer', () => {
     });
 
     test('throws for undefined instance', () => {
-      expect(() => container.registerInstance('test', undefined)).toThrow(
-        'cannot be undefined',
-      );
+      expect(() => container.registerInstance('test', undefined)).toThrow('cannot be undefined');
     });
   });
 
@@ -122,10 +120,10 @@ describe('ServiceContainer', () => {
 
     test('detects circular dependencies', () => {
       container.registerSingleton('a', (c) => ({
-        b: c.resolve('b'),
+        b: c.resolve('b')
       }));
       container.registerSingleton('b', (c) => ({
-        a: c.resolve('a'),
+        a: c.resolve('a')
       }));
 
       expect(() => container.resolve('a')).toThrow('Circular dependency');
@@ -134,7 +132,7 @@ describe('ServiceContainer', () => {
     test('passes container to factory', () => {
       container.registerSingleton('config', () => ({ port: 3000 }));
       container.registerSingleton('server', (c) => ({
-        config: c.resolve('config'),
+        config: c.resolve('config')
       }));
 
       const server = container.resolve('server');
@@ -168,7 +166,7 @@ describe('ServiceContainer', () => {
 
       const [instance1, instance2] = await Promise.all([
         container.resolveAsync('async'),
-        container.resolveAsync('async'),
+        container.resolveAsync('async')
       ]);
 
       // Both should get the same instance
@@ -177,9 +175,7 @@ describe('ServiceContainer', () => {
     });
 
     test('throws for unregistered service', async () => {
-      await expect(container.resolveAsync('unknown')).rejects.toThrow(
-        'is not registered',
-      );
+      await expect(container.resolveAsync('unknown')).rejects.toThrow('is not registered');
     });
   });
 
@@ -279,7 +275,7 @@ describe('ServiceContainer', () => {
       container.registerSingleton('failing', () => ({
         shutdown: async () => {
           throw new Error('Shutdown failed');
-        },
+        }
       }));
       container.resolve('failing');
 

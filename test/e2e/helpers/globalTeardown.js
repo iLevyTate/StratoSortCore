@@ -30,12 +30,10 @@ async function globalTeardown(config) {
       try {
         const result = execSync('tasklist /FI "IMAGENAME eq electron.exe"', {
           encoding: 'utf8',
-          timeout: 5000,
+          timeout: 5000
         });
         if (result.includes('electron.exe')) {
-          console.log(
-            '[Teardown] Note: Electron processes found (may be from other apps)',
-          );
+          console.log('[Teardown] Note: Electron processes found (may be from other apps)');
         } else {
           console.log('[Teardown] No orphaned Electron processes found');
         }
@@ -48,10 +46,10 @@ async function globalTeardown(config) {
       try {
         execSync('pgrep -f "electron.*simple-main"', {
           encoding: 'utf8',
-          timeout: 5000,
+          timeout: 5000
         });
         console.log(
-          '[Teardown] Note: StratoSort processes found - tests may not have cleaned up properly',
+          '[Teardown] Note: StratoSort processes found - tests may not have cleaned up properly'
         );
       } catch (e) {
         console.log('[Teardown] No orphaned StratoSort processes found');
@@ -74,9 +72,7 @@ async function globalTeardown(config) {
   if (fs.existsSync(screenshotsDir)) {
     const screenshots = fs.readdirSync(screenshotsDir);
     if (screenshots.length > 0) {
-      console.log(
-        `[Teardown] ${screenshots.length} screenshot(s) saved in: ${screenshotsDir}`,
-      );
+      console.log(`[Teardown] ${screenshots.length} screenshot(s) saved in: ${screenshotsDir}`);
     }
   }
 

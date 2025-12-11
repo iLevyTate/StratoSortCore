@@ -14,7 +14,7 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
   caseConvention,
   setCaseConvention,
   separator,
-  setSeparator,
+  setSeparator
 }) {
   return (
     <Modal
@@ -52,10 +52,7 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
           </div>
 
           <div className="flex justify-end">
-            <Button
-              onClick={onClose}
-              variant="primary"
-            >
+            <Button onClick={onClose} variant="primary">
               Done
             </Button>
           </div>
@@ -75,7 +72,7 @@ NamingSettingsModal.propTypes = {
   caseConvention: PropTypes.string.isRequired,
   setCaseConvention: PropTypes.func.isRequired,
   separator: PropTypes.string.isRequired,
-  setSeparator: PropTypes.func.isRequired,
+  setSeparator: PropTypes.func.isRequired
 };
 
 export default NamingSettingsModal;

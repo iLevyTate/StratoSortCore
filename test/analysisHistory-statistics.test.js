@@ -5,7 +5,7 @@
 
 // Mock dependencies
 jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
-  recalculateIncrementalStats: jest.fn(),
+  recalculateIncrementalStats: jest.fn()
 }));
 
 describe('statistics', () => {
@@ -28,8 +28,8 @@ describe('statistics', () => {
         sortedEntries: [
           { timestamp: '2024-01-20' },
           { timestamp: '2024-01-15' },
-          { timestamp: '2024-01-10' },
-        ],
+          { timestamp: '2024-01-10' }
+        ]
       };
 
       const result = statistics.getOldestTimestamp(cache, []);
@@ -42,7 +42,7 @@ describe('statistics', () => {
       const entries = [
         { timestamp: '2024-01-15' },
         { timestamp: '2024-01-10' },
-        { timestamp: '2024-01-20' },
+        { timestamp: '2024-01-20' }
       ];
 
       const result = statistics.getOldestTimestamp(cache, entries);
@@ -74,8 +74,8 @@ describe('statistics', () => {
         sortedEntries: [
           { timestamp: '2024-01-20' },
           { timestamp: '2024-01-15' },
-          { timestamp: '2024-01-10' },
-        ],
+          { timestamp: '2024-01-10' }
+        ]
       };
 
       const result = statistics.getNewestTimestamp(cache, []);
@@ -88,7 +88,7 @@ describe('statistics', () => {
       const entries = [
         { timestamp: '2024-01-15' },
         { timestamp: '2024-01-20' },
-        { timestamp: '2024-01-10' },
+        { timestamp: '2024-01-10' }
       ];
 
       const result = statistics.getNewestTimestamp(cache, entries);
@@ -110,21 +110,21 @@ describe('statistics', () => {
       const index = {
         documents: [1, 2, 3, 4, 5],
         images: [6, 7],
-        audio: [8, 9, 10],
+        audio: [8, 9, 10]
       };
 
       const result = statistics.getTopItems(index, 2);
 
       expect(result).toEqual([
         { name: 'documents', count: 5 },
-        { name: 'audio', count: 3 },
+        { name: 'audio', count: 3 }
       ]);
     });
 
     test('returns all items if limit exceeds count', () => {
       const index = {
         documents: [1],
-        images: [2],
+        images: [2]
       };
 
       const result = statistics.getTopItems(index, 10);
@@ -144,7 +144,7 @@ describe('statistics', () => {
       const sizeIndex = {
         tiny: [1, 2],
         small: [3, 4, 5],
-        large: [6],
+        large: [6]
       };
 
       const result = statistics.getSizeDistribution(sizeIndex);
@@ -152,7 +152,7 @@ describe('statistics', () => {
       expect(result).toEqual({
         tiny: 2,
         small: 3,
-        large: 1,
+        large: 1
       });
     });
 
@@ -167,24 +167,24 @@ describe('statistics', () => {
     const createAnalysisHistory = () => ({
       entries: {
         1: { timestamp: '2024-01-15' },
-        2: { timestamp: '2024-01-20' },
+        2: { timestamp: '2024-01-20' }
       },
       totalSize: 5000,
-      updatedAt: '2024-01-20T10:00:00Z',
+      updatedAt: '2024-01-20T10:00:00Z'
     });
 
     const createAnalysisIndex = () => ({
       categoryIndex: {
         documents: [1],
-        images: [2],
+        images: [2]
       },
       tagIndex: {
         invoice: [1],
-        photo: [2],
+        photo: [2]
       },
       sizeIndex: {
-        small: [1, 2],
-      },
+        small: [1, 2]
+      }
     });
 
     const createCache = () => ({
@@ -194,9 +194,9 @@ describe('statistics', () => {
         initialized: true,
         totalConfidence: 1.5,
         totalProcessingTime: 300,
-        entryCount: 2,
+        entryCount: 2
       },
-      sortedEntriesValid: false,
+      sortedEntriesValid: false
     });
 
     test('calculates statistics from history', () => {
@@ -223,7 +223,7 @@ describe('statistics', () => {
       const cache = {
         statistics: cachedStats,
         statisticsTime: Date.now(),
-        incrementalStats: { initialized: true, entryCount: 100 },
+        incrementalStats: { initialized: true, entryCount: 100 }
       };
       const state = {};
 
@@ -239,7 +239,7 @@ describe('statistics', () => {
         statistics: null,
         statisticsTime: 0,
         incrementalStats: { initialized: false },
-        sortedEntriesValid: false,
+        sortedEntriesValid: false
       };
       const state = { _statsNeedFullRecalc: true };
 
@@ -255,7 +255,7 @@ describe('statistics', () => {
         statistics: null,
         statisticsTime: 0,
         incrementalStats: { initialized: true, entryCount: 0 },
-        sortedEntriesValid: false,
+        sortedEntriesValid: false
       };
       const state = {};
 
@@ -284,11 +284,11 @@ describe('statistics', () => {
       const history = {
         entries: { 1: {}, 2: {}, 3: {} },
         totalSize: 10000,
-        updatedAt: '2024-01-20T10:00:00Z',
+        updatedAt: '2024-01-20T10:00:00Z'
       };
       const index = {
         categoryIndex: { a: [], b: [] },
-        tagIndex: { x: [], y: [], z: [] },
+        tagIndex: { x: [], y: [], z: [] }
       };
 
       const result = statistics.getQuickStats(history, index);

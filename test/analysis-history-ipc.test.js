@@ -17,7 +17,7 @@ describe('AnalysisHistory IPC', () => {
       getFileHistory: jest.fn(async () => []),
       clear: jest.fn(async () => ({})),
       export: jest.fn(async () => ({ success: true, path: 'out.json' })),
-      getRecentAnalysis: jest.fn(async () => []),
+      getRecentAnalysis: jest.fn(async () => [])
     };
 
     registerAllIpc({
@@ -25,7 +25,7 @@ describe('AnalysisHistory IPC', () => {
       IPC_CHANNELS,
       logger,
       systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
-      getServiceIntegration: () => ({ analysisHistory: service }),
+      getServiceIntegration: () => ({ analysisHistory: service })
     });
 
     // IPC handlers expect (event, ...args) - pass null for event
@@ -41,9 +41,7 @@ describe('AnalysisHistory IPC', () => {
     const searchResult = await hSearch(mockEvent, 'term', {});
     expect(Array.isArray(searchResult)).toBe(true);
 
-    const hStats = ipcMain._handlers.get(
-      IPC_CHANNELS.ANALYSIS_HISTORY.GET_STATISTICS,
-    );
+    const hStats = ipcMain._handlers.get(IPC_CHANNELS.ANALYSIS_HISTORY.GET_STATISTICS);
     // GET_STATISTICS expects just (event)
     expect((await hStats(mockEvent)).total).toBe(0);
 

@@ -17,7 +17,7 @@ describe('crossPlatformUtils', () => {
   afterEach(() => {
     // Restore platform if modified
     Object.defineProperty(process, 'platform', {
-      value: originalPlatform,
+      value: originalPlatform
     });
   });
 
@@ -71,8 +71,9 @@ describe('crossPlatformUtils', () => {
 
     test('uses custom windowsExtension when provided', () => {
       if (crossPlatformUtils.isWindows) {
-        expect(crossPlatformUtils.getExecutableName('myapp', { windowsExtension: '.exe' }))
-          .toBe('myapp.exe');
+        expect(crossPlatformUtils.getExecutableName('myapp', { windowsExtension: '.exe' })).toBe(
+          'myapp.exe'
+        );
       }
     });
 
@@ -356,13 +357,11 @@ describe('crossPlatformUtils', () => {
     });
 
     test('jumpList is Windows only', () => {
-      expect(crossPlatformUtils.isFeatureSupported('jumpList'))
-        .toBe(crossPlatformUtils.isWindows);
+      expect(crossPlatformUtils.isFeatureSupported('jumpList')).toBe(crossPlatformUtils.isWindows);
     });
 
     test('dockMenu is macOS only', () => {
-      expect(crossPlatformUtils.isFeatureSupported('dockMenu'))
-        .toBe(crossPlatformUtils.isMacOS);
+      expect(crossPlatformUtils.isFeatureSupported('dockMenu')).toBe(crossPlatformUtils.isMacOS);
     });
 
     test('tray is supported on all platforms', () => {
@@ -396,9 +395,13 @@ describe('crossPlatformUtils', () => {
     });
 
     test('handles timeout', async () => {
-      const result = await crossPlatformUtils.crossSpawn('node', ['-e', 'setTimeout(() => {}, 10000)'], {
-        timeout: 100,
-      });
+      const result = await crossPlatformUtils.crossSpawn(
+        'node',
+        ['-e', 'setTimeout(() => {}, 10000)'],
+        {
+          timeout: 100
+        }
+      );
       expect(result.timedOut).toBe(true);
     });
 

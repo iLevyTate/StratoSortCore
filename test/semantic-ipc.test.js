@@ -19,13 +19,13 @@ describe('Embeddings/Semantic IPC', () => {
         // eslint-disable-next-line no-unused-vars
         embedText: jest.fn(async (_text) => ({
           vector: [0.1, 0.2, 0.3],
-          model: 'nomic-embed-text',
+          model: 'mxbai-embed-large'
         })),
         generateFolderId: jest.fn((f) => f.id || `folder-${f.name}`),
         upsertFolderEmbedding: jest.fn(async (f) => f),
         upsertFileEmbedding: jest.fn(async () => {}),
-        initialize: jest.fn(),
-      })),
+        initialize: jest.fn()
+      }))
     );
     jest.doMock('../src/main/services/ChromaDBService', () => ({
       getInstance: () => ({
@@ -54,8 +54,8 @@ describe('Embeddings/Semantic IPC', () => {
         offlineQueue: { size: () => 0 },
         serverUrl: 'http://localhost:8000',
         checkHealth: jest.fn().mockResolvedValue(true),
-        forceRecovery: jest.fn(),
-      }),
+        forceRecovery: jest.fn()
+      })
     }));
     const { registerAllIpc } = require('../src/main/ipc');
     const { IPC_CHANNELS } = require('../src/shared/constants');
@@ -68,16 +68,12 @@ describe('Embeddings/Semantic IPC', () => {
       logger,
       systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
       getServiceIntegration: () => ({
-        analysisHistory: { getRecentAnalysis: jest.fn(async () => []) },
+        analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
       }),
-      getCustomFolders: () => [
-        { id: '1', name: 'Finance', description: 'Invoices' },
-      ],
+      getCustomFolders: () => [{ id: '1', name: 'Finance', description: 'Invoices' }]
     });
 
-    const handler = ipcMain._handlers.get(
-      IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
-    );
+    const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS);
     const result = await handler();
 
     // IMPROVED: Now validates batch operations instead of individual calls
@@ -97,15 +93,15 @@ describe('Embeddings/Semantic IPC', () => {
         // eslint-disable-next-line no-unused-vars
         embedText: jest.fn(async (_text) => ({
           vector: [0.1, 0.2, 0.3],
-          model: 'nomic-embed-text',
+          model: 'mxbai-embed-large'
         })),
         generateFolderId: jest.fn((f) => f.id || `folder-${f.name}`),
         upsertFolderEmbedding: jest.fn(async () => {}),
         upsertFileEmbedding: jest.fn(async (id, summary) => {
           inserted.push({ id, summary });
         }),
-        initialize: jest.fn(),
-      })),
+        initialize: jest.fn()
+      }))
     );
     jest.doMock('../src/main/services/ChromaDBService', () => ({
       getInstance: () => ({
@@ -135,8 +131,8 @@ describe('Embeddings/Semantic IPC', () => {
         offlineQueue: { size: () => 0 },
         serverUrl: 'http://localhost:8000',
         checkHealth: jest.fn().mockResolvedValue(true),
-        forceRecovery: jest.fn(),
-      }),
+        forceRecovery: jest.fn()
+      })
     }));
     const { registerAllIpc } = require('../src/main/ipc');
     const { IPC_CHANNELS } = require('../src/shared/constants');
@@ -148,10 +144,10 @@ describe('Embeddings/Semantic IPC', () => {
             subject: 'Q1',
             summary: 'Quarterly report',
             tags: ['finance'],
-            extractedText: 'numbers',
-          },
-        },
-      ]),
+            extractedText: 'numbers'
+          }
+        }
+      ])
     };
 
     registerAllIpc({
@@ -160,14 +156,10 @@ describe('Embeddings/Semantic IPC', () => {
       logger,
       systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
       getServiceIntegration: () => ({ analysisHistory: mockHistory }),
-      getCustomFolders: () => [
-        { id: '1', name: 'Finance', description: 'Finance folder' },
-      ],
+      getCustomFolders: () => [{ id: '1', name: 'Finance', description: 'Finance folder' }]
     });
 
-    const handler = ipcMain._handlers.get(
-      IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
-    );
+    const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES);
     const result = await handler();
     // IMPROVED: Now validates batch file operations work correctly
     expect(result.success).toBe(true);
@@ -204,8 +196,8 @@ describe('Embeddings/Semantic IPC', () => {
         offlineQueue: { size: () => 0 },
         serverUrl: 'http://localhost:8000',
         checkHealth: jest.fn().mockResolvedValue(true),
-        forceRecovery: jest.fn(),
-      }),
+        forceRecovery: jest.fn()
+      })
     }));
     const { registerAllIpc } = require('../src/main/ipc');
     const { IPC_CHANNELS } = require('../src/shared/constants');
@@ -215,9 +207,9 @@ describe('Embeddings/Semantic IPC', () => {
       logger,
       systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
       getServiceIntegration: () => ({
-        analysisHistory: { getRecentAnalysis: jest.fn(async () => []) },
+        analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
       }),
-      getCustomFolders: () => [],
+      getCustomFolders: () => []
     });
 
     const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE);

@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
-const { debounce } = require('../../utils/performance');
+import { debounce } from '../../utils/performance';
 
 // Inline SVG Icons (keep UI visuals)
 const CheckCircleIcon = ({ className }) => (

@@ -7,7 +7,7 @@ const FolderMatchingService = require('../src/main/services/FolderMatchingServic
 // Mock ollama utils
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(),
-  getOllamaEmbeddingModel: jest.fn().mockReturnValue('mxbai-embed-large'),
+  getOllamaEmbeddingModel: jest.fn().mockReturnValue('mxbai-embed-large')
 }));
 
 // Mock ParallelEmbeddingService
@@ -18,8 +18,8 @@ jest.mock('../src/main/services/ParallelEmbeddingService', () => ({
     embedText: jest.fn(),
     getStats: jest.fn().mockReturnValue({}),
     setConcurrencyLimit: jest.fn(),
-    concurrencyLimit: 5,
-  })),
+    concurrencyLimit: 5
+  }))
 }));
 
 // Mock logger
@@ -29,8 +29,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('FolderMatchingService Batch Operations', () => {
@@ -43,17 +43,15 @@ describe('FolderMatchingService Batch Operations', () => {
     mockChromaDBService = {
       initialize: jest.fn().mockResolvedValue(undefined),
       upsertFolder: jest.fn().mockResolvedValue({ success: true }),
-      batchUpsertFolders: jest
-        .fn()
-        .mockResolvedValue({ count: 2, skipped: [] }),
-      getStats: jest.fn().mockResolvedValue({ folders: 0, files: 0 }),
+      batchUpsertFolders: jest.fn().mockResolvedValue({ count: 2, skipped: [] }),
+      getStats: jest.fn().mockResolvedValue({ folders: 0, files: 0 })
     };
 
     // Setup mock Ollama
     mockOllama = {
       embeddings: jest.fn().mockResolvedValue({
-        embedding: new Array(1024).fill(0.1),
-      }),
+        embedding: new Array(1024).fill(0.1)
+      })
     };
 
     const { getOllama } = require('../src/main/ollamaUtils');
@@ -75,16 +73,26 @@ describe('FolderMatchingService Batch Operations', () => {
     // Setup mock for ParallelEmbeddingService to return successful embeddings
     mockBatchEmbedFolders.mockResolvedValue({
       results: [
-        { id: 'folder:1', vector: new Array(1024).fill(0.1), model: 'mxbai-embed-large', success: true },
-        { id: 'folder:2', vector: new Array(1024).fill(0.2), model: 'mxbai-embed-large', success: true },
+        {
+          id: 'folder:1',
+          vector: new Array(1024).fill(0.1),
+          model: 'mxbai-embed-large',
+          success: true
+        },
+        {
+          id: 'folder:2',
+          vector: new Array(1024).fill(0.2),
+          model: 'mxbai-embed-large',
+          success: true
+        }
       ],
       errors: [],
-      stats: { total: 2, successful: 2, failed: 0 },
+      stats: { total: 2, successful: 2, failed: 0 }
     });
 
     const folders = [
       { name: 'F1', description: 'D1' },
-      { name: 'F2', description: 'D2' },
+      { name: 'F2', description: 'D2' }
     ];
 
     const result = await service.batchUpsertFolders(folders);
@@ -110,16 +118,21 @@ describe('FolderMatchingService Batch Operations', () => {
     // Mock ParallelEmbeddingService to return one success and one fallback
     mockBatchEmbedFolders.mockResolvedValue({
       results: [
-        { id: 'folder:1', vector: new Array(1024).fill(0.1), model: 'mxbai-embed-large', success: true },
-        { id: 'folder:2', vector: new Array(1024).fill(0), model: 'fallback', success: true },
+        {
+          id: 'folder:1',
+          vector: new Array(1024).fill(0.1),
+          model: 'mxbai-embed-large',
+          success: true
+        },
+        { id: 'folder:2', vector: new Array(1024).fill(0), model: 'fallback', success: true }
       ],
       errors: [],
-      stats: { total: 2, successful: 2, failed: 0 },
+      stats: { total: 2, successful: 2, failed: 0 }
     });
 
     const folders = [
       { name: 'Success', description: 'D1' },
-      { name: 'Fail', description: 'D2' },
+      { name: 'Fail', description: 'D2' }
     ];
 
     const result = await service.batchUpsertFolders(folders);
@@ -140,17 +153,20 @@ describe('FolderMatchingService Batch Operations', () => {
     // Mock ParallelEmbeddingService to return one success and one error
     mockBatchEmbedFolders.mockResolvedValue({
       results: [
-        { id: 'folder:1', vector: new Array(1024).fill(0.1), model: 'mxbai-embed-large', success: true },
+        {
+          id: 'folder:1',
+          vector: new Array(1024).fill(0.1),
+          model: 'mxbai-embed-large',
+          success: true
+        }
       ],
-      errors: [
-        { id: 'folder:2', error: 'Embedding failed' },
-      ],
-      stats: { total: 2, successful: 1, failed: 1 },
+      errors: [{ id: 'folder:2', error: 'Embedding failed' }],
+      stats: { total: 2, successful: 1, failed: 1 }
     });
 
     const folders = [
       { name: 'Success', description: 'D1' },
-      { name: 'Fail', description: 'D2' },
+      { name: 'Fail', description: 'D2' }
     ];
 
     const result = await service.batchUpsertFolders(folders);

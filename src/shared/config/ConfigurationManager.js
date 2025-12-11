@@ -6,16 +6,8 @@
  * @module config/ConfigurationManager
  */
 
-const {
-  CONFIG_SCHEMA,
-  SENSITIVE_KEYS,
-  DEPRECATED_MAPPINGS,
-} = require('./configSchema');
-const {
-  parseEnvValue,
-  getEnvVar,
-  validateValue,
-} = require('./configValidation');
+const { CONFIG_SCHEMA, SENSITIVE_KEYS, DEPRECATED_MAPPINGS } = require('./configSchema');
+const { parseEnvValue, getEnvVar, validateValue } = require('./configValidation');
 
 /**
  * Configuration Manager Class
@@ -42,7 +34,7 @@ class ConfigurationManager {
     for (const [oldKey, newKey] of Object.entries(DEPRECATED_MAPPINGS)) {
       if (process.env[oldKey]) {
         this._deprecationWarnings.push(
-          `Environment variable '${oldKey}' is deprecated. Use '${newKey}' instead.`,
+          `Environment variable '${oldKey}' is deprecated. Use '${newKey}' instead.`
         );
       }
     }
@@ -61,17 +53,13 @@ class ConfigurationManager {
         }
 
         // Validate and apply default if needed
-        const validation = validateValue(
-          `${category}.${propName}`,
-          value,
-          schemaDef,
-        );
+        const validation = validateValue(`${category}.${propName}`, value, schemaDef);
 
         if (!validation.valid) {
           this._validationErrors.push({
             key: `${category}.${propName}`,
             value,
-            error: validation.error,
+            error: validation.error
           });
           // Use default on validation failure
           this._config[category][propName] = schemaDef.default;
@@ -176,7 +164,7 @@ class ConfigurationManager {
     return {
       valid: this._validationErrors.length === 0,
       errors: [...this._validationErrors],
-      warnings: [...this._deprecationWarnings],
+      warnings: [...this._deprecationWarnings]
     };
   }
 
@@ -198,16 +186,9 @@ class ConfigurationManager {
       for (const [key, value] of Object.entries(obj)) {
         const fullKey = prefix ? `${prefix}.${key}` : key;
 
-        if (
-          typeof value === 'object' &&
-          value !== null &&
-          !Array.isArray(value)
-        ) {
+        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           result[key] = redact(value, fullKey);
-        } else if (
-          !includeSensitive &&
-          SENSITIVE_KEYS.some((s) => key.toLowerCase().includes(s))
-        ) {
+        } else if (!includeSensitive && SENSITIVE_KEYS.some((s) => key.toLowerCase().includes(s))) {
           result[key] = '[REDACTED]';
         } else {
           result[key] = value;
@@ -222,8 +203,8 @@ class ConfigurationManager {
         loadedAt: new Date().toISOString(),
         nodeEnv: this.get('ENV.nodeEnv'),
         validationErrors: this._validationErrors.length,
-        deprecationWarnings: this._deprecationWarnings.length,
-      },
+        deprecationWarnings: this._deprecationWarnings.length
+      }
     };
   }
 

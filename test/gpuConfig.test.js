@@ -10,19 +10,19 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock electron app
 const mockApp = {
   disableHardwareAcceleration: jest.fn(),
   commandLine: {
-    appendSwitch: jest.fn(),
-  },
+    appendSwitch: jest.fn()
+  }
 };
 jest.mock('electron', () => ({
-  app: mockApp,
+  app: mockApp
 }));
 
 describe('GPU Configuration', () => {
@@ -73,10 +73,7 @@ describe('GPU Configuration', () => {
 
       gpuConfig.initializeGpuConfig();
 
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'use-angle',
-        'd3d11',
-      );
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('use-angle', 'd3d11');
     });
 
     test('uses custom ANGLE backend from environment', () => {
@@ -85,10 +82,7 @@ describe('GPU Configuration', () => {
 
       gpuConfig.initializeGpuConfig();
 
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'use-angle',
-        'gl',
-      );
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('use-angle', 'gl');
     });
 
     test('sets custom GL implementation when specified', () => {
@@ -97,10 +91,7 @@ describe('GPU Configuration', () => {
 
       gpuConfig.initializeGpuConfig();
 
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'use-gl',
-        'desktop',
-      );
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('use-gl', 'desktop');
     });
 
     test('ignores GPU blocklist', () => {
@@ -108,9 +99,7 @@ describe('GPU Configuration', () => {
 
       gpuConfig.initializeGpuConfig();
 
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'ignore-gpu-blocklist',
-      );
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('ignore-gpu-blocklist');
     });
 
     test('handles app.commandLine errors gracefully', () => {
@@ -142,18 +131,21 @@ describe('GPU Configuration', () => {
     test('logs GPU process exit', () => {
       const { logger } = require('../src/shared/logger');
 
-      gpuConfig.handleGpuProcessGone({}, {
-        type: 'GPU',
-        reason: 'crashed',
-        exitCode: 1,
-      });
+      gpuConfig.handleGpuProcessGone(
+        {},
+        {
+          type: 'GPU',
+          reason: 'crashed',
+          exitCode: 1
+        }
+      );
 
       expect(logger.error).toHaveBeenCalledWith(
         '[GPU] Process exited',
         expect.objectContaining({
           reason: 'crashed',
-          exitCode: 1,
-        }),
+          exitCode: 1
+        })
       );
     });
 
@@ -163,9 +155,7 @@ describe('GPU Configuration', () => {
       gpuConfig.handleGpuProcessGone({}, { type: 'GPU' });
       gpuConfig.handleGpuProcessGone({}, { type: 'GPU' });
 
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Repeated GPU failures'),
-      );
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Repeated GPU failures'));
     });
   });
 
@@ -181,12 +171,8 @@ describe('GPU Configuration', () => {
 
       gpuConfig.applyProductionOptimizations(false);
 
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'enable-gpu-rasterization',
-      );
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'enable-zero-copy',
-      );
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('enable-gpu-rasterization');
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('enable-zero-copy');
     });
 
     test('enables GPU rasterization in development', () => {
@@ -194,9 +180,7 @@ describe('GPU Configuration', () => {
 
       gpuConfig.applyProductionOptimizations(true);
 
-      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith(
-        'enable-gpu-rasterization',
-      );
+      expect(mockApp.commandLine.appendSwitch).toHaveBeenCalledWith('enable-gpu-rasterization');
     });
 
     test('skips GPU optimizations when software rendering forced', () => {
@@ -206,9 +190,7 @@ describe('GPU Configuration', () => {
 
       gpuConfig.applyProductionOptimizations(false);
 
-      expect(mockApp.commandLine.appendSwitch).not.toHaveBeenCalledWith(
-        'enable-gpu-rasterization',
-      );
+      expect(mockApp.commandLine.appendSwitch).not.toHaveBeenCalledWith('enable-gpu-rasterization');
     });
   });
 });

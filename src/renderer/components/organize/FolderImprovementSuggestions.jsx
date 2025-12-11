@@ -8,7 +8,7 @@ function FolderImprovementSuggestions({
   smartFolders = [],
   onAcceptImprovement,
   onCreateFolder,
-  onMergeFolders,
+  onMergeFolders
 }) {
   const { addNotification } = useNotification();
   const [expandedSections, setExpandedSections] = useState(new Set());
@@ -68,9 +68,7 @@ function FolderImprovementSuggestions({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-system-gray-900">
-          Folder Structure Improvements
-        </h3>
+        <h3 className="font-medium text-system-gray-900">Folder Structure Improvements</h3>
         <span className="text-sm text-system-gray-600">
           {improvements.length} suggestion{improvements.length !== 1 ? 's' : ''}
         </span>
@@ -81,9 +79,7 @@ function FolderImprovementSuggestions({
         <Card
           key={improvement.id || improvement.type || improvement.title}
           className={`overflow-hidden ${
-            improvement.priority === 'high'
-              ? 'border-red-200'
-              : 'border-system-gray-200'
+            improvement.priority === 'high' ? 'border-red-200' : 'border-system-gray-200'
           }`}
         >
           <div
@@ -108,7 +104,7 @@ function FolderImprovementSuggestions({
                   </div>
                   <span
                     className={`inline-block mt-1 text-xs px-2 py-1 rounded ${getPriorityColor(
-                      improvement.priority,
+                      improvement.priority
                     )}`}
                   >
                     {improvement.priority} priority
@@ -133,9 +129,7 @@ function FolderImprovementSuggestions({
                     >
                       <div>
                         <div className="font-medium">📁 {category.name}</div>
-                        <div className="text-sm text-system-gray-600 mt-1">
-                          {category.reason}
-                        </div>
+                        <div className="text-sm text-system-gray-600 mt-1">{category.reason}</div>
                       </div>
                       <Button
                         size="sm"
@@ -153,7 +147,10 @@ function FolderImprovementSuggestions({
               {improvement.type === 'folder_overlaps' && (
                 <div className="space-y-3">
                   {(improvement.suggestions || []).map((overlap) => (
-                    <div key={overlap.folders?.join('-') || overlap.id} className="p-3 bg-white rounded border">
+                    <div
+                      key={overlap.folders?.join('-') || overlap.id}
+                      className="p-3 bg-white rounded border"
+                    >
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="font-medium text-sm">
@@ -185,9 +182,7 @@ function FolderImprovementSuggestions({
                     <div key={folder.name || folder.id} className="p-3 bg-white rounded border">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-sm">
-                            📁 {folder.name}
-                          </div>
+                          <div className="font-medium text-sm">📁 {folder.name}</div>
                           <div className="text-xs text-system-gray-600 mt-1">
                             Used {folder.usageCount} time
                             {folder.usageCount !== 1 ? 's' : ''}
@@ -203,7 +198,7 @@ function FolderImprovementSuggestions({
                             onClick={() => {
                               addNotification(
                                 'Folder editing will be available in a future update',
-                                'info',
+                                'info'
                               );
                             }}
                           >
@@ -216,7 +211,7 @@ function FolderImprovementSuggestions({
                             onClick={() => {
                               addNotification(
                                 'Folder removal will be available in a future update',
-                                'info',
+                                'info'
                               );
                             }}
                           >
@@ -232,12 +227,13 @@ function FolderImprovementSuggestions({
               {improvement.type === 'hierarchy_improvements' && (
                 <div className="space-y-3">
                   {(improvement.suggestions || []).map((hierarchy) => (
-                    <div key={hierarchy.parent || hierarchy.id} className="p-3 bg-white rounded border">
+                    <div
+                      key={hierarchy.parent || hierarchy.id}
+                      className="p-3 bg-white rounded border"
+                    >
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-sm">
-                            {hierarchy.suggestion}
-                          </div>
+                          <div className="font-medium text-sm">{hierarchy.suggestion}</div>
                           <div className="text-xs text-system-gray-600 mt-2">
                             <div>Parent: {hierarchy.parent}</div>
                             <div className="mt-1">
@@ -249,10 +245,11 @@ function FolderImprovementSuggestions({
                           size="sm"
                           variant="secondary"
                           onClick={() =>
-                            onCreateFolder && onCreateFolder({
+                            onCreateFolder &&
+                            onCreateFolder({
                               name: hierarchy.parent,
                               isParent: true,
-                              children: hierarchy.children,
+                              children: hierarchy.children
                             })
                           }
                         >
@@ -272,12 +269,8 @@ function FolderImprovementSuggestions({
       <Card className="p-4 bg-gradient-to-r from-stratosort-blue/5 to-stratosort-blue/10">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="font-medium text-system-gray-900">
-              Organization Health Score
-            </h4>
-            <p className="text-sm text-system-gray-600 mt-1">
-              Based on folder structure analysis
-            </p>
+            <h4 className="font-medium text-system-gray-900">Organization Health Score</h4>
+            <p className="text-sm text-system-gray-600 mt-1">Based on folder structure analysis</p>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-stratosort-blue">
@@ -295,10 +288,7 @@ function FolderImprovementSuggestions({
         <Button
           variant="secondary"
           onClick={() => {
-            addNotification(
-              'Report export will be available in a future update',
-              'info',
-            );
+            addNotification('Report export will be available in a future update', 'info');
           }}
         >
           Export Report
@@ -306,9 +296,8 @@ function FolderImprovementSuggestions({
         <Button
           variant="primary"
           onClick={() =>
-            onAcceptImprovement && onAcceptImprovement(
-              improvements.filter((i) => i.priority === 'high'),
-            )
+            onAcceptImprovement &&
+            onAcceptImprovement(improvements.filter((i) => i.priority === 'high'))
           }
           className="bg-stratosort-blue hover:bg-stratosort-blue/90"
         >
@@ -328,7 +317,7 @@ function calculateHealthScore(improvements, smartFolders) {
       {
         high: 15,
         medium: 8,
-        low: 3,
+        low: 3
       }[improvement.priority] || 0;
 
     score -= deduction * (improvement.suggestions?.length || 1) * 0.5;
@@ -354,7 +343,7 @@ const folderShape = PropTypes.shape({
   name: PropTypes.string,
   reason: PropTypes.string,
   suggestion: PropTypes.string,
-  usageCount: PropTypes.number,
+  usageCount: PropTypes.number
 });
 
 const improvementShape = PropTypes.shape({
@@ -367,15 +356,15 @@ const improvementShape = PropTypes.shape({
       PropTypes.shape({
         folders: PropTypes.arrayOf(PropTypes.string),
         similarity: PropTypes.number,
-        suggestion: PropTypes.string,
+        suggestion: PropTypes.string
       }),
       PropTypes.shape({
         parent: PropTypes.string,
         children: PropTypes.arrayOf(PropTypes.string),
-        suggestion: PropTypes.string,
-      }),
-    ]),
-  ),
+        suggestion: PropTypes.string
+      })
+    ])
+  )
 });
 
 FolderImprovementSuggestions.propTypes = {
@@ -383,12 +372,12 @@ FolderImprovementSuggestions.propTypes = {
   smartFolders: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-      name: PropTypes.string,
-    }),
+      name: PropTypes.string
+    })
   ),
   onAcceptImprovement: PropTypes.func,
   onCreateFolder: PropTypes.func,
-  onMergeFolders: PropTypes.func,
+  onMergeFolders: PropTypes.func
 };
 
 export default FolderImprovementSuggestions;

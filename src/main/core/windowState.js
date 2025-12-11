@@ -23,7 +23,7 @@ const WindowState = {
   MAXIMIZED: 'maximized',
   MINIMIZED: 'minimized',
   HIDDEN: 'hidden',
-  NORMAL: 'normal',
+  NORMAL: 'normal'
 };
 
 /**
@@ -98,9 +98,7 @@ async function restoreWindow(win) {
       break;
 
     default:
-      logger.warn(
-        `[WINDOW] Unknown state: ${currentState}, attempting show+focus`,
-      );
+      logger.warn(`[WINDOW] Unknown state: ${currentState}, attempting show+focus`);
       try {
         win.show();
         win.focus();
@@ -210,7 +208,7 @@ function ensureWindowOnScreen(win) {
     // Calculate window center point
     const windowCenter = {
       x: bounds.x + bounds.width / 2,
-      y: bounds.y + bounds.height / 2,
+      y: bounds.y + bounds.height / 2
     };
 
     // Check if center is visible on any display
@@ -225,9 +223,7 @@ function ensureWindowOnScreen(win) {
     });
 
     if (!isOnScreen) {
-      logger.warn(
-        '[WINDOW] Window was off-screen, centering on primary display',
-      );
+      logger.warn('[WINDOW] Window was off-screen, centering on primary display');
       win.center();
       return true;
     }
@@ -258,9 +254,7 @@ function attachWindowEventHandlers(win, options = {}) {
   // Debug event handlers
   const events = ['minimize', 'restore', 'show', 'hide', 'focus', 'blur'];
   for (const event of events) {
-    const handler = debugHandler(
-      event.charAt(0).toUpperCase() + event.slice(1),
-    );
+    const handler = debugHandler(event.charAt(0).toUpperCase() + event.slice(1));
     handlers.set(event, handler);
     win.on(event, handler);
   }
@@ -298,5 +292,5 @@ module.exports = {
   restoreWindow,
   restoreMinimizedWindow,
   ensureWindowOnScreen,
-  attachWindowEventHandlers,
+  attachWindowEventHandlers
 };

@@ -6,33 +6,33 @@
 // Mock all dependencies before importing
 jest.mock('../src/main/services/analysisHistory', () => {
   const mockInstance = {
-    initialize: jest.fn().mockResolvedValue(),
+    initialize: jest.fn().mockResolvedValue()
   };
   return jest.fn().mockImplementation(() => mockInstance);
 });
 
 jest.mock('../src/main/services/UndoRedoService', () => {
   return jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue(),
+    initialize: jest.fn().mockResolvedValue()
   }));
 });
 
 jest.mock('../src/main/services/ProcessingStateService', () => {
   return jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue(),
+    initialize: jest.fn().mockResolvedValue()
   }));
 });
 
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
     initialize: jest.fn().mockResolvedValue(),
-    isServerAvailable: jest.fn().mockResolvedValue(true),
-  }),
+    isServerAvailable: jest.fn().mockResolvedValue(true)
+  })
 }));
 
 jest.mock('../src/main/services/FolderMatchingService', () => {
   return jest.fn().mockImplementation(() => ({
-    initialize: jest.fn(),
+    initialize: jest.fn()
   }));
 });
 
@@ -45,15 +45,15 @@ jest.mock('../src/main/services/autoOrganize', () => {
 });
 
 jest.mock('../src/main/services/OllamaService', () => ({
-  getInstance: jest.fn().mockReturnValue({}),
+  getInstance: jest.fn().mockReturnValue({})
 }));
 
 jest.mock('../src/main/services/OllamaClient', () => ({
-  getInstance: jest.fn().mockReturnValue({}),
+  getInstance: jest.fn().mockReturnValue({})
 }));
 
 jest.mock('../src/main/services/ParallelEmbeddingService', () => ({
-  getInstance: jest.fn().mockReturnValue({}),
+  getInstance: jest.fn().mockReturnValue({})
 }));
 
 jest.mock('../src/main/services/EmbeddingCache', () => {
@@ -61,7 +61,7 @@ jest.mock('../src/main/services/EmbeddingCache', () => {
 });
 
 jest.mock('../src/main/services/SettingsService', () => ({
-  getService: jest.fn().mockReturnValue({}),
+  getService: jest.fn().mockReturnValue({})
 }));
 
 // Store mockServices outside so we can reset it
@@ -76,7 +76,7 @@ jest.mock('../src/main/services/ServiceContainer', () => {
         return factory(createResolver());
       }
       return { initialize: jest.fn().mockResolvedValue() };
-    },
+    }
   });
   return {
     container: {
@@ -91,7 +91,7 @@ jest.mock('../src/main/services/ServiceContainer', () => {
         return { initialize: jest.fn().mockResolvedValue() };
       }),
       has: jest.fn((id) => mockServices.has(id)),
-      shutdown: jest.fn().mockResolvedValue(),
+      shutdown: jest.fn().mockResolvedValue()
     },
     // Expose reset function for tests
     _resetMockServices: () => {
@@ -109,8 +109,8 @@ jest.mock('../src/main/services/ServiceContainer', () => {
       OLLAMA_CLIENT: 'ollamaClient',
       OLLAMA_SERVICE: 'ollamaService',
       EMBEDDING_CACHE: 'embeddingCache',
-      PARALLEL_EMBEDDING: 'parallelEmbedding',
-    },
+      PARALLEL_EMBEDDING: 'parallelEmbedding'
+    }
   };
 });
 
@@ -174,13 +174,9 @@ describe('ServiceIntegration', () => {
 
       await integration.initialize();
 
-      expect(container.resolve).toHaveBeenCalledWith(
-        ServiceIds.ANALYSIS_HISTORY,
-      );
+      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.ANALYSIS_HISTORY);
       expect(container.resolve).toHaveBeenCalledWith(ServiceIds.UNDO_REDO);
-      expect(container.resolve).toHaveBeenCalledWith(
-        ServiceIds.PROCESSING_STATE,
-      );
+      expect(container.resolve).toHaveBeenCalledWith(ServiceIds.PROCESSING_STATE);
       expect(container.resolve).toHaveBeenCalledWith(ServiceIds.CHROMA_DB);
     });
 
@@ -188,7 +184,7 @@ describe('ServiceIntegration', () => {
       const chromaDb = require('../src/main/services/chromadb');
       chromaDb.getInstance.mockReturnValue({
         initialize: jest.fn().mockResolvedValue(),
-        isServerAvailable: jest.fn().mockResolvedValue(false),
+        isServerAvailable: jest.fn().mockResolvedValue(false)
       });
 
       const integration = new ServiceIntegration();

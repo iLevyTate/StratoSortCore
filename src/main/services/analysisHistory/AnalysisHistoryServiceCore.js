@@ -20,7 +20,7 @@ const {
   invalidateCachesOnAdd,
   updateIncrementalStatsOnAdd,
   clearCaches: clearCachesHelper,
-  warmCache: warmCacheHelper,
+  warmCache: warmCacheHelper
 } = require('./cacheManager');
 
 const {
@@ -30,20 +30,16 @@ const {
   saveHistory: saveHistoryFile,
   loadIndex: loadIndexFile,
   saveIndex: saveIndexFile,
-  createDefaultStructures,
+  createDefaultStructures: createDefaultStructuresFiles
 } = require('./persistence');
 
-const {
-  createEmptyIndex,
-  generateFileHash,
-  updateIndexes,
-} = require('./indexManager');
+const { createEmptyIndex, generateFileHash, updateIndexes } = require('./indexManager');
 
 const { searchAnalysis: searchAnalysisHelper } = require('./search');
 
 const {
   getStatistics: getStatisticsHelper,
-  getQuickStats: getQuickStatsHelper,
+  getQuickStats: getQuickStatsHelper
 } = require('./statistics');
 
 const {
@@ -53,7 +49,7 @@ const {
   getRecentAnalysis: getRecentAnalysisHelper,
   getAnalysisByDateRange: getAnalysisByDateRangeHelper,
   getCategories: getCategoriesHelper,
-  getTags: getTagsHelper,
+  getTags: getTagsHelper
 } = require('./queries');
 
 const { performMaintenanceIfNeeded, migrateHistory } = require('./maintenance');
@@ -89,6 +85,24 @@ class AnalysisHistoryServiceCore {
     this._statsNeedFullRecalc = true;
   }
 
+  _normalizeResults(result) {
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (result && Array.isArray(result.results)) {
+      const normalized = result.results.slice();
+      normalized.total = typeof result.total === 'number' ? result.total : normalized.length;
+      normalized.hasMore = typeof result.hasMore === 'boolean' ? result.hasMore : false;
+      if (typeof result.fromCache === 'boolean') {
+        normalized.fromCache = result.fromCache;
+      }
+      return normalized;
+    }
+
+    return [];
+  }
+
   getDefaultConfig() {
     return {
       schemaVersion: this.SCHEMA_VERSION,
@@ -101,7 +115,7 @@ class AnalysisHistoryServiceCore {
       backupFrequencyDays: 7,
       lastBackup: null,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
   }
 
@@ -116,8 +130,8 @@ class AnalysisHistoryServiceCore {
       metadata: {
         lastCleanup: null,
         totalEntries: 0,
-        averageAnalysisTime: 0,
-      },
+        averageAnalysisTime: 0
+      }
     };
   }
 
@@ -132,9 +146,9 @@ class AnalysisHistoryServiceCore {
       logger.info('[AnalysisHistoryService] Initialized successfully');
     } catch (error) {
       logger.error('[AnalysisHistoryService] Failed to initialize', {
-        error: error.message,
+        error: error.message
       });
-      await this._createDefaultStructures();
+      await this.createDefaultStructures({ resetConfig: true });
     }
   }
 
@@ -142,7 +156,7 @@ class AnalysisHistoryServiceCore {
     this.config = await loadConfigFile(
       this.configPath,
       () => this.getDefaultConfig(),
-      async (cfg) => saveConfigFile(this.configPath, cfg),
+      async (cfg) => saveConfigFile(this.configPath, cfg)
     );
   }
 
@@ -152,7 +166,7 @@ class AnalysisHistoryServiceCore {
       this.SCHEMA_VERSION,
       () => this.createEmptyHistory(),
       async (hist) => saveHistoryFile(this.historyPath, hist),
-      migrateHistory,
+      migrateHistory
     );
   }
 
@@ -160,26 +174,50 @@ class AnalysisHistoryServiceCore {
     this.analysisIndex = await loadIndexFile(
       this.indexPath,
       () => createEmptyIndex(this.SCHEMA_VERSION),
-      async (idx) => saveIndexFile(this.indexPath, idx),
+      async (idx) => saveIndexFile(this.indexPath, idx)
     );
   }
 
-  async _createDefaultStructures() {
-    const result = await createDefaultStructures(
+  async createDefaultStructures(options = {}) {
+    const { resetConfig = false } = options;
+
+    // Preserve existing configuration when requested to avoid wiping user prefs
+    if (!this.config && !resetConfig) {
+      try {
+        await this.loadConfig();
+      } catch (error) {
+        logger.warn('[AnalysisHistoryService] Falling back to default config during reset', {
+          error: error.message
+        });
+      }
+    }
+
+    const result = await createDefaultStructuresFiles(
       {
         configPath: this.configPath,
         historyPath: this.historyPath,
-        indexPath: this.indexPath,
+        indexPath: this.indexPath
       },
-      () => this.getDefaultConfig(),
+      resetConfig
+        ? () => this.getDefaultConfig()
+        : () => ({
+            ...(this.config || this.getDefaultConfig()),
+            updatedAt: new Date().toISOString()
+          }),
       () => this.createEmptyHistory(),
-      () => createEmptyIndex(this.SCHEMA_VERSION),
+      () => createEmptyIndex(this.SCHEMA_VERSION)
     );
 
     this.config = result.config;
     this.analysisHistory = result.history;
     this.analysisIndex = result.index;
+
+    // Reset caches/stat tracking so subsequent reads reflect the cleared state
+    this._cache = createCacheStore();
+    this._statsNeedFullRecalc = true;
     this.initialized = true;
+
+    return result;
   }
 
   async saveConfig() {
@@ -198,11 +236,7 @@ class AnalysisHistoryServiceCore {
     await this.initialize();
 
     const timestamp = new Date().toISOString();
-    const fileHash = generateFileHash(
-      fileInfo.path,
-      fileInfo.size,
-      fileInfo.lastModified,
-    );
+    const fileHash = generateFileHash(fileInfo.path, fileInfo.size, fileInfo.lastModified);
 
     const analysisEntry = {
       id: crypto.randomUUID(),
@@ -229,7 +263,7 @@ class AnalysisHistoryServiceCore {
         dates: analysisResults.dates || [],
         amounts: analysisResults.amounts || [],
         language: analysisResults.language || null,
-        sentiment: analysisResults.sentiment || null,
+        sentiment: analysisResults.sentiment || null
       },
 
       // Processing metadata
@@ -238,7 +272,7 @@ class AnalysisHistoryServiceCore {
         processingTimeMs: analysisResults.processingTime || 0,
         version: this.SCHEMA_VERSION,
         errorCount: analysisResults.errorCount || 0,
-        warnings: analysisResults.warnings || [],
+        warnings: analysisResults.warnings || []
       },
 
       // Organization results (if file was moved/renamed)
@@ -247,7 +281,7 @@ class AnalysisHistoryServiceCore {
         actual: analysisResults.actualPath || null,
         renamed: analysisResults.renamed || false,
         newName: analysisResults.newName || null,
-        smartFolder: analysisResults.smartFolder || null,
+        smartFolder: analysisResults.smartFolder || null
       },
 
       // Future expansion fields
@@ -256,7 +290,7 @@ class AnalysisHistoryServiceCore {
       userFeedback: null, // User corrections/ratings
       exportHistory: [], // Export/share history
       accessCount: 0,
-      lastAccessed: timestamp,
+      lastAccessed: timestamp
     };
 
     // Store the entry
@@ -276,16 +310,10 @@ class AnalysisHistoryServiceCore {
     invalidateCachesOnAdd(this._cache);
 
     // Save to disk
-    const saveResults = await Promise.allSettled([
-      this.saveHistory(),
-      this.saveIndex(),
-    ]);
+    const saveResults = await Promise.allSettled([this.saveHistory(), this.saveIndex()]);
     saveResults.forEach((result, index) => {
       if (result.status === 'rejected') {
-        logger.warn(
-          `[ANALYSIS-HISTORY] Save operation ${index} failed:`,
-          result.reason?.message,
-        );
+        logger.warn(`[ANALYSIS-HISTORY] Save operation ${index} failed:`, result.reason?.message);
       }
     });
 
@@ -297,7 +325,7 @@ class AnalysisHistoryServiceCore {
       this,
       this.config,
       () => this.saveHistory(),
-      () => this.saveIndex(),
+      () => this.saveIndex()
     );
 
     return analysisEntry.id;
@@ -305,57 +333,57 @@ class AnalysisHistoryServiceCore {
 
   async searchAnalysis(query, options = {}) {
     await this.initialize();
-    return await searchAnalysisHelper(
+    const result = await searchAnalysisHelper(
       this.analysisHistory,
       this._cache,
       this.SEARCH_CACHE_TTL_MS,
       query,
-      options,
+      options
     );
+    return this._normalizeResults(result);
   }
 
   async getAnalysisByPath(filePath) {
     await this.initialize();
-    return getAnalysisByPathHelper(
-      this.analysisHistory,
-      this.analysisIndex,
-      filePath,
-    );
+    return getAnalysisByPathHelper(this.analysisHistory, this.analysisIndex, filePath);
   }
 
   async getAnalysisByCategory(category, options = {}) {
     await this.initialize();
-    return getAnalysisByCategoryHelper(
+    const result = await getAnalysisByCategoryHelper(
       this.analysisHistory,
       this.analysisIndex,
       this._cache,
       this.CACHE_TTL_MS,
       category,
-      options,
+      options
     );
+    return this._normalizeResults(result);
   }
 
   async getAnalysisByTag(tag, options = {}) {
     await this.initialize();
-    return getAnalysisByTagHelper(
+    const result = await getAnalysisByTagHelper(
       this.analysisHistory,
       this.analysisIndex,
       this._cache,
       this.CACHE_TTL_MS,
       tag,
-      options,
+      options
     );
+    return this._normalizeResults(result);
   }
 
   async getRecentAnalysis(limit = 50, offset = 0) {
     await this.initialize();
-    return getRecentAnalysisHelper(
+    const result = await getRecentAnalysisHelper(
       this.analysisHistory,
       this._cache,
       this.CACHE_TTL_MS,
       limit,
-      offset,
+      offset
     );
+    return this._normalizeResults(result);
   }
 
   async getStatistics() {
@@ -365,7 +393,7 @@ class AnalysisHistoryServiceCore {
       this.analysisIndex,
       this._cache,
       this,
-      this.STATS_CACHE_TTL_MS,
+      this.STATS_CACHE_TTL_MS
     );
   }
 
@@ -376,13 +404,14 @@ class AnalysisHistoryServiceCore {
 
   async getAnalysisByDateRange(startDate, endDate, options = {}) {
     await this.initialize();
-    return getAnalysisByDateRangeHelper(
+    const result = await getAnalysisByDateRangeHelper(
       this.analysisHistory,
       this.analysisIndex,
       startDate,
       endDate,
-      options,
+      options
     );
+    return this._normalizeResults(result);
   }
 
   async getCategories() {
@@ -401,7 +430,7 @@ class AnalysisHistoryServiceCore {
       this._cache,
       (limit) => this.getRecentAnalysis(limit),
       this.analysisHistory,
-      this,
+      this
     );
   }
 

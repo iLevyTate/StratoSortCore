@@ -10,14 +10,14 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 const {
   extractAndParseJSON,
   repairJSON,
-  validateDocumentAnalysis,
+  validateDocumentAnalysis
 } = require('../src/main/utils/jsonRepair');
 
 describe('jsonRepair', () => {
@@ -61,8 +61,7 @@ describe('jsonRepair', () => {
       });
 
       test('handles code fence with surrounding text', () => {
-        const input =
-          'Here is the result:\n```json\n{"name": "test"}\n```\nThat was the output.';
+        const input = 'Here is the result:\n```json\n{"name": "test"}\n```\nThat was the output.';
         const result = extractAndParseJSON(input);
 
         expect(result).toEqual({ name: 'test' });
@@ -89,7 +88,7 @@ describe('jsonRepair', () => {
       test('returns default value for null input', () => {
         expect(extractAndParseJSON(null)).toBeNull();
         expect(extractAndParseJSON(null, { default: true })).toEqual({
-          default: true,
+          default: true
         });
       });
 
@@ -245,7 +244,7 @@ describe('jsonRepair', () => {
         category: 'financial',
         keywords: ['invoice', 'payment'],
         confidence: 85,
-        suggestedName: 'invoice_alpha.pdf',
+        suggestedName: 'invoice_alpha.pdf'
       };
 
       const result = validateDocumentAnalysis(input);
@@ -282,7 +281,7 @@ describe('jsonRepair', () => {
 
     test('filters invalid keywords', () => {
       const input = {
-        keywords: ['valid', '', null, 123, 'also-valid'],
+        keywords: ['valid', '', null, 123, 'also-valid']
       };
 
       const result = validateDocumentAnalysis(input);

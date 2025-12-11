@@ -90,11 +90,7 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
   };
 
   // If a promise is passed directly, race it with timeout
-  if (
-    fnOrPromise &&
-    typeof fnOrPromise.then === 'function' &&
-    typeof fnOrPromise !== 'function'
-  ) {
+  if (fnOrPromise && typeof fnOrPromise.then === 'function' && typeof fnOrPromise !== 'function') {
     const { timeoutPromise, timeoutId } = createTimeoutPromise();
     return Promise.race([fnOrPromise, timeoutPromise]).finally(() => {
       clearTimeout(timeoutId);
@@ -153,7 +149,7 @@ function withRetry(fn, options = {}) {
     backoffFactor,
     operationName = 'Operation',
     shouldRetry = () => true,
-    onRetry,
+    onRetry
   } = options;
 
   // Support both parameter naming conventions
@@ -173,12 +169,12 @@ function withRetry(fn, options = {}) {
         if (attempt < effectiveMaxRetries && shouldRetry(error, attempt)) {
           const waitTime = Math.min(
             effectiveInitialDelay * Math.pow(effectiveBackoff, attempt),
-            maxDelay,
+            maxDelay
           );
 
           logger.warn(
             `[Retry] ${operationName} attempt ${attempt + 1}/${effectiveMaxRetries} failed, retrying in ${waitTime}ms`,
-            { error: error.message },
+            { error: error.message }
           );
 
           if (onRetry) {
@@ -186,7 +182,7 @@ function withRetry(fn, options = {}) {
               onRetry(error, attempt);
             } catch (callbackError) {
               logger.warn('[Retry] onRetry callback threw error', {
-                error: callbackError.message,
+                error: callbackError.message
               });
             }
           }
@@ -194,10 +190,9 @@ function withRetry(fn, options = {}) {
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         } else {
           if (attempt === effectiveMaxRetries) {
-            logger.error(
-              `[Retry] ${operationName} failed after ${effectiveMaxRetries} attempts`,
-              { error: error.message },
-            );
+            logger.error(`[Retry] ${operationName} failed after ${effectiveMaxRetries} attempts`, {
+              error: error.message
+            });
           }
           break;
         }
@@ -247,7 +242,7 @@ function safeCall(fn, fallback = null, options = {}) {
     if (typeof fn !== 'function') {
       if (logError) {
         logger.warn(`[${context}] Attempted to call non-function`, {
-          type: typeof fn,
+          type: typeof fn
         });
       }
       return fallback;
@@ -260,7 +255,7 @@ function safeCall(fn, fallback = null, options = {}) {
       if (logError) {
         logger.error(`[${context}] Function call failed`, {
           error: error.message,
-          stack: error.stack,
+          stack: error.stack
         });
       }
       return fallback;
@@ -322,11 +317,7 @@ function debounce(fn, waitMs, options = {}) {
 
   function shouldInvoke(time) {
     const timeSinceLastCall = time - lastCallTime;
-    return (
-      lastCallTime === undefined ||
-      timeSinceLastCall >= waitMs ||
-      timeSinceLastCall < 0
-    );
+    return lastCallTime === undefined || timeSinceLastCall >= waitMs || timeSinceLastCall < 0;
   }
 
   function timerExpired() {
@@ -404,7 +395,7 @@ function throttle(fn, waitMs, options = {}) {
   return debounce(fn, waitMs, {
     leading: options.leading !== false,
     trailing: options.trailing !== false,
-    maxWait: waitMs,
+    maxWait: waitMs
   });
 }
 
@@ -447,7 +438,7 @@ async function allSettledWithErrors(promises, onError = null) {
         } catch (handlerError) {
           logger.error('[AllSettled] Error handler failed', {
             error: handlerError.message,
-            originalError: result.reason?.message,
+            originalError: result.reason?.message
           });
         }
       }
@@ -455,15 +446,12 @@ async function allSettledWithErrors(promises, onError = null) {
   }
 
   if (errors.length > 0) {
-    logger.warn(
-      `[AllSettled] ${errors.length} of ${promises.length} promises failed`,
-      {
-        errors: errors.map((e) => ({
-          index: e.index,
-          message: e.error?.message,
-        })),
-      },
-    );
+    logger.warn(`[AllSettled] ${errors.length} of ${promises.length} promises failed`, {
+      errors: errors.map((e) => ({
+        index: e.index,
+        message: e.error?.message
+      }))
+    });
   }
 
   return finalResults;
@@ -522,5 +510,5 @@ module.exports = {
   throttle,
 
   // Batch & Concurrency
-  batchProcess,
+  batchProcess
 };

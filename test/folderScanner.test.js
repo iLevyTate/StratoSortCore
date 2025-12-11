@@ -24,7 +24,7 @@ describe('scanDirectory symlink handling', () => {
           // If symlink creation fails on Windows, skip the symlink part of the test
           console.warn(
             'Symlink creation failed on Windows (requires elevated privileges):',
-            symlinkError.message,
+            symlinkError.message
           );
         }
       } else {

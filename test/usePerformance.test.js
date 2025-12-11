@@ -26,10 +26,13 @@ jest.mock('../src/renderer/utils/performance', () => ({
         fn(...args);
       } else {
         clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          lastCall = Date.now();
-          fn(...args);
-        }, delay - (now - lastCall));
+        timeoutId = setTimeout(
+          () => {
+            lastCall = Date.now();
+            fn(...args);
+          },
+          delay - (now - lastCall)
+        );
       }
     };
     throttled.cancel = () => clearTimeout(timeoutId);
@@ -49,16 +52,16 @@ jest.mock('../src/renderer/utils/performance', () => ({
       has: (key) => cache.has(key),
       delete: (key) => cache.delete(key),
       clear: () => cache.clear(),
-      size: () => cache.size,
+      size: () => cache.size
     };
-  },
+  }
 }));
 
 import {
   useDebounce,
   useDebouncedCallback,
   useThrottledCallback,
-  useLRUCache,
+  useLRUCache
 } from '../src/renderer/hooks/usePerformance';
 
 describe('usePerformance hooks', () => {
@@ -78,10 +81,9 @@ describe('usePerformance hooks', () => {
     });
 
     test('updates value after delay', () => {
-      const { result, rerender } = renderHook(
-        ({ value }) => useDebounce(value, 500),
-        { initialProps: { value: 'initial' } },
-      );
+      const { result, rerender } = renderHook(({ value }) => useDebounce(value, 500), {
+        initialProps: { value: 'initial' }
+      });
 
       expect(result.current).toBe('initial');
 
@@ -99,10 +101,9 @@ describe('usePerformance hooks', () => {
     });
 
     test('resets timer on rapid changes', () => {
-      const { result, rerender } = renderHook(
-        ({ value }) => useDebounce(value, 500),
-        { initialProps: { value: 'initial' } },
-      );
+      const { result, rerender } = renderHook(({ value }) => useDebounce(value, 500), {
+        initialProps: { value: 'initial' }
+      });
 
       rerender({ value: 'first' });
       act(() => {
@@ -142,10 +143,9 @@ describe('usePerformance hooks', () => {
     });
 
     test('updates immediately when delay changes', () => {
-      const { result, rerender } = renderHook(
-        ({ value, delay }) => useDebounce(value, delay),
-        { initialProps: { value: 'initial', delay: 500 } },
-      );
+      const { result, rerender } = renderHook(({ value, delay }) => useDebounce(value, delay), {
+        initialProps: { value: 'initial', delay: 500 }
+      });
 
       rerender({ value: 'updated', delay: 100 });
 
@@ -202,9 +202,7 @@ describe('usePerformance hooks', () => {
 
     test('cancels on unmount', () => {
       const callback = jest.fn();
-      const { result, unmount } = renderHook(() =>
-        useDebouncedCallback(callback, 500),
-      );
+      const { result, unmount } = renderHook(() => useDebouncedCallback(callback, 500));
 
       act(() => {
         result.current('arg1');
@@ -223,10 +221,9 @@ describe('usePerformance hooks', () => {
       const callback1 = jest.fn();
       const callback2 = jest.fn();
 
-      const { result, rerender } = renderHook(
-        ({ cb }) => useDebouncedCallback(cb, 500),
-        { initialProps: { cb: callback1 } },
-      );
+      const { result, rerender } = renderHook(({ cb }) => useDebouncedCallback(cb, 500), {
+        initialProps: { cb: callback1 }
+      });
 
       act(() => {
         result.current('first call');
@@ -289,9 +286,7 @@ describe('usePerformance hooks', () => {
 
     test('cancels on unmount', () => {
       const callback = jest.fn();
-      const { result, unmount } = renderHook(() =>
-        useThrottledCallback(callback, 500),
-      );
+      const { result, unmount } = renderHook(() => useThrottledCallback(callback, 500));
 
       act(() => {
         result.current('arg1');
@@ -314,10 +309,9 @@ describe('usePerformance hooks', () => {
       const callback1 = jest.fn();
       const callback2 = jest.fn();
 
-      const { result, rerender } = renderHook(
-        ({ cb }) => useThrottledCallback(cb, 500),
-        { initialProps: { cb: callback1 } },
-      );
+      const { result, rerender } = renderHook(({ cb }) => useThrottledCallback(cb, 500), {
+        initialProps: { cb: callback1 }
+      });
 
       // First call goes through
       act(() => {

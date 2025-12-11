@@ -26,7 +26,7 @@ describe('File Pattern Analyzer', () => {
     test('detects common project', () => {
       const files = [
         { name: 'file1.pdf', extension: 'pdf', analysis: { project: 'Alpha' } },
-        { name: 'file2.pdf', extension: 'pdf', analysis: { project: 'Alpha' } },
+        { name: 'file2.pdf', extension: 'pdf', analysis: { project: 'Alpha' } }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -38,7 +38,7 @@ describe('File Pattern Analyzer', () => {
     test('no common project when projects differ', () => {
       const files = [
         { name: 'file1.pdf', extension: 'pdf', analysis: { project: 'Alpha' } },
-        { name: 'file2.pdf', extension: 'pdf', analysis: { project: 'Beta' } },
+        { name: 'file2.pdf', extension: 'pdf', analysis: { project: 'Beta' } }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -50,7 +50,7 @@ describe('File Pattern Analyzer', () => {
     test('detects date patterns', () => {
       const files = [
         { name: 'report.pdf', extension: 'pdf', analysis: { documentDate: '2024-01-01' } },
-        { name: 'summary.pdf', extension: 'pdf', analysis: { documentDate: '2024-01-15' } },
+        { name: 'summary.pdf', extension: 'pdf', analysis: { documentDate: '2024-01-15' } }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -63,7 +63,7 @@ describe('File Pattern Analyzer', () => {
       const files = [
         { name: 'doc.pdf', extension: 'pdf' },
         { name: 'image.jpg', extension: 'jpg' },
-        { name: 'data.csv', extension: 'csv' },
+        { name: 'data.csv', extension: 'csv' }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -77,7 +77,7 @@ describe('File Pattern Analyzer', () => {
       const files = [
         { name: 'a.pdf', extension: 'pdf', analysis: { category: 'Reports' } },
         { name: 'b.pdf', extension: 'pdf', analysis: { category: 'Reports' } },
-        { name: 'c.pdf', extension: 'pdf', analysis: { category: 'Invoices' } },
+        { name: 'c.pdf', extension: 'pdf', analysis: { category: 'Invoices' } }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -89,7 +89,7 @@ describe('File Pattern Analyzer', () => {
       const files = [
         { name: 'project_report_2024.pdf', extension: 'pdf' },
         { name: 'project_summary_2024.pdf', extension: 'pdf' },
-        { name: 'project_analysis_2024.pdf', extension: 'pdf' },
+        { name: 'project_analysis_2024.pdf', extension: 'pdf' }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -102,7 +102,7 @@ describe('File Pattern Analyzer', () => {
       const files = [
         { name: 'the_doc.pdf', extension: 'pdf' },
         { name: 'the_file.pdf', extension: 'pdf' },
-        { name: 'the_data.pdf', extension: 'pdf' },
+        { name: 'the_data.pdf', extension: 'pdf' }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -114,7 +114,7 @@ describe('File Pattern Analyzer', () => {
     test('handles files without analysis', () => {
       const files = [
         { name: 'file1.pdf', extension: 'pdf' },
-        { name: 'file2.pdf', extension: 'pdf' },
+        { name: 'file2.pdf', extension: 'pdf' }
       ];
 
       const result = analyzeFilePatterns(files);
@@ -178,7 +178,7 @@ describe('File Pattern Analyzer', () => {
         hasCommonProject: true,
         project: 'Alpha',
         hasDatePattern: false,
-        commonTerms: [],
+        commonTerms: []
       };
 
       const result = generateBatchRecommendations(new Map(), patterns);
@@ -194,7 +194,7 @@ describe('File Pattern Analyzer', () => {
         hasCommonProject: false,
         hasDatePattern: true,
         dateRange: { description: '2024-01 to 2024-03' },
-        commonTerms: [],
+        commonTerms: []
       };
 
       const result = generateBatchRecommendations([], patterns);
@@ -208,7 +208,7 @@ describe('File Pattern Analyzer', () => {
       const patterns = {
         hasCommonProject: false,
         hasDatePattern: false,
-        commonTerms: ['draft', 'final'],
+        commonTerms: ['draft', 'final']
       };
 
       const result = generateBatchRecommendations([], patterns);
@@ -222,7 +222,7 @@ describe('File Pattern Analyzer', () => {
       const patterns = {
         hasCommonProject: false,
         hasDatePattern: false,
-        commonTerms: [],
+        commonTerms: []
       };
 
       // Create 6+ groups
@@ -239,11 +239,16 @@ describe('File Pattern Analyzer', () => {
       const patterns = {
         hasCommonProject: false,
         hasDatePattern: false,
-        commonTerms: [],
+        commonTerms: []
       };
 
       const groups = new Map([
-        ['a', 1], ['b', 2], ['c', 3], ['d', 4], ['e', 5], ['f', 6],
+        ['a', 1],
+        ['b', 2],
+        ['c', 3],
+        ['d', 4],
+        ['e', 5],
+        ['f', 6]
       ]);
 
       const result = generateBatchRecommendations(groups, patterns);
@@ -262,8 +267,8 @@ describe('File Pattern Analyzer', () => {
           project: 'Alpha',
           purpose: 'Financial reporting',
           category: 'Reports',
-          keywords: ['quarterly', 'finance'],
-        },
+          keywords: ['quarterly', 'finance']
+        }
       };
 
       const summary = generateFileSummary(file);
@@ -279,7 +284,7 @@ describe('File Pattern Analyzer', () => {
     test('handles missing analysis', () => {
       const file = {
         name: 'file.txt',
-        extension: 'txt',
+        extension: 'txt'
       };
 
       const summary = generateFileSummary(file);
@@ -296,8 +301,8 @@ describe('File Pattern Analyzer', () => {
           project: null,
           purpose: undefined,
           category: '',
-          keywords: [],
-        },
+          keywords: []
+        }
       };
 
       const summary = generateFileSummary(file);

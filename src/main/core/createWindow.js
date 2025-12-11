@@ -6,6 +6,7 @@ const windowStateKeeper = require('electron-window-state');
 const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
 
 const isDev = isDevelopment();
+const isMac = process.platform === 'darwin';
 
 function createMainWindow() {
   logger.debug('Creating new window');
@@ -19,8 +20,8 @@ function createMainWindow() {
 
   // Restore previous window position/size
   const mainWindowState = windowStateKeeper({
-    defaultWidth: 1440,
-    defaultHeight: 900,
+    defaultWidth: 1400,
+    defaultHeight: 900
   });
 
   const win = new BrowserWindow({
@@ -28,12 +29,14 @@ function createMainWindow() {
     y: mainWindowState.y,
     width: mainWindowState.width,
     height: mainWindowState.height,
-    minWidth: 1024,
-    minHeight: 768,
-    // Use native frame with dark theme
-    frame: true,
-    backgroundColor: '#0f0f10', // Dark background while loading
-    darkTheme: true, // Force dark theme on Windows
+    minWidth: 800,
+    minHeight: 600,
+    // Frameless chrome with platform-sensitive styling
+    frame: isMac ? true : false,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
+    backgroundColor: '#f8fafc', // Align with glass morphism surface-muted tone
+    darkTheme: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -53,12 +56,11 @@ function createMainWindow() {
       // CRITICAL FIX: Disable features that can cause Mojo errors
       webviewTag: false,
       nodeIntegrationInWorker: false,
-      nodeIntegrationInSubFrames: false,
+      nodeIntegrationInSubFrames: false
     },
     icon: path.join(__dirname, '../../../assets/stratosort-logo.png'),
     show: false,
-    titleBarStyle: 'default',
-    autoHideMenuBar: false, // Keep menu bar visible
+    autoHideMenuBar: true // Keep menu accessible via Alt while preserving a clean chrome
   });
 
   logger.debug('BrowserWindow created');
@@ -85,10 +87,7 @@ function createMainWindow() {
         logger.info('Loading from built files instead...');
         const distPath = path.join(__dirname, '../../../dist/index.html');
         win.loadFile(distPath).catch((fileError) => {
-          logger.error(
-            'Failed to load from built files, trying original:',
-            fileError,
-          );
+          logger.error('Failed to load from built files, trying original:', fileError);
           win.loadFile(path.join(__dirname, '../../renderer/index.html'));
         });
       });
@@ -118,8 +117,7 @@ function createMainWindow() {
     let ollamaHost = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
     try {
       const { getOllamaHost } = require('../ollamaUtils');
-      const configured =
-        typeof getOllamaHost === 'function' ? getOllamaHost() : null;
+      const configured = typeof getOllamaHost === 'function' ? getOllamaHost() : null;
       if (configured && typeof configured === 'string') {
         ollamaHost = configured;
       }
@@ -129,8 +127,7 @@ function createMainWindow() {
     let wsHost = '';
     try {
       const url = new URL(ollamaHost);
-      wsHost =
-        url.protocol === 'https:' ? `wss://${url.host}` : `ws://${url.host}`;
+      wsHost = url.protocol === 'https:' ? `wss://${url.host}` : `ws://${url.host}`;
     } catch (error) {
       logger.debug('Failed to parse Ollama host URL', { error: error.message });
       wsHost = '';
@@ -155,10 +152,10 @@ function createMainWindow() {
         // Disable sensitive features by default
         'Permissions-Policy': [
           [
-            'accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()',
-          ].join(''),
-        ],
-      },
+            'accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()'
+          ].join('')
+        ]
+      }
     });
   });
 
@@ -176,7 +173,7 @@ function createMainWindow() {
             logger.debug('Window state', {
               isVisible: win.isVisible(),
               isFocused: win.isFocused(),
-              isMinimized: win.isMinimized(),
+              isMinimized: win.isMinimized()
             });
           }
         }, 50);
@@ -207,12 +204,10 @@ function createMainWindow() {
 
   // Deny all permission requests by default (camera, mic, etc.)
   try {
-    win.webContents.session.setPermissionRequestHandler(
-      (_wc, permission, callback) => {
-        logger.debug('Denied permission request', { permission });
-        callback(false);
-      },
-    );
+    win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+      logger.debug('Denied permission request', { permission });
+      callback(false);
+    });
   } catch (error) {
     logger.debug('Failed to set permission handler', { error: error.message });
   }
@@ -223,7 +218,7 @@ function createMainWindow() {
       'https://docs.github.com',
       'https://microsoft.com',
       'https://docs.microsoft.com',
-      'https://ollama.ai',
+      'https://ollama.ai'
     ];
     if (allowedDomains.some((domain) => url.startsWith(domain))) {
       shell.openExternal(url);

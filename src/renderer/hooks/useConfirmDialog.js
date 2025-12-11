@@ -13,7 +13,7 @@ export function useConfirmDialog() {
     cancelText: 'Cancel',
     variant: 'default',
     fileName: null,
-    onConfirm: null,
+    onConfirm: null
   });
   const resolverRef = React.useRef(null);
 
@@ -24,7 +24,7 @@ export function useConfirmDialog() {
       confirmText = 'Confirm',
       cancelText = 'Cancel',
       variant = 'default',
-      fileName = null,
+      fileName = null
     }) => {
       return new Promise((resolve) => {
         resolverRef.current = resolve;
@@ -40,11 +40,11 @@ export function useConfirmDialog() {
             resolve(true);
             resolverRef.current = null;
             setConfirmState((prev) => ({ ...prev, isOpen: false }));
-          },
+          }
         });
       });
     },
-    [],
+    []
   );
 
   const hideConfirm = React.useCallback(() => {
@@ -55,7 +55,7 @@ export function useConfirmDialog() {
         // Fixed: Log resolver errors instead of silently swallowing
         logger.warn('Error calling resolver', {
           error: error.message,
-          stack: error.stack,
+          stack: error.stack
         });
       }
       resolverRef.current = null;
@@ -81,7 +81,7 @@ export function useConfirmDialog() {
           fileName={confirmState.fileName}
         />
       ) : null,
-    [confirmState, hideConfirm],
+    [confirmState, hideConfirm]
   );
 
   // Return both the old API (ConfirmDialog as a function for backwards compatibility)

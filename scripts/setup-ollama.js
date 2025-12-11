@@ -17,7 +17,7 @@ const colors = {
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
   cyan: '\x1b[36m',
-  gray: '\x1b[90m',
+  gray: '\x1b[90m'
 };
 
 const chalk = {
@@ -30,29 +30,23 @@ const chalk = {
   bold: {
     green: (text) => `${colors.bold}${colors.green}${text}${colors.reset}`,
     cyan: (text) => `${colors.bold}${colors.cyan}${text}${colors.reset}`,
-    red: (text) => `${colors.bold}${colors.red}${text}${colors.reset}`,
-  },
+    red: (text) => `${colors.bold}${colors.red}${text}${colors.reset}`
+  }
 };
 
 // Configuration
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
 const ESSENTIAL_MODELS = {
-  text: [
-    'llama3.2:latest',
-    'llama3.1:latest',
-    'llama3:latest',
-    'gemma2:2b',
-    'phi3:mini',
-  ],
+  text: ['llama3.2:latest', 'llama3.1:latest', 'llama3:latest', 'gemma2:2b', 'phi3:mini'],
   vision: ['llava:latest', 'bakllava:latest', 'moondream:latest'],
-  embedding: ['mxbai-embed-large:latest', 'nomic-embed-text:latest'],
+  embedding: ['mxbai-embed-large:latest', 'nomic-embed-text:latest']
 };
 
 // Minimum required: at least one text model AND one vision model
 const MINIMUM_REQUIREMENT = {
   text: 1,
   vision: 1, // Required for image analysis
-  embedding: 0, // Optional but recommended for semantic search
+  embedding: 0 // Optional but recommended for semantic search
 };
 
 // Helper functions
@@ -60,7 +54,7 @@ async function run(cmd, args = [], opts = {}) {
   const res = await asyncSpawn(cmd, args, {
     stdio: 'inherit',
     shell: process.platform === 'win32',
-    ...opts,
+    ...opts
   });
   return res.status === 0;
 }
@@ -70,7 +64,7 @@ async function checkAsync(cmd, args = [], timeoutMs = 5000) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       encoding: 'utf8',
-      shell: process.platform === 'win32',
+      shell: process.platform === 'win32'
     });
 
     let stdout = '';
@@ -100,7 +94,7 @@ async function checkAsync(cmd, args = [], timeoutMs = 5000) {
         resolve({
           ok: code === 0,
           stdout: stdout.trim(),
-          stderr: stderr.trim(),
+          stderr: stderr.trim()
         });
       }
     });
@@ -130,12 +124,9 @@ async function isOllamaRunning() {
   try {
     const url = new URL('/api/tags', OLLAMA_HOST);
     return new Promise((resolve) => {
-      const request = (url.protocol === 'https:' ? https : require('http')).get(
-        url,
-        (res) => {
-          resolve(res.statusCode === 200);
-        },
-      );
+      const request = (url.protocol === 'https:' ? https : require('http')).get(url, (res) => {
+        resolve(res.statusCode === 200);
+      });
       request.on('error', () => resolve(false));
       request.setTimeout(2000, () => {
         request.abort();
@@ -182,7 +173,7 @@ async function startOllamaServer() {
   const ollamaProcess = spawn('ollama', ['serve'], {
     detached: true,
     stdio: 'ignore',
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32'
   });
 
   ollamaProcess.unref();
@@ -196,9 +187,7 @@ async function startOllamaServer() {
     }
   }
 
-  console.log(
-    chalk.yellow('⚠ Ollama server failed to start within 10 seconds'),
-  );
+  console.log(chalk.yellow('⚠ Ollama server failed to start within 10 seconds'));
   return false;
 }
 
@@ -208,25 +197,21 @@ async function pullModel(modelName) {
     console.log(chalk.cyan(`Pulling model: ${modelName}...`));
 
     const pullProcess = spawn('ollama', ['pull', modelName], {
-      shell: process.platform === 'win32',
+      shell: process.platform === 'win32'
     });
 
     pullProcess.stdout.on('data', (data) => {
       const output = data.toString();
       // Only show progress updates, not every byte
       if (output.includes('%') || output.includes('success')) {
-        process.stdout.write(
-          `\r${chalk.gray(output.trim().slice(0, 80).padEnd(80))}`,
-        );
+        process.stdout.write(`\r${chalk.gray(output.trim().slice(0, 80).padEnd(80))}`);
       }
     });
 
     pullProcess.stderr.on('data', (data) => {
       const output = data.toString();
       if (output.includes('%') || output.includes('success')) {
-        process.stdout.write(
-          `\r${chalk.gray(output.trim().slice(0, 80).padEnd(80))}`,
-        );
+        process.stdout.write(`\r${chalk.gray(output.trim().slice(0, 80).padEnd(80))}`);
       }
     });
 
@@ -258,16 +243,14 @@ async function installEssentialModels() {
   const modelStatus = {
     text: [],
     vision: [],
-    embedding: [],
+    embedding: []
   };
 
   // Check which essential models are already installed
   for (const [category, models] of Object.entries(ESSENTIAL_MODELS)) {
     for (const model of models) {
       const modelBase = model.split(':')[0];
-      const isInstalled = installedModels.some((m) =>
-        m.startsWith(modelBase.toLowerCase()),
-      );
+      const isInstalled = installedModels.some((m) => m.startsWith(modelBase.toLowerCase()));
 
       if (isInstalled) {
         modelStatus[category].push(model);
@@ -279,8 +262,7 @@ async function installEssentialModels() {
   // Check if minimum requirements are met
   const needsText = modelStatus.text.length < MINIMUM_REQUIREMENT.text;
   const needsVision = modelStatus.vision.length < MINIMUM_REQUIREMENT.vision;
-  const needsEmbedding =
-    modelStatus.embedding.length < MINIMUM_REQUIREMENT.embedding;
+  const needsEmbedding = modelStatus.embedding.length < MINIMUM_REQUIREMENT.embedding;
 
   if (!needsText && !needsVision && !needsEmbedding) {
     console.log(chalk.green('\n✓ All minimum model requirements are met!'));
@@ -292,11 +274,7 @@ async function installEssentialModels() {
 
   // Ensure we have at least one text model
   if (needsText) {
-    console.log(
-      chalk.yellow(
-        '\n⚠ No text model found. Installing essential text model...',
-      ),
-    );
+    console.log(chalk.yellow('\n⚠ No text model found. Installing essential text model...'));
     for (const model of ESSENTIAL_MODELS.text) {
       const success = await pullModel(model);
       if (success) {
@@ -310,8 +288,8 @@ async function installEssentialModels() {
   if (needsVision) {
     console.log(
       chalk.yellow(
-        '\n⚠ No vision model found. Installing essential vision model for image analysis...',
-      ),
+        '\n⚠ No vision model found. Installing essential vision model for image analysis...'
+      )
     );
     for (const model of ESSENTIAL_MODELS.vision) {
       const success = await pullModel(model);
@@ -324,9 +302,7 @@ async function installEssentialModels() {
 
   // Try to install embedding model (optional but recommended)
   if (needsEmbedding && !process.env.MINIMAL_SETUP) {
-    console.log(
-      chalk.cyan('\nInstalling embedding model for semantic search...'),
-    );
+    console.log(chalk.cyan('\nInstalling embedding model for semantic search...'));
     for (const model of ESSENTIAL_MODELS.embedding) {
       const success = await pullModel(model);
       if (success) {
@@ -341,15 +317,15 @@ async function installEssentialModels() {
     if (modelStatus.text.length === 0) {
       console.log(
         chalk.red(
-          '\n✗ Failed to install any text model. StratoSort requires at least one text model.',
-        ),
+          '\n✗ Failed to install any text model. StratoSort requires at least one text model.'
+        )
       );
     }
     if (modelStatus.vision.length === 0) {
       console.log(
         chalk.red(
-          '\n✗ Failed to install any vision model. StratoSort requires at least one vision model for image analysis.',
-        ),
+          '\n✗ Failed to install any vision model. StratoSort requires at least one vision model for image analysis.'
+        )
       );
     }
     return false;
@@ -360,8 +336,8 @@ async function installEssentialModels() {
   console.log(chalk.gray(`  Vision models: ${modelStatus.vision.length} ✓`));
   console.log(
     chalk.gray(
-      `  Embedding models: ${modelStatus.embedding.length}${modelStatus.embedding.length > 0 ? ' ✓' : ' (optional)'}`,
-    ),
+      `  Embedding models: ${modelStatus.embedding.length}${modelStatus.embedding.length > 0 ? ' ✓' : ' (optional)'}`
+    )
   );
 
   return true;
@@ -410,11 +386,7 @@ ${chalk.cyan('Linux Installation:')}
 // Main setup flow
 async function main() {
   // Skip in CI environments
-  if (
-    process.env.CI ||
-    process.env.GITHUB_ACTIONS ||
-    process.env.CONTINUOUS_INTEGRATION
-  ) {
+  if (process.env.CI || process.env.GITHUB_ACTIONS || process.env.CONTINUOUS_INTEGRATION) {
     console.log('CI environment detected - skipping Ollama setup');
     process.exit(0);
   }
@@ -448,21 +420,19 @@ async function main() {
     const models = await getInstalledModels();
 
     console.log(
-      installed
-        ? chalk.green('✓ Ollama is installed')
-        : chalk.red('✗ Ollama is not installed'),
+      installed ? chalk.green('✓ Ollama is installed') : chalk.red('✗ Ollama is not installed')
     );
 
     console.log(
       running
         ? chalk.green('✓ Ollama server is running')
-        : chalk.yellow('⚠ Ollama server is not running'),
+        : chalk.yellow('⚠ Ollama server is not running')
     );
 
     console.log(
       models.length > 0
         ? chalk.green(`✓ ${models.length} models installed`)
-        : chalk.yellow('⚠ No models installed'),
+        : chalk.yellow('⚠ No models installed')
     );
 
     process.exit(installed && models.length > 0 ? 0 : 1);
@@ -475,12 +445,8 @@ async function main() {
     console.log(getInstallInstructions());
 
     if (!isAutoInstall) {
-      console.log(
-        chalk.yellow('\nPlease install Ollama and run this script again.'),
-      );
-      console.log(
-        chalk.gray('Or run with --auto flag to attempt automatic setup.'),
-      );
+      console.log(chalk.yellow('\nPlease install Ollama and run this script again.'));
+      console.log(chalk.gray('Or run with --auto flag to attempt automatic setup.'));
       process.exit(1);
     }
 
@@ -493,17 +459,11 @@ async function main() {
       const success = run('sh', ['-c', installCmd]);
       if (!success) {
         console.log(chalk.red('✗ Automatic installation failed'));
-        console.log(
-          chalk.yellow('Please install manually and run this script again.'),
-        );
+        console.log(chalk.yellow('Please install manually and run this script again.'));
         process.exit(1);
       }
     } else {
-      console.log(
-        chalk.yellow(
-          'Automatic installation is not available for your platform.',
-        ),
-      );
+      console.log(chalk.yellow('Automatic installation is not available for your platform.'));
       console.log('Please install manually from: https://ollama.com/download');
       process.exit(1);
     }
@@ -516,9 +476,7 @@ async function main() {
   const serverStarted = await startOllamaServer();
   if (!serverStarted) {
     console.log(chalk.yellow('⚠ Could not start Ollama server automatically'));
-    console.log(
-      chalk.gray('You may need to start it manually with: ollama serve'),
-    );
+    console.log(chalk.gray('You may need to start it manually with: ollama serve'));
   }
 
   // Step 3: Install essential models
@@ -526,9 +484,7 @@ async function main() {
   const modelsInstalled = await installEssentialModels();
 
   if (!modelsInstalled) {
-    console.log(
-      chalk.red('\n✗ Setup incomplete - could not install required models'),
-    );
+    console.log(chalk.red('\n✗ Setup incomplete - could not install required models'));
     console.log(chalk.yellow('Please ensure Ollama is running and try again.'));
     process.exit(1);
   }
@@ -538,22 +494,16 @@ async function main() {
   const finalCheck = {
     ollama: await isOllamaInstalled(),
     server: await isOllamaRunning(),
-    models: await getInstalledModels(),
+    models: await getInstalledModels()
   };
 
   if (finalCheck.ollama && finalCheck.server && finalCheck.models.length > 0) {
     console.log(chalk.bold.green('\n✅ Ollama setup complete!'));
-    console.log(
-      chalk.gray('\nStratoSort is ready to use AI-powered features:'),
-    );
+    console.log(chalk.gray('\nStratoSort is ready to use AI-powered features:'));
     console.log(chalk.gray('  • Intelligent file categorization'));
     console.log(chalk.gray('  • Smart folder suggestions'));
     console.log(chalk.gray('  • Semantic file matching'));
-    if (
-      finalCheck.models.some(
-        (m) => m.includes('llava') || m.includes('moondream'),
-      )
-    ) {
+    if (finalCheck.models.some((m) => m.includes('llava') || m.includes('moondream'))) {
       console.log(chalk.gray('  • Image content analysis'));
     }
 
@@ -565,21 +515,19 @@ async function main() {
         {
           setupDate: new Date().toISOString(),
           ollamaHost: OLLAMA_HOST,
-          installedModels: finalCheck.models,
+          installedModels: finalCheck.models
         },
         null,
-        2,
-      ),
+        2
+      )
     );
 
     process.exit(0);
   } else {
     console.log(chalk.red('\n✗ Setup verification failed'));
     if (!finalCheck.ollama) console.log(chalk.red('  ✗ Ollama not installed'));
-    if (!finalCheck.server)
-      console.log(chalk.red('  ✗ Ollama server not running'));
-    if (finalCheck.models.length === 0)
-      console.log(chalk.red('  ✗ No models installed'));
+    if (!finalCheck.server) console.log(chalk.red('  ✗ Ollama server not running'));
+    if (finalCheck.models.length === 0) console.log(chalk.red('  ✗ No models installed'));
     process.exit(1);
   }
 }
@@ -603,5 +551,5 @@ module.exports = {
   isOllamaRunning,
   getInstalledModels,
   startOllamaServer,
-  installEssentialModels,
+  installEssentialModels
 };

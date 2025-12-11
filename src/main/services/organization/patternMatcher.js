@@ -42,9 +42,7 @@ class PatternMatcher {
   loadPatterns(stored) {
     if (stored.patterns && Array.isArray(stored.patterns)) {
       this.userPatterns = new Map(stored.patterns);
-      logger.info(
-        `[PatternMatcher] Loaded ${this.userPatterns.size} user patterns`,
-      );
+      logger.info(`[PatternMatcher] Loaded ${this.userPatterns.size} user patterns`);
     }
 
     if (stored.feedbackHistory && Array.isArray(stored.feedbackHistory)) {
@@ -64,7 +62,7 @@ class PatternMatcher {
     return {
       patterns: Array.from(this.userPatterns.entries()),
       feedbackHistory: this.feedbackHistory.slice(-this.maxFeedbackHistory),
-      folderUsageStats: Array.from(this.folderUsageStats.entries()),
+      folderUsageStats: Array.from(this.folderUsageStats.entries())
     };
   }
 
@@ -87,7 +85,7 @@ class PatternMatcher {
           confidence: similarity * data.confidence,
           pattern: pattern,
           method: 'user_pattern',
-          usageCount: data.count,
+          usageCount: data.count
         });
       }
     }
@@ -110,9 +108,7 @@ class PatternMatcher {
       const cutoffTime = now - FEEDBACK_RETENTION_MS;
       const originalLength = this.feedbackHistory.length;
 
-      this.feedbackHistory = this.feedbackHistory.filter(
-        (entry) => entry.timestamp > cutoffTime,
-      );
+      this.feedbackHistory = this.feedbackHistory.filter((entry) => entry.timestamp > cutoffTime);
 
       const pruned = originalLength - this.feedbackHistory.length;
       if (pruned > 0) {
@@ -125,7 +121,7 @@ class PatternMatcher {
       timestamp: now,
       file: { name: file.name, type: file.extension },
       suggestion,
-      accepted,
+      accepted
     });
 
     // Update user patterns if accepted
@@ -136,9 +132,7 @@ class PatternMatcher {
     // Trim history if too large
     if (this.feedbackHistory.length > this.maxFeedbackHistory) {
       const excess = this.feedbackHistory.length - this.maxFeedbackHistory;
-      this.feedbackHistory = this.feedbackHistory.slice(
-        -this.maxFeedbackHistory,
-      );
+      this.feedbackHistory = this.feedbackHistory.slice(-this.maxFeedbackHistory);
       logger.debug(`[PatternMatcher] Trimmed ${excess} feedback entries`);
     }
   }
@@ -169,7 +163,7 @@ class PatternMatcher {
         count: 0,
         confidence: 0.5,
         lastUsed: now,
-        createdAt: now,
+        createdAt: now
       });
     }
 
@@ -190,17 +184,13 @@ class PatternMatcher {
 
     // First remove stale patterns
     const patternsArray = Array.from(this.userPatterns.entries());
-    const stalePatterns = patternsArray.filter(
-      ([, data]) => data.lastUsed < staleThreshold,
-    );
+    const stalePatterns = patternsArray.filter(([, data]) => data.lastUsed < staleThreshold);
 
     if (stalePatterns.length > 0) {
       for (const [key] of stalePatterns) {
         this.userPatterns.delete(key);
       }
-      logger.debug(
-        `[PatternMatcher] Pruned ${stalePatterns.length} stale patterns`,
-      );
+      logger.debug(`[PatternMatcher] Pruned ${stalePatterns.length} stale patterns`);
     }
 
     // If still at capacity, use LRU strategy
@@ -233,14 +223,12 @@ class PatternMatcher {
    */
   checkMemoryUsage() {
     try {
-      const patternSize = JSON.stringify(
-        Array.from(this.userPatterns.entries()),
-      ).length;
+      const patternSize = JSON.stringify(Array.from(this.userPatterns.entries())).length;
       const estimatedMemoryMB = patternSize / (1024 * 1024);
 
       if (estimatedMemoryMB > this.maxMemoryMB) {
         logger.warn(
-          `[PatternMatcher] Memory limit exceeded: ${estimatedMemoryMB.toFixed(2)}MB / ${this.maxMemoryMB}MB`,
+          `[PatternMatcher] Memory limit exceeded: ${estimatedMemoryMB.toFixed(2)}MB / ${this.maxMemoryMB}MB`
         );
 
         // Force aggressive eviction - remove 20% of patterns
@@ -254,10 +242,8 @@ class PatternMatcher {
           const recencyFactorA = 1 / (1 + ageA / (30 * 24 * 60 * 60 * 1000));
           const recencyFactorB = 1 / (1 + ageB / (30 * 24 * 60 * 60 * 1000));
 
-          const scoreA =
-            (a[1].count || 0) * (a[1].confidence || 0.5) * recencyFactorA;
-          const scoreB =
-            (b[1].count || 0) * (b[1].confidence || 0.5) * recencyFactorB;
+          const scoreA = (a[1].count || 0) * (a[1].confidence || 0.5) * recencyFactorA;
+          const scoreB = (b[1].count || 0) * (b[1].confidence || 0.5) * recencyFactorB;
           return scoreA - scoreB;
         });
 
@@ -265,9 +251,7 @@ class PatternMatcher {
           this.userPatterns.delete(patternsArray[i][0]);
         }
 
-        logger.info(
-          `[PatternMatcher] Evicted ${removeCount} patterns to free memory`,
-        );
+        logger.info(`[PatternMatcher] Evicted ${removeCount} patterns to free memory`);
       }
     } catch (error) {
       logger.error('[PatternMatcher] Error checking memory usage:', error);
@@ -308,7 +292,7 @@ class PatternMatcher {
     const parts = [
       file.extension,
       file.analysis?.category || 'unknown',
-      suggestion?.folder || 'unknown',
+      suggestion?.folder || 'unknown'
     ];
 
     return parts.join(':').toLowerCase();

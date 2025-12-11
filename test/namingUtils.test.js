@@ -48,19 +48,27 @@ describe('namingUtils', () => {
 
   describe('applyCaseConvention', () => {
     test('applies kebab-case', () => {
-      expect(namingUtils.applyCaseConvention('Hello World Test', 'kebab-case')).toBe('hello-world-test');
+      expect(namingUtils.applyCaseConvention('Hello World Test', 'kebab-case')).toBe(
+        'hello-world-test'
+      );
     });
 
     test('applies snake_case', () => {
-      expect(namingUtils.applyCaseConvention('Hello World Test', 'snake_case')).toBe('hello_world_test');
+      expect(namingUtils.applyCaseConvention('Hello World Test', 'snake_case')).toBe(
+        'hello_world_test'
+      );
     });
 
     test('applies camelCase', () => {
-      expect(namingUtils.applyCaseConvention('Hello World Test', 'camelCase')).toBe('helloWorldTest');
+      expect(namingUtils.applyCaseConvention('Hello World Test', 'camelCase')).toBe(
+        'helloWorldTest'
+      );
     });
 
     test('applies PascalCase', () => {
-      expect(namingUtils.applyCaseConvention('hello world test', 'PascalCase')).toBe('HelloWorldTest');
+      expect(namingUtils.applyCaseConvention('hello world test', 'PascalCase')).toBe(
+        'HelloWorldTest'
+      );
     });
 
     test('applies lowercase', () => {
@@ -84,7 +92,9 @@ describe('namingUtils', () => {
     });
 
     test('handles special characters', () => {
-      expect(namingUtils.applyCaseConvention('Hello@World#Test', 'kebab-case')).toBe('hello-world-test');
+      expect(namingUtils.applyCaseConvention('Hello@World#Test', 'kebab-case')).toBe(
+        'hello-world-test'
+      );
     });
   });
 
@@ -93,14 +103,14 @@ describe('namingUtils', () => {
       convention: 'keep-original',
       separator: '-',
       dateFormat: 'YYYY-MM-DD',
-      caseConvention: 'kebab-case',
+      caseConvention: 'kebab-case'
     };
 
     test('keeps original name', () => {
       const result = namingUtils.generatePreviewName('MyFile.txt', {
         ...baseSettings,
         convention: 'keep-original',
-        caseConvention: undefined,
+        caseConvention: undefined
       });
       expect(result).toBe('MyFile.txt');
     });
@@ -108,7 +118,7 @@ describe('namingUtils', () => {
     test('applies subject-date convention', () => {
       const result = namingUtils.generatePreviewName('MyFile.txt', {
         ...baseSettings,
-        convention: 'subject-date',
+        convention: 'subject-date'
       });
       expect(result).toMatch(/myfile-\d{4}-\d{2}-\d{2}\.txt/);
     });
@@ -116,7 +126,7 @@ describe('namingUtils', () => {
     test('applies date-subject convention', () => {
       const result = namingUtils.generatePreviewName('MyFile.txt', {
         ...baseSettings,
-        convention: 'date-subject',
+        convention: 'date-subject'
       });
       expect(result).toMatch(/\d{4}-\d{2}-\d{2}-myfile\.txt/);
     });
@@ -124,7 +134,7 @@ describe('namingUtils', () => {
     test('applies project-subject-date convention', () => {
       const result = namingUtils.generatePreviewName('MyFile.txt', {
         ...baseSettings,
-        convention: 'project-subject-date',
+        convention: 'project-subject-date'
       });
       expect(result).toMatch(/project-myfile-\d{4}-\d{2}-\d{2}\.txt/);
     });
@@ -132,7 +142,7 @@ describe('namingUtils', () => {
     test('applies category-subject convention', () => {
       const result = namingUtils.generatePreviewName('MyFile.txt', {
         ...baseSettings,
-        convention: 'category-subject',
+        convention: 'category-subject'
       });
       expect(result).toBe('category-myfile.txt');
     });
@@ -140,7 +150,7 @@ describe('namingUtils', () => {
     test('preserves file extension', () => {
       const result = namingUtils.generatePreviewName('document.pdf', {
         ...baseSettings,
-        convention: 'keep-original',
+        convention: 'keep-original'
       });
       expect(result).toContain('.pdf');
     });
@@ -149,7 +159,7 @@ describe('namingUtils', () => {
       const result = namingUtils.generatePreviewName('README', {
         ...baseSettings,
         convention: 'keep-original',
-        caseConvention: undefined, // Override to keep original case
+        caseConvention: undefined // Override to keep original case
       });
       expect(result).toBe('README');
     });
@@ -159,7 +169,7 @@ describe('namingUtils', () => {
         ...baseSettings,
         convention: 'subject-date',
         separator: '_',
-        caseConvention: undefined,
+        caseConvention: undefined
       });
       expect(result).toContain('_');
     });
@@ -170,7 +180,7 @@ describe('namingUtils', () => {
       const progress = {
         current: 5,
         total: 10,
-        lastActivity: Date.now(),
+        lastActivity: Date.now()
       };
       expect(namingUtils.validateProgressState(progress)).toBe(true);
     });
@@ -188,23 +198,33 @@ describe('namingUtils', () => {
     });
 
     test('returns false for missing current', () => {
-      expect(namingUtils.validateProgressState({ total: 10, lastActivity: Date.now() })).toBe(false);
+      expect(namingUtils.validateProgressState({ total: 10, lastActivity: Date.now() })).toBe(
+        false
+      );
     });
 
     test('returns false for missing total', () => {
-      expect(namingUtils.validateProgressState({ current: 5, lastActivity: Date.now() })).toBe(false);
+      expect(namingUtils.validateProgressState({ current: 5, lastActivity: Date.now() })).toBe(
+        false
+      );
     });
 
     test('returns false for negative current', () => {
-      expect(namingUtils.validateProgressState({ current: -1, total: 10, lastActivity: Date.now() })).toBe(false);
+      expect(
+        namingUtils.validateProgressState({ current: -1, total: 10, lastActivity: Date.now() })
+      ).toBe(false);
     });
 
     test('returns false for negative total', () => {
-      expect(namingUtils.validateProgressState({ current: 5, total: -1, lastActivity: Date.now() })).toBe(false);
+      expect(
+        namingUtils.validateProgressState({ current: 5, total: -1, lastActivity: Date.now() })
+      ).toBe(false);
     });
 
     test('returns false when current exceeds total', () => {
-      expect(namingUtils.validateProgressState({ current: 15, total: 10, lastActivity: Date.now() })).toBe(false);
+      expect(
+        namingUtils.validateProgressState({ current: 15, total: 10, lastActivity: Date.now() })
+      ).toBe(false);
     });
 
     test('returns false for missing lastActivity', () => {
@@ -213,12 +233,16 @@ describe('namingUtils', () => {
 
     test('returns false for stale progress (>15 min)', () => {
       const oldActivity = Date.now() - 20 * 60 * 1000; // 20 minutes ago
-      expect(namingUtils.validateProgressState({ current: 5, total: 10, lastActivity: oldActivity })).toBe(false);
+      expect(
+        namingUtils.validateProgressState({ current: 5, total: 10, lastActivity: oldActivity })
+      ).toBe(false);
     });
 
     test('returns true for recent progress', () => {
       const recentActivity = Date.now() - 5 * 60 * 1000; // 5 minutes ago
-      expect(namingUtils.validateProgressState({ current: 5, total: 10, lastActivity: recentActivity })).toBe(true);
+      expect(
+        namingUtils.validateProgressState({ current: 5, total: 10, lastActivity: recentActivity })
+      ).toBe(true);
     });
   });
 

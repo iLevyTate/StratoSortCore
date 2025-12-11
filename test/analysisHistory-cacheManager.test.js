@@ -5,14 +5,14 @@
 
 // Mock dependencies
 jest.mock('../src/shared/config/index', () => ({
-  get: jest.fn().mockReturnValue(5000),
+  get: jest.fn().mockReturnValue(5000)
 }));
 
 jest.mock('../src/shared/performanceConstants', () => ({
   CACHE: {
     MAX_LRU_CACHE: 100,
-    SEARCH_CACHE_TTL_MS: 60000,
-  },
+    SEARCH_CACHE_TTL_MS: 60000
+  }
 }));
 
 jest.mock('../src/shared/logger', () => ({
@@ -21,8 +21,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('cacheManager', () => {
@@ -154,7 +154,7 @@ describe('cacheManager', () => {
     test('generates cache key from query and options', () => {
       const key = cacheManager.getSearchCacheKey('test query', {
         limit: 50,
-        offset: 10,
+        offset: 10
       });
 
       expect(key).toBe('test query:50:10');
@@ -177,7 +177,7 @@ describe('cacheManager', () => {
 
       const entry = {
         analysis: { confidence: 0.8 },
-        processing: { processingTimeMs: 200 },
+        processing: { processingTimeMs: 200 }
       };
 
       cacheManager.updateIncrementalStatsOnAdd(cache, entry);
@@ -192,7 +192,7 @@ describe('cacheManager', () => {
 
       cacheManager.updateIncrementalStatsOnAdd(cache, {
         analysis: { confidence: 0.8 },
-        processing: { processingTimeMs: 200 },
+        processing: { processingTimeMs: 200 }
       });
 
       expect(cache.incrementalStats.entryCount).toBe(0);
@@ -209,7 +209,7 @@ describe('cacheManager', () => {
 
       const entry = {
         analysis: { confidence: 0.5 },
-        processing: { processingTimeMs: 100 },
+        processing: { processingTimeMs: 100 }
       };
 
       cacheManager.updateIncrementalStatsOnRemove(cache, entry);
@@ -226,7 +226,7 @@ describe('cacheManager', () => {
 
       cacheManager.updateIncrementalStatsOnRemove(cache, {
         analysis: { confidence: 0.5 },
-        processing: { processingTimeMs: 100 },
+        processing: { processingTimeMs: 100 }
       });
 
       expect(cache.incrementalStats.entryCount).toBe(0);
@@ -240,8 +240,8 @@ describe('cacheManager', () => {
       const analysisHistory = {
         entries: {
           1: { analysis: { confidence: 0.8 }, processing: { processingTimeMs: 100 } },
-          2: { analysis: { confidence: 0.6 }, processing: { processingTimeMs: 200 } },
-        },
+          2: { analysis: { confidence: 0.6 }, processing: { processingTimeMs: 200 } }
+        }
       };
 
       cacheManager.recalculateIncrementalStats(cache, analysisHistory, state);

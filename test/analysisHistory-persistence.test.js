@@ -10,8 +10,8 @@ jest.mock('fs', () => ({
     writeFile: jest.fn(),
     rename: jest.fn(),
     unlink: jest.fn(),
-    mkdir: jest.fn(),
-  },
+    mkdir: jest.fn()
+  }
 }));
 
 jest.mock('../src/shared/logger', () => ({
@@ -20,8 +20,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('persistence', () => {
@@ -53,10 +53,7 @@ describe('persistence', () => {
 
       await persistence.atomicWriteFile('/path/to/file.json', '{}');
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.stringMatching(/\.tmp\.\d+$/),
-        '{}'
-      );
+      expect(fs.writeFile).toHaveBeenCalledWith(expect.stringMatching(/\.tmp\.\d+$/), '{}');
       expect(fs.rename).toHaveBeenCalled();
     });
 
@@ -65,9 +62,9 @@ describe('persistence', () => {
       fs.rename.mockRejectedValue(new Error('Rename failed'));
       fs.unlink.mockResolvedValue();
 
-      await expect(
-        persistence.atomicWriteFile('/path/to/file.json', '{}')
-      ).rejects.toThrow('Rename failed');
+      await expect(persistence.atomicWriteFile('/path/to/file.json', '{}')).rejects.toThrow(
+        'Rename failed'
+      );
 
       expect(fs.unlink).toHaveBeenCalled();
     });
@@ -77,9 +74,9 @@ describe('persistence', () => {
       fs.rename.mockRejectedValue(new Error('Rename failed'));
       fs.unlink.mockRejectedValue(new Error('Cleanup failed'));
 
-      await expect(
-        persistence.atomicWriteFile('/path/to/file.json', '{}')
-      ).rejects.toThrow('Rename failed');
+      await expect(persistence.atomicWriteFile('/path/to/file.json', '{}')).rejects.toThrow(
+        'Rename failed'
+      );
     });
   });
 
@@ -87,11 +84,7 @@ describe('persistence', () => {
     test('loads and parses config from file', async () => {
       fs.readFile.mockResolvedValue(JSON.stringify({ setting: 'value' }));
 
-      const config = await persistence.loadConfig(
-        '/path/config.json',
-        jest.fn(),
-        jest.fn()
-      );
+      const config = await persistence.loadConfig('/path/config.json', jest.fn(), jest.fn());
 
       expect(config).toEqual({ setting: 'value' });
     });
@@ -133,7 +126,7 @@ describe('persistence', () => {
       fs.readFile.mockResolvedValue(
         JSON.stringify({
           schemaVersion: '2.0',
-          entries: {},
+          entries: {}
         })
       );
 
@@ -152,7 +145,7 @@ describe('persistence', () => {
       fs.readFile.mockResolvedValue(
         JSON.stringify({
           schemaVersion: '1.0',
-          entries: {},
+          entries: {}
         })
       );
       const migrateHistory = jest.fn().mockResolvedValue();
@@ -204,15 +197,11 @@ describe('persistence', () => {
       fs.readFile.mockResolvedValue(
         JSON.stringify({
           categoryIndex: {},
-          tagIndex: {},
+          tagIndex: {}
         })
       );
 
-      const index = await persistence.loadIndex(
-        '/path/index.json',
-        jest.fn(),
-        jest.fn()
-      );
+      const index = await persistence.loadIndex('/path/index.json', jest.fn(), jest.fn());
 
       expect(index.categoryIndex).toEqual({});
     });
@@ -222,11 +211,7 @@ describe('persistence', () => {
       const createEmptyIndex = jest.fn().mockReturnValue({ tagIndex: {} });
       const saveIndex = jest.fn().mockResolvedValue();
 
-      const index = await persistence.loadIndex(
-        '/path/index.json',
-        createEmptyIndex,
-        saveIndex
-      );
+      const index = await persistence.loadIndex('/path/index.json', createEmptyIndex, saveIndex);
 
       expect(createEmptyIndex).toHaveBeenCalled();
       expect(saveIndex).toHaveBeenCalled();
@@ -260,7 +245,7 @@ describe('persistence', () => {
         {
           configPath: '/path/config.json',
           historyPath: '/path/history.json',
-          indexPath: '/path/index.json',
+          indexPath: '/path/index.json'
         },
         getDefaultConfig,
         createEmptyHistory,

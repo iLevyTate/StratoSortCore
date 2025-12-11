@@ -15,7 +15,7 @@ const {
   createTimer,
   createResourceTracker,
   delay,
-  benchmark,
+  benchmark
 } = require('../utils/testUtilities');
 
 // Mock logger to reduce noise
@@ -25,15 +25,15 @@ jest.mock('../../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/tmp/test-app'),
-  },
+    getPath: jest.fn(() => '/tmp/test-app')
+  }
 }));
 
 describe('Batch Operations Performance', () => {
@@ -56,7 +56,7 @@ describe('Batch Operations Performance', () => {
       it(`should process ${count} files within reasonable time`, async () => {
         const files = generateDummyFiles(count, {
           includeAnalysis: true,
-          includeEmbedding: true,
+          includeEmbedding: true
         });
 
         const tracker = createResourceTracker();
@@ -85,12 +85,8 @@ describe('Batch Operations Performance', () => {
         expect(processed).toBe(count);
 
         // Log performance metrics
-        console.log(
-          `[PERF] ${count} files processed in ${elapsedMs.toFixed(2)}ms`,
-        );
-        console.log(
-          `[PERF] Throughput: ${(count / (elapsedMs / 1000)).toFixed(2)} files/sec`,
-        );
+        console.log(`[PERF] ${count} files processed in ${elapsedMs.toFixed(2)}ms`);
+        console.log(`[PERF] Throughput: ${(count / (elapsedMs / 1000)).toFixed(2)} files/sec`);
         console.log(`[PERF] Memory delta: ${results.memoryDelta.heapUsedMB}MB`);
       }, 30000); // 30 second timeout for larger tests
     });
@@ -135,7 +131,7 @@ describe('Batch Operations Performance', () => {
 
       for (let i = 1; i <= iterations; i++) {
         const files = generateDummyFiles(filesPerBatch, {
-          includeEmbedding: true,
+          includeEmbedding: true
         });
         await mockChromaDB.batchUpsertFiles(files);
 
@@ -155,7 +151,7 @@ describe('Batch Operations Performance', () => {
 
       console.log(
         '[PERF] Memory snapshots:',
-        memorySnapshots.map((s) => `Iter ${s.iteration}: ${s.heapUsedMB}MB`),
+        memorySnapshots.map((s) => `Iter ${s.iteration}: ${s.heapUsedMB}MB`)
       );
       console.log(`[PERF] Total memory growth: ${memoryGrowth.toFixed(2)}MB`);
     });
@@ -195,7 +191,7 @@ describe('Batch Operations Performance', () => {
         async () => {
           await mockChromaDB.batchUpsertFolders(folders);
         },
-        { iterations: 5, warmupIterations: 1, name: 'batchUpsertFolders' },
+        { iterations: 5, warmupIterations: 1, name: 'batchUpsertFolders' }
       );
 
       expect(benchmarkResult.avgMs).toBeLessThan(100);
@@ -213,7 +209,7 @@ describe('Batch Operations Performance', () => {
         async () => {
           await mockChromaDB.queryFolders('file:test_0', 5);
         },
-        { iterations: 20, warmupIterations: 5, name: 'queryFolders' },
+        { iterations: 20, warmupIterations: 5, name: 'queryFolders' }
       );
 
       // Query should be fast
@@ -231,26 +227,20 @@ describe('Batch Operations Performance', () => {
 
       const batches = Array(concurrentBatches)
         .fill(null)
-        .map(() =>
-          generateDummyFiles(filesPerBatch, { includeEmbedding: true }),
-        );
+        .map(() => generateDummyFiles(filesPerBatch, { includeEmbedding: true }));
 
       const timer = createTimer();
 
       // Run all batches concurrently
-      await Promise.all(
-        batches.map((batch) => mockChromaDB.batchUpsertFiles(batch)),
-      );
+      await Promise.all(batches.map((batch) => mockChromaDB.batchUpsertFiles(batch)));
 
       const elapsed = timer();
       const totalFiles = concurrentBatches * filesPerBatch;
 
       console.log(
-        `[PERF] ${concurrentBatches} concurrent batches (${totalFiles} total files) in ${elapsed.toFixed(2)}ms`,
+        `[PERF] ${concurrentBatches} concurrent batches (${totalFiles} total files) in ${elapsed.toFixed(2)}ms`
       );
-      console.log(
-        `[PERF] Throughput: ${(totalFiles / (elapsed / 1000)).toFixed(2)} files/sec`,
-      );
+      console.log(`[PERF] Throughput: ${(totalFiles / (elapsed / 1000)).toFixed(2)} files/sec`);
 
       // Should complete within reasonable time
       expect(elapsed).toBeLessThan(5000);
@@ -302,7 +292,7 @@ describe('Batch Operations Performance', () => {
       expect(throughput).toBeGreaterThan(TARGET_THROUGHPUT);
 
       console.log(
-        `[PERF] Throughput: ${throughput.toFixed(2)} files/sec (target: ${TARGET_THROUGHPUT})`,
+        `[PERF] Throughput: ${throughput.toFixed(2)} files/sec (target: ${TARGET_THROUGHPUT})`
       );
     });
 
@@ -314,7 +304,7 @@ describe('Batch Operations Performance', () => {
           const file = generateDummyFiles(1, { includeEmbedding: true })[0];
           await mockChromaDB.upsertFile(file);
         },
-        { iterations: 50, warmupIterations: 10, name: 'singleUpsert' },
+        { iterations: 50, warmupIterations: 10, name: 'singleUpsert' }
       );
 
       expect(benchmarkResult.avgMs).toBeLessThan(MAX_LATENCY_MS);
@@ -346,22 +336,18 @@ describe('Batch Operations Performance', () => {
         return cp.time - arr[i - 1].time;
       });
 
-      const firstHalfAvg =
-        checkpointTimes.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
-      const secondHalfAvg =
-        checkpointTimes.slice(5).reduce((a, b) => a + b, 0) / 5;
+      const firstHalfAvg = checkpointTimes.slice(0, 5).reduce((a, b) => a + b, 0) / 5;
+      const secondHalfAvg = checkpointTimes.slice(5).reduce((a, b) => a + b, 0) / 5;
 
       // Second half should not take more than 2x the first half
       expect(secondHalfAvg).toBeLessThan(firstHalfAvg * 2);
 
       console.log(
         '[PERF] Chunk times:',
-        checkpointTimes.map((t) => t.toFixed(2)),
+        checkpointTimes.map((t) => t.toFixed(2))
       );
       console.log(`[PERF] Total time: ${results.totalTimeMs.toFixed(2)}ms`);
-      console.log(
-        `[PERF] Memory growth: ${results.memoryDelta.heapUsedMB.toFixed(2)}MB`,
-      );
+      console.log(`[PERF] Memory growth: ${results.memoryDelta.heapUsedMB.toFixed(2)}MB`);
     }, 60000);
   });
 });
@@ -383,9 +369,7 @@ describe('Embedding Queue Performance', () => {
 
       expect(throughput).toBeGreaterThan(10000); // Should enqueue 10k+ items/sec
 
-      console.log(
-        `[PERF] Enqueue throughput: ${throughput.toFixed(0)} items/sec`,
-      );
+      console.log(`[PERF] Enqueue throughput: ${throughput.toFixed(0)} items/sec`);
     });
 
     it('should dequeue items efficiently', async () => {
@@ -401,9 +385,7 @@ describe('Embedding Queue Performance', () => {
       const elapsed = timer();
       const throughput = items.length / (elapsed / 1000);
 
-      console.log(
-        `[PERF] Dequeue throughput: ${throughput.toFixed(0)} items/sec`,
-      );
+      console.log(`[PERF] Dequeue throughput: ${throughput.toFixed(0)} items/sec`);
     });
   });
 });

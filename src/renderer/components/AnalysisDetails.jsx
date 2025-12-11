@@ -1,10 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 
-const AnalysisDetails = React.memo(function AnalysisDetails({
-  analysis,
-  options = {},
-}) {
+const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options = {} }) {
   // Comprehensive null check for analysis object
   if (!analysis || typeof analysis !== 'object') return null;
 
@@ -36,8 +33,7 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
         : undefined;
 
   const confidenceValue =
-    typeof analysis.confidence === 'number' &&
-    Number.isFinite(analysis.confidence)
+    typeof analysis.confidence === 'number' && Number.isFinite(analysis.confidence)
       ? analysis.confidence
       : null;
   const displayConfidence =
@@ -45,21 +41,15 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
       ? null
       : Math.max(
           0,
-          confidenceValue <= 1
-            ? Math.round(confidenceValue * 100)
-            : Math.round(confidenceValue),
+          confidenceValue <= 1 ? Math.round(confidenceValue * 100) : Math.round(confidenceValue)
         );
 
   const ocrText =
-    analysis.ocrText && typeof analysis.ocrText === 'string'
-      ? analysis.ocrText
-      : null;
+    analysis.ocrText && typeof analysis.ocrText === 'string' ? analysis.ocrText : null;
   const isOcrTruncated = !!ocrText && ocrText.length > 300;
 
   const transcriptText =
-    analysis.transcript && typeof analysis.transcript === 'string'
-      ? analysis.transcript
-      : null;
+    analysis.transcript && typeof analysis.transcript === 'string' ? analysis.transcript : null;
   const isTranscriptTruncated = !!transcriptText && transcriptText.length > 300;
 
   return (
@@ -67,9 +57,7 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
       {showName && analysis.suggestedName && (
         <div className="text-sm text-system-gray-700">
           <strong>Suggested Name:</strong>{' '}
-          <span className="text-stratosort-blue font-mono">
-            {analysis.suggestedName}
-          </span>
+          <span className="text-stratosort-blue font-mono">{analysis.suggestedName}</span>
         </div>
       )}
 
@@ -100,17 +88,15 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
 
       {hasKeywords && (
         <div className="text-sm text-system-gray-500">
-          <strong>Keywords:</strong>{' '}
-          {keywordList.join(', ')}
+          <strong>Keywords:</strong> {keywordList.join(', ')}
         </div>
       )}
 
       {displayConfidence !== null && (
-          <div className="text-xs text-system-gray-500">
-            <strong>AI Confidence:</strong>{' '}
-            {displayConfidence}%
-          </div>
-        )}
+        <div className="text-xs text-system-gray-500">
+          <strong>AI Confidence:</strong> {displayConfidence}%
+        </div>
+      )}
 
       {displayContentType && (
         <div className="text-xs text-system-gray-500">
@@ -132,8 +118,7 @@ const AnalysisDetails = React.memo(function AnalysisDetails({
 
       {hasColors && (
         <div className="text-xs text-system-gray-500">
-          <strong>Colors:</strong>{' '}
-          {colorList.join(', ')}
+          <strong>Colors:</strong> {colorList.join(', ')}
         </div>
       )}
 
@@ -169,12 +154,12 @@ AnalysisDetails.propTypes = {
     hasText: PropTypes.bool,
     colors: PropTypes.arrayOf(PropTypes.string),
     ocrText: PropTypes.string,
-    transcript: PropTypes.string,
+    transcript: PropTypes.string
   }),
   options: PropTypes.shape({
     showName: PropTypes.bool,
-    showCategory: PropTypes.bool,
-  }),
+    showCategory: PropTypes.bool
+  })
 };
 
 export default AnalysisDetails;

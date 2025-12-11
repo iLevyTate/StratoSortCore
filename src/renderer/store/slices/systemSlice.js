@@ -23,23 +23,23 @@ export const fetchDocumentsPath = createAsyncThunk(
     }
     const path = await window.electronAPI?.files?.getDocumentsPath?.();
     return normalizeDocumentsPath(path);
-  },
+  }
 );
 
 const initialState = {
   metrics: {
     cpu: 0,
     memory: 0,
-    uptime: 0,
+    uptime: 0
   },
   health: {
     chromadb: 'unknown', // 'online', 'offline', 'connecting'
-    ollama: 'unknown',
+    ollama: 'unknown'
   },
   notifications: [],
   version: '1.0.0',
   documentsPath: null, // Cached documents path
-  documentsPathLoading: false,
+  documentsPathLoading: false
 };
 
 const systemSlice = createSlice({
@@ -60,20 +60,18 @@ const systemSlice = createSlice({
       state.notifications.push({
         id: Date.now().toString(),
         timestamp: new Date().toISOString(),
-        ...action.payload,
+        ...action.payload
       });
     },
     removeNotification: (state, action) => {
-      state.notifications = state.notifications.filter(
-        (n) => n.id !== action.payload,
-      );
+      state.notifications = state.notifications.filter((n) => n.id !== action.payload);
     },
     clearNotifications: (state) => {
       state.notifications = [];
     },
     setDocumentsPath: (state, action) => {
       state.documentsPath = normalizeDocumentsPath(action.payload);
-    },
+    }
   },
   extraReducers: (builder) => {
     builder
@@ -88,7 +86,7 @@ const systemSlice = createSlice({
         state.documentsPath = 'Documents';
         state.documentsPathLoading = false;
       });
-  },
+  }
 });
 
 export const {
@@ -97,7 +95,7 @@ export const {
   addNotification,
   removeNotification,
   clearNotifications,
-  setDocumentsPath,
+  setDocumentsPath
 } = systemSlice.actions;
 
 export default systemSlice.reducer;

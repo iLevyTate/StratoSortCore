@@ -19,7 +19,7 @@ jest.mock('chromadb', () => {
           id: ids[i],
           embedding: embeddings[i],
           metadata: metadatas[i],
-          document: documents[i],
+          document: documents[i]
         });
       }
       return Promise.resolve(); // Keep it promise-based but execute synchronously
@@ -66,7 +66,7 @@ jest.mock('chromadb', () => {
         ids: [topResults.map((r) => r.item.id)],
         distances: [topResults.map((r) => r.distance)],
         metadatas: [topResults.map((r) => r.item.metadata)],
-        documents: [topResults.map((r) => r.item.document)],
+        documents: [topResults.map((r) => r.item.document)]
       };
     }
 
@@ -113,7 +113,7 @@ jest.mock('chromadb', () => {
   }
 
   return {
-    ChromaClient: MockChromaClient,
+    ChromaClient: MockChromaClient
   };
 });
 
@@ -124,13 +124,13 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock axios for health checks
 jest.mock('axios', () => ({
-  get: jest.fn().mockResolvedValue({ status: 200, data: { status: 'ok' } }),
+  get: jest.fn().mockResolvedValue({ status: 200, data: { status: 'ok' } })
 }));
 
 describe('ChromaDBService', () => {
@@ -181,7 +181,7 @@ describe('ChromaDBService', () => {
       name: 'Projects',
       description: 'Project files',
       vector: [1, 0, 0],
-      model: 'test-model',
+      model: 'test-model'
     });
 
     await chromaDbService.upsertFolder({
@@ -189,21 +189,18 @@ describe('ChromaDBService', () => {
       name: 'Finance',
       description: 'Financial documents',
       vector: [0, 1, 0],
-      model: 'test-model',
+      model: 'test-model'
     });
 
     // Upsert a file
     await chromaDbService.upsertFile({
       id: 'file:/tmp/report.txt',
       vector: [0.9, 0.1, 0],
-      meta: { path: '/tmp/report.txt' },
+      meta: { path: '/tmp/report.txt' }
     });
 
     // Query for matching folders
-    const matches = await chromaDbService.queryFolders(
-      'file:/tmp/report.txt',
-      2,
-    );
+    const matches = await chromaDbService.queryFolders('file:/tmp/report.txt', 2);
 
     expect(matches.length).toBeGreaterThan(0);
     expect(matches[0].name).toBe('Projects');
@@ -217,13 +214,13 @@ describe('ChromaDBService', () => {
     await chromaDbService.upsertFolder({
       id: 'folder:test',
       name: 'Test',
-      vector: [1, 0],
+      vector: [1, 0]
     });
 
     await chromaDbService.upsertFile({
       id: 'file:test',
       vector: [1, 0],
-      meta: {},
+      meta: {}
     });
 
     // Get initial stats
@@ -248,19 +245,19 @@ describe('ChromaDBService', () => {
     await chromaDbService.upsertFile({
       id: 'file:1',
       vector: [1, 0, 0],
-      meta: { path: '/file1.txt' },
+      meta: { path: '/file1.txt' }
     });
 
     await chromaDbService.upsertFile({
       id: 'file:2',
       vector: [0.9, 0.1, 0],
-      meta: { path: '/file2.txt' },
+      meta: { path: '/file2.txt' }
     });
 
     await chromaDbService.upsertFile({
       id: 'file:3',
       vector: [0, 1, 0],
-      meta: { path: '/file3.txt' },
+      meta: { path: '/file3.txt' }
     });
 
     // Query for similar files
@@ -280,13 +277,13 @@ describe('ChromaDBService', () => {
     await chromaDbService.upsertFolder({
       id: 'folder:1',
       name: 'Folder1',
-      vector: [1, 0],
+      vector: [1, 0]
     });
 
     await chromaDbService.upsertFolder({
       id: 'folder:2',
       name: 'Folder2',
-      vector: [0, 1],
+      vector: [0, 1]
     });
 
     const folders = await chromaDbService.getAllFolders();
@@ -303,15 +300,15 @@ describe('ChromaDBService', () => {
     await expect(
       chromaDbService.upsertFolder({
         id: 'folder:invalid',
-        name: 'Invalid',
-      }),
+        name: 'Invalid'
+      })
     ).rejects.toThrow();
 
     // Try to upsert invalid file (missing id)
     await expect(
       chromaDbService.upsertFile({
-        vector: [1, 0],
-      }),
+        vector: [1, 0]
+      })
     ).rejects.toThrow();
 
     // Query for non-existent file
@@ -328,13 +325,13 @@ describe('ChromaDBService', () => {
       JSON.stringify({
         id: 'file:1',
         vector: [1, 0],
-        meta: { path: '/file1.txt', name: 'file1.txt' },
+        meta: { path: '/file1.txt', name: 'file1.txt' }
       }),
       JSON.stringify({
         id: 'file:2',
         vector: [0, 1],
-        meta: { path: '/file2.txt', name: 'file2.txt' },
-      }),
+        meta: { path: '/file2.txt', name: 'file2.txt' }
+      })
     ].join('\n');
 
     await fs.writeFile(jsonlPath, jsonlData);
@@ -353,10 +350,7 @@ describe('ChromaDBService', () => {
     await chromaDbService.initialize();
 
     const nonExistentPath = path.join(tmpDir, 'nonexistent.jsonl');
-    const migrated = await chromaDbService.migrateFromJsonl(
-      nonExistentPath,
-      'file',
-    );
+    const migrated = await chromaDbService.migrateFromJsonl(nonExistentPath, 'file');
 
     expect(migrated).toBe(0);
   });

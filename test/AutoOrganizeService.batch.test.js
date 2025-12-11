@@ -7,13 +7,13 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/Users/test/Documents'),
-  },
+    getPath: jest.fn(() => '/Users/test/Documents')
+  }
 }));
 
 describe('AutoOrganizeService - Batch Processing', () => {
@@ -31,26 +31,26 @@ describe('AutoOrganizeService - Batch Processing', () => {
     mockSuggestionService = {
       getSuggestionsForFile: jest.fn(),
       getBatchSuggestions: jest.fn(),
-      recordFeedback: jest.fn(),
+      recordFeedback: jest.fn()
     };
 
     mockSettingsService = {
-      get: jest.fn().mockReturnValue({}),
+      get: jest.fn().mockReturnValue({})
     };
 
     mockFolderMatchingService = {
-      matchFileToFolder: jest.fn(),
+      matchFileToFolder: jest.fn()
     };
 
     mockUndoRedoService = {
-      recordAction: jest.fn(),
+      recordAction: jest.fn()
     };
 
     autoOrganizeService = new AutoOrganizeService({
       suggestionService: mockSuggestionService,
       settingsService: mockSettingsService,
       folderMatchingService: mockFolderMatchingService,
-      undoRedoService: mockUndoRedoService,
+      undoRedoService: mockUndoRedoService
     });
   });
 
@@ -58,7 +58,7 @@ describe('AutoOrganizeService - Batch Processing', () => {
     it('should use getBatchSuggestions for files with analysis', async () => {
       const smartFolders = [
         { id: '1', name: 'Documents', path: '/folders/Documents' },
-        { id: '2', name: 'Images', path: '/folders/Images' },
+        { id: '2', name: 'Images', path: '/folders/Images' }
       ];
 
       const files = [
@@ -66,20 +66,20 @@ describe('AutoOrganizeService - Batch Processing', () => {
           name: 'file1.pdf',
           path: '/files/file1.pdf',
           extension: '.pdf',
-          analysis: { category: 'document', keywords: ['report'] },
+          analysis: { category: 'document', keywords: ['report'] }
         },
         {
           name: 'file2.jpg',
           path: '/files/file2.jpg',
           extension: '.jpg',
-          analysis: { category: 'image', keywords: ['photo'] },
+          analysis: { category: 'image', keywords: ['photo'] }
         },
         {
           name: 'file3.doc',
           path: '/files/file3.doc',
           extension: '.doc',
-          analysis: { category: 'document', keywords: ['memo'] },
-        },
+          analysis: { category: 'document', keywords: ['memo'] }
+        }
       ];
 
       // Mock batch suggestions response
@@ -92,13 +92,13 @@ describe('AutoOrganizeService - Batch Processing', () => {
             files: [
               {
                 name: 'file1.pdf',
-                suggestion: { folder: 'Documents', path: '/folders/Documents' },
+                suggestion: { folder: 'Documents', path: '/folders/Documents' }
               },
               {
                 name: 'file3.doc',
-                suggestion: { folder: 'Documents', path: '/folders/Documents' },
-              },
-            ],
+                suggestion: { folder: 'Documents', path: '/folders/Documents' }
+              }
+            ]
           },
           {
             folder: 'Images',
@@ -106,30 +106,23 @@ describe('AutoOrganizeService - Batch Processing', () => {
             files: [
               {
                 name: 'file2.jpg',
-                suggestion: { folder: 'Images', path: '/folders/Images' },
-              },
-            ],
-          },
-        ],
+                suggestion: { folder: 'Images', path: '/folders/Images' }
+              }
+            ]
+          }
+        ]
       });
 
-      const result = await autoOrganizeService.organizeFiles(
-        files,
-        smartFolders,
-        {
-          batchSize: 10,
-        },
-      );
+      const result = await autoOrganizeService.organizeFiles(files, smartFolders, {
+        batchSize: 10
+      });
 
       // Verify getBatchSuggestions was called instead of individual getSuggestionsForFile
-      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledWith(
-        files,
-        smartFolders,
-        { includeAlternatives: false, includeStructureAnalysis: false },
-      );
+      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(1);
+      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledWith(files, smartFolders, {
+        includeAlternatives: false,
+        includeStructureAnalysis: false
+      });
 
       // Individual suggestions may be called for unprocessed files
       // (this is expected behavior when batch doesn't cover all files)
@@ -141,135 +134,108 @@ describe('AutoOrganizeService - Batch Processing', () => {
     });
 
     it('should process files in multiple batches when batch size is small', async () => {
-      const smartFolders = [
-        { id: '1', name: 'Documents', path: '/folders/Documents' },
-      ];
+      const smartFolders = [{ id: '1', name: 'Documents', path: '/folders/Documents' }];
 
       // Create 25 files
       const files = Array.from({ length: 25 }, (_, i) => ({
         name: `file${i}.pdf`,
         path: `/files/file${i}.pdf`,
         extension: '.pdf',
-        analysis: { category: 'document' },
+        analysis: { category: 'document' }
       }));
 
       // Mock batch suggestions to return success for each batch
-      mockSuggestionService.getBatchSuggestions.mockImplementation(
-        (batchFiles) => {
-          return Promise.resolve({
-            success: true,
-            groups: [
-              {
-                folder: 'Documents',
-                confidence: 0.9,
-                files: batchFiles.map((f) => ({
-                  name: f.name,
-                  suggestion: {
-                    folder: 'Documents',
-                    path: '/folders/Documents',
-                  },
-                })),
-              },
-            ],
-          });
-        },
-      );
+      mockSuggestionService.getBatchSuggestions.mockImplementation((batchFiles) => {
+        return Promise.resolve({
+          success: true,
+          groups: [
+            {
+              folder: 'Documents',
+              confidence: 0.9,
+              files: batchFiles.map((f) => ({
+                name: f.name,
+                suggestion: {
+                  folder: 'Documents',
+                  path: '/folders/Documents'
+                }
+              }))
+            }
+          ]
+        });
+      });
 
-      const result = await autoOrganizeService.organizeFiles(
-        files,
-        smartFolders,
-        {
-          batchSize: 10, // Process in batches of 10
-        },
-      );
+      const result = await autoOrganizeService.organizeFiles(files, smartFolders, {
+        batchSize: 10 // Process in batches of 10
+      });
 
       // Should be called 3 times: batch of 10, batch of 10, batch of 5
-      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(
-        3,
-      );
+      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(3);
 
       // First batch should have 10 files
-      expect(
-        mockSuggestionService.getBatchSuggestions.mock.calls[0][0],
-      ).toHaveLength(10);
+      expect(mockSuggestionService.getBatchSuggestions.mock.calls[0][0]).toHaveLength(10);
       // Second batch should have 10 files
-      expect(
-        mockSuggestionService.getBatchSuggestions.mock.calls[1][0],
-      ).toHaveLength(10);
+      expect(mockSuggestionService.getBatchSuggestions.mock.calls[1][0]).toHaveLength(10);
       // Third batch should have 5 files
-      expect(
-        mockSuggestionService.getBatchSuggestions.mock.calls[2][0],
-      ).toHaveLength(5);
+      expect(mockSuggestionService.getBatchSuggestions.mock.calls[2][0]).toHaveLength(5);
 
       // All files should be organized (may include fallback suggestions for unprocessed files)
       expect(result.organized.length).toBeGreaterThanOrEqual(25);
     });
 
     it('should fallback to individual processing when batch fails', async () => {
-      const smartFolders = [
-        { id: '1', name: 'Documents', path: '/folders/Documents' },
-      ];
+      const smartFolders = [{ id: '1', name: 'Documents', path: '/folders/Documents' }];
 
       const files = [
         {
           name: 'file1.pdf',
           path: '/files/file1.pdf',
           extension: '.pdf',
-          analysis: { category: 'document' },
+          analysis: { category: 'document' }
         },
         {
           name: 'file2.pdf',
           path: '/files/file2.pdf',
           extension: '.pdf',
-          analysis: { category: 'document' },
-        },
+          analysis: { category: 'document' }
+        }
       ];
 
       // Mock batch suggestions to fail
       mockSuggestionService.getBatchSuggestions.mockResolvedValue({
         success: false,
-        error: 'Batch processing failed',
+        error: 'Batch processing failed'
       });
 
       // Mock individual suggestions as fallback
       mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
         success: true,
         primary: { folder: 'Documents', path: '/folders/Documents' },
-        confidence: 0.85, // High enough confidence to be organized
+        confidence: 0.85 // High enough confidence to be organized
       });
 
-      const result = await autoOrganizeService.organizeFiles(
-        files,
-        smartFolders,
-        {
-          batchSize: 10,
-          confidenceThreshold: 0.8, // Set explicit threshold
-        },
-      );
+      const result = await autoOrganizeService.organizeFiles(files, smartFolders, {
+        batchSize: 10,
+        confidenceThreshold: 0.8 // Set explicit threshold
+      });
 
       // Should try batch first
-      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(
-        1,
-      );
+      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(1);
 
       // Should fallback to individual processing
-      expect(mockSuggestionService.getSuggestionsForFile).toHaveBeenCalledTimes(
-        2,
-      );
+      expect(mockSuggestionService.getSuggestionsForFile).toHaveBeenCalledTimes(2);
       expect(mockSuggestionService.getSuggestionsForFile).toHaveBeenCalledWith(
         files[0],
         smartFolders,
-        { includeAlternatives: false },
+        { includeAlternatives: false }
       );
       expect(mockSuggestionService.getSuggestionsForFile).toHaveBeenCalledWith(
         files[1],
         smartFolders,
-        { includeAlternatives: false },
+        { includeAlternatives: false }
       );
 
       // Files should still be organized (or in needsReview)
-      const totalProcessed =
-        result.organized.length + result.needsReview.length;
+      const totalProcessed = result.organized.length + result.needsReview.length;
       expect(totalProcessed).toBe(2);
     });
 
@@ -280,8 +246,8 @@ describe('AutoOrganizeService - Batch Processing', () => {
           id: 'default',
           name: 'Uncategorized',
           path: '/folders/Uncategorized',
-          isDefault: true,
-        },
+          isDefault: true
+        }
       ];
 
       const files = [
@@ -289,20 +255,20 @@ describe('AutoOrganizeService - Batch Processing', () => {
           name: 'file1.pdf',
           path: '/files/file1.pdf',
           extension: '.pdf',
-          analysis: { category: 'document' },
+          analysis: { category: 'document' }
         },
         {
           name: 'file2.txt',
           path: '/files/file2.txt',
-          extension: '.txt',
+          extension: '.txt'
           // No analysis
         },
         {
           name: 'file3.doc',
           path: '/files/file3.doc',
           extension: '.doc',
-          analysis: { category: 'document' },
-        },
+          analysis: { category: 'document' }
+        }
       ];
 
       mockSuggestionService.getBatchSuggestions.mockResolvedValue({
@@ -314,39 +280,32 @@ describe('AutoOrganizeService - Batch Processing', () => {
             files: [
               {
                 name: 'file1.pdf',
-                suggestion: { folder: 'Documents', path: '/folders/Documents' },
+                suggestion: { folder: 'Documents', path: '/folders/Documents' }
               },
               {
                 name: 'file3.doc',
-                suggestion: { folder: 'Documents', path: '/folders/Documents' },
-              },
-            ],
-          },
-        ],
+                suggestion: { folder: 'Documents', path: '/folders/Documents' }
+              }
+            ]
+          }
+        ]
       });
 
-      const result = await autoOrganizeService.organizeFiles(
-        files,
-        smartFolders,
-      );
+      const result = await autoOrganizeService.organizeFiles(files, smartFolders);
 
       // getBatchSuggestions should only be called for files with analysis
-      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(
-        1,
-      );
+      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(1);
       expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledWith(
         [files[0], files[2]], // Only files with analysis
         smartFolders,
-        { includeAlternatives: false, includeStructureAnalysis: false },
+        { includeAlternatives: false, includeStructureAnalysis: false }
       );
 
       // All files should be organized (may include fallback suggestions)
       expect(result.organized.length).toBeGreaterThanOrEqual(3);
 
       // File without analysis should go to Uncategorized
-      const unanalyzedFile = result.organized.find(
-        (o) => o.file.name === 'file2.txt',
-      );
+      const unanalyzedFile = result.organized.find((o) => o.file.name === 'file2.txt');
       expect(unanalyzedFile).toBeDefined();
       expect(unanalyzedFile.destination).toContain('Uncategorized');
       expect(unanalyzedFile.method).toBe('no-analysis-default');
@@ -355,7 +314,7 @@ describe('AutoOrganizeService - Batch Processing', () => {
     it('should handle mixed confidence levels in batch results', async () => {
       const smartFolders = [
         { id: '1', name: 'Documents', path: '/folders/Documents' },
-        { id: '2', name: 'Images', path: '/folders/Images' },
+        { id: '2', name: 'Images', path: '/folders/Images' }
       ];
 
       const files = [
@@ -363,20 +322,20 @@ describe('AutoOrganizeService - Batch Processing', () => {
           name: 'file1.pdf',
           path: '/files/file1.pdf',
           extension: '.pdf',
-          analysis: { category: 'document' },
+          analysis: { category: 'document' }
         },
         {
           name: 'file2.jpg',
           path: '/files/file2.jpg',
           extension: '.jpg',
-          analysis: { category: 'image' },
+          analysis: { category: 'image' }
         },
         {
           name: 'file3.txt',
           path: '/files/file3.txt',
           extension: '.txt',
-          analysis: { category: 'text' },
-        },
+          analysis: { category: 'text' }
+        }
       ];
 
       mockSuggestionService.getBatchSuggestions.mockResolvedValue({
@@ -388,9 +347,9 @@ describe('AutoOrganizeService - Batch Processing', () => {
             files: [
               {
                 name: 'file1.pdf',
-                suggestion: { folder: 'Documents', path: '/folders/Documents' },
-              },
-            ],
+                suggestion: { folder: 'Documents', path: '/folders/Documents' }
+              }
+            ]
           },
           {
             folder: 'Images',
@@ -399,9 +358,9 @@ describe('AutoOrganizeService - Batch Processing', () => {
               {
                 name: 'file2.jpg',
                 suggestion: { folder: 'Images', path: '/folders/Images' },
-                alternatives: [{ folder: 'Media', path: '/folders/Media' }],
-              },
-            ],
+                alternatives: [{ folder: 'Media', path: '/folders/Media' }]
+              }
+            ]
           },
           {
             folder: 'Documents',
@@ -409,105 +368,81 @@ describe('AutoOrganizeService - Batch Processing', () => {
             files: [
               {
                 name: 'file3.txt',
-                suggestion: { folder: 'Documents', path: '/folders/Documents' },
-              },
-            ],
-          },
-        ],
+                suggestion: { folder: 'Documents', path: '/folders/Documents' }
+              }
+            ]
+          }
+        ]
       });
 
-      const result = await autoOrganizeService.organizeFiles(
-        files,
-        smartFolders,
-        {
-          confidenceThreshold: 0.8,
-        },
-      );
+      const result = await autoOrganizeService.organizeFiles(files, smartFolders, {
+        confidenceThreshold: 0.8
+      });
 
       // High confidence file should be organized
-      const highConfFile = result.organized.find(
-        (o) => o.file.name === 'file1.pdf',
-      );
+      const highConfFile = result.organized.find((o) => o.file.name === 'file1.pdf');
       expect(highConfFile).toBeDefined();
       expect(highConfFile.method).toBe('batch-automatic');
 
       // Medium confidence file should need review (confidence 0.6 >= requireReview 0.5 but < confidenceThreshold 0.8)
-      const mediumConfFile = result.needsReview.find(
-        (o) => o.file.name === 'file2.jpg',
-      );
-      const organizedFile = result.organized.find(
-        (o) => o.file.name === 'file2.jpg',
-      );
+      const mediumConfFile = result.needsReview.find((o) => o.file.name === 'file2.jpg');
+      const organizedFile = result.organized.find((o) => o.file.name === 'file2.jpg');
       // File should be either in needsReview or organized (depending on thresholds)
       expect(mediumConfFile || organizedFile).toBeDefined();
 
       // Low confidence file should use fallback
-      const lowConfFile = result.organized.find(
-        (o) => o.file.name === 'file3.txt',
-      );
+      const lowConfFile = result.organized.find((o) => o.file.name === 'file3.txt');
       expect(lowConfFile).toBeDefined();
       // Method may be 'batch-low-confidence-fallback' or 'fallback' depending on processing path
-      expect(['batch-low-confidence-fallback', 'fallback']).toContain(
-        lowConfFile.method,
-      );
+      expect(['batch-low-confidence-fallback', 'fallback']).toContain(lowConfFile.method);
     });
   });
 
   describe('Performance comparison', () => {
     it('should demonstrate performance improvement with batching', async () => {
-      const smartFolders = [
-        { id: '1', name: 'Documents', path: '/folders/Documents' },
-      ];
+      const smartFolders = [{ id: '1', name: 'Documents', path: '/folders/Documents' }];
 
       // Create 100 files for performance test
       const files = Array.from({ length: 100 }, (_, i) => ({
         name: `file${i}.pdf`,
         path: `/files/file${i}.pdf`,
         extension: '.pdf',
-        analysis: { category: 'document' },
+        analysis: { category: 'document' }
       }));
 
       // Mock batch suggestions with simulated delay
-      mockSuggestionService.getBatchSuggestions.mockImplementation(
-        (batchFiles) => {
-          return new Promise((resolve) => {
-            // Simulate 50ms per batch
-            setTimeout(() => {
-              resolve({
-                success: true,
-                groups: [
-                  {
-                    folder: 'Documents',
-                    confidence: 0.9,
-                    files: batchFiles.map((f) => ({
-                      name: f.name,
-                      suggestion: {
-                        folder: 'Documents',
-                        path: '/folders/Documents',
-                      },
-                    })),
-                  },
-                ],
-              });
-            }, 50);
-          });
-        },
-      );
+      mockSuggestionService.getBatchSuggestions.mockImplementation((batchFiles) => {
+        return new Promise((resolve) => {
+          // Simulate 50ms per batch
+          setTimeout(() => {
+            resolve({
+              success: true,
+              groups: [
+                {
+                  folder: 'Documents',
+                  confidence: 0.9,
+                  files: batchFiles.map((f) => ({
+                    name: f.name,
+                    suggestion: {
+                      folder: 'Documents',
+                      path: '/folders/Documents'
+                    }
+                  }))
+                }
+              ]
+            });
+          }, 50);
+        });
+      });
 
       const startTime = Date.now();
-      const result = await autoOrganizeService.organizeFiles(
-        files,
-        smartFolders,
-        {
-          batchSize: 20, // Process in batches of 20
-        },
-      );
+      const result = await autoOrganizeService.organizeFiles(files, smartFolders, {
+        batchSize: 20 // Process in batches of 20
+      });
       const batchTime = Date.now() - startTime;
 
       // Should be called 5 times (100 / 20)
-      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(
-        5,
-      );
+      expect(mockSuggestionService.getBatchSuggestions).toHaveBeenCalledTimes(5);
 
       // All files should be organized (may include fallback suggestions)
       expect(result.organized.length).toBeGreaterThanOrEqual(100);

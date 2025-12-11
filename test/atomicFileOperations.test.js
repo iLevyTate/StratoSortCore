@@ -447,7 +447,7 @@ describe('AtomicFileOperations', () => {
 
       const result = await organizeFilesAtomically([
         { originalPath: source1, targetPath: dest1 },
-        { originalPath: source2, targetPath: dest2 },
+        { originalPath: source2, targetPath: dest2 }
       ]);
 
       expect(result.success).toBe(true);

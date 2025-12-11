@@ -46,20 +46,20 @@ module.exports = {
     {
       files: '*.md',
       options: {
-        proseWrap: 'always',
-      },
+        proseWrap: 'always'
+      }
     },
     {
       files: '*.json',
       options: {
-        printWidth: 80,
-      },
+        printWidth: 80
+      }
     },
     {
       files: ['*.yml', '*.yaml'],
       options: {
-        tabWidth: 2,
-      },
-    },
-  ],
+        tabWidth: 2
+      }
+    }
+  ]
 };

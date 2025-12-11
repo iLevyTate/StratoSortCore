@@ -6,8 +6,8 @@
 // Mock electron app
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/tmp/test'),
-  },
+    getPath: jest.fn().mockReturnValue('/tmp/test')
+  }
 }));
 
 // Mock logger
@@ -17,8 +17,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs.promises
@@ -27,8 +27,8 @@ jest.mock('fs', () => ({
     readFile: jest.fn().mockResolvedValue('[]'),
     writeFile: jest.fn().mockResolvedValue(undefined),
     unlink: jest.fn().mockResolvedValue(undefined),
-    access: jest.fn().mockRejectedValue(new Error('ENOENT')),
-  },
+    access: jest.fn().mockRejectedValue(new Error('ENOENT'))
+  }
 }));
 
 // Mock ChromaDBService
@@ -37,35 +37,35 @@ jest.mock('../src/main/services/chromadb', () => ({
     initialize: jest.fn().mockResolvedValue(undefined),
     isOnline: true,
     upsertFile: jest.fn().mockResolvedValue({ success: true }),
-    upsertFolder: jest.fn().mockResolvedValue({ success: true }),
-  }),
+    upsertFolder: jest.fn().mockResolvedValue({ success: true })
+  })
 }));
 
 // Mock shared config
 jest.mock('../src/shared/config/index', () => ({
-  get: jest.fn((key, defaultVal) => defaultVal),
+  get: jest.fn((key, defaultVal) => defaultVal)
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   BATCH: {
-    EMBEDDING_FLUSH_DELAY_MS: 100,
+    EMBEDDING_FLUSH_DELAY_MS: 100
   },
   LIMITS: {
     MAX_QUEUE_SIZE: 1000,
-    MAX_DEAD_LETTER_SIZE: 100,
+    MAX_DEAD_LETTER_SIZE: 100
   },
   THRESHOLDS: {
     QUEUE_HIGH_WATERMARK: 0.8,
-    QUEUE_CRITICAL_WATERMARK: 0.95,
+    QUEUE_CRITICAL_WATERMARK: 0.95
   },
   RETRY: {
     BACKOFF_BASE_MS: 100,
-    BACKOFF_MAX_MS: 1000,
+    BACKOFF_MAX_MS: 1000
   },
   CONCURRENCY: {
-    EMBEDDING_FLUSH: 3,
-  },
+    EMBEDDING_FLUSH: 3
+  }
 }));
 
 describe('EmbeddingQueue', () => {
@@ -91,7 +91,7 @@ describe('EmbeddingQueue', () => {
       const filePath = '/test/path/file.txt';
       queue.queue = [
         { id: `file:${filePath}`, vector: [0.1, 0.2] },
-        { id: 'file:/other/file.txt', vector: [0.3, 0.4] },
+        { id: 'file:/other/file.txt', vector: [0.3, 0.4] }
       ];
 
       const removed = queue.removeByFilePath(filePath);
@@ -107,7 +107,7 @@ describe('EmbeddingQueue', () => {
 
       queue._failedItemHandler.failedItems.set(fileId, {
         item: { id: fileId },
-        retryCount: 1,
+        retryCount: 1
       });
 
       const removed = queue.removeByFilePath(filePath);
@@ -142,7 +142,7 @@ describe('EmbeddingQueue', () => {
       queue.queue = [
         { id: 'file:/test/path/file1.txt', vector: [0.1, 0.2] },
         { id: 'file:/test/path/file2.txt', vector: [0.3, 0.4] },
-        { id: 'file:/other/file.txt', vector: [0.5, 0.6] },
+        { id: 'file:/other/file.txt', vector: [0.5, 0.6] }
       ];
 
       const removed = queue.removeByFilePaths(filePaths);
@@ -159,16 +159,14 @@ describe('EmbeddingQueue', () => {
 
       queue._failedItemHandler.failedItems.set('file:/test/path/file2.txt', {
         item: { id: 'file:/test/path/file2.txt' },
-        retryCount: 1,
+        retryCount: 1
       });
 
       const removed = queue.removeByFilePaths(filePaths);
 
       expect(removed).toBe(1);
       expect(queue.queue.length).toBe(0);
-      expect(
-        queue._failedItemHandler.failedItems.has('file:/test/path/file2.txt'),
-      ).toBe(false);
+      expect(queue._failedItemHandler.failedItems.has('file:/test/path/file2.txt')).toBe(false);
     });
 
     test('returns 0 for empty array', () => {
@@ -228,7 +226,7 @@ describe('EmbeddingQueue', () => {
     test('returns correct queue statistics', () => {
       queue.queue = [
         { id: 'file:/test/file1.txt', vector: [0.1, 0.2] },
-        { id: 'file:/test/file2.txt', vector: [0.3, 0.4] },
+        { id: 'file:/test/file2.txt', vector: [0.3, 0.4] }
       ];
 
       const stats = queue.getStats();
@@ -243,7 +241,7 @@ describe('EmbeddingQueue', () => {
       // Fill queue to 80%
       queue.queue = new Array(800).fill(null).map((_, i) => ({
         id: `file:/test/file${i}.txt`,
-        vector: [0.1, 0.2],
+        vector: [0.1, 0.2]
       }));
 
       const stats = queue.getStats();
@@ -255,7 +253,7 @@ describe('EmbeddingQueue', () => {
       // Fill queue to 95%
       queue.queue = new Array(950).fill(null).map((_, i) => ({
         id: `file:/test/file${i}.txt`,
-        vector: [0.1, 0.2],
+        vector: [0.1, 0.2]
       }));
 
       const stats = queue.getStats();

@@ -15,9 +15,7 @@ const jestArgs = [];
 
 if (args.includes('--help')) {
   // eslint-disable-next-line no-console
-  console.log(
-    'Usage: node run-tests.js [--coverage] [--bail] [--categories <name>]',
-  );
+  console.log('Usage: node run-tests.js [--coverage] [--bail] [--categories <name>]');
   process.exit(0);
 }
 
@@ -31,7 +29,7 @@ if (catIndex !== -1) {
     const map = {
       'file-upload': 'react-app|integration',
       'ai-processing': 'ollama|model-verifier',
-      performance: 'performance',
+      performance: 'performance'
     };
     const pattern = map[String(value)] || String(value);
     jestArgs.push('--testPathPattern', pattern);
@@ -51,7 +49,7 @@ function runJestDirect() {
     if (jestJsPath) {
       const child = spawn(process.execPath, [jestJsPath, ...jestArgs], {
         stdio: 'inherit',
-        env: process.env,
+        env: process.env
       });
       child.on('close', (code) => process.exit(code ?? 0));
       child.on('error', () => fallbackRunViaNpm());
@@ -69,7 +67,7 @@ function fallbackRunViaNpm() {
     const child = spawn(npmCmd, ['test', '--', ...jestArgs], {
       stdio: 'inherit',
       env: process.env,
-      shell: process.platform === 'win32',
+      shell: process.platform === 'win32'
     });
     child.on('close', (code) => process.exit(code ?? 0));
     child.on('error', () => process.exit(1));

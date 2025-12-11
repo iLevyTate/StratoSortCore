@@ -7,8 +7,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('EmbeddingCache', () => {
@@ -29,7 +29,7 @@ describe('EmbeddingCache', () => {
   describe('Basic Functionality', () => {
     it('should store and retrieve embeddings', () => {
       const text = 'test document';
-      const model = 'nomic-embed-text';
+      const model = 'mxbai-embed-large';
       const vector = new Array(1024).fill(0.5);
 
       cache.set(text, model, vector);
@@ -290,9 +290,7 @@ describe('EmbeddingCache', () => {
       const statsAfter = cache.getStats();
 
       // Memory should increase or stay the same (due to rounding)
-      expect(parseFloat(statsAfter.estimatedMB)).toBeGreaterThanOrEqual(
-        memoryBefore,
-      );
+      expect(parseFloat(statsAfter.estimatedMB)).toBeGreaterThanOrEqual(memoryBefore);
       // With 3 entries, memory should be >= 0.02 MB (may be exactly 0.02 due to rounding)
       expect(parseFloat(statsAfter.estimatedMB)).toBeGreaterThanOrEqual(0.02);
     });
@@ -451,7 +449,7 @@ describe('EmbeddingCache', () => {
           new Promise((resolve) => {
             cache.set(`text${i}`, 'model', vector);
             resolve();
-          }),
+          })
         );
       }
 
@@ -504,10 +502,10 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     jest.doMock('../src/main/ollamaUtils', () => ({
       getOllama: jest.fn(() => ({
         embeddings: jest.fn().mockResolvedValue({
-          embedding: new Array(1024).fill(0.5),
-        }),
+          embedding: new Array(1024).fill(0.5)
+        })
       })),
-      getOllamaEmbeddingModel: jest.fn(() => 'nomic-embed-text'),
+      getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large')
     }));
 
     mockChromaDB = {
@@ -516,10 +514,10 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
       upsertFile: jest.fn().mockResolvedValue(),
       queryFolders: jest.fn().mockResolvedValue([]),
       fileCollection: {
-        get: jest.fn().mockResolvedValue({ embeddings: [] }),
+        get: jest.fn().mockResolvedValue({ embeddings: [] })
       },
       querySimilarFiles: jest.fn().mockResolvedValue([]),
-      getStats: jest.fn().mockResolvedValue({}),
+      getStats: jest.fn().mockResolvedValue({})
     };
 
     FolderMatchingService = require('../src/main/services/FolderMatchingService');
@@ -554,8 +552,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     // Monkey-patch the service to use cache
     const originalEmbed = service.embedText.bind(service);
     service.embedText = async function (text) {
-      const model =
-        require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
+      const model = require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
 
       // Check cache first
       const cached = cache.get(text, model);
@@ -597,8 +594,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     let ollamaCalls = 0;
 
     service.embedText = async function (text) {
-      const model =
-        require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
+      const model = require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
 
       const cached = cache.get(text, model);
       if (cached) {
@@ -641,8 +637,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     // Add caching to service
     const originalEmbed = service.embedText.bind(service);
     service.embedText = async function (text) {
-      const model =
-        require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
+      const model = require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
       const cached = cache.get(text, model);
       if (cached) return cached;
 
@@ -654,7 +649,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     const folder = {
       name: 'Test Folder',
       description: 'A test folder for caching',
-      path: '/test/path',
+      path: '/test/path'
     };
 
     await service.upsertFolderEmbedding(folder);
@@ -672,8 +667,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
     // Add caching to service
     const originalEmbed = service.embedText.bind(service);
     service.embedText = async function (text) {
-      const model =
-        require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
+      const model = require('../src/main/ollamaUtils').getOllamaEmbeddingModel();
       const cached = cache.get(text, model);
       if (cached) return cached;
 
@@ -690,7 +684,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
 
     // Embed the same content again (simulating another file with same content)
     await service.upsertFileEmbedding('file456', contentSummary, {
-      path: '/test/file2.txt',
+      path: '/test/file2.txt'
     });
 
     const stats = cache.getStats();

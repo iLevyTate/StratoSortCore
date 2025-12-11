@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
@@ -19,15 +19,15 @@ const mockFs = {
   stat: jest.fn(),
   mkdir: jest.fn().mockResolvedValue(undefined),
   rmdir: jest.fn().mockResolvedValue(undefined),
-  readdir: jest.fn().mockResolvedValue([]),
+  readdir: jest.fn().mockResolvedValue([])
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler),
+  withErrorLogging: jest.fn((logger, handler) => handler)
 }));
 
 describe('Folder Handlers', () => {
@@ -41,11 +41,11 @@ describe('Folder Handlers', () => {
     jest.resetModules();
 
     mockIpcMain = {
-      handle: jest.fn(),
+      handle: jest.fn()
     };
 
     mockShell = {
-      openPath: jest.fn().mockResolvedValue(''),
+      openPath: jest.fn().mockResolvedValue('')
     };
 
     handlers = {};
@@ -67,10 +67,10 @@ describe('Folder Handlers', () => {
           FILES: {
             CREATE_FOLDER_DIRECT: 'files:create-folder-direct',
             OPEN_FOLDER: 'files:open-folder',
-            DELETE_FOLDER: 'files:delete-folder',
-          },
+            DELETE_FOLDER: 'files:delete-folder'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
 
       expect(mockIpcMain.handle).toHaveBeenCalledTimes(3);
@@ -85,10 +85,10 @@ describe('Folder Handlers', () => {
           FILES: {
             CREATE_FOLDER_DIRECT: 'files:create-folder-direct',
             OPEN_FOLDER: 'files:open-folder',
-            DELETE_FOLDER: 'files:delete-folder',
-          },
+            DELETE_FOLDER: 'files:delete-folder'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
     });
 
@@ -136,17 +136,16 @@ describe('Folder Handlers', () => {
 
       expect(result.success).toBe(true);
       expect(result.alreadyExisted).toBe(false);
-      expect(mockFs.mkdir).toHaveBeenCalledWith(
-        expect.stringContaining('folder'),
-        { recursive: true },
-      );
+      expect(mockFs.mkdir).toHaveBeenCalledWith(expect.stringContaining('folder'), {
+        recursive: true
+      });
     });
 
     test('handles permission denied error', async () => {
       mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
       mockFs.mkdir.mockRejectedValueOnce({
         code: 'EACCES',
-        message: 'Permission denied',
+        message: 'Permission denied'
       });
 
       const handler = handlers['files:create-folder-direct'];
@@ -160,7 +159,7 @@ describe('Folder Handlers', () => {
       mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
       mockFs.mkdir.mockRejectedValueOnce({
         code: 'ENOSPC',
-        message: 'No space',
+        message: 'No space'
       });
 
       const handler = handlers['files:create-folder-direct'];
@@ -174,7 +173,7 @@ describe('Folder Handlers', () => {
       mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
       mockFs.mkdir.mockRejectedValueOnce({
         code: 'ENAMETOOLONG',
-        message: 'Name too long',
+        message: 'Name too long'
       });
 
       const handler = handlers['files:create-folder-direct'];
@@ -193,10 +192,10 @@ describe('Folder Handlers', () => {
           FILES: {
             CREATE_FOLDER_DIRECT: 'files:create-folder-direct',
             OPEN_FOLDER: 'files:open-folder',
-            DELETE_FOLDER: 'files:delete-folder',
-          },
+            DELETE_FOLDER: 'files:delete-folder'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
     });
 
@@ -221,7 +220,7 @@ describe('Folder Handlers', () => {
     test('handles folder not found', async () => {
       mockFs.stat.mockRejectedValueOnce({
         code: 'ENOENT',
-        message: 'Not found',
+        message: 'Not found'
       });
 
       const handler = handlers['files:open-folder'];
@@ -261,10 +260,10 @@ describe('Folder Handlers', () => {
           FILES: {
             CREATE_FOLDER_DIRECT: 'files:create-folder-direct',
             OPEN_FOLDER: 'files:open-folder',
-            DELETE_FOLDER: 'files:delete-folder',
-          },
+            DELETE_FOLDER: 'files:delete-folder'
+          }
         },
-        shell: mockShell,
+        shell: mockShell
       });
     });
 
@@ -324,7 +323,7 @@ describe('Folder Handlers', () => {
       mockFs.readdir.mockResolvedValueOnce([]);
       mockFs.rmdir.mockRejectedValueOnce({
         code: 'EACCES',
-        message: 'Permission denied',
+        message: 'Permission denied'
       });
 
       const handler = handlers['files:delete-folder'];
@@ -339,7 +338,7 @@ describe('Folder Handlers', () => {
       mockFs.readdir.mockResolvedValueOnce([]);
       mockFs.rmdir.mockRejectedValueOnce({
         code: 'EBUSY',
-        message: 'Directory busy',
+        message: 'Directory busy'
       });
 
       const handler = handlers['files:delete-folder'];

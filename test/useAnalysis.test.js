@@ -12,22 +12,22 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/shared/constants', () => ({
   PHASES: { DISCOVER: 'discover', ORGANIZE: 'organize', COMPLETE: 'complete' },
   RENDERER_LIMITS: {
     ANALYSIS_TIMEOUT_MS: 180000,
-    FILE_STATS_BATCH_SIZE: 50,
+    FILE_STATS_BATCH_SIZE: 50
   },
   FILE_STATES: {
     PENDING: 'pending',
     ANALYZING: 'analyzing',
     CATEGORIZED: 'categorized',
-    ERROR: 'error',
-  },
+    ERROR: 'error'
+  }
 }));
 
 jest.mock('../src/renderer/phases/discover/namingUtils', () => ({
@@ -40,17 +40,17 @@ jest.mock('../src/renderer/phases/discover/namingUtils', () => ({
       progress.total >= 0
     );
   }),
-  generatePreviewName: jest.fn((name) => name),
+  generatePreviewName: jest.fn((name) => name)
 }));
 
 // Mock window.electronAPI
 const mockElectronAPI = {
   files: {
-    analyze: jest.fn(),
+    analyze: jest.fn()
   },
   settings: {
-    get: jest.fn(),
-  },
+    get: jest.fn()
+  }
 };
 
 describe('useAnalysis', () => {
@@ -74,19 +74,19 @@ describe('useAnalysis', () => {
       convention: 'original',
       separator: '-',
       dateFormat: 'YYYY-MM-DD',
-      caseConvention: 'original',
+      caseConvention: 'original'
     },
     setters: {
       setIsAnalyzing: mockSetIsAnalyzing,
       setAnalysisProgress: mockSetAnalysisProgress,
       setCurrentAnalysisFile: mockSetCurrentAnalysisFile,
       setAnalysisResults: mockSetAnalysisResults,
-      setFileStates: mockSetFileStates,
+      setFileStates: mockSetFileStates
     },
     updateFileState: mockUpdateFileState,
     addNotification: mockAddNotification,
     actions: mockActions,
-    ...overrides,
+    ...overrides
   });
 
   beforeEach(() => {
@@ -107,19 +107,18 @@ describe('useAnalysis', () => {
     mockAddNotification = jest.fn();
     mockActions = {
       setPhaseData: jest.fn(),
-      advancePhase: jest.fn(),
+      advancePhase: jest.fn()
     };
 
     mockElectronAPI.files.analyze.mockResolvedValue({
       category: 'documents',
-      suggestedName: 'test-document.txt',
+      suggestedName: 'test-document.txt'
     });
     mockElectronAPI.settings.get.mockResolvedValue({
-      maxConcurrentAnalysis: 3,
+      maxConcurrentAnalysis: 3
     });
 
-    useAnalysis =
-      require('../src/renderer/phases/discover/useAnalysis').useAnalysis;
+    useAnalysis = require('../src/renderer/phases/discover/useAnalysis').useAnalysis;
   });
 
   afterEach(() => {
@@ -212,14 +211,12 @@ describe('useAnalysis', () => {
       expect(mockUpdateFileState).toHaveBeenCalledWith(
         '/test.txt',
         'analyzing',
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
     test('prevents concurrent analysis runs', async () => {
-      const { result } = renderHook(() =>
-        useAnalysis(createMockOptions({ isAnalyzing: true })),
-      );
+      const { result } = renderHook(() => useAnalysis(createMockOptions({ isAnalyzing: true })));
       const files = [{ path: '/test.txt', name: 'test.txt' }];
 
       await act(async () => {
@@ -243,13 +240,9 @@ describe('useAnalysis', () => {
       expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
       expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
         current: 0,
-        total: 0,
+        total: 0
       });
-      expect(mockAddNotification).toHaveBeenCalledWith(
-        'Analysis stopped',
-        'info',
-        2000,
-      );
+      expect(mockAddNotification).toHaveBeenCalledWith('Analysis stopped', 'info', 2000);
     });
 
     test('updates actions phase data', () => {
@@ -259,14 +252,8 @@ describe('useAnalysis', () => {
         result.current.cancelAnalysis();
       });
 
-      expect(mockActions.setPhaseData).toHaveBeenCalledWith(
-        'isAnalyzing',
-        false,
-      );
-      expect(mockActions.setPhaseData).toHaveBeenCalledWith(
-        'currentAnalysisFile',
-        '',
-      );
+      expect(mockActions.setPhaseData).toHaveBeenCalledWith('isAnalyzing', false);
+      expect(mockActions.setPhaseData).toHaveBeenCalledWith('currentAnalysisFile', '');
     });
   });
 
@@ -282,7 +269,7 @@ describe('useAnalysis', () => {
       expect(mockSetFileStates).toHaveBeenCalledWith({});
       expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
         current: 0,
-        total: 0,
+        total: 0
       });
       expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
     });
@@ -298,7 +285,7 @@ describe('useAnalysis', () => {
         'Analysis queue cleared',
         'info',
         2000,
-        'queue-management',
+        'queue-management'
       );
     });
   });
@@ -318,7 +305,7 @@ describe('useAnalysis', () => {
       expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
         current: 0,
         total: 0,
-        currentFile: '',
+        currentFile: ''
       });
       expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
     });
@@ -327,7 +314,7 @@ describe('useAnalysis', () => {
       const removeItem = jest.fn();
       Object.defineProperty(window, 'localStorage', {
         value: { removeItem },
-        writable: true,
+        writable: true
       });
 
       const { result } = renderHook(() => useAnalysis(createMockOptions()));
@@ -344,9 +331,9 @@ describe('useAnalysis', () => {
         value: {
           removeItem: () => {
             throw new Error('Storage error');
-          },
+          }
         },
-        writable: true,
+        writable: true
       });
 
       const { result } = renderHook(() => useAnalysis(createMockOptions()));
@@ -371,7 +358,7 @@ describe('useAnalysis', () => {
         convention: 'original',
         separator: '-',
         dateFormat: 'YYYY-MM-DD',
-        caseConvention: 'original',
+        caseConvention: 'original'
       });
     });
   });
@@ -391,12 +378,12 @@ describe('useAnalysis', () => {
         isAnalyzing: true,
         selectedFiles: [
           { path: '/test1.txt', name: 'test1.txt' },
-          { path: '/test2.txt', name: 'test2.txt' },
+          { path: '/test2.txt', name: 'test2.txt' }
         ],
         fileStates: {
           '/test1.txt': { state: 'ready' },
-          '/test2.txt': { state: 'pending' },
-        },
+          '/test2.txt': { state: 'pending' }
+        }
       });
 
       renderHook(() => useAnalysis(options));
@@ -411,7 +398,7 @@ describe('useAnalysis', () => {
         expect.stringContaining('Resuming analysis'),
         'info',
         3000,
-        'analysis-resume',
+        'analysis-resume'
       );
     });
 
@@ -420,8 +407,8 @@ describe('useAnalysis', () => {
         isAnalyzing: true,
         selectedFiles: [{ path: '/test.txt', name: 'test.txt' }],
         fileStates: {
-          '/test.txt': { state: 'ready' },
-        },
+          '/test.txt': { state: 'ready' }
+        }
       });
 
       renderHook(() => useAnalysis(options));

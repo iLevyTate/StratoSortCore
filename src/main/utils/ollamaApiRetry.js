@@ -62,7 +62,7 @@ function isRetryableError(error) {
       500, // Internal Server Error
       502, // Bad Gateway
       503, // Service Unavailable
-      504, // Gateway Timeout
+      504 // Gateway Timeout
     ];
     if (retryableStatuses.includes(error.status)) {
       return true;
@@ -104,7 +104,12 @@ function isRetryableError(error) {
  * @param {number} jitterFactor - Jitter factor (0-1)
  * @returns {number} Delay in milliseconds
  */
-function calculateDelayWithJitter(attempt, initialDelay, maxDelay, jitterFactor = DEFAULT_JITTER_FACTOR) {
+function calculateDelayWithJitter(
+  attempt,
+  initialDelay,
+  maxDelay,
+  jitterFactor = DEFAULT_JITTER_FACTOR
+) {
   // Exponential backoff
   const exponentialDelay = initialDelay * Math.pow(2, attempt);
   const baseDelay = Math.min(exponentialDelay, maxDelay);
@@ -138,7 +143,7 @@ async function withOllamaRetry(apiCall, options = {}) {
     maxTotalTime = 60000, // 60 second absolute maximum
     jitterFactor = DEFAULT_JITTER_FACTOR,
     onRetry = null,
-    useOfflineQueue = false,
+    useOfflineQueue = false
   } = options;
 
   let attemptNumber = 0;
@@ -157,15 +162,15 @@ async function withOllamaRetry(apiCall, options = {}) {
         logger.error(`[${operation}] Exceeded maximum total time`, {
           elapsed: `${elapsed}ms`,
           maxTotalTime: `${maxTotalTime}ms`,
-          attempts: attemptNumber,
+          attempts: attemptNumber
         });
-        throw new Error(`${operation} exceeded maximum total time of ${maxTotalTime}ms after ${attemptNumber} attempts`);
+        throw new Error(
+          `${operation} exceeded maximum total time of ${maxTotalTime}ms after ${attemptNumber} attempts`
+        );
       }
 
       if (attemptNumber > 1) {
-        logger.info(
-          `[${operation}] Retry attempt ${attemptNumber}/${maxRetries + 1}`,
-        );
+        logger.info(`[${operation}] Retry attempt ${attemptNumber}/${maxRetries + 1}`);
         if (onRetry) {
           try {
             await onRetry(attemptNumber - 1, options);
@@ -181,7 +186,7 @@ async function withOllamaRetry(apiCall, options = {}) {
         if (attemptNumber > 1) {
           const totalTime = Date.now() - startTime;
           logger.info(
-            `[${operation}] Succeeded on retry attempt ${attemptNumber} (total time: ${totalTime}ms)`,
+            `[${operation}] Succeeded on retry attempt ${attemptNumber} (total time: ${totalTime}ms)`
           );
         }
 
@@ -194,7 +199,7 @@ async function withOllamaRetry(apiCall, options = {}) {
           code: error.code,
           status: error.status,
           retryable: isRetryableError(error),
-          category: categorizeError(error),
+          category: categorizeError(error)
         };
 
         if (attemptNumber <= maxRetries && isRetryableError(error)) {
@@ -207,13 +212,10 @@ async function withOllamaRetry(apiCall, options = {}) {
           );
           logger.warn(
             `[${operation}] Failed on attempt ${attemptNumber}, retrying in ${delay}ms:`,
-            errorDetails,
+            errorDetails
           );
         } else {
-          logger.error(
-            `[${operation}] Failed after ${attemptNumber} attempts:`,
-            errorDetails,
-          );
+          logger.error(`[${operation}] Failed after ${attemptNumber} attempts:`, errorDetails);
         }
 
         throw error;
@@ -225,7 +227,7 @@ async function withOllamaRetry(apiCall, options = {}) {
       maxRetries,
       initialDelay,
       maxDelay,
-      shouldRetry: isRetryableError,
+      shouldRetry: isRetryableError
     })();
   } catch (error) {
     const totalTime = Date.now() - startTime;
@@ -236,7 +238,7 @@ async function withOllamaRetry(apiCall, options = {}) {
       finalError: error.message,
       code: error.code,
       status: error.status,
-      totalTime: `${totalTime}ms`,
+      totalTime: `${totalTime}ms`
     });
 
     // Add retry context to the error for debugging
@@ -245,7 +247,7 @@ async function withOllamaRetry(apiCall, options = {}) {
       attempts: attemptNumber,
       maxRetries,
       wasRetryable: isRetryableError(error),
-      totalTimeMs: totalTime,
+      totalTimeMs: totalTime
     };
 
     // Optionally queue for later retry via OllamaClient
@@ -318,9 +320,7 @@ async function fetchWithRetry(url, fetchOptions = {}, retryOptions = {}) {
 
       // Check if response indicates a retryable error
       if (!response.ok) {
-        const error = new Error(
-          `HTTP ${response.status}: ${response.statusText}`,
-        );
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
         error.status = response.status;
         error.response = response;
 
@@ -344,8 +344,8 @@ async function fetchWithRetry(url, fetchOptions = {}, retryOptions = {}) {
     },
     {
       operation,
-      ...retryOptions,
-    },
+      ...retryOptions
+    }
   );
 }
 
@@ -357,8 +357,7 @@ async function fetchWithRetry(url, fetchOptions = {}, retryOptions = {}) {
  * @returns {Promise} - The generate response
  */
 async function generateWithRetry(client, generateOptions, retryOptions = {}) {
-  const operation =
-    retryOptions.operation || `Generate with ${generateOptions.model}`;
+  const operation = retryOptions.operation || `Generate with ${generateOptions.model}`;
 
   return withOllamaRetry(
     async () => {
@@ -366,8 +365,8 @@ async function generateWithRetry(client, generateOptions, retryOptions = {}) {
     },
     {
       operation,
-      ...retryOptions,
-    },
+      ...retryOptions
+    }
   );
 }
 
@@ -388,7 +387,7 @@ async function axiosWithRetry(axiosCall, retryOptions = {}) {
         // Normalize axios errors
         if (error.response) {
           const normalizedError = new Error(
-            `HTTP ${error.response.status}: ${error.response.statusText}`,
+            `HTTP ${error.response.status}: ${error.response.statusText}`
           );
           normalizedError.status = error.response.status;
           normalizedError.response = error.response;
@@ -400,8 +399,8 @@ async function axiosWithRetry(axiosCall, retryOptions = {}) {
     },
     {
       operation,
-      ...retryOptions,
-    },
+      ...retryOptions
+    }
   );
 }
 
@@ -413,5 +412,5 @@ module.exports = {
   isRetryableError,
   categorizeError,
   calculateDelayWithJitter,
-  DEFAULT_JITTER_FACTOR,
+  DEFAULT_JITTER_FACTOR
 };

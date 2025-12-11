@@ -12,18 +12,12 @@ const { BATCH, THRESHOLDS } = require('../../../shared/performanceConstants');
 
 // Import decomposed modules
 const { getFileTypeCategory, sanitizeFile } = require('./fileTypeUtils');
-const {
-  getFallbackDestination,
-  buildDestinationPath,
-} = require('./folderOperations');
-const {
-  processBatchResults,
-  batchOrganize: batchOrganizeHelper,
-} = require('./batchProcessor');
+const { getFallbackDestination, buildDestinationPath } = require('./folderOperations');
+const { processBatchResults, batchOrganize: batchOrganizeHelper } = require('./batchProcessor');
 const {
   processFilesWithoutAnalysis,
   processFilesIndividually,
-  processNewFile: processNewFileHelper,
+  processNewFile: processNewFileHelper
 } = require('./fileProcessor');
 
 logger.setContext('AutoOrganizeService');
@@ -47,12 +41,7 @@ class AutoOrganizeServiceCore {
    * @param {Object} dependencies.folderMatchingService - Folder matching service
    * @param {Object} dependencies.undoRedoService - Undo/redo service
    */
-  constructor({
-    suggestionService,
-    settingsService,
-    folderMatchingService,
-    undoRedoService,
-  }) {
+  constructor({ suggestionService, settingsService, folderMatchingService, undoRedoService }) {
     this.suggestionService = suggestionService;
     this.settings = settingsService;
     this.folderMatcher = folderMatchingService;
@@ -62,7 +51,7 @@ class AutoOrganizeServiceCore {
     this.thresholds = {
       autoApprove: THRESHOLDS.CONFIDENCE_HIGH, // Automatically approve >= 80% confidence
       requireReview: THRESHOLDS.MIN_SIMILARITY_SCORE, // Require review for 50-79% confidence
-      reject: THRESHOLDS.CONFIDENCE_LOW, // Reject below 30% confidence
+      reject: THRESHOLDS.CONFIDENCE_LOW // Reject below 30% confidence
     };
   }
 
@@ -82,21 +71,21 @@ class AutoOrganizeServiceCore {
       confidenceThreshold = this.thresholds.autoApprove,
       defaultLocation = 'Documents',
       preserveNames = false,
-      batchSize = DEFAULT_BATCH_SIZE,
+      batchSize = DEFAULT_BATCH_SIZE
     } = options;
 
     logger.info('[AutoOrganize] Starting automatic organization', {
       fileCount: files.length,
       smartFolderCount: smartFolders.length,
       confidenceThreshold,
-      batchSize,
+      batchSize
     });
 
     const results = {
       organized: [],
       needsReview: [],
       failed: [],
-      operations: [],
+      operations: []
     };
 
     // Separate files with and without analysis
@@ -117,7 +106,7 @@ class AutoOrganizeServiceCore {
         filesWithoutAnalysis,
         smartFolders,
         defaultLocation,
-        results,
+        results
       );
     }
 
@@ -132,7 +121,7 @@ class AutoOrganizeServiceCore {
       logger.info('[AutoOrganize] Processing files in batches', {
         totalFiles: filesWithAnalysis.length,
         batchCount: batches.length,
-        batchSize,
+        batchSize
       });
 
       // Process each batch
@@ -142,20 +131,19 @@ class AutoOrganizeServiceCore {
         logger.debug('[AutoOrganize] Processing batch', {
           batchIndex: batchIndex + 1,
           totalBatches: batches.length,
-          filesInBatch: batch.length,
+          filesInBatch: batch.length
         });
 
         try {
           // Get batch suggestions - this is the key optimization
-          const batchSuggestions =
-            await this.suggestionService.getBatchSuggestions(
-              batch,
-              smartFolders,
-              {
-                includeStructureAnalysis: false,
-                includeAlternatives: false,
-              },
-            );
+          const batchSuggestions = await this.suggestionService.getBatchSuggestions(
+            batch,
+            smartFolders,
+            {
+              includeStructureAnalysis: false,
+              includeAlternatives: false
+            }
+          );
 
           if (
             !batchSuggestions.success ||
@@ -164,7 +152,7 @@ class AutoOrganizeServiceCore {
           ) {
             // Fallback to individual processing if batch fails
             logger.warn(
-              '[AutoOrganize] Batch suggestions failed or empty, falling back to individual processing',
+              '[AutoOrganize] Batch suggestions failed or empty, falling back to individual processing'
             );
             await processFilesIndividually(
               batch,
@@ -172,11 +160,11 @@ class AutoOrganizeServiceCore {
               {
                 confidenceThreshold,
                 defaultLocation,
-                preserveNames,
+                preserveNames
               },
               results,
               this.suggestionService,
-              this.thresholds,
+              this.thresholds
             );
             continue;
           }
@@ -188,11 +176,11 @@ class AutoOrganizeServiceCore {
             {
               confidenceThreshold,
               defaultLocation,
-              preserveNames,
+              preserveNames
             },
             results,
             this.suggestionService,
-            this.thresholds,
+            this.thresholds
           );
 
           // Check if any files from the batch weren't processed
@@ -204,13 +192,11 @@ class AutoOrganizeServiceCore {
           }
 
           // Process any unprocessed files individually as fallback
-          const unprocessedFiles = batch.filter(
-            (f) => !processedFileNames.has(f.name),
-          );
+          const unprocessedFiles = batch.filter((f) => !processedFileNames.has(f.name));
           if (unprocessedFiles.length > 0) {
             logger.debug(
               '[AutoOrganize] Some files not in batch results, processing individually',
-              { count: unprocessedFiles.length },
+              { count: unprocessedFiles.length }
             );
             await processFilesIndividually(
               unprocessedFiles,
@@ -218,17 +204,17 @@ class AutoOrganizeServiceCore {
               {
                 confidenceThreshold,
                 defaultLocation,
-                preserveNames,
+                preserveNames
               },
               results,
               this.suggestionService,
-              this.thresholds,
+              this.thresholds
             );
           }
         } catch (error) {
           logger.error('[AutoOrganize] Batch processing failed', {
             batchIndex: batchIndex + 1,
-            error: error.message,
+            error: error.message
           });
 
           // Fallback to individual processing for this batch
@@ -238,11 +224,11 @@ class AutoOrganizeServiceCore {
             {
               confidenceThreshold,
               defaultLocation,
-              preserveNames,
+              preserveNames
             },
             results,
             this.suggestionService,
-            this.thresholds,
+            this.thresholds
           );
         }
       }
@@ -252,7 +238,7 @@ class AutoOrganizeServiceCore {
     logger.info('[AutoOrganize] Organization complete', {
       organized: results.organized.length,
       needsReview: results.needsReview.length,
-      failed: results.failed.length,
+      failed: results.failed.length
     });
 
     return results;
@@ -268,7 +254,7 @@ class AutoOrganizeServiceCore {
       options,
       this.suggestionService,
       this.thresholds,
-      this.buildDestinationPath.bind(this),
+      this.buildDestinationPath.bind(this)
     );
   }
 
@@ -283,12 +269,7 @@ class AutoOrganizeServiceCore {
    * Build destination path for a file
    */
   buildDestinationPath(file, suggestion, defaultLocation, preserveNames) {
-    return buildDestinationPath(
-      file,
-      suggestion,
-      defaultLocation,
-      preserveNames,
-    );
+    return buildDestinationPath(file, suggestion, defaultLocation, preserveNames);
   }
 
   /**
@@ -307,7 +288,7 @@ class AutoOrganizeServiceCore {
       smartFolders,
       options,
       this.suggestionService,
-      this.undoRedo,
+      this.undoRedo
     );
   }
 
@@ -318,10 +299,8 @@ class AutoOrganizeServiceCore {
     return {
       userPatterns: this.suggestionService.userPatterns.size,
       feedbackHistory: this.suggestionService.feedbackHistory.length,
-      folderUsageStats: Array.from(
-        this.suggestionService.folderUsageStats.entries(),
-      ),
-      thresholds: this.thresholds,
+      folderUsageStats: Array.from(this.suggestionService.folderUsageStats.entries()),
+      thresholds: this.thresholds
     };
   }
 
@@ -331,7 +310,7 @@ class AutoOrganizeServiceCore {
   updateThresholds(newThresholds) {
     this.thresholds = {
       ...this.thresholds,
-      ...newThresholds,
+      ...newThresholds
     };
     logger.info('[AutoOrganize] Updated thresholds:', this.thresholds);
   }

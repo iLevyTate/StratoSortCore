@@ -6,7 +6,7 @@
 const fs = require('fs').promises;
 const {
   analyzeImageFile,
-  extractTextFromImage,
+  extractTextFromImage
 } = require('../src/main/analysis/ollamaImageAnalysis');
 
 // Mock all dependencies BEFORE importing the module
@@ -16,8 +16,8 @@ jest.mock('../src/shared/logger', () => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    setContext: jest.fn(),
-  },
+    setContext: jest.fn()
+  }
 }));
 
 jest.mock('sharp', () => {
@@ -25,11 +25,11 @@ jest.mock('sharp', () => {
     metadata: jest.fn().mockResolvedValue({
       width: 800,
       height: 600,
-      format: 'jpeg',
+      format: 'jpeg'
     }),
     resize: jest.fn().mockReturnThis(),
     png: jest.fn().mockReturnThis(),
-    toBuffer: jest.fn().mockResolvedValue(Buffer.from('processed image data')),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.from('processed image data'))
   }));
 });
 
@@ -43,51 +43,45 @@ jest.mock('../src/shared/constants', () => ({
       HOST: 'http://127.0.0.1:11434',
       TEMPERATURE: 0.3,
       MAX_TOKENS: 1000,
-      MAX_CONTENT_LENGTH: 50000,
+      MAX_CONTENT_LENGTH: 50000
     },
     IMAGE: {
       MODEL: 'llava',
       HOST: 'http://127.0.0.1:11434',
       TEMPERATURE: 0.1,
-      MAX_TOKENS: 500,
-    },
+      MAX_TOKENS: 500
+    }
   },
   DEFAULT_AI_MODELS: {
     TEXT_ANALYSIS: 'llama3.2:latest',
     IMAGE_ANALYSIS: 'llava:latest',
-    FALLBACK_MODELS: [
-      'llama3.2:latest',
-      'gemma3:4b',
-      'llama3',
-      'mistral',
-      'phi3',
-    ],
+    FALLBACK_MODELS: ['llama3.2:latest', 'gemma3:4b', 'llama3', 'mistral', 'phi3']
   },
   FILE_SIZE_LIMITS: {
     MAX_TEXT_FILE_SIZE: 50 * 1024 * 1024,
     MAX_IMAGE_FILE_SIZE: 100 * 1024 * 1024,
-    MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024,
+    MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024
   },
   PROCESSING_LIMITS: {
     MAX_CONCURRENT_ANALYSIS: 3,
     MAX_BATCH_SIZE: 100,
     ANALYSIS_TIMEOUT: 60000,
-    RETRY_ATTEMPTS: 3,
-  },
+    RETRY_ATTEMPTS: 3
+  }
 }));
 
 // Mock Ollama utilities - define mockOllamaClient separately for use in tests
 jest.mock('../src/main/ollamaUtils', () => {
   const mockClient = {
-    generate: jest.fn(),
+    generate: jest.fn()
   };
   return {
     getOllama: jest.fn().mockResolvedValue(mockClient),
     getOllamaVisionModel: jest.fn().mockReturnValue('llava'),
     loadOllamaConfig: jest.fn().mockResolvedValue({
-      selectedVisionModel: 'llava',
+      selectedVisionModel: 'llava'
     }),
-    __mockClient: mockClient, // Export for test access
+    __mockClient: mockClient // Export for test access
   };
 });
 
@@ -95,14 +89,14 @@ jest.mock('../src/main/ollamaUtils', () => {
 jest.mock('../src/main/services/ModelVerifier', () => {
   return jest.fn().mockImplementation(() => ({
     checkOllamaConnection: jest.fn().mockResolvedValue({
-      connected: true,
-    }),
+      connected: true
+    })
   }));
 });
 
 // Mock ChromaDB to return null (skip semantic matching)
 jest.mock('../src/main/services/ChromaDBService', () => ({
-  getInstance: jest.fn().mockReturnValue(null),
+  getInstance: jest.fn().mockReturnValue(null)
 }));
 
 // Mock FolderMatchingService
@@ -112,7 +106,7 @@ jest.mock('../src/main/services/FolderMatchingService', () => {
 
 // Mock PerformanceService
 jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn().mockResolvedValue({}),
+  buildOllamaOptions: jest.fn().mockResolvedValue({})
 }));
 
 // Mock generateWithRetry to pass through to client.generate
@@ -120,30 +114,30 @@ jest.mock('../src/main/utils/ollamaApiRetry', () => ({
   generateWithRetry: jest.fn(async (client, options) => {
     // Call the mocked client.generate directly
     return await client.generate(options);
-  }),
+  })
 }));
 
 // Mock deduplicator to pass through
 jest.mock('../src/main/utils/llmOptimization', () => ({
   globalDeduplicator: {
     generateKey: jest.fn((data) => JSON.stringify(data)),
-    deduplicate: jest.fn(async (key, fn) => await fn()),
-  },
+    deduplicate: jest.fn(async (key, fn) => await fn())
+  }
 }));
 
 // Mock analysis utils
 jest.mock('../src/main/analysis/utils', () => ({
   normalizeAnalysisResult: jest.fn((data, defaults) => ({
     ...defaults,
-    ...data,
-  })),
+    ...data
+  }))
 }));
 
 // Mock fallback utils - use correct export names
 jest.mock('../src/main/analysis/fallbackUtils', () => ({
   getIntelligentCategory: jest.fn(() => 'images'),
   getIntelligentKeywords: jest.fn(() => ['image', 'photo']),
-  safeSuggestedName: jest.fn((name, ext) => name.replace(ext, '')),
+  safeSuggestedName: jest.fn((name, ext) => name.replace(ext, ''))
 }));
 
 describe('ollamaImageAnalysis - Rewritten Tests', () => {
@@ -163,11 +157,9 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       // Mock file system operations
       jest.spyOn(fs, 'stat').mockResolvedValue({
         size: 50000,
-        mtimeMs: 1234567890,
+        mtimeMs: 1234567890
       });
-      jest
-        .spyOn(fs, 'readFile')
-        .mockResolvedValue(Buffer.from('mock image data'));
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
       // Mock Ollama response
       mockOllamaClient.generate.mockResolvedValue({
@@ -181,8 +173,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
           content_type: 'people',
           has_text: false,
           colors: ['blue', 'yellow', 'white'],
-          suggestedName: 'family_beach_vacation_2024',
-        }),
+          suggestedName: 'family_beach_vacation_2024'
+        })
       });
 
       const result = await analyzeImageFile(mockImagePath, []);
@@ -205,7 +197,7 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
     test('should handle empty file', async () => {
       jest.spyOn(fs, 'stat').mockResolvedValue({
         size: 0,
-        mtimeMs: 1234567890,
+        mtimeMs: 1234567890
       });
 
       const result = await analyzeImageFile(mockImagePath, []);
@@ -220,13 +212,13 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       ModelVerifier.mockImplementation(() => ({
         checkOllamaConnection: jest.fn().mockResolvedValue({
           connected: false,
-          error: 'Connection refused',
-        }),
+          error: 'Connection refused'
+        })
       }));
 
       jest.spyOn(fs, 'stat').mockResolvedValue({
         size: 50000,
-        mtimeMs: 1234567890,
+        mtimeMs: 1234567890
       });
 
       const result = await analyzeImageFile(mockImagePath, []);
@@ -239,14 +231,12 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
     test('should handle malformed JSON response', async () => {
       jest.spyOn(fs, 'stat').mockResolvedValue({
         size: 50000,
-        mtimeMs: 1234567890,
+        mtimeMs: 1234567890
       });
-      jest
-        .spyOn(fs, 'readFile')
-        .mockResolvedValue(Buffer.from('mock image data'));
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
       mockOllamaClient.generate.mockResolvedValue({
-        response: 'Not valid JSON',
+        response: 'Not valid JSON'
       });
 
       const result = await analyzeImageFile(mockImagePath, []);
@@ -254,7 +244,7 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       // Debug: Check if result is undefined
       if (!result) {
         throw new Error(
-          `Result is undefined. Mock was called: ${mockOllamaClient.generate.mock.calls.length} times`,
+          `Result is undefined. Mock was called: ${mockOllamaClient.generate.mock.calls.length} times`
         );
       }
 
@@ -269,12 +259,10 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
 
   describe('extractTextFromImage', () => {
     test('should extract text from image', async () => {
-      jest
-        .spyOn(fs, 'readFile')
-        .mockResolvedValue(Buffer.from('mock image data'));
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
       mockOllamaClient.generate.mockResolvedValue({
-        response: 'Sample text from image',
+        response: 'Sample text from image'
       });
 
       const result = await extractTextFromImage('/test/image.jpg');
@@ -283,12 +271,10 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
     });
 
     test('should return null when no text found', async () => {
-      jest
-        .spyOn(fs, 'readFile')
-        .mockResolvedValue(Buffer.from('mock image data'));
+      jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
       mockOllamaClient.generate.mockResolvedValue({
-        response: 'NO_TEXT_FOUND',
+        response: 'NO_TEXT_FOUND'
       });
 
       const result = await extractTextFromImage('/test/image.jpg');

@@ -10,19 +10,19 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock timingConstants
 jest.mock('../src/main/core/timingConstants', () => ({
   WINDOW: {
-    ALWAYS_ON_TOP_DURATION_MS: 50,
+    ALWAYS_ON_TOP_DURATION_MS: 50
   },
   PROCESS: {
     KILL_COMMAND_TIMEOUT_MS: 100,
-    GRACEFUL_SHUTDOWN_WAIT_MS: 100,
-  },
+    GRACEFUL_SHUTDOWN_WAIT_MS: 100
+  }
 }));
 
 // Store platform state for tests
@@ -36,12 +36,12 @@ jest.mock('../src/shared/platformUtils', () => ({
   },
   get isMacOS() {
     return mockIsMacOS;
-  },
+  }
 }));
 
 // Mock asyncSpawnUtils
 jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
-  asyncSpawn: jest.fn(),
+  asyncSpawn: jest.fn()
 }));
 
 describe('platformBehavior', () => {
@@ -74,7 +74,7 @@ describe('platformBehavior', () => {
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(false),
         setAlwaysOnTop: jest.fn(),
-        focus: jest.fn(),
+        focus: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);
@@ -91,7 +91,7 @@ describe('platformBehavior', () => {
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(false),
         setAlwaysOnTop: jest.fn(),
-        focus: jest.fn(),
+        focus: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);
@@ -115,7 +115,7 @@ describe('platformBehavior', () => {
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(true),
         setAlwaysOnTop: jest.fn(),
-        focus: jest.fn(),
+        focus: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);
@@ -131,7 +131,7 @@ describe('platformBehavior', () => {
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(false),
         setAlwaysOnTop: jest.fn(),
-        focus: jest.fn(),
+        focus: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);
@@ -171,7 +171,7 @@ describe('platformBehavior', () => {
       asyncSpawnUtils.asyncSpawn.mockResolvedValue({
         status: 0,
         stdout: 'SUCCESS',
-        stderr: '',
+        stderr: ''
       });
 
       const result = await platformBehavior.killProcess(1234);
@@ -180,7 +180,7 @@ describe('platformBehavior', () => {
       expect(asyncSpawnUtils.asyncSpawn).toHaveBeenCalledWith(
         'taskkill',
         ['/pid', '1234', '/f', '/t'],
-        expect.any(Object),
+        expect.any(Object)
       );
     });
 
@@ -193,7 +193,7 @@ describe('platformBehavior', () => {
       asyncSpawnUtils.asyncSpawn.mockResolvedValue({
         status: 1,
         stdout: '',
-        stderr: 'Access denied',
+        stderr: 'Access denied'
       });
 
       const result = await platformBehavior.killProcess(1234);
@@ -209,7 +209,7 @@ describe('platformBehavior', () => {
 
       asyncSpawnUtils.asyncSpawn.mockResolvedValue({
         status: null,
-        error: new Error('Command failed'),
+        error: new Error('Command failed')
       });
 
       const result = await platformBehavior.killProcess(1234);

@@ -9,8 +9,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    debug: jest.fn(),
-  },
+    debug: jest.fn()
+  }
 }));
 
 // Mock constants
@@ -20,8 +20,8 @@ jest.mock('../src/shared/constants', () => ({
     SETUP: 'setup',
     DISCOVER: 'discover',
     ORGANIZE: 'organize',
-    COMPLETE: 'complete',
-  },
+    COMPLETE: 'complete'
+  }
 }));
 
 describe('persistenceMiddleware', () => {
@@ -48,14 +48,14 @@ describe('persistenceMiddleware', () => {
       }),
       clear: jest.fn(() => {
         mockStorage = {};
-      }),
+      })
     };
 
     // Use Object.defineProperty to properly override localStorage
     Object.defineProperty(global, 'localStorage', {
       value: mockLocalStorage,
       writable: true,
-      configurable: true,
+      configurable: true
     });
 
     // Import module fresh each test
@@ -69,26 +69,26 @@ describe('persistenceMiddleware', () => {
         currentPhase: 'discover',
         theme: 'light',
         sidebarOpen: true,
-        showSettings: false,
+        showSettings: false
       },
       files: {
         selectedFiles: [],
         organizedFiles: [],
         smartFolders: [],
         namingConvention: 'default',
-        fileStates: {},
+        fileStates: {}
       },
       analysis: {
         results: [],
         isAnalyzing: false,
         analysisProgress: { current: 0, total: 0 },
-        currentAnalysisFile: '',
-      },
+        currentAnalysisFile: ''
+      }
     };
 
     mockStore = {
       dispatch: jest.fn(),
-      getState: jest.fn().mockReturnValue(defaultState),
+      getState: jest.fn().mockReturnValue(defaultState)
     };
     mockNext = jest.fn((action) => action);
   });
@@ -140,15 +140,26 @@ describe('persistenceMiddleware', () => {
 
       expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
         'stratosort_redux_state',
-        expect.any(String),
+        expect.any(String)
       );
     });
 
     test('does not save in WELCOME phase', () => {
       mockStore.getState.mockReturnValue({
         ui: { currentPhase: 'welcome', theme: 'light', sidebarOpen: true, showSettings: false },
-        files: { selectedFiles: [], organizedFiles: [], smartFolders: [], fileStates: {}, namingConvention: 'default' },
-        analysis: { results: [], isAnalyzing: false, analysisProgress: { current: 0, total: 0 }, currentAnalysisFile: '' },
+        files: {
+          selectedFiles: [],
+          organizedFiles: [],
+          smartFolders: [],
+          fileStates: {},
+          namingConvention: 'default'
+        },
+        analysis: {
+          results: [],
+          isAnalyzing: false,
+          analysisProgress: { current: 0, total: 0 },
+          currentAnalysisFile: ''
+        }
       });
 
       const middleware = persistenceMiddleware(mockStore);
@@ -213,8 +224,19 @@ describe('persistenceMiddleware', () => {
       // Change phase
       mockStore.getState.mockReturnValue({
         ui: { currentPhase: 'organize', theme: 'light', sidebarOpen: true, showSettings: false },
-        files: { selectedFiles: [], organizedFiles: [], smartFolders: [], fileStates: {}, namingConvention: 'default' },
-        analysis: { results: [], isAnalyzing: false, analysisProgress: { current: 0, total: 0 }, currentAnalysisFile: '' },
+        files: {
+          selectedFiles: [],
+          organizedFiles: [],
+          smartFolders: [],
+          fileStates: {},
+          namingConvention: 'default'
+        },
+        analysis: {
+          results: [],
+          isAnalyzing: false,
+          analysisProgress: { current: 0, total: 0 },
+          currentAnalysisFile: ''
+        }
       });
 
       nextHandler({ type: 'ACTION_2' });
@@ -234,8 +256,19 @@ describe('persistenceMiddleware', () => {
       // Add files
       mockStore.getState.mockReturnValue({
         ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
-        files: { selectedFiles: [{ path: '/file.txt' }], organizedFiles: [], smartFolders: [], fileStates: {}, namingConvention: 'default' },
-        analysis: { results: [], isAnalyzing: false, analysisProgress: { current: 0, total: 0 }, currentAnalysisFile: '' },
+        files: {
+          selectedFiles: [{ path: '/file.txt' }],
+          organizedFiles: [],
+          smartFolders: [],
+          fileStates: {},
+          namingConvention: 'default'
+        },
+        analysis: {
+          results: [],
+          isAnalyzing: false,
+          analysisProgress: { current: 0, total: 0 },
+          currentAnalysisFile: ''
+        }
       });
 
       nextHandler({ type: 'ACTION_2' });
@@ -342,8 +375,19 @@ describe('persistenceMiddleware', () => {
       for (let i = 0; i < 10; i++) {
         mockStore.getState.mockReturnValue({
           ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
-          files: { selectedFiles: Array(i + 1).fill({}), organizedFiles: [], smartFolders: [], fileStates: {}, namingConvention: 'default' },
-          analysis: { results: [], isAnalyzing: false, analysisProgress: { current: 0, total: 0 }, currentAnalysisFile: '' },
+          files: {
+            selectedFiles: Array(i + 1).fill({}),
+            organizedFiles: [],
+            smartFolders: [],
+            fileStates: {},
+            namingConvention: 'default'
+          },
+          analysis: {
+            results: [],
+            isAnalyzing: false,
+            analysisProgress: { current: 0, total: 0 },
+            currentAnalysisFile: ''
+          }
         });
         nextHandler({ type: `ACTION_${i}` });
         jest.advanceTimersByTime(600);
@@ -356,12 +400,25 @@ describe('persistenceMiddleware', () => {
 
   describe('state serialization', () => {
     test('limits selectedFiles to 200 items', () => {
-      const largeFilesList = Array(300).fill().map((_, i) => ({ path: `/file${i}.txt` }));
+      const largeFilesList = Array(300)
+        .fill()
+        .map((_, i) => ({ path: `/file${i}.txt` }));
 
       mockStore.getState.mockReturnValue({
         ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
-        files: { selectedFiles: largeFilesList, organizedFiles: [], fileStates: {}, smartFolders: [], namingConvention: 'default' },
-        analysis: { results: [], isAnalyzing: false, analysisProgress: { current: 0, total: 0 }, currentAnalysisFile: '' },
+        files: {
+          selectedFiles: largeFilesList,
+          organizedFiles: [],
+          fileStates: {},
+          smartFolders: [],
+          namingConvention: 'default'
+        },
+        analysis: {
+          results: [],
+          isAnalyzing: false,
+          analysisProgress: { current: 0, total: 0 },
+          currentAnalysisFile: ''
+        }
       });
 
       const middleware = persistenceMiddleware(mockStore);
@@ -382,8 +439,19 @@ describe('persistenceMiddleware', () => {
 
       mockStore.getState.mockReturnValue({
         ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
-        files: { selectedFiles: [], organizedFiles: [], fileStates: largeFileStates, smartFolders: [], namingConvention: 'default' },
-        analysis: { results: [], isAnalyzing: false, analysisProgress: { current: 0, total: 0 }, currentAnalysisFile: '' },
+        files: {
+          selectedFiles: [],
+          organizedFiles: [],
+          fileStates: largeFileStates,
+          smartFolders: [],
+          namingConvention: 'default'
+        },
+        analysis: {
+          results: [],
+          isAnalyzing: false,
+          analysisProgress: { current: 0, total: 0 },
+          currentAnalysisFile: ''
+        }
       });
 
       const middleware = persistenceMiddleware(mockStore);

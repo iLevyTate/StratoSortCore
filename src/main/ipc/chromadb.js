@@ -40,9 +40,9 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
         circuitState: chromaDbService.getCircuitState(),
         isServiceAvailable: chromaDbService.isServiceAvailable(),
         queueSize: chromaDbService.offlineQueue?.size() || 0,
-        serverUrl: chromaDbService.serverUrl,
+        serverUrl: chromaDbService.serverUrl
       };
-    }),
+    })
   );
 
   /**
@@ -52,7 +52,7 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     IPC_CHANNELS.CHROMADB.GET_CIRCUIT_STATS,
     withErrorLogging(logger, async () => {
       return chromaDbService.getCircuitStats();
-    }),
+    })
   );
 
   /**
@@ -62,7 +62,7 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     IPC_CHANNELS.CHROMADB.GET_QUEUE_STATS,
     withErrorLogging(logger, async () => {
       return chromaDbService.getQueueStats();
-    }),
+    })
   );
 
   /**
@@ -81,9 +81,9 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
       return {
         success: true,
         isHealthy,
-        circuitState: chromaDbService.getCircuitState(),
+        circuitState: chromaDbService.getCircuitState()
       };
-    }),
+    })
   );
 
   /**
@@ -97,9 +97,9 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
         isHealthy,
         isOnline: chromaDbService.isOnline,
         circuitState: chromaDbService.getCircuitState(),
-        queueSize: chromaDbService.offlineQueue?.size() || 0,
+        queueSize: chromaDbService.offlineQueue?.size() || 0
       };
-    }),
+    })
   );
 
   logger.info('[CHROMADB-IPC] ChromaDB status handlers registered');
@@ -113,12 +113,7 @@ let _chromaDbServiceRef = null;
  * Set up event forwarding from ChromaDB service to renderer
  * @private
  */
-function _setupEventForwarding(
-  chromaDbService,
-  getMainWindow,
-  IPC_CHANNELS,
-  logger,
-) {
+function _setupEventForwarding(chromaDbService, getMainWindow, IPC_CHANNELS, logger) {
   // FIX: Store service reference for cleanup
   _chromaDbServiceRef = chromaDbService;
 
@@ -130,16 +125,16 @@ function _setupEventForwarding(
         win.webContents.send(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
           status,
           timestamp: Date.now(),
-          ...data,
+          ...data
         });
         logger.debug('[CHROMADB-IPC] Sent status update to renderer', {
-          status,
+          status
         });
       }
     } catch (error) {
       // FIX: Log at warn level for better visibility of IPC communication issues
       logger.warn('[CHROMADB-IPC] Failed to send status update', {
-        error: error.message,
+        error: error.message
       });
     }
   };
@@ -148,7 +143,7 @@ function _setupEventForwarding(
   const onlineHandler = (data) => {
     sendStatusUpdate('online', {
       reason: data.reason,
-      circuitState: chromaDbService.getCircuitState(),
+      circuitState: chromaDbService.getCircuitState()
     });
   };
 
@@ -156,28 +151,28 @@ function _setupEventForwarding(
     sendStatusUpdate('offline', {
       reason: data.reason,
       failureCount: data.failureCount,
-      circuitState: chromaDbService.getCircuitState(),
+      circuitState: chromaDbService.getCircuitState()
     });
   };
 
   const recoveringHandler = (data) => {
     sendStatusUpdate('recovering', {
       reason: data.reason,
-      circuitState: chromaDbService.getCircuitState(),
+      circuitState: chromaDbService.getCircuitState()
     });
   };
 
   const circuitStateChangeHandler = (data) => {
     sendStatusUpdate('circuit_changed', {
       previousState: data.previousState,
-      currentState: data.currentState,
+      currentState: data.currentState
     });
   };
 
   const operationQueuedHandler = (data) => {
     sendStatusUpdate('operation_queued', {
       operationType: data.type,
-      queueSize: data.queueSize,
+      queueSize: data.queueSize
     });
   };
 
@@ -185,7 +180,7 @@ function _setupEventForwarding(
     sendStatusUpdate('queue_flushed', {
       processed: data.processed,
       failed: data.failed,
-      remaining: data.remaining,
+      remaining: data.remaining
     });
   };
 
@@ -204,7 +199,7 @@ function _setupEventForwarding(
     { event: 'recovering', handler: recoveringHandler },
     { event: 'circuitStateChange', handler: circuitStateChangeHandler },
     { event: 'operationQueued', handler: operationQueuedHandler },
-    { event: 'queueFlushed', handler: queueFlushedHandler },
+    { event: 'queueFlushed', handler: queueFlushedHandler }
   ];
 
   logger.info('[CHROMADB-IPC] Event forwarding set up');
@@ -260,7 +255,7 @@ function getStatusSummary(chromaDbService) {
     message: statusMessage,
     circuitState,
     isOnline: chromaDbService.isOnline,
-    queueSize: queueStats.queueSize,
+    queueSize: queueStats.queueSize
   };
 }
 
@@ -268,5 +263,5 @@ module.exports = {
   registerChromaDBIpc,
   getStatusSummary,
   // FIX: Export cleanup function for use during app shutdown
-  cleanupEventListeners,
+  cleanupEventListeners
 };

@@ -40,7 +40,7 @@ class RateLimiter {
    */
   _cleanup() {
     const cutoff = Date.now() - this.windowMs;
-    this.calls = this.calls.filter(t => t > cutoff);
+    this.calls = this.calls.filter((t) => t > cutoff);
   }
 
   /**
@@ -49,7 +49,7 @@ class RateLimiter {
    */
   async waitForSlot() {
     while (!this.canCall()) {
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 100));
     }
   }
 
@@ -62,7 +62,7 @@ class RateLimiter {
     return {
       currentCalls: this.calls.length,
       maxCalls: this.maxCalls,
-      windowMs: this.windowMs,
+      windowMs: this.windowMs
     };
   }
 }
@@ -81,7 +81,7 @@ const {
   setOllamaEmbeddingModel,
   setOllamaHost,
   loadOllamaConfig,
-  saveOllamaConfig,
+  saveOllamaConfig
 } = require('../ollamaUtils');
 const { withOllamaRetry } = require('../utils/ollamaApiRetry');
 const { getInstance: getOllamaClient } = require('./OllamaClient');
@@ -112,7 +112,10 @@ class OllamaService {
         this._ollamaClient = getOllamaClient();
         await this._ollamaClient.initialize();
       } catch (clientError) {
-        logger.warn('[OllamaService] OllamaClient initialization failed (non-fatal):', clientError.message);
+        logger.warn(
+          '[OllamaService] OllamaClient initialization failed (non-fatal):',
+          clientError.message
+        );
         // Continue without resilient client - fallback to basic operations
       }
 
@@ -154,15 +157,15 @@ class OllamaService {
           queuedRequests: clientHealth.queuedRequests,
           offlineQueueSize: clientHealth.offlineQueueSize,
           consecutiveFailures: clientHealth.consecutiveFailures,
-          lastHealthCheck: clientHealth.lastHealthCheck,
+          lastHealthCheck: clientHealth.lastHealthCheck
         },
         stats: {
           totalRequests: clientStats.totalRequests,
           successfulRequests: clientStats.successfulRequests,
           failedRequests: clientStats.failedRequests,
           retriedRequests: clientStats.retriedRequests,
-          avgLatencyMs: clientStats.avgLatencyMs,
-        },
+          avgLatencyMs: clientStats.avgLatencyMs
+        }
       };
     }
 
@@ -191,7 +194,7 @@ class OllamaService {
       host: getOllamaHost(),
       textModel: getOllamaModel(),
       visionModel: getOllamaVisionModel(),
-      embeddingModel: getOllamaEmbeddingModel(),
+      embeddingModel: getOllamaEmbeddingModel()
     };
   }
 
@@ -204,8 +207,12 @@ class OllamaService {
       if (config.host) await setOllamaHost(config.host);
       if (config.textModel) await setOllamaModel(config.textModel);
       if (config.visionModel) await setOllamaVisionModel(config.visionModel);
-      if (config.embeddingModel)
-        await setOllamaEmbeddingModel(config.embeddingModel);
+      const SAFE_EMBED_MODEL = 'mxbai-embed-large';
+      if (config.embeddingModel) {
+        const embedModel =
+          config.embeddingModel === SAFE_EMBED_MODEL ? SAFE_EMBED_MODEL : SAFE_EMBED_MODEL;
+        await setOllamaEmbeddingModel(embedModel);
+      }
 
       await saveOllamaConfig();
       logger.info('[OllamaService] Configuration updated');
@@ -234,7 +241,7 @@ class OllamaService {
         testOllama.list(),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Connection test timeout')), CONNECTION_TEST_TIMEOUT)
-        ),
+        )
       ]);
       const modelCount = response?.models?.length || 0;
 
@@ -244,9 +251,9 @@ class OllamaService {
         ollamaHealth: {
           status: 'healthy',
           modelCount,
-          host: testHost,
+          host: testHost
         },
-        modelCount,
+        modelCount
       };
     } catch (error) {
       logger.error('[OllamaService] Connection test failed:', error);
@@ -256,8 +263,8 @@ class OllamaService {
         ollamaHealth: {
           status: 'unhealthy',
           error: error.message,
-          host: hostUrl || getOllamaHost(),
-        },
+          host: hostUrl || getOllamaHost()
+        }
       };
     }
   }
@@ -274,7 +281,7 @@ class OllamaService {
         ollama.list(),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Get models timeout')), GET_MODELS_TIMEOUT)
-        ),
+        )
       ]);
       const models = response?.models || [];
 
@@ -282,7 +289,7 @@ class OllamaService {
       const categories = {
         text: [],
         vision: [],
-        embedding: [],
+        embedding: []
       };
 
       models.forEach((model) => {
@@ -292,10 +299,7 @@ class OllamaService {
         // Categorize based on model name patterns
         if (lowerName.includes('embed') || lowerName.includes('mxbai')) {
           categories.embedding.push(name);
-        } else if (
-          lowerName.includes('llava') ||
-          lowerName.includes('vision')
-        ) {
+        } else if (lowerName.includes('llava') || lowerName.includes('vision')) {
           categories.vision.push(name);
         } else {
           categories.text.push(name);
@@ -309,13 +313,13 @@ class OllamaService {
         selected: {
           textModel: getOllamaModel(),
           visionModel: getOllamaVisionModel(),
-          embeddingModel: getOllamaEmbeddingModel(),
+          embeddingModel: getOllamaEmbeddingModel()
         },
         host: getOllamaHost(),
         ollamaHealth: {
           status: 'healthy',
-          modelCount: models.length,
-        },
+          modelCount: models.length
+        }
       };
     } catch (error) {
       logger.error('[OllamaService] Failed to get models:', error);
@@ -326,8 +330,8 @@ class OllamaService {
         categories: { text: [], vision: [], embedding: [] },
         ollamaHealth: {
           status: 'unhealthy',
-          error: error.message,
-        },
+          error: error.message
+        }
       };
     }
   }
@@ -350,12 +354,12 @@ class OllamaService {
 
     if (invalidModels.length > 0) {
       logger.warn('[OllamaService] Invalid model names rejected', {
-        invalidModels,
+        invalidModels
       });
       return {
         success: false,
         error: `Invalid model name(s): ${invalidModels.join(', ')}`,
-        results: [],
+        results: []
       };
     }
 
@@ -372,14 +376,14 @@ class OllamaService {
         results.push({
           model: modelName,
           success: false,
-          error: error.message,
+          error: error.message
         });
       }
     }
 
     return {
       success: results.some((r) => r.success),
-      results,
+      results
     };
   }
 
@@ -395,24 +399,24 @@ class OllamaService {
         const response = await ollama.embeddings({
           model,
           prompt: text,
-          options: options.ollamaOptions || {},
+          options: options.ollamaOptions || {}
         });
 
         return {
           success: true,
-          embedding: response.embedding,
+          embedding: response.embedding
         };
       },
       {
         operation: 'generateEmbedding',
-        maxRetries: 3,
-      },
+        maxRetries: 3
+      }
     ).catch((error) => {
       // Final error handling after retries exhausted
       logger.error('[OllamaService] Failed to generate embedding:', error);
       return {
         success: false,
-        error: error.message,
+        error: error.message
       };
     });
   }
@@ -437,23 +441,23 @@ class OllamaService {
           format: options.format,
           system: options.system,
           options: options.ollamaOptions || {},
-          stream: false,
+          stream: false
         });
 
         return {
           success: true,
-          response: response.response,
+          response: response.response
         };
       },
       {
         operation: 'analyzeText',
-        maxRetries: 3,
-      },
+        maxRetries: 3
+      }
     ).catch((error) => {
       logger.error('[OllamaService] Failed to analyze text:', error);
       return {
         success: false,
-        error: error.message,
+        error: error.message
       };
     });
   }
@@ -478,23 +482,23 @@ class OllamaService {
           images: [imageBase64],
           format: options.format,
           options: options.ollamaOptions || {},
-          stream: false,
+          stream: false
         });
 
         return {
           success: true,
-          response: response.response,
+          response: response.response
         };
       },
       {
         operation: 'analyzeImage',
-        maxRetries: 3,
-      },
+        maxRetries: 3
+      }
     ).catch((error) => {
       logger.error('[OllamaService] Failed to analyze image:', error);
       return {
         success: false,
-        error: error.message,
+        error: error.message
       };
     });
   }
@@ -521,7 +525,7 @@ class OllamaService {
         const result = await this._ollamaClient.batchEmbeddings(items, {
           model,
           onProgress: options.onProgress,
-          batchSize: options.batchSize || 10,
+          batchSize: options.batchSize || 10
         });
 
         return {
@@ -532,8 +536,8 @@ class OllamaService {
             total: items.length,
             successful: result.results.length,
             failed: result.errors.length,
-            duration: Date.now() - startTime,
-          },
+            duration: Date.now() - startTime
+          }
         };
       } catch (error) {
         logger.error('[OllamaService] Batch embedding via OllamaClient failed:', error.message);
@@ -555,20 +559,20 @@ class OllamaService {
           results.push({
             id: item.id,
             embedding: response.embedding,
-            success: true,
+            success: true
           });
         } else {
           errors.push({
             id: item.id,
             error: response.error,
-            success: false,
+            success: false
           });
         }
       } catch (error) {
         errors.push({
           id: item.id,
           error: error.message,
-          success: false,
+          success: false
         });
       }
 
@@ -576,7 +580,7 @@ class OllamaService {
         options.onProgress({
           completed: i + 1,
           total: items.length,
-          percent: Math.round(((i + 1) / items.length) * 100),
+          percent: Math.round(((i + 1) / items.length) * 100)
         });
       }
     }
@@ -589,8 +593,8 @@ class OllamaService {
         total: items.length,
         successful: results.length,
         failed: errors.length,
-        duration: Date.now() - startTime,
-      },
+        duration: Date.now() - startTime
+      }
     };
   }
 
@@ -620,7 +624,7 @@ class OllamaService {
       successfulRequests: 0,
       failedRequests: 0,
       avgLatencyMs: 0,
-      message: 'OllamaClient not initialized',
+      message: 'OllamaClient not initialized'
     };
   }
 }
@@ -702,5 +706,5 @@ module.exports = {
   OllamaService,
   getInstance,
   createInstance,
-  resetInstance,
+  resetInstance
 };

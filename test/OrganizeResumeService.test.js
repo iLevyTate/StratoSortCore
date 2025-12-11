@@ -27,7 +27,7 @@ describe('OrganizeResumeService', () => {
     // Setup mocks
     mockLogger = {
       warn: jest.fn(),
-      info: jest.fn(),
+      info: jest.fn()
     };
 
     mockServiceIntegration = {
@@ -36,15 +36,15 @@ describe('OrganizeResumeService', () => {
         markOrganizeOpStarted: jest.fn().mockResolvedValue(),
         markOrganizeOpDone: jest.fn().mockResolvedValue(),
         markOrganizeOpError: jest.fn().mockResolvedValue(),
-        completeOrganizeBatch: jest.fn().mockResolvedValue(),
-      },
+        completeOrganizeBatch: jest.fn().mockResolvedValue()
+      }
     };
 
     mockGetMainWindow = jest.fn().mockReturnValue({
       isDestroyed: () => false,
       webContents: {
-        send: jest.fn(),
-      },
+        send: jest.fn()
+      }
     });
   });
 
@@ -65,13 +65,13 @@ describe('OrganizeResumeService', () => {
 
     test('logs warning when incomplete batches exist', async () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
-        { id: 'batch1', operations: [] },
+        { id: 'batch1', operations: [] }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Resuming 1 incomplete'),
+        expect.stringContaining('Resuming 1 incomplete')
       );
     });
 
@@ -79,10 +79,8 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source: '/a', destination: '/b', status: 'done' },
-          ],
-        },
+          operations: [{ source: '/a', destination: '/b', status: 'done' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
@@ -98,10 +96,8 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
@@ -119,10 +115,8 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
@@ -139,10 +133,8 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
@@ -153,8 +145,8 @@ describe('OrganizeResumeService', () => {
         expect.objectContaining({
           type: 'batch_organize',
           current: 1,
-          total: 1,
-        }),
+          total: 1
+        })
       );
     });
 
@@ -165,10 +157,8 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
@@ -184,36 +174,32 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
 
-      expect(mockServiceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalledWith('batch1');
+      expect(mockServiceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalledWith(
+        'batch1'
+      );
     });
 
     test('handles null service integration', async () => {
       await expect(
-        resumeIncompleteBatches(null, mockLogger, mockGetMainWindow),
+        resumeIncompleteBatches(null, mockLogger, mockGetMainWindow)
       ).resolves.not.toThrow();
     });
 
     test('handles undefined processingState', async () => {
       await expect(
-        resumeIncompleteBatches({}, mockLogger, mockGetMainWindow),
+        resumeIncompleteBatches({}, mockLogger, mockGetMainWindow)
       ).resolves.not.toThrow();
     });
 
     test('handles missing getIncompleteOrganizeBatches', async () => {
       await expect(
-        resumeIncompleteBatches(
-          { processingState: {} },
-          mockLogger,
-          mockGetMainWindow,
-        ),
+        resumeIncompleteBatches({ processingState: {} }, mockLogger, mockGetMainWindow)
       ).resolves.not.toThrow();
     });
 
@@ -224,20 +210,18 @@ describe('OrganizeResumeService', () => {
 
       mockGetMainWindow.mockReturnValue({
         isDestroyed: () => true,
-        webContents: { send: jest.fn() },
+        webContents: { send: jest.fn() }
       });
 
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await expect(
-        resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow),
+        resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow)
       ).resolves.not.toThrow();
     });
 
@@ -251,14 +235,12 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [
-            { source, destination: dest, status: 'pending' },
-          ],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await expect(
-        resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow),
+        resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow)
       ).resolves.not.toThrow();
     });
 
@@ -273,18 +255,22 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [{ source: source1, destination: dest1, status: 'pending' }],
+          operations: [{ source: source1, destination: dest1, status: 'pending' }]
         },
         {
           id: 'batch2',
-          operations: [{ source: source2, destination: dest2, status: 'pending' }],
-        },
+          operations: [{ source: source2, destination: dest2, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
 
-      expect(mockServiceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalledWith('batch1');
-      expect(mockServiceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalledWith('batch2');
+      expect(mockServiceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalledWith(
+        'batch1'
+      );
+      expect(mockServiceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalledWith(
+        'batch2'
+      );
     });
 
     test('logs batch completion', async () => {
@@ -295,15 +281,15 @@ describe('OrganizeResumeService', () => {
       mockServiceIntegration.processingState.getIncompleteOrganizeBatches.mockReturnValue([
         {
           id: 'batch1',
-          operations: [{ source, destination: dest, status: 'pending' }],
-        },
+          operations: [{ source, destination: dest, status: 'pending' }]
+        }
       ]);
 
       await resumeIncompleteBatches(mockServiceIntegration, mockLogger, mockGetMainWindow);
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.stringContaining('Completed batch resume'),
-        'batch1',
+        'batch1'
       );
     });
   });

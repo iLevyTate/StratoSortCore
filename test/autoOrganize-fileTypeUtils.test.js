@@ -113,7 +113,7 @@ describe('AutoOrganize File Type Utils', () => {
         extension: 'pdf',
         type: 'document',
         extraField: 'should be removed',
-        largeData: Buffer.alloc(1000),
+        largeData: Buffer.alloc(1000)
       };
 
       const sanitized = sanitizeFile(file);
@@ -136,8 +136,8 @@ describe('AutoOrganize File Type Utils', () => {
           suggestedName: 'report.pdf',
           confidence: 0.95,
           summary: 'A report document',
-          extraAnalysisField: 'should be removed',
-        },
+          extraAnalysisField: 'should be removed'
+        }
       };
 
       const sanitized = sanitizeFile(file);
@@ -153,7 +153,7 @@ describe('AutoOrganize File Type Utils', () => {
     test('sets analysis to null when not present', () => {
       const file = {
         name: 'doc.pdf',
-        path: '/path/doc.pdf',
+        path: '/path/doc.pdf'
       };
 
       const sanitized = sanitizeFile(file);
@@ -166,8 +166,8 @@ describe('AutoOrganize File Type Utils', () => {
         name: 'doc.pdf',
         path: '/path/doc.pdf',
         analysis: {
-          category: 'Reports',
-        },
+          category: 'Reports'
+        }
       };
 
       const sanitized = sanitizeFile(file);

@@ -3,15 +3,8 @@ import PropTypes from 'prop-types';
 
 const Input = memo(
   forwardRef(function Input(
-    {
-      className = '',
-      invalid = false,
-      error = '',
-      label = '',
-      required = false,
-      ...rest
-    },
-    ref,
+    { className = '', invalid = false, error = '', label = '', required = false, ...rest },
+    ref
   ) {
     // Always call useId unconditionally to follow React hooks rules
     const generatedId = useId();
@@ -20,9 +13,7 @@ const Input = memo(
 
     const classes = useMemo(() => {
       const invalidClass =
-        invalid || error
-          ? 'border-stratosort-danger focus:ring-stratosort-danger/20'
-          : '';
+        invalid || error ? 'border-stratosort-danger focus:ring-stratosort-danger/20' : '';
       return `form-input-enhanced ${invalidClass} ${className}`.trim();
     }, [invalid, error, className]);
 
@@ -43,16 +34,10 @@ const Input = memo(
     return (
       <div className="flex flex-col gap-2">
         {label && (
-          <label
-            htmlFor={id}
-            className="text-sm font-medium text-system-gray-700"
-          >
+          <label htmlFor={id} className="text-sm font-medium text-system-gray-700">
             {label}
             {required && (
-              <span
-                className="text-stratosort-danger ml-1"
-                aria-label="required"
-              >
+              <span className="text-stratosort-danger ml-1" aria-label="required">
                 *
               </span>
             )}
@@ -69,17 +54,13 @@ const Input = memo(
           {...rest}
         />
         {error && (
-          <p
-            id={errorId}
-            className="text-sm text-stratosort-danger"
-            role="alert"
-          >
+          <p id={errorId} className="text-sm text-stratosort-danger" role="alert">
             {error}
           </p>
         )}
       </div>
     );
-  }),
+  })
 );
 
 Input.propTypes = {
@@ -87,7 +68,7 @@ Input.propTypes = {
   invalid: PropTypes.bool,
   error: PropTypes.string,
   label: PropTypes.string,
-  required: PropTypes.bool,
+  required: PropTypes.bool
 };
 
 export default Input;

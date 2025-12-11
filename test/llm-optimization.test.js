@@ -2,7 +2,7 @@ const {
   LLMRequestDeduplicator,
   BatchProcessor,
   globalDeduplicator,
-  globalBatchProcessor,
+  globalBatchProcessor
 } = require('../src/main/utils/llmOptimization');
 
 describe('LLM Optimization Utilities', () => {
@@ -53,11 +53,7 @@ describe('LLM Optimization Utilities', () => {
       const promise2 = deduplicator.deduplicate(key, expensiveOperation);
       const promise3 = deduplicator.deduplicate(key, expensiveOperation);
 
-      const [result1, result2, result3] = await Promise.all([
-        promise1,
-        promise2,
-        promise3,
-      ]);
+      const [result1, result2, result3] = await Promise.all([promise1, promise2, promise3]);
 
       // Should all return the same result
       expect(result1).toBe('result');
@@ -103,10 +99,7 @@ describe('LLM Optimization Utilities', () => {
 
       // Manually trigger the size limit check by using deduplicate
       for (let i = 0; i < 10; i++) {
-        await smallDeduplicator.deduplicate(
-          `key-${i}`,
-          async () => `result-${i}`,
-        );
+        await smallDeduplicator.deduplicate(`key-${i}`, async () => `result-${i}`);
       }
 
       // During execution, we can't easily check the limit since items are cleaned up
@@ -135,7 +128,7 @@ describe('LLM Optimization Utilities', () => {
       };
 
       const result = await processor.processBatch(items, processItem, {
-        concurrency: 2,
+        concurrency: 2
       });
 
       const totalTime = Date.now() - startTime;
@@ -165,7 +158,7 @@ describe('LLM Optimization Utilities', () => {
 
       const result = await processor.processBatch(items, processItem, {
         concurrency: 2,
-        stopOnError: false,
+        stopOnError: false
       });
 
       // Should have 4 successful and 1 error
@@ -191,7 +184,7 @@ describe('LLM Optimization Utilities', () => {
         concurrency: 1,
         onProgress: (progress) => {
           progressUpdates.push(progress);
-        },
+        }
       });
 
       expect(progressUpdates.length).toBe(3);

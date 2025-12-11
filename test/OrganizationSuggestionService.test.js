@@ -9,8 +9,8 @@ const OrganizationSuggestionService = require('../src/main/services/organization
 // Mock Ollama for LLM operations
 jest.mock('ollama', () => ({
   Ollama: jest.fn().mockImplementation(() => ({
-    generate: jest.fn(),
-  })),
+    generate: jest.fn()
+  }))
 }));
 
 // Mock the ollama utils
@@ -19,8 +19,8 @@ jest.mock('../src/main/ollamaUtils', () => ({
   getOllamaModel: jest.fn().mockReturnValue('llama2'),
   buildOllamaOptions: jest.fn().mockResolvedValue({
     temperature: 0.7,
-    num_predict: 500,
-  }),
+    num_predict: 500
+  })
 }));
 
 describe('OrganizationSuggestionService', () => {
@@ -40,9 +40,9 @@ describe('OrganizationSuggestionService', () => {
         category: 'documents',
         project: 'TestProject',
         keywords: ['invoice', 'payment', 'Q1'],
-        purpose: 'Financial documentation',
+        purpose: 'Financial documentation'
       },
-      ...overrides,
+      ...overrides
     };
   }
 
@@ -53,22 +53,22 @@ describe('OrganizationSuggestionService', () => {
         name: 'Invoices',
         path: '/docs/Invoices',
         description: 'Financial invoices and receipts',
-        keywords: ['invoice', 'receipt', 'payment'],
+        keywords: ['invoice', 'receipt', 'payment']
       },
       {
         id: 'folder-2',
         name: 'Projects',
         path: '/docs/Projects',
         description: 'Active project files',
-        keywords: ['project', 'work', 'development'],
+        keywords: ['project', 'work', 'development']
       },
       {
         id: 'folder-3',
         name: 'Archives',
         path: '/docs/Archives',
         description: 'Archived documents',
-        keywords: ['archive', 'old', 'backup'],
-      },
+        keywords: ['archive', 'old', 'backup']
+      }
     ];
     return folders.slice(0, count);
   }
@@ -82,7 +82,7 @@ describe('OrganizationSuggestionService', () => {
       upsertFile: jest.fn().mockResolvedValue({ success: true }),
       queryFolders: jest.fn().mockResolvedValue([]),
       queryFiles: jest.fn().mockResolvedValue([]),
-      deleteFile: jest.fn().mockResolvedValue({ success: true }),
+      deleteFile: jest.fn().mockResolvedValue({ success: true })
     };
 
     // Setup mock FolderMatchingService
@@ -91,8 +91,8 @@ describe('OrganizationSuggestionService', () => {
       upsertFileEmbedding: jest.fn().mockResolvedValue({ success: true }),
       matchFileToFolders: jest.fn().mockResolvedValue([]),
       embedText: jest.fn().mockResolvedValue({
-        vector: new Array(1024).fill(0.1),
-      }),
+        vector: new Array(1024).fill(0.1)
+      })
     };
 
     // Setup mock SettingsService
@@ -101,17 +101,17 @@ describe('OrganizationSuggestionService', () => {
         const defaults = {
           autoApproveThreshold: 0.8,
           reviewThreshold: 0.5,
-          enableAISuggestions: true,
+          enableAISuggestions: true
         };
         return defaults[key] !== undefined ? defaults[key] : null;
       }),
       load: jest.fn().mockResolvedValue({}),
-      save: jest.fn().mockResolvedValue({ success: true }),
+      save: jest.fn().mockResolvedValue({ success: true })
     };
 
     // Setup mock Ollama
     mockOllama = {
-      generate: jest.fn(),
+      generate: jest.fn()
     };
 
     const { getOllama } = require('../src/main/ollamaUtils');
@@ -121,7 +121,7 @@ describe('OrganizationSuggestionService', () => {
     service = new OrganizationSuggestionService({
       chromaDbService: mockChromaDBService,
       folderMatchingService: mockFolderMatchingService,
-      settingsService: mockSettingsService,
+      settingsService: mockSettingsService
     });
 
     // Initialize service state
@@ -145,8 +145,8 @@ describe('OrganizationSuggestionService', () => {
             category: 'financial',
             project: 'Accounting',
             keywords: ['invoice', 'payment', 'Q1', '2024'],
-            purpose: 'Quarterly invoice documentation',
-          },
+            purpose: 'Quarterly invoice documentation'
+          }
         });
 
         const smartFolders = createTestSmartFolders(3);
@@ -158,15 +158,15 @@ describe('OrganizationSuggestionService', () => {
             name: 'Invoices',
             score: 0.85,
             path: '/docs/Invoices',
-            description: 'Financial invoices',
+            description: 'Financial invoices'
           },
           {
             folderId: 'folder-2',
             name: 'Projects',
             score: 0.65,
             path: '/docs/Projects',
-            description: 'Active projects',
-          },
+            description: 'Active projects'
+          }
         ]);
 
         // Mock successful LLM response
@@ -177,10 +177,10 @@ describe('OrganizationSuggestionService', () => {
                 folder: 'Financial Documents',
                 reasoning: 'This appears to be a financial invoice document',
                 confidence: 0.7,
-                strategy: 'type-based',
-              },
-            ],
-          }),
+                strategy: 'type-based'
+              }
+            ]
+          })
         });
 
         const result = await service.getSuggestionsForFile(file, smartFolders);
@@ -212,17 +212,13 @@ describe('OrganizationSuggestionService', () => {
         expect(result.primary).toBeDefined();
         expect(result.primary.folder).toBeDefined();
         // The service may suggest new folders or use fallback
-        expect([
-          'fallback',
-          'new_folder_suggestion',
-          'strategy_based',
-        ]).toContain(result.primary.method);
+        expect(['fallback', 'new_folder_suggestion', 'strategy_based']).toContain(
+          result.primary.method
+        );
         expect(result.confidence).toBeLessThanOrEqual(1.0);
 
         // Verify no folder embeddings were attempted
-        expect(
-          mockFolderMatchingService.upsertFolderEmbedding,
-        ).not.toHaveBeenCalled();
+        expect(mockFolderMatchingService.upsertFolderEmbedding).not.toHaveBeenCalled();
       });
 
       // Test 3: ChromaDB Failure - Graceful Degradation
@@ -232,7 +228,7 @@ describe('OrganizationSuggestionService', () => {
 
         // Mock ChromaDB failure
         mockFolderMatchingService.matchFileToFolders.mockRejectedValue(
-          new Error('ChromaDB connection failed'),
+          new Error('ChromaDB connection failed')
         );
 
         // Mock LLM to still work
@@ -243,10 +239,10 @@ describe('OrganizationSuggestionService', () => {
                 folder: 'Documents',
                 confidence: 0.6,
                 reasoning: 'Based on file type',
-                strategy: 'type-based',
-              },
-            ],
-          }),
+                strategy: 'type-based'
+              }
+            ]
+          })
         });
 
         const result = await service.getSuggestionsForFile(file, smartFolders);
@@ -264,9 +260,7 @@ describe('OrganizationSuggestionService', () => {
         const smartFolders = createTestSmartFolders();
 
         // Mock LLM failure
-        mockOllama.generate.mockRejectedValue(
-          new Error('Ollama not available'),
-        );
+        mockOllama.generate.mockRejectedValue(new Error('Ollama not available'));
 
         // Semantic matching still works
         mockFolderMatchingService.matchFileToFolders.mockResolvedValue([
@@ -274,8 +268,8 @@ describe('OrganizationSuggestionService', () => {
             folderId: 'folder-1',
             name: 'Invoices',
             score: 0.75,
-            path: '/docs/Invoices',
-          },
+            path: '/docs/Invoices'
+          }
         ]);
 
         const result = await service.getSuggestionsForFile(file, smartFolders);
@@ -299,7 +293,7 @@ describe('OrganizationSuggestionService', () => {
           '{"suggestions": "not an array"}',
           '{"suggestions": [{"invalid": "structure"}]}',
           '{"suggestions": null}',
-          '', // Empty response
+          '' // Empty response
         ];
 
         for (const response of malformedResponses) {
@@ -311,14 +305,11 @@ describe('OrganizationSuggestionService', () => {
               folderId: 'folder-2',
               name: 'Projects',
               score: 0.6,
-              path: '/docs/Projects',
-            },
+              path: '/docs/Projects'
+            }
           ]);
 
-          const result = await service.getSuggestionsForFile(
-            file,
-            smartFolders,
-          );
+          const result = await service.getSuggestionsForFile(file, smartFolders);
 
           // Should not crash, should use other methods
           expect(result.success).toBe(true);
@@ -341,7 +332,7 @@ describe('OrganizationSuggestionService', () => {
           folder: 'User Invoices',
           path: '/user/Invoices',
           count: 5,
-          confidence: 0.8, // Higher confidence for user pattern
+          confidence: 0.8 // Higher confidence for user pattern
         });
 
         // Mock LLM suggestion with lower confidence
@@ -352,10 +343,10 @@ describe('OrganizationSuggestionService', () => {
                 folder: 'LLM Documents',
                 confidence: 0.6, // Lower confidence
                 reasoning: 'LLM suggestion',
-                strategy: 'type-based',
-              },
-            ],
-          }),
+                strategy: 'type-based'
+              }
+            ]
+          })
         });
 
         // Mock semantic match with medium score
@@ -364,8 +355,8 @@ describe('OrganizationSuggestionService', () => {
             folderId: 'folder-3',
             name: 'Semantic Match',
             score: 0.5, // Lower score
-            path: '/docs/Semantic',
-          },
+            path: '/docs/Semantic'
+          }
         ]);
 
         const result = await service.getSuggestionsForFile(file, smartFolders);
@@ -388,7 +379,7 @@ describe('OrganizationSuggestionService', () => {
         const suggestion = {
           folder: 'Invoices',
           path: '/docs/Invoices',
-          confidence: 0.8,
+          confidence: 0.8
         };
 
         // Record positive feedback
@@ -408,9 +399,7 @@ describe('OrganizationSuggestionService', () => {
 
         const updatedData = service.userPatterns.get(pattern);
         expect(updatedData.count).toBe(2);
-        expect(updatedData.confidence).toBeGreaterThanOrEqual(
-          patternData.confidence,
-        );
+        expect(updatedData.confidence).toBeGreaterThanOrEqual(patternData.confidence);
 
         // Verify feedback history
         expect(service.feedbackHistory).toHaveLength(2);
@@ -423,18 +412,18 @@ describe('OrganizationSuggestionService', () => {
         const files = [
           createTestFile({
             name: 'project-spec.pdf',
-            analysis: { project: 'AlphaProject', category: 'documentation' },
+            analysis: { project: 'AlphaProject', category: 'documentation' }
           }),
           createTestFile({
             name: 'project-budget.xlsx',
             extension: 'xlsx',
-            analysis: { project: 'AlphaProject', category: 'financial' },
+            analysis: { project: 'AlphaProject', category: 'financial' }
           }),
           createTestFile({
             name: 'project-timeline.doc',
             extension: 'doc',
-            analysis: { project: 'AlphaProject', category: 'planning' },
-          }),
+            analysis: { project: 'AlphaProject', category: 'planning' }
+          })
         ];
 
         const smartFolders = createTestSmartFolders();
@@ -445,8 +434,8 @@ describe('OrganizationSuggestionService', () => {
             folderId: 'folder-2',
             name: 'Projects',
             score: 0.8,
-            path: '/docs/Projects',
-          },
+            path: '/docs/Projects'
+          }
         ]);
 
         const result = await service.getBatchSuggestions(files, smartFolders);
@@ -460,9 +449,7 @@ describe('OrganizationSuggestionService', () => {
         expect(result.recommendations).toBeDefined();
         expect(result.recommendations.length).toBeGreaterThan(0);
 
-        const projectRec = result.recommendations.find(
-          (r) => r.type === 'project_grouping',
-        );
+        const projectRec = result.recommendations.find((r) => r.type === 'project_grouping');
         expect(projectRec).toBeDefined();
         expect(projectRec.confidence).toBeGreaterThanOrEqual(0.9);
         expect(projectRec.suggestion).toContain('AlphaProject');
@@ -474,8 +461,8 @@ describe('OrganizationSuggestionService', () => {
           name: 'invoice-2024-01.pdf',
           analysis: {
             documentDate: '2024-01-15',
-            category: 'financial',
-          },
+            category: 'financial'
+          }
         });
 
         const smartFolders = createTestSmartFolders();
@@ -486,9 +473,7 @@ describe('OrganizationSuggestionService', () => {
         expect(result.strategies).toBeDefined();
 
         // Should identify date-based strategy as applicable
-        const dateStrategy = result.strategies.find(
-          (s) => s.id === 'date-based',
-        );
+        const dateStrategy = result.strategies.find((s) => s.id === 'date-based');
         expect(dateStrategy).toBeDefined();
         expect(dateStrategy.applicability).toBeGreaterThan(0.2);
 
@@ -496,22 +481,19 @@ describe('OrganizationSuggestionService', () => {
         const files = [
           createTestFile({
             name: 'report-jan.pdf',
-            analysis: { documentDate: '2024-01-01' },
+            analysis: { documentDate: '2024-01-01' }
           }),
           createTestFile({
             name: 'report-feb.pdf',
-            analysis: { documentDate: '2024-02-01' },
+            analysis: { documentDate: '2024-02-01' }
           }),
           createTestFile({
             name: 'report-mar.pdf',
-            analysis: { documentDate: '2024-03-01' },
-          }),
+            analysis: { documentDate: '2024-03-01' }
+          })
         ];
 
-        const batchResult = await service.getBatchSuggestions(
-          files,
-          smartFolders,
-        );
+        const batchResult = await service.getBatchSuggestions(files, smartFolders);
 
         expect(batchResult.success).toBe(true);
         expect(batchResult.suggestedStrategy).toBeDefined();
@@ -533,8 +515,8 @@ describe('OrganizationSuggestionService', () => {
             folderId: 'folder-1',
             name: targetFolder,
             score: 0.7,
-            path: '/docs/Invoices',
-          },
+            path: '/docs/Invoices'
+          }
         ]);
 
         // 2. User pattern
@@ -542,7 +524,7 @@ describe('OrganizationSuggestionService', () => {
           folder: targetFolder,
           path: '/docs/Invoices',
           count: 3,
-          confidence: 0.6,
+          confidence: 0.6
         });
 
         // 3. LLM suggestion
@@ -553,10 +535,10 @@ describe('OrganizationSuggestionService', () => {
                 folder: targetFolder,
                 confidence: 0.65,
                 reasoning: 'Financial document',
-                strategy: 'type-based',
-              },
-            ],
-          }),
+                strategy: 'type-based'
+              }
+            ]
+          })
         });
 
         const result = await service.getSuggestionsForFile(file, smartFolders);
@@ -583,7 +565,7 @@ describe('OrganizationSuggestionService', () => {
         name: 'unknown.dat',
         extension: 'dat',
         path: '/downloads/unknown.dat',
-        analysis: null,
+        analysis: null
       };
 
       const smartFolders = createTestSmartFolders();
@@ -605,7 +587,7 @@ describe('OrganizationSuggestionService', () => {
       expect(result.primary).toBeDefined();
       // Should provide fallback or new folder suggestion
       expect(['fallback', 'new_folder_suggestion', 'strategy_based']).toContain(
-        result.primary.method,
+        result.primary.method
       );
     });
 
@@ -621,22 +603,22 @@ describe('OrganizationSuggestionService', () => {
             folderId: 'folder-1',
             name: 'Invoices',
             score: 0.8,
-            path: '/docs/Invoices',
-          },
+            path: '/docs/Invoices'
+          }
         ])
         .mockResolvedValueOnce([
           {
             folderId: 'folder-2',
             name: 'Projects',
             score: 0.7,
-            path: '/docs/Projects',
-          },
+            path: '/docs/Projects'
+          }
         ]);
 
       // Call concurrently
       const [result1, result2] = await Promise.all([
         service.getSuggestionsForFile(file1, smartFolders),
-        service.getSuggestionsForFile(file2, smartFolders),
+        service.getSuggestionsForFile(file2, smartFolders)
       ]);
 
       expect(result1.success).toBe(true);
@@ -678,7 +660,7 @@ describe('OrganizationSuggestionService', () => {
         mp4: 'Videos',
         js: 'Code',
         zip: 'Archives',
-        unknown: 'Files',
+        unknown: 'Files'
       };
 
       for (const [ext, expectedCategory] of Object.entries(categories)) {
@@ -691,24 +673,18 @@ describe('OrganizationSuggestionService', () => {
       const file1 = createTestFile();
       const file2 = createTestFile({
         name: 'other.pdf',
-        analysis: { category: 'reports' }, // Different category
+        analysis: { category: 'reports' } // Different category
       });
 
       const pattern1 = service.extractPattern(file1);
       const pattern2 = service.extractPattern(file2);
 
       // Same file pattern should have similarity 1.0
-      const sameSimilarity = service.calculatePatternSimilarity(
-        file1,
-        pattern1,
-      );
+      const sameSimilarity = service.calculatePatternSimilarity(file1, pattern1);
       expect(sameSimilarity).toBe(1.0);
 
       // Different patterns should have partial similarity (same extension)
-      const diffSimilarity = service.calculatePatternSimilarity(
-        file1,
-        pattern2,
-      );
+      const diffSimilarity = service.calculatePatternSimilarity(file1, pattern2);
       expect(diffSimilarity).toBeLessThanOrEqual(1.0);
       expect(diffSimilarity).toBeGreaterThanOrEqual(0);
     });
@@ -718,18 +694,18 @@ describe('OrganizationSuggestionService', () => {
     test('should identify missing common categories', () => {
       const existingFolders = [
         { id: '1', name: 'Documents', path: '/Documents' },
-        { id: '2', name: 'Images', path: '/Images' },
+        { id: '2', name: 'Images', path: '/Images' }
       ];
 
       const files = [
         createTestFile({
           name: 'project-plan.pdf',
-          analysis: { category: 'projects' },
+          analysis: { category: 'projects' }
         }),
         createTestFile({
           name: 'report.pdf',
-          analysis: { category: 'reports' },
-        }),
+          analysis: { category: 'reports' }
+        })
       ];
 
       const missing = service.identifyMissingCategories(existingFolders, files);
@@ -748,20 +724,20 @@ describe('OrganizationSuggestionService', () => {
           id: '1',
           name: 'Invoices',
           description: 'Financial invoices',
-          keywords: ['invoice', 'payment'],
+          keywords: ['invoice', 'payment']
         },
         {
           id: '2',
           name: 'Invoices Documents', // More similar name
           description: 'Financial invoices and receipts', // More similar description
-          keywords: ['invoice', 'financial', 'payment'], // More overlapping keywords
+          keywords: ['invoice', 'financial', 'payment'] // More overlapping keywords
         },
         {
           id: '3',
           name: 'Projects',
           description: 'Project files',
-          keywords: ['project', 'work'],
-        },
+          keywords: ['project', 'work']
+        }
       ];
 
       const overlaps = service.findOverlappingFolders(folders);
@@ -770,9 +746,7 @@ describe('OrganizationSuggestionService', () => {
 
       // Find Invoice overlap and verify if exists
       const invoiceOverlap = overlaps.find(
-        (o) =>
-          o.folders.includes('Invoices') &&
-          o.folders.includes('Invoices Documents'),
+        (o) => o.folders.includes('Invoices') && o.folders.includes('Invoices Documents')
       );
       // Verify overlap similarity - either the actual value or a default (both > 0)
       const similarity = invoiceOverlap ? invoiceOverlap.similarity : 0.6;
@@ -784,7 +758,7 @@ describe('OrganizationSuggestionService', () => {
       const suggestion = {
         folder: 'TestFolder',
         path: '/test',
-        confidence: 0.8,
+        confidence: 0.8
       };
 
       // Record multiple uses

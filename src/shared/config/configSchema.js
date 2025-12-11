@@ -7,11 +7,7 @@
  * @module config/configSchema
  */
 
-const {
-  PORTS,
-  SERVICE_URLS,
-  TIMEOUTS: CONFIG_DEFAULT_TIMEOUTS,
-} = require('../configDefaults');
+const { PORTS, SERVICE_URLS, TIMEOUTS: CONFIG_DEFAULT_TIMEOUTS } = require('../configDefaults');
 const { DEFAULT_SETTINGS } = require('../defaultSettings');
 const {
   TIMEOUTS: PERF_TIMEOUTS,
@@ -19,13 +15,13 @@ const {
   CACHE,
   BATCH,
   THRESHOLDS,
-  LIMITS,
+  LIMITS
 } = require('../performanceConstants');
 const {
   PROCESSING_LIMITS,
   AI_DEFAULTS,
   DEFAULT_AI_MODELS,
-  FILE_SIZE_LIMITS,
+  FILE_SIZE_LIMITS
 } = require('../constants');
 
 /**
@@ -44,14 +40,14 @@ const CONFIG_SCHEMA = {
       default: SERVICE_URLS.CHROMA_SERVER_URL,
       envVar: 'CHROMA_SERVER_URL',
       description: 'ChromaDB vector database server URL',
-      required: false,
+      required: false
     },
     /** ChromaDB server host */
     chromaHost: {
       type: 'string',
       default: '127.0.0.1',
       envVar: 'CHROMA_SERVER_HOST',
-      description: 'ChromaDB server hostname',
+      description: 'ChromaDB server hostname'
     },
     /** ChromaDB server port */
     chromaPort: {
@@ -60,7 +56,7 @@ const CONFIG_SCHEMA = {
       envVar: 'CHROMA_SERVER_PORT',
       min: 1,
       max: 65535,
-      description: 'ChromaDB server port',
+      description: 'ChromaDB server port'
     },
     /** ChromaDB server protocol */
     chromaProtocol: {
@@ -68,7 +64,7 @@ const CONFIG_SCHEMA = {
       default: 'http',
       envVar: 'CHROMA_SERVER_PROTOCOL',
       values: ['http', 'https'],
-      description: 'ChromaDB server protocol',
+      description: 'ChromaDB server protocol'
     },
     /** Ollama LLM server URL */
     ollamaUrl: {
@@ -76,7 +72,7 @@ const CONFIG_SCHEMA = {
       default: SERVICE_URLS.OLLAMA_HOST,
       envVar: ['OLLAMA_BASE_URL', 'OLLAMA_HOST'],
       description: 'Ollama LLM server URL',
-      required: false,
+      required: false
     },
     /** Ollama server port */
     ollamaPort: {
@@ -85,7 +81,7 @@ const CONFIG_SCHEMA = {
       envVar: 'OLLAMA_PORT',
       min: 1,
       max: 65535,
-      description: 'Ollama server port',
+      description: 'Ollama server port'
     },
     /** Development server port */
     devServerPort: {
@@ -94,8 +90,8 @@ const CONFIG_SCHEMA = {
       envVar: 'DEV_SERVER_PORT',
       min: 1,
       max: 65535,
-      description: 'Development server port for webpack',
-    },
+      description: 'Development server port for webpack'
+    }
   },
 
   /**
@@ -109,7 +105,7 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_AI_MODELS.TEXT_ANALYSIS,
       envVar: 'OLLAMA_TEXT_MODEL',
       description: 'Ollama model for text analysis',
-      pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/,
+      pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/
     },
     /** Vision/image analysis model */
     visionModel: {
@@ -117,7 +113,7 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
       envVar: ['OLLAMA_VISION_MODEL', 'OLLAMA_MULTIMODAL_MODEL'],
       description: 'Ollama model for image/vision analysis',
-      pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/,
+      pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/
     },
     /** Embedding model */
     embeddingModel: {
@@ -125,13 +121,13 @@ const CONFIG_SCHEMA = {
       default: 'mxbai-embed-large',
       envVar: 'OLLAMA_EMBEDDING_MODEL',
       description: 'Ollama model for generating embeddings',
-      pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/,
+      pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/
     },
     /** Fallback models list */
     fallbackModels: {
       type: 'array',
       default: DEFAULT_AI_MODELS.FALLBACK_MODELS,
-      description: 'List of fallback models to try if primary fails',
+      description: 'List of fallback models to try if primary fails'
     },
     /** AI temperature for text analysis */
     textTemperature: {
@@ -139,7 +135,7 @@ const CONFIG_SCHEMA = {
       default: AI_DEFAULTS.TEXT.TEMPERATURE,
       min: 0,
       max: 2,
-      description: 'Temperature setting for text generation',
+      description: 'Temperature setting for text generation'
     },
     /** AI temperature for image analysis */
     imageTemperature: {
@@ -147,7 +143,7 @@ const CONFIG_SCHEMA = {
       default: AI_DEFAULTS.IMAGE.TEMPERATURE,
       min: 0,
       max: 2,
-      description: 'Temperature setting for image analysis',
+      description: 'Temperature setting for image analysis'
     },
     /** Max tokens for text analysis */
     textMaxTokens: {
@@ -155,7 +151,7 @@ const CONFIG_SCHEMA = {
       default: AI_DEFAULTS.TEXT.MAX_TOKENS,
       min: 1,
       max: 32000,
-      description: 'Maximum tokens for text analysis response',
+      description: 'Maximum tokens for text analysis response'
     },
     /** Max tokens for image analysis */
     imageMaxTokens: {
@@ -163,7 +159,7 @@ const CONFIG_SCHEMA = {
       default: AI_DEFAULTS.IMAGE.MAX_TOKENS,
       min: 1,
       max: 32000,
-      description: 'Maximum tokens for image analysis response',
+      description: 'Maximum tokens for image analysis response'
     },
     /** Max content length for text processing */
     maxContentLength: {
@@ -171,8 +167,8 @@ const CONFIG_SCHEMA = {
       default: AI_DEFAULTS.TEXT.MAX_CONTENT_LENGTH,
       min: 1000,
       max: 100000,
-      description: 'Maximum content length for text processing',
-    },
+      description: 'Maximum content length for text processing'
+    }
   },
 
   /**
@@ -186,7 +182,7 @@ const CONFIG_SCHEMA = {
       default: PROCESSING_LIMITS.MAX_CONCURRENT_ANALYSIS,
       min: 1,
       max: 20,
-      description: 'Maximum concurrent analysis operations',
+      description: 'Maximum concurrent analysis operations'
     },
     /** Batch size for processing */
     batchSize: {
@@ -194,7 +190,7 @@ const CONFIG_SCHEMA = {
       default: BATCH.SIZE_MEDIUM,
       min: 1,
       max: 500,
-      description: 'Batch size for file processing',
+      description: 'Batch size for file processing'
     },
     /** Analysis timeout in milliseconds */
     timeout: {
@@ -202,7 +198,7 @@ const CONFIG_SCHEMA = {
       default: PROCESSING_LIMITS.ANALYSIS_TIMEOUT,
       min: 5000,
       max: 600000,
-      description: 'Analysis operation timeout (ms)',
+      description: 'Analysis operation timeout (ms)'
     },
     /** Retry attempts for failed operations */
     retryAttempts: {
@@ -210,7 +206,7 @@ const CONFIG_SCHEMA = {
       default: RETRY.MAX_ATTEMPTS_MEDIUM,
       min: 0,
       max: 10,
-      description: 'Number of retry attempts for failed operations',
+      description: 'Number of retry attempts for failed operations'
     },
     /** Initial retry delay in milliseconds */
     retryDelay: {
@@ -218,7 +214,7 @@ const CONFIG_SCHEMA = {
       default: RETRY.INITIAL_DELAY,
       min: 100,
       max: 30000,
-      description: 'Initial delay between retry attempts (ms)',
+      description: 'Initial delay between retry attempts (ms)'
     },
     /** Image analysis timeout (longer for vision models) */
     imageAnalysisTimeout: {
@@ -226,8 +222,8 @@ const CONFIG_SCHEMA = {
       default: CONFIG_DEFAULT_TIMEOUTS.IMAGE_ANALYSIS,
       min: 10000,
       max: 600000,
-      description: 'Image analysis timeout (ms)',
-    },
+      description: 'Image analysis timeout (ms)'
+    }
   },
 
   /**
@@ -241,7 +237,7 @@ const CONFIG_SCHEMA = {
       default: CACHE.MAX_FILE_CACHE,
       min: 0,
       max: 10000,
-      description: 'Maximum cached file analysis results',
+      description: 'Maximum cached file analysis results'
     },
     /** Maximum cache size for embeddings */
     embeddingCacheSize: {
@@ -249,7 +245,7 @@ const CONFIG_SCHEMA = {
       default: CACHE.MAX_EMBEDDING_CACHE,
       min: 0,
       max: 50000,
-      description: 'Maximum cached embeddings',
+      description: 'Maximum cached embeddings'
     },
     /** Cache TTL for short-lived entries (ms) */
     cacheTtlShort: {
@@ -257,7 +253,7 @@ const CONFIG_SCHEMA = {
       default: CACHE.TTL_SHORT,
       min: 1000,
       max: 3600000,
-      description: 'Short cache TTL (ms)',
+      description: 'Short cache TTL (ms)'
     },
     /** Cache TTL for medium-lived entries (ms) */
     cacheTtlMedium: {
@@ -265,7 +261,7 @@ const CONFIG_SCHEMA = {
       default: CACHE.TTL_MEDIUM,
       min: 1000,
       max: 86400000,
-      description: 'Medium cache TTL (ms)',
+      description: 'Medium cache TTL (ms)'
     },
     /** Cache TTL for long-lived entries (ms) */
     cacheTtlLong: {
@@ -273,7 +269,7 @@ const CONFIG_SCHEMA = {
       default: CACHE.TTL_LONG,
       min: 1000,
       max: 604800000,
-      description: 'Long cache TTL (ms)',
+      description: 'Long cache TTL (ms)'
     },
     /** Debounce delay for UI input (ms) */
     debounceMs: {
@@ -281,7 +277,7 @@ const CONFIG_SCHEMA = {
       default: PERF_TIMEOUTS.DEBOUNCE_INPUT,
       min: 50,
       max: 2000,
-      description: 'UI input debounce delay (ms)',
+      description: 'UI input debounce delay (ms)'
     },
     /** Throttle delay for frequent operations (ms) */
     throttleMs: {
@@ -289,7 +285,7 @@ const CONFIG_SCHEMA = {
       default: 100,
       min: 10,
       max: 5000,
-      description: 'Operation throttle delay (ms)',
+      description: 'Operation throttle delay (ms)'
     },
     /** Health check interval (ms) */
     healthCheckInterval: {
@@ -297,7 +293,7 @@ const CONFIG_SCHEMA = {
       default: CONFIG_DEFAULT_TIMEOUTS.HEALTH_CHECK_INTERVAL,
       min: 10000,
       max: 600000,
-      description: 'Health check interval (ms)',
+      description: 'Health check interval (ms)'
     },
     /** Maximum concurrent network operations */
     maxConcurrentNetwork: {
@@ -305,8 +301,8 @@ const CONFIG_SCHEMA = {
       default: BATCH.MAX_CONCURRENT_NETWORK,
       min: 1,
       max: 50,
-      description: 'Maximum concurrent network operations',
-    },
+      description: 'Maximum concurrent network operations'
+    }
   },
 
   /**
@@ -321,7 +317,7 @@ const CONFIG_SCHEMA = {
       envVar: 'CHROMADB_CIRCUIT_FAILURE_THRESHOLD',
       min: 1,
       max: 20,
-      description: 'Failures before opening circuit',
+      description: 'Failures before opening circuit'
     },
     /** Number of successes in half-open state before closing circuit */
     successThreshold: {
@@ -330,7 +326,7 @@ const CONFIG_SCHEMA = {
       envVar: 'CHROMADB_CIRCUIT_SUCCESS_THRESHOLD',
       min: 1,
       max: 10,
-      description: 'Successes needed to close circuit',
+      description: 'Successes needed to close circuit'
     },
     /** Time in ms before attempting recovery when circuit is open */
     timeout: {
@@ -339,7 +335,7 @@ const CONFIG_SCHEMA = {
       envVar: 'CHROMADB_CIRCUIT_TIMEOUT',
       min: 5000,
       max: 300000,
-      description: 'Recovery timeout (ms)',
+      description: 'Recovery timeout (ms)'
     },
     /** Time in ms before resetting failure count in closed state */
     resetTimeout: {
@@ -348,7 +344,7 @@ const CONFIG_SCHEMA = {
       envVar: 'CHROMADB_CIRCUIT_RESET_TIMEOUT',
       min: 10000,
       max: 600000,
-      description: 'Failure count reset timeout (ms)',
+      description: 'Failure count reset timeout (ms)'
     },
     /** Maximum operations to queue when circuit is open */
     maxQueueSize: {
@@ -357,8 +353,8 @@ const CONFIG_SCHEMA = {
       envVar: 'CHROMADB_MAX_QUEUE_SIZE',
       min: 100,
       max: 10000,
-      description: 'Maximum queued operations',
-    },
+      description: 'Maximum queued operations'
+    }
   },
 
   /**
@@ -372,7 +368,7 @@ const CONFIG_SCHEMA = {
       default: FILE_SIZE_LIMITS.MAX_TEXT_FILE_SIZE,
       min: 1024,
       max: 1073741824, // 1GB
-      description: 'Maximum text file size (bytes)',
+      description: 'Maximum text file size (bytes)'
     },
     /** Maximum image file size (bytes) */
     maxImageFileSize: {
@@ -380,7 +376,7 @@ const CONFIG_SCHEMA = {
       default: FILE_SIZE_LIMITS.MAX_IMAGE_FILE_SIZE,
       min: 1024,
       max: 1073741824,
-      description: 'Maximum image file size (bytes)',
+      description: 'Maximum image file size (bytes)'
     },
     /** Maximum document file size (bytes) */
     maxDocumentFileSize: {
@@ -388,7 +384,7 @@ const CONFIG_SCHEMA = {
       default: FILE_SIZE_LIMITS.MAX_DOCUMENT_FILE_SIZE,
       min: 1024,
       max: 1073741824,
-      description: 'Maximum document file size (bytes)',
+      description: 'Maximum document file size (bytes)'
     },
     /** Maximum path length */
     maxPathLength: {
@@ -396,8 +392,8 @@ const CONFIG_SCHEMA = {
       default: LIMITS.MAX_SEARCH_RESULTS,
       min: 100,
       max: 4096,
-      description: 'Maximum file path length',
-    },
+      description: 'Maximum file path length'
+    }
   },
 
   /**
@@ -411,7 +407,7 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_SETTINGS.autoApproveThreshold,
       min: 0,
       max: 1,
-      description: 'Minimum confidence for auto-approval',
+      description: 'Minimum confidence for auto-approval'
     },
     /** Confidence threshold for review queue */
     reviewThreshold: {
@@ -419,7 +415,7 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_SETTINGS.reviewThreshold,
       min: 0,
       max: 1,
-      description: 'Minimum confidence for review queue',
+      description: 'Minimum confidence for review queue'
     },
     /** Confidence threshold for downloads folder */
     downloadConfidenceThreshold: {
@@ -427,7 +423,7 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_SETTINGS.downloadConfidenceThreshold,
       min: 0,
       max: 1,
-      description: 'Confidence threshold for download folder items',
+      description: 'Confidence threshold for download folder items'
     },
     /** Minimum similarity score for matching */
     minSimilarityScore: {
@@ -435,7 +431,7 @@ const CONFIG_SCHEMA = {
       default: THRESHOLDS.MIN_SIMILARITY_SCORE,
       min: 0,
       max: 1,
-      description: 'Minimum similarity score for folder matching',
+      description: 'Minimum similarity score for folder matching'
     },
     /** High confidence threshold */
     confidenceHigh: {
@@ -443,7 +439,7 @@ const CONFIG_SCHEMA = {
       default: THRESHOLDS.CONFIDENCE_HIGH,
       min: 0,
       max: 1,
-      description: 'High confidence threshold',
+      description: 'High confidence threshold'
     },
     /** Medium confidence threshold */
     confidenceMedium: {
@@ -451,8 +447,8 @@ const CONFIG_SCHEMA = {
       default: THRESHOLDS.CONFIDENCE_MEDIUM,
       min: 0,
       max: 1,
-      description: 'Medium confidence threshold',
-    },
+      description: 'Medium confidence threshold'
+    }
   },
 
   /**
@@ -465,41 +461,41 @@ const CONFIG_SCHEMA = {
       type: 'boolean',
       default: false,
       envVar: 'STRATOSORT_ENABLE_TELEMETRY',
-      description: 'Enable anonymous telemetry collection',
+      description: 'Enable anonymous telemetry collection'
     },
     /** Enable debug mode */
     debugMode: {
       type: 'boolean',
       default: false,
       envVar: 'STRATOSORT_DEBUG',
-      description: 'Enable debug mode with verbose logging',
+      description: 'Enable debug mode with verbose logging'
     },
     /** Disable ChromaDB entirely */
     disableChromaDB: {
       type: 'boolean',
       default: false,
       envVar: 'STRATOSORT_DISABLE_CHROMADB',
-      description: 'Disable ChromaDB vector database',
+      description: 'Disable ChromaDB vector database'
     },
     /** Force DevTools open on start */
     forceDevTools: {
       type: 'boolean',
       default: false,
       envVar: 'FORCE_DEV_TOOLS',
-      description: 'Force DevTools open on application start',
+      description: 'Force DevTools open on application start'
     },
     /** Enable auto-organize feature */
     autoOrganize: {
       type: 'boolean',
       default: DEFAULT_SETTINGS.autoOrganize,
-      description: 'Enable automatic file organization',
+      description: 'Enable automatic file organization'
     },
     /** Enable background mode */
     backgroundMode: {
       type: 'boolean',
       default: DEFAULT_SETTINGS.backgroundMode,
-      description: 'Enable background processing mode',
-    },
+      description: 'Enable background processing mode'
+    }
   },
 
   /**
@@ -512,13 +508,13 @@ const CONFIG_SCHEMA = {
       type: 'enum',
       default: DEFAULT_SETTINGS.theme,
       values: ['light', 'dark', 'system'],
-      description: 'Application color theme',
+      description: 'Application color theme'
     },
     /** Enable notifications */
     notifications: {
       type: 'boolean',
       default: DEFAULT_SETTINGS.notifications,
-      description: 'Enable desktop notifications',
+      description: 'Enable desktop notifications'
     },
     /** Workflow restore max age (ms) */
     workflowRestoreMaxAge: {
@@ -526,7 +522,7 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_SETTINGS.workflowRestoreMaxAge,
       min: 60000,
       max: 86400000,
-      description: 'Maximum age for workflow state restoration (ms)',
+      description: 'Maximum age for workflow state restoration (ms)'
     },
     /** Auto-save debounce delay (ms) */
     saveDebounceMs: {
@@ -534,8 +530,8 @@ const CONFIG_SCHEMA = {
       default: DEFAULT_SETTINGS.saveDebounceMs,
       min: 100,
       max: 10000,
-      description: 'Debounce delay for auto-save operations (ms)',
-    },
+      description: 'Debounce delay for auto-save operations (ms)'
+    }
   },
 
   /**
@@ -549,29 +545,22 @@ const CONFIG_SCHEMA = {
       default: 'production',
       envVar: 'NODE_ENV',
       values: ['development', 'production', 'test'],
-      description: 'Node.js environment mode',
+      description: 'Node.js environment mode'
     },
     /** CI environment flag */
     isCI: {
       type: 'boolean',
       default: false,
       envVar: 'CI',
-      description: 'Running in CI environment',
-    },
-  },
+      description: 'Running in CI environment'
+    }
+  }
 };
 
 /**
  * Sensitive configuration keys that should be redacted in dumps
  */
-const SENSITIVE_KEYS = [
-  'password',
-  'secret',
-  'token',
-  'apiKey',
-  'api_key',
-  'credentials',
-];
+const SENSITIVE_KEYS = ['password', 'secret', 'token', 'apiKey', 'api_key', 'credentials'];
 
 /**
  * Deprecated configuration mappings
@@ -581,11 +570,11 @@ const DEPRECATED_MAPPINGS = {
   OLLAMA_HOST: 'SERVER.ollamaUrl',
   selectedModel: 'MODELS.textModel',
   selectedVisionModel: 'MODELS.visionModel',
-  selectedEmbeddingModel: 'MODELS.embeddingModel',
+  selectedEmbeddingModel: 'MODELS.embeddingModel'
 };
 
 module.exports = {
   CONFIG_SCHEMA,
   SENSITIVE_KEYS,
-  DEPRECATED_MAPPINGS,
+  DEPRECATED_MAPPINGS
 };

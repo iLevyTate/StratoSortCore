@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
@@ -20,10 +20,10 @@ const mockFs = {
   writeFile: jest.fn().mockResolvedValue(undefined),
   rename: jest.fn().mockResolvedValue(undefined),
   unlink: jest.fn().mockResolvedValue(undefined),
-  mkdir: jest.fn().mockResolvedValue(undefined),
+  mkdir: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock electron
@@ -33,8 +33,8 @@ jest.mock('electron', () => ({
       if (type === 'userData') return '/mock/userData';
       if (type === 'documents') return '/mock/documents';
       return '/mock/path';
-    }),
-  },
+    })
+  }
 }));
 
 // Mock path to work cross-platform
@@ -43,7 +43,7 @@ jest.mock('path', () => {
   return {
     ...actualPath,
     join: (...args) => args.join('/'),
-    normalize: (p) => p,
+    normalize: (p) => p
   };
 });
 
@@ -72,14 +72,14 @@ describe('Custom Folders', () => {
           id: 'folder1',
           name: 'Documents',
           path: '/test/documents',
-          isDefault: false,
+          isDefault: false
         },
         {
           id: 'uncategorized',
           name: 'Uncategorized',
           path: '/test/uncategorized',
-          isDefault: true,
-        },
+          isDefault: true
+        }
       ];
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(savedFolders));
 
@@ -106,8 +106,8 @@ describe('Custom Folders', () => {
           id: 'folder1',
           name: 'Documents',
           path: '/test/documents',
-          isDefault: false,
-        },
+          isDefault: false
+        }
       ];
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(savedFolders));
 
@@ -123,8 +123,8 @@ describe('Custom Folders', () => {
           id: 'uncategorized',
           name: 'Uncategorized',
           path: '/test/path',
-          isDefault: true,
-        },
+          isDefault: true
+        }
       ];
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(savedFolders));
 
@@ -149,8 +149,8 @@ describe('Custom Folders', () => {
         {
           id: 'folder1',
           name: 'Documents',
-          path: '/test/documents',
-        },
+          path: '/test/documents'
+        }
       ];
 
       await customFolders.saveCustomFolders(folders);
@@ -164,8 +164,8 @@ describe('Custom Folders', () => {
         {
           id: 'folder1',
           name: 'Documents',
-          path: '/test/documents',
-        },
+          path: '/test/documents'
+        }
       ];
 
       await customFolders.saveCustomFolders(folders);

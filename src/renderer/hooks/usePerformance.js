@@ -47,7 +47,7 @@ export function useDebouncedCallback(callback, delay) {
   // Since we use callbackRef, deps parameter is unnecessary - callback updates are tracked via ref
   const debouncedCallback = useMemo(
     () => debounce((...args) => callbackRef.current(...args), delay),
-    [delay],
+    [delay]
   );
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export function useThrottledCallback(callback, delay) {
   // Since we use callbackRef, deps parameter is unnecessary - callback updates are tracked via ref
   const throttledCallback = useMemo(
     () => throttle((...args) => callbackRef.current(...args), delay),
-    [delay],
+    [delay]
   );
 
   useEffect(() => {
@@ -109,5 +109,5 @@ export default {
   useDebounce,
   useDebouncedCallback,
   useThrottledCallback,
-  useLRUCache,
+  useLRUCache
 };

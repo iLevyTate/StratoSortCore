@@ -29,11 +29,11 @@ function createSchemas() {
           z.object({
             source: z.string(),
             destination: z.string(),
-            type: z.string().optional(),
-          }),
+            type: z.string().optional()
+          })
         )
-        .optional(),
-    }),
+        .optional()
+    })
   };
 }
 
@@ -43,5 +43,5 @@ module.exports = {
   z,
   schemas,
   stringSchema: schemas?.stringSchema || null,
-  operationSchema: schemas?.operationSchema || null,
+  operationSchema: schemas?.operationSchema || null
 };

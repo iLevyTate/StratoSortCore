@@ -31,7 +31,7 @@ function extractAndParseJSON(rawResponse, defaultValue = null) {
   } catch (e) {
     logger.debug('[JSONRepair] Direct parse failed, attempting repair', {
       error: e.message,
-      responseLength: rawResponse.length,
+      responseLength: rawResponse.length
     });
   }
 
@@ -64,7 +64,7 @@ function extractAndParseJSON(rawResponse, defaultValue = null) {
       error: e.message,
       originalLength: rawResponse.length,
       cleanedLength: cleaned.length,
-      cleanedPreview: cleaned.substring(0, 300),
+      cleanedPreview: cleaned.substring(0, 300)
     });
     return defaultValue;
   }
@@ -95,17 +95,14 @@ function repairJSON(json) {
 
   // Fix unescaped newlines within string values by replacing them
   // This regex finds strings and escapes any unescaped newlines within them
-  repaired = repaired.replace(
-    /"([^"\\]*(?:\\.[^"\\]*)*)"/g,
-    (match, content) => {
-      // Escape any actual newlines that aren't already escaped
-      const fixed = content
-        .replace(/(?<!\\)\n/g, '\\n')
-        .replace(/(?<!\\)\r/g, '\\r')
-        .replace(/(?<!\\)\t/g, '\\t');
-      return `"${fixed}"`;
-    },
-  );
+  repaired = repaired.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, content) => {
+    // Escape any actual newlines that aren't already escaped
+    const fixed = content
+      .replace(/(?<!\\)\n/g, '\\n')
+      .replace(/(?<!\\)\r/g, '\\r')
+      .replace(/(?<!\\)\t/g, '\\t');
+    return `"${fixed}"`;
+  });
 
   // Fix truncated JSON - attempt to close open structures
   const openBraces = (repaired.match(/\{/g) || []).length;
@@ -117,10 +114,7 @@ function repairJSON(json) {
   if (openBrackets > closeBrackets) {
     // Check if we're in the middle of a string and truncate
     const lastQuote = repaired.lastIndexOf('"');
-    if (
-      lastQuote > repaired.lastIndexOf(']') &&
-      lastQuote > repaired.lastIndexOf('}')
-    ) {
+    if (lastQuote > repaired.lastIndexOf(']') && lastQuote > repaired.lastIndexOf('}')) {
       // We might be in an unclosed string, try to close it
       repaired = `${repaired}"`;
     }
@@ -157,26 +151,20 @@ function validateDocumentAnalysis(parsed) {
     date: typeof parsed.date === 'string' ? parsed.date : undefined,
     project: typeof parsed.project === 'string' ? parsed.project : undefined,
     purpose: typeof parsed.purpose === 'string' ? parsed.purpose : undefined,
-    category:
-      typeof parsed.category === 'string' ? parsed.category : 'document',
+    category: typeof parsed.category === 'string' ? parsed.category : 'document',
     keywords: Array.isArray(parsed.keywords)
       ? parsed.keywords.filter((k) => typeof k === 'string' && k.length > 0)
       : [],
     confidence:
-      typeof parsed.confidence === 'number' &&
-      parsed.confidence >= 0 &&
-      parsed.confidence <= 100
+      typeof parsed.confidence === 'number' && parsed.confidence >= 0 && parsed.confidence <= 100
         ? parsed.confidence
         : 70,
-    suggestedName:
-      typeof parsed.suggestedName === 'string'
-        ? parsed.suggestedName
-        : undefined,
+    suggestedName: typeof parsed.suggestedName === 'string' ? parsed.suggestedName : undefined
   };
 }
 
 module.exports = {
   extractAndParseJSON,
   repairJSON,
-  validateDocumentAnalysis,
+  validateDocumentAnalysis
 };

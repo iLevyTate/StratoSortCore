@@ -9,17 +9,14 @@ const DEFAULT_IGNORE_PATTERNS = [
   'desktop.ini',
   '.git',
   'node_modules',
-  '__pycache__',
+  '__pycache__'
   // Add more common patterns if needed
 ];
 
 // CRITICAL FIX: Limit concurrent file operations to prevent file handle exhaustion
 const CONCURRENCY_LIMIT = 50;
 
-async function scanDirectory(
-  dirPath,
-  ignorePatterns = DEFAULT_IGNORE_PATTERNS,
-) {
+async function scanDirectory(dirPath, ignorePatterns = DEFAULT_IGNORE_PATTERNS) {
   try {
     const dirents = await fs.readdir(dirPath, { withFileTypes: true });
 
@@ -51,7 +48,7 @@ async function scanDirectory(
           path: itemPath,
           type: dirent.isDirectory() ? 'folder' : 'file',
           size: stats.size,
-          modified: stats.mtime ? stats.mtime.toISOString() : null,
+          modified: stats.mtime ? stats.mtime.toISOString() : null
         };
 
         if (dirent.isDirectory()) {
@@ -61,7 +58,7 @@ async function scanDirectory(
       } catch (statError) {
         logger.warn('Error stating file during scan', {
           path: itemPath,
-          error: statError.message,
+          error: statError.message
         });
         return null;
       }
@@ -80,7 +77,7 @@ async function scanDirectory(
     logger.error('Error scanning directory', {
       dirPath,
       error: error.message,
-      code: error.code,
+      code: error.code
     });
     // Optionally, rethrow or return a specific error structure
     if (error.code === 'EACCES' || error.code === 'EPERM') {
@@ -91,8 +88,8 @@ async function scanDirectory(
           path: dirPath,
           type: 'folder',
           error: 'Permission Denied',
-          children: [],
-        },
+          children: []
+        }
       ];
     }
     // For other errors, you might want to propagate them

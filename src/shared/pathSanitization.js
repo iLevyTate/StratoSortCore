@@ -14,7 +14,7 @@ const {
   RESERVED_WINDOWS_NAMES,
   PROTOTYPE_POLLUTION_KEYS,
   ALLOWED_METADATA_FIELDS,
-  getDangerousPaths,
+  getDangerousPaths
 } = require('./securityConfig');
 
 /**
@@ -63,12 +63,10 @@ function sanitizePath(filePath) {
   }
 
   // 6. Validate path depth to prevent deep nesting attacks
-  const pathParts = normalized
-    .split(path.sep)
-    .filter((part) => part.length > 0);
+  const pathParts = normalized.split(path.sep).filter((part) => part.length > 0);
   if (pathParts.length > MAX_PATH_DEPTH) {
     throw new Error(
-      `Invalid path: path depth (${pathParts.length}) exceeds maximum (${MAX_PATH_DEPTH})`,
+      `Invalid path: path depth (${pathParts.length}) exceeds maximum (${MAX_PATH_DEPTH})`
     );
   }
 
@@ -77,9 +75,7 @@ function sanitizePath(filePath) {
     for (const part of pathParts) {
       const nameWithoutExt = path.parse(part).name.toUpperCase();
       if (RESERVED_WINDOWS_NAMES.has(nameWithoutExt)) {
-        throw new Error(
-          `Invalid path: reserved Windows filename detected: ${nameWithoutExt}`,
-        );
+        throw new Error(`Invalid path: reserved Windows filename detected: ${nameWithoutExt}`);
       }
     }
   }
@@ -239,7 +235,7 @@ async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
         isSymlink: true,
         isSafe: false,
         realPath,
-        error: 'Symbolic link points to a dangerous system directory',
+        error: 'Symbolic link points to a dangerous system directory'
       };
     }
 
@@ -250,7 +246,7 @@ async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
           isSymlink: true,
           isSafe: false,
           realPath,
-          error: 'Symbolic link points outside allowed directories',
+          error: 'Symbolic link points outside allowed directories'
         };
       }
     }
@@ -264,7 +260,7 @@ async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
     return {
       isSymlink: false,
       isSafe: false,
-      error: `Failed to check symlink: ${error.message}`,
+      error: `Failed to check symlink: ${error.message}`
     };
   }
 }
@@ -285,18 +281,14 @@ async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
  * @returns {Promise<{valid: boolean, normalizedPath: string, error?: string}>}
  */
 async function validateFileOperationPath(filePath, options = {}) {
-  const {
-    allowedBasePaths = null,
-    checkSymlinks = false,
-    requireExists = false,
-  } = options;
+  const { allowedBasePaths = null, checkSymlinks = false, requireExists = false } = options;
 
   // Basic validation
   if (!filePath || typeof filePath !== 'string') {
     return {
       valid: false,
       normalizedPath: '',
-      error: 'Invalid path: path must be a non-empty string',
+      error: 'Invalid path: path must be a non-empty string'
     };
   }
 
@@ -312,7 +304,7 @@ async function validateFileOperationPath(filePath, options = {}) {
       return {
         valid: false,
         normalizedPath,
-        error: 'Invalid path: access to system directories is not allowed',
+        error: 'Invalid path: access to system directories is not allowed'
       };
     }
 
@@ -322,22 +314,19 @@ async function validateFileOperationPath(filePath, options = {}) {
         return {
           valid: false,
           normalizedPath,
-          error: 'Invalid path: path is outside allowed directories',
+          error: 'Invalid path: path is outside allowed directories'
         };
       }
     }
 
     // Check symlink safety if requested
     if (checkSymlinks) {
-      const symlinkResult = await checkSymlinkSafety(
-        normalizedPath,
-        allowedBasePaths,
-      );
+      const symlinkResult = await checkSymlinkSafety(normalizedPath, allowedBasePaths);
       if (!symlinkResult.isSafe) {
         return {
           valid: false,
           normalizedPath,
-          error: symlinkResult.error || 'Invalid path: unsafe symbolic link',
+          error: symlinkResult.error || 'Invalid path: unsafe symbolic link'
         };
       }
     }
@@ -350,7 +339,7 @@ async function validateFileOperationPath(filePath, options = {}) {
         return {
           valid: false,
           normalizedPath,
-          error: 'Invalid path: file or directory does not exist',
+          error: 'Invalid path: file or directory does not exist'
         };
       }
     }
@@ -360,7 +349,7 @@ async function validateFileOperationPath(filePath, options = {}) {
     return {
       valid: false,
       normalizedPath: '',
-      error: error.message || 'Path validation failed',
+      error: error.message || 'Path validation failed'
     };
   }
 }
@@ -378,7 +367,7 @@ function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
     return {
       valid: false,
       normalizedPath: '',
-      error: 'Invalid path: path must be a non-empty string',
+      error: 'Invalid path: path must be a non-empty string'
     };
   }
 
@@ -390,7 +379,7 @@ function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
       return {
         valid: false,
         normalizedPath,
-        error: 'Invalid path: access to system directories is not allowed',
+        error: 'Invalid path: access to system directories is not allowed'
       };
     }
 
@@ -399,7 +388,7 @@ function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
         return {
           valid: false,
           normalizedPath,
-          error: 'Invalid path: path is outside allowed directories',
+          error: 'Invalid path: path is outside allowed directories'
         };
       }
     }
@@ -409,7 +398,7 @@ function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
     return {
       valid: false,
       normalizedPath: '',
-      error: error.message || 'Path validation failed',
+      error: error.message || 'Path validation failed'
     };
   }
 }
@@ -423,5 +412,5 @@ module.exports = {
   validateFileOperationPathSync,
   checkSymlinkSafety,
   isPathDangerous,
-  isPathWithinAllowed,
+  isPathWithinAllowed
 };

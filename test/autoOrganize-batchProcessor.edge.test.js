@@ -4,15 +4,13 @@
 
 const path = require('path');
 
-const {
-  processBatchResults,
-} = require('../src/main/services/autoOrganize/batchProcessor');
+const { processBatchResults } = require('../src/main/services/autoOrganize/batchProcessor');
 
 describe('autoOrganize batchProcessor edge cases', () => {
   test('uses path-based lookup when filenames collide', async () => {
     const files = [
       { name: 'dup.txt', path: '/a/dup.txt' },
-      { name: 'dup.txt', path: '/b/dup.txt' },
+      { name: 'dup.txt', path: '/b/dup.txt' }
     ];
 
     const batchSuggestions = {
@@ -23,16 +21,16 @@ describe('autoOrganize batchProcessor edge cases', () => {
             {
               name: 'dup.txt',
               path: '/a/dup.txt',
-              suggestion: { folder: 'FolderA', path: '/dest/A' },
+              suggestion: { folder: 'FolderA', path: '/dest/A' }
             },
             {
               name: 'dup.txt',
               path: '/b/dup.txt',
-              suggestion: { folder: 'FolderB', path: '/dest/B' },
-            },
-          ],
-        },
-      ],
+              suggestion: { folder: 'FolderB', path: '/dest/B' }
+            }
+          ]
+        }
+      ]
     };
 
     const results = { organized: [], needsReview: [], operations: [] };
@@ -43,25 +41,20 @@ describe('autoOrganize batchProcessor edge cases', () => {
       {
         confidenceThreshold: 0.6,
         defaultLocation: '/dest',
-        preserveNames: false,
+        preserveNames: false
       },
       results,
       { recordFeedback: jest.fn().mockResolvedValue() },
-      { requireReview: 0.4 },
+      { requireReview: 0.4 }
     );
 
     expect(results.operations).toHaveLength(2);
     const destinations = results.operations.map((op) => op.destination);
     expect(destinations).toEqual(
-      expect.arrayContaining([
-        path.join('/dest/A', 'dup.txt'),
-        path.join('/dest/B', 'dup.txt'),
-      ]),
+      expect.arrayContaining([path.join('/dest/A', 'dup.txt'), path.join('/dest/B', 'dup.txt')])
     );
     const sources = results.operations.map((op) => op.source);
-    expect(sources).toEqual(
-      expect.arrayContaining(['/a/dup.txt', '/b/dup.txt']),
-    );
+    expect(sources).toEqual(expect.arrayContaining(['/a/dup.txt', '/b/dup.txt']));
   });
 
   test('handles missing groups gracefully', async () => {
@@ -72,11 +65,11 @@ describe('autoOrganize batchProcessor edge cases', () => {
       {
         confidenceThreshold: 0.6,
         defaultLocation: '/dest',
-        preserveNames: false,
+        preserveNames: false
       },
       results,
       { recordFeedback: jest.fn().mockResolvedValue() },
-      { requireReview: 0.4 },
+      { requireReview: 0.4 }
     );
     expect(results.operations).toHaveLength(0);
     expect(results.organized).toHaveLength(0);

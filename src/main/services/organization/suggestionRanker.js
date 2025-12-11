@@ -16,7 +16,7 @@ const sourceWeights = {
   strategy: 1.0, // Strategy-based are standard
   llm: 0.8, // LLM suggestions need validation
   pattern: 1.1, // Pattern matches are reliable
-  llm_creative: 0.7, // Creative suggestions are experimental
+  llm_creative: 0.7 // Creative suggestions are experimental
 };
 
 /**
@@ -38,10 +38,7 @@ function rankSuggestions(suggestions) {
       // Merge scores if duplicate
       const existing = uniqueSuggestions.get(key);
       existing.score = Math.max(existing.score, suggestion.score);
-      existing.confidence = Math.max(
-        existing.confidence,
-        suggestion.confidence,
-      );
+      existing.confidence = Math.max(existing.confidence, suggestion.confidence);
 
       // Keep the source that provided higher confidence
       if (suggestion.confidence > existing.confidence) {
@@ -54,7 +51,7 @@ function rankSuggestions(suggestions) {
   // Apply weighting based on source
   const weighted = Array.from(uniqueSuggestions.values()).map((s) => ({
     ...s,
-    weightedScore: applySourceWeight(s),
+    weightedScore: applySourceWeight(s)
   }));
 
   // Sort by weighted score
@@ -111,12 +108,10 @@ function generateExplanation(suggestion, file) {
     strategy: `Using ${suggestion.strategyName || 'your preferred'} organization method`,
     llm: `Based on the file's content and purpose`,
     pattern: `This is where ${file.extension.toUpperCase()} files usually go`,
-    llm_creative:
-      suggestion.reasoning || 'Alternative way to organize this file',
+    llm_creative: suggestion.reasoning || 'Alternative way to organize this file',
     folder_improvement: `"${suggestion.folder}" could be enhanced for this type of file`,
-    improvement:
-      suggestion.improvement || `Suggested improvement for better organization`,
-    new_folder_suggestion: 'A new folder would be perfect for this file type',
+    improvement: suggestion.improvement || `Suggested improvement for better organization`,
+    new_folder_suggestion: 'A new folder would be perfect for this file type'
   };
 
   // Add confidence-based prefix
@@ -131,9 +126,7 @@ function generateExplanation(suggestion, file) {
 
   return (
     prefix +
-    (explanations[suggestion.source] ||
-      explanations[suggestion.method] ||
-      'Based on file analysis')
+    (explanations[suggestion.source] || explanations[suggestion.method] || 'Based on file analysis')
   );
 }
 
@@ -161,5 +154,5 @@ module.exports = {
   applySourceWeight,
   calculateConfidence,
   generateExplanation,
-  combineSuggestions,
+  combineSuggestions
 };

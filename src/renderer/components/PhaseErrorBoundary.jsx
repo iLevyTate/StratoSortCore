@@ -29,7 +29,7 @@ class PhaseErrorBoundaryClass extends React.Component {
     logger.error(`Error in ${this.props.phaseName} phase`, {
       error: error.message,
       stack: error.stack,
-      componentStack: errorInfo?.componentStack,
+      componentStack: errorInfo?.componentStack
     });
 
     this.setState({ errorInfo });
@@ -47,7 +47,7 @@ class PhaseErrorBoundaryClass extends React.Component {
       hasError: false,
       error: null,
       errorInfo: null,
-      resetKey: prevState.resetKey + 1,
+      resetKey: prevState.resetKey + 1
     }));
   }
 
@@ -88,31 +88,27 @@ class PhaseErrorBoundaryClass extends React.Component {
                     {this.props.phaseName} Error
                   </h2>
                   <p className="text-system-gray-600">
-                    An error occurred in the{' '}
-                    {this.props.phaseName.toLowerCase()} phase. Your progress in
-                    other phases is safe.
+                    An error occurred in the {this.props.phaseName.toLowerCase()} phase. Your
+                    progress in other phases is safe.
                   </p>
                 </div>
               </div>
 
               <div className="bg-system-gray-50 rounded-lg p-4 mb-6">
-                <p className="text-sm font-medium text-system-gray-700 mb-2">
-                  Error Details:
-                </p>
+                <p className="text-sm font-medium text-system-gray-700 mb-2">Error Details:</p>
                 <p className="text-sm font-mono text-system-gray-600 break-words">
                   {this.state.error?.message || 'Unknown error occurred'}
                 </p>
-                {process.env.NODE_ENV === 'development' &&
-                  this.state.error?.stack && (
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-xs text-system-gray-500 hover:text-system-gray-700">
-                        Show stack trace
-                      </summary>
-                      <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-60 p-2 bg-white rounded border border-border-soft">
-                        {this.state.error.stack}
-                      </pre>
-                    </details>
-                  )}
+                {process.env.NODE_ENV === 'development' && this.state.error?.stack && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs text-system-gray-500 hover:text-system-gray-700">
+                      Show stack trace
+                    </summary>
+                    <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-60 p-2 bg-white rounded border border-border-soft">
+                      {this.state.error.stack}
+                    </pre>
+                  </details>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -133,8 +129,7 @@ class PhaseErrorBoundaryClass extends React.Component {
               </div>
 
               <p className="text-xs text-center text-system-gray-500 mt-4">
-                If this problem persists, try restarting the application or
-                check your settings.
+                If this problem persists, try restarting the application or check your settings.
               </p>
             </div>
           </div>
@@ -144,11 +139,7 @@ class PhaseErrorBoundaryClass extends React.Component {
 
     // CRITICAL FIX: Use resetKey as key to force remount when "Try Again" is clicked
     // This ensures the child component is fully remounted with fresh state
-    return (
-      <React.Fragment key={this.state.resetKey}>
-        {this.props.children}
-      </React.Fragment>
-    );
+    return <React.Fragment key={this.state.resetKey}>{this.props.children}</React.Fragment>;
   }
 }
 
@@ -156,7 +147,7 @@ PhaseErrorBoundaryClass.propTypes = {
   children: PropTypes.node.isRequired,
   phaseName: PropTypes.string.isRequired,
   onError: PropTypes.func,
-  onNavigateHome: PropTypes.func,
+  onNavigateHome: PropTypes.func
 };
 
 /**
@@ -177,7 +168,7 @@ function PhaseErrorBoundary({ children, phaseName }) {
     logger.error(`Phase error: ${phase}`, {
       error: error.message,
       stack: error.stack,
-      componentStack: errorInfo.componentStack,
+      componentStack: errorInfo.componentStack
     });
   };
 
@@ -194,7 +185,7 @@ function PhaseErrorBoundary({ children, phaseName }) {
 
 PhaseErrorBoundary.propTypes = {
   children: PropTypes.node.isRequired,
-  phaseName: PropTypes.string.isRequired,
+  phaseName: PropTypes.string.isRequired
 };
 
 export default PhaseErrorBoundary;

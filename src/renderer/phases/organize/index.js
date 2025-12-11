@@ -13,6 +13,6 @@ export {
   useFileEditing,
   useFileSelection,
   useBulkOperations,
-  useProcessedFiles,
+  useProcessedFiles
 } from './useFileEditing';
 export { useOrganization, useProgressTracking } from './useOrganization';

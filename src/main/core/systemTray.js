@@ -20,7 +20,7 @@ let trayConfig = {
   getSettingsService: null,
   handleSettingsChanged: null,
   createWindow: null,
-  setIsQuitting: null,
+  setIsQuitting: null
 };
 
 /**
@@ -42,7 +42,7 @@ function createSystemTray() {
         ? '../../../assets/icons/icons/win/icon.ico'
         : isMacOS
           ? '../../../assets/icons/icons/png/24x24.png'
-          : '../../../assets/icons/icons/png/16x16.png',
+          : '../../../assets/icons/icons/png/16x16.png'
     );
 
     const trayIcon = nativeImage.createFromPath(iconPath);
@@ -78,7 +78,7 @@ function updateTrayMenu() {
         } else if (trayConfig.createWindow) {
           trayConfig.createWindow();
         }
-      },
+      }
     },
     {
       label: downloadWatcher ? 'Pause Auto-Sort' : 'Resume Auto-Sort',
@@ -88,7 +88,7 @@ function updateTrayMenu() {
           const settingsService = trayConfig.getSettingsService?.();
           if (settingsService) {
             const merged = await settingsService.save({
-              autoOrganize: enable,
+              autoOrganize: enable
             });
             trayConfig.handleSettingsChanged?.(merged);
           } else {
@@ -98,7 +98,7 @@ function updateTrayMenu() {
           logger.warn('[TRAY] Failed to toggle auto-sort:', err.message);
         }
         updateTrayMenu();
-      },
+      }
     },
     { type: 'separator' },
     {
@@ -106,8 +106,8 @@ function updateTrayMenu() {
       click: () => {
         trayConfig.setIsQuitting?.(true);
         app.quit();
-      },
-    },
+      }
+    }
   ]);
 
   tray.setContextMenu(contextMenu);
@@ -141,5 +141,5 @@ module.exports = {
   createSystemTray,
   updateTrayMenu,
   destroyTray,
-  getTray,
+  getTray
 };

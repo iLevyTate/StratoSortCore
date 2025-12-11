@@ -30,9 +30,7 @@ function isUNCPath(p) {
  * @returns {Promise<Object|null>} Created folder object or null
  */
 async function createDefaultFolder(smartFolders) {
-  logger.warn(
-    '[AutoOrganize] No default folder found, creating emergency fallback',
-  );
+  logger.warn('[AutoOrganize] No default folder found, creating emergency fallback');
 
   try {
     // Validate documentsDir exists and is accessible
@@ -46,7 +44,7 @@ async function createDefaultFolder(smartFolders) {
     if (isUNCPath(documentsDir)) {
       throw new Error(
         `Security violation: UNC paths not allowed in documents directory. ` +
-          `Detected UNC path: ${documentsDir}`,
+          `Detected UNC path: ${documentsDir}`
       );
     }
 
@@ -55,17 +53,13 @@ async function createDefaultFolder(smartFolders) {
     const sanitizedFolderName = 'Uncategorized'.replace(/[^a-zA-Z0-9_-]/g, '_');
 
     // Use path.resolve to normalize path and prevent traversal
-    const defaultFolderPath = path.resolve(
-      documentsDir,
-      sanitizedBaseName,
-      sanitizedFolderName,
-    );
+    const defaultFolderPath = path.resolve(documentsDir, sanitizedBaseName, sanitizedFolderName);
 
     // Additional UNC path check on resolved path
     if (isUNCPath(defaultFolderPath)) {
       throw new Error(
         `Security violation: UNC path detected after resolution. ` +
-          `Path ${defaultFolderPath} is a UNC path which is not allowed`,
+          `Path ${defaultFolderPath} is a UNC path which is not allowed`
       );
     }
 
@@ -73,17 +67,13 @@ async function createDefaultFolder(smartFolders) {
     const resolvedDocumentsDir = path.resolve(documentsDir);
 
     // On Windows, normalize path separators for consistent comparison
-    const normalizedDefaultPath = defaultFolderPath
-      .replace(/\\/g, '/')
-      .toLowerCase();
-    const normalizedDocumentsDir = resolvedDocumentsDir
-      .replace(/\\/g, '/')
-      .toLowerCase();
+    const normalizedDefaultPath = defaultFolderPath.replace(/\\/g, '/').toLowerCase();
+    const normalizedDocumentsDir = resolvedDocumentsDir.replace(/\\/g, '/').toLowerCase();
 
     if (!normalizedDefaultPath.startsWith(normalizedDocumentsDir)) {
       throw new Error(
         `Security violation: Attempted path traversal detected. ` +
-          `Path ${defaultFolderPath} is outside documents directory ${resolvedDocumentsDir}`,
+          `Path ${defaultFolderPath} is outside documents directory ${resolvedDocumentsDir}`
       );
     }
 
@@ -94,30 +84,25 @@ async function createDefaultFolder(smartFolders) {
       /[\\/]\.\./, // Separator with parent
       /^[a-zA-Z]:/, // Different drive letter (if not expected)
       /\0/, // Null bytes
-      /[<>:"|?*]/, // Invalid Windows filename chars in unexpected positions
+      /[<>:"|?*]/ // Invalid Windows filename chars in unexpected positions
     ];
 
     for (const pattern of suspiciousPatterns) {
-      if (
-        pattern.test(defaultFolderPath.substring(resolvedDocumentsDir.length))
-      ) {
+      if (pattern.test(defaultFolderPath.substring(resolvedDocumentsDir.length))) {
         throw new Error(
           `Security violation: Suspicious path pattern detected. ` +
-            `Path contains potentially dangerous characters or sequences`,
+            `Path contains potentially dangerous characters or sequences`
         );
       }
     }
 
-    logger.info(
-      '[AutoOrganize] Path validation passed for emergency default folder',
-      {
-        documentsDir: resolvedDocumentsDir,
-        defaultFolderPath,
-        sanitized: true,
-        uncPathCheck: 'passed',
-        traversalCheck: 'passed',
-      },
-    );
+    logger.info('[AutoOrganize] Path validation passed for emergency default folder', {
+      documentsDir: resolvedDocumentsDir,
+      defaultFolderPath,
+      sanitized: true,
+      uncPathCheck: 'passed',
+      traversalCheck: 'passed'
+    });
 
     // Check if directory already exists before creating
     let dirExists = false;
@@ -132,7 +117,7 @@ async function createDefaultFolder(smartFolders) {
       if (isSymbolicLink) {
         throw new Error(
           `Security violation: Symbolic links are not allowed for safety reasons. ` +
-            `Path ${defaultFolderPath} is a symbolic link.`,
+            `Path ${defaultFolderPath} is a symbolic link.`
         );
       }
     } catch (error) {
@@ -146,15 +131,9 @@ async function createDefaultFolder(smartFolders) {
     if (!dirExists) {
       // Ensure directory exists with proper error handling
       await fs.mkdir(defaultFolderPath, { recursive: true });
-      logger.info(
-        '[AutoOrganize] Created emergency default folder at:',
-        defaultFolderPath,
-      );
+      logger.info('[AutoOrganize] Created emergency default folder at:', defaultFolderPath);
     } else {
-      logger.info(
-        '[AutoOrganize] Emergency default folder already exists at:',
-        defaultFolderPath,
-      );
+      logger.info('[AutoOrganize] Emergency default folder already exists at:', defaultFolderPath);
     }
 
     // Create default folder object
@@ -165,22 +144,19 @@ async function createDefaultFolder(smartFolders) {
       description: 'Emergency fallback folder for files without analysis',
       keywords: [],
       isDefault: true,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
     };
 
     // Add to smartFolders array for this session
     smartFolders.push(defaultFolder);
 
-    logger.info(
-      '[AutoOrganize] Emergency default folder configured at:',
-      defaultFolderPath,
-    );
+    logger.info('[AutoOrganize] Emergency default folder configured at:', defaultFolderPath);
 
     return defaultFolder;
   } catch (error) {
     logger.error('[AutoOrganize] Failed to create emergency default folder:', {
       error: error.message,
-      stack: error.stack,
+      stack: error.stack
     });
 
     return null;
@@ -196,8 +172,7 @@ async function createDefaultFolder(smartFolders) {
  */
 function getFallbackDestination(file, smartFolders, defaultLocation) {
   // Ensure defaultLocation is a valid string
-  const safeDefaultLocation =
-    typeof defaultLocation === 'string' ? defaultLocation : 'Documents';
+  const safeDefaultLocation = typeof defaultLocation === 'string' ? defaultLocation : 'Documents';
 
   // Try to match based on file type
   const fileType = getFileTypeCategory(file.extension);
@@ -205,9 +180,7 @@ function getFallbackDestination(file, smartFolders, defaultLocation) {
   // Look for a smart folder that matches the file type
   const typeFolder = smartFolders.find(
     (f) =>
-      f.name &&
-      typeof f.name === 'string' &&
-      f.name.toLowerCase().includes(fileType.toLowerCase()),
+      f.name && typeof f.name === 'string' && f.name.toLowerCase().includes(fileType.toLowerCase())
   );
 
   if (typeFolder) {
@@ -224,7 +197,7 @@ function getFallbackDestination(file, smartFolders, defaultLocation) {
       (f) =>
         f.name &&
         typeof f.name === 'string' &&
-        f.name.toLowerCase() === file.analysis.category.toLowerCase(),
+        f.name.toLowerCase() === file.analysis.category.toLowerCase()
     );
 
     if (categoryFolder) {
@@ -268,12 +241,7 @@ function extractStringValue(value, fallback = 'Uncategorized') {
  * @param {boolean} preserveNames - Whether to preserve original names
  * @returns {string} Destination path
  */
-function buildDestinationPath(
-  file,
-  suggestion,
-  defaultLocation,
-  preserveNames,
-) {
+function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) {
   // Validate and extract folder path - handle both string and object cases
   let folderPath;
 
@@ -295,9 +263,7 @@ function buildDestinationPath(
     folderPath = path.join(location, folderName);
   }
 
-  let fileName = preserveNames
-    ? file.name
-    : file.analysis?.suggestedName || file.name;
+  let fileName = preserveNames ? file.name : file.analysis?.suggestedName || file.name;
 
   // Ensure the original file extension is preserved
   const originalExt = path.extname(file.name);
@@ -314,5 +280,5 @@ module.exports = {
   isUNCPath,
   createDefaultFolder,
   getFallbackDestination,
-  buildDestinationPath,
+  buildDestinationPath
 };

@@ -8,8 +8,8 @@ const path = require('path');
 // Mock electron app
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/tmp/test'),
-  },
+    getPath: jest.fn().mockReturnValue('/tmp/test')
+  }
 }));
 
 // Mock logger
@@ -19,8 +19,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs.promises
@@ -28,10 +28,10 @@ const mockFs = {
   readFile: jest.fn(),
   writeFile: jest.fn().mockResolvedValue(undefined),
   rename: jest.fn().mockResolvedValue(undefined),
-  unlink: jest.fn().mockResolvedValue(undefined),
+  unlink: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 describe('OfflineQueue', () => {
@@ -54,7 +54,7 @@ describe('OfflineQueue', () => {
 
     queue = new OfflineQueue({
       persistPath: path.join('/tmp/test', 'test-queue.json'),
-      maxQueueSize: 100,
+      maxQueueSize: 100
     });
   });
 
@@ -69,7 +69,7 @@ describe('OfflineQueue', () => {
     test('adds operation to queue', () => {
       const result = queue.enqueue(OperationType.UPSERT_FILE, {
         id: 'file:test.txt',
-        vector: [0.1, 0.2],
+        vector: [0.1, 0.2]
       });
 
       expect(result).toBe(true);
@@ -95,11 +95,11 @@ describe('OfflineQueue', () => {
     test('deduplicates operations by key', () => {
       queue.enqueue(OperationType.UPSERT_FILE, {
         id: 'file:test.txt',
-        data: 'v1',
+        data: 'v1'
       });
       queue.enqueue(OperationType.UPSERT_FILE, {
         id: 'file:test.txt',
-        data: 'v2',
+        data: 'v2'
       });
 
       expect(queue.size()).toBe(1);
@@ -110,7 +110,7 @@ describe('OfflineQueue', () => {
       // Fill queue to max
       for (let i = 0; i < 100; i++) {
         queue.enqueue(OperationType.UPDATE_FILE_PATHS, {
-          pathUpdates: [{ oldId: `old${i}`, newId: `new${i}` }],
+          pathUpdates: [{ oldId: `old${i}`, newId: `new${i}` }]
         });
       }
 
@@ -133,7 +133,7 @@ describe('OfflineQueue', () => {
     test('returns operations in priority order', () => {
       // Add operations in reverse priority order
       queue.enqueue(OperationType.UPDATE_FILE_PATHS, {
-        pathUpdates: [{ oldId: 'old', newId: 'new' }],
+        pathUpdates: [{ oldId: 'old', newId: 'new' }]
       });
       queue.enqueue(OperationType.UPSERT_FILE, { id: 'file:test.txt' });
       queue.enqueue(OperationType.DELETE_FILE, { id: 'file:delete.txt' });
@@ -231,11 +231,7 @@ describe('OfflineQueue', () => {
       // maxRetries: 2 means the operation gets 1 retry before being dropped
       // First attempt: retries 0 -> 1 (< maxRetries, so re-queue)
       // Second attempt: retries 1 -> 2 (>= maxRetries, so drop)
-      queue.enqueue(
-        OperationType.UPSERT_FILE,
-        { id: 'file:test.txt' },
-        { maxRetries: 2 },
-      );
+      queue.enqueue(OperationType.UPSERT_FILE, { id: 'file:test.txt' }, { maxRetries: 2 });
 
       const processor = jest.fn().mockRejectedValue(new Error('Test error'));
 
@@ -252,9 +248,9 @@ describe('OfflineQueue', () => {
     test('prevents concurrent flushes', async () => {
       queue.enqueue(OperationType.UPSERT_FILE, { id: 'file:test.txt' });
 
-      const slowProcessor = jest.fn().mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 100)),
-      );
+      const slowProcessor = jest
+        .fn()
+        .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
 
       // Start first flush
       const flush1 = queue.flush(slowProcessor);
@@ -327,10 +323,10 @@ describe('OfflineQueue', () => {
             type: OperationType.UPSERT_FILE,
             data: { id: 'file:test.txt' },
             key: 'upsert_file:file:test.txt',
-            priority: 2,
-          },
+            priority: 2
+          }
         ],
-        stats: { totalEnqueued: 1 },
+        stats: { totalEnqueued: 1 }
       };
 
       mockFs.readFile.mockResolvedValue(JSON.stringify(savedData));

@@ -44,7 +44,7 @@ class LLMRequestDeduplicator {
     // If request is already in flight, return the existing promise
     if (this.pendingRequests.has(key)) {
       logger.debug('[LLM-DEDUP] Request already in flight, reusing', {
-        key: key.slice(0, 8),
+        key: key.slice(0, 8)
       });
       return this.pendingRequests.get(key);
     }
@@ -79,7 +79,7 @@ class LLMRequestDeduplicator {
   getStats() {
     return {
       pendingCount: this.pendingRequests.size,
-      maxPending: this.maxPendingRequests,
+      maxPending: this.maxPendingRequests
     };
   }
 }
@@ -99,24 +99,20 @@ class BatchProcessor {
    * @returns {Promise<Array>} Results array
    */
   async processBatch(items, processFn, options = {}) {
-    const {
-      concurrency = this.concurrencyLimit,
-      onProgress = null,
-      stopOnError = false,
-    } = options;
+    const { concurrency = this.concurrencyLimit, onProgress = null, stopOnError = false } = options;
 
     if (!Array.isArray(items) || items.length === 0) {
       return {
         results: [],
         errors: [],
         successful: 0,
-        total: 0,
+        total: 0
       };
     }
 
     logger.info('[BATCH-PROCESSOR] Starting batch processing', {
       itemCount: items.length,
-      concurrency,
+      concurrency
     });
 
     const results = new Array(items.length);
@@ -137,14 +133,14 @@ class BatchProcessor {
             completed: completedCount,
             total: items.length,
             current: item,
-            result,
+            result
           });
         }
 
         logger.debug('[BATCH-PROCESSOR] Item completed', {
           index,
           completed: completedCount,
-          total: items.length,
+          total: items.length
         });
       } catch (error) {
         errors.push({ index, error });
@@ -153,7 +149,7 @@ class BatchProcessor {
 
         logger.error('[BATCH-PROCESSOR] Item failed', {
           index,
-          error: error.message,
+          error: error.message
         });
 
         if (stopOnError) {
@@ -183,14 +179,14 @@ class BatchProcessor {
     logger.info('[BATCH-PROCESSOR] Batch processing complete', {
       total: items.length,
       successful: items.length - errors.length,
-      failed: errors.length,
+      failed: errors.length
     });
 
     return {
       results,
       errors,
       successful: items.length - errors.length,
-      total: items.length,
+      total: items.length
     };
   }
 
@@ -201,7 +197,7 @@ class BatchProcessor {
     return {
       activeCount: this.activeCount,
       concurrencyLimit: this.concurrencyLimit,
-      queueSize: this.queue.length,
+      queueSize: this.queue.length
     };
   }
 }
@@ -214,5 +210,5 @@ module.exports = {
   LLMRequestDeduplicator,
   BatchProcessor,
   globalDeduplicator,
-  globalBatchProcessor,
+  globalBatchProcessor
 };

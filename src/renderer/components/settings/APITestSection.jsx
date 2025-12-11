@@ -75,9 +75,7 @@ function APITestSection({ addNotification }) {
         <div className="space-y-3 text-sm">
           {Object.entries(testResults).map(([service, result]) => (
             <div key={service} className="flex justify-between items-center">
-              <span className="capitalize">
-                {service.replace(/([A-Z])/g, ' $1').trim()}:
-              </span>
+              <span className="capitalize">{service.replace(/([A-Z])/g, ' $1').trim()}:</span>
               <span className="font-mono text-xs flex items-center gap-1">
                 {result.success ? (
                   <CheckCircle className="w-4 h-4 text-stratosort-success" />
@@ -95,7 +93,7 @@ function APITestSection({ addNotification }) {
 }
 
 APITestSection.propTypes = {
-  addNotification: PropTypes.func.isRequired,
+  addNotification: PropTypes.func.isRequired
 };
 
 export default APITestSection;

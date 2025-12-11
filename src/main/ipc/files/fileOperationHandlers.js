@@ -13,9 +13,7 @@ const { withErrorLogging, withValidation } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
 const { z, operationSchema } = require('./schemas');
-const {
-  validateFileOperationPath,
-} = require('../../../shared/pathSanitization');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 
 logger.setContext('IPC:Files:Operations');
 
@@ -29,17 +27,17 @@ logger.setContext('IPC:Files:Operations');
 async function validateOperationPaths(source, destination, log) {
   // Validate source path
   const sourceResult = await validateFileOperationPath(source, {
-    checkSymlinks: true,
+    checkSymlinks: true
   });
 
   if (!sourceResult.valid) {
     log.warn('[FILE-OPS] Source path validation failed', {
       source,
-      error: sourceResult.error,
+      error: sourceResult.error
     });
     return {
       valid: false,
-      error: `Invalid source path: ${sourceResult.error}`,
+      error: `Invalid source path: ${sourceResult.error}`
     };
   }
 
@@ -50,24 +48,24 @@ async function validateOperationPaths(source, destination, log) {
 
   // Validate destination path
   const destResult = await validateFileOperationPath(destination, {
-    checkSymlinks: true,
+    checkSymlinks: true
   });
 
   if (!destResult.valid) {
     log.warn('[FILE-OPS] Destination path validation failed', {
       destination,
-      error: destResult.error,
+      error: destResult.error
     });
     return {
       valid: false,
-      error: `Invalid destination path: ${destResult.error}`,
+      error: `Invalid destination path: ${destResult.error}`
     };
   }
 
   return {
     valid: true,
     source: sourceResult.normalizedPath,
-    destination: destResult.normalizedPath,
+    destination: destResult.normalizedPath
   };
 }
 
@@ -88,14 +86,14 @@ async function updateDatabasePath(source, destination, log) {
           newId,
           newMeta: {
             path: destination,
-            name: path.basename(destination),
-          },
-        },
+            name: path.basename(destination)
+          }
+        }
       ]);
     }
   } catch (dbError) {
     log.warn('[FILE-OPS] Database path update failed after move', {
-      error: dbError.message,
+      error: dbError.message
     });
     dbSyncWarning = `File moved but database sync failed: ${dbError.message}`;
   }
@@ -115,12 +113,12 @@ async function deleteFromDatabase(filePath, log) {
     if (removedCount > 0) {
       log.debug('[FILE-OPS] Removed pending embeddings for deleted file', {
         filePath,
-        removedCount,
+        removedCount
       });
     }
   } catch (queueError) {
     log.warn('[FILE-OPS] Failed to clean embedding queue', {
-      error: queueError.message,
+      error: queueError.message
     });
   }
 
@@ -133,7 +131,7 @@ async function deleteFromDatabase(filePath, log) {
     }
   } catch (dbError) {
     log.warn('[FILE-OPS] Database entry delete failed', {
-      error: dbError.message,
+      error: dbError.message
     });
     dbDeleteWarning = `File deleted but database sync failed: ${dbError.message}`;
   }
@@ -143,18 +141,14 @@ async function deleteFromDatabase(filePath, log) {
 /**
  * Create the perform operation handler
  */
-function createPerformOperationHandler({
-  logger: log,
-  getServiceIntegration,
-  getMainWindow,
-}) {
+function createPerformOperationHandler({ logger: log, getServiceIntegration, getMainWindow }) {
   return async (event, operation) => {
     // FIX: Validate operation object before processing
     if (!operation || typeof operation !== 'object') {
       return {
         success: false,
         error: 'Invalid operation: expected an object',
-        errorCode: 'INVALID_OPERATION',
+        errorCode: 'INVALID_OPERATION'
       };
     }
 
@@ -162,7 +156,7 @@ function createPerformOperationHandler({
       return {
         success: false,
         error: 'Invalid operation: missing or invalid type',
-        errorCode: 'INVALID_OPERATION_TYPE',
+        errorCode: 'INVALID_OPERATION_TYPE'
       };
     }
 
@@ -170,9 +164,7 @@ function createPerformOperationHandler({
       log.info('[FILE-OPS] Performing operation:', {
         type: operation.type,
         source: operation.source ? path.basename(operation.source) : 'N/A',
-        destination: operation.destination
-          ? path.basename(operation.destination)
-          : 'N/A',
+        destination: operation.destination ? path.basename(operation.destination) : 'N/A'
       });
 
       switch (operation.type) {
@@ -181,26 +173,23 @@ function createPerformOperationHandler({
           const moveValidation = await validateOperationPaths(
             operation.source,
             operation.destination,
-            log,
+            log
           );
           if (!moveValidation.valid) {
             return {
               success: false,
               error: moveValidation.error,
-              errorCode: 'INVALID_PATH',
+              errorCode: 'INVALID_PATH'
             };
           }
 
           await fs.rename(moveValidation.source, moveValidation.destination);
 
           try {
-            await getServiceIntegration()?.undoRedo?.recordAction?.(
-              ACTION_TYPES.FILE_MOVE,
-              {
-                originalPath: moveValidation.source,
-                newPath: moveValidation.destination,
-              },
-            );
+            await getServiceIntegration()?.undoRedo?.recordAction?.(ACTION_TYPES.FILE_MOVE, {
+              originalPath: moveValidation.source,
+              newPath: moveValidation.destination
+            });
           } catch {
             // Non-fatal
           }
@@ -208,13 +197,13 @@ function createPerformOperationHandler({
           const dbSyncWarning = await updateDatabasePath(
             moveValidation.source,
             moveValidation.destination,
-            log,
+            log
           );
 
           return {
             success: true,
             message: `Moved ${moveValidation.source} to ${moveValidation.destination}`,
-            ...(dbSyncWarning && { warning: dbSyncWarning }),
+            ...(dbSyncWarning && { warning: dbSyncWarning })
           };
         }
 
@@ -223,48 +212,41 @@ function createPerformOperationHandler({
           const copyValidation = await validateOperationPaths(
             operation.source,
             operation.destination,
-            log,
+            log
           );
           if (!copyValidation.valid) {
             return {
               success: false,
               error: copyValidation.error,
-              errorCode: 'INVALID_PATH',
+              errorCode: 'INVALID_PATH'
             };
           }
 
           await fs.copyFile(copyValidation.source, copyValidation.destination);
           return {
             success: true,
-            message: `Copied ${copyValidation.source} to ${copyValidation.destination}`,
+            message: `Copied ${copyValidation.source} to ${copyValidation.destination}`
           };
         }
 
         case 'delete': {
           // SECURITY FIX: Validate path before file operation
-          const deleteValidation = await validateOperationPaths(
-            operation.source,
-            null,
-            log,
-          );
+          const deleteValidation = await validateOperationPaths(operation.source, null, log);
           if (!deleteValidation.valid) {
             return {
               success: false,
               error: deleteValidation.error,
-              errorCode: 'INVALID_PATH',
+              errorCode: 'INVALID_PATH'
             };
           }
 
           await fs.unlink(deleteValidation.source);
-          const dbDeleteWarning = await deleteFromDatabase(
-            deleteValidation.source,
-            log,
-          );
+          const dbDeleteWarning = await deleteFromDatabase(deleteValidation.source, log);
 
           return {
             success: true,
             message: `Deleted ${deleteValidation.source}`,
-            ...(dbDeleteWarning && { warning: dbDeleteWarning }),
+            ...(dbDeleteWarning && { warning: dbDeleteWarning })
           };
         }
 
@@ -273,14 +255,14 @@ function createPerformOperationHandler({
             operation,
             logger: log,
             getServiceIntegration,
-            getMainWindow,
+            getMainWindow
           });
 
         default:
           log.error(`[FILE-OPS] Unknown operation type: ${operation.type}`);
           return {
             success: false,
-            error: `Unknown operation type: ${operation.type}`,
+            error: `Unknown operation type: ${operation.type}`
           };
       }
     } catch (error) {
@@ -298,13 +280,13 @@ function registerFileOperationHandlers({
   IPC_CHANNELS,
   logger: handlerLogger,
   getServiceIntegration,
-  getMainWindow,
+  getMainWindow
 }) {
   const log = handlerLogger || logger;
   const baseHandler = createPerformOperationHandler({
     logger: log,
     getServiceIntegration,
-    getMainWindow,
+    getMainWindow
   });
 
   // Create handler with or without Zod validation
@@ -325,24 +307,24 @@ function registerFileOperationHandlers({
           return {
             success: false,
             error: 'Invalid file path provided',
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
         // SECURITY FIX: Validate path before any operations
         const validation = await validateFileOperationPath(filePath, {
-          checkSymlinks: true,
+          checkSymlinks: true
         });
 
         if (!validation.valid) {
           log.warn('[FILE-OPS] Delete path validation failed', {
             filePath,
-            error: validation.error,
+            error: validation.error
           });
           return {
             success: false,
             error: validation.error,
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
@@ -361,12 +343,12 @@ function registerFileOperationHandlers({
               success: false,
               error: 'File not found or inaccessible',
               errorCode: 'FILE_NOT_FOUND',
-              details: statError.message,
+              details: statError.message
             };
           }
           // For other errors, try to proceed with delete anyway
           log.warn('[FILE-OPS] Could not stat file before delete', {
-            error: statError.message,
+            error: statError.message
           });
         }
 
@@ -374,11 +356,7 @@ function registerFileOperationHandlers({
 
         const dbDeleteWarning = await deleteFromDatabase(validatedPath, log);
 
-        log.info(
-          '[FILE-OPS] Deleted file:',
-          validatedPath,
-          `(${fileSize} bytes)`,
-        );
+        log.info('[FILE-OPS] Deleted file:', validatedPath, `(${fileSize} bytes)`);
 
         return {
           success: true,
@@ -386,9 +364,9 @@ function registerFileOperationHandlers({
           deletedFile: {
             path: validatedPath,
             size: fileSize,
-            deletedAt: new Date().toISOString(),
+            deletedAt: new Date().toISOString()
           },
-          ...(dbDeleteWarning && { warning: dbDeleteWarning }),
+          ...(dbDeleteWarning && { warning: dbDeleteWarning })
         };
       } catch (error) {
         log.error('[FILE-OPS] Error deleting file:', error);
@@ -412,10 +390,10 @@ function registerFileOperationHandlers({
           error: userMessage,
           errorCode,
           details: error.message,
-          systemError: error.code,
+          systemError: error.code
         };
       }
-    }),
+    })
   );
 
   // Copy file handler
@@ -427,22 +405,18 @@ function registerFileOperationHandlers({
           return {
             success: false,
             error: 'Source and destination paths are required',
-            errorCode: 'INVALID_PATHS',
+            errorCode: 'INVALID_PATHS'
           };
         }
 
         // SECURITY FIX: Validate both paths before any operations
-        const validation = await validateOperationPaths(
-          sourcePath,
-          destinationPath,
-          log,
-        );
+        const validation = await validateOperationPaths(sourcePath, destinationPath, log);
 
         if (!validation.valid) {
           return {
             success: false,
             error: validation.error,
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
@@ -461,12 +435,12 @@ function registerFileOperationHandlers({
               success: false,
               error: 'Source file not found',
               errorCode: 'SOURCE_NOT_FOUND',
-              details: statError.message,
+              details: statError.message
             };
           }
           // For other errors, try to proceed anyway
           log.warn('[FILE-OPS] Could not stat source file before copy', {
-            error: statError.message,
+            error: statError.message
           });
         }
 
@@ -475,12 +449,7 @@ function registerFileOperationHandlers({
 
         await fs.copyFile(normalizedSource, normalizedDestination);
 
-        log.info(
-          '[FILE-OPS] Copied file:',
-          normalizedSource,
-          'to',
-          normalizedDestination,
-        );
+        log.info('[FILE-OPS] Copied file:', normalizedSource, 'to', normalizedDestination);
 
         return {
           success: true,
@@ -489,8 +458,8 @@ function registerFileOperationHandlers({
             source: normalizedSource,
             destination: normalizedDestination,
             size: fileSize,
-            copiedAt: new Date().toISOString(),
-          },
+            copiedAt: new Date().toISOString()
+          }
         };
       } catch (error) {
         log.error('[FILE-OPS] Error copying file:', error);
@@ -516,10 +485,10 @@ function registerFileOperationHandlers({
           success: false,
           error: userMessage,
           errorCode,
-          details: error.message,
+          details: error.message
         };
       }
-    }),
+    })
   );
 }
 

@@ -31,7 +31,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           return {
             success: false,
             error: 'Invalid folder path provided',
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
@@ -45,13 +45,13 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
               success: true,
               message: 'Folder already exists',
               path: normalizedPath,
-              alreadyExisted: true,
+              alreadyExisted: true
             };
           } else {
             return {
               success: false,
               error: 'A file with this name already exists',
-              errorCode: 'FILE_EXISTS',
+              errorCode: 'FILE_EXISTS'
             };
           }
         } catch (statError) {
@@ -69,7 +69,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           success: true,
           message: 'Folder created successfully',
           path: normalizedPath,
-          alreadyExisted: false,
+          alreadyExisted: false
         };
       } catch (error) {
         logger.error('[FILE-OPS] Error creating folder:', error);
@@ -93,10 +93,10 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           error: userMessage,
           errorCode,
           details: error.message,
-          systemError: error.code,
+          systemError: error.code
         };
       }
-    }),
+    })
   );
 
   // Open folder in file explorer
@@ -108,7 +108,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           return {
             success: false,
             error: 'Invalid folder path provided',
-            errorCode: 'INVALID_PATH',
+            errorCode: 'INVALID_PATH'
           };
         }
 
@@ -120,7 +120,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
             return {
               success: false,
               error: 'Path is not a directory',
-              errorCode: 'NOT_A_DIRECTORY',
+              errorCode: 'NOT_A_DIRECTORY'
             };
           }
         } catch (accessError) {
@@ -128,7 +128,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
             success: false,
             error: 'Folder not found or inaccessible',
             errorCode: 'FOLDER_NOT_FOUND',
-            details: accessError.message,
+            details: accessError.message
           };
         }
 
@@ -138,7 +138,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
         return {
           success: true,
           message: 'Folder opened successfully',
-          openedPath: normalizedPath,
+          openedPath: normalizedPath
         };
       } catch (error) {
         logger.error('[FILE-OPS] Error opening folder:', error);
@@ -146,10 +146,10 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           success: false,
           error: 'Failed to open folder',
           errorCode: 'OPEN_FAILED',
-          details: error.message,
+          details: error.message
         };
       }
-    }),
+    })
   );
 
   // Delete empty folder
@@ -161,7 +161,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
         return {
           success: false,
           error: 'Invalid folder path provided',
-          errorCode: 'INVALID_PATH',
+          errorCode: 'INVALID_PATH'
         };
       }
 
@@ -174,7 +174,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
             return {
               success: false,
               error: 'Path is not a directory',
-              code: 'NOT_DIRECTORY',
+              code: 'NOT_DIRECTORY'
             };
           }
         } catch (statError) {
@@ -182,7 +182,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
             return {
               success: true,
               message: 'Folder already deleted or does not exist',
-              existed: false,
+              existed: false
             };
           }
           throw statError;
@@ -194,7 +194,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
             success: false,
             error: `Directory not empty - contains ${contents.length} items`,
             code: 'NOT_EMPTY',
-            itemCount: contents.length,
+            itemCount: contents.length
           };
         }
 
@@ -204,7 +204,7 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
         return {
           success: true,
           path: normalizedPath,
-          message: 'Folder deleted successfully',
+          message: 'Folder deleted successfully'
         };
       } catch (error) {
         logger.error('[FILE-OPS] Error deleting folder:', error);
@@ -222,10 +222,10 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
           success: false,
           error: userMessage,
           details: error.message,
-          code: error.code,
+          code: error.code
         };
       }
-    }),
+    })
   );
 }
 

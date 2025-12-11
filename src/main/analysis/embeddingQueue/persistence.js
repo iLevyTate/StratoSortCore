@@ -28,21 +28,13 @@ async function loadPersistedData(filePath, onLoad, description) {
         const parsed = JSON.parse(data);
         onLoad(parsed);
       } catch (parseError) {
-        logger.error(
-          `[EmbeddingQueue] Failed to parse ${description} file`,
-          parseError,
-        );
+        logger.error(`[EmbeddingQueue] Failed to parse ${description} file`, parseError);
         // Backup corrupt file
-        await fs
-          .rename(filePath, `${filePath}.corrupt.${Date.now()}`)
-          .catch(() => {});
+        await fs.rename(filePath, `${filePath}.corrupt.${Date.now()}`).catch(() => {});
       }
     }
   } catch (error) {
-    logger.warn(
-      `[EmbeddingQueue] Error loading ${description}:`,
-      error.message,
-    );
+    logger.warn(`[EmbeddingQueue] Error loading ${description}:`, error.message);
   }
 }
 
@@ -58,9 +50,7 @@ async function atomicWriteFile(filePath, data, options = {}) {
   const tempPath = `${filePath}.tmp.${Date.now()}`;
 
   try {
-    const content = pretty
-      ? JSON.stringify(data, null, 2)
-      : JSON.stringify(data);
+    const content = pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data);
     await fs.writeFile(tempPath, content, 'utf8');
     // Retry rename on Windows EPERM errors (file handle race condition)
     let lastError;
@@ -72,9 +62,7 @@ async function atomicWriteFile(filePath, data, options = {}) {
       } catch (renameError) {
         lastError = renameError;
         if (renameError.code === 'EPERM' && attempt < 2) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, 50 * (attempt + 1)),
-          );
+          await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
           continue;
         }
         throw renameError;
@@ -116,10 +104,7 @@ async function persistQueueData(filePath, queue) {
     }
     await atomicWriteFile(filePath, queue);
   } catch (error) {
-    logger.debug(
-      '[EmbeddingQueue] Error persisting queue to disk:',
-      error.message,
-    );
+    logger.debug('[EmbeddingQueue] Error persisting queue to disk:', error.message);
   }
 }
 
@@ -138,10 +123,7 @@ async function persistFailedItems(filePath, failedItems) {
     const data = Array.from(failedItems.entries());
     await atomicWriteFile(filePath, data);
   } catch (error) {
-    logger.debug(
-      '[EmbeddingQueue] Error persisting failed items:',
-      error.message,
-    );
+    logger.debug('[EmbeddingQueue] Error persisting failed items:', error.message);
   }
 }
 
@@ -158,10 +140,7 @@ async function persistDeadLetterQueue(filePath, deadLetterQueue) {
     }
     await atomicWriteFile(filePath, deadLetterQueue, { pretty: true });
   } catch (error) {
-    logger.debug(
-      '[EmbeddingQueue] Error persisting dead letter queue:',
-      error.message,
-    );
+    logger.debug('[EmbeddingQueue] Error persisting dead letter queue:', error.message);
   }
 }
 
@@ -171,5 +150,5 @@ module.exports = {
   safeUnlink,
   persistQueueData,
   persistFailedItems,
-  persistDeadLetterQueue,
+  persistDeadLetterQueue
 };

@@ -3,9 +3,7 @@
  * Tests fallback behavior when Ollama is unavailable
  */
 
-const {
-  analyzeDocumentFile,
-} = require('../src/main/analysis/ollamaDocumentAnalysis');
+const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
 
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
@@ -14,8 +12,8 @@ jest.mock('../src/shared/logger', () => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    setContext: jest.fn(),
-  },
+    setContext: jest.fn()
+  }
 }));
 
 // Mock constants
@@ -29,36 +27,30 @@ jest.mock('../src/shared/constants', () => ({
       HOST: 'http://127.0.0.1:11434',
       TEMPERATURE: 0.3,
       MAX_TOKENS: 1000,
-      MAX_CONTENT_LENGTH: 50000,
+      MAX_CONTENT_LENGTH: 50000
     },
     IMAGE: {
       MODEL: 'llava',
       TEMPERATURE: 0.2,
-      MAX_TOKENS: 1000,
-    },
+      MAX_TOKENS: 1000
+    }
   },
   DEFAULT_AI_MODELS: {
     TEXT_ANALYSIS: 'llama3.2:latest',
     IMAGE_ANALYSIS: 'llava:latest',
-    FALLBACK_MODELS: [
-      'llama3.2:latest',
-      'gemma3:4b',
-      'llama3',
-      'mistral',
-      'phi3',
-    ],
+    FALLBACK_MODELS: ['llama3.2:latest', 'gemma3:4b', 'llama3', 'mistral', 'phi3']
   },
   FILE_SIZE_LIMITS: {
     MAX_TEXT_FILE_SIZE: 50 * 1024 * 1024,
     MAX_IMAGE_FILE_SIZE: 100 * 1024 * 1024,
-    MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024,
+    MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024
   },
   PROCESSING_LIMITS: {
     MAX_CONCURRENT_ANALYSIS: 3,
     MAX_BATCH_SIZE: 100,
     ANALYSIS_TIMEOUT: 60000,
-    RETRY_ATTEMPTS: 3,
-  },
+    RETRY_ATTEMPTS: 3
+  }
 }));
 
 // Mock ModelVerifier to return Ollama unavailable
@@ -66,14 +58,14 @@ jest.mock('../src/main/services/ModelVerifier', () => {
   return jest.fn().mockImplementation(() => ({
     checkOllamaConnection: jest.fn().mockResolvedValue({
       connected: false,
-      error: 'Ollama unavailable',
-    }),
+      error: 'Ollama unavailable'
+    })
   }));
 });
 
 // Mock other services
 jest.mock('../src/main/services/ChromaDBService', () => ({
-  getInstance: jest.fn().mockReturnValue(null),
+  getInstance: jest.fn().mockReturnValue(null)
 }));
 
 jest.mock('../src/main/services/FolderMatchingService', () => {
@@ -85,39 +77,39 @@ jest.mock('../src/main/services/FolderMatchingService', () => {
 });
 
 jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn().mockResolvedValue({}),
+  buildOllamaOptions: jest.fn().mockResolvedValue({})
 }));
 
 // Mock document extractors
 jest.mock('../src/main/analysis/documentExtractors', () => ({
   extractTextFromPdf: jest.fn().mockResolvedValue('Sample PDF content'),
-  extractTextFromDocx: jest.fn().mockResolvedValue('Sample DOCX content'),
+  extractTextFromDocx: jest.fn().mockResolvedValue('Sample DOCX content')
 }));
 
 // Mock fallback utils
 jest.mock('../src/main/analysis/fallbackUtils', () => ({
   getIntelligentCategory: jest.fn(() => 'documents'),
   getIntelligentKeywords: jest.fn(() => ['document', 'text']),
-  safeSuggestedName: jest.fn((name, ext) => name.replace(ext, '')),
+  safeSuggestedName: jest.fn((name, ext) => name.replace(ext, ''))
 }));
 
 // Mock other utilities
 jest.mock('../src/main/utils/llmOptimization', () => ({
   globalDeduplicator: {
     generateKey: jest.fn(),
-    deduplicate: jest.fn(),
-  },
+    deduplicate: jest.fn()
+  }
 }));
 
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  generateWithRetry: jest.fn(),
+  generateWithRetry: jest.fn()
 }));
 
 jest.mock('../src/main/analysis/utils', () => ({
   normalizeAnalysisResult: jest.fn((data, defaults) => ({
     ...defaults,
-    ...data,
-  })),
+    ...data
+  }))
 }));
 
 jest.mock('../src/main/analysis/documentLlm', () => ({
@@ -125,10 +117,10 @@ jest.mock('../src/main/analysis/documentLlm', () => ({
   AppConfig: {
     ai: {
       textAnalysis: {
-        defaultModel: 'mock-model',
-      },
-    },
-  },
+        defaultModel: 'mock-model'
+      }
+    }
+  }
 }));
 
 describe('ollamaDocumentAnalysis - Fallback Tests', () => {

@@ -14,7 +14,7 @@ import {
   selectSelectedFiles,
   selectAnalysisResults,
   selectFileStates,
-  selectSmartFolders,
+  selectSmartFolders
 } from '../src/renderer/store/selectors';
 
 describe('Redux Selectors', () => {
@@ -22,8 +22,8 @@ describe('Redux Selectors', () => {
     test('returns selected files', () => {
       const state = {
         files: {
-          selectedFiles: [{ path: '/file.pdf' }],
-        },
+          selectedFiles: [{ path: '/file.pdf' }]
+        }
       };
 
       const result = selectSelectedFiles(state);
@@ -36,8 +36,8 @@ describe('Redux Selectors', () => {
     test('returns analysis results', () => {
       const state = {
         analysis: {
-          results: [{ path: '/file.pdf', analysis: { category: 'docs' } }],
-        },
+          results: [{ path: '/file.pdf', analysis: { category: 'docs' } }]
+        }
       };
 
       const result = selectAnalysisResults(state);
@@ -50,8 +50,8 @@ describe('Redux Selectors', () => {
     test('returns file states', () => {
       const state = {
         files: {
-          fileStates: { '/file.pdf': { state: 'ready' } },
-        },
+          fileStates: { '/file.pdf': { state: 'ready' } }
+        }
       };
 
       const result = selectFileStates(state);
@@ -64,8 +64,8 @@ describe('Redux Selectors', () => {
     test('returns smart folders', () => {
       const state = {
         files: {
-          smartFolders: [{ id: '1', name: 'Docs' }],
-        },
+          smartFolders: [{ id: '1', name: 'Docs' }]
+        }
       };
 
       const result = selectSmartFolders(state);
@@ -80,18 +80,18 @@ describe('Redux Selectors', () => {
         files: {
           selectedFiles: [
             { path: '/file1.pdf', name: 'file1.pdf' },
-            { path: '/file2.pdf', name: 'file2.pdf' },
+            { path: '/file2.pdf', name: 'file2.pdf' }
           ],
-          fileStates: {},
+          fileStates: {}
         },
         analysis: {
           results: [
             {
               path: '/file1.pdf',
-              analysis: { category: 'documents', subject: 'Report' },
-            },
-          ],
-        },
+              analysis: { category: 'documents', subject: 'Report' }
+            }
+          ]
+        }
       };
 
       const result = selectFilesWithAnalysis(state);
@@ -105,9 +105,9 @@ describe('Redux Selectors', () => {
       const state = {
         files: {
           selectedFiles: [{ path: '/docs/report.pdf', name: 'report.pdf' }],
-          fileStates: {},
+          fileStates: {}
         },
-        analysis: { results: [] },
+        analysis: { results: [] }
       };
 
       const result = selectFilesWithAnalysis(state);
@@ -119,9 +119,9 @@ describe('Redux Selectors', () => {
       const state = {
         files: {
           selectedFiles: [{ path: '/file.pdf', extension: '.PDF' }],
-          fileStates: {},
+          fileStates: {}
         },
-        analysis: { results: [] },
+        analysis: { results: [] }
       };
 
       const result = selectFilesWithAnalysis(state);
@@ -133,13 +133,11 @@ describe('Redux Selectors', () => {
       const state = {
         files: {
           selectedFiles: [{ path: '/file.pdf' }],
-          fileStates: {},
+          fileStates: {}
         },
         analysis: {
-          results: [
-            { path: '/file.pdf', error: 'Analysis failed' },
-          ],
-        },
+          results: [{ path: '/file.pdf', error: 'Analysis failed' }]
+        }
       };
 
       const result = selectFilesWithAnalysis(state);
@@ -150,7 +148,7 @@ describe('Redux Selectors', () => {
     test('returns empty array reference for empty files', () => {
       const state = {
         files: { selectedFiles: [], fileStates: {} },
-        analysis: { results: [] },
+        analysis: { results: [] }
       };
 
       const result = selectFilesWithAnalysis(state);
@@ -162,9 +160,9 @@ describe('Redux Selectors', () => {
       const state = {
         files: {
           selectedFiles: [{ path: '/file.pdf' }],
-          fileStates: { '/file.pdf': { state: 'analyzing' } },
+          fileStates: { '/file.pdf': { state: 'analyzing' } }
         },
-        analysis: { results: [] },
+        analysis: { results: [] }
       };
 
       const result = selectFilesWithAnalysis(state);
@@ -177,19 +175,15 @@ describe('Redux Selectors', () => {
     test('returns only files with analysis and no error', () => {
       const state = {
         files: {
-          selectedFiles: [
-            { path: '/file1.pdf' },
-            { path: '/file2.pdf' },
-            { path: '/file3.pdf' },
-          ],
-          fileStates: {},
+          selectedFiles: [{ path: '/file1.pdf' }, { path: '/file2.pdf' }, { path: '/file3.pdf' }],
+          fileStates: {}
         },
         analysis: {
           results: [
             { path: '/file1.pdf', analysis: { category: 'docs' } },
-            { path: '/file2.pdf', error: 'Failed' },
-          ],
-        },
+            { path: '/file2.pdf', error: 'Failed' }
+          ]
+        }
       };
 
       const result = selectReadyFiles(state);
@@ -203,18 +197,15 @@ describe('Redux Selectors', () => {
     test('returns only files with errors', () => {
       const state = {
         files: {
-          selectedFiles: [
-            { path: '/file1.pdf' },
-            { path: '/file2.pdf' },
-          ],
-          fileStates: {},
+          selectedFiles: [{ path: '/file1.pdf' }, { path: '/file2.pdf' }],
+          fileStates: {}
         },
         analysis: {
           results: [
             { path: '/file1.pdf', analysis: { category: 'docs' } },
-            { path: '/file2.pdf', error: 'Analysis failed' },
-          ],
-        },
+            { path: '/file2.pdf', error: 'Analysis failed' }
+          ]
+        }
       };
 
       const result = selectFailedFiles(state);
@@ -228,20 +219,14 @@ describe('Redux Selectors', () => {
     test('returns files without analysis or error', () => {
       const state = {
         files: {
-          selectedFiles: [
-            { path: '/file1.pdf' },
-            { path: '/file2.pdf' },
-            { path: '/file3.pdf' },
-          ],
+          selectedFiles: [{ path: '/file1.pdf' }, { path: '/file2.pdf' }, { path: '/file3.pdf' }],
           fileStates: {
-            '/file1.pdf': { state: 'pending' },
-          },
+            '/file1.pdf': { state: 'pending' }
+          }
         },
         analysis: {
-          results: [
-            { path: '/file2.pdf', analysis: { category: 'docs' } },
-          ],
-        },
+          results: [{ path: '/file2.pdf', analysis: { category: 'docs' } }]
+        }
       };
 
       const result = selectPendingFiles(state);
@@ -254,19 +239,15 @@ describe('Redux Selectors', () => {
     test('returns file statistics', () => {
       const state = {
         files: {
-          selectedFiles: [
-            { path: '/file1.pdf' },
-            { path: '/file2.pdf' },
-            { path: '/file3.pdf' },
-          ],
-          fileStates: {},
+          selectedFiles: [{ path: '/file1.pdf' }, { path: '/file2.pdf' }, { path: '/file3.pdf' }],
+          fileStates: {}
         },
         analysis: {
           results: [
             { path: '/file1.pdf', analysis: { category: 'docs' } },
-            { path: '/file2.pdf', error: 'Failed' },
-          ],
-        },
+            { path: '/file2.pdf', error: 'Failed' }
+          ]
+        }
       };
 
       const result = selectFileStats(state);
@@ -282,8 +263,8 @@ describe('Redux Selectors', () => {
     test('returns chromadb status', () => {
       const state = {
         system: {
-          health: { chromadb: 'online' },
-        },
+          health: { chromadb: 'online' }
+        }
       };
 
       const result = selectChromaDBStatus(state);
@@ -303,7 +284,7 @@ describe('Redux Selectors', () => {
   describe('selectChromaDBAvailable', () => {
     test('returns true for online status', () => {
       const state = {
-        system: { health: { chromadb: 'online' } },
+        system: { health: { chromadb: 'online' } }
       };
 
       const result = selectChromaDBAvailable(state);
@@ -313,7 +294,7 @@ describe('Redux Selectors', () => {
 
     test('returns true for connecting status', () => {
       const state = {
-        system: { health: { chromadb: 'connecting' } },
+        system: { health: { chromadb: 'connecting' } }
       };
 
       const result = selectChromaDBAvailable(state);
@@ -323,7 +304,7 @@ describe('Redux Selectors', () => {
 
     test('returns false for offline status', () => {
       const state = {
-        system: { health: { chromadb: 'offline' } },
+        system: { health: { chromadb: 'offline' } }
       };
 
       const result = selectChromaDBAvailable(state);

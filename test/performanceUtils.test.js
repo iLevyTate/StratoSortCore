@@ -29,19 +29,19 @@ jest.mock('../src/shared/promiseUtils', () => ({
             lastCall = Date.now();
             fn(...args);
           },
-          delay - (now - lastCall),
+          delay - (now - lastCall)
         );
       }
     };
     throttled.cancel = () => clearTimeout(timeoutId);
     return throttled;
-  }),
+  })
 }));
 
 const {
   createLRUCache,
   rafThrottle,
-  batchProcessor,
+  batchProcessor
 } = require('../src/renderer/utils/performance');
 
 describe('performance utilities', () => {

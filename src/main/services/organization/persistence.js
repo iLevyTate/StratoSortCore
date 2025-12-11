@@ -25,10 +25,7 @@ class PatternPersistence {
    */
   constructor(options = {}) {
     this.userDataPath = app.getPath('userData');
-    this.patternsFilePath = path.join(
-      this.userDataPath,
-      options.filename || 'user-patterns.json',
-    );
+    this.patternsFilePath = path.join(this.userDataPath, options.filename || 'user-patterns.json');
     this.lastSaveTime = Date.now();
     this.saveThrottleMs = options.saveThrottleMs || 5000;
     this.pendingSave = null;
@@ -43,16 +40,14 @@ class PatternPersistence {
       const data = await fs.readFile(this.patternsFilePath, 'utf-8');
       const stored = JSON.parse(data);
 
-      logger.info(
-        `[Persistence] Loaded patterns from ${this.patternsFilePath}`,
-      );
+      logger.info(`[Persistence] Loaded patterns from ${this.patternsFilePath}`);
       return stored;
     } catch (error) {
       if (error.code !== 'ENOENT') {
         logger.error('[Persistence] Error loading patterns:', {
           filePath: this.patternsFilePath,
           errorCode: error.code,
-          errorMessage: error.message,
+          errorMessage: error.message
         });
         throw error;
       }
@@ -77,7 +72,7 @@ class PatternPersistence {
               this.pendingSave = null;
               this.save(data);
             },
-            this.saveThrottleMs - (now - this.lastSaveTime),
+            this.saveThrottleMs - (now - this.lastSaveTime)
           );
 
           if (typeof this.pendingSave.unref === 'function') {
@@ -91,7 +86,7 @@ class PatternPersistence {
 
       const saveData = {
         ...data,
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
       };
 
       // Ensure directory exists

@@ -54,7 +54,7 @@ async function validateSourceFiles(files) {
     } catch (error) {
       logger.warn('[ORGANIZE] File validation failed', {
         path: sourcePath,
-        error: error.message,
+        error: error.message
       });
       invalid.push({ file, error: error.message });
     }
@@ -63,12 +63,7 @@ async function validateSourceFiles(files) {
   return { valid, invalid };
 }
 
-function registerOrganizeIpc({
-  ipcMain,
-  IPC_CHANNELS,
-  getServiceIntegration,
-  getCustomFolders,
-}) {
+function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, getCustomFolders }) {
   const context = 'Organize';
 
   // Helper to get auto-organize service
@@ -88,7 +83,7 @@ function registerOrganizeIpc({
         error: 'Auto-organize service not available',
         organized: [],
         needsReview: [],
-        failed: [],
+        failed: []
       },
       handler: async (event, { files, smartFolders, options = {} }, service) => {
         const path = require('path');
@@ -99,7 +94,7 @@ function registerOrganizeIpc({
         if (invalidFiles.length > 0) {
           logger.warn('[ORGANIZE] Some files were skipped (not found or invalid)', {
             skippedCount: invalidFiles.length,
-            skippedFiles: invalidFiles.slice(0, 5).map(f => f.error),
+            skippedFiles: invalidFiles.slice(0, 5).map((f) => f.error)
           });
         }
 
@@ -109,15 +104,15 @@ function registerOrganizeIpc({
             error: 'No valid files to organize - all source files are missing or invalid',
             organized: [],
             needsReview: [],
-            failed: invalidFiles.map(f => ({
+            failed: invalidFiles.map((f) => ({
               file: f.file,
               error: f.error
-            })),
+            }))
           };
         }
 
         // FIX: Ensure extension property exists on all files (compute from path if missing)
-        const filesWithExtension = validFiles.map(file => {
+        const filesWithExtension = validFiles.map((file) => {
           if (!file.extension && file.path) {
             const ext = path.extname(file.path).toLowerCase();
             return { ...file, extension: ext };
@@ -127,7 +122,7 @@ function registerOrganizeIpc({
         try {
           logger.info('[ORGANIZE] Starting auto-organize', {
             fileCount: filesWithExtension.length,
-            skippedCount: invalidFiles.length,
+            skippedCount: invalidFiles.length
           });
 
           const folders = smartFolders || getCustomFolders();
@@ -136,7 +131,7 @@ function registerOrganizeIpc({
           logger.info('[ORGANIZE] Auto-organize complete', {
             organized: result.organized.length,
             needsReview: result.needsReview.length,
-            failed: result.failed.length,
+            failed: result.failed.length
           });
 
           return result;
@@ -145,11 +140,11 @@ function registerOrganizeIpc({
           return createErrorResponse(error, {
             organized: [],
             needsReview: [],
-            failed: [],
+            failed: []
           });
         }
-      },
-    }),
+      }
+    })
   );
 
   // Batch organize with auto-approval
@@ -165,12 +160,12 @@ function registerOrganizeIpc({
         success: false,
         error: 'Auto-organize service not available',
         operations: [],
-        groups: [],
+        groups: []
       },
       handler: async (event, { files, smartFolders, options = {} }, service) => {
         try {
           logger.info('[ORGANIZE] Starting batch organize', {
-            fileCount: files.length,
+            fileCount: files.length
           });
 
           const folders = smartFolders || getCustomFolders();
@@ -178,7 +173,7 @@ function registerOrganizeIpc({
 
           logger.info('[ORGANIZE] Batch organize complete', {
             operationCount: result.operations.length,
-            groupCount: result.groups.length,
+            groupCount: result.groups.length
           });
 
           return result;
@@ -186,11 +181,11 @@ function registerOrganizeIpc({
           logger.error('[ORGANIZE] Batch organize failed:', error);
           return createErrorResponse(error, {
             operations: [],
-            groups: [],
+            groups: []
           });
         }
-      },
-    }),
+      }
+    })
   );
 
   // Process new file (for auto-organize on download)
@@ -203,25 +198,19 @@ function registerOrganizeIpc({
       getService: getOrganizeService,
       fallbackResponse: {
         success: false,
-        error: 'Auto-organize service not available',
+        error: 'Auto-organize service not available'
       },
       handler: async (event, { filePath, options = {} }, service) => {
         try {
           logger.info('[ORGANIZE] Processing new file', { filePath });
 
           const smartFolders = getCustomFolders();
-          const result = await service.processNewFile(
-            filePath,
-            smartFolders,
-            options,
-          );
+          const result = await service.processNewFile(filePath, smartFolders, options);
 
           if (result) {
             logger.info('[ORGANIZE] New file organized', result);
           } else {
-            logger.info(
-              '[ORGANIZE] New file not organized (low confidence or disabled)',
-            );
+            logger.info('[ORGANIZE] New file not organized (low confidence or disabled)');
           }
 
           return result;
@@ -229,8 +218,8 @@ function registerOrganizeIpc({
           logger.error('[ORGANIZE] Failed to process new file:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get organization statistics
@@ -245,7 +234,7 @@ function registerOrganizeIpc({
         userPatterns: 0,
         feedbackHistory: 0,
         folderUsageStats: [],
-        thresholds: {},
+        thresholds: {}
       },
       handler: async (event, service) => {
         try {
@@ -257,11 +246,11 @@ function registerOrganizeIpc({
             userPatterns: 0,
             feedbackHistory: 0,
             folderUsageStats: [],
-            thresholds: {},
+            thresholds: {}
           };
         }
-      },
-    }),
+      }
+    })
   );
 
   // Update confidence thresholds
@@ -275,7 +264,7 @@ function registerOrganizeIpc({
       getService: getOrganizeService,
       fallbackResponse: {
         success: false,
-        error: 'Auto-organize service not available',
+        error: 'Auto-organize service not available'
       },
       handler: async (event, { thresholds }, service) => {
         try {
@@ -283,14 +272,14 @@ function registerOrganizeIpc({
 
           return {
             success: true,
-            thresholds,
+            thresholds
           };
         } catch (error) {
           logger.error('[ORGANIZE] Failed to update thresholds:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   logger.info('[IPC] Auto-organize handlers registered');

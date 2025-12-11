@@ -13,11 +13,7 @@
 const path = require('path');
 
 // Import the modules under test
-const {
-  sanitizePath,
-  isPathSafe,
-  sanitizeMetadata,
-} = require('../../src/shared/pathSanitization');
+const { sanitizePath, isPathSafe, sanitizeMetadata } = require('../../src/shared/pathSanitization');
 
 const {
   normalizePath,
@@ -29,7 +25,7 @@ const {
   isWindows,
   isMacOS,
   isLinux,
-  isUnix,
+  isUnix
 } = require('../../src/shared/crossPlatformUtils');
 
 const {
@@ -37,7 +33,7 @@ const {
   MAX_PATH_DEPTH,
   RESERVED_WINDOWS_NAMES,
   DANGEROUS_PATHS,
-  getDangerousPaths,
+  getDangerousPaths
 } = require('../../src/shared/securityConfig');
 
 // ============================================================================
@@ -185,27 +181,19 @@ describe('Path Handling Utilities', () => {
 
     describe('assertPathEquals', () => {
       test('Windows comparison is case-insensitive', () => {
-        expect(
-          assertPathEquals('C:\\Users\\Test', 'c:\\users\\test', 'win32'),
-        ).toBe(true);
+        expect(assertPathEquals('C:\\Users\\Test', 'c:\\users\\test', 'win32')).toBe(true);
       });
 
       test('Windows comparison normalizes separators', () => {
-        expect(
-          assertPathEquals('C:/Users/Test', 'C:\\Users\\Test', 'win32'),
-        ).toBe(true);
+        expect(assertPathEquals('C:/Users/Test', 'C:\\Users\\Test', 'win32')).toBe(true);
       });
 
       test('Unix comparison is case-sensitive', () => {
-        expect(assertPathEquals('/home/User', '/home/user', 'linux')).toBe(
-          false,
-        );
+        expect(assertPathEquals('/home/User', '/home/user', 'linux')).toBe(false);
       });
 
       test('Unix comparison exact match', () => {
-        expect(assertPathEquals('/home/user', '/home/user', 'linux')).toBe(
-          true,
-        );
+        expect(assertPathEquals('/home/user', '/home/user', 'linux')).toBe(true);
       });
     });
 
@@ -225,12 +213,7 @@ describe('Path Handling Utilities', () => {
   describe('Windows Path Handling', () => {
     describe('Drive Letter Paths', () => {
       test('accepts valid C: drive path', () => {
-        const testPath = createWindowsPath(
-          'C',
-          'Users',
-          'Documents',
-          'file.txt',
-        );
+        const testPath = createWindowsPath('C', 'Users', 'Documents', 'file.txt');
         expect(() => sanitizePath(testPath)).not.toThrow();
       });
 
@@ -363,7 +346,7 @@ describe('Path Handling Utilities', () => {
         'LPT6',
         'LPT7',
         'LPT8',
-        'LPT9',
+        'LPT9'
       ];
 
       test('RESERVED_WINDOWS_NAMES contains all reserved names', () => {
@@ -376,9 +359,7 @@ describe('Path Handling Utilities', () => {
         test('sanitizePath rejects reserved names on Windows', () => {
           reservedNames.forEach((name) => {
             const testPath = `C:\\Users\\${name}\\file.txt`;
-            expect(() => sanitizePath(testPath)).toThrow(
-              /reserved Windows filename/,
-            );
+            expect(() => sanitizePath(testPath)).toThrow(/reserved Windows filename/);
           });
         });
 
@@ -403,7 +384,7 @@ describe('Path Handling Utilities', () => {
           createUnixPath('var', 'log', 'app.log'),
           createUnixPath('tmp', 'temp.txt'),
           createUnixPath('usr', 'local', 'bin'),
-          createUnixPath('opt', 'application'),
+          createUnixPath('opt', 'application')
         ];
 
         paths.forEach((p) => {
@@ -427,7 +408,7 @@ describe('Path Handling Utilities', () => {
         const paths = [
           createUnixPath('home', 'user', 'My Documents', 'file.txt'),
           createUnixPath('Users', 'John Doe', 'Desktop'),
-          createUnixPath('var', 'log', 'app name', 'debug.log'),
+          createUnixPath('var', 'log', 'app name', 'debug.log')
         ];
 
         paths.forEach((p) => {
@@ -449,7 +430,7 @@ describe('Path Handling Utilities', () => {
           '/home/user/file_name.txt',
           '/home/user/file.name.txt',
           '/home/user/file (1).txt',
-          '/home/user/file [copy].txt',
+          '/home/user/file [copy].txt'
         ];
 
         specialPaths.forEach((p) => {
@@ -460,7 +441,7 @@ describe('Path Handling Utilities', () => {
       test('handles paths with unicode characters', () => {
         const unicodePaths = [
           '/home/user/documents',
-          '/home/user/folder-name',
+          '/home/user/folder-name'
           // Basic latin with accents should work after NFC normalization
         ];
 
@@ -520,9 +501,7 @@ describe('Path Handling Utilities', () => {
       test('rejects parent directory traversal', () => {
         expect(() => sanitizePath('../file.txt')).toThrow(/path traversal/);
         expect(() => sanitizePath('../../file.txt')).toThrow(/path traversal/);
-        expect(() => sanitizePath('folder/../../../file.txt')).toThrow(
-          /path traversal/,
-        );
+        expect(() => sanitizePath('folder/../../../file.txt')).toThrow(/path traversal/);
       });
 
       test('rejects hidden traversal in middle of path', () => {
@@ -729,15 +708,11 @@ describe('Path Handling Utilities', () => {
 
       test('normalizes Windows paths', () => {
         expect(win32.normalize('C:\\Users\\..\\Admin')).toBe('C:\\Admin');
-        expect(win32.normalize('C:\\Users\\.\\Documents')).toBe(
-          'C:\\Users\\Documents',
-        );
+        expect(win32.normalize('C:\\Users\\.\\Documents')).toBe('C:\\Users\\Documents');
       });
 
       test('joins Windows paths', () => {
-        expect(win32.join('C:\\Users', 'Documents')).toBe(
-          'C:\\Users\\Documents',
-        );
+        expect(win32.join('C:\\Users', 'Documents')).toBe('C:\\Users\\Documents');
       });
 
       test('parses Windows paths', () => {
@@ -774,15 +749,11 @@ describe('Path Handling Utilities', () => {
 
       test('normalizes Unix paths', () => {
         expect(posix.normalize('/home/user/../admin')).toBe('/home/admin');
-        expect(posix.normalize('/home/user/./documents')).toBe(
-          '/home/user/documents',
-        );
+        expect(posix.normalize('/home/user/./documents')).toBe('/home/user/documents');
       });
 
       test('joins Unix paths', () => {
-        expect(posix.join('/home', 'user', 'documents')).toBe(
-          '/home/user/documents',
-        );
+        expect(posix.join('/home', 'user', 'documents')).toBe('/home/user/documents');
       });
 
       test('parses Unix paths', () => {
@@ -829,7 +800,7 @@ describe('Path Handling Utilities', () => {
     test('sanitizes path field in metadata', () => {
       const metadata = {
         path: 'C:\\Users\\Documents\\file.txt',
-        name: 'file.txt',
+        name: 'file.txt'
       };
       const result = sanitizeMetadata(metadata);
       expect(result.path).toBeDefined();
@@ -838,7 +809,7 @@ describe('Path Handling Utilities', () => {
     test('removes metadata with invalid path', () => {
       const metadata = {
         path: '../../../etc/passwd',
-        name: 'passwd',
+        name: 'passwd'
       };
       const result = sanitizeMetadata(metadata);
       expect(result.path).toBeUndefined();
@@ -847,7 +818,7 @@ describe('Path Handling Utilities', () => {
     test('sanitizes null bytes in path metadata', () => {
       const metadata = {
         path: 'C:\\file\0.txt',
-        name: 'file.txt',
+        name: 'file.txt'
       };
       const result = sanitizeMetadata(metadata);
       // Path should either be sanitized (no null bytes) or removed entirely
@@ -867,7 +838,7 @@ describe('Path Handling Utilities', () => {
         '../../file.txt',
         '../../../etc/passwd',
         '..\\file.txt',
-        '..\\..\\file.txt',
+        '..\\..\\file.txt'
       ];
 
       relativePaths.forEach((testPath) => {
@@ -881,7 +852,7 @@ describe('Path Handling Utilities', () => {
       const resolvedPaths = [
         '/safe/path/../etc/passwd', // becomes /safe/etc/passwd
         'folder/../file.txt', // becomes file.txt
-        '/a/b/c/../d/e', // becomes /a/b/d/e
+        '/a/b/c/../d/e' // becomes /a/b/d/e
       ];
 
       resolvedPaths.forEach((testPath) => {
@@ -893,7 +864,7 @@ describe('Path Handling Utilities', () => {
       // Test paths where '..' cannot be fully resolved (escapes root)
       const escapingPaths = [
         'a/../../b', // becomes ../b
-        'a/b/../../../c', // becomes ../c
+        'a/b/../../../c' // becomes ../c
       ];
 
       escapingPaths.forEach((testPath) => {

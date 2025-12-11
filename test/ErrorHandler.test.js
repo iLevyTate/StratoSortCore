@@ -9,14 +9,14 @@ jest.mock('electron', () => ({
     getPath: jest.fn().mockReturnValue('/tmp/test-app'),
     on: jest.fn(),
     relaunch: jest.fn(),
-    quit: jest.fn(),
+    quit: jest.fn()
   },
   dialog: {
-    showMessageBox: jest.fn().mockResolvedValue({ response: 1 }),
+    showMessageBox: jest.fn().mockResolvedValue({ response: 1 })
   },
   BrowserWindow: {
-    getFocusedWindow: jest.fn(),
-  },
+    getFocusedWindow: jest.fn()
+  }
 }));
 
 // Mock fs
@@ -26,10 +26,10 @@ const mockFs = {
   readFile: jest.fn(),
   readdir: jest.fn().mockResolvedValue([]),
   stat: jest.fn(),
-  unlink: jest.fn().mockResolvedValue(undefined),
+  unlink: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock logger
@@ -40,8 +40,8 @@ jest.mock('../src/shared/logger', () => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    log: jest.fn(),
-  },
+    log: jest.fn()
+  }
 }));
 
 // Mock constants
@@ -53,8 +53,8 @@ jest.mock('../src/shared/constants', () => ({
     AI_UNAVAILABLE: 'AI_UNAVAILABLE',
     INVALID_FORMAT: 'INVALID_FORMAT',
     FILE_TOO_LARGE: 'FILE_TOO_LARGE',
-    UNKNOWN: 'UNKNOWN',
-  },
+    UNKNOWN: 'UNKNOWN'
+  }
 }));
 
 describe('ErrorHandler', () => {
@@ -73,10 +73,9 @@ describe('ErrorHandler', () => {
     test('creates logs directory', async () => {
       await errorHandler.initialize();
 
-      expect(mockFs.mkdir).toHaveBeenCalledWith(
-        expect.stringContaining('logs'),
-        { recursive: true },
-      );
+      expect(mockFs.mkdir).toHaveBeenCalledWith(expect.stringContaining('logs'), {
+        recursive: true
+      });
     });
 
     test('sets up log file with timestamp', async () => {
@@ -302,7 +301,7 @@ describe('ErrorHandler', () => {
         '{"level":"INFO","message":"info message"}',
         '{"level":"ERROR","message":"error message"}',
         '{"level":"CRITICAL","message":"critical message"}',
-        '{"level":"DEBUG","message":"debug message"}',
+        '{"level":"DEBUG","message":"debug message"}'
       ].join('\n');
 
       mockFs.readFile.mockResolvedValue(logContent);
@@ -318,7 +317,7 @@ describe('ErrorHandler', () => {
       const logContent = [
         '{"level":"ERROR","message":"error 1"}',
         '{"level":"ERROR","message":"error 2"}',
-        '{"level":"ERROR","message":"error 3"}',
+        '{"level":"ERROR","message":"error 3"}'
       ].join('\n');
 
       mockFs.readFile.mockResolvedValue(logContent);
@@ -332,7 +331,7 @@ describe('ErrorHandler', () => {
       const logContent = [
         '{"level":"ERROR","message":"valid"}',
         'invalid json',
-        '{"level":"ERROR","message":"also valid"}',
+        '{"level":"ERROR","message":"also valid"}'
       ].join('\n');
 
       mockFs.readFile.mockResolvedValue(logContent);
@@ -360,10 +359,7 @@ describe('ErrorHandler', () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 10);
 
-      mockFs.readdir.mockResolvedValue([
-        'stratosort-old.log',
-        'stratosort-new.log',
-      ]);
+      mockFs.readdir.mockResolvedValue(['stratosort-old.log', 'stratosort-new.log']);
       mockFs.stat
         .mockResolvedValueOnce({ mtime: oldDate })
         .mockResolvedValueOnce({ mtime: new Date() });
@@ -383,10 +379,7 @@ describe('ErrorHandler', () => {
     });
 
     test('only processes stratosort log files', async () => {
-      mockFs.readdir.mockResolvedValue([
-        'other-file.log',
-        'stratosort-test.log',
-      ]);
+      mockFs.readdir.mockResolvedValue(['other-file.log', 'stratosort-test.log']);
       mockFs.stat.mockResolvedValue({ mtime: new Date(0) });
 
       await errorHandler.cleanupLogs(7);
@@ -409,7 +402,7 @@ describe('ErrorHandler', () => {
       const mockWebContents = { send: jest.fn() };
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(false),
-        webContents: mockWebContents,
+        webContents: mockWebContents
       };
       electron.BrowserWindow.getFocusedWindow.mockReturnValue(mockWindow);
 
@@ -418,7 +411,7 @@ describe('ErrorHandler', () => {
       expect(mockWebContents.send).toHaveBeenCalledWith('app:error', {
         message: 'Test message',
         type: 'error',
-        timestamp: expect.any(String),
+        timestamp: expect.any(String)
       });
     });
 
@@ -431,13 +424,13 @@ describe('ErrorHandler', () => {
         type: 'warning',
         title: 'Warning',
         message: 'Test message',
-        buttons: ['OK'],
+        buttons: ['OK']
       });
     });
 
     test('shows dialog when window is destroyed', async () => {
       const mockWindow = {
-        isDestroyed: jest.fn().mockReturnValue(true),
+        isDestroyed: jest.fn().mockReturnValue(true)
       };
       electron.BrowserWindow.getFocusedWindow.mockReturnValue(mockWindow);
 

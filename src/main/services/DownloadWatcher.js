@@ -17,7 +17,7 @@ const IMAGE_EXTENSIONS = new Set([
   '.webp',
   '.tiff',
   '.svg',
-  '.heic',
+  '.heic'
 ]);
 
 // Temporary/incomplete file patterns to ignore
@@ -36,7 +36,7 @@ const TEMP_FILE_PATTERNS = [
   /\._/, // macOS resource forks
   /\.DS_Store$/i, // macOS directory settings
   /Thumbs\.db$/i, // Windows thumbnails
-  /desktop\.ini$/i, // Windows desktop settings
+  /desktop\.ini$/i // Windows desktop settings
 ];
 
 /**
@@ -63,7 +63,7 @@ class DownloadWatcher {
     analyzeImageFile,
     getCustomFolders,
     autoOrganizeService,
-    settingsService,
+    settingsService
   }) {
     this.analyzeDocumentFile = analyzeDocumentFile;
     this.analyzeImageFile = analyzeImageFile;
@@ -132,17 +132,17 @@ class DownloadWatcher {
               /desktop\.ini$/i, // Windows desktop settings
               /\.DS_Store$/i, // macOS directory settings
               '**/node_modules/**', // Ignore node_modules
-              '**/.git/**', // Ignore git directories
+              '**/.git/**' // Ignore git directories
             ],
             awaitWriteFinish: {
               stabilityThreshold: 2000, // Wait 2s after last change
-              pollInterval: 100, // Check every 100ms
+              pollInterval: 100 // Check every 100ms
             },
             // Error handling options
             persistent: true,
             usePolling: false, // Use native watchers for better performance
             alwaysStat: false, // Don't stat files we're ignoring
-            depth: 0, // Only watch immediate directory, not subdirectories
+            depth: 0 // Only watch immediate directory, not subdirectories
           });
 
           // FIX #32: Validate watcher was created successfully before registering listeners
@@ -200,13 +200,13 @@ class DownloadWatcher {
     } catch (error) {
       const fsError = FileSystemError.fromNodeError(error, {
         path: dirPath,
-        operation: 'verify',
+        operation: 'verify'
       });
 
       logger.error('[DOWNLOAD-WATCHER] Cannot access downloads directory:', {
         path: dirPath,
         error: fsError.getUserFriendlyMessage(),
-        code: fsError.code,
+        code: fsError.code
       });
 
       this.lastError = fsError;
@@ -230,10 +230,7 @@ class DownloadWatcher {
 
       // Check if already processing this file
       if (this.processingFiles.has(filePath)) {
-        logger.debug(
-          '[DOWNLOAD-WATCHER] File already being processed:',
-          filePath,
-        );
+        logger.debug('[DOWNLOAD-WATCHER] File already being processed:', filePath);
         return;
       }
 
@@ -244,7 +241,7 @@ class DownloadWatcher {
         logger.error('[DOWNLOAD-WATCHER] Failed processing file', {
           filePath,
           ...this._formatErrorInfo(e),
-          stack: e.stack,
+          stack: e.stack
         });
       } finally {
         this.processingFiles.delete(filePath);
@@ -267,19 +264,16 @@ class DownloadWatcher {
     logger.error('[DOWNLOAD-WATCHER] Watcher error:', {
       message: fsError.getUserFriendlyMessage(),
       code: fsError.code,
-      originalError: error.message,
+      originalError: error.message
     });
 
     this.lastError = fsError;
 
     // Attempt automatic restart if error seems recoverable
-    if (
-      fsError.shouldRetry() &&
-      this.restartAttempts < this.maxRestartAttempts
-    ) {
+    if (fsError.shouldRetry() && this.restartAttempts < this.maxRestartAttempts) {
       this.restartAttempts++;
       logger.info(
-        `[DOWNLOAD-WATCHER] Attempting restart (${this.restartAttempts}/${this.maxRestartAttempts})...`,
+        `[DOWNLOAD-WATCHER] Attempting restart (${this.restartAttempts}/${this.maxRestartAttempts})...`
       );
 
       // Stop the current watcher
@@ -291,9 +285,7 @@ class DownloadWatcher {
       }, this.restartDelay * this.restartAttempts); // Exponential backoff
       restartTimer.unref();
     } else if (this.restartAttempts >= this.maxRestartAttempts) {
-      logger.error(
-        '[DOWNLOAD-WATCHER] Max restart attempts reached. Watcher disabled.',
-      );
+      logger.error('[DOWNLOAD-WATCHER] Max restart attempts reached. Watcher disabled.');
       this.stop();
     }
   }
@@ -335,10 +327,7 @@ class DownloadWatcher {
       return true;
     } catch (error) {
       if (error.code === 'ENOENT') {
-        logger.debug(
-          `[DOWNLOAD-WATCHER] File no longer exists (${context}), skipping:`,
-          filePath,
-        );
+        logger.debug(`[DOWNLOAD-WATCHER] File no longer exists (${context}), skipping:`, filePath);
         return false;
       }
       throw error;
@@ -364,28 +353,17 @@ class DownloadWatcher {
    * @returns {Promise<boolean>} True if directory exists/created successfully
    * @throws {FileSystemError} If throwOnError is true and mkdir fails
    */
-  async _ensureDirectory(
-    dirPath,
-    context = 'destination',
-    throwOnError = true,
-  ) {
+  async _ensureDirectory(dirPath, context = 'destination', throwOnError = true) {
     try {
       await fs.mkdir(dirPath, { recursive: true });
       return true;
     } catch (mkdirError) {
-      const fsError = FileSystemError.forOperation(
-        'mkdir',
-        mkdirError,
-        dirPath,
-      );
-      logger.error(
-        `[DOWNLOAD-WATCHER] Failed to create ${context} directory:`,
-        {
-          path: dirPath,
-          error: fsError.getUserFriendlyMessage(),
-          code: fsError.code,
-        },
-      );
+      const fsError = FileSystemError.forOperation('mkdir', mkdirError, dirPath);
+      logger.error(`[DOWNLOAD-WATCHER] Failed to create ${context} directory:`, {
+        path: dirPath,
+        error: fsError.getUserFriendlyMessage(),
+        code: fsError.code
+      });
       if (throwOnError) {
         throw fsError;
       }
@@ -405,7 +383,7 @@ class DownloadWatcher {
       maxRestartAttempts: this.maxRestartAttempts,
       lastError: this.lastError ? this.lastError.toJSON() : null,
       processingCount: this.processingFiles.size,
-      pendingDebounce: this.debounceTimers.size,
+      pendingDebounce: this.debounceTimers.size
     };
   }
 
@@ -466,10 +444,7 @@ class DownloadWatcher {
       hasNodeModules ||
       basename.startsWith('.')
     ) {
-      logger.debug(
-        '[DOWNLOAD-WATCHER] Skipping system/temporary file:',
-        filePath,
-      );
+      logger.debug('[DOWNLOAD-WATCHER] Skipping system/temporary file:', filePath);
       return false;
     }
 
@@ -486,24 +461,21 @@ class DownloadWatcher {
       }
     } catch (error) {
       if (error.code === 'ENOENT') {
-        logger.debug(
-          '[DOWNLOAD-WATCHER] File no longer exists, skipping:',
-          filePath,
-        );
+        logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping:', filePath);
         return false;
       }
 
       // Convert to FileSystemError for consistent handling
       const fsError = FileSystemError.fromNodeError(error, {
         path: filePath,
-        operation: 'access',
+        operation: 'access'
       });
 
       // Log with context but don't crash
       logger.warn('[DOWNLOAD-WATCHER] Cannot access file:', {
         filePath,
         error: fsError.getUserFriendlyMessage(),
-        code: fsError.code,
+        code: fsError.code
       });
 
       // Only throw if it's a critical error
@@ -533,15 +505,11 @@ class DownloadWatcher {
       const settings = await this.settingsService.load();
 
       // Use the new auto-organize service with suggestions
-      const result = await this.autoOrganizeService.processNewFile(
-        filePath,
-        folders,
-        {
-          autoOrganizeEnabled: settings.autoOrganize,
-          confidenceThreshold: settings.downloadConfidenceThreshold || 0.9,
-          defaultLocation: settings.defaultSmartFolderLocation || 'Documents',
-        },
-      );
+      const result = await this.autoOrganizeService.processNewFile(filePath, folders, {
+        autoOrganizeEnabled: settings.autoOrganize,
+        confidenceThreshold: settings.downloadConfidenceThreshold || 0.9,
+        defaultLocation: settings.defaultSmartFolderLocation || 'Documents'
+      });
 
       if (result && result.destination) {
         // CRITICAL FIX: Verify file still exists before renaming
@@ -550,11 +518,7 @@ class DownloadWatcher {
         }
 
         // Create destination directory with error handling
-        await this._ensureDirectory(
-          path.dirname(result.destination),
-          'destination',
-          true,
-        );
+        await this._ensureDirectory(path.dirname(result.destination), 'destination', true);
 
         // Move file with cross-device handling
         await this._moveFile(filePath, result.destination);
@@ -564,20 +528,18 @@ class DownloadWatcher {
           `${Math.round(result.confidence * 100)}% confidence:`,
           filePath,
           '=>',
-          result.destination,
+          result.destination
         );
         return { handled: true, shouldFallback: false };
       } else {
-        logger.info(
-          '[DOWNLOAD-WATCHER] File not auto-organized (low confidence or disabled)',
-        );
+        logger.info('[DOWNLOAD-WATCHER] File not auto-organized (low confidence or disabled)');
         return { handled: true, shouldFallback: false };
       }
     } catch (e) {
       // Log with appropriate detail based on error type
       logger.warn(
         '[DOWNLOAD-WATCHER] Auto-organize service failed, falling back:',
-        this._formatErrorInfo(e),
+        this._formatErrorInfo(e)
       );
       // Fall through to fallback logic
       return { handled: false, shouldFallback: true };
@@ -598,19 +560,16 @@ class DownloadWatcher {
       await fs.access(filePath);
     } catch (error) {
       if (error.code === 'ENOENT') {
-        logger.debug(
-          '[DOWNLOAD-WATCHER] File no longer exists for fallback, skipping:',
-          filePath,
-        );
+        logger.debug('[DOWNLOAD-WATCHER] File no longer exists for fallback, skipping:', filePath);
         return;
       }
       const fsError = FileSystemError.fromNodeError(error, {
         path: filePath,
-        operation: 'access',
+        operation: 'access'
       });
       logger.warn('[DOWNLOAD-WATCHER] Cannot access file for fallback:', {
         filePath,
-        error: fsError.getUserFriendlyMessage(),
+        error: fsError.getUserFriendlyMessage()
       });
       return;
     }
@@ -618,7 +577,7 @@ class DownloadWatcher {
     const folderCategories = folders.map((f) => ({
       name: f.name,
       description: f.description || '',
-      id: f.id,
+      id: f.id
     }));
 
     let result;
@@ -631,17 +590,14 @@ class DownloadWatcher {
     } catch (e) {
       logger.error('[DOWNLOAD-WATCHER] Analysis failed', {
         filePath,
-        error: e.message,
+        error: e.message
       });
       return;
     }
 
     const destFolder = this.resolveDestinationFolder(result, folders);
     if (!destFolder) {
-      logger.debug(
-        '[DOWNLOAD-WATCHER] No matching destination folder found for:',
-        filePath,
-      );
+      logger.debug('[DOWNLOAD-WATCHER] No matching destination folder found for:', filePath);
       return;
     }
 
@@ -652,13 +608,7 @@ class DownloadWatcher {
       }
 
       // Create destination directory
-      if (
-        !(await this._ensureDirectory(
-          destFolder.path,
-          'destination folder',
-          false,
-        ))
-      ) {
+      if (!(await this._ensureDirectory(destFolder.path, 'destination folder', false))) {
         return;
       }
 
@@ -668,26 +618,19 @@ class DownloadWatcher {
       let newName = baseName;
       if (result.suggestedName) {
         const suggestedExt = path.extname(result.suggestedName);
-        newName = suggestedExt
-          ? result.suggestedName
-          : `${result.suggestedName}${extname}`;
+        newName = suggestedExt ? result.suggestedName : `${result.suggestedName}${extname}`;
       }
       const destPath = path.join(destFolder.path, newName);
 
       // Move file with cross-device and conflict handling
       await this._moveFileWithConflictHandling(filePath, destPath, extname);
 
-      logger.info(
-        '[DOWNLOAD-WATCHER] Moved (fallback)',
-        filePath,
-        '=>',
-        destPath,
-      );
+      logger.info('[DOWNLOAD-WATCHER] Moved (fallback)', filePath, '=>', destPath);
     } catch (e) {
       logger.error('[DOWNLOAD-WATCHER] Failed to move file', {
         source: filePath,
         destination: destFolder.path,
-        ...this._formatErrorInfo(e),
+        ...this._formatErrorInfo(e)
       });
     }
   }
@@ -705,7 +648,7 @@ class DownloadWatcher {
       // Handle cross-device move (different drives)
       if (renameError.code === 'EXDEV') {
         logger.debug(
-          '[DOWNLOAD-WATCHER] Cross-device move detected, using crossDeviceMove utility',
+          '[DOWNLOAD-WATCHER] Cross-device move detected, using crossDeviceMove utility'
         );
         try {
           await crossDeviceMove(source, destination, { verify: true });
@@ -716,21 +659,17 @@ class DownloadWatcher {
           logger.error('[DOWNLOAD-WATCHER] Cross-device move failed:', {
             source,
             destination,
-            error: fsError.getUserFriendlyMessage(),
+            error: fsError.getUserFriendlyMessage()
           });
           throw fsError;
         }
       } else {
-        const fsError = FileSystemError.forOperation(
-          'move',
-          renameError,
-          source,
-        );
+        const fsError = FileSystemError.forOperation('move', renameError, source);
         logger.error('[DOWNLOAD-WATCHER] Failed to move file:', {
           source,
           destination,
           error: fsError.getUserFriendlyMessage(),
-          code: fsError.code,
+          code: fsError.code
         });
         throw fsError;
       }
@@ -750,7 +689,7 @@ class DownloadWatcher {
       if (renameError.code === 'EXDEV') {
         // Cross-device move using shared utility
         logger.debug(
-          '[DOWNLOAD-WATCHER] Cross-device move in fallback, using crossDeviceMove utility',
+          '[DOWNLOAD-WATCHER] Cross-device move in fallback, using crossDeviceMove utility'
         );
         await crossDeviceMove(source, destPath, { verify: true });
       } else if (renameError.code === 'EEXIST') {
@@ -761,10 +700,7 @@ class DownloadWatcher {
         const destDir = path.dirname(destPath);
 
         while (counter < 1000) {
-          uniquePath = path.join(
-            destDir,
-            `${nameWithoutExt}_${counter}${extname}`,
-          );
+          uniquePath = path.join(destDir, `${nameWithoutExt}_${counter}${extname}`);
           try {
             await fs.access(uniquePath);
             counter++;
@@ -779,7 +715,7 @@ class DownloadWatcher {
           '[DOWNLOAD-WATCHER] Moved (fallback, renamed due to conflict)',
           source,
           '=>',
-          uniquePath,
+          uniquePath
         );
         return;
       } else {
@@ -797,17 +733,13 @@ class DownloadWatcher {
     // Try folder match candidates
     if (Array.isArray(result.folderMatchCandidates)) {
       for (const cand of result.folderMatchCandidates) {
-        const found = folders.find(
-          (f) => f.id === cand.id || f.name === cand.name,
-        );
+        const found = folders.find((f) => f.id === cand.id || f.name === cand.name);
         if (found) return found;
       }
     }
     // Fallback to category name match
     if (result.category) {
-      return folders.find(
-        (f) => f.name.toLowerCase() === result.category.toLowerCase(),
-      );
+      return folders.find((f) => f.name.toLowerCase() === result.category.toLowerCase());
     }
     return null;
   }

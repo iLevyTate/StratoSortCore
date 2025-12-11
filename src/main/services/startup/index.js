@@ -57,5 +57,5 @@ module.exports = {
   StartupManager,
   getStartupManager,
   createInstance,
-  resetInstance,
+  resetInstance
 };

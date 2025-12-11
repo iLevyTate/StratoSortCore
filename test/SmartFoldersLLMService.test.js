@@ -10,31 +10,31 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fetch with retry
 const mockFetchWithRetry = jest.fn();
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  fetchWithRetry: mockFetchWithRetry,
+  fetchWithRetry: mockFetchWithRetry
 }));
 
 // Mock JSON repair
 jest.mock('../src/main/utils/jsonRepair', () => ({
-  extractAndParseJSON: jest.fn(),
+  extractAndParseJSON: jest.fn()
 }));
 
 // Mock ollama utils
 jest.mock('../src/main/ollamaUtils', () => ({
-  getOllamaHost: jest.fn().mockReturnValue('http://127.0.0.1:11434'),
+  getOllamaHost: jest.fn().mockReturnValue('http://127.0.0.1:11434')
 }));
 
 // Mock constants
 jest.mock('../src/shared/constants', () => ({
   DEFAULT_AI_MODELS: {
-    TEXT_ANALYSIS: 'llama2',
-  },
+    TEXT_ANALYSIS: 'llama2'
+  }
 }));
 
 describe('SmartFoldersLLMService', () => {
@@ -60,12 +60,12 @@ describe('SmartFoldersLLMService', () => {
     const testFolder = {
       name: 'Documents',
       path: '/home/user/Documents',
-      description: 'My documents folder',
+      description: 'My documents folder'
     };
 
     const existingFolders = [
       { name: 'Work', description: 'Work files', keywords: ['office'], category: 'work' },
-      { name: 'Personal', description: 'Personal items', keywords: [], category: 'personal' },
+      { name: 'Personal', description: 'Personal items', keywords: [], category: 'personal' }
     ];
 
     test('enhances folder successfully', async () => {
@@ -76,22 +76,22 @@ describe('SmartFoldersLLMService', () => {
             improvedDescription: 'Enhanced description',
             suggestedKeywords: ['docs', 'files'],
             organizationTips: 'Keep organized',
-            confidence: 0.85,
-          }),
-        }),
+            confidence: 0.85
+          })
+        })
       });
 
       extractAndParseJSON.mockReturnValue({
         improvedDescription: 'Enhanced description',
         suggestedKeywords: ['docs', 'files'],
         organizationTips: 'Keep organized',
-        confidence: 0.85,
+        confidence: 0.85
       });
 
       const result = await enhanceSmartFolderWithLLM(
         testFolder,
         existingFolders,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result.improvedDescription).toBe('Enhanced description');
@@ -105,7 +105,7 @@ describe('SmartFoldersLLMService', () => {
       const result = await enhanceSmartFolderWithLLM(
         testFolder,
         existingFolders,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result.error).toContain('Network error');
@@ -115,13 +115,13 @@ describe('SmartFoldersLLMService', () => {
       mockFetchWithRetry.mockResolvedValue({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error',
+        statusText: 'Internal Server Error'
       });
 
       const result = await enhanceSmartFolderWithLLM(
         testFolder,
         existingFolders,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result.error).toContain('HTTP error');
@@ -131,14 +131,14 @@ describe('SmartFoldersLLMService', () => {
     test('returns error on invalid JSON response', async () => {
       mockFetchWithRetry.mockResolvedValue({
         ok: true,
-        json: jest.fn().mockResolvedValue({ response: 'invalid json' }),
+        json: jest.fn().mockResolvedValue({ response: 'invalid json' })
       });
       extractAndParseJSON.mockReturnValue(null);
 
       const result = await enhanceSmartFolderWithLLM(
         testFolder,
         existingFolders,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result.error).toBe('Invalid JSON response from LLM');
@@ -148,16 +148,12 @@ describe('SmartFoldersLLMService', () => {
       mockFetchWithRetry.mockResolvedValue({
         ok: true,
         json: jest.fn().mockResolvedValue({
-          response: JSON.stringify({ improvedDescription: 'Test' }),
-        }),
+          response: JSON.stringify({ improvedDescription: 'Test' })
+        })
       });
       extractAndParseJSON.mockReturnValue({ improvedDescription: 'Test' });
 
-      const result = await enhanceSmartFolderWithLLM(
-        testFolder,
-        [],
-        mockGetOllamaModel,
-      );
+      const result = await enhanceSmartFolderWithLLM(testFolder, [], mockGetOllamaModel);
 
       expect(result.improvedDescription).toBe('Test');
     });
@@ -168,15 +164,15 @@ describe('SmartFoldersLLMService', () => {
       mockFetchWithRetry.mockResolvedValue({
         ok: true,
         json: jest.fn().mockResolvedValue({
-          response: JSON.stringify({ improvedDescription: 'Generated' }),
-        }),
+          response: JSON.stringify({ improvedDescription: 'Generated' })
+        })
       });
       extractAndParseJSON.mockReturnValue({ improvedDescription: 'Generated' });
 
       const result = await enhanceSmartFolderWithLLM(
         folderNoDesc,
         existingFolders,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result.improvedDescription).toBe('Generated');
@@ -186,24 +182,24 @@ describe('SmartFoldersLLMService', () => {
   describe('calculateFolderSimilarities', () => {
     const folderCategories = [
       { name: 'Documents', id: '1', description: 'Document storage' },
-      { name: 'Images', id: '2', description: 'Photo and image files' },
+      { name: 'Images', id: '2', description: 'Photo and image files' }
     ];
 
     test('calculates similarities for all folders', async () => {
       mockFetchWithRetry
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ response: '0.85' }),
+          json: jest.fn().mockResolvedValue({ response: '0.85' })
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ response: '0.3' }),
+          json: jest.fn().mockResolvedValue({ response: '0.3' })
         });
 
       const result = await calculateFolderSimilarities(
         'Reports',
         folderCategories,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result).toHaveLength(2);
@@ -217,7 +213,7 @@ describe('SmartFoldersLLMService', () => {
       const result = await calculateFolderSimilarities(
         'Documents',
         folderCategories,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result).toHaveLength(2);
@@ -227,13 +223,13 @@ describe('SmartFoldersLLMService', () => {
     test('uses fallback on HTTP error', async () => {
       mockFetchWithRetry.mockResolvedValue({
         ok: false,
-        status: 500,
+        status: 500
       });
 
       const result = await calculateFolderSimilarities(
         'Test',
         folderCategories,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result.every((r) => r.fallback)).toBe(true);
@@ -243,17 +239,17 @@ describe('SmartFoldersLLMService', () => {
       mockFetchWithRetry
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ response: 'not a number' }),
+          json: jest.fn().mockResolvedValue({ response: 'not a number' })
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ response: '0.7' }),
+          json: jest.fn().mockResolvedValue({ response: '0.7' })
         });
 
       const result = await calculateFolderSimilarities(
         'Test',
         folderCategories,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       // First folder should fallback, second should succeed
@@ -261,11 +257,7 @@ describe('SmartFoldersLLMService', () => {
     });
 
     test('handles empty folder categories', async () => {
-      const result = await calculateFolderSimilarities(
-        'Test',
-        [],
-        mockGetOllamaModel,
-      );
+      const result = await calculateFolderSimilarities('Test', [], mockGetOllamaModel);
 
       expect(result).toEqual([]);
     });
@@ -274,17 +266,17 @@ describe('SmartFoldersLLMService', () => {
       mockFetchWithRetry
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ response: '0.3' }),
+          json: jest.fn().mockResolvedValue({ response: '0.3' })
         })
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ response: '0.9' }),
+          json: jest.fn().mockResolvedValue({ response: '0.9' })
         });
 
       const result = await calculateFolderSimilarities(
         'Test',
         folderCategories,
-        mockGetOllamaModel,
+        mockGetOllamaModel
       );
 
       expect(result[0].confidence).toBeGreaterThan(result[1].confidence);

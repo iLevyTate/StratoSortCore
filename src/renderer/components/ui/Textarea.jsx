@@ -11,7 +11,7 @@ const Textarea = forwardRef(function Textarea(
     autoExpand = false,
     ...rest
   },
-  ref,
+  ref
 ) {
   // Always call useId unconditionally to follow React hooks rules
   const generatedId = useId();
@@ -19,33 +19,20 @@ const Textarea = forwardRef(function Textarea(
   const errorId = `${id}-error`;
 
   const invalidClass =
-    invalid || error
-      ? 'border-stratosort-danger focus:ring-stratosort-danger/20'
-      : '';
+    invalid || error ? 'border-stratosort-danger focus:ring-stratosort-danger/20' : '';
   const autoExpandClass = autoExpand ? 'auto-expand' : '';
-  const classes =
-    `form-textarea-enhanced ${invalidClass} ${autoExpandClass} ${className}`.trim();
+  const classes = `form-textarea-enhanced ${invalidClass} ${autoExpandClass} ${className}`.trim();
 
   // If used standalone without label/error, return simple textarea
   if (!label && !error) {
-    return (
-      <textarea
-        ref={ref}
-        className={classes}
-        aria-invalid={invalid || !!error}
-        {...rest}
-      />
-    );
+    return <textarea ref={ref} className={classes} aria-invalid={invalid || !!error} {...rest} />;
   }
 
   // Full form field with label and error
   return (
     <div className="flex flex-col gap-2">
       {label && (
-        <label
-          htmlFor={id}
-          className="text-sm font-medium text-system-gray-700"
-        >
+        <label htmlFor={id} className="text-sm font-medium text-system-gray-700">
           {label}
           {required && (
             <span className="text-stratosort-danger ml-1" aria-label="required">
@@ -78,7 +65,7 @@ Textarea.propTypes = {
   error: PropTypes.string,
   label: PropTypes.string,
   required: PropTypes.bool,
-  autoExpand: PropTypes.bool,
+  autoExpand: PropTypes.bool
 };
 
 export default Textarea;

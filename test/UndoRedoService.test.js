@@ -20,8 +20,8 @@ const os = require('os');
 // Mock electron with a getter that reads the dynamic value
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(),
-  },
+    getPath: jest.fn()
+  }
 }));
 
 describe('UndoRedoService', () => {
@@ -49,7 +49,7 @@ describe('UndoRedoService', () => {
     service = new UndoRedoService({
       maxActions: 10,
       maxMemoryMB: 1,
-      maxBatchSize: 100,
+      maxBatchSize: 100
     });
   });
 
@@ -108,7 +108,7 @@ describe('UndoRedoService', () => {
     test('canUndo returns true after recording action', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
       expect(service.canUndo()).toBe(true);
     });
@@ -120,7 +120,7 @@ describe('UndoRedoService', () => {
 
       await service.recordAction('FILE_MOVE', {
         originalPath: source,
-        newPath: dest,
+        newPath: dest
       });
 
       await service.undo();
@@ -132,7 +132,7 @@ describe('UndoRedoService', () => {
     test('records action and increments index', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
 
       expect(service.actions).toHaveLength(1);
@@ -142,11 +142,11 @@ describe('UndoRedoService', () => {
     test('generates unique action ID', async () => {
       const id1 = await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
       const id2 = await service.recordAction('FILE_MOVE', {
         originalPath: '/c',
-        newPath: '/d',
+        newPath: '/d'
       });
 
       expect(id1).not.toBe(id2);
@@ -158,7 +158,7 @@ describe('UndoRedoService', () => {
         .map((_, i) => ({
           type: 'move',
           originalPath: `/a${i}`,
-          newPath: `/b${i}`,
+          newPath: `/b${i}`
         }));
 
       await service.recordAction('BATCH_ORGANIZE', { operations });
@@ -169,7 +169,7 @@ describe('UndoRedoService', () => {
     test('removes future actions when recording after undo', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
 
       const source = path.join(testDir, 'source.txt');
@@ -177,14 +177,14 @@ describe('UndoRedoService', () => {
       await fs.writeFile(dest, 'content');
       await service.recordAction('FILE_MOVE', {
         originalPath: source,
-        newPath: dest,
+        newPath: dest
       });
 
       await service.undo();
 
       await service.recordAction('FILE_RENAME', {
         originalPath: '/e',
-        newPath: '/f',
+        newPath: '/f'
       });
 
       expect(service.actions).toHaveLength(2);
@@ -195,7 +195,7 @@ describe('UndoRedoService', () => {
       for (let i = 0; i < 15; i++) {
         await service.recordAction('FILE_MOVE', {
           originalPath: `/a${i}`,
-          newPath: `/b${i}`,
+          newPath: `/b${i}`
         });
       }
 
@@ -207,7 +207,7 @@ describe('UndoRedoService', () => {
     test('describes FILE_MOVE', () => {
       const desc = service.getActionDescription('FILE_MOVE', {
         originalPath: '/home/test.txt',
-        newPath: '/home/docs/test.txt',
+        newPath: '/home/docs/test.txt'
       });
       expect(desc).toContain('Move');
       expect(desc).toContain('test.txt');
@@ -216,7 +216,7 @@ describe('UndoRedoService', () => {
     test('describes FILE_RENAME', () => {
       const desc = service.getActionDescription('FILE_RENAME', {
         originalPath: '/home/old.txt',
-        newPath: '/home/new.txt',
+        newPath: '/home/new.txt'
       });
       expect(desc).toContain('Rename');
       expect(desc).toContain('old.txt');
@@ -225,7 +225,7 @@ describe('UndoRedoService', () => {
 
     test('describes FILE_DELETE', () => {
       const desc = service.getActionDescription('FILE_DELETE', {
-        originalPath: '/home/deleted.txt',
+        originalPath: '/home/deleted.txt'
       });
       expect(desc).toContain('Delete');
       expect(desc).toContain('deleted.txt');
@@ -233,7 +233,7 @@ describe('UndoRedoService', () => {
 
     test('describes FOLDER_CREATE', () => {
       const desc = service.getActionDescription('FOLDER_CREATE', {
-        folderPath: '/home/newfolder',
+        folderPath: '/home/newfolder'
       });
       expect(desc).toContain('Create folder');
       expect(desc).toContain('newfolder');
@@ -241,7 +241,7 @@ describe('UndoRedoService', () => {
 
     test('describes BATCH_ORGANIZE', () => {
       const desc = service.getActionDescription('BATCH_ORGANIZE', {
-        operations: [{}, {}, {}],
+        operations: [{}, {}, {}]
       });
       expect(desc).toContain('Organize');
       expect(desc).toContain('3');
@@ -266,11 +266,11 @@ describe('UndoRedoService', () => {
     test('returns action history', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
       await service.recordAction('FILE_RENAME', {
         originalPath: '/c',
-        newPath: '/d',
+        newPath: '/d'
       });
 
       const history = service.getActionHistory();
@@ -286,7 +286,7 @@ describe('UndoRedoService', () => {
       for (let i = 0; i < 5; i++) {
         await service.recordAction('FILE_MOVE', {
           originalPath: `/a${i}`,
-          newPath: `/b${i}`,
+          newPath: `/b${i}`
         });
       }
 
@@ -305,11 +305,11 @@ describe('UndoRedoService', () => {
     test('clears all actions', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
       await service.recordAction('FILE_MOVE', {
         originalPath: '/c',
-        newPath: '/d',
+        newPath: '/d'
       });
 
       await service.clearHistory();
@@ -324,7 +324,7 @@ describe('UndoRedoService', () => {
     test('returns statistics', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
 
       const stats = service.getStats();
@@ -342,11 +342,11 @@ describe('UndoRedoService', () => {
     test('totalActions reflects recorded actions', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
       await service.recordAction('FILE_MOVE', {
         originalPath: '/c',
-        newPath: '/d',
+        newPath: '/d'
       });
 
       const stats = service.getStats();
@@ -434,7 +434,7 @@ describe('UndoRedoService', () => {
       const action = {
         id: 'test',
         type: 'FILE_MOVE',
-        data: { originalPath: '/a', newPath: '/b' },
+        data: { originalPath: '/a', newPath: '/b' }
       };
       const size = service._estimateActionSize(action);
       expect(typeof size).toBe('number');
@@ -444,7 +444,7 @@ describe('UndoRedoService', () => {
     test('recalculates memory estimate', async () => {
       await service.recordAction('FILE_MOVE', {
         originalPath: '/a',
-        newPath: '/b',
+        newPath: '/b'
       });
       const beforeRecalc = service.currentMemoryEstimate;
 

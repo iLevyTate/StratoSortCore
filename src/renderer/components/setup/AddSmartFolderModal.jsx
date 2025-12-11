@@ -14,7 +14,7 @@ function AddSmartFolderModal({
   onAdd,
   defaultLocation,
   existingFolders = [],
-  showNotification,
+  showNotification
 }) {
   const [folderName, setFolderName] = useState('');
   const [folderPath, setFolderPath] = useState('');
@@ -78,10 +78,7 @@ function AddSmartFolderModal({
         (f.path && f.path.toLowerCase() === targetPath.toLowerCase())
     );
     if (existing) {
-      showNotification?.(
-        `A smart folder with this name or path already exists`,
-        'warning'
-      );
+      showNotification?.(`A smart folder with this name or path already exists`, 'warning');
       return;
     }
 
@@ -91,7 +88,7 @@ function AddSmartFolderModal({
         name: folderName.trim(),
         path: targetPath,
         description: description.trim() || `Smart folder for ${folderName.trim()}`,
-        isDefault: false,
+        isDefault: false
       };
 
       const success = await onAdd(newFolder);
@@ -123,10 +120,7 @@ function AddSmartFolderModal({
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-system-gray-100">
-          <h2
-            id="add-folder-title"
-            className="text-lg font-semibold text-system-gray-900"
-          >
+          <h2 id="add-folder-title" className="text-lg font-semibold text-system-gray-900">
             Add Smart Folder
           </h2>
           <button
@@ -135,7 +129,12 @@ function AddSmartFolderModal({
             aria-label="Close"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -190,7 +189,12 @@ function AddSmartFolderModal({
                 className="px-3 shrink-0"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                  />
                 </svg>
               </Button>
             </div>
@@ -260,10 +264,10 @@ AddSmartFolderModal.propTypes = {
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
       name: PropTypes.string,
-      path: PropTypes.string,
+      path: PropTypes.string
     })
   ),
-  showNotification: PropTypes.func,
+  showNotification: PropTypes.func
 };
 
 export default AddSmartFolderModal;

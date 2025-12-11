@@ -62,7 +62,9 @@ describe('defaultSettings', () => {
 
     test('thresholds are in correct order', () => {
       expect(DEFAULT_SETTINGS.reviewThreshold).toBeLessThan(DEFAULT_SETTINGS.autoApproveThreshold);
-      expect(DEFAULT_SETTINGS.autoApproveThreshold).toBeLessThan(DEFAULT_SETTINGS.downloadConfidenceThreshold);
+      expect(DEFAULT_SETTINGS.autoApproveThreshold).toBeLessThan(
+        DEFAULT_SETTINGS.downloadConfidenceThreshold
+      );
     });
   });
 
@@ -146,7 +148,7 @@ describe('defaultSettings', () => {
         'maxBatchSize',
         'retryAttempts',
         'workflowRestoreMaxAge',
-        'saveDebounceMs',
+        'saveDebounceMs'
       ];
 
       numericKeys.forEach((key) => {
@@ -155,11 +157,7 @@ describe('defaultSettings', () => {
     });
 
     test('threshold values are between 0 and 1', () => {
-      const thresholds = [
-        'autoApproveThreshold',
-        'downloadConfidenceThreshold',
-        'reviewThreshold',
-      ];
+      const thresholds = ['autoApproveThreshold', 'downloadConfidenceThreshold', 'reviewThreshold'];
 
       thresholds.forEach((key) => {
         expect(DEFAULT_SETTINGS[key]).toBeGreaterThanOrEqual(0);

@@ -25,7 +25,7 @@ function createEmptyIndex(schemaVersion) {
     categoryIndex: {},
     dateIndex: {},
     sizeIndex: {},
-    lastOptimized: null,
+    lastOptimized: null
   };
 }
 
@@ -38,11 +38,7 @@ function createEmptyIndex(schemaVersion) {
  */
 function generateFileHash(filePath, size, lastModified) {
   const hashInput = `${filePath}:${size}:${lastModified}`;
-  return crypto
-    .createHash('sha256')
-    .update(hashInput)
-    .digest('hex')
-    .substring(0, 16);
+  return crypto.createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
 }
 
 /**
@@ -67,9 +63,7 @@ function updateIndexes(index, entry) {
   const timestamp = new Date().toISOString();
   // Ensure updatedAt always moves forward, even when called twice within the same ms
   index.updatedAt =
-    timestamp === index.updatedAt
-      ? new Date(Date.now() + 1).toISOString()
-      : timestamp;
+    timestamp === index.updatedAt ? new Date(Date.now() + 1).toISOString() : timestamp;
 
   // File hash index
   index.fileHashes[entry.fileHash] = entry.id;
@@ -134,9 +128,7 @@ function removeFromIndexes(index, entry) {
   // Remove from category index
   if (entry.analysis.category) {
     const categoryEntries = index.categoryIndex[entry.analysis.category] || [];
-    index.categoryIndex[entry.analysis.category] = categoryEntries.filter(
-      (id) => id !== entry.id,
-    );
+    index.categoryIndex[entry.analysis.category] = categoryEntries.filter((id) => id !== entry.id);
     if (index.categoryIndex[entry.analysis.category].length === 0) {
       delete index.categoryIndex[entry.analysis.category];
     }
@@ -145,9 +137,7 @@ function removeFromIndexes(index, entry) {
   // Remove from date index
   const dateKey = entry.timestamp.substring(0, 7); // YYYY-MM
   if (index.dateIndex[dateKey]) {
-    index.dateIndex[dateKey] = index.dateIndex[dateKey].filter(
-      (id) => id !== entry.id,
-    );
+    index.dateIndex[dateKey] = index.dateIndex[dateKey].filter((id) => id !== entry.id);
     if (index.dateIndex[dateKey].length === 0) {
       delete index.dateIndex[dateKey];
     }
@@ -156,9 +146,7 @@ function removeFromIndexes(index, entry) {
   // Remove from size index
   const sizeRange = getSizeRange(entry.fileSize);
   if (index.sizeIndex[sizeRange]) {
-    index.sizeIndex[sizeRange] = index.sizeIndex[sizeRange].filter(
-      (id) => id !== entry.id,
-    );
+    index.sizeIndex[sizeRange] = index.sizeIndex[sizeRange].filter((id) => id !== entry.id);
     if (index.sizeIndex[sizeRange].length === 0) {
       delete index.sizeIndex[sizeRange];
     }
@@ -170,5 +158,5 @@ module.exports = {
   generateFileHash,
   getSizeRange,
   updateIndexes,
-  removeFromIndexes,
+  removeFromIndexes
 };

@@ -24,5 +24,5 @@ module.exports = {
   ...testFixtures,
 
   // Page Objects
-  ...pageObjects,
+  ...pageObjects
 };

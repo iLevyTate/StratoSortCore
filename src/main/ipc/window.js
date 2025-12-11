@@ -23,8 +23,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
         const win = getWindow();
         if (win) win.minimize();
         return true;
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -36,8 +36,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
         const win = getWindow();
         if (win) win.maximize();
         return true;
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -49,8 +49,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
         const win = getWindow();
         if (win) win.unmaximize();
         return true;
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -69,8 +69,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
           return win.isMaximized();
         }
         return false;
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -81,8 +81,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
       handler: async () => {
         const win = getWindow();
         return win ? win.isMaximized() : false;
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -94,8 +94,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
         const win = getWindow();
         if (win) win.close();
         return true;
-      },
-    }),
+      }
+    })
   );
 }
 

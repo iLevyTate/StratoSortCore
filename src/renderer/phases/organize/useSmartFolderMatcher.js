@@ -29,8 +29,8 @@ export function useSmartFolderMatcher(smartFolders) {
           `${baseName}s`,
           baseName.replace(/\s+/g, ''),
           baseName.replace(/\s+/g, '-'),
-          baseName.replace(/\s+/g, '_'),
-        ],
+          baseName.replace(/\s+/g, '_')
+        ]
       };
     });
 
@@ -51,7 +51,7 @@ export function useSmartFolderMatcher(smartFolders) {
         `${normalizedCategory}s`,
         normalizedCategory.replace(/\s+/g, ''),
         normalizedCategory.replace(/\s+/g, '-'),
-        normalizedCategory.replace(/\s+/g, '_'),
+        normalizedCategory.replace(/\s+/g, '_')
       ];
 
       // Try to find a match

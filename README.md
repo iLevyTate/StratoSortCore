@@ -1,72 +1,69 @@
-# StratoSort
+# El StratoSort
 
-**Smart File Organization with Local AI** 🚀
+![Coverage](https://img.shields.io/badge/coverage-73.4%25-orange)
 
-StratoSort is a privacy-first document organizer that uses AI to intelligently categorize and organize your files. All processing happens locally on your computer - your files never leave your machine.
+**Smart File Organization with Local AI**
+
+El StratoSort is a privacy-first document organizer that uses local AI to categorize and arrange
+files without sending data to the cloud. It is a focused variation of the broader StratoSort family,
+retaining the same logo and identity while targeting this branch’s priorities.
 
 ![StratoSort Logo](assets/stratosort-logo.png)
 
-## ✨ Features
+## Features
 
-- 🤖 **Local AI Analysis** - Powered by Ollama, runs completely offline
-- 📁 **Smart Organization** - AI suggests the best folders for your files
-- 🖼️ **Image Understanding** - Analyzes image content, not just filenames
-- 🔄 **Safe Operations** - Full undo/redo for all file movements
-- 🛡️ **Privacy First** - No cloud, no tracking, no data leaves your computer
-- 📊 **Batch Processing** - Organize hundreds of files at once
-- 🎯 **Smart Folders** - Create intelligent folders that learn your preferences
+- Local AI analysis powered by Ollama and fully offline
+- Smart organization suggestions for files and folders
+- Image understanding beyond filenames
+- Safe operations with full undo/redo
+- Privacy-first by design—no tracking or data exfiltration
+- Batch processing for large sets of files
+- Smart folders that adapt to user choices
 
-## 📥 Download & Install
+## Download & Install
 
-### For Windows Users
+### Windows
 
-1. **Download the installer**:
-   - Go to [Releases](https://github.com/stratosort/stratosort/releases/latest)
-   - Download `StratoSort-Setup-1.0.0.exe`
-   - Located in: `release/build/StratoSort-Setup-1.0.0.exe` (after building)
+1. Go to [Releases](https://github.com/stratosort/stratosort/releases/latest) and download
+   `StratoSort-Setup-1.0.0.exe` (produced at `release/build/StratoSort-Setup-1.0.0.exe` after
+   building).
+2. Run the installer and follow the wizard.
+3. On first launch, the app will verify AI components and guide you through any required Ollama
+   setup (one-time, ~6GB).
 
-2. **Run the installer**:
-   - Double-click the downloaded file
-   - Follow the installation wizard
-   - StratoSort will automatically set up AI models on first run
+### macOS
 
-3. **First Launch**:
-   - The app will check for required AI components
-   - If needed, it will guide you through installing Ollama
-   - Essential AI models will be downloaded automatically (one-time, ~6GB)
+- Download `StratoSort-1.0.0.dmg` from
+  [Releases](https://github.com/stratosort/stratosort/releases/latest).
+- Open the DMG, drag StratoSort to Applications, then launch to complete AI setup.
 
-### For macOS Users
+### Linux
 
-- Download `StratoSort-1.0.0.dmg` from [Releases](https://github.com/stratosort/stratosort/releases/latest)
-- Open the DMG and drag StratoSort to Applications
-- On first launch, the app will set up AI components
-
-### For Linux Users
-
-- Download `StratoSort-1.0.0.AppImage` from [Releases](https://github.com/stratosort/stratosort/releases/latest)
+- Download `StratoSort-1.0.0.AppImage` from
+  [Releases](https://github.com/stratosort/stratosort/releases/latest).
 - Make it executable: `chmod +x StratoSort-1.0.0.AppImage`
 - Run it: `./StratoSort-1.0.0.AppImage`
 
-## 🚀 Getting Started
+## Getting Started
 
-**New to StratoSort?** Check out our [Quick Start Guide](QUICK_START.md) for a 5-minute walkthrough!
+New to StratoSort? See the [Quick Start Guide](QUICK_START.md) for a five-minute walkthrough.
 
-1. **Launch StratoSort** - The app will start and check AI readiness
-2. **Select Files** - Choose files or folders to organize
-3. **Analyze** - AI analyzes your files (text, images, documents)
-4. **Review** - See AI suggestions for organization
-5. **Organize** - Apply suggestions with one click
-6. **Undo if Needed** - Full history with Ctrl+Z
+1. Launch StratoSort to check AI readiness.
+2. Select files or folders to organize.
+3. Analyze for AI-driven suggestions.
+4. Review suggestions.
+5. Organize with one click.
+6. Use undo/redo as needed.
 
-## 🎯 Use Cases
+## Use Cases
 
-- **Downloads Folder Cleanup** - Automatically sort downloads into proper folders
-- **Photo Organization** - Group photos by content, not just date
-- **Document Management** - Categorize documents by type and content
-- **Project Files** - Keep project files organized by topic
-- **Receipt & Invoice Filing** - Auto-categorize financial documents
+- Downloads folder cleanup
+- Photo organization by visual content
+- Document management by type and content
+- Project file structuring
+- Receipt and invoice filing
 
-## ⚙️ System Requirements
+## System Requirements
 
 ### Minimum
 
@@ -79,52 +76,44 @@ StratoSort is a privacy-first document organizer that uses AI to intelligently c
 
 - 8GB+ RAM
 - 12GB+ free disk space
-- GPU with 4GB+ VRAM (optional, for faster processing)
+- GPU with 4GB+ VRAM (optional for faster processing)
 
-## 🔒 Privacy & Security
+## Privacy & Security
 
-- **100% Local** - All AI processing happens on your computer
-- **No Internet Required** - Works completely offline after setup
-- **No Data Collection** - We don't track, collect, or transmit any data
-- **Open Source** - Full source code available for inspection
+- 100% local processing
+- No internet required after setup
+- No data collection or tracking
+- Open source for inspection
 
-## ⌨️ Keyboard Shortcuts
+## Keyboard Shortcuts
 
-- **Undo**: `Ctrl+Z` (Windows/Linux) or `Cmd+Z` (Mac)
-- **Redo**: `Ctrl+Shift+Z` or `Ctrl+Y` (Windows/Linux) or `Cmd+Shift+Z` (Mac)
-- **Select All**: `Ctrl+A` (Windows/Linux) or `Cmd+A` (Mac)
+- Undo: `Ctrl+Z` (Windows/Linux) or `Cmd+Z` (Mac)
+- Redo: `Ctrl+Shift+Z` or `Ctrl+Y` (Windows/Linux) or `Cmd+Shift+Z` (Mac)
+- Select All: `Ctrl+A` (Windows/Linux) or `Cmd+A` (Mac)
 
-## 🔧 Advanced Features
+## Advanced Features
 
 ### Smart Folders
 
-Create intelligent folders that automatically categorize files:
-
-- Set keywords and descriptions
-- AI learns from your choices
-- Improves accuracy over time
+- Configure keywords and descriptions
+- AI learns from selections and improves over time
 
 ### Auto-Organization
 
-Enable automatic organization for Downloads folder:
-
-1. Go to Settings → Auto-Organize
-2. Enable "Watch Downloads Folder"
-3. Set confidence threshold
-4. New downloads are organized automatically
+1. Go to Settings → Auto-Organize.
+2. Enable "Watch Downloads Folder".
+3. Set confidence thresholds.
+4. New downloads organize automatically.
 
 ### Batch Operations
 
-Process multiple files efficiently:
-
 - Select multiple files/folders
-- Get suggestions for all at once
-- Review and apply in bulk
-- Full undo for entire batch
+- Analyze and apply suggestions in bulk
+- Undo available for entire batch operations
 
 ---
 
-## 👨‍💻 For Developers
+## For Developers
 
 ### Building from Source
 
@@ -132,7 +121,7 @@ Process multiple files efficiently:
 
 - Node.js 18+ and npm 8+
 - Git
-- Tesseract OCR installed and on PATH (required for PDF/image OCR fallback)
+- Tesseract OCR installed and on PATH (for PDF/image OCR fallback)
 
 #### Setup
 
@@ -145,12 +134,9 @@ npm run dev  # Start development mode
 
 #### Build Commands
 
-**Quick Build (Windows)**:
-
-- Double-click `BUILD_INSTALLER.bat` or `BUILD_INSTALLER.ps1`
-- Installer will be created in `release/build/`
-
-**Manual Build**:
+- Quick build (Windows): run `BUILD_INSTALLER.bat` or `BUILD_INSTALLER.ps1` to produce an installer
+  in `release/build/`.
+- Manual builds:
 
 ```bash
 npm run build        # Build renderer
@@ -162,8 +148,6 @@ npm run dist:linux   # Create Linux packages
 
 #### Installer Location
 
-After building, installers are located in:
-
 - Windows: `release/build/StratoSort-Setup-1.0.0.exe`
 - macOS: `release/build/StratoSort-1.0.0.dmg`
 - Linux: `release/build/StratoSort-1.0.0.AppImage`
@@ -172,67 +156,73 @@ After building, installers are located in:
 
 ```bash
 npm test                    # Run all tests
-npm run lint               # Check code style
-npm run setup:ollama       # Set up Ollama and models
-npm run setup:ollama:check # Verify Ollama installation
+npm run lint                # Check code style
+npm run setup:ollama        # Set up Ollama and models
+npm run setup:ollama:check  # Verify Ollama installation
 ```
 
-### Architecture
+### Architecture Overview
 
-- **Frontend**: React with Tailwind CSS
-- **Backend**: Electron with Node.js
-- **AI**: Ollama with local LLMs
-- **Database**: ChromaDB for embeddings
-- **State**: Context API with persistence
+- Electron multi-process: sandboxed React renderer communicating with the Node.js main process via
+  IPC.
+- Data plane: ChromaDB stores embeddings; backend services orchestrate analysis and organization.
+- State: Redux Toolkit with persistence middleware in the renderer.
+- Security: Context isolation with a constrained preload bridge (`window.electronAPI`).
+- Further detail: see `docs/ARCHITECTURE.md` and `docs/DI_PATTERNS.md`.
 
 ### Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+1. Fork the repository.
+2. Create a feature branch.
+3. Make changes.
+4. Run tests and linting.
+5. Submit a pull request.
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-- [Organization Guide](ORGANIZATION_SUGGESTIONS_GUIDE.md) - How the AI suggestion system works
-- [Ollama Setup Guide](OLLAMA_SETUP_GUIDE.md) - Detailed AI setup instructions
-- [API Documentation](docs/API.md) - For developers
+- [Architecture](docs/ARCHITECTURE.md)
+- [Dependency Injection Patterns](docs/DI_PATTERNS.md)
+- [Learning Guide](docs/LEARNING_GUIDE.md)
+- [Reference & Glossary](docs/REFERENCE_AND_GLOSSARY.md)
+- [Code Examples](docs/CODE_EXAMPLES.md)
+- [Organization Guide](ORGANIZATION_SUGGESTIONS_GUIDE.md)
+- [Ollama Setup Guide](OLLAMA_SETUP_GUIDE.md)
+- [API Documentation](docs/API.md)
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### AI Models Not Working
 
-- Run `npm run setup:ollama:check` to verify installation
-- Ensure Ollama is running: `ollama serve`
-- Check Settings → AI Configuration
+- Run `npm run setup:ollama:check` to verify installation.
+- Ensure Ollama is running: `ollama serve`.
+- Check Settings → AI Configuration.
 
 ### Files Not Moving
 
-- Check file permissions
-- Ensure destination folders exist
-- Review the operation log
+- Check file permissions.
+- Ensure destination folders exist.
+- Review the operation log.
 
 ### Performance Issues
 
-- Close other applications
-- Check available disk space
-- Consider using smaller AI models
+- Close other applications.
+- Check available disk space.
+- Consider using smaller AI models.
 
-## 📄 License
+## License
 
-MIT License - See [LICENSE](LICENSE) file for details
+MIT License - See [LICENSE](LICENSE) for details.
 
-## 🔗 Links
+## Links
 
-- **Homepage**: [stratosort.com](https://stratosort.com)
-- **GitHub**: [github.com/stratosort/stratosort](https://github.com/stratosort/stratosort)
-- **Issues**: [Report a bug](https://github.com/stratosort/stratosort/issues)
-- **Ollama**: [ollama.ai](https://ollama.ai)
+- Homepage: [stratosort.com](https://stratosort.com)
+- GitHub: [github.com/stratosort/stratosort](https://github.com/stratosort/stratosort)
+- Issues: [Report a bug](https://github.com/stratosort/stratosort/issues)
+- Ollama: [ollama.ai](https://ollama.ai)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Powered by [Ollama](https://ollama.ai) for local AI
 - Built with [Electron](https://www.electronjs.org/) and [React](https://reactjs.org/)
@@ -240,4 +230,4 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 ---
 
-**Made with ❤️ for privacy-conscious users**
+Built for privacy-conscious users.

@@ -23,7 +23,7 @@ describe('AnalysisError', () => {
   describe('AnalysisError base class', () => {
     test('creates error with code and metadata', () => {
       const error = new AnalysisError('PDF_PROCESSING_FAILURE', {
-        fileName: 'test.pdf',
+        fileName: 'test.pdf'
       });
 
       expect(error.name).toBe('AnalysisError');
@@ -53,7 +53,7 @@ describe('AnalysisError', () => {
 
     test('generates message for model not installed', () => {
       const error = new AnalysisError('MODEL_NOT_INSTALLED', {
-        requiredModel: 'llama3.2',
+        requiredModel: 'llama3.2'
       });
 
       expect(error.message).toContain('llama3.2');
@@ -105,7 +105,7 @@ describe('AnalysisError', () => {
   describe('getActionableSteps', () => {
     test('returns install command for model not installed', () => {
       const error = new AnalysisError('MODEL_NOT_INSTALLED', {
-        requiredModel: 'llama3.2',
+        requiredModel: 'llama3.2'
       });
 
       const steps = error.getActionableSteps();
@@ -123,12 +123,12 @@ describe('AnalysisError', () => {
 
     test('returns npm install for dependency missing', () => {
       const error = new AnalysisError('DEPENDENCY_MISSING', {
-        dependency: 'pdf-parse',
+        dependency: 'pdf-parse'
       });
 
       const steps = error.getActionableSteps();
 
-      expect(steps.some(s => s.includes('npm install'))).toBe(true);
+      expect(steps.some((s) => s.includes('npm install'))).toBe(true);
     });
 
     test('returns empty array for unknown code', () => {
@@ -207,7 +207,7 @@ describe('AnalysisError', () => {
 
     test('creates error with additional metadata', () => {
       const error = new FileProcessingError('IMAGE_ANALYSIS_FAILURE', 'photo.jpg', {
-        dimensions: '1920x1080',
+        dimensions: '1920x1080'
       });
 
       expect(error.metadata.dimensions).toBe('1920x1080');

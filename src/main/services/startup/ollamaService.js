@@ -24,7 +24,7 @@ async function checkOllamaHealth() {
   try {
     const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
     const response = await axios.get(`${baseUrl}/api/tags`, {
-      timeout: 2000,
+      timeout: 2000
     });
     return response.status === 200;
   } catch (error) {
@@ -46,8 +46,8 @@ async function isOllamaRunning() {
         operation: 'Ollama health check',
         maxRetries: 2,
         initialDelay: 500,
-        maxDelay: 2000,
-      },
+        maxDelay: 2000
+      }
     );
     return response.status === 200;
   } catch {
@@ -68,21 +68,16 @@ async function startOllama({ serviceStatus }) {
   try {
     const response = await axios.get(`${baseUrl}/api/tags`, {
       timeout: 1000,
-      validateStatus: () => true,
+      validateStatus: () => true
     });
 
     if (response.status === 200) {
-      logger.info(
-        '[STARTUP] Ollama is already running externally, skipping startup',
-      );
+      logger.info('[STARTUP] Ollama is already running externally, skipping startup');
       return { process: null, external: true };
     }
   } catch (error) {
     if (error.code !== 'ECONNREFUSED') {
-      logger.debug(
-        '[STARTUP] Ollama pre-check error (non-critical):',
-        error.message,
-      );
+      logger.debug('[STARTUP] Ollama pre-check error (non-critical):', error.message);
     }
   }
 
@@ -93,7 +88,7 @@ async function startOllama({ serviceStatus }) {
       detached: false,
       stdio: 'pipe',
       shell: shouldUseShell(),
-      windowsHide: true,
+      windowsHide: true
     });
   } catch (error) {
     throw new Error(`Failed to spawn Ollama binary: ${error.message}`);
@@ -117,9 +112,7 @@ async function startOllama({ serviceStatus }) {
       (message.includes('listen tcp') && message.includes('11434'))
     ) {
       startupError = 'PORT_IN_USE';
-      logger.info(
-        '[STARTUP] Ollama port already in use, assuming external instance is running',
-      );
+      logger.info('[STARTUP] Ollama port already in use, assuming external instance is running');
     }
   });
 
@@ -156,5 +149,5 @@ async function startOllama({ serviceStatus }) {
 module.exports = {
   checkOllamaHealth,
   isOllamaRunning,
-  startOllama,
+  startOllama
 };

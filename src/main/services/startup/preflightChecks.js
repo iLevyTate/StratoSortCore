@@ -31,22 +31,20 @@ async function checkPythonInstallation() {
     ? [
         { cmd: 'py', args: ['-3', '--version'] },
         { cmd: 'python3', args: ['--version'] },
-        { cmd: 'python', args: ['--version'] },
+        { cmd: 'python', args: ['--version'] }
       ]
     : [
         { cmd: 'python3', args: ['--version'] },
-        { cmd: 'python', args: ['--version'] },
+        { cmd: 'python', args: ['--version'] }
       ];
 
   for (const { cmd, args } of pythonCommands) {
     try {
-      logger.debug(
-        `[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`,
-      );
+      logger.debug(`[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`);
       const result = await asyncSpawn(cmd, args, {
         timeout: 3000,
         windowsHide: true,
-        shell: shouldUseShell(),
+        shell: shouldUseShell()
       });
 
       if (result.status === 0) {
@@ -76,7 +74,7 @@ async function checkOllamaInstallation() {
     const result = await asyncSpawn('ollama', ['--version'], {
       timeout: 3000,
       windowsHide: true,
-      shell: shouldUseShell(),
+      shell: shouldUseShell()
     });
 
     if (result.status === 0) {
@@ -102,7 +100,7 @@ async function checkOllamaInstallation() {
 async function isPortAvailable(host, port) {
   try {
     await axios.get(`http://${host}:${port}`, {
-      timeout: DEFAULT_AXIOS_TIMEOUT,
+      timeout: DEFAULT_AXIOS_TIMEOUT
     });
     // If we get here, something is already running on the port
     return false;
@@ -112,25 +110,21 @@ async function isPortAvailable(host, port) {
       'ETIMEDOUT',
       'ECONNRESET',
       'EHOSTUNREACH',
-      'ENETUNREACH',
+      'ENETUNREACH'
     ]);
 
     if (PORT_AVAILABLE_ERRORS.has(error.code)) {
-      logger.debug(
-        `[PREFLIGHT] Port ${host}:${port} appears available (${error.code})`,
-      );
+      logger.debug(`[PREFLIGHT] Port ${host}:${port} appears available (${error.code})`);
       return true;
     }
 
     if (error.response) {
-      logger.debug(
-        `[PREFLIGHT] Port ${host}:${port} in use (HTTP ${error.response.status})`,
-      );
+      logger.debug(`[PREFLIGHT] Port ${host}:${port} in use (HTTP ${error.response.status})`);
       return false;
     }
 
     logger.warn(
-      `[PREFLIGHT] Port check inconclusive for ${host}:${port}: ${error.code || error.message}`,
+      `[PREFLIGHT] Port check inconclusive for ${host}:${port}: ${error.code || error.message}`
     );
     return false;
   }
@@ -155,19 +149,11 @@ async function runPreflightChecks({ reportProgress, errors }) {
     logger.debug(`[PREFLIGHT] Data directory path: ${userDataPath}`);
 
     try {
-      await withTimeout(
-        fs.access(userDataPath),
-        5000,
-        'Directory access check',
-      );
+      await withTimeout(fs.access(userDataPath), 5000, 'Directory access check');
       logger.debug('[PREFLIGHT] Data directory exists');
     } catch {
       logger.debug('[PREFLIGHT] Data directory does not exist, creating...');
-      await withTimeout(
-        fs.mkdir(userDataPath, { recursive: true }),
-        5000,
-        'Directory creation',
-      );
+      await withTimeout(fs.mkdir(userDataPath, { recursive: true }), 5000, 'Directory creation');
       logger.debug('[PREFLIGHT] Data directory created');
     }
 
@@ -176,7 +162,7 @@ async function runPreflightChecks({ reportProgress, errors }) {
     await withTimeout(
       fs.writeFile(testFile, 'test').then(() => fs.unlink(testFile)),
       5000,
-      'Write access test',
+      'Write access test'
     );
     logger.debug('[PREFLIGHT] Data directory write test passed');
     checks.push({ name: 'Data Directory', status: 'ok' });
@@ -185,12 +171,12 @@ async function runPreflightChecks({ reportProgress, errors }) {
     checks.push({
       name: 'Data Directory',
       status: 'fail',
-      error: error.message,
+      error: error.message
     });
     errors.push({
       check: 'data-directory',
       error: error.message,
-      critical: true,
+      critical: true
     });
   }
 
@@ -199,21 +185,19 @@ async function runPreflightChecks({ reportProgress, errors }) {
     logger.debug('[PREFLIGHT] Starting Python installation check...');
     const pythonCheck = await checkPythonInstallation();
     logger.debug(
-      `[PREFLIGHT] Python check result: installed=${pythonCheck.installed}, version=${pythonCheck.version}`,
+      `[PREFLIGHT] Python check result: installed=${pythonCheck.installed}, version=${pythonCheck.version}`
     );
     checks.push({
       name: 'Python Installation',
       status: pythonCheck.installed ? 'ok' : 'warn',
-      version: pythonCheck.version,
+      version: pythonCheck.version
     });
     if (!pythonCheck.installed) {
-      logger.warn(
-        '[PREFLIGHT] Python not found - ChromaDB features will be disabled',
-      );
+      logger.warn('[PREFLIGHT] Python not found - ChromaDB features will be disabled');
       errors.push({
         check: 'python',
         error: 'Python not found. ChromaDB features will be disabled.',
-        critical: false,
+        critical: false
       });
     }
   } catch (error) {
@@ -221,7 +205,7 @@ async function runPreflightChecks({ reportProgress, errors }) {
     checks.push({
       name: 'Python Installation',
       status: 'warn',
-      error: error.message,
+      error: error.message
     });
   }
 
@@ -230,18 +214,18 @@ async function runPreflightChecks({ reportProgress, errors }) {
     logger.debug('[PREFLIGHT] Starting Ollama installation check...');
     const ollamaCheck = await checkOllamaInstallation();
     logger.debug(
-      `[PREFLIGHT] Ollama check result: installed=${ollamaCheck.installed}, version=${ollamaCheck.version}`,
+      `[PREFLIGHT] Ollama check result: installed=${ollamaCheck.installed}, version=${ollamaCheck.version}`
     );
     checks.push({
       name: 'Ollama Installation',
-      status: ollamaCheck.installed ? 'ok' : 'warn',
+      status: ollamaCheck.installed ? 'ok' : 'warn'
     });
     if (!ollamaCheck.installed) {
       logger.warn('[PREFLIGHT] Ollama not found - AI features will be limited');
       errors.push({
         check: 'ollama',
         error: 'Ollama not found. AI features will be limited.',
-        critical: false,
+        critical: false
       });
     }
   } catch (error) {
@@ -249,7 +233,7 @@ async function runPreflightChecks({ reportProgress, errors }) {
     checks.push({
       name: 'Ollama Installation',
       status: 'warn',
-      error: error.message,
+      error: error.message
     });
   }
 
@@ -258,19 +242,13 @@ async function runPreflightChecks({ reportProgress, errors }) {
     logger.debug('[PREFLIGHT] Starting port availability check...');
     const chromaPort = process.env.CHROMA_SERVER_PORT || 8000;
     const ollamaPort = 11434;
-    logger.debug(
-      `[PREFLIGHT] Checking ports: ChromaDB=${chromaPort}, Ollama=${ollamaPort}`,
-    );
+    logger.debug(`[PREFLIGHT] Checking ports: ChromaDB=${chromaPort}, Ollama=${ollamaPort}`);
 
     const chromaPortAvailable = await isPortAvailable('127.0.0.1', chromaPort);
-    logger.debug(
-      `[PREFLIGHT] ChromaDB port ${chromaPort} available: ${chromaPortAvailable}`,
-    );
+    logger.debug(`[PREFLIGHT] ChromaDB port ${chromaPort} available: ${chromaPortAvailable}`);
 
     const ollamaPortAvailable = await isPortAvailable('127.0.0.1', ollamaPort);
-    logger.debug(
-      `[PREFLIGHT] Ollama port ${ollamaPort} available: ${ollamaPortAvailable}`,
-    );
+    logger.debug(`[PREFLIGHT] Ollama port ${ollamaPort} available: ${ollamaPortAvailable}`);
 
     checks.push({
       name: 'Port Availability',
@@ -279,15 +257,15 @@ async function runPreflightChecks({ reportProgress, errors }) {
         chromaPort,
         ollamaPort,
         chromaPortAvailable,
-        ollamaPortAvailable,
-      },
+        ollamaPortAvailable
+      }
     });
 
     if (!chromaPortAvailable || !ollamaPortAvailable) {
       errors.push({
         check: 'port-availability',
         error: `Port conflicts detected: chroma(${chromaPortAvailable ? 'free' : 'in use'}), ollama(${ollamaPortAvailable ? 'free' : 'in use'})`,
-        critical: false,
+        critical: false
       });
     }
   } catch (error) {
@@ -295,7 +273,7 @@ async function runPreflightChecks({ reportProgress, errors }) {
     checks.push({
       name: 'Port Availability',
       status: 'warn',
-      error: error.message,
+      error: error.message
     });
   }
 
@@ -321,5 +299,5 @@ module.exports = {
   checkOllamaInstallation,
   isPortAvailable,
   runPreflightChecks,
-  DEFAULT_AXIOS_TIMEOUT,
+  DEFAULT_AXIOS_TIMEOUT
 };

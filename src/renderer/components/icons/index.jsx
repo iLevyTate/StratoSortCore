@@ -14,12 +14,7 @@ import PropTypes from 'prop-types';
  * Folder open icon - represents open directories
  */
 export const FolderOpenIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -34,12 +29,7 @@ FolderOpenIcon.propTypes = { className: PropTypes.string };
  * Settings/gear icon - represents configuration
  */
 export const SettingsIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -60,12 +50,7 @@ SettingsIcon.propTypes = { className: PropTypes.string };
  * Alert triangle icon - represents warnings
  */
 export const AlertTriangleIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -80,12 +65,7 @@ AlertTriangleIcon.propTypes = { className: PropTypes.string };
  * Bar chart icon - represents statistics/metrics
  */
 export const BarChart3Icon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -100,12 +80,7 @@ BarChart3Icon.propTypes = { className: PropTypes.string };
  * Check circle icon - represents success/completion
  */
 export const CheckCircle2Icon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -120,12 +95,7 @@ CheckCircle2Icon.propTypes = { className: PropTypes.string };
  * Inbox icon - represents empty/incoming state
  */
 export const InboxIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -140,12 +110,7 @@ InboxIcon.propTypes = { className: PropTypes.string };
  * File stack icon - represents multiple files/documents
  */
 export const FileStackIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -160,12 +125,7 @@ FileStackIcon.propTypes = { className: PropTypes.string };
  * Sparkles icon - represents AI/magic features
  */
 export const SparklesIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -180,18 +140,8 @@ SparklesIcon.propTypes = { className: PropTypes.string };
  * Close/X icon - for dismissing elements
  */
 export const CloseIcon = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M6 18L18 6M6 6l12 12"
-    />
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
 CloseIcon.propTypes = { className: PropTypes.string };

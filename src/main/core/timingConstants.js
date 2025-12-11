@@ -21,7 +21,7 @@ const WINDOW = {
    * Duration to keep window "always on top" when forcing foreground on Windows.
    * Must be long enough for the window to receive focus.
    */
-  ALWAYS_ON_TOP_DURATION_MS: 100,
+  ALWAYS_ON_TOP_DURATION_MS: 100
 };
 
 /**
@@ -44,7 +44,7 @@ const STARTUP = {
    * Maximum time to wait for service integration to initialize.
    * Should match startup manager timeout for consistency.
    */
-  SERVICE_INIT_TIMEOUT_MS: 30000,
+  SERVICE_INIT_TIMEOUT_MS: 30000
 };
 
 /**
@@ -65,7 +65,7 @@ const SHUTDOWN = {
   /**
    * Timeout for taskkill command on Windows.
    */
-  TASKKILL_TIMEOUT_MS: 5000,
+  TASKKILL_TIMEOUT_MS: 5000
 };
 
 /**
@@ -76,7 +76,7 @@ const METRICS = {
    * Interval between system metrics broadcasts to renderer.
    * Increased from 10s to 30s to reduce overhead.
    */
-  BROADCAST_INTERVAL_MS: 30000,
+  BROADCAST_INTERVAL_MS: 30000
 };
 
 /**
@@ -91,7 +91,7 @@ const PROCESS = {
   /**
    * Timeout for individual kill commands.
    */
-  KILL_COMMAND_TIMEOUT_MS: 100,
+  KILL_COMMAND_TIMEOUT_MS: 100
 };
 
 module.exports = {
@@ -99,5 +99,5 @@ module.exports = {
   STARTUP,
   SHUTDOWN,
   METRICS,
-  PROCESS,
+  PROCESS
 };

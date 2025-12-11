@@ -25,5 +25,5 @@ function safeFilePath(filePath) {
 }
 
 module.exports = {
-  safeFilePath,
+  safeFilePath
 };

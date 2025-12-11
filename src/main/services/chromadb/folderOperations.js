@@ -31,7 +31,7 @@ async function directUpsertFolder({ folder, folderCollection, queryCache }) {
           description: folder.description || '',
           path: folder.path || '',
           model: folder.model || '',
-          updatedAt: folder.updatedAt || new Date().toISOString(),
+          updatedAt: folder.updatedAt || new Date().toISOString()
         };
 
         const sanitized = sanitizeMetadata(metadata);
@@ -40,7 +40,7 @@ async function directUpsertFolder({ folder, folderCollection, queryCache }) {
           ids: [folder.id],
           embeddings: [folder.vector],
           metadatas: [sanitized],
-          documents: [folder.name || folder.id],
+          documents: [folder.name || folder.id]
         });
 
         // Invalidate query cache entries that might reference this folder
@@ -50,7 +50,7 @@ async function directUpsertFolder({ folder, folderCollection, queryCache }) {
 
         logger.debug('[FolderOps] Upserted folder embedding', {
           id: folder.id,
-          name: folder.name,
+          name: folder.name
         });
       } catch (error) {
         logger.error('[FolderOps] Failed to upsert folder with context:', {
@@ -60,15 +60,15 @@ async function directUpsertFolder({ folder, folderCollection, queryCache }) {
           folderPath: folder.path,
           timestamp: new Date().toISOString(),
           error: error.message,
-          errorStack: error.stack,
+          errorStack: error.stack
         });
         throw error;
       }
     },
     {
       maxRetries: 3,
-      initialDelay: 500,
-    },
+      initialDelay: 500
+    }
   )();
 }
 
@@ -81,11 +81,7 @@ async function directUpsertFolder({ folder, folderCollection, queryCache }) {
  * @param {Object} params.queryCache - Query cache instance
  * @returns {Promise<Object>} Object with count and skipped array
  */
-async function directBatchUpsertFolders({
-  folders,
-  folderCollection,
-  queryCache,
-}) {
+async function directBatchUpsertFolders({ folders, folderCollection, queryCache }) {
   return withRetry(
     async () => {
       const ids = [];
@@ -104,7 +100,7 @@ async function directBatchUpsertFolders({
                 ? 'missing_id'
                 : !folder.vector
                   ? 'missing_vector'
-                  : 'invalid_vector_type',
+                  : 'invalid_vector_type'
             });
             skipped.push({
               folder: { id: folder.id, name: folder.name },
@@ -112,7 +108,7 @@ async function directBatchUpsertFolders({
                 ? 'missing_id'
                 : !folder.vector
                   ? 'missing_vector'
-                  : 'invalid_vector_type',
+                  : 'invalid_vector_type'
             });
             continue;
           }
@@ -122,7 +118,7 @@ async function directBatchUpsertFolders({
             description: folder.description || '',
             path: folder.path || '',
             model: folder.model || '',
-            updatedAt: folder.updatedAt || new Date().toISOString(),
+            updatedAt: folder.updatedAt || new Date().toISOString()
           };
 
           ids.push(folder.id);
@@ -136,7 +132,7 @@ async function directBatchUpsertFolders({
             ids,
             embeddings,
             metadatas,
-            documents,
+            documents
           });
 
           // Invalidate cache for all affected folders
@@ -146,28 +142,25 @@ async function directBatchUpsertFolders({
 
           logger.info('[FolderOps] Batch upserted folder embeddings', {
             count: ids.length,
-            skipped: skipped.length,
+            skipped: skipped.length
           });
         }
 
         return { count: ids.length, skipped };
       } catch (error) {
-        logger.error(
-          '[FolderOps] Failed to batch upsert folders with context:',
-          {
-            operation: 'batch-upsert-folders',
-            totalFolders: folders.length,
-            successfulCount: ids.length,
-            skippedCount: skipped.length,
-            timestamp: new Date().toISOString(),
-            error: error.message,
-            errorStack: error.stack,
-          },
-        );
+        logger.error('[FolderOps] Failed to batch upsert folders with context:', {
+          operation: 'batch-upsert-folders',
+          totalFolders: folders.length,
+          successfulCount: ids.length,
+          skippedCount: skipped.length,
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          errorStack: error.stack
+        });
         throw error;
       }
     },
-    { maxRetries: 3, initialDelay: 500 },
+    { maxRetries: 3, initialDelay: 500 }
   )();
 }
 
@@ -180,11 +173,7 @@ async function directBatchUpsertFolders({
  * @param {Object} params.folderCollection - ChromaDB folder collection
  * @returns {Promise<Array>} Sorted array of folder matches with scores
  */
-async function queryFoldersByEmbedding({
-  embedding,
-  topK = 5,
-  folderCollection,
-}) {
+async function queryFoldersByEmbedding({ embedding, topK = 5, folderCollection }) {
   try {
     if (!Array.isArray(embedding) || embedding.length === 0) {
       logger.warn('[FolderOps] Invalid embedding for folder query');
@@ -193,7 +182,7 @@ async function queryFoldersByEmbedding({
 
     const results = await folderCollection.query({
       queryEmbeddings: [embedding],
-      nResults: topK,
+      nResults: topK
     });
 
     if (
@@ -230,7 +219,7 @@ async function queryFoldersByEmbedding({
         name: metadata?.name || folderId,
         score,
         description: metadata?.description,
-        path: metadata?.path,
+        path: metadata?.path
       });
     }
 
@@ -251,12 +240,7 @@ async function queryFoldersByEmbedding({
  * @param {Object} params.folderCollection - ChromaDB folder collection
  * @returns {Promise<Array>} Sorted array of folder matches
  */
-async function executeQueryFolders({
-  fileId,
-  topK,
-  fileCollection,
-  folderCollection,
-}) {
+async function executeQueryFolders({ fileId, topK, fileCollection, folderCollection }) {
   try {
     if (!fileCollection) {
       logger.error('[FolderOps] File collection not initialized');
@@ -277,7 +261,7 @@ async function executeQueryFolders({
       try {
         fileResult = await fileCollection.get({
           ids: [fileId],
-          include: ['embeddings', 'metadatas', 'documents'],
+          include: ['embeddings', 'metadatas', 'documents']
         });
 
         if (attempt > 0 || !fileResult?.embeddings?.length) {
@@ -286,19 +270,15 @@ async function executeQueryFolders({
             attempt: attempt + 1,
             hasResult: !!fileResult,
             hasEmbeddings: !!fileResult?.embeddings,
-            embeddingsLength: fileResult?.embeddings?.length || 0,
+            embeddingsLength: fileResult?.embeddings?.length || 0
           });
         }
 
-        if (
-          fileResult &&
-          fileResult.embeddings &&
-          fileResult.embeddings.length > 0
-        ) {
+        if (fileResult && fileResult.embeddings && fileResult.embeddings.length > 0) {
           if (attempt > 0) {
             logger.info(
               `[FolderOps] File found on retry attempt ${attempt + 1}/${maxRetries}`,
-              fileId,
+              fileId
             );
           }
           break;
@@ -308,16 +288,13 @@ async function executeQueryFolders({
           const delay = retryDelays[attempt];
           logger.debug(
             `[FolderOps] File not found on attempt ${attempt + 1}, retrying in ${delay}ms...`,
-            fileId,
+            fileId
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       } catch (error) {
         lastError = error;
-        logger.warn(
-          `[FolderOps] Error getting file on attempt ${attempt + 1}:`,
-          error.message,
-        );
+        logger.warn(`[FolderOps] Error getting file on attempt ${attempt + 1}:`, error.message);
         if (attempt < maxRetries - 1) {
           const delay = retryDelays[attempt];
           await new Promise((resolve) => setTimeout(resolve, delay));
@@ -325,15 +302,11 @@ async function executeQueryFolders({
       }
     }
 
-    if (
-      !fileResult ||
-      !fileResult.embeddings ||
-      fileResult.embeddings.length === 0
-    ) {
+    if (!fileResult || !fileResult.embeddings || fileResult.embeddings.length === 0) {
       logger.warn('[FolderOps] File not found after retries:', {
         fileId,
         attempts: maxRetries,
-        lastError: lastError?.message,
+        lastError: lastError?.message
       });
       return [];
     }
@@ -348,7 +321,7 @@ async function executeQueryFolders({
     // Query the folder collection for similar embeddings
     const results = await folderCollection.query({
       queryEmbeddings: [fileEmbedding],
-      nResults: topK,
+      nResults: topK
     });
 
     // Comprehensive validation
@@ -398,7 +371,7 @@ async function executeQueryFolders({
         name: metadata?.name || folderId,
         score,
         description: metadata?.description,
-        path: metadata?.path,
+        path: metadata?.path
       });
     }
 
@@ -425,7 +398,7 @@ async function batchQueryFolders({
   topK = 5,
   fileCollection,
   folderCollection,
-  queryCache,
+  queryCache
 }) {
   if (!fileIds || fileIds.length === 0) {
     return {};
@@ -440,14 +413,10 @@ async function batchQueryFolders({
       try {
         fileResults = await fileCollection.get({
           ids: fileIds,
-          include: ['embeddings'],
+          include: ['embeddings']
         });
 
-        if (
-          fileResults &&
-          fileResults.embeddings &&
-          fileResults.embeddings.length > 0
-        ) {
+        if (fileResults && fileResults.embeddings && fileResults.embeddings.length > 0) {
           break;
         }
 
@@ -462,7 +431,7 @@ async function batchQueryFolders({
 
     if (!fileResults || !fileResults.ids || fileResults.ids.length === 0) {
       logger.warn('[FolderOps] No embeddings found for batch query', {
-        count: fileIds.length,
+        count: fileIds.length
       });
       return {};
     }
@@ -485,17 +454,13 @@ async function batchQueryFolders({
     // Batch query folders
     const results = await folderCollection.query({
       queryEmbeddings: queryEmbeddings,
-      nResults: topK,
+      nResults: topK
     });
 
     // Process results
     const resultMap = {};
 
-    if (
-      results &&
-      results.ids &&
-      results.ids.length === queryEmbeddings.length
-    ) {
+    if (results && results.ids && results.ids.length === queryEmbeddings.length) {
       for (let i = 0; i < queryEmbeddings.length; i++) {
         const fileId = validFileIds[i];
         const matches = [];
@@ -515,7 +480,7 @@ async function batchQueryFolders({
             name: metadatasArray[j]?.name || idsArray[j],
             score,
             description: metadatasArray[j]?.description,
-            path: metadatasArray[j]?.path,
+            path: metadatasArray[j]?.path
           });
         }
 
@@ -560,7 +525,7 @@ async function getAllFolders({ folderCollection }) {
           id: result.ids[i],
           name: metadata?.name || result.ids[i],
           vector,
-          metadata,
+          metadata
         });
       }
     }
@@ -588,8 +553,8 @@ async function resetFolders({ client }) {
       metadata: {
         description: 'Smart folder embeddings for categorization',
         hnsw_space: 'cosine',
-        'hnsw:space': 'cosine', // Keep legacy key for compatibility
-      },
+        'hnsw:space': 'cosine' // Keep legacy key for compatibility
+      }
     });
 
     logger.info('[FolderOps] Reset folder embeddings collection');
@@ -607,5 +572,5 @@ module.exports = {
   executeQueryFolders,
   batchQueryFolders,
   getAllFolders,
-  resetFolders,
+  resetFolders
 };

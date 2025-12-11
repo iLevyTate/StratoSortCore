@@ -10,7 +10,8 @@ describe('useSmartFolderMatcher', () => {
 
   beforeEach(() => {
     // jest.resetModules(); // Removed - breaks React hooks context
-    useSmartFolderMatcher = require('../src/renderer/phases/organize/useSmartFolderMatcher').useSmartFolderMatcher;
+    useSmartFolderMatcher =
+      require('../src/renderer/phases/organize/useSmartFolderMatcher').useSmartFolderMatcher;
   });
 
   describe('basic matching', () => {
@@ -49,7 +50,7 @@ describe('useSmartFolderMatcher', () => {
     test('matches exact folder name', () => {
       const folders = [
         { name: 'Documents', path: '/Documents' },
-        { name: 'Photos', path: '/Photos' },
+        { name: 'Photos', path: '/Photos' }
       ];
       const { result } = renderHook(() => useSmartFolderMatcher(folders));
 
@@ -193,10 +194,9 @@ describe('useSmartFolderMatcher', () => {
 
     test('returns new function when smartFolders change', () => {
       const initialFolders = [{ name: 'Documents', path: '/Documents' }];
-      const { result, rerender } = renderHook(
-        ({ folders }) => useSmartFolderMatcher(folders),
-        { initialProps: { folders: initialFolders } }
-      );
+      const { result, rerender } = renderHook(({ folders }) => useSmartFolderMatcher(folders), {
+        initialProps: { folders: initialFolders }
+      });
 
       const first = result.current;
 
@@ -246,7 +246,7 @@ describe('useSmartFolderMatcher', () => {
     test('matches first folder in order when variants overlap', () => {
       const folders = [
         { name: 'Document', path: '/Document' },
-        { name: 'Documents', path: '/Documents' },
+        { name: 'Documents', path: '/Documents' }
       ];
       const { result } = renderHook(() => useSmartFolderMatcher(folders));
 
@@ -257,7 +257,7 @@ describe('useSmartFolderMatcher', () => {
     test('exact match wins when folder is first', () => {
       const folders = [
         { name: 'Documents', path: '/Documents' },
-        { name: 'Document', path: '/Document' },
+        { name: 'Document', path: '/Document' }
       ];
       const { result } = renderHook(() => useSmartFolderMatcher(folders));
 
@@ -268,7 +268,7 @@ describe('useSmartFolderMatcher', () => {
     test('first folder match wins when multiple variants match', () => {
       const folders = [
         { name: 'My Files', path: '/My Files' },
-        { name: 'MyFiles', path: '/MyFiles' },
+        { name: 'MyFiles', path: '/MyFiles' }
       ];
       const { result } = renderHook(() => useSmartFolderMatcher(folders));
 

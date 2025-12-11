@@ -17,7 +17,7 @@ function EmbeddingRebuildSection({ addNotification }) {
         res?.success
           ? `Rebuilt ${res.folders || 0} folder embeddings`
           : `Failed: ${res?.error || 'Unknown error'}`,
-        res?.success ? 'success' : 'error',
+        res?.success ? 'success' : 'error'
       );
     } catch (e) {
       addNotification(`Failed: ${e.message}`, 'error');
@@ -34,7 +34,7 @@ function EmbeddingRebuildSection({ addNotification }) {
         res?.success
           ? `Rebuilt ${res.files || 0} file embeddings`
           : `Failed: ${res?.error || 'Unknown error'}`,
-        res?.success ? 'success' : 'error',
+        res?.success ? 'success' : 'error'
       );
     } catch (e) {
       addNotification(`Failed: ${e.message}`, 'error');
@@ -50,8 +50,8 @@ function EmbeddingRebuildSection({ addNotification }) {
           Smart Folder Embeddings
         </label>
         <p className="text-xs text-system-gray-500 mb-4">
-          Rebuild embeddings for all smart folders to improve semantic matching
-          after you edit folder names or descriptions.
+          Rebuild embeddings for all smart folders to improve semantic matching after you edit
+          folder names or descriptions.
         </p>
         <div className="flex gap-3">
           <Button
@@ -79,7 +79,7 @@ function EmbeddingRebuildSection({ addNotification }) {
 }
 
 EmbeddingRebuildSection.propTypes = {
-  addNotification: PropTypes.func.isRequired,
+  addNotification: PropTypes.func.isRequired
 };
 
 export default EmbeddingRebuildSection;

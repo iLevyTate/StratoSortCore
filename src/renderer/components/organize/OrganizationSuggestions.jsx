@@ -7,7 +7,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
   suggestions,
   onAccept,
   onReject,
-  onStrategyChange,
+  onStrategyChange
 }) {
   const [selectedStrategy, setSelectedStrategy] = useState(null);
   const [expandedAlternatives, setExpandedAlternatives] = useState(false);
@@ -20,20 +20,14 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
         onStrategyChange(file, strategyId);
       }
     },
-    [file, onStrategyChange],
+    [file, onStrategyChange]
   );
 
   if (!suggestions || !suggestions.primary) {
     return null;
   }
 
-  const {
-    primary,
-    alternatives = [],
-    strategies = [],
-    confidence = 0,
-    explanation,
-  } = suggestions;
+  const { primary, alternatives = [], strategies = [], confidence = 0, explanation } = suggestions;
 
   // Normalize confidence for both display (0-100) and logic (0-1)
   const normalizeConfidenceFraction = (value) => {
@@ -86,14 +80,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h4 className="font-medium text-system-gray-900">
-                Suggested Organization
-              </h4>
-              <span
-                className={`text-sm ${getConfidenceColor(confidenceFraction)}`}
-              >
-                {getConfidenceLabel(confidenceFraction)} (
-                {confidencePercent}
+              <h4 className="font-medium text-system-gray-900">Suggested Organization</h4>
+              <span className={`text-sm ${getConfidenceColor(confidenceFraction)}`}>
+                {getConfidenceLabel(confidenceFraction)} ({confidencePercent}
                 %)
               </span>
             </div>
@@ -105,16 +94,12 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                   {sanitizeFolderName(primary.folder)}
                 </span>
                 {primary.path && (
-                  <span className="text-system-gray-500">
-                    ({sanitizeFolderName(primary.path)})
-                  </span>
+                  <span className="text-system-gray-500">({sanitizeFolderName(primary.path)})</span>
                 )}
               </div>
 
               {explanation && (
-                <p className="text-sm text-system-gray-600 mt-2 italic">
-                  {explanation}
-                </p>
+                <p className="text-sm text-system-gray-600 mt-2 italic">{explanation}</p>
               )}
 
               {primary.strategy && (
@@ -168,9 +153,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-medium">
-                  {Math.round(safeConfidence * 100)}%
-                </span>
+                <span className="text-sm font-medium">{Math.round(safeConfidence * 100)}%</span>
               </div>
             </div>
           </div>
@@ -209,20 +192,14 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                         </span>
                         <span
                           className={`text-xs ${getConfidenceColor(
-                            normalizeConfidenceFraction(alt.confidence || 0),
+                            normalizeConfidenceFraction(alt.confidence || 0)
                           )}`}
                         >
-                          {Math.round(
-                            normalizeConfidenceFraction(alt.confidence || 0) *
-                              100,
-                          )}
-                          %
+                          {Math.round(normalizeConfidenceFraction(alt.confidence || 0) * 100)}%
                         </span>
                       </div>
                       {alt.reasoning && (
-                        <p className="text-xs text-system-gray-500 mt-1">
-                          {alt.reasoning}
-                        </p>
+                        <p className="text-xs text-system-gray-500 mt-1">{alt.reasoning}</p>
                       )}
                       {alt.method && (
                         <span className="text-xs text-system-gray-500">
@@ -249,9 +226,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
       {/* Organization Strategies */}
       {strategies.length > 0 && (
         <Card className="p-4 bg-system-gray-50">
-          <h5 className="text-sm font-medium text-system-gray-700 mb-3">
-            Organization Strategies
-          </h5>
+          <h5 className="text-sm font-medium text-system-gray-700 mb-3">Organization Strategies</h5>
           <div className="space-y-2">
             {strategies.map((strategy) => (
               <div
@@ -266,9 +241,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-medium text-sm">{strategy.name}</div>
-                    <div className="text-xs text-system-gray-600">
-                      {strategy.description}
-                    </div>
+                    <div className="text-xs text-system-gray-600">{strategy.description}</div>
                     <div className="text-xs text-system-gray-500 mt-1">
                       Pattern: {strategy.pattern}
                     </div>
@@ -294,7 +267,7 @@ const suggestionShape = PropTypes.shape({
   method: PropTypes.string,
   strategy: PropTypes.string,
   strategyName: PropTypes.string,
-  suggestedName: PropTypes.string,
+  suggestedName: PropTypes.string
 });
 
 const strategyShape = PropTypes.shape({
@@ -302,23 +275,23 @@ const strategyShape = PropTypes.shape({
   name: PropTypes.string,
   description: PropTypes.string,
   pattern: PropTypes.string,
-  applicability: PropTypes.number,
+  applicability: PropTypes.number
 });
 
 OrganizationSuggestions.propTypes = {
   file: PropTypes.shape({
-    name: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired
   }).isRequired,
   suggestions: PropTypes.shape({
     primary: suggestionShape.isRequired,
     alternatives: PropTypes.arrayOf(suggestionShape),
     strategies: PropTypes.arrayOf(strategyShape),
     confidence: PropTypes.number,
-    explanation: PropTypes.string,
+    explanation: PropTypes.string
   }).isRequired,
   onAccept: PropTypes.func,
   onReject: PropTypes.func,
-  onStrategyChange: PropTypes.func,
+  onStrategyChange: PropTypes.func
 };
 
 export default OrganizationSuggestions;

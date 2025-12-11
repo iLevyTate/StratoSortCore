@@ -15,17 +15,13 @@ describe('reactEdgeCaseUtils', () => {
 
   describe('useSafeState', () => {
     test('initializes with initial value', () => {
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState('initial'),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState('initial'));
 
       expect(result.current[0]).toBe('initial');
     });
 
     test('updates state when mounted', () => {
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState('initial'),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState('initial'));
 
       act(() => {
         result.current[1]('updated');
@@ -35,9 +31,7 @@ describe('reactEdgeCaseUtils', () => {
     });
 
     test('does not update state after unmount', () => {
-      const { result, unmount } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState('initial'),
-      );
+      const { result, unmount } = renderHook(() => reactEdgeCaseUtils.useSafeState('initial'));
 
       const setter = result.current[1];
       unmount();
@@ -51,43 +45,33 @@ describe('reactEdgeCaseUtils', () => {
     });
 
     test('initializes with null', () => {
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState(null),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState(null));
 
       expect(result.current[0]).toBe(null);
     });
 
     test('initializes with undefined', () => {
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState(undefined),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState(undefined));
 
       expect(result.current[0]).toBe(undefined);
     });
 
     test('initializes with object', () => {
       const initialValue = { key: 'value' };
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState(initialValue),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState(initialValue));
 
       expect(result.current[0]).toEqual({ key: 'value' });
     });
 
     test('initializes with array', () => {
       const initialValue = [1, 2, 3];
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState(initialValue),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState(initialValue));
 
       expect(result.current[0]).toEqual([1, 2, 3]);
     });
 
     test('handles multiple updates', () => {
-      const { result } = renderHook(() =>
-        reactEdgeCaseUtils.useSafeState(0),
-      );
+      const { result } = renderHook(() => reactEdgeCaseUtils.useSafeState(0));
 
       act(() => {
         result.current[1](1);

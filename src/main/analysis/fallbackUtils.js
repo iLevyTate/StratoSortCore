@@ -5,8 +5,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
 
   if (smartFolders && smartFolders.length > 0) {
     const validFolders = smartFolders.filter(
-      (f) =>
-        f && f.name && typeof f.name === 'string' && f.name.trim().length > 0,
+      (f) => f && f.name && typeof f.name === 'string' && f.name.trim().length > 0
     );
     let bestMatch = null;
     let bestScore = 0;
@@ -14,18 +13,14 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       const folderNameLower = folder.name.toLowerCase();
       let score = 0;
       if (lowerFileName.includes(folderNameLower)) score += 10;
-      const folderWords = folderNameLower
-        .split(/[\s_-]+/)
-        .filter((w) => w.length > 2);
-      for (const word of folderWords)
-        if (lowerFileName.includes(word)) score += 8;
+      const folderWords = folderNameLower.split(/[\s_-]+/).filter((w) => w.length > 2);
+      for (const word of folderWords) if (lowerFileName.includes(word)) score += 8;
       if (folder.description) {
         const descWords = folder.description
           .toLowerCase()
           .split(/[\s,.-]+/)
           .filter((w) => w.length > 3);
-        for (const word of descWords)
-          if (lowerFileName.includes(word)) score += 6;
+        for (const word of descWords) if (lowerFileName.includes(word)) score += 6;
       }
       if (Array.isArray(folder.semanticTags)) {
         for (const tag of folder.semanticTags)
@@ -53,8 +48,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       }
       if (Array.isArray(folder.relatedFolders)) {
         for (const relatedName of folder.relatedFolders)
-          if (lowerFileName.includes(String(relatedName).toLowerCase()))
-            score += 1;
+          if (lowerFileName.includes(String(relatedName).toLowerCase())) score += 1;
       }
       if (folder.confidenceScore && folder.confidenceScore > 0.8) score *= 1.2;
       if (score > bestScore) {
@@ -87,7 +81,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'revenue',
       'profit',
       'loss',
-      'balance',
+      'balance'
     ],
     legal: [
       'contract',
@@ -107,7 +101,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'settlement',
       'clause',
       'liability',
-      'warranty',
+      'warranty'
     ],
     project: [
       'project',
@@ -127,7 +121,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'retrospective',
       'sprint',
       'agile',
-      'scrum',
+      'scrum'
     ],
     personal: [
       'resume',
@@ -146,7 +140,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'passport',
       'certificate',
       'diploma',
-      'education',
+      'education'
     ],
     technical: [
       'manual',
@@ -166,7 +160,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'security',
       'backup',
       'config',
-      'setup',
+      'setup'
     ],
     research: [
       'research',
@@ -184,7 +178,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'whitepaper',
       'thesis',
       'dissertation',
-      'publication',
+      'publication'
     ],
     marketing: [
       'marketing',
@@ -203,7 +197,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'lead',
       'customer',
       'segment',
-      'target',
+      'target'
     ],
     hr: [
       'employee',
@@ -222,8 +216,8 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       'position',
       'salary',
       'compensation',
-      'leave',
-    ],
+      'leave'
+    ]
   };
   // FIXED Bug #27: Add early exit optimization when perfect match found
   const categoryScores = {};
@@ -272,7 +266,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
     '.xml': 'data',
     '.zip': 'archive',
     '.rar': 'archive',
-    '.7z': 'archive',
+    '.7z': 'archive'
   };
   return extensionCategories[extension] || 'document';
 }
@@ -287,7 +281,7 @@ function getIntelligentKeywords(fileName, extension) {
     personal: ['personal', 'individual', 'private'],
     technical: ['technical', 'manual', 'guide'],
     document: ['document', 'file', 'text'],
-    image: ['image', 'visual', 'graphic'],
+    image: ['image', 'visual', 'graphic']
   };
   const keywords = [...(baseKeywords[category] || ['file', 'document'])];
   if (lowerFileName.includes('report')) keywords.push('report');
@@ -328,7 +322,7 @@ function safeSuggestedName(fileName, extension) {
     'LPT6',
     'LPT7',
     'LPT8',
-    'LPT9',
+    'LPT9'
   ];
 
   const upperName = nameWithoutExt.toUpperCase().trim();
@@ -343,10 +337,7 @@ function safeSuggestedName(fileName, extension) {
   }
 
   // Remove leading/trailing dots and spaces
-  nameWithoutExt = nameWithoutExt
-    .trim()
-    .replace(/^\.+/, '')
-    .replace(/\.+$/, '');
+  nameWithoutExt = nameWithoutExt.trim().replace(/^\.+/, '').replace(/\.+$/, '');
 
   // If stripping dots results in empty name, use default
   if (!nameWithoutExt || nameWithoutExt.length === 0) {
@@ -371,9 +362,7 @@ function safeSuggestedName(fileName, extension) {
   // CRITICAL FIX: Ensure name doesn't exceed filesystem limits (255 chars typical)
   const maxLength = 200; // Leave room for extension and path components
   const truncatedName =
-    finalName.length > maxLength
-      ? finalName.substring(0, maxLength)
-      : finalName;
+    finalName.length > maxLength ? finalName.substring(0, maxLength) : finalName;
 
   // Always include extension to prevent files from becoming unopenable
   return truncatedName + extension;
@@ -382,5 +371,5 @@ function safeSuggestedName(fileName, extension) {
 module.exports = {
   getIntelligentCategory,
   getIntelligentKeywords,
-  safeSuggestedName,
+  safeSuggestedName
 };

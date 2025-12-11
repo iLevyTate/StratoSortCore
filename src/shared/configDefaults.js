@@ -9,14 +9,14 @@ const { logger } = require('./logger');
 const PORTS = {
   CHROMA_DB: 8000,
   OLLAMA: 11434,
-  DEV_SERVER: 3000,
+  DEV_SERVER: 3000
 };
 
 // Default service URLs
 // Note: Using 127.0.0.1 instead of localhost for cross-platform IPv4/IPv6 consistency
 const SERVICE_URLS = {
   OLLAMA_HOST: 'http://127.0.0.1:11434',
-  CHROMA_SERVER_URL: 'http://127.0.0.1:8000',
+  CHROMA_SERVER_URL: 'http://127.0.0.1:8000'
 };
 
 // Default timeout values (in milliseconds)
@@ -25,7 +25,7 @@ const TIMEOUTS = {
   HEALTH_CHECK_INTERVAL: 120000,
   ANALYSIS: 60000,
   FILE_OPERATION: 10000,
-  IMAGE_ANALYSIS: 120000,
+  IMAGE_ANALYSIS: 120000
 };
 
 // Valid protocols for service URLs
@@ -34,7 +34,7 @@ const VALID_PROTOCOLS = ['http', 'https'];
 // Port number validation range
 const PORT_RANGE = {
   MIN: 1,
-  MAX: 65535,
+  MAX: 65535
 };
 
 /**
@@ -145,7 +145,7 @@ function validateServiceUrl(urlString, options = {}) {
     return {
       valid: false,
       url: null,
-      error: 'URL is required and must be a string',
+      error: 'URL is required and must be a string'
     };
   }
 
@@ -158,7 +158,7 @@ function validateServiceUrl(urlString, options = {}) {
       return {
         valid: false,
         url: null,
-        error: `Invalid protocol "${protocol}". Must be http or https.`,
+        error: `Invalid protocol "${protocol}". Must be http or https.`
       };
     }
 
@@ -166,7 +166,7 @@ function validateServiceUrl(urlString, options = {}) {
       return {
         valid: false,
         url: null,
-        error: 'HTTPS protocol is required for this service.',
+        error: 'HTTPS protocol is required for this service.'
       };
     }
 
@@ -180,7 +180,7 @@ function validateServiceUrl(urlString, options = {}) {
       return {
         valid: false,
         url: null,
-        error: 'Hostname exceeds maximum length of 253 characters.',
+        error: 'Hostname exceeds maximum length of 253 characters.'
       };
     }
 
@@ -191,7 +191,7 @@ function validateServiceUrl(urlString, options = {}) {
         return {
           valid: false,
           url: null,
-          error: `Port must be between ${PORT_RANGE.MIN} and ${PORT_RANGE.MAX}.`,
+          error: `Port must be between ${PORT_RANGE.MIN} and ${PORT_RANGE.MAX}.`
         };
       }
 
@@ -199,7 +199,7 @@ function validateServiceUrl(urlString, options = {}) {
         return {
           valid: false,
           url: null,
-          error: `Port ${port} is not in the list of allowed ports.`,
+          error: `Port ${port} is not in the list of allowed ports.`
         };
       }
     }
@@ -210,17 +210,13 @@ function validateServiceUrl(urlString, options = {}) {
       url: parsed.href,
       protocol,
       hostname: parsed.hostname,
-      port: parsed.port
-        ? parseInt(parsed.port, 10)
-        : protocol === 'https'
-          ? 443
-          : 80,
+      port: parsed.port ? parseInt(parsed.port, 10) : protocol === 'https' ? 443 : 80
     };
   } catch (error) {
     return {
       valid: false,
       url: null,
-      error: `Invalid URL format: ${error.message}`,
+      error: `Invalid URL format: ${error.message}`
     };
   }
 }
@@ -238,7 +234,7 @@ function getValidatedChromaServerUrl() {
       url: SERVICE_URLS.CHROMA_SERVER_URL,
       valid: true,
       error: null,
-      isDefault: true,
+      isDefault: true
     };
   }
 
@@ -246,14 +242,12 @@ function getValidatedChromaServerUrl() {
 
   if (!result.valid) {
     // Log warning but return default
-    logger.warn(
-      `[Config] Invalid CHROMA_SERVER_URL: ${result.error}. Using default.`,
-    );
+    logger.warn(`[Config] Invalid CHROMA_SERVER_URL: ${result.error}. Using default.`);
     return {
       url: SERVICE_URLS.CHROMA_SERVER_URL,
       valid: false,
       error: result.error,
-      isDefault: true,
+      isDefault: true
     };
   }
 
@@ -264,7 +258,7 @@ function getValidatedChromaServerUrl() {
     isDefault: false,
     protocol: result.protocol,
     hostname: result.hostname,
-    port: result.port,
+    port: result.port
   };
 }
 
@@ -281,7 +275,7 @@ function getValidatedOllamaHost() {
       url: SERVICE_URLS.OLLAMA_HOST,
       valid: true,
       error: null,
-      isDefault: true,
+      isDefault: true
     };
   }
 
@@ -289,14 +283,12 @@ function getValidatedOllamaHost() {
 
   if (!result.valid) {
     // Log warning but return default
-    logger.warn(
-      `[Config] Invalid OLLAMA_BASE_URL: ${result.error}. Using default.`,
-    );
+    logger.warn(`[Config] Invalid OLLAMA_BASE_URL: ${result.error}. Using default.`);
     return {
       url: SERVICE_URLS.OLLAMA_HOST,
       valid: false,
       error: result.error,
-      isDefault: true,
+      isDefault: true
     };
   }
 
@@ -307,7 +299,7 @@ function getValidatedOllamaHost() {
     isDefault: false,
     protocol: result.protocol,
     hostname: result.hostname,
-    port: result.port,
+    port: result.port
   };
 }
 
@@ -321,18 +313,16 @@ function validateEnvironment() {
     valid: true,
     warnings: [],
     errors: [],
-    config: {},
+    config: {}
   };
 
   // Check NODE_ENV
   const nodeEnv = process.env.NODE_ENV;
   if (!nodeEnv) {
-    report.warnings.push(
-      'NODE_ENV is not set. Defaulting to development behavior.',
-    );
+    report.warnings.push('NODE_ENV is not set. Defaulting to development behavior.');
   } else if (!['development', 'production', 'test'].includes(nodeEnv)) {
     report.warnings.push(
-      `NODE_ENV="${nodeEnv}" is not a standard value. Expected: development, production, or test.`,
+      `NODE_ENV="${nodeEnv}" is not a standard value. Expected: development, production, or test.`
     );
   }
   report.config.nodeEnv = nodeEnv || 'undefined';
@@ -342,9 +332,7 @@ function validateEnvironment() {
   report.config.chromaServerUrl = chromaResult.url;
   report.config.chromaIsDefault = chromaResult.isDefault;
   if (!chromaResult.valid) {
-    report.warnings.push(
-      `ChromaDB URL validation failed: ${chromaResult.error}`,
-    );
+    report.warnings.push(`ChromaDB URL validation failed: ${chromaResult.error}`);
   }
 
   // Check Ollama URL
@@ -379,5 +367,5 @@ module.exports = {
   validateServiceUrl,
   getValidatedChromaServerUrl,
   getValidatedOllamaHost,
-  validateEnvironment,
+  validateEnvironment
 };

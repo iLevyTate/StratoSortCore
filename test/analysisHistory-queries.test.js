@@ -5,7 +5,7 @@
 
 // Mock dependencies
 jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
-  maintainCacheSize: jest.fn(),
+  maintainCacheSize: jest.fn()
 }));
 
 describe('queries', () => {
@@ -24,20 +24,20 @@ describe('queries', () => {
         timestamp: '2024-01-15T10:00:00Z',
         fileName: 'beta.pdf',
         analysis: { confidence: 0.8 },
-        fileSize: 1000,
+        fileSize: 1000
       },
       {
         timestamp: '2024-01-10T10:00:00Z',
         fileName: 'alpha.pdf',
         analysis: { confidence: 0.9 },
-        fileSize: 500,
+        fileSize: 500
       },
       {
         timestamp: '2024-01-20T10:00:00Z',
         fileName: 'gamma.pdf',
         analysis: { confidence: 0.7 },
-        fileSize: 2000,
-      },
+        fileSize: 2000
+      }
     ];
 
     test('sorts by timestamp ascending', () => {
@@ -85,10 +85,10 @@ describe('queries', () => {
   describe('getAnalysisByPath', () => {
     test('returns entry when path exists', () => {
       const history = {
-        entries: { 'entry-1': { fileName: 'test.pdf' } },
+        entries: { 'entry-1': { fileName: 'test.pdf' } }
       };
       const index = {
-        pathLookup: { '/path/to/test.pdf': 'entry-1' },
+        pathLookup: { '/path/to/test.pdf': 'entry-1' }
       };
 
       const result = queries.getAnalysisByPath(history, index, '/path/to/test.pdf');
@@ -111,23 +111,17 @@ describe('queries', () => {
       entries: {
         1: { id: 1, timestamp: '2024-01-15', fileName: 'a.pdf', analysis: {} },
         2: { id: 2, timestamp: '2024-01-10', fileName: 'b.pdf', analysis: {} },
-        3: { id: 3, timestamp: '2024-01-20', fileName: 'c.pdf', analysis: {} },
-      },
+        3: { id: 3, timestamp: '2024-01-20', fileName: 'c.pdf', analysis: {} }
+      }
     };
     const index = {
-      categoryIndex: { documents: [1, 2, 3] },
+      categoryIndex: { documents: [1, 2, 3] }
     };
 
     test('returns entries for category', () => {
       const cache = { categoryResults: new Map() };
 
-      const result = queries.getAnalysisByCategory(
-        history,
-        index,
-        cache,
-        5000,
-        'documents'
-      );
+      const result = queries.getAnalysisByCategory(history, index, cache, 5000, 'documents');
 
       expect(result.results.length).toBe(3);
       expect(result.total).toBe(3);
@@ -137,14 +131,10 @@ describe('queries', () => {
     test('respects pagination', () => {
       const cache = { categoryResults: new Map() };
 
-      const result = queries.getAnalysisByCategory(
-        history,
-        index,
-        cache,
-        5000,
-        'documents',
-        { limit: 2, offset: 0 }
-      );
+      const result = queries.getAnalysisByCategory(history, index, cache, 5000, 'documents', {
+        limit: 2,
+        offset: 0
+      });
 
       expect(result.results.length).toBe(2);
       expect(result.total).toBe(3);
@@ -155,17 +145,11 @@ describe('queries', () => {
       const cachedResults = [{ id: 1 }, { id: 2 }];
       const cache = {
         categoryResults: new Map([
-          ['documents:timestamp:desc', { results: cachedResults, time: Date.now() }],
-        ]),
+          ['documents:timestamp:desc', { results: cachedResults, time: Date.now() }]
+        ])
       };
 
-      const result = queries.getAnalysisByCategory(
-        history,
-        index,
-        cache,
-        5000,
-        'documents'
-      );
+      const result = queries.getAnalysisByCategory(history, index, cache, 5000, 'documents');
 
       expect(result.total).toBe(2);
     });
@@ -173,13 +157,7 @@ describe('queries', () => {
     test('returns empty results for unknown category', () => {
       const cache = { categoryResults: new Map() };
 
-      const result = queries.getAnalysisByCategory(
-        history,
-        index,
-        cache,
-        5000,
-        'unknown'
-      );
+      const result = queries.getAnalysisByCategory(history, index, cache, 5000, 'unknown');
 
       expect(result.results.length).toBe(0);
       expect(result.total).toBe(0);
@@ -190,11 +168,11 @@ describe('queries', () => {
     const history = {
       entries: {
         1: { id: 1, timestamp: '2024-01-15', fileName: 'a.pdf', analysis: {} },
-        2: { id: 2, timestamp: '2024-01-10', fileName: 'b.pdf', analysis: {} },
-      },
+        2: { id: 2, timestamp: '2024-01-10', fileName: 'b.pdf', analysis: {} }
+      }
     };
     const index = {
-      tagIndex: { invoice: [1, 2] },
+      tagIndex: { invoice: [1, 2] }
     };
 
     test('returns entries for tag', () => {
@@ -210,8 +188,8 @@ describe('queries', () => {
       const cachedResults = [{ id: 1 }];
       const cache = {
         tagResults: new Map([
-          ['invoice:timestamp:desc', { results: cachedResults, time: Date.now() }],
-        ]),
+          ['invoice:timestamp:desc', { results: cachedResults, time: Date.now() }]
+        ])
       };
 
       const result = queries.getAnalysisByTag(history, index, cache, 5000, 'invoice');
@@ -225,8 +203,8 @@ describe('queries', () => {
       entries: {
         1: { timestamp: '2024-01-15', fileName: 'recent.pdf' },
         2: { timestamp: '2024-01-10', fileName: 'older.pdf' },
-        3: { timestamp: '2024-01-20', fileName: 'newest.pdf' },
-      },
+        3: { timestamp: '2024-01-20', fileName: 'newest.pdf' }
+      }
     };
 
     test('returns entries sorted by timestamp descending', () => {
@@ -261,7 +239,7 @@ describe('queries', () => {
       const cache = {
         sortedEntriesValid: true,
         sortedEntries: cachedEntries,
-        sortedEntriesTime: Date.now(),
+        sortedEntriesTime: Date.now()
       };
 
       const result = queries.getRecentAnalysis(history, cache, 5000);
@@ -275,36 +253,26 @@ describe('queries', () => {
       entries: {
         1: { id: 1, timestamp: '2024-01-15T10:00:00Z', fileName: 'jan.pdf' },
         2: { id: 2, timestamp: '2024-02-10T10:00:00Z', fileName: 'feb.pdf' },
-        3: { id: 3, timestamp: '2024-03-20T10:00:00Z', fileName: 'mar.pdf' },
-      },
+        3: { id: 3, timestamp: '2024-03-20T10:00:00Z', fileName: 'mar.pdf' }
+      }
     };
     const index = {
       dateIndex: {
         '2024-01': [1],
         '2024-02': [2],
-        '2024-03': [3],
-      },
+        '2024-03': [3]
+      }
     };
 
     test('returns entries within date range', () => {
-      const result = queries.getAnalysisByDateRange(
-        history,
-        index,
-        '2024-01-01',
-        '2024-02-28'
-      );
+      const result = queries.getAnalysisByDateRange(history, index, '2024-01-01', '2024-02-28');
 
       expect(result.results.length).toBe(2);
       expect(result.total).toBe(2);
     });
 
     test('filters to exact date range', () => {
-      const result = queries.getAnalysisByDateRange(
-        history,
-        index,
-        '2024-01-10',
-        '2024-01-20'
-      );
+      const result = queries.getAnalysisByDateRange(history, index, '2024-01-10', '2024-01-20');
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('jan.pdf');
@@ -317,8 +285,8 @@ describe('queries', () => {
         categoryIndex: {
           documents: [1, 2, 3],
           images: [4],
-          audio: [5, 6],
-        },
+          audio: [5, 6]
+        }
       };
 
       const result = queries.getCategories(index);
@@ -335,8 +303,8 @@ describe('queries', () => {
         tagIndex: {
           invoice: [1, 2, 3, 4],
           receipt: [5, 6],
-          contract: [7],
-        },
+          contract: [7]
+        }
       };
 
       const result = queries.getTags(index);

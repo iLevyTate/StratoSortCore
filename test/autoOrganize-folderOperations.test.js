@@ -8,17 +8,17 @@ const path = require('path');
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/mock/documents'),
-  },
+    getPath: jest.fn().mockReturnValue('/mock/documents')
+  }
 }));
 
 // Mock fs
 const mockFs = {
   mkdir: jest.fn().mockResolvedValue(undefined),
-  lstat: jest.fn(),
+  lstat: jest.fn()
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock logger
@@ -28,8 +28,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('AutoOrganize Folder Operations', () => {
@@ -98,7 +98,7 @@ describe('AutoOrganize Folder Operations', () => {
     test('reuses existing folder if already exists', async () => {
       mockFs.lstat.mockResolvedValueOnce({
         isDirectory: () => true,
-        isSymbolicLink: () => false,
+        isSymbolicLink: () => false
       });
 
       const smartFolders = [];
@@ -112,7 +112,7 @@ describe('AutoOrganize Folder Operations', () => {
     test('rejects symbolic links for security', async () => {
       mockFs.lstat.mockResolvedValueOnce({
         isDirectory: () => false,
-        isSymbolicLink: () => true,
+        isSymbolicLink: () => true
       });
 
       const smartFolders = [];
@@ -138,7 +138,7 @@ describe('AutoOrganize Folder Operations', () => {
       const file = { name: 'photo.jpg', extension: 'jpg' };
       const smartFolders = [
         { name: 'Images', path: '/docs/Images' },
-        { name: 'Documents', path: '/docs/Documents' },
+        { name: 'Documents', path: '/docs/Documents' }
       ];
 
       const result = getFallbackDestination(file, smartFolders, '/default');
@@ -151,11 +151,9 @@ describe('AutoOrganize Folder Operations', () => {
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { category: 'Reports' },
+        analysis: { category: 'Reports' }
       };
-      const smartFolders = [
-        { name: 'Reports', path: '/docs/Reports' },
-      ];
+      const smartFolders = [{ name: 'Reports', path: '/docs/Reports' }];
 
       const result = getFallbackDestination(file, smartFolders, '/default');
 
@@ -166,7 +164,7 @@ describe('AutoOrganize Folder Operations', () => {
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { category: 'SpecialReports' },
+        analysis: { category: 'SpecialReports' }
       };
       const smartFolders = [];
 
@@ -208,7 +206,7 @@ describe('AutoOrganize Folder Operations', () => {
     test('preserves original name when preserveNames is true', () => {
       const file = {
         name: 'original.pdf',
-        analysis: { suggestedName: 'better_name.pdf' },
+        analysis: { suggestedName: 'better_name.pdf' }
       };
       const suggestion = { folder: 'Docs' };
 
@@ -221,7 +219,7 @@ describe('AutoOrganize Folder Operations', () => {
     test('uses suggested name when preserveNames is false', () => {
       const file = {
         name: 'original.pdf',
-        analysis: { suggestedName: 'better_name.pdf' },
+        analysis: { suggestedName: 'better_name.pdf' }
       };
       const suggestion = { folder: 'Docs' };
 
@@ -233,7 +231,7 @@ describe('AutoOrganize Folder Operations', () => {
     test('falls back to original name when no suggested name', () => {
       const file = {
         name: 'original.pdf',
-        analysis: {},
+        analysis: {}
       };
       const suggestion = { folder: 'Docs' };
 

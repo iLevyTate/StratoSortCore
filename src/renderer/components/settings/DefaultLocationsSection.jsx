@@ -14,7 +14,7 @@ function DefaultLocationsSection({ settings, setSettings }) {
     if (res?.success && res.path) {
       setSettings((prev) => ({
         ...prev,
-        defaultSmartFolderLocation: res.path,
+        defaultSmartFolderLocation: res.path
       }));
     }
   }, [setSettings]);
@@ -32,7 +32,7 @@ function DefaultLocationsSection({ settings, setSettings }) {
             onChange={(e) =>
               setSettings((prev) => ({
                 ...prev,
-                defaultSmartFolderLocation: e.target.value,
+                defaultSmartFolderLocation: e.target.value
               }))
             }
             className="flex-1"
@@ -59,7 +59,7 @@ function DefaultLocationsSection({ settings, setSettings }) {
 
 DefaultLocationsSection.propTypes = {
   settings: PropTypes.object.isRequired,
-  setSettings: PropTypes.func.isRequired,
+  setSettings: PropTypes.func.isRequired
 };
 
 export default DefaultLocationsSection;

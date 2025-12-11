@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 describe('PatternMatcher', () => {
@@ -29,7 +29,7 @@ describe('PatternMatcher', () => {
       maxUserPatterns: 100,
       maxMemoryMB: 10,
       patternSimilarityThreshold: 0.5,
-      maxFeedbackHistory: 50,
+      maxFeedbackHistory: 50
     });
   });
 
@@ -62,10 +62,13 @@ describe('PatternMatcher', () => {
       const stored = {
         patterns: [
           ['pdf:reports:docs', { folder: 'Documents', count: 5 }],
-          ['jpg:photos:pics', { folder: 'Photos', count: 3 }],
+          ['jpg:photos:pics', { folder: 'Photos', count: 3 }]
         ],
         feedbackHistory: [{ timestamp: Date.now(), accepted: true }],
-        folderUsageStats: [['Documents', 10], ['Photos', 5]],
+        folderUsageStats: [
+          ['Documents', 10],
+          ['Photos', 5]
+        ]
       };
 
       matcher.loadPatterns(stored);
@@ -112,13 +115,13 @@ describe('PatternMatcher', () => {
         folder: 'Documents',
         path: '/Documents',
         confidence: 0.9,
-        count: 5,
+        count: 5
       });
 
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { category: 'reports' },
+        analysis: { category: 'reports' }
       };
 
       const suggestions = matcher.getPatternBasedSuggestions(file);
@@ -132,13 +135,13 @@ describe('PatternMatcher', () => {
       matcher.userPatterns.set('jpg:photos:gallery', {
         folder: 'Photos',
         confidence: 0.9,
-        count: 5,
+        count: 5
       });
 
       const file = {
         name: 'document.pdf',
         extension: 'pdf',
-        analysis: { category: 'contracts' },
+        analysis: { category: 'contracts' }
       };
 
       const suggestions = matcher.getPatternBasedSuggestions(file);
@@ -152,14 +155,14 @@ describe('PatternMatcher', () => {
         matcher.userPatterns.set(`pdf:reports:folder${i}`, {
           folder: `Folder${i}`,
           confidence: 0.9,
-          count: 5,
+          count: 5
         });
       }
 
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { category: 'reports' },
+        analysis: { category: 'reports' }
       };
 
       const suggestions = matcher.getPatternBasedSuggestions(file);
@@ -171,18 +174,18 @@ describe('PatternMatcher', () => {
       matcher.userPatterns.set('pdf:reports:low', {
         folder: 'Low',
         confidence: 0.5,
-        count: 1,
+        count: 1
       });
       matcher.userPatterns.set('pdf:reports:high', {
         folder: 'High',
         confidence: 0.95,
-        count: 10,
+        count: 10
       });
 
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { category: 'reports' },
+        analysis: { category: 'reports' }
       };
 
       const suggestions = matcher.getPatternBasedSuggestions(file);
@@ -239,7 +242,7 @@ describe('PatternMatcher', () => {
         matcher.recordFeedback(
           { name: `file${i}.pdf`, extension: 'pdf' },
           { folder: 'Docs' },
-          true,
+          true
         );
       }
 
@@ -377,7 +380,7 @@ describe('PatternMatcher', () => {
         matcher.userPatterns.set(`pattern${i}`, {
           lastUsed: staleTime - i * 1000,
           count: 1,
-          confidence: 0.5,
+          confidence: 0.5
         });
       }
 

@@ -14,11 +14,9 @@ module.exports = {
     '^.+\\.(js|jsx)$': [
       'babel-jest',
       {
-        presets: [
-          ['@babel/preset-env', { targets: { node: 'current' } }],
-        ],
-      },
-    ],
+        presets: [['@babel/preset-env', { targets: { node: 'current' } }]]
+      }
+    ]
   },
 
   // Performance tests need more time
@@ -30,7 +28,7 @@ module.exports = {
   // Module resolution
   moduleNameMapper: {
     '^electron$': '<rootDir>/../mocks/electron.js',
-    '^ollama$': '<rootDir>/../mocks/ollama.js',
+    '^ollama$': '<rootDir>/../mocks/ollama.js'
   },
 
   // Setup files
@@ -40,5 +38,5 @@ module.exports = {
   collectCoverage: false,
 
   // Verbose output for performance metrics
-  verbose: true,
+  verbose: true
 };

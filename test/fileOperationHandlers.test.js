@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
@@ -21,61 +21,59 @@ const mockFs = {
   unlink: jest.fn().mockResolvedValue(undefined),
   access: jest.fn().mockResolvedValue(undefined),
   stat: jest.fn().mockResolvedValue({ size: 1024 }),
-  mkdir: jest.fn().mockResolvedValue(undefined),
+  mkdir: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock constants
 jest.mock('../src/shared/constants', () => ({
   ACTION_TYPES: {
     FILE_MOVE: 'FILE_MOVE',
-    BATCH_OPERATION: 'BATCH_OPERATION',
-  },
+    BATCH_OPERATION: 'BATCH_OPERATION'
+  }
 }));
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: jest.fn((logger, handler) => handler),
-  withValidation: jest.fn((logger, schema, handler) => handler),
+  withValidation: jest.fn((logger, schema, handler) => handler)
 }));
 
 // Mock batchOrganizeHandler
 jest.mock('../src/main/ipc/files/batchOrganizeHandler', () => ({
-  handleBatchOrganize: jest.fn().mockResolvedValue({ success: true }),
+  handleBatchOrganize: jest.fn().mockResolvedValue({ success: true })
 }));
 
 // Mock schemas
 jest.mock('../src/main/ipc/files/schemas', () => ({
   z: null,
-  operationSchema: null,
+  operationSchema: null
 }));
 
 // Mock chromadb
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
     updateFilePaths: jest.fn().mockResolvedValue(undefined),
-    deleteFileEmbedding: jest.fn().mockResolvedValue(undefined),
-  }),
+    deleteFileEmbedding: jest.fn().mockResolvedValue(undefined)
+  })
 }));
 
 // Mock embeddingQueue
 jest.mock('../src/main/analysis/embeddingQueue', () => ({
-  removeByFilePath: jest.fn().mockReturnValue(0),
+  removeByFilePath: jest.fn().mockReturnValue(0)
 }));
 
 // Mock pathSanitization - allow paths through validation
 jest.mock('../src/shared/pathSanitization', () => ({
   validateFileOperationPath: jest.fn().mockImplementation(async (filePath) => ({
     valid: true,
-    normalizedPath: filePath,
+    normalizedPath: filePath
   })),
   sanitizePath: jest.fn((p) => p),
   isPathDangerous: jest.fn(() => false),
-  checkSymlinkSafety: jest
-    .fn()
-    .mockResolvedValue({ isSymlink: false, isSafe: true }),
+  checkSymlinkSafety: jest.fn().mockResolvedValue({ isSymlink: false, isSafe: true })
 }));
 
 describe('File Operation Handlers', () => {
@@ -89,14 +87,14 @@ describe('File Operation Handlers', () => {
     jest.resetModules();
 
     mockIpcMain = {
-      handle: jest.fn(),
+      handle: jest.fn()
     };
 
     mockLogger = {
       info: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: jest.fn()
     };
 
     handlers = {};
@@ -118,12 +116,12 @@ describe('File Operation Handlers', () => {
           FILES: {
             PERFORM_OPERATION: 'files:perform-operation',
             DELETE_FILE: 'files:delete-file',
-            COPY_FILE: 'files:copy-file',
-          },
+            COPY_FILE: 'files:copy-file'
+          }
         },
         logger: mockLogger,
         getServiceIntegration: () => null,
-        getMainWindow: () => null,
+        getMainWindow: () => null
       });
 
       expect(mockIpcMain.handle).toHaveBeenCalledTimes(3);
@@ -138,14 +136,14 @@ describe('File Operation Handlers', () => {
           FILES: {
             PERFORM_OPERATION: 'files:perform-operation',
             DELETE_FILE: 'files:delete-file',
-            COPY_FILE: 'files:copy-file',
-          },
+            COPY_FILE: 'files:copy-file'
+          }
         },
         logger: mockLogger,
         getServiceIntegration: () => ({
-          undoRedo: { recordAction: jest.fn() },
+          undoRedo: { recordAction: jest.fn() }
         }),
-        getMainWindow: () => null,
+        getMainWindow: () => null
       });
     });
 
@@ -172,15 +170,12 @@ describe('File Operation Handlers', () => {
         {
           type: 'move',
           source: '/source/file.txt',
-          destination: '/dest/file.txt',
-        },
+          destination: '/dest/file.txt'
+        }
       );
 
       expect(result.success).toBe(true);
-      expect(mockFs.rename).toHaveBeenCalledWith(
-        '/source/file.txt',
-        '/dest/file.txt',
-      );
+      expect(mockFs.rename).toHaveBeenCalledWith('/source/file.txt', '/dest/file.txt');
     });
 
     test('handles copy operation', async () => {
@@ -190,8 +185,8 @@ describe('File Operation Handlers', () => {
         {
           type: 'copy',
           source: '/source/file.txt',
-          destination: '/dest/file.txt',
-        },
+          destination: '/dest/file.txt'
+        }
       );
 
       expect(result.success).toBe(true);
@@ -204,8 +199,8 @@ describe('File Operation Handlers', () => {
         {},
         {
           type: 'delete',
-          source: '/source/file.txt',
-        },
+          source: '/source/file.txt'
+        }
       );
 
       expect(result.success).toBe(true);
@@ -218,8 +213,8 @@ describe('File Operation Handlers', () => {
         {},
         {
           type: 'unknown',
-          source: '/test',
-        },
+          source: '/test'
+        }
       );
 
       expect(result.success).toBe(false);
@@ -236,8 +231,8 @@ describe('File Operation Handlers', () => {
         {
           type: 'move',
           source: '/source/file.txt',
-          destination: '/dest/file.txt',
-        },
+          destination: '/dest/file.txt'
+        }
       );
 
       expect(chromaDb.updateFilePaths).toHaveBeenCalled();
@@ -246,7 +241,7 @@ describe('File Operation Handlers', () => {
     test('handles database update failure gracefully', async () => {
       const { getInstance } = require('../src/main/services/chromadb');
       getInstance.mockReturnValueOnce({
-        updateFilePaths: jest.fn().mockRejectedValue(new Error('DB error')),
+        updateFilePaths: jest.fn().mockRejectedValue(new Error('DB error'))
       });
 
       const handler = handlers['files:perform-operation'];
@@ -255,8 +250,8 @@ describe('File Operation Handlers', () => {
         {
           type: 'move',
           source: '/source/file.txt',
-          destination: '/dest/file.txt',
-        },
+          destination: '/dest/file.txt'
+        }
       );
 
       expect(result.success).toBe(true);
@@ -272,12 +267,12 @@ describe('File Operation Handlers', () => {
           FILES: {
             PERFORM_OPERATION: 'files:perform-operation',
             DELETE_FILE: 'files:delete-file',
-            COPY_FILE: 'files:copy-file',
-          },
+            COPY_FILE: 'files:copy-file'
+          }
         },
         logger: mockLogger,
         getServiceIntegration: () => null,
-        getMainWindow: () => null,
+        getMainWindow: () => null
       });
     });
 
@@ -316,9 +311,7 @@ describe('File Operation Handlers', () => {
       const handler = handlers['files:delete-file'];
       await handler({}, '/path/to/file.txt');
 
-      expect(embeddingQueue.removeByFilePath).toHaveBeenCalledWith(
-        '/path/to/file.txt',
-      );
+      expect(embeddingQueue.removeByFilePath).toHaveBeenCalledWith('/path/to/file.txt');
     });
   });
 
@@ -330,12 +323,12 @@ describe('File Operation Handlers', () => {
           FILES: {
             PERFORM_OPERATION: 'files:perform-operation',
             DELETE_FILE: 'files:delete-file',
-            COPY_FILE: 'files:copy-file',
-          },
+            COPY_FILE: 'files:copy-file'
+          }
         },
         logger: mockLogger,
         getServiceIntegration: () => null,
-        getMainWindow: () => null,
+        getMainWindow: () => null
       });
     });
 
@@ -369,11 +362,7 @@ describe('File Operation Handlers', () => {
       mockFs.stat.mockRejectedValueOnce(enoentError);
 
       const handler = handlers['files:copy-file'];
-      const result = await handler(
-        {},
-        '/nonexistent/file.txt',
-        '/dest/file.txt',
-      );
+      const result = await handler({}, '/nonexistent/file.txt', '/dest/file.txt');
 
       expect(result.success).toBe(false);
       expect(result.errorCode).toBe('SOURCE_NOT_FOUND');

@@ -45,8 +45,8 @@ function createCacheStore() {
       totalConfidence: 0,
       totalProcessingTime: 0,
       entryCount: 0,
-      initialized: false,
-    },
+      initialized: false
+    }
   };
 }
 
@@ -58,7 +58,7 @@ function getCacheTTLs() {
   return {
     CACHE_TTL_MS: getConfig('PERFORMANCE.cacheTtlShort', 5000), // 5 second cache
     STATS_CACHE_TTL_MS: getConfig('PERFORMANCE.cacheTtlMedium', 30000), // 30 second cache
-    SEARCH_CACHE_TTL_MS: CACHE.SEARCH_CACHE_TTL_MS,
+    SEARCH_CACHE_TTL_MS: CACHE.SEARCH_CACHE_TTL_MS
   };
 }
 
@@ -108,10 +108,7 @@ function invalidateCachesOnRemove(cache, state) {
 function maintainCacheSize(cacheMap, maxSize) {
   if (cacheMap.size > maxSize) {
     // Remove oldest entries (first inserted)
-    const keysToRemove = Array.from(cacheMap.keys()).slice(
-      0,
-      cacheMap.size - maxSize,
-    );
+    const keysToRemove = Array.from(cacheMap.keys()).slice(0, cacheMap.size - maxSize);
     keysToRemove.forEach((key) => cacheMap.delete(key));
   }
 }
@@ -137,8 +134,7 @@ function updateIncrementalStatsOnAdd(cache, entry) {
   }
 
   cache.incrementalStats.totalConfidence += entry.analysis.confidence || 0;
-  cache.incrementalStats.totalProcessingTime +=
-    entry.processing.processingTimeMs || 0;
+  cache.incrementalStats.totalProcessingTime += entry.processing.processingTimeMs || 0;
   cache.incrementalStats.entryCount++;
 }
 
@@ -153,8 +149,7 @@ function updateIncrementalStatsOnRemove(cache, entry) {
   }
 
   cache.incrementalStats.totalConfidence -= entry.analysis.confidence || 0;
-  cache.incrementalStats.totalProcessingTime -=
-    entry.processing.processingTimeMs || 0;
+  cache.incrementalStats.totalProcessingTime -= entry.processing.processingTimeMs || 0;
   cache.incrementalStats.entryCount--;
 
   // Ensure we don't go negative due to floating point errors
@@ -185,7 +180,7 @@ function recalculateIncrementalStats(cache, analysisHistory, state) {
     totalConfidence,
     totalProcessingTime,
     entryCount: entries.length,
-    initialized: true,
+    initialized: true
   };
 
   state._statsNeedFullRecalc = false;
@@ -232,5 +227,5 @@ module.exports = {
   updateIncrementalStatsOnRemove,
   recalculateIncrementalStats,
   clearCaches,
-  warmCache,
+  warmCache
 };

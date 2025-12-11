@@ -10,31 +10,29 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock platformBehavior
 jest.mock('../src/main/core/platformBehavior', () => ({
   bringWindowToForeground: jest.fn(),
-  isWindows: false,
+  isWindows: false
 }));
 
 // Mock timingConstants
 jest.mock('../src/main/core/timingConstants', () => ({
   WINDOW: {
-    RESTORE_SETTLE_MS: 50,
-  },
+    RESTORE_SETTLE_MS: 50
+  }
 }));
 
 // Mock electron
 const mockScreen = {
-  getAllDisplays: jest.fn().mockReturnValue([
-    { bounds: { x: 0, y: 0, width: 1920, height: 1080 } },
-  ]),
+  getAllDisplays: jest.fn().mockReturnValue([{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }])
 };
 jest.mock('electron', () => ({
-  screen: mockScreen,
+  screen: mockScreen
 }));
 
 describe('Window State', () => {
@@ -62,7 +60,7 @@ describe('Window State', () => {
       getBounds: jest.fn().mockReturnValue({ x: 100, y: 100, width: 800, height: 600 }),
       on: jest.fn(),
       once: jest.fn(),
-      removeListener: jest.fn(),
+      removeListener: jest.fn()
     };
   });
 

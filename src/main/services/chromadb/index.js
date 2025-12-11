@@ -21,7 +21,7 @@ const {
   checkHealthViaHttp,
   checkHealthViaClient,
   isServerAvailable,
-  createHealthCheckInterval,
+  createHealthCheckInterval
 } = require('./ChromaHealthChecker');
 const { logger } = require('../../../shared/logger');
 
@@ -103,5 +103,5 @@ module.exports = {
   checkHealthViaHttp,
   checkHealthViaClient,
   isServerAvailable,
-  createHealthCheckInterval,
+  createHealthCheckInterval
 };

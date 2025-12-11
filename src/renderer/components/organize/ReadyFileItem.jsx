@@ -16,42 +16,35 @@ function ReadyFileItem({
   onEdit,
   destination,
   category: categoryProp,
-  onViewDetails,
+  onViewDetails
 }) {
   const analysis = editing?.analysis || file?.analysis;
   const suggestedName = editing?.suggestedName ?? analysis?.suggestedName;
   const category = categoryProp ?? editing?.category ?? analysis?.category;
-  const hasCategoryOption = smartFolders?.some(
-    (folder) => folder.name === category,
-  );
+  const hasCategoryOption = smartFolders?.some((folder) => folder.name === category);
   const computedConfidence =
     typeof analysis?.confidence === 'number'
       ? analysis.confidence > 1
         ? Math.round(analysis.confidence)
         : Math.round(analysis.confidence * 100)
       : null;
-  const handleToggle = useCallback(
-    () => onToggleSelected(index),
-    [onToggleSelected, index],
-  );
+  const handleToggle = useCallback(() => onToggleSelected(index), [onToggleSelected, index]);
   const handleEditName = useCallback(
     (e) => onEdit(index, 'suggestedName', e.target.value),
-    [onEdit, index],
+    [onEdit, index]
   );
   const handleEditCategory = useCallback(
     (e) => onEdit(index, 'category', e.target.value),
-    [onEdit, index],
+    [onEdit, index]
   );
 
   // Extract file path for tooltip
   const filePath = file.path || '';
   const tone = stateDisplay.color?.includes('green')
     ? 'success'
-    : stateDisplay.color?.includes('amber') ||
-        stateDisplay.color?.includes('warning')
+    : stateDisplay.color?.includes('amber') || stateDisplay.color?.includes('warning')
       ? 'warning'
-      : stateDisplay.color?.includes('red') ||
-          stateDisplay.color?.includes('danger')
+      : stateDisplay.color?.includes('red') || stateDisplay.color?.includes('danger')
         ? 'error'
         : 'info';
 
@@ -79,12 +72,10 @@ function ReadyFileItem({
               </div>
               <div className="text-sm text-system-gray-500 whitespace-normal break-words leading-tight w-full">
                 {[
-                  file.size
-                    ? `${Math.round(file.size / 1024)} KB`
-                    : 'Pending size',
+                  file.size ? `${Math.round(file.size / 1024)} KB` : 'Pending size',
                   file.source && file.source !== 'file_selection'
                     ? file.source.replace('_', ' ')
-                    : null,
+                    : null
                 ]
                   .filter(Boolean)
                   .join(' • ')}
@@ -110,11 +101,7 @@ function ReadyFileItem({
                   <label className="block text-xs font-medium text-system-gray-700 mb-1">
                     Category
                   </label>
-                  <Select
-                    value={category}
-                    onChange={handleEditCategory}
-                    className="text-sm w-full"
-                  >
+                  <Select value={category} onChange={handleEditCategory} className="text-sm w-full">
                     {!hasCategoryOption && category && (
                       <option value={category}>{`Unmapped: ${category}`}</option>
                     )}
@@ -139,10 +126,7 @@ function ReadyFileItem({
               {destination && (
                 <div className="text-sm text-system-gray-600 mt-2 overflow-visible">
                   <strong>Destination:</strong>{' '}
-                  <span
-                    className="text-stratosort-blue block mt-1 break-words"
-                    title={destination}
-                  >
+                  <span className="text-stratosort-blue block mt-1 break-words" title={destination}>
                     {destination}
                   </span>
                 </div>
@@ -156,9 +140,7 @@ function ReadyFileItem({
         </div>
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
           <StatusBadge variant={tone}>
-            <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
-              {stateDisplay.icon}
-            </span>
+            <span className={stateDisplay.spinning ? 'animate-spin' : ''}>{stateDisplay.icon}</span>
             <span className="hidden sm:inline">{stateDisplay.label}</span>
           </StatusBadge>
           {computedConfidence !== null && (
@@ -178,7 +160,7 @@ ReadyFileItem.propTypes = {
     path: PropTypes.string,
     size: PropTypes.number,
     source: PropTypes.string,
-    analysis: PropTypes.object,
+    analysis: PropTypes.object
   }).isRequired,
   index: PropTypes.number.isRequired,
   isSelected: PropTypes.bool,
@@ -187,23 +169,23 @@ ReadyFileItem.propTypes = {
     color: PropTypes.string,
     spinning: PropTypes.bool,
     icon: PropTypes.node,
-    label: PropTypes.string,
+    label: PropTypes.string
   }).isRequired,
   smartFolders: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-      name: PropTypes.string,
-    }),
+      name: PropTypes.string
+    })
   ),
   editing: PropTypes.shape({
     analysis: PropTypes.object,
     suggestedName: PropTypes.string,
-    category: PropTypes.string,
+    category: PropTypes.string
   }),
   onEdit: PropTypes.func.isRequired,
   destination: PropTypes.string,
   category: PropTypes.string,
-  onViewDetails: PropTypes.func,
+  onViewDetails: PropTypes.func
 };
 
 export default memo(ReadyFileItem);

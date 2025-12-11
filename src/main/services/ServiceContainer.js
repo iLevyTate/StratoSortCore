@@ -36,7 +36,7 @@ const ServiceLifetime = {
   /** Service is created once and reused for all requests */
   SINGLETON: 'singleton',
   /** Service is created fresh for each request */
-  TRANSIENT: 'transient',
+  TRANSIENT: 'transient'
 };
 
 /**
@@ -121,7 +121,7 @@ class ServiceContainer {
       factory,
       lifetime: ServiceLifetime.SINGLETON,
       instance: null,
-      initializing: false,
+      initializing: false
     });
 
     logger.debug(`[ServiceContainer] Registered singleton: ${name}`);
@@ -154,7 +154,7 @@ class ServiceContainer {
     this._registrations.set(name, {
       name,
       factory,
-      lifetime: ServiceLifetime.TRANSIENT,
+      lifetime: ServiceLifetime.TRANSIENT
     });
 
     logger.debug(`[ServiceContainer] Registered transient: ${name}`);
@@ -188,7 +188,7 @@ class ServiceContainer {
       factory: () => instance,
       lifetime: ServiceLifetime.SINGLETON,
       instance,
-      initializing: false,
+      initializing: false
     });
 
     logger.debug(`[ServiceContainer] Registered instance: ${name}`);
@@ -210,31 +210,24 @@ class ServiceContainer {
    */
   resolve(name) {
     if (this._isShuttingDown) {
-      throw new Error(
-        `Cannot resolve service '${name}' - container is shutting down`,
-      );
+      throw new Error(`Cannot resolve service '${name}' - container is shutting down`);
     }
 
     const registration = this._registrations.get(name);
     if (!registration) {
       throw new Error(
-        `Service '${name}' is not registered. Available services: ${Array.from(this._registrations.keys()).join(', ')}`,
+        `Service '${name}' is not registered. Available services: ${Array.from(this._registrations.keys()).join(', ')}`
       );
     }
 
     // Check for circular dependencies
     if (this._resolutionStack.has(name)) {
       const chain = `${Array.from(this._resolutionStack).join(' -> ')} -> ${name}`;
-      throw new Error(
-        `Circular dependency detected while resolving '${name}': ${chain}`,
-      );
+      throw new Error(`Circular dependency detected while resolving '${name}': ${chain}`);
     }
 
     // For singletons, return cached instance if available
-    if (
-      registration.lifetime === ServiceLifetime.SINGLETON &&
-      registration.instance !== null
-    ) {
+    if (registration.lifetime === ServiceLifetime.SINGLETON && registration.instance !== null) {
       return registration.instance;
     }
 
@@ -273,15 +266,13 @@ class ServiceContainer {
    */
   async resolveAsync(name) {
     if (this._isShuttingDown) {
-      throw new Error(
-        `Cannot resolve service '${name}' - container is shutting down`,
-      );
+      throw new Error(`Cannot resolve service '${name}' - container is shutting down`);
     }
 
     const registration = this._registrations.get(name);
     if (!registration) {
       throw new Error(
-        `Service '${name}' is not registered. Available services: ${Array.from(this._registrations.keys()).join(', ')}`,
+        `Service '${name}' is not registered. Available services: ${Array.from(this._registrations.keys()).join(', ')}`
       );
     }
 
@@ -301,9 +292,7 @@ class ServiceContainer {
     // Check for circular dependencies
     if (this._resolutionStack.has(name)) {
       const chain = `${Array.from(this._resolutionStack).join(' -> ')} -> ${name}`;
-      throw new Error(
-        `Circular dependency detected while resolving '${name}': ${chain}`,
-      );
+      throw new Error(`Circular dependency detected while resolving '${name}': ${chain}`);
     }
 
     // Track resolution
@@ -407,10 +396,7 @@ class ServiceContainer {
     const shutdownPromises = [];
 
     for (const [name, registration] of this._registrations) {
-      if (
-        registration.lifetime === ServiceLifetime.SINGLETON &&
-        registration.instance !== null
-      ) {
+      if (registration.lifetime === ServiceLifetime.SINGLETON && registration.instance !== null) {
         const instance = registration.instance;
 
         // Try to call shutdown or cleanup methods
@@ -418,31 +404,22 @@ class ServiceContainer {
           logger.debug(`[ServiceContainer] Calling shutdown on: ${name}`);
           shutdownPromises.push(
             Promise.resolve(instance.shutdown()).catch((error) => {
-              logger.error(
-                `[ServiceContainer] Error shutting down ${name}:`,
-                error,
-              );
-            }),
+              logger.error(`[ServiceContainer] Error shutting down ${name}:`, error);
+            })
           );
         } else if (typeof instance.cleanup === 'function') {
           logger.debug(`[ServiceContainer] Calling cleanup on: ${name}`);
           shutdownPromises.push(
             Promise.resolve(instance.cleanup()).catch((error) => {
-              logger.error(
-                `[ServiceContainer] Error cleaning up ${name}:`,
-                error,
-              );
-            }),
+              logger.error(`[ServiceContainer] Error cleaning up ${name}:`, error);
+            })
           );
         } else if (typeof instance.dispose === 'function') {
           logger.debug(`[ServiceContainer] Calling dispose on: ${name}`);
           shutdownPromises.push(
             Promise.resolve(instance.dispose()).catch((error) => {
-              logger.error(
-                `[ServiceContainer] Error disposing ${name}:`,
-                error,
-              );
-            }),
+              logger.error(`[ServiceContainer] Error disposing ${name}:`, error);
+            })
           );
         }
       }
@@ -503,12 +480,12 @@ const ServiceIds = {
   // State services
   ANALYSIS_HISTORY: 'analysisHistory',
   UNDO_REDO: 'undoRedo',
-  PROCESSING_STATE: 'processingState',
+  PROCESSING_STATE: 'processingState'
 };
 
 module.exports = {
   ServiceContainer,
   container,
   ServiceLifetime,
-  ServiceIds,
+  ServiceIds
 };

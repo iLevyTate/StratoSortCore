@@ -8,16 +8,16 @@ jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn().mockReturnValue({
     list: jest.fn().mockResolvedValue({ models: [] }),
     generate: jest.fn().mockResolvedValue({ response: 'OK' }),
-    embeddings: jest.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
-  }),
+    embeddings: jest.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] })
+  })
 }));
 
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  fetchWithRetry: jest.fn().mockResolvedValue({ ok: true }),
+  fetchWithRetry: jest.fn().mockResolvedValue({ ok: true })
 }));
 
 jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn().mockResolvedValue({}),
+  buildOllamaOptions: jest.fn().mockResolvedValue({})
 }));
 
 describe('ModelVerifier', () => {
@@ -94,10 +94,7 @@ describe('ModelVerifier', () => {
 
   describe('getInstalledModels', () => {
     test('returns models list on success', async () => {
-      const mockModels = [
-        { name: 'llama3:latest' },
-        { name: 'llava:latest' },
-      ];
+      const mockModels = [{ name: 'llama3:latest' }, { name: 'llava:latest' }];
       getOllama().list.mockResolvedValue({ models: mockModels });
 
       const result = await verifier.getInstalledModels();
@@ -125,8 +122,8 @@ describe('ModelVerifier', () => {
         models: [
           { name: 'llama3.2:latest' },
           { name: 'llava:latest' },
-          { name: 'mxbai-embed-large' },
-        ],
+          { name: 'mxbai-embed-large' }
+        ]
       });
 
       const result = await verifier.verifyEssentialModels();
@@ -138,7 +135,7 @@ describe('ModelVerifier', () => {
     test('returns missing models list', async () => {
       fetchWithRetry.mockResolvedValue({ ok: true });
       getOllama().list.mockResolvedValue({
-        models: [{ name: 'llama3.2:latest' }],
+        models: [{ name: 'llama3.2:latest' }]
       });
 
       const result = await verifier.verifyEssentialModels();
@@ -163,8 +160,8 @@ describe('ModelVerifier', () => {
           { name: 'llama3.2:latest' },
           { name: 'llava:latest' },
           { name: 'mxbai-embed-large' },
-          { name: 'whisper:medium' },
-        ],
+          { name: 'whisper:medium' }
+        ]
       });
 
       const result = await verifier.verifyEssentialModels();
@@ -203,22 +200,15 @@ describe('ModelVerifier', () => {
     test('includes recommendation for missing Whisper', () => {
       const recommendations = verifier.generateRecommendations([], false);
 
-      const whisperRec = recommendations.find((r) =>
-        r.message.toLowerCase().includes('whisper'),
-      );
+      const whisperRec = recommendations.find((r) => r.message.toLowerCase().includes('whisper'));
       expect(whisperRec).toBeDefined();
       expect(whisperRec.type).toBe('important');
     });
 
     test('includes recommendation for missing embedding model', () => {
-      const recommendations = verifier.generateRecommendations(
-        ['mxbai-embed-large'],
-        true,
-      );
+      const recommendations = verifier.generateRecommendations(['mxbai-embed-large'], true);
 
-      const embedRec = recommendations.find((r) =>
-        r.message.includes('mxbai-embed-large'),
-      );
+      const embedRec = recommendations.find((r) => r.message.includes('mxbai-embed-large'));
       expect(embedRec).toBeDefined();
       expect(embedRec.type).toBe('feature');
     });
@@ -266,8 +256,8 @@ describe('ModelVerifier', () => {
           { name: 'llama3.2:latest' },
           { name: 'llava:latest' },
           { name: 'mxbai-embed-large' },
-          { name: 'whisper' },
-        ],
+          { name: 'whisper' }
+        ]
       });
       getOllama().generate.mockResolvedValue({ response: 'OK' });
       getOllama().embeddings.mockResolvedValue({ embedding: [0.1, 0.2] });
@@ -288,8 +278,8 @@ describe('ModelVerifier', () => {
           { name: 'llama3.2:latest' },
           { name: 'llava:latest' },
           { name: 'mxbai-embed-large' },
-          { name: 'whisper' },
-        ],
+          { name: 'whisper' }
+        ]
       });
       getOllama().generate.mockResolvedValue({ response: 'OK' });
       getOllama().embeddings.mockResolvedValue({ embedding: [0.1, 0.2] });

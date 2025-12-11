@@ -10,15 +10,15 @@ const mockTesseract = {
   PSM: {
     SINGLE_BLOCK: 6,
     SINGLE_WORD: 8,
-    SINGLE_CHAR: 10,
+    SINGLE_CHAR: 10
   },
 
   OEM: {
     TESSERACT_ONLY: 0,
     LSTM_ONLY: 1,
     TESSERACT_LSTM_COMBINED: 2,
-    DEFAULT: 3,
-  },
+    DEFAULT: 3
+  }
 };
 
 module.exports = mockTesseract;

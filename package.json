@@ -79,7 +79,8 @@
     "dist:win": "npm run build && electron-builder --win --publish never --config electron-builder.json",
     "dist:mac": "npm run build && electron-builder --mac --publish never --config electron-builder.json",
     "dist:linux": "npm run build && electron-builder --linux --publish never --config electron-builder.json",
-    "dist:all": "npm run build && electron-builder --mac --win --linux --publish never --config electron-builder.json"
+    "dist:all": "npm run build && electron-builder --mac --win --linux --publish never --config electron-builder.json",
+    "ci": "npm run format:check && npm run lint && npm test && npm run build"
   },
   "browserslist": [],
   "overrides": {
@@ -111,7 +112,7 @@
     "node-fetch": "^3.3.2",
     "node-tesseract-ocr": "^2.2.1",
     "officeparser": "^5.2.2",
-    "ollama": "^0.6.3",
+    "ollama": "^0.5.18",
     "pdf-parse": "^2.4.5",
     "prop-types": "^15.8.1",
     "react": "^19.2.1",

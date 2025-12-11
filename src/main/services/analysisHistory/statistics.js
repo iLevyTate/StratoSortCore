@@ -99,13 +99,7 @@ function getSizeDistribution(sizeIndex) {
  * @param {number} statsCacheTTL - Stats cache TTL in ms
  * @returns {Object} Statistics object
  */
-function getStatistics(
-  analysisHistory,
-  analysisIndex,
-  cache,
-  state,
-  statsCacheTTL,
-) {
+function getStatistics(analysisHistory, analysisIndex, cache, state, statsCacheTTL) {
   const now = Date.now();
 
   // Check if cache is valid (use longer TTL for stats)
@@ -132,12 +126,8 @@ function getStatistics(
     categoriesCount: categories.length,
     tagsCount: tags.length,
     // Use pre-computed totals for averages
-    averageConfidence: hasEntries
-      ? cache.incrementalStats.totalConfidence / entryCount
-      : 0,
-    averageProcessingTime: hasEntries
-      ? cache.incrementalStats.totalProcessingTime / entryCount
-      : 0,
+    averageConfidence: hasEntries ? cache.incrementalStats.totalConfidence / entryCount : 0,
+    averageProcessingTime: hasEntries ? cache.incrementalStats.totalProcessingTime / entryCount : 0,
     // For min/max timestamps, use sorted cache if available
     oldestAnalysis: hasEntries ? getOldestTimestamp(cache, entries) : null,
     newestAnalysis: hasEntries ? getNewestTimestamp(cache, entries) : null,
@@ -148,7 +138,7 @@ function getStatistics(
     sizeDistribution: getSizeDistribution(analysisIndex.sizeIndex),
     // Additional metadata
     isEmpty: !hasEntries,
-    lastUpdated: analysisHistory.updatedAt,
+    lastUpdated: analysisHistory.updatedAt
   };
 
   // Cache the result
@@ -171,7 +161,7 @@ function getQuickStats(analysisHistory, analysisIndex) {
     totalSize: analysisHistory.totalSize,
     categoriesCount: Object.keys(analysisIndex.categoryIndex).length,
     tagsCount: Object.keys(analysisIndex.tagIndex).length,
-    lastUpdated: analysisHistory.updatedAt,
+    lastUpdated: analysisHistory.updatedAt
   };
 }
 
@@ -181,5 +171,5 @@ module.exports = {
   getTopItems,
   getSizeDistribution,
   getStatistics,
-  getQuickStats,
+  getQuickStats
 };

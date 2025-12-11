@@ -12,18 +12,18 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock os
 jest.mock('os', () => ({
-  platform: jest.fn().mockReturnValue('linux'),
+  platform: jest.fn().mockReturnValue('linux')
 }));
 
 // Mock child_process
 jest.mock('child_process', () => ({
-  spawn: jest.fn().mockReturnValue({ on: jest.fn() }),
+  spawn: jest.fn().mockReturnValue({ on: jest.fn() })
 }));
 
 describe('Shutdown Handler', () => {
@@ -50,9 +50,7 @@ describe('Shutdown Handler', () => {
 
       await shutdownProcess('TestService', null);
 
-      expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('process is null'),
-      );
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('process is null'));
     });
 
     test('does nothing for non-object process', async () => {
@@ -60,10 +58,7 @@ describe('Shutdown Handler', () => {
 
       await shutdownProcess('TestService', 'not-an-object');
 
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('not an object'),
-        'string',
-      );
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('not an object'), 'string');
     });
 
     test('does nothing for process without PID', async () => {
@@ -71,9 +66,7 @@ describe('Shutdown Handler', () => {
 
       await shutdownProcess('TestService', { kill: jest.fn() });
 
-      expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('has no PID'),
-      );
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('has no PID'));
     });
 
     test('does nothing for already killed process', async () => {
@@ -82,12 +75,10 @@ describe('Shutdown Handler', () => {
       await shutdownProcess('TestService', {
         pid: 123,
         killed: true,
-        kill: jest.fn(),
+        kill: jest.fn()
       });
 
-      expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('already killed'),
-      );
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('already killed'));
     });
 
     test('does nothing for process with exit code', async () => {
@@ -96,12 +87,10 @@ describe('Shutdown Handler', () => {
       await shutdownProcess('TestService', {
         pid: 123,
         exitCode: 0,
-        kill: jest.fn(),
+        kill: jest.fn()
       });
 
-      expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('already exited'),
-      );
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('already exited'));
     });
 
     test('sends SIGTERM to running process', async () => {
@@ -186,7 +175,7 @@ describe('Shutdown Handler', () => {
       expect(spawn).toHaveBeenCalledWith(
         'taskkill',
         ['/pid', '123', '/f', '/t'],
-        expect.objectContaining({ windowsHide: true }),
+        expect.objectContaining({ windowsHide: true })
       );
     });
 
@@ -198,7 +187,7 @@ describe('Shutdown Handler', () => {
         kill: jest.fn(),
         once: jest.fn((event, cb) => {
           if (event === 'exit') setTimeout(cb, 0);
-        }),
+        })
       };
 
       const promise = shutdownProcess('TestService', mockProcess);
@@ -219,7 +208,7 @@ describe('Shutdown Handler', () => {
         serviceProcesses: new Map(),
         serviceStatus: {},
         healthMonitor,
-        healthCheckState: { inProgress: false },
+        healthCheckState: { inProgress: false }
       });
 
       expect(clearIntervalSpy).toHaveBeenCalledWith(healthMonitor);
@@ -234,7 +223,7 @@ describe('Shutdown Handler', () => {
         serviceProcesses: new Map(),
         serviceStatus: {},
         healthMonitor: null,
-        healthCheckState,
+        healthCheckState
       });
 
       expect(healthCheckState.inProgress).toBe(false);
@@ -255,17 +244,17 @@ describe('Shutdown Handler', () => {
 
       const serviceProcesses = new Map([
         ['service1', mockProcess1],
-        ['service2', mockProcess2],
+        ['service2', mockProcess2]
       ]);
 
       const promise = shutdown({
         serviceProcesses,
         serviceStatus: {
           service1: { status: 'running', health: 'healthy' },
-          service2: { status: 'running', health: 'healthy' },
+          service2: { status: 'running', health: 'healthy' }
         },
         healthMonitor: null,
-        healthCheckState: { inProgress: false },
+        healthCheckState: { inProgress: false }
       });
 
       // Simulate graceful exits
@@ -288,7 +277,7 @@ describe('Shutdown Handler', () => {
         serviceProcesses,
         serviceStatus: {},
         healthMonitor: null,
-        healthCheckState: {},
+        healthCheckState: {}
       });
 
       expect(serviceProcesses.size).toBe(0);
@@ -297,14 +286,14 @@ describe('Shutdown Handler', () => {
     test('resets service status', async () => {
       const serviceStatus = {
         chromadb: { status: 'running', health: 'healthy' },
-        ollama: { status: 'running', health: 'healthy' },
+        ollama: { status: 'running', health: 'healthy' }
       };
 
       await shutdown({
         serviceProcesses: new Map(),
         serviceStatus,
         healthMonitor: null,
-        healthCheckState: {},
+        healthCheckState: {}
       });
 
       expect(serviceStatus.chromadb.status).toBe('stopped');

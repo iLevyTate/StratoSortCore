@@ -19,7 +19,7 @@ const backgroundSetupStatus = {
   complete: false,
   error: null,
   startedAt: null,
-  completedAt: null,
+  completedAt: null
 };
 
 /**
@@ -51,10 +51,7 @@ function notifyRenderer(type, message) {
  * @returns {Promise<boolean>}
  */
 async function checkFirstRun() {
-  const setupMarker = path.join(
-    app.getPath('userData'),
-    'ollama-setup-complete.marker',
-  );
+  const setupMarker = path.join(app.getPath('userData'), 'ollama-setup-complete.marker');
 
   try {
     await fs.access(setupMarker);
@@ -68,10 +65,7 @@ async function checkFirstRun() {
  * Mark setup as complete by writing marker file
  */
 async function markSetupComplete() {
-  const setupMarker = path.join(
-    app.getPath('userData'),
-    'ollama-setup-complete.marker',
-  );
+  const setupMarker = path.join(app.getPath('userData'), 'ollama-setup-complete.marker');
 
   // Use atomic write (temp + rename) to prevent corruption
   try {
@@ -87,11 +81,7 @@ async function markSetupComplete() {
  * Clean up installer marker if it exists
  */
 async function cleanupInstallerMarker() {
-  const installerMarker = path.join(
-    app.getPath('exe'),
-    '..',
-    'first-run.marker',
-  );
+  const installerMarker = path.join(app.getPath('exe'), '..', 'first-run.marker');
 
   try {
     await fs.access(installerMarker);
@@ -99,10 +89,7 @@ async function cleanupInstallerMarker() {
       await fs.unlink(installerMarker);
       logger.debug('[BACKGROUND] Removed installer marker');
     } catch (e) {
-      logger.debug(
-        '[BACKGROUND] Could not remove installer marker:',
-        e.message,
-      );
+      logger.debug('[BACKGROUND] Could not remove installer marker:', e.message);
     }
   } catch {
     // Installer marker doesn't exist, no action needed
@@ -122,19 +109,13 @@ async function runOllamaSetup() {
     return;
   }
 
-  const {
-    isOllamaInstalled,
-    getInstalledModels,
-    installEssentialModels,
-  } = require(setupScript);
+  const { isOllamaInstalled, getInstalledModels, installEssentialModels } = require(setupScript);
 
   // Check if Ollama is installed and has models
   if (await isOllamaInstalled()) {
     const models = await getInstalledModels();
     if (models.length === 0) {
-      logger.info(
-        '[BACKGROUND] No AI models found, installing essential models...',
-      );
+      logger.info('[BACKGROUND] No AI models found, installing essential models...');
       notifyRenderer('info', 'Installing AI models in background...');
 
       try {
@@ -142,18 +123,13 @@ async function runOllamaSetup() {
         logger.info('[BACKGROUND] AI models installed successfully');
         notifyRenderer('success', 'AI models installed successfully');
       } catch (e) {
-        logger.warn(
-          '[BACKGROUND] Could not install AI models automatically:',
-          e.message,
-        );
+        logger.warn('[BACKGROUND] Could not install AI models automatically:', e.message);
       }
     } else {
       logger.info('[BACKGROUND] AI models already installed:', models.length);
     }
   } else {
-    logger.warn(
-      '[BACKGROUND] Ollama not installed - AI features will be limited',
-    );
+    logger.warn('[BACKGROUND] Ollama not installed - AI features will be limited');
   }
 }
 
@@ -200,14 +176,11 @@ async function runBackgroundSetup() {
       if (win && !win.isDestroyed()) {
         win.webContents.send('startup-degraded', {
           reason: error.message,
-          component: 'background-setup',
+          component: 'background-setup'
         });
       }
     } catch (notifyError) {
-      logger.debug(
-        '[BACKGROUND] Could not notify renderer of error:',
-        notifyError.message,
-      );
+      logger.debug('[BACKGROUND] Could not notify renderer of error:', notifyError.message);
     }
   }
 }
@@ -215,5 +188,5 @@ async function runBackgroundSetup() {
 module.exports = {
   runBackgroundSetup,
   getBackgroundSetupStatus,
-  checkFirstRun,
+  checkFirstRun
 };

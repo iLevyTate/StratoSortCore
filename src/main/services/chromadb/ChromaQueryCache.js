@@ -26,13 +26,11 @@ class ChromaQueryCache {
     this.cache = new Map();
 
     const envMaxSize =
-      process.env.CHROMA_QUERY_CACHE_SIZE ||
-      process.env.STRATOSORT_CHROMA_CACHE_SIZE;
+      process.env.CHROMA_QUERY_CACHE_SIZE || process.env.STRATOSORT_CHROMA_CACHE_SIZE;
     const parsedMaxSize = Number.parseInt(envMaxSize, 10);
 
     const envTtl =
-      process.env.CHROMA_QUERY_CACHE_TTL_MS ||
-      process.env.STRATOSORT_CHROMA_CACHE_TTL_MS;
+      process.env.CHROMA_QUERY_CACHE_TTL_MS || process.env.STRATOSORT_CHROMA_CACHE_TTL_MS;
     const parsedTtl = Number.parseInt(envTtl, 10);
 
     this.maxSize = Number.isFinite(options.maxSize)
@@ -90,7 +88,7 @@ class ChromaQueryCache {
     // Add new entry (will be at the end of iteration order)
     this.cache.set(key, {
       data,
-      timestamp: Date.now(),
+      timestamp: Date.now()
     });
   }
 
@@ -157,7 +155,7 @@ class ChromaQueryCache {
     return {
       size: this.cache.size,
       maxSize: this.maxSize,
-      ttlMs: this.ttlMs,
+      ttlMs: this.ttlMs
     };
   }
 

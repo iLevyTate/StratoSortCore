@@ -9,7 +9,7 @@
 const mockApp = {
   on: jest.fn(),
   removeListener: jest.fn(),
-  quit: jest.fn(),
+  quit: jest.fn()
 };
 
 const mockGetAllWindows = jest.fn(() => []);
@@ -18,12 +18,12 @@ const mockGetAllWindows = jest.fn(() => []);
 jest.mock('electron', () => ({
   app: mockApp,
   BrowserWindow: {
-    getAllWindows: mockGetAllWindows,
+    getAllWindows: mockGetAllWindows
   },
   ipcMain: {
     removeHandler: jest.fn(),
-    removeListener: jest.fn(),
-  },
+    removeListener: jest.fn()
+  }
 }));
 
 // Mock dependencies
@@ -33,38 +33,38 @@ jest.mock('../../../../src/shared/logger', () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    debug: jest.fn(),
-  },
+    debug: jest.fn()
+  }
 }));
 
 jest.mock('../../../../src/main/core/systemTray', () => ({
   destroyTray: jest.fn(),
-  getTray: jest.fn(() => null),
+  getTray: jest.fn(() => null)
 }));
 
 jest.mock('../../../../src/main/services/startup', () => ({
   getStartupManager: jest.fn(() => ({
-    shutdown: jest.fn().mockResolvedValue(undefined),
-  })),
+    shutdown: jest.fn().mockResolvedValue(undefined)
+  }))
 }));
 
 jest.mock('../../../../src/main/core/systemAnalytics', () => ({
-  destroy: jest.fn(),
+  destroy: jest.fn()
 }));
 
 jest.mock('../../../../src/main/core/ipcRegistry', () => ({
-  removeAllRegistered: jest.fn(() => ({ handlers: 0, listeners: 0 })),
+  removeAllRegistered: jest.fn(() => ({ handlers: 0, listeners: 0 }))
 }));
 
 jest.mock('../../../../src/main/ipc/chromadb', () => ({
-  cleanupEventListeners: jest.fn(),
+  cleanupEventListeners: jest.fn()
 }));
 
 const mockShouldQuit = jest.fn(() => true);
 jest.mock('../../../../src/main/core/platformBehavior', () => ({
   shouldQuitOnAllWindowsClosed: mockShouldQuit,
   killProcess: jest.fn().mockResolvedValue({ success: true }),
-  isProcessRunning: jest.fn(() => false),
+  isProcessRunning: jest.fn(() => false)
 }));
 
 const lifecycle = require('../../../../src/main/core/lifecycle');
@@ -78,7 +78,7 @@ describe('lifecycle module', () => {
     it('should accept configuration object', () => {
       const config = {
         getMetricsInterval: jest.fn(),
-        setMetricsInterval: jest.fn(),
+        setMetricsInterval: jest.fn()
       };
 
       expect(() => lifecycle.initializeLifecycle(config)).not.toThrow();
@@ -92,14 +92,8 @@ describe('lifecycle module', () => {
       const cleanup = lifecycle.registerLifecycleHandlers(createWindow);
 
       // Should register app handlers
-      expect(mockApp.on).toHaveBeenCalledWith(
-        'before-quit',
-        expect.any(Function),
-      );
-      expect(mockApp.on).toHaveBeenCalledWith(
-        'window-all-closed',
-        expect.any(Function),
-      );
+      expect(mockApp.on).toHaveBeenCalledWith('before-quit', expect.any(Function));
+      expect(mockApp.on).toHaveBeenCalledWith('window-all-closed', expect.any(Function));
       expect(mockApp.on).toHaveBeenCalledWith('activate', expect.any(Function));
 
       // Should return cleanup functions
@@ -177,7 +171,7 @@ describe('lifecycle module', () => {
 
       expect(logger.error).toHaveBeenCalledWith('UNCAUGHT EXCEPTION:', {
         message: 'Test error',
-        stack: expect.any(String),
+        stack: expect.any(String)
       });
     });
   });
@@ -192,7 +186,7 @@ describe('lifecycle module', () => {
 
       expect(logger.error).toHaveBeenCalledWith('UNHANDLED REJECTION', {
         reason: 'Test rejection reason',
-        promise: expect.any(String),
+        promise: expect.any(String)
       });
     });
   });
@@ -209,13 +203,13 @@ describe('lifecycle module', () => {
         getEventListeners: () => [],
         getChromaDbProcess: () => null,
         getServiceIntegration: () => null,
-        getDownloadWatcher: () => null,
+        getDownloadWatcher: () => null
       });
 
       await lifecycle.verifyShutdownCleanup();
 
       expect(logger.info).toHaveBeenCalledWith(
-        '[SHUTDOWN-VERIFY] All resources verified as released',
+        '[SHUTDOWN-VERIFY] All resources verified as released'
       );
     });
 
@@ -230,7 +224,7 @@ describe('lifecycle module', () => {
         getEventListeners: () => [],
         getChromaDbProcess: () => null,
         getServiceIntegration: () => null,
-        getDownloadWatcher: () => null,
+        getDownloadWatcher: () => null
       });
 
       await lifecycle.verifyShutdownCleanup();

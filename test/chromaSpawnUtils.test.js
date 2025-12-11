@@ -10,28 +10,28 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs.promises
 const mockFs = {
-  access: jest.fn(),
+  access: jest.fn()
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock asyncSpawnUtils
 jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
   findPythonLauncherAsync: jest.fn(),
-  checkChromaExecutableAsync: jest.fn(),
+  checkChromaExecutableAsync: jest.fn()
 }));
 
 // Mock platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
   getChromaDbBinName: jest.fn().mockReturnValue('chromadb'),
-  shouldUseShell: jest.fn().mockReturnValue(false),
+  shouldUseShell: jest.fn().mockReturnValue(false)
 }));
 
 describe('chromaSpawnUtils', () => {
@@ -42,7 +42,7 @@ describe('chromaSpawnUtils', () => {
   const defaultConfig = {
     dbPath: '/data/chroma',
     host: 'localhost',
-    port: 8000,
+    port: 8000
   };
 
   beforeEach(() => {
@@ -99,8 +99,7 @@ describe('chromaSpawnUtils', () => {
     });
 
     test('handles quoted arguments in custom command', async () => {
-      process.env.CHROMA_SERVER_COMMAND =
-        'chroma run --path "/path with spaces/db"';
+      process.env.CHROMA_SERVER_COMMAND = 'chroma run --path "/path with spaces/db"';
 
       const result = await chromaSpawnUtils.buildChromaSpawnPlan(defaultConfig);
 
@@ -148,7 +147,7 @@ describe('chromaSpawnUtils', () => {
       asyncSpawnUtils.checkChromaExecutableAsync.mockResolvedValue(false);
       asyncSpawnUtils.findPythonLauncherAsync.mockResolvedValue({
         command: 'python3',
-        args: [],
+        args: []
       });
 
       const result = await chromaSpawnUtils.buildChromaSpawnPlan(defaultConfig);
@@ -175,7 +174,7 @@ describe('chromaSpawnUtils', () => {
       const customConfig = {
         dbPath: '/custom/path',
         host: '0.0.0.0',
-        port: 9999,
+        port: 9999
       };
 
       const result = await chromaSpawnUtils.buildChromaSpawnPlan(customConfig);
@@ -190,7 +189,7 @@ describe('chromaSpawnUtils', () => {
 
       const result = await chromaSpawnUtils.buildChromaSpawnPlan({
         ...defaultConfig,
-        port: 8080,
+        port: 8080
       });
 
       const portIndex = result.args.indexOf('--port');
@@ -211,7 +210,7 @@ describe('chromaSpawnUtils', () => {
     test('delegates to async version', async () => {
       asyncSpawnUtils.findPythonLauncherAsync.mockResolvedValue({
         command: 'python3',
-        args: [],
+        args: []
       });
 
       const result = await chromaSpawnUtils.findPythonLauncher();

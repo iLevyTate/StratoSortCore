@@ -7,19 +7,19 @@ describe('OLLAMA pull progress IPC', () => {
     const fakeWindow = {
       isDestroyed: () => false,
       webContents: {
-        send: (channel, payload) => sent.push({ channel, payload }),
-      },
+        send: (channel, payload) => sent.push({ channel, payload })
+      }
     };
 
     const handlers = new Map();
     const ipcMain = {
-      handle: (channel, handler) => handlers.set(channel, handler),
+      handle: (channel, handler) => handlers.set(channel, handler)
     };
 
     const logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
     const withErrorLogging = (_logger, fn) => fn; // pass-through for test
     jest.doMock('../src/main/ipc/ipcWrappers', () => ({
-      withErrorLogging,
+      withErrorLogging
     }));
 
     const getOllama = () => ({
@@ -28,7 +28,7 @@ describe('OLLAMA pull progress IPC', () => {
         stream && stream({ total: 100, completed: 25 });
         stream && stream({ total: 100, completed: 100 });
         return;
-      },
+      }
     });
 
     registerOllamaIpc({
@@ -41,16 +41,14 @@ describe('OLLAMA pull progress IPC', () => {
       getOllamaModel: () => 'mock',
       getOllamaVisionModel: () => 'mock-v',
       getOllamaEmbeddingModel: () => 'mock-e',
-      getOllamaHost: () => 'http://localhost:11434',
+      getOllamaHost: () => 'http://localhost:11434'
     });
 
     const handler = handlers.get(IPC_CHANNELS.OLLAMA.PULL_MODELS);
     const result = await handler(null, ['m1']);
 
     expect(result.success).toBe(true);
-    const progressEvents = sent.filter(
-      (e) => e.channel === 'operation-progress',
-    );
+    const progressEvents = sent.filter((e) => e.channel === 'operation-progress');
     expect(progressEvents.length).toBeGreaterThanOrEqual(2);
     expect(progressEvents[0].payload.type).toBe('ollama-pull');
     expect(progressEvents[0].payload.model).toBe('m1');

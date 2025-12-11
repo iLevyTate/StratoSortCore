@@ -17,7 +17,7 @@ function registerSuggestionsIpc({
   chromaDbService,
   folderMatchingService,
   settingsService,
-  getCustomFolders,
+  getCustomFolders
 }) {
   const context = 'Suggestions';
 
@@ -27,14 +27,11 @@ function registerSuggestionsIpc({
     suggestionService = new OrganizationSuggestionService({
       chromaDbService,
       folderMatchingService,
-      settingsService,
+      settingsService
     });
     logger.info('[SUGGESTIONS] OrganizationSuggestionService initialized');
   } catch (error) {
-    logger.warn(
-      '[SUGGESTIONS] Failed to initialize suggestion service:',
-      error.message,
-    );
+    logger.warn('[SUGGESTIONS] Failed to initialize suggestion service:', error.message);
     // Continue anyway - handlers will check for null service
   }
 
@@ -55,24 +52,20 @@ function registerSuggestionsIpc({
         error: 'Suggestion service unavailable (ChromaDB may not be running)',
         primary: null,
         alternatives: [],
-        confidence: 0,
+        confidence: 0
       },
       handler: async (event, { file, options = {} }, service) => {
         try {
           logger.info('[SUGGESTIONS] Getting suggestions for file:', file.name);
 
           const smartFolders = getCustomFolders();
-          const suggestions = await service.getSuggestionsForFile(
-            file,
-            smartFolders,
-            options,
-          );
+          const suggestions = await service.getSuggestionsForFile(file, smartFolders, options);
 
           logger.info('[SUGGESTIONS] Generated suggestions:', {
             file: file.name,
             primary: suggestions.primary?.folder,
             alternatives: suggestions.alternatives?.length || 0,
-            confidence: suggestions.confidence,
+            confidence: suggestions.confidence
           });
 
           return suggestions;
@@ -80,8 +73,8 @@ function registerSuggestionsIpc({
           logger.error('[SUGGESTIONS] Failed to get file suggestions:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get batch suggestions for multiple files
@@ -97,37 +90,30 @@ function registerSuggestionsIpc({
         success: false,
         error: 'Suggestion service unavailable (ChromaDB may not be running)',
         groups: [],
-        recommendations: [],
+        recommendations: []
       },
       handler: async (event, { files }, service) => {
         try {
-          logger.info(
-            '[SUGGESTIONS] Getting batch suggestions for',
-            files.length,
-            'files',
-          );
+          logger.info('[SUGGESTIONS] Getting batch suggestions for', files.length, 'files');
 
           const smartFolders = getCustomFolders();
-          const batchSuggestions = await service.getBatchSuggestions(
-            files,
-            smartFolders,
-          );
+          const batchSuggestions = await service.getBatchSuggestions(files, smartFolders);
 
           logger.info('[SUGGESTIONS] Generated batch suggestions:', {
             fileCount: files.length,
             groups: batchSuggestions.groups?.length || 0,
-            recommendations: batchSuggestions.recommendations?.length || 0,
+            recommendations: batchSuggestions.recommendations?.length || 0
           });
 
           return batchSuggestions;
         } catch (error) {
           logger.error('[SUGGESTIONS] Failed to get batch suggestions:', error);
           return createErrorResponse(error, {
-            groups: [],
+            groups: []
           });
         }
-      },
-    }),
+      }
+    })
   );
 
   // Record user feedback on suggestions
@@ -141,14 +127,14 @@ function registerSuggestionsIpc({
       getService: getSuggestionService,
       fallbackResponse: {
         success: false,
-        error: 'Suggestion service unavailable',
+        error: 'Suggestion service unavailable'
       },
       handler: async (event, { file, suggestion, accepted }, service) => {
         try {
           logger.info('[SUGGESTIONS] Recording feedback:', {
             file: file.name,
             suggestion: suggestion?.folder,
-            accepted,
+            accepted
           });
 
           service.recordFeedback(file, suggestion, accepted);
@@ -158,8 +144,8 @@ function registerSuggestionsIpc({
           logger.error('[SUGGESTIONS] Failed to record feedback:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get organization strategies
@@ -173,7 +159,7 @@ function registerSuggestionsIpc({
       fallbackResponse: {
         success: false,
         error: 'Suggestion service is not available',
-        strategies: [],
+        strategies: []
       },
       handler: async (event, service) => {
         try {
@@ -181,21 +167,19 @@ function registerSuggestionsIpc({
 
           return {
             success: true,
-            strategies: Object.entries(service.strategies).map(
-              ([id, strategy]) => ({
-                id,
-                ...strategy,
-              }),
-            ),
+            strategies: Object.entries(service.strategies).map(([id, strategy]) => ({
+              id,
+              ...strategy
+            }))
           };
         } catch (error) {
           logger.error('[SUGGESTIONS] Failed to get strategies:', error);
           return createErrorResponse(error, {
-            strategies: [],
+            strategies: []
           });
         }
-      },
-    }),
+      }
+    })
   );
 
   // Apply a specific strategy to files
@@ -210,13 +194,13 @@ function registerSuggestionsIpc({
       fallbackResponse: {
         success: false,
         error: 'Suggestion service is not available',
-        results: [],
+        results: []
       },
       handler: async (event, { files, strategyId }, service) => {
         try {
           logger.info('[SUGGESTIONS] Applying strategy:', {
             strategy: strategyId,
-            fileCount: files.length,
+            fileCount: files.length
           });
 
           const strategy = service.strategies[strategyId];
@@ -228,28 +212,24 @@ function registerSuggestionsIpc({
           const results = [];
 
           for (const file of files) {
-            const folder = service.mapFileToStrategy(
-              file,
-              strategy,
-              smartFolders,
-            );
+            const folder = service.mapFileToStrategy(file, strategy, smartFolders);
             results.push({
               file,
               folder,
-              strategy: strategyId,
+              strategy: strategyId
             });
           }
 
           return {
             success: true,
-            results,
+            results
           };
         } catch (error) {
           logger.error('[SUGGESTIONS] Failed to apply strategy:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get user patterns (for debugging/UI display)
@@ -263,31 +243,29 @@ function registerSuggestionsIpc({
       fallbackResponse: {
         success: false,
         error: 'Suggestion service not available',
-        patterns: [],
+        patterns: []
       },
       handler: async (event, service) => {
         try {
           logger.info('[SUGGESTIONS] Getting user patterns');
 
-          const patterns = Array.from(service.userPatterns.entries()).map(
-            ([pattern, data]) => ({
-              pattern,
-              ...data,
-            }),
-          );
+          const patterns = Array.from(service.userPatterns.entries()).map(([pattern, data]) => ({
+            pattern,
+            ...data
+          }));
 
           return {
             success: true,
-            patterns,
+            patterns
           };
         } catch (error) {
           logger.error('[SUGGESTIONS] Failed to get user patterns:', error);
           return createErrorResponse(error, {
-            patterns: [],
+            patterns: []
           });
         }
-      },
-    }),
+      }
+    })
   );
 
   // Clear user patterns (for testing/reset)
@@ -300,7 +278,7 @@ function registerSuggestionsIpc({
       getService: getSuggestionService,
       fallbackResponse: {
         success: false,
-        error: 'Suggestion service not available',
+        error: 'Suggestion service not available'
       },
       handler: async (event, service) => {
         try {
@@ -314,8 +292,8 @@ function registerSuggestionsIpc({
           logger.error('[SUGGESTIONS] Failed to clear patterns:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Analyze folder structure for improvements
@@ -329,39 +307,33 @@ function registerSuggestionsIpc({
       fallbackResponse: {
         success: false,
         error: 'Suggestion service not available',
-        improvements: [],
+        improvements: []
       },
       handler: async (event, { files = [] }, service) => {
         try {
           logger.info('[SUGGESTIONS] Analyzing folder structure');
 
           const smartFolders = getCustomFolders();
-          const improvements = await service.analyzeFolderStructure(
-            smartFolders,
-            files,
-          );
+          const improvements = await service.analyzeFolderStructure(smartFolders, files);
 
           logger.info('[SUGGESTIONS] Folder analysis complete:', {
             improvementCount: improvements.length,
-            smartFolderCount: smartFolders.length,
+            smartFolderCount: smartFolders.length
           });
 
           return {
             success: true,
             improvements,
-            smartFolders,
+            smartFolders
           };
         } catch (error) {
-          logger.error(
-            '[SUGGESTIONS] Failed to analyze folder structure:',
-            error,
-          );
+          logger.error('[SUGGESTIONS] Failed to analyze folder structure:', error);
           return createErrorResponse(error, {
-            improvements: [],
+            improvements: []
           });
         }
-      },
-    }),
+      }
+    })
   );
 
   // Suggest new smart folder
@@ -374,28 +346,25 @@ function registerSuggestionsIpc({
       getService: getSuggestionService,
       fallbackResponse: {
         success: false,
-        error: 'Suggestion service not available',
+        error: 'Suggestion service not available'
       },
       handler: async (event, { file }, service) => {
         try {
           logger.info('[SUGGESTIONS] Suggesting new folder for:', file.name);
 
           const smartFolders = getCustomFolders();
-          const suggestion = await service.suggestNewSmartFolder(
-            file,
-            smartFolders,
-          );
+          const suggestion = await service.suggestNewSmartFolder(file, smartFolders);
 
           return {
             success: true,
-            suggestion,
+            suggestion
           };
         } catch (error) {
           logger.error('[SUGGESTIONS] Failed to suggest new folder:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   logger.info('[IPC] Suggestions handlers registered');

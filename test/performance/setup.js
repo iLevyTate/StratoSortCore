@@ -14,7 +14,10 @@ global.console = {
   log: jest.fn((...args) => {
     // Allow [PERF] and [STRESS] prefixed logs
     const message = args[0];
-    if (typeof message === 'string' && (message.includes('[PERF]') || message.includes('[STRESS]'))) {
+    if (
+      typeof message === 'string' &&
+      (message.includes('[PERF]') || message.includes('[STRESS]'))
+    ) {
       originalConsole.log(...args);
     }
   }),
@@ -24,7 +27,7 @@ global.console = {
     originalConsole.error(...args);
   }),
   debug: jest.fn(),
-  info: jest.fn(),
+  info: jest.fn()
 };
 
 // Performance test utilities
@@ -45,7 +48,7 @@ global.performanceTestUtils = {
   // Log performance metric
   logMetric: (name, value, unit = '') => {
     originalConsole.log(`[PERF] ${name}: ${value}${unit}`);
-  },
+  }
 };
 
 // Cleanup after each test

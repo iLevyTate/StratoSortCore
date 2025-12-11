@@ -18,20 +18,20 @@ import { PHASES } from '../../shared/constants';
 // Using simpler opacity-only transitions for smoother performance
 const pageVariants = {
   initial: {
-    opacity: 0,
+    opacity: 0
   },
   in: {
-    opacity: 1,
+    opacity: 1
   },
   out: {
-    opacity: 0,
-  },
+    opacity: 0
+  }
 };
 
 const pageTransition = {
   type: 'tween',
   ease: 'easeInOut',
-  duration: 0.2, // Fast, smooth fade
+  duration: 0.2 // Fast, smooth fade
 };
 
 function PhaseRenderer() {
@@ -102,7 +102,7 @@ function PhaseRenderer() {
               style={{
                 willChange: 'opacity',
                 backfaceVisibility: 'hidden',
-                transform: 'translate3d(0, 0, 0)',
+                transform: 'translate3d(0, 0, 0)'
               }}
             >
               {renderCurrentPhase()}
@@ -111,9 +111,7 @@ function PhaseRenderer() {
         </Suspense>
       </div>
       {showSettings && (
-        <Suspense
-          fallback={<ModalLoadingOverlay message="Loading Settings..." />}
-        >
+        <Suspense fallback={<ModalLoadingOverlay message="Loading Settings..." />}>
           <PhaseErrorBoundary phaseName="Settings">
             <SettingsPanel />
           </PhaseErrorBoundary>

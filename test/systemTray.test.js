@@ -10,39 +10,39 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 const mockTrayInstance = {
   setToolTip: jest.fn(),
   setContextMenu: jest.fn(),
-  destroy: jest.fn(),
+  destroy: jest.fn()
 };
 
 const mockNativeImage = {
   createFromPath: jest.fn().mockReturnValue({
-    setTemplateImage: jest.fn(),
-  }),
+    setTemplateImage: jest.fn()
+  })
 };
 
 const mockMenu = {
-  buildFromTemplate: jest.fn().mockReturnValue({}),
+  buildFromTemplate: jest.fn().mockReturnValue({})
 };
 
 const mockWindow = {
   isMinimized: jest.fn().mockReturnValue(false),
   restore: jest.fn(),
   show: jest.fn(),
-  focus: jest.fn(),
+  focus: jest.fn()
 };
 
 const mockApp = {
-  quit: jest.fn(),
+  quit: jest.fn()
 };
 
 const mockBrowserWindow = {
-  getAllWindows: jest.fn().mockReturnValue([mockWindow]),
+  getAllWindows: jest.fn().mockReturnValue([mockWindow])
 };
 
 jest.mock('electron', () => ({
@@ -50,12 +50,12 @@ jest.mock('electron', () => ({
   Menu: mockMenu,
   app: mockApp,
   BrowserWindow: mockBrowserWindow,
-  nativeImage: mockNativeImage,
+  nativeImage: mockNativeImage
 }));
 
 jest.mock('../src/shared/platformUtils', () => ({
   isWindows: false,
-  isMacOS: false,
+  isMacOS: false
 }));
 
 describe('systemTray', () => {
@@ -82,7 +82,7 @@ describe('systemTray', () => {
         getSettingsService: jest.fn(),
         handleSettingsChanged: jest.fn(),
         createWindow: jest.fn(),
-        setIsQuitting: jest.fn(),
+        setIsQuitting: jest.fn()
       };
 
       systemTray.initializeTrayConfig(config);
@@ -124,18 +124,14 @@ describe('systemTray', () => {
     test('creates context menu with Open action', () => {
       systemTray.updateTrayMenu();
 
-      const openItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Open StratoSort',
-      );
+      const openItem = capturedMenuTemplate.find((item) => item.label === 'Open StratoSort');
       expect(openItem).toBeDefined();
     });
 
     test('Open action shows and focuses window', () => {
       systemTray.updateTrayMenu();
 
-      const openItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Open StratoSort',
-      );
+      const openItem = capturedMenuTemplate.find((item) => item.label === 'Open StratoSort');
       openItem.click();
 
       expect(mockWindow.show).toHaveBeenCalled();
@@ -146,9 +142,7 @@ describe('systemTray', () => {
       mockWindow.isMinimized.mockReturnValueOnce(true);
       systemTray.updateTrayMenu();
 
-      const openItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Open StratoSort',
-      );
+      const openItem = capturedMenuTemplate.find((item) => item.label === 'Open StratoSort');
       openItem.click();
 
       expect(mockWindow.restore).toHaveBeenCalled();
@@ -161,9 +155,7 @@ describe('systemTray', () => {
 
       systemTray.updateTrayMenu();
 
-      const openItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Open StratoSort',
-      );
+      const openItem = capturedMenuTemplate.find((item) => item.label === 'Open StratoSort');
       openItem.click();
 
       expect(createWindow).toHaveBeenCalled();
@@ -175,9 +167,7 @@ describe('systemTray', () => {
 
       systemTray.updateTrayMenu();
 
-      const autoSortItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Pause Auto-Sort',
-      );
+      const autoSortItem = capturedMenuTemplate.find((item) => item.label === 'Pause Auto-Sort');
       expect(autoSortItem).toBeDefined();
     });
 
@@ -187,33 +177,29 @@ describe('systemTray', () => {
 
       systemTray.updateTrayMenu();
 
-      const autoSortItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Resume Auto-Sort',
-      );
+      const autoSortItem = capturedMenuTemplate.find((item) => item.label === 'Resume Auto-Sort');
       expect(autoSortItem).toBeDefined();
     });
 
     test('auto-sort toggle calls settings service', async () => {
       const mockSettingsService = {
-        save: jest.fn().mockResolvedValue({ autoOrganize: true }),
+        save: jest.fn().mockResolvedValue({ autoOrganize: true })
       };
       const handleSettingsChanged = jest.fn();
 
       systemTray.initializeTrayConfig({
         getDownloadWatcher: jest.fn().mockReturnValue(null),
         getSettingsService: jest.fn().mockReturnValue(mockSettingsService),
-        handleSettingsChanged,
+        handleSettingsChanged
       });
 
       systemTray.updateTrayMenu();
 
-      const autoSortItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Resume Auto-Sort',
-      );
+      const autoSortItem = capturedMenuTemplate.find((item) => item.label === 'Resume Auto-Sort');
       await autoSortItem.click();
 
       expect(mockSettingsService.save).toHaveBeenCalledWith({
-        autoOrganize: true,
+        autoOrganize: true
       });
       expect(handleSettingsChanged).toHaveBeenCalled();
     });
@@ -224,18 +210,16 @@ describe('systemTray', () => {
       systemTray.initializeTrayConfig({
         getDownloadWatcher: jest.fn().mockReturnValue(null),
         getSettingsService: jest.fn().mockReturnValue(null),
-        handleSettingsChanged,
+        handleSettingsChanged
       });
 
       systemTray.updateTrayMenu();
 
-      const autoSortItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Resume Auto-Sort',
-      );
+      const autoSortItem = capturedMenuTemplate.find((item) => item.label === 'Resume Auto-Sort');
       await autoSortItem.click();
 
       expect(handleSettingsChanged).toHaveBeenCalledWith({
-        autoOrganize: true,
+        autoOrganize: true
       });
     });
 
@@ -245,9 +229,7 @@ describe('systemTray', () => {
 
       systemTray.updateTrayMenu();
 
-      const quitItem = capturedMenuTemplate.find(
-        (item) => item.label === 'Quit',
-      );
+      const quitItem = capturedMenuTemplate.find((item) => item.label === 'Quit');
       quitItem.click();
 
       expect(setIsQuitting).toHaveBeenCalledWith(true);

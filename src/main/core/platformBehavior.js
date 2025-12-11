@@ -77,15 +77,11 @@ async function killProcess(pid, options = {}) {
 async function killProcessWindows(pid) {
   const { asyncSpawn } = require('../utils/asyncSpawnUtils');
 
-  const result = await asyncSpawn(
-    'taskkill',
-    ['/pid', String(pid), '/f', '/t'],
-    {
-      windowsHide: true,
-      timeout: PROCESS.KILL_COMMAND_TIMEOUT_MS * 50, // 5 seconds for taskkill
-      encoding: 'utf8',
-    },
-  );
+  const result = await asyncSpawn('taskkill', ['/pid', String(pid), '/f', '/t'], {
+    windowsHide: true,
+    timeout: PROCESS.KILL_COMMAND_TIMEOUT_MS * 50, // 5 seconds for taskkill
+    encoding: 'utf8'
+  });
 
   if (result.status === 0) {
     logger.info(`[PLATFORM] Process ${pid} terminated (taskkill)`);
@@ -99,7 +95,7 @@ async function killProcessWindows(pid) {
     }
     return {
       success: false,
-      error: new Error(`taskkill exited with ${result.status}`),
+      error: new Error(`taskkill exited with ${result.status}`)
     };
   }
 }
@@ -116,9 +112,7 @@ async function killProcessUnix(pid, forceKill) {
       logger.info(`[PLATFORM] Sent SIGTERM to process ${pid}`);
 
       // Wait for graceful shutdown
-      await new Promise((resolve) =>
-        setTimeout(resolve, PROCESS.GRACEFUL_SHUTDOWN_WAIT_MS),
-      );
+      await new Promise((resolve) => setTimeout(resolve, PROCESS.GRACEFUL_SHUTDOWN_WAIT_MS));
 
       // Check if process is still alive
       try {
@@ -211,5 +205,5 @@ module.exports = {
   shouldQuitOnAllWindowsClosed,
   // Export platform flags for cases where direct checks are needed
   isWindows,
-  isMacOS,
+  isMacOS
 };

@@ -108,25 +108,21 @@ describe('Analysis Fallback Utils', () => {
       test('matches folder by name', () => {
         const smartFolders = [
           { name: 'Photos', path: '/Photos' },
-          { name: 'Documents', path: '/Documents' },
+          { name: 'Documents', path: '/Documents' }
         ];
 
         expect(getIntelligentCategory('vacation_photos.jpg', '.jpg', smartFolders)).toBe('Photos');
       });
 
       test('matches folder by description', () => {
-        const smartFolders = [
-          { name: 'Work', description: 'Reports and analysis files' },
-        ];
+        const smartFolders = [{ name: 'Work', description: 'Reports and analysis files' }];
 
         expect(getIntelligentCategory('quarterly_analysis.pdf', '.pdf', smartFolders)).toBe('Work');
       });
 
       test('matches folder by keywords', () => {
         // Need score >= 5 to match. Keywords give +4 each, so need 2 matches or use folder name
-        const smartFolders = [
-          { name: 'Finance', keywords: ['invoice', 'receipt', 'payment'] },
-        ];
+        const smartFolders = [{ name: 'Finance', keywords: ['invoice', 'receipt', 'payment'] }];
 
         // 'finance_invoice' gives: folder name match (+10) + keyword 'invoice' (+4) = 14
         expect(getIntelligentCategory('finance_invoice.pdf', '.pdf', smartFolders)).toBe('Finance');
@@ -134,16 +130,16 @@ describe('Analysis Fallback Utils', () => {
 
       test('matches folder by semantic tags', () => {
         const smartFolders = [
-          { name: 'Projects', semanticTags: ['development', 'code', 'software'] },
+          { name: 'Projects', semanticTags: ['development', 'code', 'software'] }
         ];
 
-        expect(getIntelligentCategory('software_design.pdf', '.pdf', smartFolders)).toBe('Projects');
+        expect(getIntelligentCategory('software_design.pdf', '.pdf', smartFolders)).toBe(
+          'Projects'
+        );
       });
 
       test('falls back to pattern when score too low', () => {
-        const smartFolders = [
-          { name: 'Other', path: '/Other' },
-        ];
+        const smartFolders = [{ name: 'Other', path: '/Other' }];
 
         expect(getIntelligentCategory('invoice_2024.pdf', '.pdf', smartFolders)).toBe('financial');
       });
@@ -153,12 +149,7 @@ describe('Analysis Fallback Utils', () => {
       });
 
       test('handles invalid smart folders', () => {
-        const smartFolders = [
-          null,
-          { name: '' },
-          { name: null },
-          { name: 'Valid' },
-        ];
+        const smartFolders = [null, { name: '' }, { name: null }, { name: 'Valid' }];
 
         // Should not crash
         expect(() => getIntelligentCategory('file.pdf', '.pdf', smartFolders)).not.toThrow();
@@ -189,7 +180,7 @@ describe('Analysis Fallback Utils', () => {
     test('limits keywords to 7', () => {
       const keywords = getIntelligentKeywords(
         'report_summary_analysis_proposal_presentation.pdf',
-        '.pdf',
+        '.pdf'
       );
 
       expect(keywords.length).toBeLessThanOrEqual(7);

@@ -14,7 +14,10 @@ global.console = {
   log: jest.fn((...args) => {
     // Allow [STRESS] and [TEST] prefixed logs
     const message = args[0];
-    if (typeof message === 'string' && (message.includes('[STRESS]') || message.includes('[TEST]'))) {
+    if (
+      typeof message === 'string' &&
+      (message.includes('[STRESS]') || message.includes('[TEST]'))
+    ) {
       originalConsole.log(...args);
     }
   }),
@@ -24,7 +27,7 @@ global.console = {
     originalConsole.error(...args);
   }),
   debug: jest.fn(),
-  info: jest.fn(),
+  info: jest.fn()
 };
 
 // Stress test utilities
@@ -51,16 +54,16 @@ global.stressTestUtils = {
     }
     return {
       total: count,
-      successes: results.filter(r => r.success).length,
-      failures: results.filter(r => !r.success).length,
-      results,
+      successes: results.filter((r) => r.success).length,
+      failures: results.filter((r) => !r.success).length,
+      results
     };
   },
 
   // Log stress test metric
   logMetric: (name, value, unit = '') => {
     originalConsole.log(`[STRESS] ${name}: ${value}${unit}`);
-  },
+  }
 };
 
 // Cleanup after each test

@@ -29,7 +29,7 @@ export function useFileActions({
   setFileStates,
   addNotification,
   showConfirm,
-  phaseData,
+  phaseData
 }) {
   /**
    * Handle file action (open, reveal, delete)
@@ -44,7 +44,7 @@ export function useFileActions({
               `Opened: ${filePath.split(/[\\/]/).pop()}`,
               'success',
               2000,
-              'file-actions',
+              'file-actions'
             );
             break;
 
@@ -57,11 +57,11 @@ export function useFileActions({
               if (!stats || !stats.exists) {
                 // File doesn't exist at current path, check if it's in organizedFiles
                 const organizedFile = phaseData?.organizedFiles?.find(
-                  (f) => f.path === filePath || f.originalPath === filePath,
+                  (f) => f.path === filePath || f.originalPath === filePath
                 );
                 if (organizedFile?.originalPath) {
                   const originalStats = await window.electronAPI.files.getStats(
-                    organizedFile.originalPath,
+                    organizedFile.originalPath
                   );
                   if (originalStats?.exists) {
                     pathToReveal = organizedFile.originalPath;
@@ -71,7 +71,7 @@ export function useFileActions({
             } catch {
               // If stats check fails, try original path anyway
               const organizedFile = phaseData?.organizedFiles?.find(
-                (f) => f.path === filePath || f.originalPath === filePath,
+                (f) => f.path === filePath || f.originalPath === filePath
               );
               if (organizedFile?.originalPath) {
                 pathToReveal = organizedFile.originalPath;
@@ -82,7 +82,7 @@ export function useFileActions({
               `Revealed: ${pathToReveal.split(/[\\/]/).pop()}`,
               'success',
               2000,
-              'file-actions',
+              'file-actions'
             );
             break;
           }
@@ -90,9 +90,7 @@ export function useFileActions({
           case 'remove': {
             // Remove from queue without deleting from disk
             const fileName = filePath.split(/[\\/]/).pop();
-            setAnalysisResults((prev) =>
-              prev.filter((f) => f.path !== filePath),
-            );
+            setAnalysisResults((prev) => prev.filter((f) => f.path !== filePath));
             setSelectedFiles((prev) => prev.filter((f) => f.path !== filePath));
             setFileStates((prev) => {
               if (!prev) return prev;
@@ -100,12 +98,7 @@ export function useFileActions({
               delete next[filePath];
               return next;
             });
-            addNotification(
-              `Removed from queue: ${fileName}`,
-              'info',
-              2000,
-              'file-actions',
-            );
+            addNotification(`Removed from queue: ${fileName}`, 'info', 2000, 'file-actions');
             break;
           }
 
@@ -118,70 +111,39 @@ export function useFileActions({
               confirmText: 'Delete',
               cancelText: 'Cancel',
               variant: 'danger',
-              fileName,
+              fileName
             });
             if (confirmDelete) {
               const result = await window.electronAPI.files.delete(filePath);
               if (result.success) {
-                setAnalysisResults((prev) =>
-                  prev.filter((f) => f.path !== filePath),
-                );
-                setSelectedFiles((prev) =>
-                  prev.filter((f) => f.path !== filePath),
-                );
+                setAnalysisResults((prev) => prev.filter((f) => f.path !== filePath));
+                setSelectedFiles((prev) => prev.filter((f) => f.path !== filePath));
                 setFileStates((prev) => {
                   if (!prev) return prev;
                   const next = { ...prev };
                   delete next[filePath];
                   return next;
                 });
-                addNotification(
-                  `Deleted: ${fileName}`,
-                  'success',
-                  3000,
-                  'file-actions',
-                );
+                addNotification(`Deleted: ${fileName}`, 'success', 3000, 'file-actions');
               } else {
-                addNotification(
-                  `Failed to delete: ${fileName}`,
-                  'error',
-                  4000,
-                  'file-actions',
-                );
+                addNotification(`Failed to delete: ${fileName}`, 'error', 4000, 'file-actions');
               }
             }
             break;
           }
 
           default:
-            addNotification(
-              `Unknown action: ${action}`,
-              'error',
-              4000,
-              'file-actions',
-            );
+            addNotification(`Unknown action: ${action}`, 'error', 4000, 'file-actions');
         }
       } catch (error) {
-        addNotification(
-          `Action failed: ${error.message}`,
-          'error',
-          4000,
-          'file-actions',
-        );
+        addNotification(`Action failed: ${error.message}`, 'error', 4000, 'file-actions');
       }
     },
-    [
-      addNotification,
-      setSelectedFiles,
-      setAnalysisResults,
-      setFileStates,
-      showConfirm,
-      phaseData,
-    ],
+    [addNotification, setSelectedFiles, setAnalysisResults, setFileStates, showConfirm, phaseData]
   );
 
   return {
-    handleFileAction,
+    handleFileAction
   };
 }
 

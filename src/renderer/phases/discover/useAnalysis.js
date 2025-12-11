@@ -243,10 +243,6 @@ export function useAnalysis(options) {
    * Keeps Discover and Organize screens in sync with the user-selected naming.
    */
   useEffect(() => {
-    if ((!analysisResults || analysisResults.length === 0) && !fileStates) {
-      return;
-    }
-
     setAnalysisResults((prev) => {
       if (!prev || prev.length === 0) return prev;
       return prev.map((result) => {
@@ -290,7 +286,8 @@ export function useAnalysis(options) {
       });
       return next;
     });
-    // Only re-run when naming settings change; analysis state handled via functional updates
+    // Only re-run when naming settings change; avoid deps on state we set to prevent loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [namingSettings, generatePreviewName, setAnalysisResults, setFileStates]);
 
   /**

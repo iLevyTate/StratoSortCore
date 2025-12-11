@@ -3,7 +3,7 @@
  */
 
 const {
-  OrganizationSuggestionServiceCore,
+  OrganizationSuggestionServiceCore
 } = require('../src/main/services/organization/OrganizationSuggestionServiceCore');
 
 describe('OrganizationSuggestionServiceCore batch grouping', () => {
@@ -12,7 +12,7 @@ describe('OrganizationSuggestionServiceCore batch grouping', () => {
       chromaDbService: {},
       folderMatchingService: {},
       settingsService: {},
-      config: {},
+      config: {}
     });
 
     // stub methods to avoid heavy work
@@ -21,13 +21,13 @@ describe('OrganizationSuggestionServiceCore batch grouping', () => {
     service.getImprovementSuggestions = jest.fn().mockResolvedValue([]);
     service.patternMatcher = {
       getPatternBasedSuggestions: jest.fn().mockReturnValue([]),
-      folderUsageStats: {},
+      folderUsageStats: {}
     };
 
     // create a batch where one file has no primary suggestion
     const files = [
       { name: 'a.txt', path: '/a.txt', extension: '.txt' },
-      { name: 'b.txt', path: '/b.txt', extension: '.txt' },
+      { name: 'b.txt', path: '/b.txt', extension: '.txt' }
     ];
 
     // monkeypatch getSuggestionsForFile to simulate one missing primary
@@ -37,13 +37,13 @@ describe('OrganizationSuggestionServiceCore batch grouping', () => {
         success: true,
         primary: { folder: 'Docs' },
         confidence: 0.8,
-        alternatives: [],
+        alternatives: []
       })
       .mockResolvedValueOnce({
         success: true,
         primary: null,
         confidence: 0.5,
-        alternatives: [],
+        alternatives: []
       });
 
     const result = await service.getBatchSuggestions(files, [], {});

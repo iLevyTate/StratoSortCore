@@ -9,11 +9,7 @@
 
 const { logger } = require('../logger');
 const ConfigurationManager = require('./ConfigurationManager');
-const {
-  CONFIG_SCHEMA,
-  SENSITIVE_KEYS,
-  DEPRECATED_MAPPINGS,
-} = require('./configSchema');
+const { CONFIG_SCHEMA, SENSITIVE_KEYS, DEPRECATED_MAPPINGS } = require('./configSchema');
 const { ConfigValidationError } = require('./configValidation');
 
 // Singleton instance
@@ -24,17 +20,11 @@ configManager.load();
 
 // Log any warnings
 if (configManager.getDeprecationWarnings().length > 0) {
-  logger.warn(
-    '[Config] Deprecation warnings:',
-    configManager.getDeprecationWarnings(),
-  );
+  logger.warn('[Config] Deprecation warnings:', configManager.getDeprecationWarnings());
 }
 
 if (configManager.getValidationErrors().length > 0) {
-  logger.warn(
-    '[Config] Validation errors (using defaults):',
-    configManager.getValidationErrors(),
-  );
+  logger.warn('[Config] Validation errors (using defaults):', configManager.getValidationErrors());
 }
 
 // Export both the manager instance and convenience methods
@@ -60,5 +50,5 @@ module.exports = {
   CONFIG_SCHEMA,
   ConfigValidationError,
   SENSITIVE_KEYS,
-  DEPRECATED_MAPPINGS,
+  DEPRECATED_MAPPINGS
 };

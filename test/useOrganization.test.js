@@ -12,12 +12,12 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/shared/constants', () => ({
-  PHASES: { DISCOVER: 'discover', ORGANIZE: 'organize', COMPLETE: 'complete' },
+  PHASES: { DISCOVER: 'discover', ORGANIZE: 'organize', COMPLETE: 'complete' }
 }));
 
 jest.mock('../src/renderer/components/UndoRedoSystem', () => ({
@@ -25,21 +25,21 @@ jest.mock('../src/renderer/components/UndoRedoSystem', () => ({
     type: 'organize-batch',
     label,
     operations,
-    callbacks,
-  })),
+    callbacks
+  }))
 }));
 
 // Mock window.electronAPI
 const mockElectronAPI = {
   organize: {
-    auto: jest.fn(),
+    auto: jest.fn()
   },
   events: {
-    onOperationProgress: jest.fn(),
+    onOperationProgress: jest.fn()
   },
   files: {
-    normalizePath: jest.fn((path) => path),
-  },
+    normalizePath: jest.fn((path) => path)
+  }
 };
 
 describe('useOrganization', () => {
@@ -57,9 +57,7 @@ describe('useOrganization', () => {
     mockElectronAPI.events.onOperationProgress.mockReturnValue(jest.fn());
     mockElectronAPI.organize.auto.mockResolvedValue({
       success: true,
-      operations: [
-        { type: 'move', source: '/test.txt', destination: '/Documents/test.txt' },
-      ],
+      operations: [{ type: 'move', source: '/test.txt', destination: '/Documents/test.txt' }]
     });
 
     const module = require('../src/renderer/phases/organize/useOrganization');
@@ -74,7 +72,7 @@ describe('useOrganization', () => {
       expect(result.current.batchProgress).toEqual({
         current: 0,
         total: 0,
-        currentFile: '',
+        currentFile: ''
       });
     });
 
@@ -97,14 +95,14 @@ describe('useOrganization', () => {
         result.current.setBatchProgress({
           current: 5,
           total: 10,
-          currentFile: 'test.txt',
+          currentFile: 'test.txt'
         });
       });
 
       expect(result.current.batchProgress).toEqual({
         current: 5,
         total: 10,
-        currentFile: 'test.txt',
+        currentFile: 'test.txt'
       });
     });
 
@@ -113,12 +111,12 @@ describe('useOrganization', () => {
 
       act(() => {
         result.current.setOrganizePreview([
-          { fileName: 'test.txt', destination: '/Documents/test.txt' },
+          { fileName: 'test.txt', destination: '/Documents/test.txt' }
         ]);
       });
 
       expect(result.current.organizePreview).toEqual([
-        { fileName: 'test.txt', destination: '/Documents/test.txt' },
+        { fileName: 'test.txt', destination: '/Documents/test.txt' }
       ]);
     });
 
@@ -147,7 +145,7 @@ describe('useOrganization', () => {
       expect(result.current.batchProgress).toEqual({
         current: 0,
         total: 0,
-        currentFile: '',
+        currentFile: ''
       });
 
       window.electronAPI.events = originalAPI;
@@ -160,8 +158,8 @@ describe('useOrganization', () => {
         {
           path: '/test.txt',
           name: 'test.txt',
-          analysis: { category: 'documents', suggestedName: 'Test Document.txt' },
-        },
+          analysis: { category: 'documents', suggestedName: 'Test Document.txt' }
+        }
       ],
       editingFiles: {},
       getFileWithEdits: jest.fn((file) => file),
@@ -173,18 +171,18 @@ describe('useOrganization', () => {
       unmarkFilesAsProcessed: jest.fn(),
       actions: {
         setPhaseData: jest.fn(),
-        advancePhase: jest.fn(),
+        advancePhase: jest.fn()
       },
       phaseData: {
-        organizedFiles: [],
+        organizedFiles: []
       },
       addNotification: jest.fn(),
       executeAction: jest.fn().mockResolvedValue({
-        results: [{ success: true, source: '/test.txt', destination: '/Documents/test.txt' }],
+        results: [{ success: true, source: '/test.txt', destination: '/Documents/test.txt' }]
       }),
       setOrganizedFiles: jest.fn(),
       setOrganizingState: jest.fn(),
-      ...overrides,
+      ...overrides
     });
 
     test('returns handleOrganizeFiles function', () => {
@@ -205,7 +203,7 @@ describe('useOrganization', () => {
       expect(result.current.batchProgress).toEqual({
         current: 0,
         total: 0,
-        currentFile: '',
+        currentFile: ''
       });
     });
 
@@ -241,7 +239,7 @@ describe('useOrganization', () => {
       test('handles auto-organize failure', async () => {
         mockElectronAPI.organize.auto.mockResolvedValue({
           success: false,
-          error: 'Service unavailable',
+          error: 'Service unavailable'
         });
 
         const options = createMockOptions();
@@ -263,7 +261,7 @@ describe('useOrganization', () => {
         mockElectronAPI.organize.auto.mockResolvedValue({
           success: true,
           operations: [{ type: 'move', source: '/a.txt', destination: '/b.txt' }],
-          needsReview: [{ path: '/review.txt' }],
+          needsReview: [{ path: '/review.txt' }]
         });
 
         const options = createMockOptions();
@@ -285,7 +283,7 @@ describe('useOrganization', () => {
         mockElectronAPI.organize.auto.mockResolvedValue({
           success: true,
           operations: [{ type: 'move', source: '/a.txt', destination: '/b.txt' }],
-          failed: [{ path: '/failed.txt', error: 'Permission denied' }],
+          failed: [{ path: '/failed.txt', error: 'Permission denied' }]
         });
 
         const options = createMockOptions();
@@ -306,7 +304,7 @@ describe('useOrganization', () => {
       test('shows notification when no operations generated', async () => {
         mockElectronAPI.organize.auto.mockResolvedValue({
           success: true,
-          operations: [],
+          operations: []
         });
 
         const options = createMockOptions();
@@ -377,7 +375,7 @@ describe('useOrganization', () => {
       test('accepts specific files to organize', async () => {
         const options = createMockOptions();
         const filesToOrganize = [
-          { path: '/specific.txt', name: 'specific.txt', analysis: { category: 'test' } },
+          { path: '/specific.txt', name: 'specific.txt', analysis: { category: 'test' } }
         ];
 
         const { result } = renderHook(() => useOrganization(options));
@@ -388,7 +386,7 @@ describe('useOrganization', () => {
 
         expect(mockElectronAPI.organize.auto).toHaveBeenCalledWith(
           expect.objectContaining({
-            files: filesToOrganize,
+            files: filesToOrganize
           })
         );
       });
@@ -401,8 +399,8 @@ describe('useOrganization', () => {
         const options = createMockOptions({
           findSmartFolderForCategory: jest.fn(() => ({
             name: 'Documents',
-            path: '/Documents',
-          })),
+            path: '/Documents'
+          }))
         });
 
         const { result } = renderHook(() => useOrganization(options));
@@ -425,9 +423,7 @@ describe('useOrganization', () => {
         options.executeAction.mockImplementation(async (action) => {
           // Simulate calling the execute callback
           action.callbacks.onExecute({
-            results: [
-              { success: true, source: '/test.txt', destination: '/Documents/test.txt' },
-            ],
+            results: [{ success: true, source: '/test.txt', destination: '/Documents/test.txt' }]
           });
           return { results: [{ success: true }] };
         });
@@ -448,11 +444,9 @@ describe('useOrganization', () => {
         options.executeAction.mockImplementation(async (action) => {
           // Simulate calling the undo callback
           action.callbacks.onUndo({
-            results: [
-              { success: true, originalPath: '/test.txt' },
-            ],
+            results: [{ success: true, originalPath: '/test.txt' }],
             successCount: 1,
-            failCount: 0,
+            failCount: 0
           });
           return { results: [{ success: true }] };
         });
@@ -472,11 +466,9 @@ describe('useOrganization', () => {
         options.executeAction.mockImplementation(async (action) => {
           // Simulate calling the redo callback
           action.callbacks.onRedo({
-            results: [
-              { success: true, source: '/test.txt', destination: '/Documents/test.txt' },
-            ],
+            results: [{ success: true, source: '/test.txt', destination: '/Documents/test.txt' }],
             successCount: 1,
-            failCount: 0,
+            failCount: 0
           });
           return { results: [{ success: true }] };
         });

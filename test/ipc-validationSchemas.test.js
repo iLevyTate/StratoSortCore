@@ -6,18 +6,33 @@
 describe('IPC Validation Schemas', () => {
   let schemas;
   let z;
+  let moduleRef;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    const module = require('../src/main/ipc/validationSchemas');
-    schemas = module.schemas;
-    z = module.z;
+    moduleRef = require('../src/main/ipc/validationSchemas');
+    schemas = moduleRef.schemas;
+    z = moduleRef.z;
+
+    if (!z || !schemas) {
+      const detail = moduleRef?.zodLoadError?.message || 'unknown';
+      throw new Error(`zod not available for validation schema tests: ${detail}`);
+    }
   });
 
-  // Skip tests if zod is not available
-  const testIfZod = z ? test : test.skip;
+  /* eslint-disable jest/valid-title, jest/no-done-callback */
+  // All schema tests must run; keep a guard per test for clarity
+  const testIfZod = (name, fn, timeout) =>
+    test(
+      name,
+      (...args) => {
+        return fn(...args);
+      },
+      timeout
+    );
+  /* eslint-enable jest/valid-title, jest/no-done-callback */
 
   describe('filePath schema', () => {
     testIfZod('accepts valid file path', () => {
@@ -36,21 +51,21 @@ describe('IPC Validation Schemas', () => {
       const result = schemas.settings.safeParse({
         theme: 'dark',
         language: 'en',
-        launchOnStartup: true,
+        launchOnStartup: true
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('accepts partial settings', () => {
       const result = schemas.settings.safeParse({
-        theme: 'light',
+        theme: 'light'
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('rejects invalid theme', () => {
       const result = schemas.settings.safeParse({
-        theme: 'invalid-theme',
+        theme: 'invalid-theme'
       });
       expect(result.success).toBe(false);
     });
@@ -65,19 +80,15 @@ describe('IPC Validation Schemas', () => {
     testIfZod('validates ollamaHost as URL or empty', () => {
       expect(
         schemas.settings.safeParse({
-          ollamaHost: 'http://localhost:11434',
-        }).success,
+          ollamaHost: 'http://localhost:11434'
+        }).success
       ).toBe(true);
       expect(schemas.settings.safeParse({ ollamaHost: '' }).success).toBe(true);
     });
 
     testIfZod('validates model name format', () => {
-      expect(
-        schemas.settings.safeParse({ textModel: 'llama2:7b' }).success,
-      ).toBe(true);
-      expect(
-        schemas.settings.safeParse({ textModel: 'model@latest' }).success,
-      ).toBe(true);
+      expect(schemas.settings.safeParse({ textModel: 'llama2:7b' }).success).toBe(true);
+      expect(schemas.settings.safeParse({ textModel: 'model@latest' }).success).toBe(true);
     });
   });
 
@@ -85,7 +96,7 @@ describe('IPC Validation Schemas', () => {
     testIfZod('accepts valid smart folder', () => {
       const result = schemas.smartFolder.safeParse({
         name: 'Documents',
-        path: '/home/user/Documents',
+        path: '/home/user/Documents'
       });
       expect(result.success).toBe(true);
     });
@@ -98,7 +109,7 @@ describe('IPC Validation Schemas', () => {
         description: 'Important documents',
         keywords: ['important', 'docs'],
         category: 'personal',
-        isDefault: false,
+        isDefault: false
       });
       expect(result.success).toBe(true);
     });
@@ -106,7 +117,7 @@ describe('IPC Validation Schemas', () => {
     testIfZod('rejects empty name', () => {
       const result = schemas.smartFolder.safeParse({
         name: '',
-        path: '/path',
+        path: '/path'
       });
       expect(result.success).toBe(false);
     });
@@ -114,7 +125,7 @@ describe('IPC Validation Schemas', () => {
     testIfZod('rejects empty path', () => {
       const result = schemas.smartFolder.safeParse({
         name: 'Folder',
-        path: '',
+        path: ''
       });
       expect(result.success).toBe(false);
     });
@@ -125,22 +136,22 @@ describe('IPC Validation Schemas', () => {
       const result = schemas.batchOrganize.safeParse({
         operations: [
           { source: '/src/file1.pdf', destination: '/dest/file1.pdf' },
-          { source: '/src/file2.pdf', destination: '/dest/file2.pdf' },
-        ],
+          { source: '/src/file2.pdf', destination: '/dest/file2.pdf' }
+        ]
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('rejects empty operations array', () => {
       const result = schemas.batchOrganize.safeParse({
-        operations: [],
+        operations: []
       });
       expect(result.success).toBe(false);
     });
 
     testIfZod('rejects operations with empty source', () => {
       const result = schemas.batchOrganize.safeParse({
-        operations: [{ source: '', destination: '/dest/file.pdf' }],
+        operations: [{ source: '', destination: '/dest/file.pdf' }]
       });
       expect(result.success).toBe(false);
     });
@@ -150,21 +161,21 @@ describe('IPC Validation Schemas', () => {
     testIfZod('accepts valid pagination', () => {
       const result = schemas.pagination.safeParse({
         limit: 50,
-        offset: 10,
+        offset: 10
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('rejects negative offset', () => {
       const result = schemas.pagination.safeParse({
-        offset: -1,
+        offset: -1
       });
       expect(result.success).toBe(false);
     });
 
     testIfZod('rejects limit above maximum', () => {
       const result = schemas.pagination.safeParse({
-        limit: 2000,
+        limit: 2000
       });
       expect(result.success).toBe(false);
     });
@@ -174,14 +185,14 @@ describe('IPC Validation Schemas', () => {
     testIfZod('accepts valid search query', () => {
       const result = schemas.searchQuery.safeParse({
         query: 'test search',
-        limit: 20,
+        limit: 20
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('accepts query with all option', () => {
       const result = schemas.searchQuery.safeParse({
-        all: true,
+        all: true
       });
       expect(result.success).toBe(true);
     });
@@ -193,21 +204,21 @@ describe('IPC Validation Schemas', () => {
         path: '/path/to/file.pdf',
         name: 'file.pdf',
         size: 1024,
-        type: 'application/pdf',
+        type: 'application/pdf'
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('accepts minimal analysis file', () => {
       const result = schemas.analysisFile.safeParse({
-        path: '/path/to/file.pdf',
+        path: '/path/to/file.pdf'
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('rejects missing path', () => {
       const result = schemas.analysisFile.safeParse({
-        name: 'file.pdf',
+        name: 'file.pdf'
       });
       expect(result.success).toBe(false);
     });
@@ -218,7 +229,7 @@ describe('IPC Validation Schemas', () => {
       const result = schemas.feedback.safeParse({
         file: { path: '/path/to/file.pdf' },
         suggestion: { folder: 'Documents', confidence: 0.9 },
-        accepted: true,
+        accepted: true
       });
       expect(result.success).toBe(true);
     });
@@ -226,7 +237,7 @@ describe('IPC Validation Schemas', () => {
     testIfZod('requires accepted boolean', () => {
       const result = schemas.feedback.safeParse({
         file: { path: '/path/to/file.pdf' },
-        suggestion: { folder: 'Documents' },
+        suggestion: { folder: 'Documents' }
       });
       expect(result.success).toBe(false);
     });
@@ -236,14 +247,14 @@ describe('IPC Validation Schemas', () => {
     testIfZod('accepts valid input', () => {
       const result = schemas.findSimilar.safeParse({
         fileId: 'file-123',
-        topK: 5,
+        topK: 5
       });
       expect(result.success).toBe(true);
     });
 
     testIfZod('applies default topK', () => {
       const result = schemas.findSimilar.safeParse({
-        fileId: 'file-123',
+        fileId: 'file-123'
       });
       expect(result.success).toBe(true);
       expect(result.data.topK).toBe(10);
@@ -251,7 +262,7 @@ describe('IPC Validation Schemas', () => {
 
     testIfZod('rejects missing fileId', () => {
       const result = schemas.findSimilar.safeParse({
-        topK: 5,
+        topK: 5
       });
       expect(result.success).toBe(false);
     });
@@ -259,7 +270,7 @@ describe('IPC Validation Schemas', () => {
     testIfZod('rejects topK above max', () => {
       const result = schemas.findSimilar.safeParse({
         fileId: 'file-123',
-        topK: 200,
+        topK: 200
       });
       expect(result.success).toBe(false);
     });
@@ -288,8 +299,8 @@ describe('IPC Validation Schemas', () => {
         thresholds: {
           autoApprove: 0.9,
           review: 0.5,
-          reject: 0.2,
-        },
+          reject: 0.2
+        }
       });
       expect(result.success).toBe(true);
     });
@@ -297,8 +308,8 @@ describe('IPC Validation Schemas', () => {
     testIfZod('rejects threshold above 1', () => {
       const result = schemas.thresholds.safeParse({
         thresholds: {
-          autoApprove: 1.5,
-        },
+          autoApprove: 1.5
+        }
       });
       expect(result.success).toBe(false);
     });
@@ -306,8 +317,8 @@ describe('IPC Validation Schemas', () => {
     testIfZod('rejects negative threshold', () => {
       const result = schemas.thresholds.safeParse({
         thresholds: {
-          reject: -0.1,
-        },
+          reject: -0.1
+        }
       });
       expect(result.success).toBe(false);
     });

@@ -2,12 +2,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 
-const {
-  analyzeImageFile,
-} = require('../src/main/analysis/ollamaImageAnalysis');
-const {
-  analyzeDocumentFile,
-} = require('../src/main/analysis/ollamaDocumentAnalysis');
+const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
+const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
 
 /**
  * These tests focus on negative/edge-case inputs to ensure the analysers fail

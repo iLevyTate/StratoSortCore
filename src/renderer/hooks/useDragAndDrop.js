@@ -1,5 +1,35 @@
 import { useCallback, useState } from 'react';
 
+const decodeFileUri = (value) => {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim().replace(/^['"](.*)['"]$/, '$1');
+
+  if (trimmed.toLowerCase().startsWith('file://')) {
+    try {
+      const url = new URL(trimmed);
+      const pathname = decodeURIComponent(url.pathname || '');
+      if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) {
+        return pathname.slice(1);
+      }
+      return pathname;
+    } catch {
+      return trimmed;
+    }
+  }
+
+  return trimmed;
+};
+
+const isAbsolutePath = (value) =>
+  typeof value === 'string' &&
+  (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\') || value.startsWith('/'));
+
+const extractName = (pathValue) => {
+  if (typeof pathValue !== 'string') return '';
+  const parts = pathValue.split(/[\\/]/);
+  return parts[parts.length - 1] || pathValue;
+};
+
 export function useDragAndDrop(onFilesDropped) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -32,16 +62,41 @@ export function useDragAndDrop(onFilesDropped) {
         return;
       }
 
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0 && onFilesDropped) {
-        const fileObjects = files.map((file) => ({
-          path: file.path || file.name,
-          name: file.name,
-          type: 'file',
-          size: file.size
-        }));
+      const fileList = Array.from(e.dataTransfer.files || []);
+      const uriListRaw = e.dataTransfer.getData('text/uri-list') || '';
+      const textPlainRaw = e.dataTransfer.getData('text/plain') || '';
 
-        onFilesDropped(fileObjects.length > 0 ? fileObjects : files);
+      const parsedUris = uriListRaw
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#'))
+        .map((line) => decodeFileUri(line));
+
+      // Some Windows drags provide the absolute path as plain text
+      const parsedPlainText =
+        textPlainRaw && !textPlainRaw.includes('\n')
+          ? [decodeFileUri(textPlainRaw)]
+          : textPlainRaw
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => decodeFileUri(line));
+
+      const collectedPaths = [
+        ...fileList.map((f) => decodeFileUri(f.path || f.name)),
+        ...parsedUris,
+        ...parsedPlainText
+      ].filter(isAbsolutePath);
+
+      const uniquePaths = Array.from(new Set(collectedPaths));
+
+      if (uniquePaths.length > 0 && onFilesDropped) {
+        const fileObjects = uniquePaths.map((pathValue) => ({
+          path: pathValue,
+          name: extractName(pathValue),
+          type: 'file'
+        }));
+        onFilesDropped(fileObjects);
       }
     },
     [onFilesDropped]

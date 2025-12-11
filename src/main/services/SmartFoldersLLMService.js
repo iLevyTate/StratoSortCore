@@ -5,22 +5,15 @@ const { fetchWithRetry } = require('../utils/ollamaApiRetry');
 const { getOllamaHost } = require('../ollamaUtils');
 const { DEFAULT_AI_MODELS } = require('../../shared/constants');
 
-async function enhanceSmartFolderWithLLM(
-  folderData,
-  existingFolders,
-  getOllamaModel,
-) {
+async function enhanceSmartFolderWithLLM(folderData, existingFolders, getOllamaModel) {
   try {
-    logger.info(
-      '[LLM-ENHANCEMENT] Analyzing smart folder for optimization:',
-      folderData.name,
-    );
+    logger.info('[LLM-ENHANCEMENT] Analyzing smart folder for optimization:', folderData.name);
 
     const existingFolderContext = existingFolders.map((f) => ({
       name: f.name,
       description: f.description,
       keywords: f.keywords || [],
-      category: f.category || 'general',
+      category: f.category || 'general'
     }));
 
     const prompt = `You are an expert file organization system. Analyze this new smart folder and provide enhancements based on existing folder structure.
@@ -42,12 +35,9 @@ Please provide a JSON response with the following enhancements:
 }`;
 
     const modelToUse =
-      (typeof getOllamaModel === 'function' && getOllamaModel()) ||
-      DEFAULT_AI_MODELS.TEXT_ANALYSIS;
+      (typeof getOllamaModel === 'function' && getOllamaModel()) || DEFAULT_AI_MODELS.TEXT_ANALYSIS;
 
-    const host = typeof getOllamaHost === 'function'
-      ? getOllamaHost()
-      : 'http://127.0.0.1:11434';
+    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : 'http://127.0.0.1:11434';
 
     try {
       const response = await fetchWithRetry(`${host}/api/generate`, {
@@ -58,13 +48,13 @@ Please provide a JSON response with the following enhancements:
           prompt,
           stream: false,
           format: 'json',
-          options: { temperature: 0.3, num_predict: 500 },
-        }),
+          options: { temperature: 0.3, num_predict: 500 }
+        })
       });
 
       if (!response?.ok) {
         return {
-          error: `HTTP error ${response?.status || 'unknown'}`,
+          error: `HTTP error ${response?.status || 'unknown'}`
         };
       }
 
@@ -78,7 +68,7 @@ Please provide a JSON response with the following enhancements:
 
       logger.warn('[LLM-ENHANCEMENT] Failed to parse LLM response', {
         responseLength: data?.response?.length,
-        responsePreview: data?.response?.substring?.(0, 300),
+        responsePreview: data?.response?.substring?.(0, 300)
       });
       return { error: 'Invalid JSON response from LLM' };
     } catch (serviceError) {
@@ -86,43 +76,30 @@ Please provide a JSON response with the following enhancements:
       return { error: serviceError.message || 'Service error' };
     }
   } catch (error) {
-    logger.error(
-      '[LLM-ENHANCEMENT] Failed to enhance smart folder:',
-      error.message,
-    );
+    logger.error('[LLM-ENHANCEMENT] Failed to enhance smart folder:', error.message);
     return { error: error.message };
   }
 }
 
-async function calculateFolderSimilarities(
-  suggestedCategory,
-  folderCategories,
-  getOllamaModel,
-) {
+async function calculateFolderSimilarities(suggestedCategory, folderCategories, getOllamaModel) {
   try {
     const similarities = [];
     const modelToUse =
-      (typeof getOllamaModel === 'function' && getOllamaModel()) ||
-      DEFAULT_AI_MODELS.TEXT_ANALYSIS;
-    const host = typeof getOllamaHost === 'function'
-      ? getOllamaHost()
-      : 'http://127.0.0.1:11434';
+      (typeof getOllamaModel === 'function' && getOllamaModel()) || DEFAULT_AI_MODELS.TEXT_ANALYSIS;
+    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : 'http://127.0.0.1:11434';
 
     if (!Array.isArray(folderCategories) || folderCategories.length === 0) {
       return [];
     }
 
     const pushFallback = (folder) => {
-      const basicSimilarity = calculateBasicSimilarity(
-        suggestedCategory,
-        folder.name,
-      );
+      const basicSimilarity = calculateBasicSimilarity(suggestedCategory, folder.name);
       similarities.push({
         name: folder.name,
         id: folder.id,
         confidence: basicSimilarity,
         description: folder.description,
-        fallback: true,
+        fallback: true
       });
     };
 
@@ -149,8 +126,8 @@ Respond with only a number between 0.0 and 1.0:`;
             model: modelToUse,
             prompt,
             stream: false,
-            options: { temperature: 0.1, num_predict: 10 },
-          }),
+            options: { temperature: 0.1, num_predict: 10 }
+          })
         });
 
         if (response?.ok) {
@@ -163,7 +140,7 @@ Respond with only a number between 0.0 and 1.0:`;
                 name: folder.name,
                 id: folder.id,
                 confidence: similarity,
-                description: folder.description,
+                description: folder.description
               });
             } else {
               pushFallback(folder);
@@ -171,7 +148,7 @@ Respond with only a number between 0.0 and 1.0:`;
           } catch (parseError) {
             logger.warn(
               `[SEMANTIC] Failed to parse response for folder ${folder.name}:`,
-              parseError.message,
+              parseError.message
             );
             pushFallback(folder);
           }
@@ -180,10 +157,7 @@ Respond with only a number between 0.0 and 1.0:`;
           pushFallback(folder);
         }
       } catch (folderError) {
-        logger.warn(
-          `[SEMANTIC] Failed to analyze folder ${folder.name}:`,
-          folderError.message,
-        );
+        logger.warn(`[SEMANTIC] Failed to analyze folder ${folder.name}:`, folderError.message);
         pushFallback(folder);
       }
     }
@@ -209,5 +183,5 @@ function calculateBasicSimilarity(str1, str2) {
 module.exports = {
   enhanceSmartFolderWithLLM,
   calculateFolderSimilarities,
-  calculateBasicSimilarity,
+  calculateBasicSimilarity
 };

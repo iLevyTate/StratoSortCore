@@ -113,9 +113,7 @@ describe('errorHandlingUtils', () => {
     });
 
     test('retries on failure', async () => {
-      const fn = jest.fn()
-        .mockRejectedValueOnce(new Error('fail'))
-        .mockResolvedValue('success');
+      const fn = jest.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('success');
 
       const wrapped = withRetry(fn, { maxRetries: 3, delay: 10 });
 
@@ -162,9 +160,7 @@ describe('errorHandlingUtils', () => {
     });
 
     test('calls onRetry callback', async () => {
-      const fn = jest.fn()
-        .mockRejectedValueOnce(new Error('fail'))
-        .mockResolvedValue('success');
+      const fn = jest.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('success');
       const onRetry = jest.fn();
 
       const wrapped = withRetry(fn, { maxRetries: 3, delay: 10, onRetry });

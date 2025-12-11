@@ -57,7 +57,7 @@ function registerOllamaIpc({
   getOllamaModel,
   getOllamaVisionModel,
   getOllamaEmbeddingModel,
-  getOllamaHost,
+  getOllamaHost
 }) {
   ipcMain.handle(
     IPC_CHANNELS.OLLAMA.GET_MODELS,
@@ -69,10 +69,8 @@ function registerOllamaIpc({
         const categories = { text: [], vision: [], embedding: [] };
         for (const m of models) {
           const name = m.name || '';
-          if (/llava|vision|clip|sam/gi.test(name))
-            categories.vision.push(name);
-          else if (/embed|embedding/gi.test(name))
-            categories.embedding.push(name);
+          if (/llava|vision|clip|sam/gi.test(name)) categories.vision.push(name);
+          else if (/embed|embedding/gi.test(name)) categories.embedding.push(name);
           else categories.text.push(name);
         }
         // Ensure we update health on every models fetch
@@ -80,7 +78,7 @@ function registerOllamaIpc({
           status: 'healthy',
           host: getOllamaHost ? getOllamaHost() : undefined,
           modelCount: models.length,
-          lastCheck: Date.now(),
+          lastCheck: Date.now()
         };
         return {
           models: models.map((m) => m.name),
@@ -89,13 +87,10 @@ function registerOllamaIpc({
             textModel: getOllamaModel(),
             visionModel: getOllamaVisionModel(),
             embeddingModel:
-              typeof getOllamaEmbeddingModel === 'function'
-                ? getOllamaEmbeddingModel()
-                : null,
+              typeof getOllamaEmbeddingModel === 'function' ? getOllamaEmbeddingModel() : null
           },
           ollamaHealth: systemAnalytics.ollamaHealth,
-          host:
-            typeof getOllamaHost === 'function' ? getOllamaHost() : undefined,
+          host: typeof getOllamaHost === 'function' ? getOllamaHost() : undefined
         };
       } catch (error) {
         logger.error('[IPC] Error fetching Ollama models:', error);
@@ -103,7 +98,7 @@ function registerOllamaIpc({
           systemAnalytics.ollamaHealth = {
             status: 'unhealthy',
             error: 'Connection refused. Ensure Ollama is running.',
-            lastCheck: Date.now(),
+            lastCheck: Date.now()
           };
         }
         return {
@@ -113,17 +108,14 @@ function registerOllamaIpc({
             textModel: getOllamaModel(),
             visionModel: getOllamaVisionModel(),
             embeddingModel:
-              typeof getOllamaEmbeddingModel === 'function'
-                ? getOllamaEmbeddingModel()
-                : null,
+              typeof getOllamaEmbeddingModel === 'function' ? getOllamaEmbeddingModel() : null
           },
           error: error.message,
-          host:
-            typeof getOllamaHost === 'function' ? getOllamaHost() : undefined,
-          ollamaHealth: systemAnalytics.ollamaHealth,
+          host: typeof getOllamaHost === 'function' ? getOllamaHost() : undefined,
+          ollamaHealth: systemAnalytics.ollamaHealth
         };
       }
-    }),
+    })
   );
 
   // Use custom regex for URL validation that properly handles IP addresses
@@ -147,14 +139,14 @@ function registerOllamaIpc({
               status: 'healthy',
               host: testUrl,
               modelCount: response.models.length,
-              lastCheck: Date.now(),
+              lastCheck: Date.now()
             };
             return {
               success: true,
               host: testUrl,
               modelCount: response.models.length,
               models: response.models.map((m) => m.name),
-              ollamaHealth: systemAnalytics.ollamaHealth,
+              ollamaHealth: systemAnalytics.ollamaHealth
             };
           } catch (error) {
             logger.error('[IPC] Ollama connection test failed:', error);
@@ -164,13 +156,13 @@ function registerOllamaIpc({
               status: 'unhealthy',
               host: fallbackHost,
               error: error.message,
-              lastCheck: Date.now(),
+              lastCheck: Date.now()
             };
             return {
               success: false,
               host: fallbackHost,
               error: error.message,
-              ollamaHealth: systemAnalytics.ollamaHealth,
+              ollamaHealth: systemAnalytics.ollamaHealth
             };
           }
         })
@@ -188,14 +180,14 @@ function registerOllamaIpc({
               status: 'healthy',
               host: testUrl,
               modelCount: response.models.length,
-              lastCheck: Date.now(),
+              lastCheck: Date.now()
             };
             return {
               success: true,
               host: testUrl,
               modelCount: response.models.length,
               models: response.models.map((m) => m.name),
-              ollamaHealth: systemAnalytics.ollamaHealth,
+              ollamaHealth: systemAnalytics.ollamaHealth
             };
           } catch (error) {
             logger.error('[IPC] Ollama connection test failed:', error);
@@ -205,13 +197,13 @@ function registerOllamaIpc({
               status: 'unhealthy',
               host: fallbackHost,
               error: error.message,
-              lastCheck: Date.now(),
+              lastCheck: Date.now()
             };
             return {
               success: false,
               host: fallbackHost,
               error: error.message,
-              ollamaHealth: systemAnalytics.ollamaHealth,
+              ollamaHealth: systemAnalytics.ollamaHealth
             };
           }
         });
@@ -227,8 +219,7 @@ function registerOllamaIpc({
         for (const model of Array.isArray(models) ? models : []) {
           try {
             // Send progress events if supported by client
-            const win =
-              typeof getMainWindow === 'function' ? getMainWindow() : null;
+            const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
             await ollama.pull({
               model,
               stream: (progress) => {
@@ -237,13 +228,13 @@ function registerOllamaIpc({
                     win.webContents.send('operation-progress', {
                       type: 'ollama-pull',
                       model,
-                      progress,
+                      progress
                     });
                   }
                 } catch {
                   // Non-fatal if progress send fails
                 }
-              },
+              }
             });
             results.push({ model, success: true });
           } catch (e) {
@@ -255,7 +246,7 @@ function registerOllamaIpc({
         logger.error('[IPC] Pull models failed]:', error);
         return { success: false, error: error.message };
       }
-    }),
+    })
   );
 
   // Delete a model
@@ -270,7 +261,7 @@ function registerOllamaIpc({
         logger.error('[IPC] Delete model failed]:', error);
         return { success: false, error: error.message };
       }
-    }),
+    })
   );
 }
 

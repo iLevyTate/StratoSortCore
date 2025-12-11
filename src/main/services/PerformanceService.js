@@ -41,7 +41,7 @@ async function detectNvidiaGpu() {
       // Use cross-platform utility for nvidia-smi executable name
       proc = spawn(getNvidiaSmiCommand(), [
         '--query-gpu=name,memory.total',
-        '--format=csv,noheader,nounits',
+        '--format=csv,noheader,nounits'
       ]);
 
       // Timeout to prevent hanging processes (5 seconds should be plenty)
@@ -67,7 +67,7 @@ async function detectNvidiaGpu() {
           safeResolve({
             hasNvidiaGpu: true,
             gpuName: name || 'NVIDIA GPU',
-            gpuMemoryMB,
+            gpuMemoryMB
           });
         } else {
           safeResolve({ hasNvidiaGpu: false });
@@ -89,7 +89,7 @@ async function detectSystemCapabilities() {
     cpuThreads,
     hasNvidiaGpu: Boolean(nvidia.hasNvidiaGpu),
     gpuName: nvidia.gpuName || null,
-    gpuMemoryMB: nvidia.gpuMemoryMB || null,
+    gpuMemoryMB: nvidia.gpuMemoryMB || null
   };
   return cachedCapabilities;
 }
@@ -107,9 +107,7 @@ async function buildOllamaOptions(task = 'text') {
   const caps = await detectSystemCapabilities();
 
   // Environment variable overrides for fine-tuning
-  const envNumGpu = process.env.OLLAMA_NUM_GPU
-    ? parseInt(process.env.OLLAMA_NUM_GPU, 10)
-    : null;
+  const envNumGpu = process.env.OLLAMA_NUM_GPU ? parseInt(process.env.OLLAMA_NUM_GPU, 10) : null;
   const envNumThread = process.env.OLLAMA_NUM_THREAD
     ? parseInt(process.env.OLLAMA_NUM_THREAD, 10)
     : null;
@@ -119,8 +117,7 @@ async function buildOllamaOptions(task = 'text') {
     : null;
 
   // Base threading - can be overridden via env var
-  const numThread =
-    envNumThread || Math.max(2, Math.min(caps.cpuThreads || 4, 16));
+  const numThread = envNumThread || Math.max(2, Math.min(caps.cpuThreads || 4, 16));
 
   // Context window: larger for text models to handle longer documents
   // Vision models need smaller context due to image token overhead
@@ -165,7 +162,7 @@ async function buildOllamaOptions(task = 'text') {
     gpuHints = {
       num_gpu: numGpuLayers,
       // Force GPU acceleration - Ollama will use CUDA if available
-      main_gpu: 0, // Use first GPU
+      main_gpu: 0 // Use first GPU
     };
   } else {
     gpuHints = { num_gpu: 0 }; // CPU-only mode
@@ -175,8 +172,7 @@ async function buildOllamaOptions(task = 'text') {
   // On Linux with sufficient RAM, mlock can improve performance by preventing swapping
   const memoryHints = {
     use_mmap: true,
-    use_mlock:
-      process.platform === 'linux' && os.totalmem() / 1024 / 1024 / 1024 > 16,
+    use_mlock: process.platform === 'linux' && os.totalmem() / 1024 / 1024 / 1024 > 16
   };
 
   return {
@@ -189,11 +185,11 @@ async function buildOllamaOptions(task = 'text') {
     // Memory hints
     ...memoryHints,
     // CRITICAL: Keep model loaded in memory to avoid reload latency (5-30 seconds per load)
-    keep_alive: envKeepAlive,
+    keep_alive: envKeepAlive
   };
 }
 
 module.exports = {
   detectSystemCapabilities,
-  buildOllamaOptions,
+  buildOllamaOptions
 };

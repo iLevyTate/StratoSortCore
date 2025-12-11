@@ -10,29 +10,29 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   RETRY: {
-    BACKOFF_BASE_MS: 100, // Short for testing
-  },
+    BACKOFF_BASE_MS: 100 // Short for testing
+  }
 }));
 
 // Mock persistence functions
 jest.mock('../src/main/analysis/embeddingQueue/persistence', () => ({
   persistFailedItems: jest.fn().mockResolvedValue(undefined),
-  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined),
+  persistDeadLetterQueue: jest.fn().mockResolvedValue(undefined)
 }));
 
 const {
-  createFailedItemHandler,
+  createFailedItemHandler
 } = require('../src/main/analysis/embeddingQueue/failedItemHandler');
 const {
   persistFailedItems,
-  persistDeadLetterQueue,
+  persistDeadLetterQueue
 } = require('../src/main/analysis/embeddingQueue/persistence');
 
 describe('failedItemHandler', () => {
@@ -46,7 +46,7 @@ describe('failedItemHandler', () => {
       maxDeadLetterSize: 10,
       maxFailedItemsSize: 5,
       failedItemsPath: '/tmp/failed.json',
-      deadLetterPath: '/tmp/deadletter.json',
+      deadLetterPath: '/tmp/deadletter.json'
     });
   });
 
@@ -61,8 +61,8 @@ describe('failedItemHandler', () => {
         expect.objectContaining({
           item,
           retryCount: 1,
-          error: 'Test error',
-        }),
+          error: 'Test error'
+        })
       );
     });
 
@@ -94,27 +94,18 @@ describe('failedItemHandler', () => {
 
       handler.trackFailedItem(item, 'Test error');
 
-      expect(persistFailedItems).toHaveBeenCalledWith(
-        '/tmp/failed.json',
-        handler.failedItems,
-      );
+      expect(persistFailedItems).toHaveBeenCalledWith('/tmp/failed.json', handler.failedItems);
     });
 
     test('evicts oldest item when at capacity (LRU)', () => {
       // Fill to capacity
       for (let i = 0; i < 5; i++) {
-        handler.trackFailedItem(
-          { id: `file:test${i}.txt`, vector: [0.1] },
-          `Error ${i}`,
-        );
+        handler.trackFailedItem({ id: `file:test${i}.txt`, vector: [0.1] }, `Error ${i}`);
       }
       expect(handler.failedItems.size).toBe(5);
 
       // Add one more - should evict oldest
-      handler.trackFailedItem(
-        { id: 'file:new.txt', vector: [0.1] },
-        'New error',
-      );
+      handler.trackFailedItem({ id: 'file:new.txt', vector: [0.1] }, 'New error');
 
       expect(handler.failedItems.size).toBe(5);
       expect(handler.failedItems.has('file:test0.txt')).toBe(false); // Evicted
@@ -136,8 +127,8 @@ describe('failedItemHandler', () => {
           error: 'Final error',
           retryCount: 3,
           itemId: 'file:test.txt',
-          itemType: 'file',
-        }),
+          itemType: 'file'
+        })
       );
     });
 
@@ -152,20 +143,12 @@ describe('failedItemHandler', () => {
     test('prunes oldest entries when at capacity', () => {
       // Fill to capacity
       for (let i = 0; i < 10; i++) {
-        handler.addToDeadLetterQueue(
-          { id: `file:test${i}.txt`, vector: [0.1] },
-          `Error ${i}`,
-          1,
-        );
+        handler.addToDeadLetterQueue({ id: `file:test${i}.txt`, vector: [0.1] }, `Error ${i}`, 1);
       }
       expect(handler.deadLetterQueue.length).toBe(10);
 
       // Add one more - should prune 10% (1 item)
-      handler.addToDeadLetterQueue(
-        { id: 'file:new.txt', vector: [0.1] },
-        'New error',
-        1,
-      );
+      handler.addToDeadLetterQueue({ id: 'file:new.txt', vector: [0.1] }, 'New error', 1);
 
       expect(handler.deadLetterQueue.length).toBe(10);
       expect(handler.deadLetterQueue[0].itemId).toBe('file:test1.txt'); // test0 was pruned
@@ -178,7 +161,7 @@ describe('failedItemHandler', () => {
 
       expect(persistDeadLetterQueue).toHaveBeenCalledWith(
         '/tmp/deadletter.json',
-        handler.deadLetterQueue,
+        handler.deadLetterQueue
       );
     });
   });
@@ -261,11 +244,7 @@ describe('failedItemHandler', () => {
     beforeEach(() => {
       // Add some items to dead letter queue
       for (let i = 0; i < 3; i++) {
-        handler.addToDeadLetterQueue(
-          { id: `file:test${i}.txt`, vector: [0.1] },
-          `Error ${i}`,
-          3,
-        );
+        handler.addToDeadLetterQueue({ id: `file:test${i}.txt`, vector: [0.1] }, `Error ${i}`, 3);
       }
     });
 
@@ -293,11 +272,7 @@ describe('failedItemHandler', () => {
       const queue = [];
       const persistQueue = jest.fn().mockResolvedValue(undefined);
 
-      const result = await handler.retryDeadLetterItem(
-        'file:test1.txt',
-        queue,
-        persistQueue,
-      );
+      const result = await handler.retryDeadLetterItem('file:test1.txt', queue, persistQueue);
 
       expect(result).toBe(true);
       expect(queue).toHaveLength(1);
@@ -309,11 +284,7 @@ describe('failedItemHandler', () => {
       const queue = [];
       const persistQueue = jest.fn();
 
-      const result = await handler.retryDeadLetterItem(
-        'file:nonexistent.txt',
-        queue,
-        persistQueue,
-      );
+      const result = await handler.retryDeadLetterItem('file:nonexistent.txt', queue, persistQueue);
 
       expect(result).toBe(false);
       expect(queue).toHaveLength(0);
@@ -345,7 +316,7 @@ describe('failedItemHandler', () => {
     test('sets dead letter queue from persisted data', () => {
       const items = [
         { itemId: 'file:a.txt', item: { id: 'file:a.txt' } },
-        { itemId: 'file:b.txt', item: { id: 'file:b.txt' } },
+        { itemId: 'file:b.txt', item: { id: 'file:b.txt' } }
       ];
 
       handler.setDeadLetterQueue(items);
@@ -368,11 +339,7 @@ describe('failedItemHandler', () => {
   describe('getStats', () => {
     test('returns correct statistics', () => {
       handler.trackFailedItem({ id: 'file:test.txt', vector: [0.1] }, 'Error');
-      handler.addToDeadLetterQueue(
-        { id: 'file:dead.txt', vector: [0.1] },
-        'Error',
-        3,
-      );
+      handler.addToDeadLetterQueue({ id: 'file:dead.txt', vector: [0.1] }, 'Error', 3);
 
       const stats = handler.getStats();
 
@@ -381,7 +348,7 @@ describe('failedItemHandler', () => {
         maxFailedItemsSize: 5,
         deadLetterCount: 1,
         maxDeadLetterSize: 10,
-        itemMaxRetries: 3,
+        itemMaxRetries: 3
       });
     });
   });

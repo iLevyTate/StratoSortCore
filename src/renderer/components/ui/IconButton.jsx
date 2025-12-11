@@ -10,24 +10,20 @@ import PropTypes from 'prop-types';
  * @param {string} variant - The button variant (default, primary, secondary, ghost)
  * @param {string} className - Additional CSS classes
  */
-const IconButton = ({
-  icon,
-  size = 'md',
-  variant = 'default',
-  className = '',
-  ...props
-}) => {
+const IconButton = ({ icon, size = 'md', variant = 'default', className = '', ...props }) => {
   const sizeClasses = {
     sm: 'h-8 w-8 text-sm',
     md: 'h-10 w-10 text-base',
-    lg: 'h-12 w-12 text-lg',
+    lg: 'h-12 w-12 text-lg'
   };
 
   const variantClasses = {
-    default: 'bg-white border border-system-gray-200 text-system-gray-600 hover:text-stratosort-blue hover:border-stratosort-blue hover:shadow-md',
+    default:
+      'bg-white border border-system-gray-200 text-system-gray-600 hover:text-stratosort-blue hover:border-stratosort-blue hover:shadow-md',
     primary: 'bg-stratosort-blue text-white hover:bg-stratosort-blue/90 shadow-sm hover:shadow-md',
-    secondary: 'bg-white/90 border border-border-soft text-system-gray-700 hover:bg-system-gray-50 hover:border-system-gray-300 shadow-sm',
-    ghost: 'text-system-gray-600 hover:bg-system-gray-100 hover:text-system-gray-900',
+    secondary:
+      'bg-white/90 border border-border-soft text-system-gray-700 hover:bg-system-gray-50 hover:border-system-gray-300 shadow-sm',
+    ghost: 'text-system-gray-600 hover:bg-system-gray-100 hover:text-system-gray-900'
   };
 
   return (
@@ -52,7 +48,7 @@ IconButton.propTypes = {
   icon: PropTypes.node.isRequired,
   size: PropTypes.oneOf(['sm', 'md', 'lg']),
   variant: PropTypes.oneOf(['default', 'primary', 'secondary', 'ghost']),
-  className: PropTypes.string,
+  className: PropTypes.string
 };
 
 export default IconButton;

@@ -1,5 +1,5 @@
 jest.mock('../src/main/services/PerformanceService', () => ({
-  buildOllamaOptions: jest.fn(async () => ({})),
+  buildOllamaOptions: jest.fn(async () => ({}))
 }));
 
 let mockOllamaInstance;
@@ -7,7 +7,7 @@ let mockOllamaInstance;
 // Mock ollamaUtils to return our mock instance
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(),
-  getOllamaHost: jest.fn(() => 'http://127.0.0.1:11434'),
+  getOllamaHost: jest.fn(() => 'http://127.0.0.1:11434')
 }));
 
 const { getOllama } = require('../src/main/ollamaUtils');
@@ -19,19 +19,17 @@ describe('ModelVerifier', () => {
     mockOllamaInstance = {
       list: jest.fn(),
       generate: jest.fn(),
-      embeddings: jest.fn(),
+      embeddings: jest.fn()
     };
     getOllama.mockReturnValue(mockOllamaInstance);
   });
 
   test('verifyEssentialModels reports missing models', async () => {
     const mv = new ModelVerifier();
-    jest
-      .spyOn(mv, 'checkOllamaConnection')
-      .mockResolvedValue({ connected: true });
+    jest.spyOn(mv, 'checkOllamaConnection').mockResolvedValue({ connected: true });
     jest.spyOn(mv, 'getInstalledModels').mockResolvedValue({
       success: true,
-      models: [{ name: DEFAULT_AI_MODELS.TEXT_ANALYSIS }],
+      models: [{ name: DEFAULT_AI_MODELS.TEXT_ANALYSIS }]
     });
     const result = await mv.verifyEssentialModels();
     expect(result.success).toBe(false);
@@ -49,17 +47,15 @@ describe('ModelVerifier', () => {
     const mv = new ModelVerifier();
     mockOllamaInstance.generate.mockResolvedValue({ response: 'OK' });
     mockOllamaInstance.list.mockResolvedValue({
-      models: [{ name: 'whisper' }],
+      models: [{ name: 'whisper' }]
     });
     mockOllamaInstance.embeddings.mockResolvedValue({
-      embedding: [0.1, 0.2, 0.3],
+      embedding: [0.1, 0.2, 0.3]
     });
 
     const result = await mv.testModelFunctionality();
     expect(result.success).toBe(true);
-    const textTest = result.tests.find(
-      (t) => t.model === DEFAULT_AI_MODELS.TEXT_ANALYSIS,
-    );
+    const textTest = result.tests.find((t) => t.model === DEFAULT_AI_MODELS.TEXT_ANALYSIS);
     expect(textTest.success).toBe(true);
   });
 });

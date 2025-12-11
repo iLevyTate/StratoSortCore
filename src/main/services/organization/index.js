@@ -18,9 +18,7 @@
  * @module services/organization
  */
 
-const {
-  OrganizationSuggestionServiceCore,
-} = require('./OrganizationSuggestionServiceCore');
+const { OrganizationSuggestionServiceCore } = require('./OrganizationSuggestionServiceCore');
 const { PatternMatcher } = require('./patternMatcher');
 const { PatternPersistence } = require('./persistence');
 const strategies = require('./strategies');
@@ -51,7 +49,7 @@ function createWithDefaults(config = {}) {
     chromaDbService,
     folderMatchingService,
     settingsService,
-    config,
+    config
   });
 }
 

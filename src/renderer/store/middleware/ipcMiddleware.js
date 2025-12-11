@@ -19,19 +19,15 @@ const ipcMiddleware = (store) => {
     listenersInitialized = true;
 
     // Listen for operation progress from batch operations
-    const progressCleanup = window.electronAPI.events.onOperationProgress(
-      (data) => {
-        store.dispatch(updateProgress(data));
-      },
-    );
+    const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
+      store.dispatch(updateProgress(data));
+    });
     if (progressCleanup) cleanupFunctions.push(progressCleanup);
 
     // Listen for system metrics updates
-    const metricsCleanup = window.electronAPI.events.onSystemMetrics(
-      (metrics) => {
-        store.dispatch(updateMetrics(metrics));
-      },
-    );
+    const metricsCleanup = window.electronAPI.events.onSystemMetrics((metrics) => {
+      store.dispatch(updateMetrics(metrics));
+    });
     if (metricsCleanup) cleanupFunctions.push(metricsCleanup);
 
     // Clean up listeners on window unload to prevent memory leaks

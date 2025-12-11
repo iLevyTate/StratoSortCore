@@ -25,7 +25,7 @@ export default function ChromaDBStatusManager() {
         if (status && status.success !== undefined) {
           dispatch(
             updateHealth({
-              chromadb: status.status || (status.success ? 'online' : 'offline'),
+              chromadb: status.status || (status.success ? 'online' : 'offline')
             })
           );
           logger.info('ChromaDB initial status:', status.status || status);
@@ -56,7 +56,7 @@ export default function ChromaDBStatusManager() {
             } else if (status && typeof status === 'object') {
               dispatch(
                 updateHealth({
-                  chromadb: status.status || (status.available ? 'online' : 'offline'),
+                  chromadb: status.status || (status.available ? 'online' : 'offline')
                 })
               );
             }

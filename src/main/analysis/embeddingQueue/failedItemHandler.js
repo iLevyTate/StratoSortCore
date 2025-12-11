@@ -26,7 +26,7 @@ function createFailedItemHandler(config) {
     maxDeadLetterSize,
     maxFailedItemsSize = 1000,
     failedItemsPath,
-    deadLetterPath,
+    deadLetterPath
   } = config;
 
   // State
@@ -59,11 +59,11 @@ function createFailedItemHandler(config) {
         addToDeadLetterQueue(
           oldEntry.item,
           `Evicted from failed items due to capacity (was: ${oldEntry.error})`,
-          oldEntry.retryCount,
+          oldEntry.retryCount
         );
         logger.warn(
           `[EmbeddingQueue] Failed items at capacity (${maxFailedItemsSize}), evicted oldest to dead letter`,
-          { evictedId: oldestKey },
+          { evictedId: oldestKey }
         );
       }
     }
@@ -72,19 +72,16 @@ function createFailedItemHandler(config) {
       item,
       retryCount,
       lastAttempt: Date.now(),
-      error: errorMessage,
+      error: errorMessage
     });
 
     // Persist failed items to disk for recovery
     persistFailedItems(failedItemsPath, failedItems).catch((err) => {
-      logger.warn(
-        '[EmbeddingQueue] Failed to persist failed items:',
-        err.message,
-      );
+      logger.warn('[EmbeddingQueue] Failed to persist failed items:', err.message);
     });
 
     logger.debug(
-      `[EmbeddingQueue] Tracked failed item ${item.id} (retry ${retryCount}/${itemMaxRetries})`,
+      `[EmbeddingQueue] Tracked failed item ${item.id} (retry ${retryCount}/${itemMaxRetries})`
     );
   }
 
@@ -101,7 +98,7 @@ function createFailedItemHandler(config) {
       retryCount,
       failedAt: new Date().toISOString(),
       itemId: item.id,
-      itemType: item.id.startsWith('folder:') ? 'folder' : 'file',
+      itemType: item.id.startsWith('folder:') ? 'folder' : 'file'
     };
 
     // Prune oldest entries if at capacity
@@ -109,7 +106,7 @@ function createFailedItemHandler(config) {
       const pruneCount = Math.floor(maxDeadLetterSize * 0.1);
       deadLetterQueue.splice(0, pruneCount);
       logger.warn(
-        `[EmbeddingQueue] Dead letter queue at capacity, pruned ${pruneCount} oldest entries`,
+        `[EmbeddingQueue] Dead letter queue at capacity, pruned ${pruneCount} oldest entries`
       );
     }
 
@@ -117,15 +114,12 @@ function createFailedItemHandler(config) {
 
     logger.error(
       `[EmbeddingQueue] Item ${item.id} moved to dead letter queue after ${retryCount} failed attempts`,
-      { error: errorMessage },
+      { error: errorMessage }
     );
 
     // Persist dead letter queue to disk
     persistDeadLetterQueue(deadLetterPath, deadLetterQueue).catch((err) => {
-      logger.warn(
-        '[EmbeddingQueue] Failed to persist dead letter queue:',
-        err.message,
-      );
+      logger.warn('[EmbeddingQueue] Failed to persist dead letter queue:', err.message);
     });
   }
 
@@ -139,8 +133,7 @@ function createFailedItemHandler(config) {
 
     for (const [id, data] of failedItems) {
       // Exponential backoff per item: 10s, 20s, 40s
-      const backoffMs =
-        RETRY.BACKOFF_BASE_MS * 2 * Math.pow(2, data.retryCount - 1);
+      const backoffMs = RETRY.BACKOFF_BASE_MS * 2 * Math.pow(2, data.retryCount - 1);
 
       if (now - data.lastAttempt >= backoffMs) {
         itemsToRetry.push(data.item);
@@ -160,9 +153,7 @@ function createFailedItemHandler(config) {
     const itemsToRetry = getItemsToRetry();
 
     if (itemsToRetry.length > 0) {
-      logger.info(
-        `[EmbeddingQueue] Re-queuing ${itemsToRetry.length} failed items for retry`,
-      );
+      logger.info(`[EmbeddingQueue] Re-queuing ${itemsToRetry.length} failed items for retry`);
       // Add to front of queue for priority processing
       queue.unshift(...itemsToRetry);
       await persistQueue();
@@ -187,9 +178,7 @@ function createFailedItemHandler(config) {
     const count = deadLetterQueue.length;
     deadLetterQueue = [];
     await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
-    logger.info(
-      `[EmbeddingQueue] Cleared ${count} items from dead letter queue`,
-    );
+    logger.info(`[EmbeddingQueue] Cleared ${count} items from dead letter queue`);
     return count;
   }
 
@@ -211,9 +200,7 @@ function createFailedItemHandler(config) {
     queue.push(entry.item);
     await persistQueue();
     await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
-    logger.info(
-      `[EmbeddingQueue] Manually re-queued dead letter item ${itemId}`,
-    );
+    logger.info(`[EmbeddingQueue] Manually re-queued dead letter item ${itemId}`);
     return true;
   }
 
@@ -234,9 +221,7 @@ function createFailedItemHandler(config) {
     queue.push(...items);
     await persistQueue();
     await persistDeadLetterQueue(deadLetterPath, deadLetterQueue);
-    logger.info(
-      `[EmbeddingQueue] Manually re-queued ${count} dead letter items`,
-    );
+    logger.info(`[EmbeddingQueue] Manually re-queued ${count} dead letter items`);
     return count;
   }
 
@@ -265,7 +250,7 @@ function createFailedItemHandler(config) {
       maxFailedItemsSize,
       deadLetterCount: deadLetterQueue.length,
       maxDeadLetterSize,
-      itemMaxRetries,
+      itemMaxRetries
     };
   }
 
@@ -284,7 +269,7 @@ function createFailedItemHandler(config) {
     retryAllDeadLetterItems,
     setDeadLetterQueue,
     persistAll,
-    getStats,
+    getStats
   };
 }
 

@@ -29,7 +29,7 @@ describe('useDragAndDrop', () => {
 
     const mockEvent = {
       preventDefault: jest.fn(),
-      stopPropagation: jest.fn(),
+      stopPropagation: jest.fn()
     };
 
     act(() => {
@@ -49,6 +49,9 @@ describe('useDragAndDrop', () => {
       result.current.dragProps.onDragEnter({
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
+        dataTransfer: {
+          getData: jest.fn().mockReturnValue('')
+        }
       });
     });
 
@@ -59,9 +62,9 @@ describe('useDragAndDrop', () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       currentTarget: {
-        contains: jest.fn().mockReturnValue(false),
+        contains: jest.fn().mockReturnValue(false)
       },
-      relatedTarget: document.body,
+      relatedTarget: document.body
     };
 
     act(() => {
@@ -78,6 +81,9 @@ describe('useDragAndDrop', () => {
       result.current.dragProps.onDragEnter({
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
+        dataTransfer: {
+          getData: jest.fn().mockReturnValue('')
+        }
       });
     });
 
@@ -87,9 +93,9 @@ describe('useDragAndDrop', () => {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       currentTarget: {
-        contains: jest.fn().mockReturnValue(true),
+        contains: jest.fn().mockReturnValue(true)
       },
-      relatedTarget: childElement,
+      relatedTarget: childElement
     };
 
     act(() => {
@@ -104,7 +110,7 @@ describe('useDragAndDrop', () => {
 
     const mockEvent = {
       preventDefault: jest.fn(),
-      stopPropagation: jest.fn(),
+      stopPropagation: jest.fn()
     };
 
     act(() => {
@@ -120,7 +126,7 @@ describe('useDragAndDrop', () => {
 
     const mockFiles = [
       { path: '/test/file1.pdf', name: 'file1.pdf', size: 1024 },
-      { path: '/test/file2.pdf', name: 'file2.pdf', size: 2048 },
+      { path: '/test/file2.pdf', name: 'file2.pdf', size: 2048 }
     ];
 
     const mockDropEvent = {
@@ -128,7 +134,8 @@ describe('useDragAndDrop', () => {
       stopPropagation: jest.fn(),
       dataTransfer: {
         files: mockFiles,
-      },
+        getData: jest.fn().mockReturnValue('')
+      }
     };
 
     // Set dragging state first
@@ -136,6 +143,9 @@ describe('useDragAndDrop', () => {
       result.current.dragProps.onDragEnter({
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
+        dataTransfer: {
+          getData: jest.fn().mockReturnValue('')
+        }
       });
     });
 
@@ -145,22 +155,23 @@ describe('useDragAndDrop', () => {
 
     expect(result.current.isDragging).toBe(false);
     expect(mockOnFilesDropped).toHaveBeenCalledWith([
-      { path: '/test/file1.pdf', name: 'file1.pdf', type: 'file', size: 1024 },
-      { path: '/test/file2.pdf', name: 'file2.pdf', type: 'file', size: 2048 },
+      { path: '/test/file1.pdf', name: 'file1.pdf', type: 'file' },
+      { path: '/test/file2.pdf', name: 'file2.pdf', type: 'file' }
     ]);
   });
 
   test('uses name as path if path is not available', () => {
     const { result } = renderHook(() => useDragAndDrop(mockOnFilesDropped));
 
-    const mockFiles = [{ name: 'file1.pdf', size: 1024 }];
+    const mockFiles = [{ name: '/file1.pdf', size: 1024 }];
 
     const mockDropEvent = {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       dataTransfer: {
         files: mockFiles,
-      },
+        getData: jest.fn().mockReturnValue('')
+      }
     };
 
     act(() => {
@@ -168,7 +179,7 @@ describe('useDragAndDrop', () => {
     });
 
     expect(mockOnFilesDropped).toHaveBeenCalledWith([
-      { path: 'file1.pdf', name: 'file1.pdf', type: 'file', size: 1024 },
+      { path: '/file1.pdf', name: 'file1.pdf', type: 'file' }
     ]);
   });
 
@@ -180,7 +191,8 @@ describe('useDragAndDrop', () => {
       stopPropagation: jest.fn(),
       dataTransfer: {
         files: [],
-      },
+        getData: jest.fn().mockReturnValue('')
+      }
     };
 
     act(() => {
@@ -196,7 +208,7 @@ describe('useDragAndDrop', () => {
     const mockDropEvent = {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
-      dataTransfer: null,
+      dataTransfer: null
     };
 
     act(() => {
@@ -213,7 +225,7 @@ describe('useDragAndDrop', () => {
     const mockDropEvent = {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
-      dataTransfer: {},
+      dataTransfer: {}
     };
 
     act(() => {
@@ -233,7 +245,8 @@ describe('useDragAndDrop', () => {
       stopPropagation: jest.fn(),
       dataTransfer: {
         files: mockFiles,
-      },
+        getData: jest.fn().mockReturnValue('')
+      }
     };
 
     // Should not throw
@@ -245,9 +258,7 @@ describe('useDragAndDrop', () => {
   });
 
   test('maintains stable function references', () => {
-    const { result, rerender } = renderHook(() =>
-      useDragAndDrop(mockOnFilesDropped),
-    );
+    const { result, rerender } = renderHook(() => useDragAndDrop(mockOnFilesDropped));
 
     const initialProps = result.current.dragProps;
 
@@ -263,17 +274,17 @@ describe('useDragAndDrop', () => {
     const callback1 = jest.fn();
     const callback2 = jest.fn();
 
-    const { result, rerender } = renderHook(
-      ({ callback }) => useDragAndDrop(callback),
-      { initialProps: { callback: callback1 } },
-    );
+    const { result, rerender } = renderHook(({ callback }) => useDragAndDrop(callback), {
+      initialProps: { callback: callback1 }
+    });
 
     const mockDropEvent = {
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
       dataTransfer: {
-        files: [{ name: 'file.pdf', size: 1024 }],
-      },
+        files: [{ name: '/file.pdf', size: 1024 }],
+        getData: jest.fn().mockReturnValue('')
+      }
     };
 
     act(() => {

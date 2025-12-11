@@ -10,18 +10,18 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock errorHandlingUtils
 jest.mock('../src/shared/errorHandlingUtils', () => ({
-  withRetry: jest.fn((fn) => fn),
+  withRetry: jest.fn((fn) => fn)
 }));
 
 // Mock pathSanitization
 jest.mock('../src/shared/pathSanitization', () => ({
-  sanitizeMetadata: jest.fn((meta) => meta),
+  sanitizeMetadata: jest.fn((meta) => meta)
 }));
 
 describe('ChromaDB Folder Operations', () => {
@@ -46,8 +46,8 @@ describe('ChromaDB Folder Operations', () => {
       get: jest.fn().mockResolvedValue({
         ids: ['file-1'],
         embeddings: [[0.1, 0.2, 0.3]],
-        metadatas: [{}],
-      }),
+        metadatas: [{}]
+      })
     };
 
     mockFolderCollection = {
@@ -55,23 +55,23 @@ describe('ChromaDB Folder Operations', () => {
       query: jest.fn().mockResolvedValue({
         ids: [['folder-1']],
         distances: [[0.2]],
-        metadatas: [[{ name: 'Folder 1' }]],
+        metadatas: [[{ name: 'Folder 1' }]]
       }),
       get: jest.fn().mockResolvedValue({
         ids: ['folder-1'],
         embeddings: [[0.1]],
-        metadatas: [{ name: 'Folder 1' }],
-      }),
+        metadatas: [{ name: 'Folder 1' }]
+      })
     };
 
     mockQueryCache = {
       invalidateForFolder: jest.fn(),
-      set: jest.fn(),
+      set: jest.fn()
     };
 
     mockClient = {
       deleteCollection: jest.fn().mockResolvedValue(undefined),
-      createCollection: jest.fn().mockResolvedValue(mockFolderCollection),
+      createCollection: jest.fn().mockResolvedValue(mockFolderCollection)
     };
 
     const module = require('../src/main/services/chromadb/folderOperations');
@@ -92,20 +92,20 @@ describe('ChromaDB Folder Operations', () => {
         vector: [0.1, 0.2, 0.3],
         description: 'My documents folder',
         path: '/home/user/Documents',
-        model: 'nomic-embed-text',
+        model: 'mxbai-embed-large'
       };
 
       await directUpsertFolder({
         folder,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockFolderCollection.upsert).toHaveBeenCalledWith({
         ids: ['folder-123'],
         embeddings: [[0.1, 0.2, 0.3]],
         metadatas: [expect.objectContaining({ name: 'Documents' })],
-        documents: ['Documents'],
+        documents: ['Documents']
       });
     });
 
@@ -113,13 +113,13 @@ describe('ChromaDB Folder Operations', () => {
       const folder = {
         id: 'folder-123',
         name: 'Docs',
-        vector: [0.1],
+        vector: [0.1]
       };
 
       await directUpsertFolder({
         folder,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockQueryCache.invalidateForFolder).toHaveBeenCalled();
@@ -128,13 +128,13 @@ describe('ChromaDB Folder Operations', () => {
     test('handles missing optional fields', async () => {
       const folder = {
         id: 'folder-123',
-        vector: [0.1],
+        vector: [0.1]
       };
 
       await directUpsertFolder({
         folder,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockFolderCollection.upsert).toHaveBeenCalled();
@@ -145,28 +145,28 @@ describe('ChromaDB Folder Operations', () => {
 
       const folder = {
         id: 'folder-123',
-        vector: [0.1],
+        vector: [0.1]
       };
 
       await expect(
         directUpsertFolder({
           folder,
           folderCollection: mockFolderCollection,
-          queryCache: mockQueryCache,
-        }),
+          queryCache: mockQueryCache
+        })
       ).rejects.toThrow('DB error');
     });
 
     test('works without query cache', async () => {
       const folder = {
         id: 'folder-123',
-        vector: [0.1],
+        vector: [0.1]
       };
 
       await directUpsertFolder({
         folder,
         folderCollection: mockFolderCollection,
-        queryCache: null,
+        queryCache: null
       });
 
       expect(mockFolderCollection.upsert).toHaveBeenCalled();
@@ -177,13 +177,13 @@ describe('ChromaDB Folder Operations', () => {
     test('upserts multiple folders', async () => {
       const folders = [
         { id: 'folder-1', name: 'Docs', vector: [0.1] },
-        { id: 'folder-2', name: 'Photos', vector: [0.2] },
+        { id: 'folder-2', name: 'Photos', vector: [0.2] }
       ];
 
       const result = await directBatchUpsertFolders({
         folders,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result.count).toBe(2);
@@ -192,7 +192,7 @@ describe('ChromaDB Folder Operations', () => {
         ids: ['folder-1', 'folder-2'],
         embeddings: [[0.1], [0.2]],
         metadatas: expect.any(Array),
-        documents: ['Docs', 'Photos'],
+        documents: ['Docs', 'Photos']
       });
     });
 
@@ -201,13 +201,13 @@ describe('ChromaDB Folder Operations', () => {
         { id: 'folder-1', vector: [0.1] },
         { id: null, vector: [0.2] }, // Missing ID
         { id: 'folder-3', vector: null }, // Missing vector
-        { id: 'folder-4', vector: 'not array' }, // Invalid vector
+        { id: 'folder-4', vector: 'not array' } // Invalid vector
       ];
 
       const result = await directBatchUpsertFolders({
         folders,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result.count).toBe(1);
@@ -220,13 +220,13 @@ describe('ChromaDB Folder Operations', () => {
     test('invalidates cache after batch upsert', async () => {
       const folders = [
         { id: 'folder-1', vector: [0.1] },
-        { id: 'folder-2', vector: [0.2] },
+        { id: 'folder-2', vector: [0.2] }
       ];
 
       await directBatchUpsertFolders({
         folders,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockQueryCache.invalidateForFolder).toHaveBeenCalled();
@@ -235,13 +235,13 @@ describe('ChromaDB Folder Operations', () => {
     test('returns 0 count for all invalid folders', async () => {
       const folders = [
         { id: null, vector: [0.1] },
-        { id: 'folder-2', vector: null },
+        { id: 'folder-2', vector: null }
       ];
 
       const result = await directBatchUpsertFolders({
         folders,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result.count).toBe(0);
@@ -258,8 +258,8 @@ describe('ChromaDB Folder Operations', () => {
         directBatchUpsertFolders({
           folders,
           folderCollection: mockFolderCollection,
-          queryCache: mockQueryCache,
-        }),
+          queryCache: mockQueryCache
+        })
       ).rejects.toThrow('Batch failed');
     });
   });
@@ -269,13 +269,13 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [['folder-1', 'folder-2']],
         distances: [[0.2, 0.4]],
-        metadatas: [[{ name: 'Docs' }, { name: 'Photos' }]],
+        metadatas: [[{ name: 'Docs' }, { name: 'Photos' }]]
       });
 
       const result = await queryFoldersByEmbedding({
         embedding: [0.1, 0.2],
         topK: 5,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toHaveLength(2);
@@ -288,7 +288,7 @@ describe('ChromaDB Folder Operations', () => {
       const result = await queryFoldersByEmbedding({
         embedding: null,
         topK: 5,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -298,7 +298,7 @@ describe('ChromaDB Folder Operations', () => {
       const result = await queryFoldersByEmbedding({
         embedding: [],
         topK: 5,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -308,13 +308,13 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [[]],
         distances: [[]],
-        metadatas: [[]],
+        metadatas: [[]]
       });
 
       const result = await queryFoldersByEmbedding({
         embedding: [0.1],
         topK: 5,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -326,7 +326,7 @@ describe('ChromaDB Folder Operations', () => {
       const result = await queryFoldersByEmbedding({
         embedding: [0.1],
         topK: 5,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -336,13 +336,13 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [[null, 'folder-2']],
         distances: [[0.2, undefined]],
-        metadatas: [[{}, {}]],
+        metadatas: [[{}, {}]]
       });
 
       const result = await queryFoldersByEmbedding({
         embedding: [0.1],
         topK: 5,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -355,14 +355,14 @@ describe('ChromaDB Folder Operations', () => {
         fileId: 'file-1',
         topK: 5,
         fileCollection: mockFileCollection,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toHaveLength(1);
       expect(result[0].folderId).toBe('folder-1');
       expect(mockFileCollection.get).toHaveBeenCalledWith({
         ids: ['file-1'],
-        include: ['embeddings', 'metadatas', 'documents'],
+        include: ['embeddings', 'metadatas', 'documents']
       });
     });
 
@@ -371,7 +371,7 @@ describe('ChromaDB Folder Operations', () => {
         fileId: 'file-1',
         topK: 5,
         fileCollection: null,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -382,7 +382,7 @@ describe('ChromaDB Folder Operations', () => {
         fileId: 'file-1',
         topK: 5,
         fileCollection: mockFileCollection,
-        folderCollection: null,
+        folderCollection: null
       });
 
       expect(result).toEqual([]);
@@ -392,14 +392,14 @@ describe('ChromaDB Folder Operations', () => {
       mockFileCollection.get.mockResolvedValue({
         ids: [],
         embeddings: [],
-        metadatas: [],
+        metadatas: []
       });
 
       const result = await executeQueryFolders({
         fileId: 'not-found',
         topK: 5,
         fileCollection: mockFileCollection,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -409,14 +409,14 @@ describe('ChromaDB Folder Operations', () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['file-1'],
         embeddings: [null],
-        metadatas: [{}],
+        metadatas: [{}]
       });
 
       const result = await executeQueryFolders({
         fileId: 'file-1',
         topK: 5,
         fileCollection: mockFileCollection,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -426,14 +426,14 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [[]],
         distances: [[]],
-        metadatas: [[]],
+        metadatas: [[]]
       });
 
       const result = await executeQueryFolders({
         fileId: 'file-1',
         topK: 5,
         fileCollection: mockFileCollection,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -446,7 +446,7 @@ describe('ChromaDB Folder Operations', () => {
         fileId: 'file-1',
         topK: 5,
         fileCollection: mockFileCollection,
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -457,13 +457,13 @@ describe('ChromaDB Folder Operations', () => {
     test('queries folders for multiple files', async () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['file-1', 'file-2'],
-        embeddings: [[0.1], [0.2]],
+        embeddings: [[0.1], [0.2]]
       });
 
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [['folder-1'], ['folder-2']],
         distances: [[0.2], [0.3]],
-        metadatas: [[{ name: 'Docs' }], [{ name: 'Photos' }]],
+        metadatas: [[{ name: 'Docs' }], [{ name: 'Photos' }]]
       });
 
       const result = await batchQueryFolders({
@@ -471,7 +471,7 @@ describe('ChromaDB Folder Operations', () => {
         topK: 5,
         fileCollection: mockFileCollection,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(Object.keys(result)).toHaveLength(2);
@@ -485,7 +485,7 @@ describe('ChromaDB Folder Operations', () => {
         topK: 5,
         fileCollection: mockFileCollection,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toEqual({});
@@ -497,7 +497,7 @@ describe('ChromaDB Folder Operations', () => {
         topK: 5,
         fileCollection: mockFileCollection,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toEqual({});
@@ -506,13 +506,13 @@ describe('ChromaDB Folder Operations', () => {
     test('caches individual results', async () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['file-1'],
-        embeddings: [[0.1]],
+        embeddings: [[0.1]]
       });
 
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [['folder-1']],
         distances: [[0.2]],
-        metadatas: [[{ name: 'Docs' }]],
+        metadatas: [[{ name: 'Docs' }]]
       });
 
       await batchQueryFolders({
@@ -520,13 +520,10 @@ describe('ChromaDB Folder Operations', () => {
         topK: 5,
         fileCollection: mockFileCollection,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
-      expect(mockQueryCache.set).toHaveBeenCalledWith(
-        'query:folders:file-1:5',
-        expect.any(Array),
-      );
+      expect(mockQueryCache.set).toHaveBeenCalledWith('query:folders:file-1:5', expect.any(Array));
     });
 
     test('returns empty object on error', async () => {
@@ -537,7 +534,7 @@ describe('ChromaDB Folder Operations', () => {
         topK: 5,
         fileCollection: mockFileCollection,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toEqual({});
@@ -546,13 +543,13 @@ describe('ChromaDB Folder Operations', () => {
     test('handles files without embeddings', async () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['file-1', 'file-2'],
-        embeddings: [[0.1], null],
+        embeddings: [[0.1], null]
       });
 
       mockFolderCollection.query.mockResolvedValueOnce({
         ids: [['folder-1']],
         distances: [[0.2]],
-        metadatas: [[{ name: 'Docs' }]],
+        metadatas: [[{ name: 'Docs' }]]
       });
 
       const result = await batchQueryFolders({
@@ -560,7 +557,7 @@ describe('ChromaDB Folder Operations', () => {
         topK: 5,
         fileCollection: mockFileCollection,
         folderCollection: mockFolderCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(Object.keys(result)).toHaveLength(1);
@@ -573,11 +570,11 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.get.mockResolvedValueOnce({
         ids: ['folder-1', 'folder-2'],
         embeddings: [[0.1], [0.2]],
-        metadatas: [{ name: 'Docs' }, { name: 'Photos' }],
+        metadatas: [{ name: 'Docs' }, { name: 'Photos' }]
       });
 
       const result = await getAllFolders({
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toHaveLength(2);
@@ -590,11 +587,11 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.get.mockResolvedValueOnce({
         ids: [],
         embeddings: [],
-        metadatas: [],
+        metadatas: []
       });
 
       const result = await getAllFolders({
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -604,7 +601,7 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.get.mockRejectedValueOnce(new Error('Get failed'));
 
       const result = await getAllFolders({
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toEqual([]);
@@ -614,11 +611,11 @@ describe('ChromaDB Folder Operations', () => {
       mockFolderCollection.get.mockResolvedValueOnce({
         ids: ['folder-1'],
         embeddings: undefined,
-        metadatas: undefined,
+        metadatas: undefined
       });
 
       const result = await getAllFolders({
-        folderCollection: mockFolderCollection,
+        folderCollection: mockFolderCollection
       });
 
       expect(result).toHaveLength(1);
@@ -632,13 +629,13 @@ describe('ChromaDB Folder Operations', () => {
       const result = await resetFolders({ client: mockClient });
 
       expect(mockClient.deleteCollection).toHaveBeenCalledWith({
-        name: 'folder_embeddings',
+        name: 'folder_embeddings'
       });
       expect(mockClient.createCollection).toHaveBeenCalledWith({
         name: 'folder_embeddings',
         metadata: expect.objectContaining({
-          hnsw_space: 'cosine',
-        }),
+          hnsw_space: 'cosine'
+        })
       });
       expect(result).toBe(mockFolderCollection);
     });

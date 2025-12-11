@@ -29,12 +29,7 @@ const CIRCUIT_BREAKER_RECOVERY_WINDOW = TIMEOUTS.GLOBAL_ANALYSIS;
  * @param {Function} checkHealth - Function to check health
  * @returns {Promise<boolean>} Whether recovery was attempted
  */
-async function handleCircuitBreakerRecovery(
-  serviceName,
-  serviceStatus,
-  startService,
-  checkHealth,
-) {
+async function handleCircuitBreakerRecovery(serviceName, serviceStatus, startService, checkHealth) {
   const status = serviceStatus[serviceName];
 
   if (!status.circuitBreakerTripped || !status.circuitBreakerTrippedAt) {
@@ -52,8 +47,7 @@ async function handleCircuitBreakerRecovery(
   const attemptCount = status.recoveryAttempts;
   const maxAttempts = 5;
   const backoffMultiplier = Math.pow(2, attemptCount);
-  const adjustedRecoveryWindow =
-    CIRCUIT_BREAKER_RECOVERY_WINDOW * backoffMultiplier;
+  const adjustedRecoveryWindow = CIRCUIT_BREAKER_RECOVERY_WINDOW * backoffMultiplier;
 
   if (now - trippedTime < adjustedRecoveryWindow) {
     return false;
@@ -61,14 +55,14 @@ async function handleCircuitBreakerRecovery(
 
   if (attemptCount >= maxAttempts) {
     logger.error(
-      `[HEALTH] ${serviceName} exceeded maximum recovery attempts (${maxAttempts}). Service permanently disabled.`,
+      `[HEALTH] ${serviceName} exceeded maximum recovery attempts (${maxAttempts}). Service permanently disabled.`
     );
     status.status = 'permanently_failed';
     return true;
   }
 
   logger.info(
-    `[HEALTH] ${serviceName} circuit breaker recovery attempt ${attemptCount + 1}/${maxAttempts} (backoff: ${adjustedRecoveryWindow / 1000}s)...`,
+    `[HEALTH] ${serviceName} circuit breaker recovery attempt ${attemptCount + 1}/${maxAttempts} (backoff: ${adjustedRecoveryWindow / 1000}s)...`
   );
 
   try {
@@ -78,7 +72,7 @@ async function handleCircuitBreakerRecovery(
 
     if (isHealthy) {
       logger.info(
-        `[HEALTH] ${serviceName} circuit breaker recovery successful - service is healthy`,
+        `[HEALTH] ${serviceName} circuit breaker recovery successful - service is healthy`
       );
       status.circuitBreakerTripped = false;
       status.circuitBreakerTrippedAt = null;
@@ -90,7 +84,7 @@ async function handleCircuitBreakerRecovery(
     }
   } catch (error) {
     logger.warn(
-      `[HEALTH] ${serviceName} circuit breaker recovery attempt ${attemptCount + 1} failed: ${error.message}`,
+      `[HEALTH] ${serviceName} circuit breaker recovery attempt ${attemptCount + 1} failed: ${error.message}`
     );
     status.recoveryAttempts = attemptCount + 1;
     status.circuitBreakerTrippedAt = new Date().toISOString();
@@ -113,17 +107,12 @@ async function checkServiceHealthWithRecovery(
   serviceStatus,
   config,
   restartLocks,
-  startService,
+  startService
 ) {
   const status = serviceStatus[serviceName];
 
-  if (
-    status.status === 'permanently_failed' ||
-    status.health === 'permanently_failed'
-  ) {
-    logger.debug(
-      `[HEALTH] Skipping ${serviceName} health check - service permanently failed`,
-    );
+  if (status.status === 'permanently_failed' || status.health === 'permanently_failed') {
+    logger.debug(`[HEALTH] Skipping ${serviceName} health check - service permanently failed`);
     return;
   }
 
@@ -153,8 +142,8 @@ async function checkServiceHealthWithRecovery(
           operation: 'Ollama service health check',
           maxRetries: 3,
           initialDelay: 1000,
-          maxDelay: 4000,
-        },
+          maxDelay: 4000
+        }
       );
       isHealthy = response.status === 200;
     }
@@ -171,14 +160,12 @@ async function checkServiceHealthWithRecovery(
 
     logger.warn(`[HEALTH] ${serviceName} health check failed:`, error.message);
 
-    if (
-      status.consecutiveFailures >= config.circuitBreakerConsecutiveFailures
-    ) {
+    if (status.consecutiveFailures >= config.circuitBreakerConsecutiveFailures) {
       const restartCount = status.restartCount || 0;
 
       if (restartCount >= config.circuitBreakerThreshold) {
         logger.error(
-          `[HEALTH] ${serviceName} exceeded circuit breaker threshold (${config.circuitBreakerThreshold} failures). Auto-disabling service.`,
+          `[HEALTH] ${serviceName} exceeded circuit breaker threshold (${config.circuitBreakerThreshold} failures). Auto-disabling service.`
         );
         status.status = 'permanently_failed';
         status.health = 'permanently_failed';
@@ -189,13 +176,12 @@ async function checkServiceHealthWithRecovery(
         // Check for restart lock
         if (restartLocks[serviceName]) {
           logger.warn(
-            `[HEALTH] ${serviceName} restart already in progress, skipping duplicate attempt.`,
+            `[HEALTH] ${serviceName} restart already in progress, skipping duplicate attempt.`
           );
         } else {
           // For Ollama, check port availability first
           if (serviceName === 'ollama') {
-            const baseUrl =
-              process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+            const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
             let host = '127.0.0.1';
             let port = 11434;
             try {
@@ -209,7 +195,7 @@ async function checkServiceHealthWithRecovery(
             const portAvailable = await isPortAvailable(host, port);
             if (!portAvailable) {
               logger.warn(
-                '[HEALTH] Ollama port is already in use. Assuming external instance is running.',
+                '[HEALTH] Ollama port is already in use. Assuming external instance is running.'
               );
               status.consecutiveFailures = 0;
               status.health = 'degraded';
@@ -218,7 +204,7 @@ async function checkServiceHealthWithRecovery(
           }
 
           logger.warn(
-            `[HEALTH] Attempting to restart ${serviceName} (attempt ${restartCount + 1}/5)...`,
+            `[HEALTH] Attempting to restart ${serviceName} (attempt ${restartCount + 1}/5)...`
           );
           restartLocks[serviceName] = true;
           status.restartCount = restartCount + 1;
@@ -248,25 +234,15 @@ async function checkServicesHealth(
   config,
   restartLocks,
   startChromaDB,
-  startOllama,
+  startOllama
 ) {
   logger.debug('[HEALTH] Checking service health...');
 
   // Handle circuit breaker recovery for ChromaDB
-  await handleCircuitBreakerRecovery(
-    'chromadb',
-    serviceStatus,
-    startChromaDB,
-    checkChromaDBHealth,
-  );
+  await handleCircuitBreakerRecovery('chromadb', serviceStatus, startChromaDB, checkChromaDBHealth);
 
   // Handle circuit breaker recovery for Ollama
-  await handleCircuitBreakerRecovery(
-    'ollama',
-    serviceStatus,
-    startOllama,
-    checkOllamaHealth,
-  );
+  await handleCircuitBreakerRecovery('ollama', serviceStatus, startOllama, checkOllamaHealth);
 
   // Check ChromaDB health
   await checkServiceHealthWithRecovery(
@@ -274,17 +250,11 @@ async function checkServicesHealth(
     serviceStatus,
     config,
     restartLocks,
-    startChromaDB,
+    startChromaDB
   );
 
   // Check Ollama health
-  await checkServiceHealthWithRecovery(
-    'ollama',
-    serviceStatus,
-    config,
-    restartLocks,
-    startOllama,
-  );
+  await checkServiceHealthWithRecovery('ollama', serviceStatus, config, restartLocks, startOllama);
 }
 
 /**
@@ -304,7 +274,7 @@ function createHealthMonitor({
   restartLocks,
   startChromaDB,
   startOllama,
-  healthCheckState,
+  healthCheckState
 }) {
   logger.info('[STARTUP] Starting health monitoring...');
 
@@ -318,14 +288,12 @@ function createHealthMonitor({
         Date.now() - healthCheckState.startedAt > healthCheckTimeout
       ) {
         logger.error(
-          `[HEALTH] Health check stuck for ${(Date.now() - healthCheckState.startedAt) / 1000}s, force resetting flag`,
+          `[HEALTH] Health check stuck for ${(Date.now() - healthCheckState.startedAt) / 1000}s, force resetting flag`
         );
         healthCheckState.inProgress = false;
         healthCheckState.startedAt = null;
       } else {
-        logger.warn(
-          '[HEALTH] Previous health check still in progress, skipping',
-        );
+        logger.warn('[HEALTH] Previous health check still in progress, skipping');
         return;
       }
     }
@@ -341,14 +309,12 @@ function createHealthMonitor({
         config,
         restartLocks,
         startChromaDB,
-        startOllama,
+        startOllama
       );
 
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
-          reject(
-            new Error(`Health check timeout after ${healthCheckTimeout}ms`),
-          );
+          reject(new Error(`Health check timeout after ${healthCheckTimeout}ms`));
         }, healthCheckTimeout);
       });
 
@@ -368,10 +334,7 @@ function createHealthMonitor({
   try {
     healthMonitor.unref();
   } catch (error) {
-    logger.warn(
-      '[HEALTH] Failed to unref health monitor interval:',
-      error.message,
-    );
+    logger.warn('[HEALTH] Failed to unref health monitor interval:', error.message);
   }
 
   return healthMonitor;
@@ -382,5 +345,5 @@ module.exports = {
   checkServiceHealthWithRecovery,
   checkServicesHealth,
   createHealthMonitor,
-  CIRCUIT_BREAKER_RECOVERY_WINDOW,
+  CIRCUIT_BREAKER_RECOVERY_WINDOW
 };

@@ -16,7 +16,7 @@ describe('ProcessingStateService', () => {
     testId++;
     tmpDir = path.join(
       os.tmpdir(),
-      `stratosort-processing-${Date.now()}-${testId}-${Math.random().toString(36).slice(2)}`,
+      `stratosort-processing-${Date.now()}-${testId}-${Math.random().toString(36).slice(2)}`
     );
     await fs.mkdir(tmpDir, { recursive: true });
 
@@ -60,7 +60,7 @@ describe('ProcessingStateService', () => {
     const batchId = 'batch-test';
     const ops = [
       { source: '/from/a.txt', destination: '/to/a.txt' },
-      { source: '/from/b.txt', destination: '/to/b.txt' },
+      { source: '/from/b.txt', destination: '/to/b.txt' }
     ];
 
     // Small delay helper to avoid Windows file locking issues during rapid successive writes
@@ -82,8 +82,6 @@ describe('ProcessingStateService', () => {
 
     const incomplete = svc.getIncompleteOrganizeBatches();
     expect(Array.isArray(incomplete)).toBe(true);
-    expect(
-      incomplete.length === 0 || incomplete.every((b) => !!b.completedAt),
-    ).toBe(true);
+    expect(incomplete.length === 0 || incomplete.every((b) => !!b.completedAt)).toBe(true);
   });
 });

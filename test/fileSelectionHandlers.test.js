@@ -10,43 +10,43 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
 const mockFs = {
   stat: jest.fn(),
-  readdir: jest.fn(),
+  readdir: jest.fn()
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock constants
 jest.mock('../src/shared/constants', () => ({
   SUPPORTED_DOCUMENT_EXTENSIONS: ['.pdf', '.doc', '.docx'],
   SUPPORTED_IMAGE_EXTENSIONS: ['.jpg', '.png', '.gif'],
-  SUPPORTED_ARCHIVE_EXTENSIONS: ['.zip', '.rar'],
+  SUPPORTED_ARCHIVE_EXTENSIONS: ['.zip', '.rar']
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   TIMEOUTS: {
-    DELAY_BATCH: 50,
-  },
+    DELAY_BATCH: 50
+  }
 }));
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler),
+  withErrorLogging: jest.fn((logger, handler) => handler)
 }));
 
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/mock/documents'),
-  },
+    getPath: jest.fn().mockReturnValue('/mock/documents')
+  }
 }));
 
 describe('File Selection Handlers', () => {
@@ -61,11 +61,11 @@ describe('File Selection Handlers', () => {
     jest.resetModules();
 
     mockIpcMain = {
-      handle: jest.fn(),
+      handle: jest.fn()
     };
 
     mockDialog = {
-      showOpenDialog: jest.fn(),
+      showOpenDialog: jest.fn()
     };
 
     mockGetMainWindow = jest.fn().mockReturnValue({
@@ -74,7 +74,7 @@ describe('File Selection Handlers', () => {
       isVisible: () => true,
       focus: jest.fn(),
       restore: jest.fn(),
-      show: jest.fn(),
+      show: jest.fn()
     });
 
     handlers = {};
@@ -98,11 +98,11 @@ describe('File Selection Handlers', () => {
             GET_DOCUMENTS_PATH: 'files:get-documents-path',
             GET_FILE_STATS: 'files:get-file-stats',
             GET_FILES_IN_DIRECTORY: 'files:get-files-in-directory',
-            SELECT: 'files:select',
-          },
+            SELECT: 'files:select'
+          }
         },
         dialog: mockDialog,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(mockIpcMain.handle).toHaveBeenCalledTimes(5);
@@ -119,18 +119,18 @@ describe('File Selection Handlers', () => {
             GET_DOCUMENTS_PATH: 'files:get-documents-path',
             GET_FILE_STATS: 'files:get-file-stats',
             GET_FILES_IN_DIRECTORY: 'files:get-files-in-directory',
-            SELECT: 'files:select',
-          },
+            SELECT: 'files:select'
+          }
         },
         dialog: mockDialog,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
     });
 
     test('returns null path when dialog canceled', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: true,
-        filePaths: [],
+        filePaths: []
       });
 
       const handler = handlers['files:select-directory'];
@@ -143,7 +143,7 @@ describe('File Selection Handlers', () => {
     test('returns selected directory path', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: false,
-        filePaths: ['/selected/directory'],
+        filePaths: ['/selected/directory']
       });
 
       const handler = handlers['files:select-directory'];
@@ -154,9 +154,7 @@ describe('File Selection Handlers', () => {
     });
 
     test('handles dialog error', async () => {
-      mockDialog.showOpenDialog.mockRejectedValueOnce(
-        new Error('Dialog error'),
-      );
+      mockDialog.showOpenDialog.mockRejectedValueOnce(new Error('Dialog error'));
 
       const handler = handlers['files:select-directory'];
       const result = await handler({});
@@ -176,11 +174,11 @@ describe('File Selection Handlers', () => {
             GET_DOCUMENTS_PATH: 'files:get-documents-path',
             GET_FILE_STATS: 'files:get-file-stats',
             GET_FILES_IN_DIRECTORY: 'files:get-files-in-directory',
-            SELECT: 'files:select',
-          },
+            SELECT: 'files:select'
+          }
         },
         dialog: mockDialog,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
     });
 
@@ -203,11 +201,11 @@ describe('File Selection Handlers', () => {
             GET_DOCUMENTS_PATH: 'files:get-documents-path',
             GET_FILE_STATS: 'files:get-file-stats',
             GET_FILES_IN_DIRECTORY: 'files:get-files-in-directory',
-            SELECT: 'files:select',
-          },
+            SELECT: 'files:select'
+          }
         },
         dialog: mockDialog,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
     });
 
@@ -226,7 +224,7 @@ describe('File Selection Handlers', () => {
         isDirectory: () => false,
         birthtime: new Date('2024-01-01'),
         mtime: new Date('2024-01-02'),
-        atime: new Date('2024-01-03'),
+        atime: new Date('2024-01-03')
       };
       mockFs.stat.mockResolvedValueOnce(mockStats);
 
@@ -260,11 +258,11 @@ describe('File Selection Handlers', () => {
             GET_DOCUMENTS_PATH: 'files:get-documents-path',
             GET_FILE_STATS: 'files:get-file-stats',
             GET_FILES_IN_DIRECTORY: 'files:get-files-in-directory',
-            SELECT: 'files:select',
-          },
+            SELECT: 'files:select'
+          }
         },
         dialog: mockDialog,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
     });
 
@@ -280,7 +278,7 @@ describe('File Selection Handlers', () => {
       mockFs.readdir.mockResolvedValueOnce([
         { name: 'file1.txt', isFile: () => true },
         { name: 'file2.pdf', isFile: () => true },
-        { name: 'subdir', isFile: () => false },
+        { name: 'subdir', isFile: () => false }
       ]);
 
       const handler = handlers['files:get-files-in-directory'];
@@ -312,18 +310,18 @@ describe('File Selection Handlers', () => {
             GET_DOCUMENTS_PATH: 'files:get-documents-path',
             GET_FILE_STATS: 'files:get-file-stats',
             GET_FILES_IN_DIRECTORY: 'files:get-files-in-directory',
-            SELECT: 'files:select',
-          },
+            SELECT: 'files:select'
+          }
         },
         dialog: mockDialog,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
     });
 
     test('returns empty when dialog canceled', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: true,
-        filePaths: [],
+        filePaths: []
       });
 
       const handler = handlers['files:select'];
@@ -336,11 +334,11 @@ describe('File Selection Handlers', () => {
     test('returns selected files', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: false,
-        filePaths: ['/selected/file.pdf'],
+        filePaths: ['/selected/file.pdf']
       });
       mockFs.stat.mockResolvedValueOnce({
         isFile: () => true,
-        isDirectory: () => false,
+        isDirectory: () => false
       });
 
       const handler = handlers['files:select'];
@@ -354,11 +352,11 @@ describe('File Selection Handlers', () => {
     test('filters unsupported files', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: false,
-        filePaths: ['/selected/file.exe'],
+        filePaths: ['/selected/file.exe']
       });
       mockFs.stat.mockResolvedValueOnce({
         isFile: () => true,
-        isDirectory: () => false,
+        isDirectory: () => false
       });
 
       const handler = handlers['files:select'];
@@ -371,15 +369,15 @@ describe('File Selection Handlers', () => {
     test('expands directories', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: false,
-        filePaths: ['/selected/folder'],
+        filePaths: ['/selected/folder']
       });
       mockFs.stat.mockResolvedValueOnce({
         isFile: () => false,
-        isDirectory: () => true,
+        isDirectory: () => true
       });
       mockFs.readdir.mockResolvedValueOnce([
         { name: 'doc.pdf', isFile: () => true, isDirectory: () => false },
-        { name: 'image.jpg', isFile: () => true, isDirectory: () => false },
+        { name: 'image.jpg', isFile: () => true, isDirectory: () => false }
       ]);
 
       const handler = handlers['files:select'];
@@ -392,7 +390,7 @@ describe('File Selection Handlers', () => {
     test('handles stat error gracefully', async () => {
       mockDialog.showOpenDialog.mockResolvedValueOnce({
         canceled: false,
-        filePaths: ['/nonexistent/file.pdf'],
+        filePaths: ['/nonexistent/file.pdf']
       });
       mockFs.stat.mockRejectedValueOnce(new Error('File not found'));
 

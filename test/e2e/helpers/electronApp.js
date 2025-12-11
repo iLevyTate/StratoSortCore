@@ -31,10 +31,10 @@ const DEFAULT_LAUNCH_OPTIONS = {
     // Disable hardware acceleration for more stable CI testing
     ELECTRON_DISABLE_GPU: '1',
     // Enable logging for debugging
-    ELECTRON_ENABLE_LOGGING: '1',
+    ELECTRON_ENABLE_LOGGING: '1'
   },
   // Timeout for app launch (30 seconds)
-  timeout: 30000,
+  timeout: 30000
 };
 
 /**
@@ -52,8 +52,8 @@ async function launchApp(options = {}) {
     ...options,
     env: {
       ...DEFAULT_LAUNCH_OPTIONS.env,
-      ...(options.env || {}),
-    },
+      ...(options.env || {})
+    }
   };
 
   // Add args for headless mode if not headed
@@ -69,7 +69,7 @@ async function launchApp(options = {}) {
     executablePath: ELECTRON_PATH,
     args,
     env: mergedOptions.env,
-    timeout: mergedOptions.timeout,
+    timeout: mergedOptions.timeout
   });
 
   // Wait for the first BrowserWindow to open
@@ -147,16 +147,19 @@ async function waitForAppReady(window, timeout = 30000) {
   // Wait for the navigation bar to be visible (indicates app is loaded)
   await window.waitForSelector('nav[aria-label="Phase navigation"]', {
     state: 'visible',
-    timeout,
+    timeout
   });
 
   // Wait for any loading spinners to disappear
   const spinners = window.locator('.animate-spin');
   const spinnerCount = await spinners.count();
   if (spinnerCount > 0) {
-    await spinners.first().waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {
-      // Ignore timeout - spinner may have already disappeared
-    });
+    await spinners
+      .first()
+      .waitFor({ state: 'hidden', timeout: 10000 })
+      .catch(() => {
+        // Ignore timeout - spinner may have already disappeared
+      });
   }
 
   console.log('[E2E] App is ready');
@@ -207,8 +210,8 @@ async function getAppInfo(app) {
       paths: {
         userData: app.getPath('userData'),
         documents: app.getPath('documents'),
-        temp: app.getPath('temp'),
-      },
+        temp: app.getPath('temp')
+      }
     };
   });
 }
@@ -250,5 +253,5 @@ module.exports = {
   isWindowMaximized,
   isWindowVisible,
   APP_ROOT,
-  MAIN_ENTRY,
+  MAIN_ENTRY
 };

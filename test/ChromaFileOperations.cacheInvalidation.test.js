@@ -2,9 +2,7 @@
  * @jest-environment node
  */
 
-const {
-  updateFilePaths,
-} = require('../src/main/services/chromadb/fileOperations');
+const { updateFilePaths } = require('../src/main/services/chromadb/fileOperations');
 
 describe('Chroma fileOperations cache invalidation', () => {
   test('invalidates both new and old IDs on path update', async () => {
@@ -13,14 +11,14 @@ describe('Chroma fileOperations cache invalidation', () => {
         ids: ['old-id'],
         embeddings: [[0.1, 0.2]],
         metadatas: [{ path: '/old/path', name: 'old' }],
-        documents: ['/old/path'],
+        documents: ['/old/path']
       }),
       delete: jest.fn().mockResolvedValue(),
-      upsert: jest.fn().mockResolvedValue(),
+      upsert: jest.fn().mockResolvedValue()
     };
 
     const mockQueryCache = {
-      invalidateForFile: jest.fn(),
+      invalidateForFile: jest.fn()
     };
 
     const updated = await updateFilePaths({
@@ -28,11 +26,11 @@ describe('Chroma fileOperations cache invalidation', () => {
         {
           oldId: 'old-id',
           newId: 'new-id',
-          newMeta: { path: '/new/path', name: 'new' },
-        },
+          newMeta: { path: '/new/path', name: 'new' }
+        }
       ],
       fileCollection: mockFileCollection,
-      queryCache: mockQueryCache,
+      queryCache: mockQueryCache
     });
 
     expect(updated).toBe(1);

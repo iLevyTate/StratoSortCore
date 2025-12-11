@@ -31,7 +31,7 @@ const {
   extractTextFromKml,
   extractTextFromKmz,
   extractPlainTextFromRtf,
-  extractPlainTextFromHtml,
+  extractPlainTextFromHtml
 } = require('../src/main/analysis/documentExtractors');
 
 describe('documentExtractors', () => {
@@ -46,7 +46,7 @@ describe('documentExtractors', () => {
     test('should extract text from valid PDF', async () => {
       const pdfParse = require('pdf-parse');
       const mockPdfData = {
-        text: 'This is extracted PDF text content',
+        text: 'This is extracted PDF text content'
       };
 
       pdfParse.mockResolvedValue(mockPdfData);
@@ -67,18 +67,18 @@ describe('documentExtractors', () => {
 
       // IMPROVED BEHAVIOR: FileProcessingError now provides structured error messages
       // instead of raw error codes, making errors more user-friendly
-      await expect(
-        extractTextFromPdf(mockFilePath, mockFileName),
-      ).rejects.toThrow('PDF contains no extractable text');
+      await expect(extractTextFromPdf(mockFilePath, mockFileName)).rejects.toThrow(
+        'PDF contains no extractable text'
+      );
     });
 
     test('should throw error for file exceeding size limit', async () => {
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 200 * 1024 * 1024 }); // 200MB
 
       // FileProcessingError with FILE_TOO_LARGE code produces a structured error message
-      await expect(
-        extractTextFromPdf(mockFilePath, mockFileName),
-      ).rejects.toThrow('File size exceeds processing limits');
+      await expect(extractTextFromPdf(mockFilePath, mockFileName)).rejects.toThrow(
+        'File size exceeds processing limits'
+      );
     });
 
     test('should truncate very long text', async () => {
@@ -105,7 +105,7 @@ describe('documentExtractors', () => {
 
       const mockSharp = {
         png: jest.fn().mockReturnThis(),
-        toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data')),
+        toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data'))
       };
       sharp.mockReturnValue(mockSharp);
 
@@ -145,7 +145,7 @@ describe('documentExtractors', () => {
     test('should extract text from DOCX', async () => {
       const mammoth = require('mammoth');
       mammoth.extractRawText.mockResolvedValue({
-        value: 'This is DOCX content',
+        value: 'This is DOCX content'
       });
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -160,9 +160,7 @@ describe('documentExtractors', () => {
       mammoth.extractRawText.mockResolvedValue({ value: '' });
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
-      await expect(extractTextFromDocx(mockFilePath)).rejects.toThrow(
-        'No text content in DOCX',
-      );
+      await expect(extractTextFromDocx(mockFilePath)).rejects.toThrow('No text content in DOCX');
     });
 
     test('should check file size before reading', async () => {
@@ -170,7 +168,7 @@ describe('documentExtractors', () => {
 
       // FileProcessingError with FILE_TOO_LARGE code produces a structured error message
       await expect(extractTextFromDocx(mockFilePath)).rejects.toThrow(
-        'File size exceeds processing limits',
+        'File size exceeds processing limits'
       );
     });
   });
@@ -184,13 +182,13 @@ describe('documentExtractors', () => {
           value: jest.fn().mockReturnValue([
             ['Header1', 'Header2', 'Header3'],
             ['Value1', 'Value2', 'Value3'],
-            ['Value4', 'Value5', 'Value6'],
-          ]),
-        }),
+            ['Value4', 'Value5', 'Value6']
+          ])
+        })
       };
 
       const mockWorkbook = {
-        sheets: jest.fn().mockReturnValue([mockSheet]),
+        sheets: jest.fn().mockReturnValue([mockSheet])
       };
 
       XLSX.fromFileAsync.mockResolvedValue(mockWorkbook);
@@ -205,19 +203,16 @@ describe('documentExtractors', () => {
     test('should limit rows to prevent memory issues', async () => {
       const XLSX = require('xlsx-populate');
 
-      const largeArray = Array.from({ length: 15000 }, (_, i) => [
-        `Row${i}`,
-        `Data${i}`,
-      ]);
+      const largeArray = Array.from({ length: 15000 }, (_, i) => [`Row${i}`, `Data${i}`]);
 
       const mockSheet = {
         usedRange: jest.fn().mockReturnValue({
-          value: jest.fn().mockReturnValue(largeArray),
-        }),
+          value: jest.fn().mockReturnValue(largeArray)
+        })
       };
 
       const mockWorkbook = {
-        sheets: jest.fn().mockReturnValue([mockSheet]),
+        sheets: jest.fn().mockReturnValue([mockSheet])
       };
 
       XLSX.fromFileAsync.mockResolvedValue(mockWorkbook);
@@ -235,11 +230,11 @@ describe('documentExtractors', () => {
       const XLSX = require('xlsx-populate');
 
       const mockSheet = {
-        usedRange: jest.fn().mockReturnValue(null),
+        usedRange: jest.fn().mockReturnValue(null)
       };
 
       const mockWorkbook = {
-        sheets: jest.fn().mockReturnValue([mockSheet]),
+        sheets: jest.fn().mockReturnValue([mockSheet])
       };
 
       XLSX.fromFileAsync.mockResolvedValue(mockWorkbook);
@@ -255,12 +250,12 @@ describe('documentExtractors', () => {
 
       const mockSheet = {
         usedRange: jest.fn().mockReturnValue({
-          value: jest.fn().mockReturnValue(null),
-        }),
+          value: jest.fn().mockReturnValue(null)
+        })
       };
 
       const mockWorkbook = {
-        sheets: jest.fn().mockReturnValue([mockSheet]),
+        sheets: jest.fn().mockReturnValue([mockSheet])
       };
 
       XLSX.fromFileAsync.mockResolvedValue(mockWorkbook);
@@ -281,13 +276,13 @@ describe('documentExtractors', () => {
             .mockReturnValue([
               ['Array', 'Row'],
               { columnA: 'Object', columnB: 'Row' },
-              'Scalar Row',
-            ]),
-        }),
+              'Scalar Row'
+            ])
+        })
       };
 
       const mockWorkbook = {
-        sheets: jest.fn().mockReturnValue([mockSheet]),
+        sheets: jest.fn().mockReturnValue([mockSheet])
       };
 
       XLSX.fromFileAsync.mockResolvedValue(mockWorkbook);
@@ -315,7 +310,7 @@ describe('documentExtractors', () => {
     test('should handle object response from parser', async () => {
       const officeParser = require('officeparser');
       officeParser.parseOfficeAsync.mockResolvedValue({
-        text: 'Presentation content',
+        text: 'Presentation content'
       });
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -339,7 +334,7 @@ describe('documentExtractors', () => {
       officeParser.parseOfficeAsync.mockResolvedValue([
         'Slide 1 content',
         { text: 'Slide 2 content' },
-        'Slide 3 content',
+        'Slide 3 content'
       ]);
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -352,7 +347,7 @@ describe('documentExtractors', () => {
       const officeParser = require('officeparser');
       // FIX: Test support for alternative object structures
       officeParser.parseOfficeAsync.mockResolvedValue({
-        content: 'Presentation content from content property',
+        content: 'Presentation content from content property'
       });
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
@@ -370,26 +365,22 @@ describe('documentExtractors', () => {
           entryName: 'chapter1.xhtml',
           getData: jest
             .fn()
-            .mockReturnValue(
-              Buffer.from('<html><body>Chapter 1 content</body></html>'),
-            ),
+            .mockReturnValue(Buffer.from('<html><body>Chapter 1 content</body></html>'))
         },
         {
           entryName: 'chapter2.html',
           getData: jest
             .fn()
-            .mockReturnValue(
-              Buffer.from('<html><body>Chapter 2 content</body></html>'),
-            ),
+            .mockReturnValue(Buffer.from('<html><body>Chapter 2 content</body></html>'))
         },
         {
           entryName: 'metadata.opf',
-          getData: jest.fn().mockReturnValue(Buffer.from('metadata')),
-        },
+          getData: jest.fn().mockReturnValue(Buffer.from('metadata'))
+        }
       ];
 
       const mockZip = {
-        getEntries: jest.fn().mockReturnValue(mockEntries),
+        getEntries: jest.fn().mockReturnValue(mockEntries)
       };
 
       AdmZip.mockImplementation(() => mockZip);
@@ -406,13 +397,11 @@ describe('documentExtractors', () => {
 
       const mockEntries = Array.from({ length: 150 }, (_, i) => ({
         entryName: `chapter${i}.xhtml`,
-        getData: jest
-          .fn()
-          .mockReturnValue(Buffer.from(`<html>Chapter ${i}</html>`)),
+        getData: jest.fn().mockReturnValue(Buffer.from(`<html>Chapter ${i}</html>`))
       }));
 
       const mockZip = {
-        getEntries: jest.fn().mockReturnValue(mockEntries),
+        getEntries: jest.fn().mockReturnValue(mockEntries)
       };
 
       AdmZip.mockImplementation(() => mockZip);
@@ -462,8 +451,7 @@ Body content only.`;
 
   describe('extractPlainTextFromHtml', () => {
     test('should strip HTML tags', () => {
-      const html =
-        '<html><body><h1>Title</h1><p>Paragraph text</p></body></html>';
+      const html = '<html><body><h1>Title</h1><p>Paragraph text</p></body></html>';
       const result = extractPlainTextFromHtml(html);
 
       expect(result).toBe('Title Paragraph text');
@@ -488,8 +476,7 @@ Body content only.`;
     });
 
     test('should decode HTML entities', () => {
-      const html =
-        '<p>&lt;div&gt; &amp; &quot;quotes&quot; &apos;apostrophe&apos;</p>';
+      const html = '<p>&lt;div&gt; &amp; &quot;quotes&quot; &apos;apostrophe&apos;</p>';
       const result = extractPlainTextFromHtml(html);
 
       expect(result).toContain('<div>');
@@ -539,7 +526,7 @@ Body content only.`;
     test('should extract text using mammoth', async () => {
       const mammoth = require('mammoth');
       mammoth.extractRawText.mockResolvedValue({
-        value: 'DOC content',
+        value: 'DOC content'
       });
 
       const result = await extractTextFromDoc(mockFilePath);
@@ -626,14 +613,12 @@ Body content only.`;
         getData: jest
           .fn()
           .mockReturnValue(
-            Buffer.from(
-              '<office:document-content>Content</office:document-content>',
-            ),
-          ),
+            Buffer.from('<office:document-content>Content</office:document-content>')
+          )
       };
 
       const mockZip = {
-        getEntry: jest.fn().mockReturnValue(mockEntry),
+        getEntry: jest.fn().mockReturnValue(mockEntry)
       };
 
       AdmZip.mockImplementation(() => mockZip);
@@ -647,7 +632,7 @@ Body content only.`;
       const AdmZip = require('adm-zip');
 
       const mockZip = {
-        getEntry: jest.fn().mockReturnValue(null),
+        getEntry: jest.fn().mockReturnValue(null)
       };
 
       AdmZip.mockImplementation(() => mockZip);
@@ -687,14 +672,12 @@ Body content only.`;
         entryName: 'doc.kml',
         getData: jest
           .fn()
-          .mockReturnValue(
-            Buffer.from('<kml><Document><name>Test</name></Document></kml>'),
-          ),
+          .mockReturnValue(Buffer.from('<kml><Document><name>Test</name></Document></kml>'))
       };
 
       const mockZip = {
         getEntry: jest.fn().mockReturnValue(mockEntry),
-        getEntries: jest.fn().mockReturnValue([mockEntry]),
+        getEntries: jest.fn().mockReturnValue([mockEntry])
       };
 
       AdmZip.mockImplementation(() => mockZip);
@@ -709,12 +692,12 @@ Body content only.`;
 
       const mockEntry = {
         entryName: 'custom.kml',
-        getData: jest.fn().mockReturnValue(Buffer.from('<kml>Content</kml>')),
+        getData: jest.fn().mockReturnValue(Buffer.from('<kml>Content</kml>'))
       };
 
       const mockZip = {
         getEntry: jest.fn().mockReturnValue(null),
-        getEntries: jest.fn().mockReturnValue([mockEntry]),
+        getEntries: jest.fn().mockReturnValue([mockEntry])
       };
 
       AdmZip.mockImplementation(() => mockZip);
@@ -732,9 +715,7 @@ Body content only.`;
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf'));
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
 
-      await expect(
-        extractTextFromPdf(mockFilePath, mockFileName),
-      ).rejects.toThrow();
+      await expect(extractTextFromPdf(mockFilePath, mockFileName)).rejects.toThrow();
     });
 
     test('should cleanup buffers after PDF processing', async () => {

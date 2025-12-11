@@ -8,19 +8,11 @@ const { crossDeviceMove } = require('../../shared/atomicFileOperations');
  *
  * Dependencies are injected for testability and modularity.
  */
-async function resumeIncompleteBatches(
-  serviceIntegration,
-  logger,
-  getMainWindow,
-) {
+async function resumeIncompleteBatches(serviceIntegration, logger, getMainWindow) {
   try {
-    const incomplete =
-      serviceIntegration?.processingState?.getIncompleteOrganizeBatches?.() ||
-      [];
+    const incomplete = serviceIntegration?.processingState?.getIncompleteOrganizeBatches?.() || [];
     if (!incomplete.length) return;
-    logger.warn(
-      `[RESUME] Resuming ${incomplete.length} incomplete organize batch(es)`,
-    );
+    logger.warn(`[RESUME] Resuming ${incomplete.length} incomplete organize batch(es)`);
 
     for (const batch of incomplete) {
       const total = batch.operations.length;
@@ -33,16 +25,13 @@ async function resumeIncompleteBatches(
               type: 'batch_organize',
               current: i + 1,
               total,
-              currentFile: path.basename(op.source),
+              currentFile: path.basename(op.source)
             });
           }
           continue;
         }
         try {
-          await serviceIntegration.processingState.markOrganizeOpStarted(
-            batch.id,
-            i,
-          );
+          await serviceIntegration.processingState.markOrganizeOpStarted(batch.id, i);
 
           // Ensure destination directory exists
           const destDir = path.dirname(op.destination);
@@ -55,9 +44,7 @@ async function resumeIncompleteBatches(
             let uniqueDestination = op.destination;
             const ext = path.extname(op.destination);
             const baseName =
-              ext && ext.length > 0
-                ? op.destination.slice(0, -ext.length)
-                : op.destination;
+              ext && ext.length > 0 ? op.destination.slice(0, -ext.length) : op.destination;
             while (counter <= 1000) {
               try {
                 await fs.access(uniqueDestination);
@@ -82,18 +69,16 @@ async function resumeIncompleteBatches(
           } catch (renameError) {
             if (renameError.code === 'EXDEV') {
               await crossDeviceMove(op.source, op.destination, {
-                verify: true,
+                verify: true
               });
             } else {
               throw renameError;
             }
           }
 
-          await serviceIntegration.processingState.markOrganizeOpDone(
-            batch.id,
-            i,
-            { destination: op.destination },
-          );
+          await serviceIntegration.processingState.markOrganizeOpDone(batch.id, i, {
+            destination: op.destination
+          });
 
           const win = getMainWindow?.();
           if (win && !win.isDestroyed()) {
@@ -101,7 +86,7 @@ async function resumeIncompleteBatches(
               type: 'batch_organize',
               current: i + 1,
               total,
-              currentFile: path.basename(op.source),
+              currentFile: path.basename(op.source)
             });
           }
         } catch (err) {
@@ -111,23 +96,17 @@ async function resumeIncompleteBatches(
             'in batch',
             batch.id,
             ':',
-            err.message,
+            err.message
           );
           try {
-            await serviceIntegration.processingState.markOrganizeOpError(
-              batch.id,
-              i,
-              err.message,
-            );
+            await serviceIntegration.processingState.markOrganizeOpError(batch.id, i, err.message);
           } catch {
             // ignore inner error
           }
         }
       }
       try {
-        await serviceIntegration.processingState.completeOrganizeBatch(
-          batch.id,
-        );
+        await serviceIntegration.processingState.completeOrganizeBatch(batch.id);
       } catch {
         // ignore inner error
       }
@@ -139,5 +118,5 @@ async function resumeIncompleteBatches(
 }
 
 module.exports = {
-  resumeIncompleteBatches,
+  resumeIncompleteBatches
 };

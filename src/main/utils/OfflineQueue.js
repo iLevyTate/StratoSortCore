@@ -31,7 +31,7 @@ const OperationType = {
   BATCH_UPSERT_FOLDERS: 'batch_upsert_folders',
   BATCH_DELETE_FILES: 'batch_delete_files',
   BATCH_DELETE_FOLDERS: 'batch_delete_folders',
-  UPDATE_FILE_PATHS: 'update_file_paths',
+  UPDATE_FILE_PATHS: 'update_file_paths'
 };
 
 // Operation priorities (lower = higher priority)
@@ -44,7 +44,7 @@ const OperationPriority = {
   [OperationType.UPSERT_FOLDER]: 2,
   [OperationType.BATCH_UPSERT_FILES]: 3,
   [OperationType.BATCH_UPSERT_FOLDERS]: 3,
-  [OperationType.UPDATE_FILE_PATHS]: 4,
+  [OperationType.UPDATE_FILE_PATHS]: 4
 };
 
 // Default configuration
@@ -54,7 +54,7 @@ const DEFAULT_CONFIG = {
   flushBatchSize: 50, // Number of operations to process per flush batch
   flushDelayMs: 1000, // Delay between flush batches
   deduplicateByKey: true, // Deduplicate operations by their key
-  maxRetries: 3, // Maximum retries for failed operations
+  maxRetries: 3 // Maximum retries for failed operations
 };
 
 /**
@@ -72,24 +72,15 @@ class OfflineQueue extends EventEmitter {
     // Set default persist path if not provided
     if (!this.config.persistPath) {
       try {
-        this.config.persistPath = path.join(
-          app.getPath('userData'),
-          'chromadb-queue.json',
-        );
+        this.config.persistPath = path.join(app.getPath('userData'), 'chromadb-queue.json');
       } catch (error) {
         // FIX: Log warning instead of silently falling back
         // This aids diagnosis when app.getPath fails (e.g., app not ready)
-        logger.warn(
-          '[OfflineQueue] app.getPath failed, using process.cwd() fallback',
-          {
-            error: error.message,
-            fallbackPath: path.join(process.cwd(), 'chromadb-queue.json'),
-          },
-        );
-        this.config.persistPath = path.join(
-          process.cwd(),
-          'chromadb-queue.json',
-        );
+        logger.warn('[OfflineQueue] app.getPath failed, using process.cwd() fallback', {
+          error: error.message,
+          fallbackPath: path.join(process.cwd(), 'chromadb-queue.json')
+        });
+        this.config.persistPath = path.join(process.cwd(), 'chromadb-queue.json');
       }
     }
 
@@ -110,12 +101,12 @@ class OfflineQueue extends EventEmitter {
       totalProcessed: 0,
       totalFailed: 0,
       totalDropped: 0,
-      deduplicated: 0,
+      deduplicated: 0
     };
 
     logger.info('[OfflineQueue] Initialized', {
       persistPath: this.config.persistPath,
-      maxQueueSize: this.config.maxQueueSize,
+      maxQueueSize: this.config.maxQueueSize
     });
   }
 
@@ -132,12 +123,12 @@ class OfflineQueue extends EventEmitter {
       await this._loadFromDisk();
       this.isLoaded = true;
       logger.info('[OfflineQueue] Loaded queue from disk', {
-        queueSize: this.queue.length,
+        queueSize: this.queue.length
       });
     } catch (error) {
       if (error.code !== 'ENOENT') {
         logger.warn('[OfflineQueue] Failed to load queue from disk', {
-          error: error.message,
+          error: error.message
         });
       }
       this.isLoaded = true;
@@ -181,7 +172,7 @@ class OfflineQueue extends EventEmitter {
       if (!dropped) {
         logger.warn('[OfflineQueue] Queue full, dropping new operation', {
           type,
-          key,
+          key
         });
         this.stats.totalDropped++;
         this.emit('dropped', { type, data, reason: 'queue_full' });
@@ -199,7 +190,7 @@ class OfflineQueue extends EventEmitter {
       retries: 0,
       maxRetries: options.maxRetries || this.config.maxRetries,
       createdAt: Date.now(),
-      updatedAt: Date.now(),
+      updatedAt: Date.now()
     };
 
     // Add to queue
@@ -211,7 +202,7 @@ class OfflineQueue extends EventEmitter {
     logger.debug('[OfflineQueue] Operation enqueued', {
       type,
       key,
-      queueSize: this.queue.length,
+      queueSize: this.queue.length
     });
 
     this._schedulePersist();
@@ -315,7 +306,7 @@ class OfflineQueue extends EventEmitter {
 
             this.emit('operationProcessed', {
               operation,
-              remaining: this.queue.length,
+              remaining: this.queue.length
             });
           } catch (error) {
             operation.retries++;
@@ -328,20 +319,17 @@ class OfflineQueue extends EventEmitter {
                 type: operation.type,
                 key: operation.key,
                 retries: operation.retries,
-                error: error.message,
+                error: error.message
               });
             } else {
               // Max retries exceeded, drop operation
               failed++;
               this.stats.totalFailed++;
-              logger.error(
-                '[OfflineQueue] Operation failed permanently, dropping',
-                {
-                  type: operation.type,
-                  key: operation.key,
-                  error: error.message,
-                },
-              );
+              logger.error('[OfflineQueue] Operation failed permanently, dropping', {
+                type: operation.type,
+                key: operation.key,
+                error: error.message
+              });
               this.emit('operationFailed', { operation, error });
             }
           }
@@ -369,7 +357,7 @@ class OfflineQueue extends EventEmitter {
       processed,
       failed,
       remaining: this.queue.length,
-      retriesPending: failedOperations.length,
+      retriesPending: failedOperations.length
     };
 
     logger.info('[OfflineQueue] Flush completed', result);
@@ -401,7 +389,7 @@ class OfflineQueue extends EventEmitter {
       isFlushing: this.isFlushing,
       lastPersistTime: this.lastPersistTime,
       lastFlushTime: this.lastFlushTime,
-      ...this.stats,
+      ...this.stats
     };
   }
 
@@ -505,7 +493,7 @@ class OfflineQueue extends EventEmitter {
 
     logger.warn('[OfflineQueue] Dropped operation to make room', {
       type: dropped.type,
-      key: dropped.key,
+      key: dropped.key
     });
 
     this.emit('dropped', { ...dropped, reason: 'priority' });
@@ -535,7 +523,7 @@ class OfflineQueue extends EventEmitter {
     this._persistTimer = setTimeout(() => {
       this._persistToDisk().catch((error) => {
         logger.error('[OfflineQueue] Failed to persist queue', {
-          error: error.message,
+          error: error.message
         });
       });
     }, 1000);
@@ -556,7 +544,7 @@ class OfflineQueue extends EventEmitter {
         version: 1,
         timestamp: Date.now(),
         queue: this.queue,
-        stats: this.stats,
+        stats: this.stats
       };
 
       // FIX: Use atomic write (temp + rename) to prevent corruption on crash
@@ -573,9 +561,7 @@ class OfflineQueue extends EventEmitter {
           } catch (renameError) {
             lastError = renameError;
             if (renameError.code === 'EPERM' && attempt < 2) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, 50 * (attempt + 1)),
-              );
+              await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
               continue;
             }
             throw renameError;
@@ -594,11 +580,11 @@ class OfflineQueue extends EventEmitter {
 
       this.lastPersistTime = Date.now();
       logger.debug('[OfflineQueue] Queue persisted to disk', {
-        queueSize: this.queue.length,
+        queueSize: this.queue.length
       });
     } catch (error) {
       logger.error('[OfflineQueue] Failed to persist queue', {
-        error: error.message,
+        error: error.message
       });
       throw error;
     }
@@ -615,7 +601,7 @@ class OfflineQueue extends EventEmitter {
 
     if (data.version !== 1) {
       logger.warn('[OfflineQueue] Unknown queue version, starting fresh', {
-        version: data.version,
+        version: data.version
       });
       return;
     }
@@ -657,7 +643,7 @@ class OfflineQueue extends EventEmitter {
       await this._persistToDisk();
     } catch (error) {
       logger.warn('[OfflineQueue] Failed to persist on cleanup', {
-        error: error.message,
+        error: error.message
       });
     }
 
@@ -670,5 +656,5 @@ module.exports = {
   OfflineQueue,
   OperationType,
   OperationPriority,
-  DEFAULT_CONFIG,
+  DEFAULT_CONFIG
 };

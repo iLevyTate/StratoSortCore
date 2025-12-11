@@ -10,26 +10,26 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock errorHandlingUtils
 jest.mock('../src/shared/errorHandlingUtils', () => ({
-  withRetry: jest.fn((fn) => fn),
+  withRetry: jest.fn((fn) => fn)
 }));
 
 // Mock pathSanitization
 jest.mock('../src/shared/pathSanitization', () => ({
-  sanitizeMetadata: jest.fn((meta) => meta),
+  sanitizeMetadata: jest.fn((meta) => meta)
 }));
 
 // Mock OfflineQueue
 jest.mock('../src/main/utils/OfflineQueue', () => ({
   OperationType: {
     UPSERT_FILE: 'upsert_file',
-    DELETE_FILE: 'delete_file',
-  },
+    DELETE_FILE: 'delete_file'
+  }
 }));
 
 describe('ChromaDB File Operations', () => {
@@ -53,16 +53,16 @@ describe('ChromaDB File Operations', () => {
       upsert: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue({ ids: [], embeddings: [], metadatas: [] }),
-      query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
+      query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] })
     };
 
     mockQueryCache = {
-      invalidateForFile: jest.fn(),
+      invalidateForFile: jest.fn()
     };
 
     mockClient = {
       deleteCollection: jest.fn().mockResolvedValue(undefined),
-      createCollection: jest.fn().mockResolvedValue(mockFileCollection),
+      createCollection: jest.fn().mockResolvedValue(mockFileCollection)
     };
 
     const module = require('../src/main/services/chromadb/fileOperations');
@@ -81,21 +81,21 @@ describe('ChromaDB File Operations', () => {
         id: 'file-123',
         vector: [0.1, 0.2, 0.3],
         meta: { path: '/test/file.txt', name: 'file.txt' },
-        model: 'nomic-embed-text',
-        updatedAt: '2024-01-01T00:00:00Z',
+        model: 'mxbai-embed-large',
+        updatedAt: '2024-01-01T00:00:00Z'
       };
 
       await directUpsertFile({
         file,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockFileCollection.upsert).toHaveBeenCalledWith({
         ids: ['file-123'],
         embeddings: [[0.1, 0.2, 0.3]],
         metadatas: [expect.objectContaining({ path: '/test/file.txt' })],
-        documents: ['/test/file.txt'],
+        documents: ['/test/file.txt']
       });
     });
 
@@ -103,13 +103,13 @@ describe('ChromaDB File Operations', () => {
       const file = {
         id: 'file-123',
         vector: [0.1, 0.2, 0.3],
-        meta: { path: '/test/file.txt' },
+        meta: { path: '/test/file.txt' }
       };
 
       await directUpsertFile({
         file,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockQueryCache.invalidateForFile).toHaveBeenCalledWith('file-123');
@@ -118,13 +118,13 @@ describe('ChromaDB File Operations', () => {
     test('handles missing meta gracefully', async () => {
       const file = {
         id: 'file-123',
-        vector: [0.1, 0.2, 0.3],
+        vector: [0.1, 0.2, 0.3]
       };
 
       await directUpsertFile({
         file,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockFileCollection.upsert).toHaveBeenCalled();
@@ -135,28 +135,28 @@ describe('ChromaDB File Operations', () => {
 
       const file = {
         id: 'file-123',
-        vector: [0.1, 0.2, 0.3],
+        vector: [0.1, 0.2, 0.3]
       };
 
       await expect(
         directUpsertFile({
           file,
           fileCollection: mockFileCollection,
-          queryCache: mockQueryCache,
-        }),
+          queryCache: mockQueryCache
+        })
       ).rejects.toThrow('DB error');
     });
 
     test('works without query cache', async () => {
       const file = {
         id: 'file-123',
-        vector: [0.1, 0.2, 0.3],
+        vector: [0.1, 0.2, 0.3]
       };
 
       await directUpsertFile({
         file,
         fileCollection: mockFileCollection,
-        queryCache: null,
+        queryCache: null
       });
 
       expect(mockFileCollection.upsert).toHaveBeenCalled();
@@ -167,13 +167,13 @@ describe('ChromaDB File Operations', () => {
     test('upserts multiple files', async () => {
       const files = [
         { id: 'file-1', vector: [0.1], meta: { path: '/a.txt' } },
-        { id: 'file-2', vector: [0.2], meta: { path: '/b.txt' } },
+        { id: 'file-2', vector: [0.2], meta: { path: '/b.txt' } }
       ];
 
       const result = await directBatchUpsertFiles({
         files,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(2);
@@ -181,7 +181,7 @@ describe('ChromaDB File Operations', () => {
         ids: ['file-1', 'file-2'],
         embeddings: [[0.1], [0.2]],
         metadatas: expect.any(Array),
-        documents: expect.any(Array),
+        documents: expect.any(Array)
       });
     });
 
@@ -190,13 +190,13 @@ describe('ChromaDB File Operations', () => {
         { id: 'file-1', vector: [0.1] },
         { id: null, vector: [0.2] }, // Missing ID
         { id: 'file-3', vector: null }, // Missing vector
-        { id: 'file-4', vector: 'not array' }, // Invalid vector
+        { id: 'file-4', vector: 'not array' } // Invalid vector
       ];
 
       const result = await directBatchUpsertFiles({
         files,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(1);
@@ -205,13 +205,13 @@ describe('ChromaDB File Operations', () => {
     test('invalidates cache for all files', async () => {
       const files = [
         { id: 'file-1', vector: [0.1] },
-        { id: 'file-2', vector: [0.2] },
+        { id: 'file-2', vector: [0.2] }
       ];
 
       await directBatchUpsertFiles({
         files,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockQueryCache.invalidateForFile).toHaveBeenCalledWith('file-1');
@@ -222,7 +222,7 @@ describe('ChromaDB File Operations', () => {
       const result = await directBatchUpsertFiles({
         files: [],
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -238,8 +238,8 @@ describe('ChromaDB File Operations', () => {
         directBatchUpsertFiles({
           files,
           fileCollection: mockFileCollection,
-          queryCache: mockQueryCache,
-        }),
+          queryCache: mockQueryCache
+        })
       ).rejects.toThrow('Batch failed');
     });
   });
@@ -249,7 +249,7 @@ describe('ChromaDB File Operations', () => {
       const result = await deleteFileEmbedding({
         fileId: 'file-123',
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(true);
@@ -263,7 +263,7 @@ describe('ChromaDB File Operations', () => {
       const result = await deleteFileEmbedding({
         fileId: 'file-123',
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(false);
@@ -273,7 +273,7 @@ describe('ChromaDB File Operations', () => {
       const result = await deleteFileEmbedding({
         fileId: 'file-123',
         fileCollection: mockFileCollection,
-        queryCache: null,
+        queryCache: null
       });
 
       expect(result).toBe(true);
@@ -285,12 +285,12 @@ describe('ChromaDB File Operations', () => {
       const result = await batchDeleteFileEmbeddings({
         fileIds: ['file-1', 'file-2', 'file-3'],
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(3);
       expect(mockFileCollection.delete).toHaveBeenCalledWith({
-        ids: ['file-1', 'file-2', 'file-3'],
+        ids: ['file-1', 'file-2', 'file-3']
       });
     });
 
@@ -298,7 +298,7 @@ describe('ChromaDB File Operations', () => {
       const result = await batchDeleteFileEmbeddings({
         fileIds: [],
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -309,7 +309,7 @@ describe('ChromaDB File Operations', () => {
       const result = await batchDeleteFileEmbeddings({
         fileIds: null,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -319,7 +319,7 @@ describe('ChromaDB File Operations', () => {
       await batchDeleteFileEmbeddings({
         fileIds: ['file-1', 'file-2'],
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockQueryCache.invalidateForFile).toHaveBeenCalledWith('file-1');
@@ -333,8 +333,8 @@ describe('ChromaDB File Operations', () => {
         batchDeleteFileEmbeddings({
           fileIds: ['file-1'],
           fileCollection: mockFileCollection,
-          queryCache: mockQueryCache,
-        }),
+          queryCache: mockQueryCache
+        })
       ).rejects.toThrow('Batch delete failed');
     });
   });
@@ -344,21 +344,21 @@ describe('ChromaDB File Operations', () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['old-id'],
         embeddings: [[0.1, 0.2]],
-        metadatas: [{ path: '/old/path.txt' }],
+        metadatas: [{ path: '/old/path.txt' }]
       });
 
       const pathUpdates = [
         {
           oldId: 'old-id',
           newId: 'new-id',
-          newMeta: { path: '/new/path.txt', name: 'path.txt' },
-        },
+          newMeta: { path: '/new/path.txt', name: 'path.txt' }
+        }
       ];
 
       const result = await updateFilePaths({
         pathUpdates,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(1);
@@ -369,7 +369,7 @@ describe('ChromaDB File Operations', () => {
       const result = await updateFilePaths({
         pathUpdates: [],
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -379,7 +379,7 @@ describe('ChromaDB File Operations', () => {
       const result = await updateFilePaths({
         pathUpdates: null,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -388,13 +388,13 @@ describe('ChromaDB File Operations', () => {
     test('skips invalid path updates', async () => {
       const pathUpdates = [
         { oldId: null, newId: 'new-id' }, // Missing oldId
-        { oldId: 'old-id', newId: null }, // Missing newId
+        { oldId: 'old-id', newId: null } // Missing newId
       ];
 
       const result = await updateFilePaths({
         pathUpdates,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -404,17 +404,15 @@ describe('ChromaDB File Operations', () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: [],
         embeddings: [],
-        metadatas: [],
+        metadatas: []
       });
 
-      const pathUpdates = [
-        { oldId: 'not-found', newId: 'new-id', newMeta: {} },
-      ];
+      const pathUpdates = [{ oldId: 'not-found', newId: 'new-id', newMeta: {} }];
 
       const result = await updateFilePaths({
         pathUpdates,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(0);
@@ -424,17 +422,15 @@ describe('ChromaDB File Operations', () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['old-id'],
         embeddings: [[0.1]],
-        metadatas: [{}],
+        metadatas: [{}]
       });
 
-      const pathUpdates = [
-        { oldId: 'old-id', newId: 'new-id', newMeta: { path: '/new.txt' } },
-      ];
+      const pathUpdates = [{ oldId: 'old-id', newId: 'new-id', newMeta: { path: '/new.txt' } }];
 
       await updateFilePaths({
         pathUpdates,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(mockFileCollection.delete).toHaveBeenCalledWith({ ids: ['old-id'] });
@@ -444,19 +440,17 @@ describe('ChromaDB File Operations', () => {
       mockFileCollection.get.mockResolvedValueOnce({
         ids: ['old-id'],
         embeddings: [[0.1]],
-        metadatas: [{}],
+        metadatas: [{}]
       });
       mockFileCollection.delete.mockRejectedValueOnce(new Error('Delete failed'));
 
-      const pathUpdates = [
-        { oldId: 'old-id', newId: 'new-id', newMeta: { path: '/new.txt' } },
-      ];
+      const pathUpdates = [{ oldId: 'old-id', newId: 'new-id', newMeta: { path: '/new.txt' } }];
 
       // Should not throw
       const result = await updateFilePaths({
         pathUpdates,
         fileCollection: mockFileCollection,
-        queryCache: mockQueryCache,
+        queryCache: mockQueryCache
       });
 
       expect(result).toBe(1);
@@ -469,13 +463,13 @@ describe('ChromaDB File Operations', () => {
         ids: [['file-1', 'file-2']],
         distances: [[0.2, 0.4]],
         metadatas: [[{ path: '/a.txt' }, { path: '/b.txt' }]],
-        documents: [['/a.txt', '/b.txt']],
+        documents: [['/a.txt', '/b.txt']]
       });
 
       const result = await querySimilarFiles({
         queryEmbedding: [0.1, 0.2],
         topK: 5,
-        fileCollection: mockFileCollection,
+        fileCollection: mockFileCollection
       });
 
       expect(result).toHaveLength(2);
@@ -487,13 +481,13 @@ describe('ChromaDB File Operations', () => {
       mockFileCollection.query.mockResolvedValueOnce({
         ids: [[]],
         distances: [[]],
-        metadatas: [[]],
+        metadatas: [[]]
       });
 
       const result = await querySimilarFiles({
         queryEmbedding: [0.1],
         topK: 5,
-        fileCollection: mockFileCollection,
+        fileCollection: mockFileCollection
       });
 
       expect(result).toEqual([]);
@@ -505,7 +499,7 @@ describe('ChromaDB File Operations', () => {
       const result = await querySimilarFiles({
         queryEmbedding: [0.1],
         topK: 5,
-        fileCollection: mockFileCollection,
+        fileCollection: mockFileCollection
       });
 
       expect(result).toEqual([]);
@@ -515,13 +509,13 @@ describe('ChromaDB File Operations', () => {
       mockFileCollection.query.mockResolvedValueOnce({
         ids: [['file-1']],
         distances: undefined,
-        metadatas: undefined,
+        metadatas: undefined
       });
 
       const result = await querySimilarFiles({
         queryEmbedding: [0.1],
         topK: 5,
-        fileCollection: mockFileCollection,
+        fileCollection: mockFileCollection
       });
 
       expect(result).toHaveLength(1);
@@ -532,13 +526,13 @@ describe('ChromaDB File Operations', () => {
         ids: [['file-1']],
         distances: [[0]], // Distance 0 = perfect match
         metadatas: [[]],
-        documents: [[]],
+        documents: [[]]
       });
 
       const result = await querySimilarFiles({
         queryEmbedding: [0.1],
         topK: 5,
-        fileCollection: mockFileCollection,
+        fileCollection: mockFileCollection
       });
 
       expect(result[0].score).toBe(1); // Perfect score
@@ -550,13 +544,13 @@ describe('ChromaDB File Operations', () => {
       const result = await resetFiles({ client: mockClient });
 
       expect(mockClient.deleteCollection).toHaveBeenCalledWith({
-        name: 'file_embeddings',
+        name: 'file_embeddings'
       });
       expect(mockClient.createCollection).toHaveBeenCalledWith({
         name: 'file_embeddings',
         metadata: expect.objectContaining({
-          hnsw_space: 'cosine',
-        }),
+          hnsw_space: 'cosine'
+        })
       });
       expect(result).toBe(mockFileCollection);
     });

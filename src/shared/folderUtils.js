@@ -97,5 +97,5 @@ function getFolderNamesString(folderCategories) {
 
 module.exports = {
   mapFoldersToCategories,
-  getFolderNamesString,
+  getFolderNamesString
 };

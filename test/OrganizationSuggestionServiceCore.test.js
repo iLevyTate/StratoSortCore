@@ -6,8 +6,8 @@
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/mock/documents'),
-  },
+    getPath: jest.fn(() => '/mock/documents')
+  }
 }));
 
 // Mock logger
@@ -17,34 +17,34 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
 jest.mock('fs', () => ({
   promises: {
-    mkdir: jest.fn().mockResolvedValue(undefined),
-  },
+    mkdir: jest.fn().mockResolvedValue(undefined)
+  }
 }));
 
 // Mock llmOptimization
 const mockBatchProcessor = {
   processBatch: jest.fn().mockResolvedValue({
     results: [],
-    errors: [],
-  }),
+    errors: []
+  })
 };
 
 jest.mock('../src/main/utils/llmOptimization', () => ({
-  globalBatchProcessor: mockBatchProcessor,
+  globalBatchProcessor: mockBatchProcessor
 }));
 
 // Mock strategies
 jest.mock('../src/main/services/organization/strategies', () => ({
   strategies: {
     byFileType: { name: 'byFileType', priority: 1 },
-    byContent: { name: 'byContent', priority: 2 },
+    byContent: { name: 'byContent', priority: 2 }
   },
   getFileTypeCategory: jest.fn((ext) => {
     const categories = { '.pdf': 'documents', '.jpg': 'images' };
@@ -56,8 +56,8 @@ jest.mock('../src/main/services/organization/strategies', () => ({
   getFallbackSuggestion: jest.fn(() => ({
     folder: 'Uncategorized',
     path: '/uncategorized',
-    confidence: 0.1,
-  })),
+    confidence: 0.1
+  }))
 }));
 
 // Mock PatternMatcher
@@ -70,47 +70,43 @@ const mockPatternMatcher = {
   calculatePatternSimilarity: jest.fn().mockReturnValue(0),
   userPatterns: new Map(),
   feedbackHistory: [],
-  folderUsageStats: new Map(),
+  folderUsageStats: new Map()
 };
 
 jest.mock('../src/main/services/organization/patternMatcher', () => ({
-  PatternMatcher: jest.fn().mockImplementation(() => mockPatternMatcher),
+  PatternMatcher: jest.fn().mockImplementation(() => mockPatternMatcher)
 }));
 
 // Mock suggestionRanker
 jest.mock('../src/main/services/organization/suggestionRanker', () => ({
-  rankSuggestions: jest.fn((suggestions) =>
-    suggestions.sort((a, b) => b.score - a.score),
-  ),
+  rankSuggestions: jest.fn((suggestions) => suggestions.sort((a, b) => b.score - a.score)),
   calculateConfidence: jest.fn((suggestion) => suggestion?.confidence || 0),
-  generateExplanation: jest.fn(() => 'Test explanation'),
+  generateExplanation: jest.fn(() => 'Test explanation')
 }));
 
 // Mock folderAnalyzer
 jest.mock('../src/main/services/organization/folderAnalyzer', () => ({
   calculateFolderFitScore: jest.fn().mockReturnValue(0.5),
-  suggestFolderImprovement: jest
-    .fn()
-    .mockReturnValue({ suggestion: 'improve' }),
+  suggestFolderImprovement: jest.fn().mockReturnValue({ suggestion: 'improve' }),
   suggestNewSmartFolder: jest.fn().mockReturnValue(null),
   analyzeFolderStructure: jest.fn().mockReturnValue([]),
   identifyMissingCategories: jest.fn().mockReturnValue([]),
-  findOverlappingFolders: jest.fn().mockReturnValue([]),
+  findOverlappingFolders: jest.fn().mockReturnValue([])
 }));
 
 // Mock llmSuggester
 jest.mock('../src/main/services/organization/llmSuggester', () => ({
-  getLLMAlternativeSuggestions: jest.fn().mockResolvedValue([]),
+  getLLMAlternativeSuggestions: jest.fn().mockResolvedValue([])
 }));
 
 // Mock persistence
 const mockPersistence = {
   load: jest.fn().mockResolvedValue(null),
-  save: jest.fn().mockResolvedValue(undefined),
+  save: jest.fn().mockResolvedValue(undefined)
 };
 
 jest.mock('../src/main/services/organization/persistence', () => ({
-  PatternPersistence: jest.fn().mockImplementation(() => mockPersistence),
+  PatternPersistence: jest.fn().mockImplementation(() => mockPersistence)
 }));
 
 // Mock filePatternAnalyzer
@@ -118,10 +114,10 @@ jest.mock('../src/main/services/organization/filePatternAnalyzer', () => ({
   analyzeFilePatterns: jest.fn().mockReturnValue({
     extensionDistribution: {},
     sizeDistribution: {},
-    patterns: [],
+    patterns: []
   }),
   generateBatchRecommendations: jest.fn().mockReturnValue([]),
-  generateFileSummary: jest.fn((file) => `Summary of ${file.name}`),
+  generateFileSummary: jest.fn((file) => `Summary of ${file.name}`)
 }));
 
 describe('OrganizationSuggestionServiceCore', () => {
@@ -137,30 +133,27 @@ describe('OrganizationSuggestionServiceCore', () => {
 
     mockChromaDbService = {
       batchUpsertFolders: jest.fn().mockResolvedValue(3),
-      queryFolders: jest.fn().mockResolvedValue([]),
+      queryFolders: jest.fn().mockResolvedValue([])
     };
 
     mockFolderMatchingService = {
-      embedText: jest
-        .fn()
-        .mockResolvedValue({ vector: [0.1, 0.2], model: 'test' }),
+      embedText: jest.fn().mockResolvedValue({ vector: [0.1, 0.2], model: 'test' }),
       generateFolderId: jest.fn((folder) => `folder-${folder.name}`),
       upsertFileEmbedding: jest.fn().mockResolvedValue(undefined),
-      matchFileToFolders: jest.fn().mockResolvedValue([]),
+      matchFileToFolders: jest.fn().mockResolvedValue([])
     };
 
     mockSettingsService = {
-      get: jest.fn().mockReturnValue({}),
+      get: jest.fn().mockReturnValue({})
     };
 
     const module = require('../src/main/services/organization/OrganizationSuggestionServiceCore');
-    OrganizationSuggestionServiceCore =
-      module.OrganizationSuggestionServiceCore;
+    OrganizationSuggestionServiceCore = module.OrganizationSuggestionServiceCore;
 
     service = new OrganizationSuggestionServiceCore({
       chromaDbService: mockChromaDbService,
       folderMatchingService: mockFolderMatchingService,
-      settingsService: mockSettingsService,
+      settingsService: mockSettingsService
     });
   });
 
@@ -178,16 +171,12 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('initializes pattern matcher', () => {
-      const {
-        PatternMatcher,
-      } = require('../src/main/services/organization/patternMatcher');
+      const { PatternMatcher } = require('../src/main/services/organization/patternMatcher');
       expect(PatternMatcher).toHaveBeenCalled();
     });
 
     test('initializes persistence', () => {
-      const {
-        PatternPersistence,
-      } = require('../src/main/services/organization/persistence');
+      const { PatternPersistence } = require('../src/main/services/organization/persistence');
       expect(PatternPersistence).toHaveBeenCalled();
     });
 
@@ -196,7 +185,7 @@ describe('OrganizationSuggestionServiceCore', () => {
         chromaDbService: mockChromaDbService,
         folderMatchingService: mockFolderMatchingService,
         settingsService: mockSettingsService,
-        config: { semanticMatchThreshold: 0.6 },
+        config: { semanticMatchThreshold: 0.6 }
       });
 
       expect(customService.config.semanticMatchThreshold).toBe(0.6);
@@ -208,7 +197,7 @@ describe('OrganizationSuggestionServiceCore', () => {
       name: 'test.pdf',
       extension: '.pdf',
       path: '/test/test.pdf',
-      analysis: { category: 'documents' },
+      analysis: { category: 'documents' }
     };
 
     const mockSmartFolders = [
@@ -216,15 +205,12 @@ describe('OrganizationSuggestionServiceCore', () => {
         id: 'folder-1',
         name: 'Documents',
         path: '/docs',
-        description: 'Document files',
-      },
+        description: 'Document files'
+      }
     ];
 
     test('returns suggestions structure', async () => {
-      const result = await service.getSuggestionsForFile(
-        mockFile,
-        mockSmartFolders,
-      );
+      const result = await service.getSuggestionsForFile(mockFile, mockSmartFolders);
 
       expect(result).toHaveProperty('success');
       expect(result).toHaveProperty('primary');
@@ -235,34 +221,32 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('validates file object', async () => {
-      await expect(service.getSuggestionsForFile(null, [])).rejects.toThrow(
-        'Invalid file object',
+      await expect(service.getSuggestionsForFile(null, [])).rejects.toThrow('Invalid file object');
+
+      await expect(service.getSuggestionsForFile({ extension: '.pdf' }, [])).rejects.toThrow(
+        'file.name is required'
       );
 
-      await expect(
-        service.getSuggestionsForFile({ extension: '.pdf' }, []),
-      ).rejects.toThrow('file.name is required');
-
-      await expect(
-        service.getSuggestionsForFile({ name: 'test' }, []),
-      ).rejects.toThrow('file.extension is required');
+      await expect(service.getSuggestionsForFile({ name: 'test' }, [])).rejects.toThrow(
+        'file.extension is required'
+      );
     });
 
     test('validates smartFolders is array', async () => {
-      await expect(
-        service.getSuggestionsForFile(mockFile, 'not-array'),
-      ).rejects.toThrow('smartFolders must be an array');
+      await expect(service.getSuggestionsForFile(mockFile, 'not-array')).rejects.toThrow(
+        'smartFolders must be an array'
+      );
     });
 
     test('rejects file name exceeding max length', async () => {
       const longNameFile = {
         name: 'a'.repeat(300),
-        extension: '.pdf',
+        extension: '.pdf'
       };
 
-      await expect(
-        service.getSuggestionsForFile(longNameFile, []),
-      ).rejects.toThrow('exceeds maximum length');
+      await expect(service.getSuggestionsForFile(longNameFile, [])).rejects.toThrow(
+        'exceeds maximum length'
+      );
     });
 
     test('ensures smart folder embeddings', async () => {
@@ -273,10 +257,10 @@ describe('OrganizationSuggestionServiceCore', () => {
 
     test('gathers suggestions from multiple sources', async () => {
       const {
-        getStrategyBasedSuggestions,
+        getStrategyBasedSuggestions
       } = require('../src/main/services/organization/strategies');
       const {
-        getLLMAlternativeSuggestions,
+        getLLMAlternativeSuggestions
       } = require('../src/main/services/organization/llmSuggester');
 
       await service.getSuggestionsForFile(mockFile, mockSmartFolders);
@@ -287,9 +271,7 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('ranks suggestions', async () => {
-      const {
-        rankSuggestions,
-      } = require('../src/main/services/organization/suggestionRanker');
+      const { rankSuggestions } = require('../src/main/services/organization/suggestionRanker');
 
       await service.getSuggestionsForFile(mockFile, mockSmartFolders);
 
@@ -300,30 +282,21 @@ describe('OrganizationSuggestionServiceCore', () => {
       // To trigger the outer error handler, we need to cause an error
       // that isn't caught by the inner helper methods.
       // The rankSuggestions function throwing will trigger the outer catch.
-      const {
-        rankSuggestions,
-      } = require('../src/main/services/organization/suggestionRanker');
+      const { rankSuggestions } = require('../src/main/services/organization/suggestionRanker');
       rankSuggestions.mockImplementationOnce(() => {
         throw new Error('Ranking failed');
       });
 
-      const result = await service.getSuggestionsForFile(
-        mockFile,
-        mockSmartFolders,
-      );
+      const result = await service.getSuggestionsForFile(mockFile, mockSmartFolders);
 
       expect(result.success).toBe(false);
       expect(result.fallback).toBeDefined();
     });
 
     test('excludes alternatives when option is false', async () => {
-      const result = await service.getSuggestionsForFile(
-        mockFile,
-        mockSmartFolders,
-        {
-          includeAlternatives: false,
-        },
-      );
+      const result = await service.getSuggestionsForFile(mockFile, mockSmartFolders, {
+        includeAlternatives: false
+      });
 
       expect(result.alternatives).toEqual([]);
     });
@@ -332,7 +305,7 @@ describe('OrganizationSuggestionServiceCore', () => {
   describe('getBatchSuggestions', () => {
     const mockFiles = [
       { name: 'doc1.pdf', extension: '.pdf', path: '/test/doc1.pdf' },
-      { name: 'doc2.pdf', extension: '.pdf', path: '/test/doc2.pdf' },
+      { name: 'doc2.pdf', extension: '.pdf', path: '/test/doc2.pdf' }
     ];
 
     const mockSmartFolders = [{ name: 'Documents', path: '/docs' }];
@@ -341,17 +314,14 @@ describe('OrganizationSuggestionServiceCore', () => {
       mockBatchProcessor.processBatch.mockResolvedValue({
         results: mockFiles.map((file) => ({
           file,
-          suggestion: { primary: { folder: 'Documents', confidence: 0.8 } },
+          suggestion: { primary: { folder: 'Documents', confidence: 0.8 } }
         })),
-        errors: [],
+        errors: []
       });
     });
 
     test('returns batch suggestions structure', async () => {
-      const result = await service.getBatchSuggestions(
-        mockFiles,
-        mockSmartFolders,
-      );
+      const result = await service.getBatchSuggestions(mockFiles, mockSmartFolders);
 
       expect(result).toHaveProperty('success');
       expect(result).toHaveProperty('groups');
@@ -361,7 +331,7 @@ describe('OrganizationSuggestionServiceCore', () => {
 
     test('analyzes file patterns', async () => {
       const {
-        analyzeFilePatterns,
+        analyzeFilePatterns
       } = require('../src/main/services/organization/filePatternAnalyzer');
 
       await service.getBatchSuggestions(mockFiles, mockSmartFolders);
@@ -376,24 +346,16 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('groups results by folder', async () => {
-      const result = await service.getBatchSuggestions(
-        mockFiles,
-        mockSmartFolders,
-      );
+      const result = await service.getBatchSuggestions(mockFiles, mockSmartFolders);
 
       expect(result.groups).toBeDefined();
       expect(Array.isArray(result.groups)).toBe(true);
     });
 
     test('returns error on failure', async () => {
-      mockBatchProcessor.processBatch.mockRejectedValueOnce(
-        new Error('Batch failed'),
-      );
+      mockBatchProcessor.processBatch.mockRejectedValueOnce(new Error('Batch failed'));
 
-      const result = await service.getBatchSuggestions(
-        mockFiles,
-        mockSmartFolders,
-      );
+      const result = await service.getBatchSuggestions(mockFiles, mockSmartFolders);
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -406,14 +368,14 @@ describe('OrganizationSuggestionServiceCore', () => {
         id: 'folder-1',
         name: 'Documents',
         description: 'Doc files',
-        path: '/docs',
+        path: '/docs'
       },
       {
         id: 'folder-2',
         name: 'Images',
         description: 'Image files',
-        path: '/images',
-      },
+        path: '/images'
+      }
     ];
 
     test('embeds and upserts folders', async () => {
@@ -437,9 +399,7 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('handles embedding failures gracefully', async () => {
-      mockFolderMatchingService.embedText.mockRejectedValueOnce(
-        new Error('Embed failed'),
-      );
+      mockFolderMatchingService.embedText.mockRejectedValueOnce(new Error('Embed failed'));
 
       const result = await service.ensureSmartFolderEmbeddings(mockFolders);
 
@@ -454,20 +414,17 @@ describe('OrganizationSuggestionServiceCore', () => {
       name: 'test.pdf',
       path: '/test/test.pdf',
       extension: '.pdf',
-      analysis: { category: 'documents' },
+      analysis: { category: 'documents' }
     };
 
     const mockFolders = [{ id: 'folder-1', name: 'Documents', path: '/docs' }];
 
     test('returns semantic matches', async () => {
       mockFolderMatchingService.matchFileToFolders.mockResolvedValueOnce([
-        { folderId: 'folder-1', name: 'Documents', score: 0.8 },
+        { folderId: 'folder-1', name: 'Documents', score: 0.8 }
       ]);
 
-      const results = await service.getSemanticFolderMatches(
-        mockFile,
-        mockFolders,
-      );
+      const results = await service.getSemanticFolderMatches(mockFile, mockFolders);
 
       expect(results).toHaveLength(1);
       expect(results[0].method).toBe('semantic_embedding');
@@ -480,14 +437,9 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('returns empty array on error', async () => {
-      mockFolderMatchingService.matchFileToFolders.mockRejectedValueOnce(
-        new Error('Match failed'),
-      );
+      mockFolderMatchingService.matchFileToFolders.mockRejectedValueOnce(new Error('Match failed'));
 
-      const results = await service.getSemanticFolderMatches(
-        mockFile,
-        mockFolders,
-      );
+      const results = await service.getSemanticFolderMatches(mockFile, mockFolders);
 
       expect(results).toEqual([]);
     });
@@ -496,23 +448,18 @@ describe('OrganizationSuggestionServiceCore', () => {
   describe('getImprovementSuggestions', () => {
     const mockFile = {
       name: 'test.pdf',
-      extension: '.pdf',
+      extension: '.pdf'
     };
 
-    const mockFolders = [
-      { name: 'Documents', path: '/docs', description: 'Docs' },
-    ];
+    const mockFolders = [{ name: 'Documents', path: '/docs', description: 'Docs' }];
 
     test('returns improvement suggestions for partial matches', async () => {
       const {
-        calculateFolderFitScore,
+        calculateFolderFitScore
       } = require('../src/main/services/organization/folderAnalyzer');
       calculateFolderFitScore.mockReturnValueOnce(0.5); // Between 0.3 and 0.7
 
-      const results = await service.getImprovementSuggestions(
-        mockFile,
-        mockFolders,
-      );
+      const results = await service.getImprovementSuggestions(mockFile, mockFolders);
 
       expect(results.length).toBeGreaterThanOrEqual(0);
     });
@@ -520,18 +467,15 @@ describe('OrganizationSuggestionServiceCore', () => {
     test('suggests new folder when no improvements found', async () => {
       const {
         calculateFolderFitScore,
-        suggestNewSmartFolder,
+        suggestNewSmartFolder
       } = require('../src/main/services/organization/folderAnalyzer');
       calculateFolderFitScore.mockReturnValue(0.1); // Below threshold
       suggestNewSmartFolder.mockReturnValueOnce({
         folder: 'New Category',
-        isNew: true,
+        isNew: true
       });
 
-      const results = await service.getImprovementSuggestions(
-        mockFile,
-        mockFolders,
-      );
+      const results = await service.getImprovementSuggestions(mockFile, mockFolders);
 
       expect(suggestNewSmartFolder).toHaveBeenCalled();
       expect(Array.isArray(results)).toBe(true);
@@ -546,11 +490,7 @@ describe('OrganizationSuggestionServiceCore', () => {
 
       service.recordFeedback(file, suggestion, true);
 
-      expect(mockPatternMatcher.recordFeedback).toHaveBeenCalledWith(
-        file,
-        suggestion,
-        true,
-      );
+      expect(mockPatternMatcher.recordFeedback).toHaveBeenCalledWith(file, suggestion, true);
     });
 
     test('saves patterns after feedback', async () => {
@@ -566,7 +506,7 @@ describe('OrganizationSuggestionServiceCore', () => {
   describe('analyzeFolderStructure', () => {
     test('delegates to folderAnalyzer', async () => {
       const {
-        analyzeFolderStructure,
+        analyzeFolderStructure
       } = require('../src/main/services/organization/folderAnalyzer');
 
       await service.analyzeFolderStructure([{ name: 'Docs' }], []);
@@ -582,17 +522,14 @@ describe('OrganizationSuggestionServiceCore', () => {
 
       service.extractPattern(file, suggestion);
 
-      expect(mockPatternMatcher.extractPattern).toHaveBeenCalledWith(
-        file,
-        suggestion,
-      );
+      expect(mockPatternMatcher.extractPattern).toHaveBeenCalledWith(file, suggestion);
     });
   });
 
   describe('identifyMissingCategories', () => {
     test('identifies missing categories', () => {
       const {
-        identifyMissingCategories,
+        identifyMissingCategories
       } = require('../src/main/services/organization/folderAnalyzer');
       identifyMissingCategories.mockReturnValueOnce(['videos', 'audio']);
 
@@ -606,7 +543,7 @@ describe('OrganizationSuggestionServiceCore', () => {
   describe('findOverlappingFolders', () => {
     test('finds overlapping folders', () => {
       const {
-        findOverlappingFolders,
+        findOverlappingFolders
       } = require('../src/main/services/organization/folderAnalyzer');
       findOverlappingFolders.mockReturnValueOnce([['Docs', 'Documents']]);
 
@@ -641,9 +578,7 @@ describe('OrganizationSuggestionServiceCore', () => {
 
       service.calculatePatternSimilarity(file, pattern);
 
-      expect(
-        mockPatternMatcher.calculatePatternSimilarity,
-      ).toHaveBeenCalledWith(file, pattern);
+      expect(mockPatternMatcher.calculatePatternSimilarity).toHaveBeenCalledWith(file, pattern);
     });
   });
 
@@ -657,9 +592,7 @@ describe('OrganizationSuggestionServiceCore', () => {
     });
 
     test('folderUsageStats getter returns pattern matcher stats', () => {
-      expect(service.folderUsageStats).toBe(
-        mockPatternMatcher.folderUsageStats,
-      );
+      expect(service.folderUsageStats).toBe(mockPatternMatcher.folderUsageStats);
     });
 
     test('loadUserPatterns delegates to _loadPatternsAsync', async () => {

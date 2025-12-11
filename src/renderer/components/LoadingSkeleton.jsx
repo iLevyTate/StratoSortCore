@@ -5,7 +5,7 @@ import PropTypes from 'prop-types';
 const ANIMATION_CONFIG = {
   DELAY_INCREMENT: 0.1, // Seconds between skeleton animation delays
   DEFAULT_FILE_COUNT: 5, // Default number of file skeletons to show
-  DEFAULT_FOLDER_COUNT: 6, // Default number of folder skeletons to show
+  DEFAULT_FOLDER_COUNT: 6 // Default number of folder skeletons to show
 };
 
 /**
@@ -14,11 +14,7 @@ const ANIMATION_CONFIG = {
  * @param {string} variant - Type of skeleton to display
  * @param {number} count - Number of skeletons to render
  */
-const LoadingSkeleton = ({
-  className = '',
-  variant = 'default',
-  count = 1,
-}) => {
+const LoadingSkeleton = ({ className = '', variant = 'default', count = 1 }) => {
   const baseClasses =
     'animate-pulse bg-gradient-to-r from-system-gray-100 to-system-gray-200 rounded';
 
@@ -31,7 +27,7 @@ const LoadingSkeleton = ({
     button: 'h-10 w-24 rounded-[var(--radius-md)]',
     input: 'h-10 w-full rounded-[var(--radius-md)]',
     file: 'h-16 w-full rounded-[var(--radius-md)]',
-    folder: 'h-20 w-full rounded-[var(--radius-lg)]',
+    folder: 'h-20 w-full rounded-[var(--radius-lg)]'
   };
 
   const skeletons = Array.from({ length: count }, (_, i) => (
@@ -43,11 +39,7 @@ const LoadingSkeleton = ({
     />
   ));
 
-  return count > 1 ? (
-    <div className="space-y-2">{skeletons}</div>
-  ) : (
-    skeletons[0]
-  );
+  return count > 1 ? <div className="space-y-2">{skeletons}</div> : skeletons[0];
 };
 
 LoadingSkeleton.propTypes = {
@@ -61,18 +53,16 @@ LoadingSkeleton.propTypes = {
     'button',
     'input',
     'file',
-    'folder',
+    'folder'
   ]),
-  count: PropTypes.number,
+  count: PropTypes.number
 };
 
 /**
  * Composite loading state for file list UI
  * @param {number} count - Number of skeleton items to display
  */
-export const FileListSkeleton = ({
-  count = ANIMATION_CONFIG.DEFAULT_FILE_COUNT,
-}) => (
+export const FileListSkeleton = ({ count = ANIMATION_CONFIG.DEFAULT_FILE_COUNT }) => (
   <div className="space-y-3" role="status" aria-label="Loading files">
     {Array.from({ length: count }, (_, i) => (
       <div
@@ -92,26 +82,21 @@ export const FileListSkeleton = ({
 );
 
 FileListSkeleton.propTypes = {
-  count: PropTypes.number,
+  count: PropTypes.number
 };
 
 /**
  * Composite loading state for folder grid UI
  * @param {number} count - Number of skeleton items to display
  */
-export const FolderGridSkeleton = ({
-  count = ANIMATION_CONFIG.DEFAULT_FOLDER_COUNT,
-}) => (
+export const FolderGridSkeleton = ({ count = ANIMATION_CONFIG.DEFAULT_FOLDER_COUNT }) => (
   <div
     className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
     role="status"
     aria-label="Loading folders"
   >
     {Array.from({ length: count }, (_, i) => (
-      <div
-        key={i}
-        className="p-4 bg-white rounded-xl border border-border-soft"
-      >
+      <div key={i} className="p-4 bg-white rounded-xl border border-border-soft">
         <LoadingSkeleton variant="folder" />
         <div className="mt-3 space-y-2">
           <LoadingSkeleton className="w-3/4" />
@@ -124,7 +109,7 @@ export const FolderGridSkeleton = ({
 );
 
 FolderGridSkeleton.propTypes = {
-  count: PropTypes.number,
+  count: PropTypes.number
 };
 
 export const AnalysisProgressSkeleton = () => (
@@ -152,51 +137,86 @@ export const AnalysisProgressSkeleton = () => (
 );
 
 /**
- * Composite loading state for smart folder list UI (vertical list layout)
+ * Composite loading state for smart folder list UI (mirrors card grid layout)
  * @param {number} count - Number of skeleton items to display
+ * @param {boolean} compact - Render compact row-style skeletons
  */
 export const SmartFolderListSkeleton = ({
   count = ANIMATION_CONFIG.DEFAULT_FOLDER_COUNT,
-}) => (
-  <div className="space-y-8" role="status" aria-label="Loading smart folders">
-    {Array.from({ length: count }, (_, i) => (
+  compact = false
+}) => {
+  const gridShell = (children) => (
+    <div
+      className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"
+      role="status"
+      aria-label="Loading smart folders"
+    >
+      {children}
+      <span className="sr-only">Loading smart folder list...</span>
+    </div>
+  );
+
+  if (compact) {
+    return gridShell(
+      Array.from({ length: count }, (_, i) => (
+        <div
+          key={i}
+          className="group flex items-center bg-white/70 rounded-xl border border-border-soft/60 shadow-sm animate-pulse h-full"
+          style={{ padding: 'var(--spacing-cozy)', gap: 'var(--spacing-cozy)' }}
+        >
+          <div className="h-10 w-10 rounded-xl bg-stratosort-blue/10" />
+          <div className="flex-1 min-w-0 space-y-2">
+            <LoadingSkeleton className="w-3/4" />
+            <LoadingSkeleton variant="text" className="w-1/2" />
+          </div>
+          <div className="w-4 h-4 rounded-full bg-system-gray-200" />
+        </div>
+      ))
+    );
+  }
+
+  return gridShell(
+    Array.from({ length: count }, (_, i) => (
       <div
         key={i}
-        className="p-13 bg-surface-muted rounded-lg border border-border-soft"
+        className="bg-white/70 rounded-xl border border-border-soft/60 shadow-sm animate-pulse flex flex-col"
+        style={{ padding: 'var(--spacing-default)', gap: 'var(--spacing-cozy)' }}
       >
-        <div className="flex items-start justify-between gap-8">
-          <div className="flex-1 min-w-0">
-            <LoadingSkeleton className="w-3/4 mb-2" />
-            <LoadingSkeleton variant="text" className="w-full mb-3" />
-            <div className="text-sm bg-stratosort-blue/5 p-8 rounded-lg border-l-4 border-stratosort-blue/30">
-              <LoadingSkeleton className="w-1/4 mb-2" />
-              <LoadingSkeleton variant="text" className="w-2/3" />
+        <div className="flex items-start justify-between" style={{ gap: 'var(--spacing-cozy)' }}>
+          <div className="flex items-start" style={{ gap: 'var(--spacing-cozy)' }}>
+            <div className="h-12 w-12 rounded-xl bg-stratosort-blue/10" />
+            <div className="space-y-2 w-full max-w-[14rem]">
+              <LoadingSkeleton className="w-3/4" />
+              <LoadingSkeleton variant="text" className="w-full" />
             </div>
           </div>
-          <div className="flex items-center gap-8 shrink-0">
-            <div className="flex items-center gap-5">
-              <LoadingSkeleton
-                variant="avatar"
-                className="w-3 h-3 rounded-full"
-              />
-              <LoadingSkeleton className="w-12 h-4" />
-            </div>
-            <div className="flex gap-5">
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-              <LoadingSkeleton variant="button" className="w-8 h-8 rounded" />
-            </div>
+          <LoadingSkeleton className="w-20 h-6 rounded-full" />
+        </div>
+
+        <div className="bg-stratosort-blue/5 rounded-xl border border-stratosort-blue/10 p-4 space-y-2">
+          <LoadingSkeleton className="w-1/3" />
+          <LoadingSkeleton variant="text" className="w-2/3" />
+        </div>
+
+        <div
+          className="flex items-center justify-between border-t border-border-soft/50"
+          style={{ gap: 'var(--spacing-cozy)', paddingTop: 'var(--spacing-cozy)' }}
+        >
+          <div className="flex items-center" style={{ gap: 'var(--spacing-compact)' }}>
+            <LoadingSkeleton variant="button" className="w-10 h-10 rounded-xl" />
+            <LoadingSkeleton variant="button" className="w-10 h-10 rounded-xl" />
+            <LoadingSkeleton variant="button" className="w-10 h-10 rounded-xl" />
           </div>
+          <LoadingSkeleton variant="button" className="w-10 h-10 rounded-xl" />
         </div>
       </div>
-    ))}
-    <span className="sr-only">Loading smart folder list...</span>
-  </div>
-);
+    ))
+  );
+};
 
 SmartFolderListSkeleton.propTypes = {
   count: PropTypes.number,
+  compact: PropTypes.bool
 };
 
 // Alias for backward compatibility - now uses vertical list skeleton
@@ -204,11 +224,7 @@ export const SmartFolderSkeleton = SmartFolderListSkeleton;
 
 // Enhanced loading spinner for lazy-loaded components
 export const LazyLoadingSpinner = ({ message = 'Loading...' }) => (
-  <div
-    className="flex items-center justify-center py-21"
-    role="status"
-    aria-label={message}
-  >
+  <div className="flex items-center justify-center py-21" role="status" aria-label={message}>
     <div className="text-center">
       <div className="animate-spin w-13 h-13 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8"></div>
       <p className="text-system-gray-700">{message}</p>
@@ -218,7 +234,7 @@ export const LazyLoadingSpinner = ({ message = 'Loading...' }) => (
 );
 
 LazyLoadingSpinner.propTypes = {
-  message: PropTypes.string,
+  message: PropTypes.string
 };
 
 // Modal loading overlay for lazy-loaded modals/panels
@@ -237,7 +253,7 @@ export const ModalLoadingOverlay = ({ message = 'Loading...' }) => (
 );
 
 ModalLoadingOverlay.propTypes = {
-  message: PropTypes.string,
+  message: PropTypes.string
 };
 
 export default LoadingSkeleton;

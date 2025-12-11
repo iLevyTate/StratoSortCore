@@ -15,8 +15,8 @@ describe('documentLlm cache', () => {
         category: 'General',
         keywords: ['a', 'b', 'c'],
         confidence: 80,
-        suggestedName: 'test_doc',
-      }),
+        suggestedName: 'test_doc'
+      })
     }));
 
     jest.doMock(
@@ -24,14 +24,12 @@ describe('documentLlm cache', () => {
       () => ({
         getOllama: async () => ({ generate: generateMock }),
         getOllamaModel: () => 'mock-model',
-        loadOllamaConfig: async () => ({ selectedTextModel: 'mock-model' }),
+        loadOllamaConfig: async () => ({ selectedTextModel: 'mock-model' })
       }),
-      { virtual: false },
+      { virtual: false }
     );
 
-    const {
-      analyzeTextWithOllama,
-    } = require('../src/main/analysis/documentLlm');
+    const { analyzeTextWithOllama } = require('../src/main/analysis/documentLlm');
 
     const text = 'Hello world. This is a test document.';
     const folders = [{ name: 'General', description: 'General docs' }];

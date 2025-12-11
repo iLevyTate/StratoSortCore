@@ -21,32 +21,32 @@ const TEST_FILES = {
     name: 'contract.txt',
     path: path.join(TEST_FILES_DIR, 'contract.txt'),
     type: 'text',
-    expectedCategory: 'Legal',
+    expectedCategory: 'Legal'
   },
   projectReport: {
     name: 'project-report.md',
     path: path.join(TEST_FILES_DIR, 'project-report.md'),
     type: 'markdown',
-    expectedCategory: 'Project',
+    expectedCategory: 'Project'
   },
   samplePdf: {
     name: 'sample.pdf',
     path: path.join(TEST_FILES_DIR, 'sample.pdf'),
     type: 'pdf',
-    expectedCategory: 'Document',
+    expectedCategory: 'Document'
   },
   sampleTxt: {
     name: 'sample.txt',
     path: path.join(TEST_FILES_DIR, 'sample.txt'),
     type: 'text',
-    expectedCategory: 'Document',
+    expectedCategory: 'Document'
   },
   sampleMp3: {
     name: 'sample.mp3',
     path: path.join(TEST_FILES_DIR, 'sample.mp3'),
     type: 'audio',
-    expectedCategory: 'Media',
-  },
+    expectedCategory: 'Media'
+  }
 };
 
 /**
@@ -57,7 +57,7 @@ const PHASES = {
   SETUP: 'setup',
   DISCOVER: 'discover',
   ORGANIZE: 'organize',
-  COMPLETE: 'complete',
+  COMPLETE: 'complete'
 };
 
 /**
@@ -68,7 +68,7 @@ const PHASE_NAV_LABELS = {
   [PHASES.SETUP]: 'Smart Folders',
   [PHASES.DISCOVER]: 'Discover Files',
   [PHASES.ORGANIZE]: 'Review Organize',
-  [PHASES.COMPLETE]: 'Complete',
+  [PHASES.COMPLETE]: 'Complete'
 };
 
 /**
@@ -116,7 +116,7 @@ const SELECTORS = {
   errorMessage: '[role="alert"]',
   toast: '[data-testid="toast"]',
   modal: '[role="dialog"]',
-  modalClose: '[aria-label="Close"]',
+  modalClose: '[aria-label="Close"]'
 };
 
 /**
@@ -153,7 +153,7 @@ async function setupTestFiles(fileKeys = ['sampleTxt', 'contract']) {
       await fs.copyFile(testFile.path, destPath);
       files.push({
         ...testFile,
-        tempPath: destPath,
+        tempPath: destPath
       });
       console.log(`[E2E] Copied test file: ${testFile.name}`);
     } catch (error) {
@@ -198,7 +198,7 @@ function mockAnalysisResult(overrides = {}) {
     suggestedFolder: 'Documents/Test',
     suggestedName: 'Test_Document.txt',
     extractedDate: new Date().toISOString().split('T')[0],
-    ...overrides,
+    ...overrides
   };
 }
 
@@ -217,7 +217,7 @@ function mockFolder(overrides = {}) {
     keywords: ['test', 'sample'],
     rules: [],
     createdAt: new Date().toISOString(),
-    ...overrides,
+    ...overrides
   };
 }
 
@@ -246,7 +246,7 @@ const wait = {
       await wait.ms(interval);
     }
     throw new Error(`Condition not met within ${timeout}ms`);
-  },
+  }
 };
 
 /**
@@ -256,7 +256,7 @@ const TIMEOUTS = {
   SHORT: 5000, // Quick UI interactions
   MEDIUM: 15000, // Page loads, navigation
   LONG: 60000, // Analysis operations
-  VERY_LONG: 180000, // Full workflow tests
+  VERY_LONG: 180000 // Full workflow tests
 };
 
 module.exports = {
@@ -272,5 +272,5 @@ module.exports = {
   mockAnalysisResult,
   mockFolder,
   wait,
-  TIMEOUTS,
+  TIMEOUTS
 };

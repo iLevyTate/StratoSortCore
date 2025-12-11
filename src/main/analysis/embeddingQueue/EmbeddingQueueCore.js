@@ -16,7 +16,7 @@ const {
   LIMITS,
   THRESHOLDS,
   RETRY,
-  CONCURRENCY,
+  CONCURRENCY
 } = require('../../../shared/performanceConstants');
 
 const { loadPersistedData, persistQueueData } = require('./persistence');
@@ -29,10 +29,7 @@ logger.setContext('EmbeddingQueue');
 class EmbeddingQueue {
   constructor() {
     this.queue = [];
-    this.persistencePath = path.join(
-      app.getPath('userData'),
-      'pending_embeddings.json',
-    );
+    this.persistencePath = path.join(app.getPath('userData'), 'pending_embeddings.json');
 
     // Configuration from unified config
     this.BATCH_SIZE = getConfig('ANALYSIS.batchSize', 50);
@@ -49,12 +46,8 @@ class EmbeddingQueue {
     // Memory monitoring thresholds
     this.HIGH_WATERMARK = THRESHOLDS.QUEUE_HIGH_WATERMARK;
     this.CRITICAL_WATERMARK = THRESHOLDS.QUEUE_CRITICAL_WATERMARK;
-    this.MEMORY_WARNING_THRESHOLD = Math.floor(
-      this.MAX_QUEUE_SIZE * this.HIGH_WATERMARK,
-    );
-    this.CRITICAL_WARNING_THRESHOLD = Math.floor(
-      this.MAX_QUEUE_SIZE * this.CRITICAL_WATERMARK,
-    );
+    this.MEMORY_WARNING_THRESHOLD = Math.floor(this.MAX_QUEUE_SIZE * this.HIGH_WATERMARK);
+    this.CRITICAL_WARNING_THRESHOLD = Math.floor(this.MAX_QUEUE_SIZE * this.CRITICAL_WATERMARK);
     this.memoryWarningLogged = false;
     this.criticalWarningLogged = false;
 
@@ -68,14 +61,8 @@ class EmbeddingQueue {
     this._failedItemHandler = createFailedItemHandler({
       itemMaxRetries: getConfig('ANALYSIS.retryAttempts', 3),
       maxDeadLetterSize: LIMITS.MAX_DEAD_LETTER_SIZE,
-      failedItemsPath: path.join(
-        app.getPath('userData'),
-        'failed_embeddings.json',
-      ),
-      deadLetterPath: path.join(
-        app.getPath('userData'),
-        'dead_letter_embeddings.json',
-      ),
+      failedItemsPath: path.join(app.getPath('userData'), 'failed_embeddings.json'),
+      deadLetterPath: path.join(app.getPath('userData'), 'dead_letter_embeddings.json')
     });
 
     // Track pending operations for graceful shutdown
@@ -92,16 +79,11 @@ class EmbeddingQueue {
     if (this._pendingFlush) operations.push(this._pendingFlush);
 
     if (operations.length > 0) {
-      logger.info(
-        '[EmbeddingQueue] Waiting for pending operations to complete',
-      );
+      logger.info('[EmbeddingQueue] Waiting for pending operations to complete');
       try {
         await Promise.all(operations);
       } catch (err) {
-        logger.error(
-          '[EmbeddingQueue] Error completing pending operations:',
-          err.message,
-        );
+        logger.error('[EmbeddingQueue] Error completing pending operations:', err.message);
       }
     }
     await this.persistQueue();
@@ -135,18 +117,15 @@ class EmbeddingQueue {
           if (Array.isArray(data) && data.length > 0) {
             this.queue = data;
             logger.info(
-              `[EmbeddingQueue] Restored ${this.queue.length} pending embeddings from disk`,
+              `[EmbeddingQueue] Restored ${this.queue.length} pending embeddings from disk`
             );
           }
         },
-        'pending embeddings',
+        'pending embeddings'
       );
 
       // Load failed items
-      const failedItemsPath = path.join(
-        app.getPath('userData'),
-        'failed_embeddings.json',
-      );
+      const failedItemsPath = path.join(app.getPath('userData'), 'failed_embeddings.json');
       await loadPersistedData(
         failedItemsPath,
         (data) => {
@@ -159,38 +138,30 @@ class EmbeddingQueue {
             }
             if (this._failedItemHandler.failedItems.size > 0) {
               logger.info(
-                `[EmbeddingQueue] Restored ${this._failedItemHandler.failedItems.size} failed items awaiting retry`,
+                `[EmbeddingQueue] Restored ${this._failedItemHandler.failedItems.size} failed items awaiting retry`
               );
             }
           }
         },
-        'failed items',
+        'failed items'
       );
 
       // Load dead letter queue
-      const deadLetterPath = path.join(
-        app.getPath('userData'),
-        'dead_letter_embeddings.json',
-      );
+      const deadLetterPath = path.join(app.getPath('userData'), 'dead_letter_embeddings.json');
       await loadPersistedData(
         deadLetterPath,
         (data) => {
           if (Array.isArray(data) && data.length > 0) {
             this._failedItemHandler.setDeadLetterQueue(data);
-            logger.info(
-              `[EmbeddingQueue] Loaded ${data.length} items in dead letter queue`,
-            );
+            logger.info(`[EmbeddingQueue] Loaded ${data.length} items in dead letter queue`);
           }
         },
-        'dead letter queue',
+        'dead letter queue'
       );
 
       this.initialized = true;
 
-      if (
-        this.queue.length > 0 ||
-        this._failedItemHandler.failedItems.size > 0
-      ) {
+      if (this.queue.length > 0 || this._failedItemHandler.failedItems.size > 0) {
         this.scheduleFlush();
       }
     } catch (error) {
@@ -215,29 +186,19 @@ class EmbeddingQueue {
     const result = { success: true, warnings: [] };
 
     // Memory monitoring
-    if (
-      this.queue.length >= this.MEMORY_WARNING_THRESHOLD &&
-      !this.memoryWarningLogged
-    ) {
-      const capacityPercent = Math.round(
-        (this.queue.length / this.MAX_QUEUE_SIZE) * 100,
-      );
+    if (this.queue.length >= this.MEMORY_WARNING_THRESHOLD && !this.memoryWarningLogged) {
+      const capacityPercent = Math.round((this.queue.length / this.MAX_QUEUE_SIZE) * 100);
       logger.warn(
-        `[EmbeddingQueue] Queue at ${capacityPercent}% capacity - approaching high watermark`,
+        `[EmbeddingQueue] Queue at ${capacityPercent}% capacity - approaching high watermark`
       );
       this.memoryWarningLogged = true;
       result.warnings.push('high_watermark');
     }
 
-    if (
-      this.queue.length >= this.CRITICAL_WARNING_THRESHOLD &&
-      !this.criticalWarningLogged
-    ) {
-      const capacityPercent = Math.round(
-        (this.queue.length / this.MAX_QUEUE_SIZE) * 100,
-      );
+    if (this.queue.length >= this.CRITICAL_WARNING_THRESHOLD && !this.criticalWarningLogged) {
+      const capacityPercent = Math.round((this.queue.length / this.MAX_QUEUE_SIZE) * 100);
       logger.error(
-        `[EmbeddingQueue] CRITICAL: Queue at ${capacityPercent}% capacity - flush may be failing`,
+        `[EmbeddingQueue] CRITICAL: Queue at ${capacityPercent}% capacity - flush may be failing`
       );
       this.criticalWarningLogged = true;
       result.warnings.push('critical_watermark');
@@ -253,19 +214,14 @@ class EmbeddingQueue {
 
     // Enforce max queue size with backpressure instead of dropping data
     if (this.queue.length >= this.MAX_QUEUE_SIZE) {
-      const capacityPercent = Math.round(
-        (this.queue.length / this.MAX_QUEUE_SIZE) * 100,
-      );
+      const capacityPercent = Math.round((this.queue.length / this.MAX_QUEUE_SIZE) * 100);
       logger.error(
         `[EmbeddingQueue] Queue full (${capacityPercent}% capacity) - diverting item to failed queue (backpressure)`,
-        { id: item.id },
+        { id: item.id }
       );
       this._failedItemHandler.trackFailedItem(item, 'queue_overflow');
       await this.persistQueue().catch((err) =>
-        logger.warn(
-          '[EmbeddingQueue] Failed to persist after overflow backpressure:',
-          err.message,
-        ),
+        logger.warn('[EmbeddingQueue] Failed to persist after overflow backpressure:', err.message)
       );
       result.success = false;
       result.reason = 'queue_overflow';
@@ -277,18 +233,14 @@ class EmbeddingQueue {
 
     // Persist asynchronously
     this._pendingPersistence = this.persistQueue()
-      .catch((err) =>
-        logger.warn('[EmbeddingQueue] Failed to persist queue:', err.message),
-      )
+      .catch((err) => logger.warn('[EmbeddingQueue] Failed to persist queue:', err.message))
       .finally(() => {
         this._pendingPersistence = null;
       });
 
     if (this.queue.length >= this.BATCH_SIZE) {
       this._pendingFlush = this.flush()
-        .catch((err) =>
-          logger.error('[EmbeddingQueue] Flush failed:', err.message),
-        )
+        .catch((err) => logger.error('[EmbeddingQueue] Flush failed:', err.message))
         .finally(() => {
           this._pendingFlush = null;
         });
@@ -342,7 +294,7 @@ class EmbeddingQueue {
       total: batch.length,
       completed: 0,
       percent: 0,
-      queueRemaining: this.queue.length - batchSize,
+      queueRemaining: this.queue.length - batchSize
     });
 
     try {
@@ -374,8 +326,7 @@ class EmbeddingQueue {
           totalBatchSize: batch.length,
           concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
           onProgress: (p) => this._notifyProgress(p),
-          onItemFailed: (item, err) =>
-            this._failedItemHandler.trackFailedItem(item, err),
+          onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
         });
       }
 
@@ -390,8 +341,7 @@ class EmbeddingQueue {
           totalBatchSize: batch.length,
           concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
           onProgress: (p) => this._notifyProgress(p),
-          onItemFailed: (item, err) =>
-            this._failedItemHandler.trackFailedItem(item, err),
+          onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
         });
       }
 
@@ -405,7 +355,7 @@ class EmbeddingQueue {
         success: successCount,
         failed: failedItemIds.size,
         remaining: this.queue.length,
-        duration: `${flushDuration}ms`,
+        duration: `${flushDuration}ms`
       });
 
       this._notifyProgress({
@@ -415,13 +365,11 @@ class EmbeddingQueue {
         failed: failedItemIds.size,
         percent: 100,
         queueRemaining: this.queue.length,
-        duration: flushDuration,
+        duration: flushDuration
       });
 
       await this.persistQueue();
-      await this._failedItemHandler.retryFailedItems(this.queue, () =>
-        this.persistQueue(),
-      );
+      await this._failedItemHandler.retryFailedItems(this.queue, () => this.persistQueue());
 
       if (this.queue.length > 0) {
         this.scheduleFlush();
@@ -431,13 +379,13 @@ class EmbeddingQueue {
       this._notifyProgress({
         phase: 'error',
         error: error.message,
-        retryCount: this.retryCount,
+        retryCount: this.retryCount
       });
 
       this.retryCount++;
       const backoffDelay = Math.min(
         RETRY.BACKOFF_BASE_MS * Math.pow(2, this.retryCount - 1),
-        RETRY.BACKOFF_MAX_MS,
+        RETRY.BACKOFF_MAX_MS
       );
       logger.info(`[EmbeddingQueue] Will retry in ${backoffDelay / 1000}s`);
       const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
@@ -458,12 +406,12 @@ class EmbeddingQueue {
       total: batch.length,
       completed: 0,
       retryCount: this.retryCount,
-      maxRetries: this.MAX_RETRY_COUNT,
+      maxRetries: this.MAX_RETRY_COUNT
     });
 
     if (this.retryCount >= this.MAX_RETRY_COUNT) {
       logger.error(
-        `[EmbeddingQueue] Database offline after ${this.MAX_RETRY_COUNT} retries, moving items to failed queue`,
+        `[EmbeddingQueue] Database offline after ${this.MAX_RETRY_COUNT} retries, moving items to failed queue`
       );
       for (const item of batch) {
         this._failedItemHandler.trackFailedItem(item, 'Database offline');
@@ -476,12 +424,12 @@ class EmbeddingQueue {
     }
 
     logger.warn(
-      `[EmbeddingQueue] Database offline, will retry (${this.retryCount}/${this.MAX_RETRY_COUNT})`,
+      `[EmbeddingQueue] Database offline, will retry (${this.retryCount}/${this.MAX_RETRY_COUNT})`
     );
 
     const backoffDelay = Math.min(
       RETRY.BACKOFF_BASE_MS * Math.pow(2, this.retryCount - 1),
-      RETRY.BACKOFF_MAX_MS,
+      RETRY.BACKOFF_MAX_MS
     );
     logger.info(`[EmbeddingQueue] Retry in ${backoffDelay / 1000}s`);
     const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
@@ -514,14 +462,11 @@ class EmbeddingQueue {
     if (removedCount > 0) {
       logger.debug('[EmbeddingQueue] Removed pending items for deleted file', {
         filePath,
-        removedCount,
+        removedCount
       });
       // Persist the updated queue
       this.persistQueue().catch((err) =>
-        logger.warn(
-          '[EmbeddingQueue] Failed to persist after removal:',
-          err.message,
-        ),
+        logger.warn('[EmbeddingQueue] Failed to persist after removal:', err.message)
       );
     }
 
@@ -554,14 +499,11 @@ class EmbeddingQueue {
     if (removedCount > 0) {
       logger.debug('[EmbeddingQueue] Removed pending items for deleted files', {
         fileCount: filePaths.length,
-        removedCount,
+        removedCount
       });
       // Persist the updated queue
       this.persistQueue().catch((err) =>
-        logger.warn(
-          '[EmbeddingQueue] Failed to persist after batch removal:',
-          err.message,
-        ),
+        logger.warn('[EmbeddingQueue] Failed to persist after batch removal:', err.message)
       );
     }
 
@@ -572,9 +514,7 @@ class EmbeddingQueue {
    * Get queue statistics
    */
   getStats() {
-    const capacityPercent = Math.round(
-      (this.queue.length / this.MAX_QUEUE_SIZE) * 100,
-    );
+    const capacityPercent = Math.round((this.queue.length / this.MAX_QUEUE_SIZE) * 100);
     let healthStatus = 'healthy';
     if (capacityPercent >= this.CRITICAL_WATERMARK * 100) {
       healthStatus = 'critical';
@@ -597,7 +537,7 @@ class EmbeddingQueue {
       isInitialized: this.initialized,
       hasHighWatermarkWarning: this.memoryWarningLogged,
       hasCriticalWarning: this.criticalWarningLogged,
-      ...failedStats,
+      ...failedStats
     };
   }
 
@@ -619,10 +559,8 @@ class EmbeddingQueue {
    * Retry a dead letter item
    */
   async retryDeadLetterItem(itemId) {
-    const result = await this._failedItemHandler.retryDeadLetterItem(
-      itemId,
-      this.queue,
-      () => this.persistQueue(),
+    const result = await this._failedItemHandler.retryDeadLetterItem(itemId, this.queue, () =>
+      this.persistQueue()
     );
     if (result) this.scheduleFlush();
     return result;
@@ -632,9 +570,8 @@ class EmbeddingQueue {
    * Retry all dead letter items
    */
   async retryAllDeadLetterItems() {
-    const count = await this._failedItemHandler.retryAllDeadLetterItems(
-      this.queue,
-      () => this.persistQueue(),
+    const count = await this._failedItemHandler.retryAllDeadLetterItems(this.queue, () =>
+      this.persistQueue()
     );
     if (count > 0) this.scheduleFlush();
     return count;
@@ -659,9 +596,7 @@ class EmbeddingQueue {
     }
 
     if (this.queue.length > 0) {
-      logger.info(
-        `[EmbeddingQueue] Force flushing ${this.queue.length} remaining items`,
-      );
+      logger.info(`[EmbeddingQueue] Force flushing ${this.queue.length} remaining items`);
       await this.flush();
     }
 
@@ -692,7 +627,7 @@ class EmbeddingQueue {
     logger.info('[EmbeddingQueue] Shutdown complete', {
       pendingItems: this.queue.length,
       failedItems: this._failedItemHandler.failedItems.size,
-      deadLetterItems: this._failedItemHandler.deadLetterQueue.length,
+      deadLetterItems: this._failedItemHandler.deadLetterQueue.length
     });
   }
 }

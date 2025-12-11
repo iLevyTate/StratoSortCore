@@ -10,15 +10,15 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
 const mockFs = {
   rename: jest.fn().mockResolvedValue(undefined),
   mkdir: jest.fn().mockResolvedValue(undefined),
-  access: jest.fn().mockResolvedValue(undefined),
+  access: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
   promises: mockFs,
@@ -26,47 +26,47 @@ jest.mock('fs', () => ({
     on: jest.fn((event, cb) => {
       if (event === 'end') setTimeout(() => cb(), 0);
       return { on: jest.fn().mockReturnThis(), destroy: jest.fn() };
-    }),
-  }),
+    })
+  })
 }));
 
 // Mock crypto
 jest.mock('crypto', () => ({
   createHash: jest.fn().mockReturnValue({
     update: jest.fn().mockReturnThis(),
-    digest: jest.fn().mockReturnValue('abc123hash'),
+    digest: jest.fn().mockReturnValue('abc123hash')
   }),
-  randomUUID: jest.fn().mockReturnValue('12345678-1234-1234-1234-123456789012'),
+  randomUUID: jest.fn().mockReturnValue('12345678-1234-1234-1234-123456789012')
 }));
 
 // Mock constants
 jest.mock('../src/shared/constants', () => ({
   ACTION_TYPES: {
-    BATCH_OPERATION: 'BATCH_OPERATION',
+    BATCH_OPERATION: 'BATCH_OPERATION'
   },
   PROCESSING_LIMITS: {
     MAX_BATCH_OPERATION_SIZE: 1000,
-    MAX_BATCH_OPERATION_TIME: 600000,
-  },
+    MAX_BATCH_OPERATION_TIME: 600000
+  }
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   LIMITS: {
-    MAX_NUMERIC_RETRIES: 5000,
-  },
+    MAX_NUMERIC_RETRIES: 5000
+  }
 }));
 
 // Mock atomicFileOperations
 jest.mock('../src/shared/atomicFileOperations', () => ({
-  crossDeviceMove: jest.fn().mockResolvedValue(undefined),
+  crossDeviceMove: jest.fn().mockResolvedValue(undefined)
 }));
 
 // Mock chromadb
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
-    updateFilePaths: jest.fn().mockResolvedValue(undefined),
-  }),
+    updateFilePaths: jest.fn().mockResolvedValue(undefined)
+  })
 }));
 
 describe('Batch Organize Handler', () => {
@@ -89,7 +89,7 @@ describe('Batch Organize Handler', () => {
       info: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: jest.fn()
     };
 
     const mockGetServiceIntegration = () => ({
@@ -98,18 +98,18 @@ describe('Batch Organize Handler', () => {
         markOrganizeOpStarted: jest.fn(),
         markOrganizeOpDone: jest.fn(),
         markOrganizeOpError: jest.fn(),
-        completeOrganizeBatch: jest.fn(),
+        completeOrganizeBatch: jest.fn()
       },
       undoRedo: {
-        recordAction: jest.fn(),
-      },
+        recordAction: jest.fn()
+      }
     });
 
     const mockGetMainWindow = () => ({
       isDestroyed: () => false,
       webContents: {
-        send: jest.fn(),
-      },
+        send: jest.fn()
+      }
     });
 
     test('rejects non-array operations', async () => {
@@ -117,7 +117,7 @@ describe('Batch Organize Handler', () => {
         operation: { operations: 'not-array' },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.success).toBe(false);
@@ -129,7 +129,7 @@ describe('Batch Organize Handler', () => {
         operation: { operations: [] },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.success).toBe(false);
@@ -139,14 +139,14 @@ describe('Batch Organize Handler', () => {
     test('rejects batch exceeding max size', async () => {
       const operations = Array.from({ length: MAX_BATCH_SIZE + 1 }, (_, i) => ({
         source: `/src/file${i}.txt`,
-        destination: `/dest/file${i}.txt`,
+        destination: `/dest/file${i}.txt`
       }));
 
       const result = await handleBatchOrganize({
         operation: { operations },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.success).toBe(false);
@@ -156,14 +156,14 @@ describe('Batch Organize Handler', () => {
     test('processes batch successfully', async () => {
       const operations = [
         { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-        { source: '/src/file2.txt', destination: '/dest/file2.txt' },
+        { source: '/src/file2.txt', destination: '/dest/file2.txt' }
       ];
 
       const result = await handleBatchOrganize({
         operation: { operations },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.success).toBe(true);
@@ -178,14 +178,14 @@ describe('Batch Organize Handler', () => {
 
       const operations = [
         { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-        { source: '/src/file2.txt', destination: '/dest/file2.txt' },
+        { source: '/src/file2.txt', destination: '/dest/file2.txt' }
       ];
 
       const result = await handleBatchOrganize({
         operation: { operations },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.successCount).toBe(1);
@@ -198,27 +198,27 @@ describe('Batch Organize Handler', () => {
           createOrLoadOrganizeBatch: jest.fn().mockResolvedValue({
             operations: [
               { source: '/src/file1.txt', destination: '/dest/file1.txt', status: 'done' },
-              { source: '/src/file2.txt', destination: '/dest/file2.txt', status: 'pending' },
-            ],
+              { source: '/src/file2.txt', destination: '/dest/file2.txt', status: 'pending' }
+            ]
           }),
           markOrganizeOpStarted: jest.fn(),
           markOrganizeOpDone: jest.fn(),
           markOrganizeOpError: jest.fn(),
-          completeOrganizeBatch: jest.fn(),
+          completeOrganizeBatch: jest.fn()
         },
-        undoRedo: { recordAction: jest.fn() },
+        undoRedo: { recordAction: jest.fn() }
       };
 
       const result = await handleBatchOrganize({
         operation: {
           operations: [
             { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-            { source: '/src/file2.txt', destination: '/dest/file2.txt' },
-          ],
+            { source: '/src/file2.txt', destination: '/dest/file2.txt' }
+          ]
         },
         logger: mockLogger,
         getServiceIntegration: () => mockServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.successCount).toBe(2);
@@ -227,19 +227,15 @@ describe('Batch Organize Handler', () => {
     });
 
     test('handles file collision with counter', async () => {
-      mockFs.rename
-        .mockRejectedValueOnce({ code: 'EEXIST' })
-        .mockResolvedValueOnce(undefined);
+      mockFs.rename.mockRejectedValueOnce({ code: 'EEXIST' }).mockResolvedValueOnce(undefined);
 
       const result = await handleBatchOrganize({
         operation: {
-          operations: [
-            { source: '/src/file.txt', destination: '/dest/file.txt' },
-          ],
+          operations: [{ source: '/src/file.txt', destination: '/dest/file.txt' }]
         },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.success).toBe(true);
@@ -252,13 +248,11 @@ describe('Batch Organize Handler', () => {
 
       const result = await handleBatchOrganize({
         operation: {
-          operations: [
-            { source: '/src/file.txt', destination: '/dest/file.txt' },
-          ],
+          operations: [{ source: '/src/file.txt', destination: '/dest/file.txt' }]
         },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(crossDeviceMove).toHaveBeenCalled();
@@ -275,12 +269,12 @@ describe('Batch Organize Handler', () => {
         operation: {
           operations: [
             { source: '/src/file1.txt', destination: '/dest/file1.txt' },
-            { source: '/src/file2.txt', destination: '/dest/file2.txt' },
-          ],
+            { source: '/src/file2.txt', destination: '/dest/file2.txt' }
+          ]
         },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: mockGetMainWindow,
+        getMainWindow: mockGetMainWindow
       });
 
       expect(result.success).toBe(false);
@@ -290,18 +284,16 @@ describe('Batch Organize Handler', () => {
     test('sends progress to renderer', async () => {
       const mockWindow = {
         isDestroyed: () => false,
-        webContents: { send: jest.fn() },
+        webContents: { send: jest.fn() }
       };
 
       await handleBatchOrganize({
         operation: {
-          operations: [
-            { source: '/src/file.txt', destination: '/dest/file.txt' },
-          ],
+          operations: [{ source: '/src/file.txt', destination: '/dest/file.txt' }]
         },
         logger: mockLogger,
         getServiceIntegration: mockGetServiceIntegration,
-        getMainWindow: () => mockWindow,
+        getMainWindow: () => mockWindow
       });
 
       expect(mockWindow.webContents.send).toHaveBeenCalledWith(
@@ -309,8 +301,8 @@ describe('Batch Organize Handler', () => {
         expect.objectContaining({
           type: 'batch_organize',
           current: 1,
-          total: 1,
-        }),
+          total: 1
+        })
       );
     });
   });

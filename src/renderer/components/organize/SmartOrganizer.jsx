@@ -1,12 +1,16 @@
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { Search, Eye, ClipboardList, CheckCircle, Target, Zap, Lightbulb, BarChart3, Folder } from 'lucide-react';
+import {
+  Search,
+  Eye,
+  ClipboardList,
+  CheckCircle,
+  Target,
+  Zap,
+  Lightbulb,
+  BarChart3,
+  Folder
+} from 'lucide-react';
 import { logger } from '../../../shared/logger';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
@@ -24,19 +28,14 @@ const ORGANIZATION_STEPS = [
   { id: 'analyze', label: 'Analyze', Icon: Search },
   { id: 'review', label: 'Review', Icon: Eye },
   { id: 'preview', label: 'Preview', Icon: ClipboardList },
-  { id: 'organize', label: 'Organize', Icon: CheckCircle },
+  { id: 'organize', label: 'Organize', Icon: CheckCircle }
 ];
 
 /**
  * SmartOrganizer - Simplified, intuitive interface for file organization
  * Guides users through the organization process with clear steps
  */
-function SmartOrganizer({
-  files = [],
-  smartFolders = [],
-  onOrganize,
-  onCancel,
-}) {
+function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel }) {
   const { addNotification } = useNotification();
   const [currentStep, setCurrentStep] = useState('analyze');
   const [suggestions, setSuggestions] = useState({});
@@ -64,20 +63,18 @@ function SmartOrganizer({
       // Get suggestions for all files
       if (files.length === 1) {
         // Single file mode
-        const result = await window.electronAPI.suggestions.getFileSuggestions(
-          files[0],
-          { includeAlternatives: true },
-        );
+        const result = await window.electronAPI.suggestions.getFileSuggestions(files[0], {
+          includeAlternatives: true
+        });
         // FIX: Check mounted state before updating
         if (isMountedRef.current) {
           setSuggestions({ [files[0].path]: result });
         }
       } else {
         // Batch mode
-        const batchResult =
-          await window.electronAPI.suggestions.getBatchSuggestions(files, {
-            analyzePatterns: true,
-          });
+        const batchResult = await window.electronAPI.suggestions.getBatchSuggestions(files, {
+          analyzePatterns: true
+        });
         // FIX: Check mounted state before updating
         if (isMountedRef.current) {
           setBatchSuggestions(batchResult);
@@ -85,8 +82,7 @@ function SmartOrganizer({
       }
 
       // Get folder improvement suggestions
-      const improvements =
-        await window.electronAPI.suggestions.analyzeFolderStructure(files);
+      const improvements = await window.electronAPI.suggestions.analyzeFolderStructure(files);
       // FIX: Check mounted state before updating
       if (isMountedRef.current) {
         setFolderImprovements(improvements?.improvements || []);
@@ -94,13 +90,13 @@ function SmartOrganizer({
     } catch (error) {
       logger.error('Failed to analyze files', {
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
       // FIX: Notify user about the failure so they're aware analysis didn't work
       if (isMountedRef.current) {
         addNotification(
           'Failed to analyze files. Please try again or check your connection.',
-          'error',
+          'error'
         );
       }
     } finally {
@@ -148,30 +144,23 @@ function SmartOrganizer({
     // Await feedback recording before finalizing UI state
     isRecordingFeedbackRef.current = true;
     try {
-      await window.electronAPI.suggestions.recordFeedback(
-        file,
-        suggestion,
-        true,
-      );
+      await window.electronAPI.suggestions.recordFeedback(file, suggestion, true);
       // Only update UI state after successful feedback recording
       setAcceptedSuggestions((prev) => ({
         ...prev,
-        [file.path]: suggestion,
+        [file.path]: suggestion
       }));
     } catch (error) {
       logger.error('Failed to record accept feedback', {
         error: error.message,
         stack: error.stack,
-        filePath: file.path,
+        filePath: file.path
       });
       // Still update UI but notify user of the failure
-      addNotification(
-        'Feedback recording failed, but suggestion accepted locally',
-        'warning',
-      );
+      addNotification('Feedback recording failed, but suggestion accepted locally', 'warning');
       setAcceptedSuggestions((prev) => ({
         ...prev,
-        [file.path]: suggestion,
+        [file.path]: suggestion
       }));
     } finally {
       isRecordingFeedbackRef.current = false;
@@ -185,21 +174,17 @@ function SmartOrganizer({
     // Await feedback recording and update ref on completion
     isRecordingFeedbackRef.current = true;
     try {
-      await window.electronAPI.suggestions.recordFeedback(
-        file,
-        suggestion,
-        false,
-      );
+      await window.electronAPI.suggestions.recordFeedback(file, suggestion, false);
       // Update rejected ref
       rejectedSuggestionsRef.current = {
         ...rejectedSuggestionsRef.current,
-        [file.path]: suggestion,
+        [file.path]: suggestion
       };
     } catch (error) {
       logger.error('Failed to record reject feedback', {
         error: error.message,
         stack: error.stack,
-        filePath: file.path,
+        filePath: file.path
       });
       // Notify user of failure
       addNotification('Failed to record rejection feedback', 'warning');
@@ -230,11 +215,7 @@ function SmartOrganizer({
               <step.Icon className="w-5 h-5" />
             </div>
             <div className="ml-2 mr-4">
-              <span
-                className={`text-sm ${
-                  currentStep === step.id ? 'font-bold' : ''
-                }`}
-              >
+              <span className={`text-sm ${currentStep === step.id ? 'font-bold' : ''}`}>
                 {step.label}
               </span>
             </div>
@@ -245,7 +226,7 @@ function SmartOrganizer({
         ))}
       </div>
     ),
-    [currentStep],
+    [currentStep]
   );
 
   // FIX: Memoize average confidence calculation to prevent recalculation on every render
@@ -258,15 +239,11 @@ function SmartOrganizer({
   const averageConfidence = useMemo(() => {
     if (files.length === 1) {
       const suggestion = suggestions[files[0]?.path];
-      return suggestion
-        ? normalizeConfidencePercent(suggestion.confidence)
-        : 0;
+      return suggestion ? normalizeConfidencePercent(suggestion.confidence) : 0;
     } else if (batchSuggestions?.groups?.length > 0) {
       const avg =
-        batchSuggestions.groups.reduce(
-          (sum, group) => sum + (group.confidence || 0),
-          0,
-        ) / batchSuggestions.groups.length;
+        batchSuggestions.groups.reduce((sum, group) => sum + (group.confidence || 0), 0) /
+        batchSuggestions.groups.length;
       return normalizeConfidencePercent(avg);
     }
     return 0;
@@ -277,9 +254,7 @@ function SmartOrganizer({
       {/* Header with Mode Toggle */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold text-system-gray-900">
-            Smart File Organizer
-          </h2>
+          <h2 className="text-2xl font-bold text-system-gray-900">Smart File Organizer</h2>
           <p className="text-sm text-system-gray-600 mt-1">
             {files.length} file{files.length !== 1 ? 's' : ''} ready to organize
           </p>
@@ -380,18 +355,14 @@ function SmartOrganizer({
                   </h4>
                   <p className="text-sm text-system-gray-600 mt-1">
                     We found {folderImprovements.length} way
-                    {folderImprovements.length !== 1 ? 's' : ''} to improve your
-                    organization
+                    {folderImprovements.length !== 1 ? 's' : ''} to improve your organization
                   </p>
                   <Button
                     size="sm"
                     variant="secondary"
                     className="mt-2"
                     onClick={() => {
-                      addNotification(
-                        'Detailed improvements view coming soon',
-                        'info',
-                      );
+                      addNotification('Detailed improvements view coming soon', 'info');
                     }}
                   >
                     View Improvements
@@ -477,9 +448,16 @@ function SmartOrganizer({
       {(suggestions || batchSuggestions) && (
         <div className="flex items-center justify-between text-sm text-system-gray-600 pt-4 border-t">
           <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1"><BarChart3 className="w-4 h-4" /> Accuracy: {averageConfidence}%</span>
-            <span className="flex items-center gap-1"><Folder className="w-4 h-4" /> {smartFolders.length} Smart Folders</span>
-            <span className="flex items-center gap-1"><CheckCircle className="w-4 h-4 text-stratosort-success" /> {Object.keys(acceptedSuggestions).length} Accepted</span>
+            <span className="flex items-center gap-1">
+              <BarChart3 className="w-4 h-4" /> Accuracy: {averageConfidence}%
+            </span>
+            <span className="flex items-center gap-1">
+              <Folder className="w-4 h-4" /> {smartFolders.length} Smart Folders
+            </span>
+            <span className="flex items-center gap-1">
+              <CheckCircle className="w-4 h-4 text-stratosort-success" />{' '}
+              {Object.keys(acceptedSuggestions).length} Accepted
+            </span>
           </div>
           <div className="text-xs">The system learns from your choices</div>
         </div>
@@ -491,20 +469,20 @@ function SmartOrganizer({
 const fileShape = PropTypes.shape({
   path: PropTypes.string.isRequired,
   name: PropTypes.string,
-  analysis: PropTypes.object,
+  analysis: PropTypes.object
 });
 
 const smartFolderShape = PropTypes.shape({
   id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   name: PropTypes.string,
-  description: PropTypes.string,
+  description: PropTypes.string
 });
 
 SmartOrganizer.propTypes = {
   files: PropTypes.arrayOf(fileShape),
   smartFolders: PropTypes.arrayOf(smartFolderShape),
   onOrganize: PropTypes.func,
-  onCancel: PropTypes.func,
+  onCancel: PropTypes.func
 };
 
 export default SmartOrganizer;

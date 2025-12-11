@@ -7,14 +7,14 @@
 jest.mock('electron', () => ({
   app: {
     getPath: jest.fn().mockReturnValue('/tmp/test-app'),
-    getVersion: jest.fn().mockReturnValue('1.0.0'),
+    getVersion: jest.fn().mockReturnValue('1.0.0')
   },
   ipcMain: {
-    emit: jest.fn(),
+    emit: jest.fn()
   },
   BrowserWindow: {
-    getAllWindows: jest.fn().mockReturnValue([]),
-  },
+    getAllWindows: jest.fn().mockReturnValue([])
+  }
 }));
 
 // Mock fs promises
@@ -25,7 +25,7 @@ const mockFs = {
   readdir: jest.fn().mockResolvedValue([]),
   stat: jest.fn(),
   access: jest.fn().mockResolvedValue(undefined),
-  unlink: jest.fn().mockResolvedValue(undefined),
+  unlink: jest.fn().mockResolvedValue(undefined)
 };
 
 // Mock fs sync
@@ -34,8 +34,8 @@ const mockFsSync = {
   mkdirSync: jest.fn(),
   watch: jest.fn().mockReturnValue({
     on: jest.fn().mockReturnThis(),
-    close: jest.fn(),
-  }),
+    close: jest.fn()
+  })
 };
 
 jest.mock('fs', () => ({
@@ -43,7 +43,7 @@ jest.mock('fs', () => ({
   existsSync: (...args) => mockFsSync.existsSync(...args),
   mkdirSync: (...args) => mockFsSync.mkdirSync(...args),
   watch: (...args) => mockFsSync.watch(...args),
-  constants: { R_OK: 4, W_OK: 2 },
+  constants: { R_OK: 4, W_OK: 2 }
 }));
 
 // Mock logger
@@ -53,16 +53,14 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock settings validation
 jest.mock('../src/shared/settingsValidation', () => ({
-  validateSettings: jest
-    .fn()
-    .mockReturnValue({ valid: true, errors: [], warnings: [] }),
-  sanitizeSettings: jest.fn((s) => s),
+  validateSettings: jest.fn().mockReturnValue({ valid: true, errors: [], warnings: [] }),
+  sanitizeSettings: jest.fn((s) => s)
 }));
 
 // Mock default settings
@@ -70,13 +68,13 @@ jest.mock('../src/shared/defaultSettings', () => ({
   DEFAULT_SETTINGS: {
     theme: 'system',
     autoOrganize: false,
-    downloadConfidenceThreshold: 0.9,
-  },
+    downloadConfidenceThreshold: 0.9
+  }
 }));
 
 // Mock atomic file operations
 jest.mock('../src/shared/atomicFileOperations', () => ({
-  backupAndReplace: jest.fn().mockResolvedValue({ success: true }),
+  backupAndReplace: jest.fn().mockResolvedValue({ success: true })
 }));
 
 describe('SettingsService', () => {
@@ -125,9 +123,7 @@ describe('SettingsService', () => {
     });
 
     test('returns merged settings from file', async () => {
-      mockFs.readFile.mockResolvedValueOnce(
-        JSON.stringify({ theme: 'dark', customSetting: true }),
-      );
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ theme: 'dark', customSetting: true }));
 
       const settings = await service.load();
 
@@ -169,12 +165,10 @@ describe('SettingsService', () => {
       validateSettings.mockReturnValueOnce({
         valid: false,
         errors: ['Invalid theme'],
-        warnings: [],
+        warnings: []
       });
 
-      await expect(service.save({ theme: 'invalid' })).rejects.toThrow(
-        'Invalid settings',
-      );
+      await expect(service.save({ theme: 'invalid' })).rejects.toThrow('Invalid settings');
     });
 
     test('creates backup before saving', async () => {
@@ -186,12 +180,10 @@ describe('SettingsService', () => {
 
     test('merges with existing settings', async () => {
       mockFs.readFile.mockResolvedValueOnce(
-        JSON.stringify({ theme: 'light', existingSetting: true }),
+        JSON.stringify({ theme: 'light', existingSetting: true })
       );
 
-      const {
-        backupAndReplace,
-      } = require('../src/shared/atomicFileOperations');
+      const { backupAndReplace } = require('../src/shared/atomicFileOperations');
 
       await service.save({ theme: 'dark' });
 
@@ -269,20 +261,20 @@ describe('SettingsService', () => {
     test('returns list of backup files', async () => {
       mockFs.readdir.mockResolvedValueOnce([
         'settings-2024-01-01T00-00-00.json',
-        'settings-2024-01-02T00-00-00.json',
+        'settings-2024-01-02T00-00-00.json'
       ]);
       mockFs.readFile
         .mockResolvedValueOnce(
           JSON.stringify({
             timestamp: '2024-01-01T00:00:00Z',
-            appVersion: '1.0.0',
-          }),
+            appVersion: '1.0.0'
+          })
         )
         .mockResolvedValueOnce(
           JSON.stringify({
             timestamp: '2024-01-02T00:00:00Z',
-            appVersion: '1.0.0',
-          }),
+            appVersion: '1.0.0'
+          })
         );
       mockFs.stat
         .mockResolvedValueOnce({ size: 100, mtime: new Date('2024-01-01') })
@@ -297,15 +289,11 @@ describe('SettingsService', () => {
     test('sorts backups by timestamp (newest first)', async () => {
       mockFs.readdir.mockResolvedValueOnce([
         'settings-2024-01-01T00-00-00.json',
-        'settings-2024-01-02T00-00-00.json',
+        'settings-2024-01-02T00-00-00.json'
       ]);
       mockFs.readFile
-        .mockResolvedValueOnce(
-          JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }),
-        )
-        .mockResolvedValueOnce(
-          JSON.stringify({ timestamp: '2024-01-02T00:00:00Z' }),
-        );
+        .mockResolvedValueOnce(JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }))
+        .mockResolvedValueOnce(JSON.stringify({ timestamp: '2024-01-02T00:00:00Z' }));
       mockFs.stat
         .mockResolvedValueOnce({ size: 100, mtime: new Date('2024-01-01') })
         .mockResolvedValueOnce({ size: 150, mtime: new Date('2024-01-02') });
@@ -314,7 +302,7 @@ describe('SettingsService', () => {
 
       // Newest should be first
       expect(new Date(backups[0].timestamp).getTime()).toBeGreaterThan(
-        new Date(backups[1].timestamp).getTime(),
+        new Date(backups[1].timestamp).getTime()
       );
     });
 
@@ -322,11 +310,9 @@ describe('SettingsService', () => {
       mockFs.readdir.mockResolvedValueOnce([
         'settings-2024-01-01T00-00-00.json',
         'other-file.json',
-        'random.txt',
+        'random.txt'
       ]);
-      mockFs.readFile.mockResolvedValueOnce(
-        JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }),
-      );
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }));
       mockFs.stat.mockResolvedValueOnce({ size: 100, mtime: new Date() });
 
       const backups = await service.listBackups();
@@ -340,8 +326,8 @@ describe('SettingsService', () => {
       mockFs.readFile.mockResolvedValueOnce(
         JSON.stringify({
           timestamp: '2024-01-01T00:00:00Z',
-          settings: { theme: 'dark', autoOrganize: true },
-        }),
+          settings: { theme: 'dark', autoOrganize: true }
+        })
       );
 
       const result = await service.restoreFromBackup('/path/to/backup.json');
@@ -357,7 +343,7 @@ describe('SettingsService', () => {
         timestamp: '2024-01-01T00:00:00Z',
         appVersion: '1.0.0',
         settings,
-        hash: 'invalid-hash',
+        hash: 'invalid-hash'
       };
 
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(backupData));
@@ -370,9 +356,7 @@ describe('SettingsService', () => {
     });
 
     test('handles missing settings in backup', async () => {
-      mockFs.readFile.mockResolvedValueOnce(
-        JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }),
-      );
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }));
 
       const result = await service.restoreFromBackup('/path/to/backup.json');
 
@@ -404,7 +388,7 @@ describe('SettingsService', () => {
         filename: `settings-2024-01-${String(i + 1).padStart(2, '0')}T00-00-00.json`,
         path: `/path/settings-${i}.json`,
         timestamp: new Date(2024, 0, i + 1).toISOString(),
-        _parsedTime: new Date(2024, 0, i + 1).getTime(),
+        _parsedTime: new Date(2024, 0, i + 1).getTime()
       }));
 
       jest.spyOn(service, 'listBackups').mockResolvedValueOnce(backups);

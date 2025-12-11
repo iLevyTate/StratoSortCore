@@ -40,7 +40,7 @@ describe('Suggestion Ranker', () => {
       const suggestions = [
         { folder: 'Documents', score: 0.8, confidence: 0.7 },
         { folder: 'documents', score: 0.6, confidence: 0.5 }, // Duplicate (case-insensitive)
-        { folder: 'Photos', score: 0.9, confidence: 0.8 },
+        { folder: 'Photos', score: 0.9, confidence: 0.8 }
       ];
 
       const result = rankSuggestions(suggestions);
@@ -53,7 +53,7 @@ describe('Suggestion Ranker', () => {
     test('merges scores for duplicates (takes max)', () => {
       const suggestions = [
         { folder: 'Documents', score: 0.6, confidence: 0.5 },
-        { folder: 'documents', score: 0.8, confidence: 0.7 },
+        { folder: 'documents', score: 0.8, confidence: 0.7 }
       ];
 
       const result = rankSuggestions(suggestions);
@@ -66,7 +66,7 @@ describe('Suggestion Ranker', () => {
     test('sorts by weighted score', () => {
       const suggestions = [
         { folder: 'Low', score: 0.5, confidence: 0.5, source: 'strategy' },
-        { folder: 'High', score: 0.5, confidence: 0.5, source: 'user_pattern' },
+        { folder: 'High', score: 0.5, confidence: 0.5, source: 'user_pattern' }
       ];
 
       const result = rankSuggestions(suggestions);
@@ -79,7 +79,7 @@ describe('Suggestion Ranker', () => {
       const suggestions = [
         { folder: 'Documents', score: 0.8 },
         { folder: null, score: 0.9 },
-        { folder: '', score: 0.7 },
+        { folder: '', score: 0.7 }
       ];
 
       const result = rankSuggestions(suggestions);
@@ -89,9 +89,7 @@ describe('Suggestion Ranker', () => {
     });
 
     test('adds weightedScore property', () => {
-      const suggestions = [
-        { folder: 'Test', score: 0.8, source: 'semantic' },
-      ];
+      const suggestions = [{ folder: 'Test', score: 0.8, source: 'semantic' }];
 
       const result = rankSuggestions(suggestions);
 
@@ -145,7 +143,7 @@ describe('Suggestion Ranker', () => {
     test('boosts confidence for multiple sources', () => {
       const confidence = calculateConfidence({
         confidence: 0.7,
-        sources: ['semantic', 'pattern'],
+        sources: ['semantic', 'pattern']
       });
       expect(confidence).toBe(0.84); // 0.7 * 1.2
     });
@@ -153,7 +151,7 @@ describe('Suggestion Ranker', () => {
     test('boosts confidence for user_pattern source', () => {
       const confidence = calculateConfidence({
         confidence: 0.7,
-        source: 'user_pattern',
+        source: 'user_pattern'
       });
       expect(confidence).toBe(0.91); // 0.7 * 1.3
     });
@@ -161,7 +159,7 @@ describe('Suggestion Ranker', () => {
     test('caps confidence at 1.0', () => {
       const confidence = calculateConfidence({
         confidence: 0.9,
-        source: 'user_pattern',
+        source: 'user_pattern'
       });
       expect(confidence).toBeLessThanOrEqual(1.0);
     });
@@ -181,57 +179,45 @@ describe('Suggestion Ranker', () => {
     test('generates semantic explanation', () => {
       const explanation = generateExplanation(
         { source: 'semantic', folder: 'Documents' },
-        { extension: '.pdf' },
+        { extension: '.pdf' }
       );
       expect(explanation).toContain('similar');
       expect(explanation).toContain('Documents');
     });
 
     test('generates user_pattern explanation', () => {
-      const explanation = generateExplanation(
-        { source: 'user_pattern' },
-        { extension: '.pdf' },
-      );
+      const explanation = generateExplanation({ source: 'user_pattern' }, { extension: '.pdf' });
       expect(explanation).toContain('organized similar files');
     });
 
     test('generates strategy explanation', () => {
       const explanation = generateExplanation(
         { source: 'strategy', strategyName: 'Project-Based' },
-        { extension: '.pdf' },
+        { extension: '.pdf' }
       );
       expect(explanation).toContain('Project-Based');
     });
 
     test('generates llm explanation', () => {
-      const explanation = generateExplanation(
-        { source: 'llm' },
-        { extension: '.pdf' },
-      );
+      const explanation = generateExplanation({ source: 'llm' }, { extension: '.pdf' });
       expect(explanation).toContain('content and purpose');
     });
 
     test('generates pattern explanation', () => {
-      const explanation = generateExplanation(
-        { source: 'pattern' },
-        { extension: 'pdf' },
-      );
+      const explanation = generateExplanation({ source: 'pattern' }, { extension: 'pdf' });
       expect(explanation).toContain('PDF');
     });
 
     test('generates llm_creative explanation with reasoning', () => {
       const explanation = generateExplanation(
         { source: 'llm_creative', reasoning: 'Custom reasoning here' },
-        { extension: '.pdf' },
+        { extension: '.pdf' }
       );
       expect(explanation).toBe('Custom reasoning here');
     });
 
     test('falls back to generic explanation for unknown source', () => {
-      const explanation = generateExplanation(
-        { source: 'unknown_source' },
-        { extension: '.pdf' },
-      );
+      const explanation = generateExplanation({ source: 'unknown_source' }, { extension: '.pdf' });
       expect(explanation).toContain('file analysis');
     });
   });
@@ -240,7 +226,7 @@ describe('Suggestion Ranker', () => {
     test('combines suggestions from multiple sources', () => {
       const sources = {
         semantic: [{ folder: 'Docs', score: 0.8 }],
-        pattern: [{ folder: 'Files', score: 0.7 }],
+        pattern: [{ folder: 'Files', score: 0.7 }]
       };
 
       const result = combineSuggestions(sources);
@@ -253,7 +239,7 @@ describe('Suggestion Ranker', () => {
     test('handles empty sources', () => {
       const sources = {
         semantic: [],
-        pattern: [],
+        pattern: []
       };
 
       const result = combineSuggestions(sources);
@@ -263,7 +249,10 @@ describe('Suggestion Ranker', () => {
 
     test('adds source tag to each suggestion', () => {
       const sources = {
-        llm: [{ folder: 'AI', score: 0.9 }, { folder: 'ML', score: 0.8 }],
+        llm: [
+          { folder: 'AI', score: 0.9 },
+          { folder: 'ML', score: 0.8 }
+        ]
       };
 
       const result = combineSuggestions(sources);

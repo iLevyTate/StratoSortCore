@@ -32,13 +32,13 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
           path: file.meta?.path || '',
           name: file.meta?.name || '',
           model: file.model || '',
-          updatedAt: file.updatedAt || new Date().toISOString(),
+          updatedAt: file.updatedAt || new Date().toISOString()
         };
 
         // Merge with sanitized additional metadata (filters dangerous fields)
         const sanitized = sanitizeMetadata({
           ...baseMetadata,
-          ...file.meta,
+          ...file.meta
         });
 
         // ChromaDB expects embeddings as arrays
@@ -46,7 +46,7 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
           ids: [file.id],
           embeddings: [file.vector],
           metadatas: [sanitized],
-          documents: [sanitized.path || file.id],
+          documents: [sanitized.path || file.id]
         });
 
         // Invalidate query cache entries that might reference this file
@@ -56,7 +56,7 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
 
         logger.debug('[FileOps] Upserted file embedding', {
           id: file.id,
-          path: sanitized.path,
+          path: sanitized.path
         });
       } catch (error) {
         logger.error('[FileOps] Failed to upsert file with context:', {
@@ -66,12 +66,12 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
           fileName: file.meta?.name,
           timestamp: new Date().toISOString(),
           error: error.message,
-          errorStack: error.stack,
+          errorStack: error.stack
         });
         throw error;
       }
     },
-    { maxRetries: 3, initialDelay: 500 },
+    { maxRetries: 3, initialDelay: 500 }
   )();
 }
 
@@ -96,7 +96,7 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
         for (const file of files) {
           if (!file.id || !file.vector || !Array.isArray(file.vector)) {
             logger.warn('[FileOps] Skipping invalid file in batch', {
-              id: file.id,
+              id: file.id
             });
             continue;
           }
@@ -105,12 +105,12 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
             path: file.meta?.path || '',
             name: file.meta?.name || '',
             model: file.model || '',
-            updatedAt: file.updatedAt || new Date().toISOString(),
+            updatedAt: file.updatedAt || new Date().toISOString()
           };
 
           const sanitized = sanitizeMetadata({
             ...baseMetadata,
-            ...file.meta,
+            ...file.meta
           });
 
           ids.push(file.id);
@@ -124,7 +124,7 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
             ids,
             embeddings,
             metadatas,
-            documents,
+            documents
           });
 
           // Invalidate cache for all affected files
@@ -133,7 +133,7 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
           }
 
           logger.info('[FileOps] Batch upserted file embeddings', {
-            count: ids.length,
+            count: ids.length
           });
         }
 
@@ -145,12 +145,12 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
           successfulCount: ids.length,
           timestamp: new Date().toISOString(),
           error: error.message,
-          errorStack: error.stack,
+          errorStack: error.stack
         });
         throw error;
       }
     },
-    { maxRetries: 3, initialDelay: 500 },
+    { maxRetries: 3, initialDelay: 500 }
   )();
 }
 
@@ -177,7 +177,7 @@ async function deleteFileEmbedding({ fileId, fileCollection, queryCache }) {
   } catch (error) {
     logger.error('[FileOps] Failed to delete file embedding:', {
       fileId,
-      error: error.message,
+      error: error.message
     });
     return false;
   }
@@ -192,11 +192,7 @@ async function deleteFileEmbedding({ fileId, fileCollection, queryCache }) {
  * @param {Object} params.queryCache - Query cache instance
  * @returns {Promise<number>} Number of deleted files
  */
-async function batchDeleteFileEmbeddings({
-  fileIds,
-  fileCollection,
-  queryCache,
-}) {
+async function batchDeleteFileEmbeddings({ fileIds, fileCollection, queryCache }) {
   if (!fileIds || fileIds.length === 0) {
     return 0;
   }
@@ -210,13 +206,13 @@ async function batchDeleteFileEmbeddings({
     }
 
     logger.info('[FileOps] Batch deleted file embeddings', {
-      count: fileIds.length,
+      count: fileIds.length
     });
     return fileIds.length;
   } catch (error) {
     logger.error('[FileOps] Failed to batch delete file embeddings:', {
       count: fileIds.length,
-      error: error.message,
+      error: error.message
     });
     throw error;
   }
@@ -249,7 +245,7 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
         if (!update.oldId || !update.newId) {
           logger.warn('[FileOps] Skipping invalid path update', {
             oldId: update.oldId,
-            newId: update.newId,
+            newId: update.newId
           });
           continue;
         }
@@ -257,7 +253,7 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
         try {
           const existingFile = await fileCollection.get({
             ids: [update.oldId],
-            include: ['embeddings', 'metadatas', 'documents'],
+            include: ['embeddings', 'metadatas', 'documents']
           });
 
           if (
@@ -273,14 +269,14 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
               ...update.newMeta,
               path: update.newMeta.path || existingMeta.path,
               name: update.newMeta.name || existingMeta.name,
-              updatedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
             });
 
             updatesToProcess.push({
               id: update.newId,
               embedding: existingFile.embeddings[0],
               metadata: updatedMeta,
-              document: update.newMeta.path || update.newId,
+              document: update.newMeta.path || update.newId
             });
 
             // Delete old entry if ID changed
@@ -288,24 +284,24 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
               try {
                 await fileCollection.delete({ ids: [update.oldId] });
                 logger.debug('[FileOps] Deleted old file entry', {
-                  oldId: update.oldId,
+                  oldId: update.oldId
                 });
               } catch (deleteError) {
                 logger.debug('[FileOps] Could not delete old file entry', {
                   oldId: update.oldId,
-                  error: deleteError.message,
+                  error: deleteError.message
                 });
               }
             }
           } else {
             logger.warn('[FileOps] File not found for path update', {
-              oldId: update.oldId,
+              oldId: update.oldId
             });
           }
         } catch (getError) {
           logger.warn('[FileOps] Error getting file for path update', {
             oldId: update.oldId,
-            error: getError.message,
+            error: getError.message
           });
         }
       }
@@ -316,7 +312,7 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
           ids: updatesToProcess.map((u) => u.id),
           embeddings: updatesToProcess.map((u) => u.embedding),
           metadatas: updatesToProcess.map((u) => u.metadata),
-          documents: updatesToProcess.map((u) => u.document),
+          documents: updatesToProcess.map((u) => u.document)
         });
 
         // Invalidate cache for all affected files
@@ -336,14 +332,14 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
         updatedCount += updatesToProcess.length;
         logger.debug('[FileOps] Batch updated file paths', {
           count: updatesToProcess.length,
-          batch: i / BATCH_SIZE + 1,
+          batch: i / BATCH_SIZE + 1
         });
       }
     }
 
     logger.info('[FileOps] Batch updated file paths', {
       total: pathUpdates.length,
-      updated: updatedCount,
+      updated: updatedCount
     });
 
     return updatedCount;
@@ -352,7 +348,7 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
       error: error.message,
       errorStack: error.stack,
       totalUpdates: pathUpdates.length,
-      updatedCount,
+      updatedCount
     });
     throw error;
   }
@@ -367,15 +363,11 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
  * @param {Object} params.fileCollection - ChromaDB file collection
  * @returns {Promise<Array>} Similar files with scores
  */
-async function querySimilarFiles({
-  queryEmbedding,
-  topK = 10,
-  fileCollection,
-}) {
+async function querySimilarFiles({ queryEmbedding, topK = 10, fileCollection }) {
   try {
     const results = await fileCollection.query({
       queryEmbeddings: [queryEmbedding],
-      nResults: topK,
+      nResults: topK
     });
 
     if (!results.ids || !results.ids[0] || results.ids[0].length === 0) {
@@ -401,7 +393,7 @@ async function querySimilarFiles({
         id: ids[i],
         score,
         metadata,
-        document,
+        document
       });
     }
 
@@ -428,8 +420,8 @@ async function resetFiles({ client }) {
       metadata: {
         description: 'Document and image file embeddings for semantic search',
         hnsw_space: 'cosine',
-        'hnsw:space': 'cosine', // Keep for backward compatibility with existing collections
-      },
+        'hnsw:space': 'cosine' // Keep for backward compatibility with existing collections
+      }
     });
 
     logger.info('[FileOps] Reset file embeddings collection');
@@ -448,5 +440,5 @@ module.exports = {
   updateFilePaths,
   querySimilarFiles,
   resetFiles,
-  OperationType,
+  OperationType
 };

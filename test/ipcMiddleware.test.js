@@ -5,11 +5,11 @@
 
 // Mock dependencies
 jest.mock('../src/renderer/store/slices/analysisSlice', () => ({
-  updateProgress: jest.fn((data) => ({ type: 'analysis/updateProgress', payload: data })),
+  updateProgress: jest.fn((data) => ({ type: 'analysis/updateProgress', payload: data }))
 }));
 
 jest.mock('../src/renderer/store/slices/systemSlice', () => ({
-  updateMetrics: jest.fn((data) => ({ type: 'system/updateMetrics', payload: data })),
+  updateMetrics: jest.fn((data) => ({ type: 'system/updateMetrics', payload: data }))
 }));
 
 jest.mock('../src/shared/logger', () => ({
@@ -17,8 +17,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
-    debug: jest.fn(),
-  },
+    debug: jest.fn()
+  }
 }));
 
 describe('ipcMiddleware', () => {
@@ -39,8 +39,8 @@ describe('ipcMiddleware', () => {
     mockElectronAPI = {
       events: {
         onOperationProgress: jest.fn().mockReturnValue(mockCleanupFn),
-        onSystemMetrics: jest.fn().mockReturnValue(mockCleanupFn),
-      },
+        onSystemMetrics: jest.fn().mockReturnValue(mockCleanupFn)
+      }
     };
 
     mockAddEventListener = jest.fn();
@@ -51,10 +51,10 @@ describe('ipcMiddleware', () => {
       value: {
         electronAPI: mockElectronAPI,
         addEventListener: mockAddEventListener,
-        removeEventListener: mockRemoveEventListener,
+        removeEventListener: mockRemoveEventListener
       },
       writable: true,
-      configurable: true,
+      configurable: true
     });
 
     // Mock module.hot
@@ -68,7 +68,7 @@ describe('ipcMiddleware', () => {
     mockDispatch = jest.fn();
     mockStore = {
       dispatch: mockDispatch,
-      getState: jest.fn().mockReturnValue({}),
+      getState: jest.fn().mockReturnValue({})
     };
     mockNext = jest.fn((action) => action);
   });
@@ -121,10 +121,7 @@ describe('ipcMiddleware', () => {
     test('adds beforeunload event listener', () => {
       ipcMiddleware(mockStore);
 
-      expect(mockAddEventListener).toHaveBeenCalledWith(
-        'beforeunload',
-        expect.any(Function),
-      );
+      expect(mockAddEventListener).toHaveBeenCalledWith('beforeunload', expect.any(Function));
     });
 
     test('only initializes listeners once', () => {
@@ -149,10 +146,7 @@ describe('ipcMiddleware', () => {
       ipcMiddleware(mockStore);
       cleanupIpcListeners();
 
-      expect(mockRemoveEventListener).toHaveBeenCalledWith(
-        'beforeunload',
-        expect.any(Function),
-      );
+      expect(mockRemoveEventListener).toHaveBeenCalledWith('beforeunload', expect.any(Function));
     });
 
     test('resets initialized flag', () => {
@@ -207,8 +201,8 @@ describe('ipcMiddleware', () => {
       // The actual HMR setup would need integration testing
       global.module = {
         hot: {
-          dispose: jest.fn(),
-        },
+          dispose: jest.fn()
+        }
       };
 
       // Re-mock window
@@ -216,11 +210,11 @@ describe('ipcMiddleware', () => {
         electronAPI: {
           events: {
             onOperationProgress: jest.fn().mockReturnValue(jest.fn()),
-            onSystemMetrics: jest.fn().mockReturnValue(jest.fn()),
-          },
+            onSystemMetrics: jest.fn().mockReturnValue(jest.fn())
+          }
         },
         addEventListener: jest.fn(),
-        removeEventListener: jest.fn(),
+        removeEventListener: jest.fn()
       };
 
       // The middleware was already loaded, but the test verifies no crashes

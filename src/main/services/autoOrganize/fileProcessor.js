@@ -13,7 +13,7 @@ const { sanitizeFile } = require('./fileTypeUtils');
 const {
   createDefaultFolder,
   getFallbackDestination,
-  buildDestinationPath,
+  buildDestinationPath
 } = require('./folderOperations');
 
 logger.setContext('AutoOrganize-FileProcessor');
@@ -29,19 +29,14 @@ const generateSecureId = (prefix) =>
  * @param {string} defaultLocation - Default location
  * @param {Object} results - Results object to populate
  */
-async function processFilesWithoutAnalysis(
-  files,
-  smartFolders,
-  defaultLocation,
-  results,
-) {
+async function processFilesWithoutAnalysis(files, smartFolders, defaultLocation, results) {
   logger.info('[AutoOrganize] Processing files without analysis', {
-    count: files.length,
+    count: files.length
   });
 
   // Find or create default folder once for all files
   let defaultFolder = smartFolders.find(
-    (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized',
+    (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized'
   );
 
   if (!defaultFolder) {
@@ -52,7 +47,7 @@ async function processFilesWithoutAnalysis(
       for (const file of files) {
         results.failed.push({
           file: sanitizeFile(file),
-          reason: 'No analysis available and failed to create default folder',
+          reason: 'No analysis available and failed to create default folder'
         });
       }
       return;
@@ -63,20 +58,20 @@ async function processFilesWithoutAnalysis(
   for (const file of files) {
     const destination = path.join(
       defaultFolder.path || `${defaultLocation}/${defaultFolder.name}`,
-      file.name,
+      file.name
     );
 
     results.organized.push({
       file: sanitizeFile(file),
       destination,
       confidence: 0.1,
-      method: 'no-analysis-default',
+      method: 'no-analysis-default'
     });
 
     results.operations.push({
       type: 'move',
       source: file.path,
-      destination,
+      destination
     });
   }
 }
@@ -96,7 +91,7 @@ async function processFilesIndividually(
   options,
   results,
   suggestionService,
-  thresholds,
+  thresholds
 ) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
 
@@ -105,58 +100,48 @@ async function processFilesIndividually(
       // Get suggestion for the file
       let suggestion;
       try {
-        suggestion = await suggestionService.getSuggestionsForFile(
-          file,
-          smartFolders,
-          { includeAlternatives: false },
-        );
+        suggestion = await suggestionService.getSuggestionsForFile(file, smartFolders, {
+          includeAlternatives: false
+        });
       } catch (suggestionError) {
         logger.error('[AutoOrganize] Failed to get suggestion for file:', {
           file: file.name,
-          error: suggestionError.message,
+          error: suggestionError.message
         });
 
         // Use fallback logic on suggestion failure
-        const fallbackDestination = getFallbackDestination(
-          file,
-          smartFolders,
-          defaultLocation,
-        );
+        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
         results.organized.push({
           file: sanitizeFile(file),
           destination: fallbackDestination,
           confidence: 0.2,
-          method: 'suggestion-error-fallback',
+          method: 'suggestion-error-fallback'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination: fallbackDestination,
+          destination: fallbackDestination
         });
         continue;
       }
 
       if (!suggestion || !suggestion.success || !suggestion.primary) {
         // Use fallback logic
-        const fallbackDestination = getFallbackDestination(
-          file,
-          smartFolders,
-          defaultLocation,
-        );
+        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
         results.organized.push({
           file: sanitizeFile(file),
           destination: fallbackDestination,
           confidence: 0.3,
-          method: 'fallback',
+          method: 'fallback'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination: fallbackDestination,
+          destination: fallbackDestination
         });
         continue;
       }
@@ -174,43 +159,32 @@ async function processFilesIndividually(
             typeof primary.folder === 'string'
               ? primary.folder
               : primary.folder?.name || 'Uncategorized',
-          path:
-            typeof primary.path === 'string'
-              ? primary.path
-              : primary.path?.path || undefined,
+          path: typeof primary.path === 'string' ? primary.path : primary.path?.path || undefined
         };
-        const destination = buildDestinationPath(
-          file,
-          safePrimary,
-          defaultLocation,
-          preserveNames,
-        );
+        const destination = buildDestinationPath(file, safePrimary, defaultLocation, preserveNames);
 
         results.organized.push({
           file: sanitizeFile(file),
           suggestion: primary,
           destination,
           confidence,
-          method: 'automatic',
+          method: 'automatic'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination,
+          destination
         });
 
         // Record feedback with proper error handling
         try {
           await suggestionService.recordFeedback(file, primary, true);
         } catch (feedbackError) {
-          logger.warn(
-            '[AutoOrganize] Failed to record feedback (non-critical):',
-            {
-              file: file.path,
-              error: feedbackError.message,
-            },
-          );
+          logger.warn('[AutoOrganize] Failed to record feedback (non-critical):', {
+            file: file.path,
+            error: feedbackError.message
+          });
         }
       } else if (confidence >= thresholds.requireReview) {
         // Medium confidence - needs review
@@ -219,27 +193,23 @@ async function processFilesIndividually(
           suggestion: primary,
           alternatives: suggestion.alternatives,
           confidence,
-          explanation: suggestion.explanation,
+          explanation: suggestion.explanation
         });
       } else {
         // Low confidence - use fallback
-        const fallbackDestination = getFallbackDestination(
-          file,
-          smartFolders,
-          defaultLocation,
-        );
+        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
         results.organized.push({
           file: sanitizeFile(file),
           destination: fallbackDestination,
           confidence,
-          method: 'low-confidence-fallback',
+          method: 'low-confidence-fallback'
         });
 
         results.operations.push({
           type: 'move',
           source: file.path,
-          destination: fallbackDestination,
+          destination: fallbackDestination
         });
       }
     } catch (error) {
@@ -250,7 +220,7 @@ async function processFilesIndividually(
         batchId: generateSecureId('organize'),
         timestamp: new Date().toISOString(),
         error: error.message,
-        errorStack: error.stack,
+        errorStack: error.stack
       };
 
       logger.error('[AutoOrganize] Failed to process file:', fileErrorDetails);
@@ -260,7 +230,7 @@ async function processFilesIndividually(
         reason: error.message,
         filePath: file.path,
         timestamp: fileErrorDetails.timestamp,
-        batchId: fileErrorDetails.batchId,
+        batchId: fileErrorDetails.batchId
       });
     }
   }
@@ -275,23 +245,14 @@ async function processFilesIndividually(
  * @param {Object} undoRedo - Undo/redo service
  * @returns {Promise<Object|null>} Organization result or null
  */
-async function processNewFile(
-  filePath,
-  smartFolders,
-  options,
-  suggestionService,
-  undoRedo,
-) {
+async function processNewFile(filePath, smartFolders, options, suggestionService, undoRedo) {
   const {
     autoOrganizeEnabled = false,
-    confidenceThreshold = 0.9, // Higher threshold for automatic processing
+    confidenceThreshold = 0.9 // Higher threshold for automatic processing
   } = options;
 
   if (!autoOrganizeEnabled) {
-    logger.info(
-      '[AutoOrganize] Auto-organize disabled, skipping file:',
-      filePath,
-    );
+    logger.info('[AutoOrganize] Auto-organize disabled, skipping file:', filePath);
     return null;
   }
 
@@ -299,7 +260,7 @@ async function processNewFile(
     // Analyze the file first
     const {
       analyzeDocumentFile,
-      analyzeImageFile,
+      analyzeImageFile
     } = require('../../analysis/ollamaDocumentAnalysis');
     const extension = path.extname(filePath).toLowerCase();
 
@@ -320,22 +281,16 @@ async function processNewFile(
       name: path.basename(filePath),
       path: filePath,
       extension,
-      analysis,
+      analysis
     };
 
     // Get suggestion
-    const suggestion = await suggestionService.getSuggestionsForFile(
-      file,
-      smartFolders,
-      { includeAlternatives: false },
-    );
+    const suggestion = await suggestionService.getSuggestionsForFile(file, smartFolders, {
+      includeAlternatives: false
+    });
 
     // Only auto-organize if confidence is very high
-    if (
-      suggestion.success &&
-      suggestion.primary &&
-      suggestion.confidence >= confidenceThreshold
-    ) {
+    if (suggestion.success && suggestion.primary && suggestion.confidence >= confidenceThreshold) {
       // Ensure primary suggestion folder/path are valid strings
       const primary = suggestion.primary;
       const safePrimary = {
@@ -344,22 +299,19 @@ async function processNewFile(
           typeof primary.folder === 'string'
             ? primary.folder
             : primary.folder?.name || 'Uncategorized',
-        path:
-          typeof primary.path === 'string'
-            ? primary.path
-            : primary.path?.path || undefined,
+        path: typeof primary.path === 'string' ? primary.path : primary.path?.path || undefined
       };
       const destination = buildDestinationPath(
         file,
         safePrimary,
         options.defaultLocation || 'Documents',
-        false,
+        false
       );
 
       logger.info('[AutoOrganize] Auto-organizing new file', {
         file: filePath,
         destination,
-        confidence: suggestion.confidence,
+        confidence: suggestion.confidence
       });
 
       // Record the action for undo
@@ -367,10 +319,10 @@ async function processNewFile(
         type: 'FILE_MOVE',
         data: {
           originalPath: filePath,
-          newPath: destination,
+          newPath: destination
         },
         timestamp: Date.now(),
-        description: `Auto-organized ${file.name}`,
+        description: `Auto-organized ${file.name}`
       };
 
       if (undoRedo) {
@@ -381,24 +333,21 @@ async function processNewFile(
         source: filePath,
         destination,
         confidence: suggestion.confidence,
-        suggestion: suggestion.primary,
+        suggestion: suggestion.primary
       };
     }
 
-    logger.info(
-      '[AutoOrganize] File confidence too low for auto-organization',
-      {
-        file: filePath,
-        confidence: suggestion.confidence || 0,
-        threshold: confidenceThreshold,
-      },
-    );
+    logger.info('[AutoOrganize] File confidence too low for auto-organization', {
+      file: filePath,
+      confidence: suggestion.confidence || 0,
+      threshold: confidenceThreshold
+    });
 
     return null;
   } catch (error) {
     logger.error('[AutoOrganize] Error processing new file:', {
       file: filePath,
-      error: error.message,
+      error: error.message
     });
     return null;
   }
@@ -408,5 +357,5 @@ module.exports = {
   generateSecureId,
   processFilesWithoutAnalysis,
   processFilesIndividually,
-  processNewFile,
+  processNewFile
 };

@@ -29,7 +29,7 @@ function createApplicationMenu(getMainWindow) {
             if (mainWindow) {
               mainWindow.webContents.send('menu-action', 'select-files');
             }
-          },
+          }
         },
         {
           label: 'Select Folder',
@@ -39,7 +39,7 @@ function createApplicationMenu(getMainWindow) {
             if (mainWindow) {
               mainWindow.webContents.send('menu-action', 'select-folder');
             }
-          },
+          }
         },
         { type: 'separator' },
         {
@@ -50,7 +50,7 @@ function createApplicationMenu(getMainWindow) {
             if (mainWindow) {
               mainWindow.webContents.send('menu-action', 'open-settings');
             }
-          },
+          }
         },
         { type: 'separator' },
         {
@@ -59,9 +59,9 @@ function createApplicationMenu(getMainWindow) {
           click: () => {
             const { app } = require('electron');
             app.quit();
-          },
-        },
-      ],
+          }
+        }
+      ]
     },
     {
       label: 'Edit',
@@ -72,8 +72,8 @@ function createApplicationMenu(getMainWindow) {
         { label: 'Cut', accelerator: 'CmdOrCtrl+X', role: 'cut' },
         { label: 'Copy', accelerator: 'CmdOrCtrl+C', role: 'copy' },
         { label: 'Paste', accelerator: 'CmdOrCtrl+V', role: 'paste' },
-        { label: 'Select All', accelerator: 'CmdOrCtrl+A', role: 'selectAll' },
-      ],
+        { label: 'Select All', accelerator: 'CmdOrCtrl+A', role: 'selectAll' }
+      ]
     },
     {
       label: 'View',
@@ -82,13 +82,13 @@ function createApplicationMenu(getMainWindow) {
         {
           label: 'Force Reload',
           accelerator: 'CmdOrCtrl+Shift+R',
-          role: 'forceReload',
+          role: 'forceReload'
         },
         { type: 'separator' },
         {
           label: 'Toggle Fullscreen',
           accelerator: 'F11',
-          role: 'togglefullscreen',
+          role: 'togglefullscreen'
         },
         ...(isDev
           ? [
@@ -96,18 +96,18 @@ function createApplicationMenu(getMainWindow) {
               {
                 label: 'Toggle Developer Tools',
                 accelerator: 'F12',
-                role: 'toggleDevTools',
-              },
+                role: 'toggleDevTools'
+              }
             ]
-          : []),
-      ],
+          : [])
+      ]
     },
     {
       label: 'Window',
       submenu: [
         { label: 'Minimize', accelerator: 'CmdOrCtrl+M', role: 'minimize' },
-        { label: 'Close', accelerator: 'CmdOrCtrl+W', role: 'close' },
-      ],
+        { label: 'Close', accelerator: 'CmdOrCtrl+W', role: 'close' }
+      ]
     },
     {
       label: 'Help',
@@ -119,17 +119,17 @@ function createApplicationMenu(getMainWindow) {
             if (mainWindow) {
               mainWindow.webContents.send('menu-action', 'show-about');
             }
-          },
+          }
         },
         { type: 'separator' },
         {
           label: 'Documentation',
           click: () => {
             shell.openExternal('https://github.com');
-          },
-        },
-      ],
-    },
+          }
+        }
+      ]
+    }
   ];
 
   const menu = Menu.buildFromTemplate(template);
@@ -137,5 +137,5 @@ function createApplicationMenu(getMainWindow) {
 }
 
 module.exports = {
-  createApplicationMenu,
+  createApplicationMenu
 };

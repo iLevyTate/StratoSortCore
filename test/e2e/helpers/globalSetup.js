@@ -32,14 +32,12 @@ async function globalSetup(config) {
       execSync('npm run build:dev', {
         cwd: projectRoot,
         stdio: 'inherit',
-        timeout: 120000, // 2 minutes
+        timeout: 120000 // 2 minutes
       });
       console.log('[Setup] Build completed successfully');
     } catch (error) {
       console.error('[Setup] Build failed:', error.message);
-      console.error(
-        '[Setup] Please run "npm run build:dev" manually before running E2E tests',
-      );
+      console.error('[Setup] Please run "npm run build:dev" manually before running E2E tests');
       throw new Error('Renderer build required for E2E tests');
     }
   } else {
@@ -56,7 +54,7 @@ async function globalSetup(config) {
     try {
       const response = await fetch('http://127.0.0.1:11434/api/tags', {
         method: 'GET',
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(5000)
       });
       if (response.ok) {
         console.log('[Setup] Ollama is running');
@@ -67,9 +65,7 @@ async function globalSetup(config) {
       process.env.OLLAMA_AVAILABLE = 'false';
     }
   } catch (e) {
-    console.log(
-      '[Setup] Ollama is not installed (AI features may be limited in tests)',
-    );
+    console.log('[Setup] Ollama is not installed (AI features may be limited in tests)');
     process.env.OLLAMA_AVAILABLE = 'false';
   }
 
@@ -78,7 +74,7 @@ async function globalSetup(config) {
   const outputDirs = [
     path.join(projectRoot, 'test-results', 'e2e'),
     path.join(projectRoot, 'test-results', 'e2e', 'screenshots'),
-    path.join(projectRoot, 'test-results', 'e2e-report'),
+    path.join(projectRoot, 'test-results', 'e2e-report')
   ];
 
   for (const dir of outputDirs) {

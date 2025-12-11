@@ -43,7 +43,7 @@ async function asyncSpawn(command, args = [], options = {}) {
             status: null,
             stdout: '',
             stderr: '',
-            error: spawnError,
+            error: spawnError
           });
         }
         return;
@@ -64,7 +64,7 @@ async function asyncSpawn(command, args = [], options = {}) {
               stdout,
               stderr,
               error: new Error(`Command timed out after ${timeout}ms`),
-              timedOut: true,
+              timedOut: true
             });
           }
         }, timeout);
@@ -101,7 +101,7 @@ async function asyncSpawn(command, args = [], options = {}) {
             status: code,
             stdout,
             stderr,
-            signal,
+            signal
           });
         }
       });
@@ -115,7 +115,7 @@ async function asyncSpawn(command, args = [], options = {}) {
             status: null,
             stdout,
             stderr,
-            error,
+            error
           });
         }
       });
@@ -127,7 +127,7 @@ async function asyncSpawn(command, args = [], options = {}) {
           status: null,
           stdout: '',
           stderr: '',
-          error,
+          error
         });
       }
     }
@@ -145,41 +145,33 @@ async function hasPythonModuleAsync(moduleName) {
     ? [
         { cmd: 'py', args: ['-3'] },
         { cmd: 'python3', args: [] },
-        { cmd: 'python', args: [] },
+        { cmd: 'python', args: [] }
       ]
     : [
         { cmd: 'python3', args: [] },
-        { cmd: 'python', args: [] },
+        { cmd: 'python', args: [] }
       ];
 
   for (const { cmd, args } of pythonCommands) {
     try {
       const result = await asyncSpawn(
         cmd,
-        [
-          ...args,
-          '-c',
-          `import importlib; importlib.import_module("${moduleName}")`,
-        ],
+        [...args, '-c', `import importlib; importlib.import_module("${moduleName}")`],
         {
           stdio: ['ignore', 'ignore', 'pipe'],
           timeout: 5000,
-          windowsHide: true,
-        },
+          windowsHide: true
+        }
       );
 
       if (result.status === 0) {
-        logger.debug(
-          `[STARTUP] Python module "${moduleName}" found using ${cmd}`,
-        );
+        logger.debug(`[STARTUP] Python module "${moduleName}" found using ${cmd}`);
         return true;
       }
 
       const stderr = result.stderr?.trim();
       if (stderr && !stderr.includes('No module named')) {
-        logger.debug(
-          `[STARTUP] ${cmd} error checking "${moduleName}": ${stderr}`,
-        );
+        logger.debug(`[STARTUP] ${cmd} error checking "${moduleName}": ${stderr}`);
       }
     } catch (error) {
       // Command not found or failed, try next one
@@ -187,9 +179,7 @@ async function hasPythonModuleAsync(moduleName) {
     }
   }
 
-  logger.warn(
-    `[STARTUP] Python module "${moduleName}" not found with any Python interpreter`,
-  );
+  logger.warn(`[STARTUP] Python module "${moduleName}" not found with any Python interpreter`);
   return false;
 }
 
@@ -203,24 +193,20 @@ async function findPythonLauncherAsync() {
     ? [
         { command: 'py', args: ['-3'] },
         { command: 'python3', args: [] },
-        { command: 'python', args: [] },
+        { command: 'python', args: [] }
       ]
     : [
         { command: 'python3', args: [] },
-        { command: 'python', args: [] },
+        { command: 'python', args: [] }
       ];
 
   for (const candidate of candidates) {
     try {
-      const result = await asyncSpawn(
-        candidate.command,
-        [...candidate.args, '--version'],
-        {
-          stdio: 'pipe',
-          windowsHide: true,
-          timeout: 2000,
-        },
-      );
+      const result = await asyncSpawn(candidate.command, [...candidate.args, '--version'], {
+        stdio: 'pipe',
+        windowsHide: true,
+        timeout: 2000
+      });
 
       if (result.status === 0) {
         return candidate;
@@ -246,7 +232,7 @@ async function checkChromaExecutableAsync() {
       stdio: 'pipe',
       windowsHide: true,
       timeout: 5000,
-      shell: shouldUseShell(),
+      shell: shouldUseShell()
     });
 
     // Handle timeout case separately from "not found"
@@ -259,19 +245,13 @@ async function checkChromaExecutableAsync() {
       return true;
     } else if (result.error && result.error.code !== 'ENOENT') {
       // Some other error (not "command not found")
-      logger.warn(
-        '[ChromaDB] chroma executable check failed:',
-        result.error.code,
-      );
+      logger.warn('[ChromaDB] chroma executable check failed:', result.error.code);
       return true; // Assume it exists
     }
 
     return false;
   } catch (error) {
-    logger.debug(
-      '[ChromaDB] System chroma executable not found:',
-      error.message,
-    );
+    logger.debug('[ChromaDB] System chroma executable not found:', error.message);
     return false;
   }
 }
@@ -280,5 +260,5 @@ module.exports = {
   asyncSpawn,
   hasPythonModuleAsync,
   findPythonLauncherAsync,
-  checkChromaExecutableAsync,
+  checkChromaExecutableAsync
 };

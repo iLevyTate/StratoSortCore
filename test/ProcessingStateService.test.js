@@ -10,8 +10,8 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock fs
@@ -20,17 +20,17 @@ const mockFs = {
   writeFile: jest.fn().mockResolvedValue(undefined),
   rename: jest.fn().mockResolvedValue(undefined),
   unlink: jest.fn().mockResolvedValue(undefined),
-  mkdir: jest.fn().mockResolvedValue(undefined),
+  mkdir: jest.fn().mockResolvedValue(undefined)
 };
 jest.mock('fs', () => ({
-  promises: mockFs,
+  promises: mockFs
 }));
 
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('/mock/userData'),
-  },
+    getPath: jest.fn().mockReturnValue('/mock/userData')
+  }
 }));
 
 describe('ProcessingStateService', () => {
@@ -71,7 +71,7 @@ describe('ProcessingStateService', () => {
       const existingState = {
         schemaVersion: '1.0.0',
         analysis: { jobs: {}, lastUpdated: '' },
-        organize: { batches: {}, lastUpdated: '' },
+        organize: { batches: {}, lastUpdated: '' }
       };
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(existingState));
 
@@ -95,8 +95,8 @@ describe('ProcessingStateService', () => {
         JSON.stringify({
           schemaVersion: '1.0.0',
           analysis: { jobs: {} },
-          organize: { batches: {} },
-        }),
+          organize: { batches: {} }
+        })
       );
 
       await service.initialize();
@@ -110,8 +110,8 @@ describe('ProcessingStateService', () => {
         JSON.stringify({
           schemaVersion: '1.0.0',
           analysis: { jobs: {} },
-          organize: { batches: {} },
-        }),
+          organize: { batches: {} }
+        })
       );
 
       await Promise.all([service.initialize(), service.initialize()]);
@@ -125,7 +125,7 @@ describe('ProcessingStateService', () => {
       const state = {
         schemaVersion: '1.0.0',
         analysis: { jobs: { '/test': { status: 'done' } } },
-        organize: { batches: {} },
+        organize: { batches: {} }
       };
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(state));
 
@@ -138,8 +138,8 @@ describe('ProcessingStateService', () => {
       mockFs.readFile.mockResolvedValueOnce(
         JSON.stringify({
           analysis: { jobs: {} },
-          organize: { batches: {} },
-        }),
+          organize: { batches: {} }
+        })
       );
 
       await service.loadState();
@@ -186,9 +186,7 @@ describe('ProcessingStateService', () => {
     });
 
     test('handles rename retry on EPERM', async () => {
-      mockFs.rename
-        .mockRejectedValueOnce({ code: 'EPERM' })
-        .mockResolvedValueOnce(undefined);
+      mockFs.rename.mockRejectedValueOnce({ code: 'EPERM' }).mockResolvedValueOnce(undefined);
 
       await service.saveState();
 
@@ -213,12 +211,8 @@ describe('ProcessingStateService', () => {
       test('creates in_progress job', async () => {
         await service.markAnalysisStart('/test/file.pdf');
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe(
-          'in_progress',
-        );
-        expect(
-          service.state.analysis.jobs['/test/file.pdf'].startedAt,
-        ).toBeDefined();
+        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe('in_progress');
+        expect(service.state.analysis.jobs['/test/file.pdf'].startedAt).toBeDefined();
       });
     });
 
@@ -227,12 +221,8 @@ describe('ProcessingStateService', () => {
         await service.markAnalysisStart('/test/file.pdf');
         await service.markAnalysisComplete('/test/file.pdf');
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe(
-          'done',
-        );
-        expect(
-          service.state.analysis.jobs['/test/file.pdf'].completedAt,
-        ).toBeDefined();
+        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe('done');
+        expect(service.state.analysis.jobs['/test/file.pdf'].completedAt).toBeDefined();
       });
     });
 
@@ -241,21 +231,15 @@ describe('ProcessingStateService', () => {
         await service.markAnalysisStart('/test/file.pdf');
         await service.markAnalysisError('/test/file.pdf', 'Analysis failed');
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe(
-          'failed',
-        );
-        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe(
-          'Analysis failed',
-        );
+        expect(service.state.analysis.jobs['/test/file.pdf'].status).toBe('failed');
+        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe('Analysis failed');
       });
 
       test('uses default error message', async () => {
         await service.markAnalysisStart('/test/file.pdf');
         await service.markAnalysisError('/test/file.pdf', null);
 
-        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe(
-          'Unknown analysis error',
-        );
+        expect(service.state.analysis.jobs['/test/file.pdf'].error).toBe('Unknown analysis error');
       });
     });
 
@@ -264,7 +248,7 @@ describe('ProcessingStateService', () => {
         service.state.analysis.jobs = {
           '/file1': { status: 'in_progress' },
           '/file2': { status: 'done' },
-          '/file3': { status: 'pending' },
+          '/file3': { status: 'pending' }
         };
 
         const incomplete = service.getIncompleteAnalysisJobs();
@@ -324,13 +308,10 @@ describe('ProcessingStateService', () => {
       test('creates new batch', async () => {
         const operations = [
           { source: '/src/file1', destination: '/dest/file1' },
-          { source: '/src/file2', destination: '/dest/file2' },
+          { source: '/src/file2', destination: '/dest/file2' }
         ];
 
-        const batch = await service.createOrLoadOrganizeBatch(
-          'batch1',
-          operations,
-        );
+        const batch = await service.createOrLoadOrganizeBatch('batch1', operations);
 
         expect(batch.id).toBe('batch1');
         expect(batch.operations).toHaveLength(2);
@@ -338,9 +319,7 @@ describe('ProcessingStateService', () => {
       });
 
       test('returns existing batch', async () => {
-        const operations = [
-          { source: '/src/file1', destination: '/dest/file1' },
-        ];
+        const operations = [{ source: '/src/file1', destination: '/dest/file1' }];
 
         await service.createOrLoadOrganizeBatch('batch1', operations);
         const batch = await service.createOrLoadOrganizeBatch('batch1', []);
@@ -352,14 +331,12 @@ describe('ProcessingStateService', () => {
     describe('markOrganizeOpStarted', () => {
       test('marks operation as in_progress', async () => {
         await service.createOrLoadOrganizeBatch('batch1', [
-          { source: '/src', destination: '/dest' },
+          { source: '/src', destination: '/dest' }
         ]);
 
         await service.markOrganizeOpStarted('batch1', 0);
 
-        expect(
-          service.state.organize.batches['batch1'].operations[0].status,
-        ).toBe('in_progress');
+        expect(service.state.organize.batches['batch1'].operations[0].status).toBe('in_progress');
       });
 
       test('handles missing batch', async () => {
@@ -371,35 +348,33 @@ describe('ProcessingStateService', () => {
     describe('markOrganizeOpDone', () => {
       test('marks operation as done', async () => {
         await service.createOrLoadOrganizeBatch('batch1', [
-          { source: '/src', destination: '/dest' },
+          { source: '/src', destination: '/dest' }
         ]);
 
         await service.markOrganizeOpDone('batch1', 0);
 
-        expect(
-          service.state.organize.batches['batch1'].operations[0].status,
-        ).toBe('done');
+        expect(service.state.organize.batches['batch1'].operations[0].status).toBe('done');
       });
 
       test('updates operation with new data', async () => {
         await service.createOrLoadOrganizeBatch('batch1', [
-          { source: '/src', destination: '/dest' },
+          { source: '/src', destination: '/dest' }
         ]);
 
         await service.markOrganizeOpDone('batch1', 0, {
-          newDestination: '/new/dest',
+          newDestination: '/new/dest'
         });
 
-        expect(
-          service.state.organize.batches['batch1'].operations[0].newDestination,
-        ).toBe('/new/dest');
+        expect(service.state.organize.batches['batch1'].operations[0].newDestination).toBe(
+          '/new/dest'
+        );
       });
     });
 
     describe('markOrganizeOpError', () => {
       test('marks operation as failed', async () => {
         await service.createOrLoadOrganizeBatch('batch1', [
-          { source: '/src', destination: '/dest' },
+          { source: '/src', destination: '/dest' }
         ]);
 
         await service.markOrganizeOpError('batch1', 0, 'File not found');
@@ -416,9 +391,7 @@ describe('ProcessingStateService', () => {
 
         await service.completeOrganizeBatch('batch1');
 
-        expect(
-          service.state.organize.batches['batch1'].completedAt,
-        ).toBeDefined();
+        expect(service.state.organize.batches['batch1'].completedAt).toBeDefined();
       });
     });
 

@@ -10,42 +10,42 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock ollama utils
 const mockOllama = {
-  generate: jest.fn(),
+  generate: jest.fn()
 };
 const mockModel = 'llama2';
 
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(() => mockOllama),
-  getOllamaModel: jest.fn(() => mockModel),
+  getOllamaModel: jest.fn(() => mockModel)
 }));
 
 // Mock performance service
 jest.mock('../src/main/services/PerformanceService', () => ({
   buildOllamaOptions: jest.fn().mockResolvedValue({
     num_ctx: 4096,
-    num_thread: 4,
-  }),
+    num_thread: 4
+  })
 }));
 
 // Mock deduplicator
 const mockDeduplicator = {
   generateKey: jest.fn().mockReturnValue('test-key'),
-  deduplicate: jest.fn(),
+  deduplicate: jest.fn()
 };
 
 jest.mock('../src/main/utils/llmOptimization', () => ({
-  globalDeduplicator: mockDeduplicator,
+  globalDeduplicator: mockDeduplicator
 }));
 
 // Mock JSON repair
 jest.mock('../src/main/utils/jsonRepair', () => ({
-  extractAndParseJSON: jest.fn(),
+  extractAndParseJSON: jest.fn()
 }));
 
 describe('llmSuggester', () => {
@@ -59,14 +59,14 @@ describe('llmSuggester', () => {
     analysis: {
       category: 'documents',
       subject: 'Report',
-      confidence: 0.9,
-    },
+      confidence: 0.9
+    }
   };
 
   const testSmartFolders = [
     { name: 'Documents', description: 'General documents' },
     { name: 'Reports', description: 'Business reports' },
-    { name: 'Archive', description: 'Archived files' },
+    { name: 'Archive', description: 'Archived files' }
   ];
 
   beforeEach(() => {
@@ -84,10 +84,10 @@ describe('llmSuggester', () => {
             folder: 'Reports',
             reasoning: 'Document appears to be a report',
             confidence: 0.85,
-            strategy: 'content-based',
-          },
-        ],
-      }),
+            strategy: 'content-based'
+          }
+        ]
+      })
     });
 
     extractAndParseJSON.mockReturnValue({
@@ -96,9 +96,9 @@ describe('llmSuggester', () => {
           folder: 'Reports',
           reasoning: 'Document appears to be a report',
           confidence: 0.85,
-          strategy: 'content-based',
-        },
-      ],
+          strategy: 'content-based'
+        }
+      ]
     });
 
     const llmSuggester = require('../src/main/services/organization/llmSuggester');
@@ -107,10 +107,7 @@ describe('llmSuggester', () => {
   });
 
   test('returns suggestions from LLM', async () => {
-    const suggestions = await getLLMAlternativeSuggestions(
-      testFile,
-      testSmartFolders,
-    );
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].folder).toBe('Reports');
@@ -124,8 +121,8 @@ describe('llmSuggester', () => {
     expect(mockDeduplicator.generateKey).toHaveBeenCalledWith(
       expect.objectContaining({
         fileName: 'document.pdf',
-        type: 'organization-suggestions',
-      }),
+        type: 'organization-suggestions'
+      })
     );
     expect(mockDeduplicator.deduplicate).toHaveBeenCalled();
   });
@@ -133,7 +130,7 @@ describe('llmSuggester', () => {
   test('passes config values to ollama', async () => {
     await getLLMAlternativeSuggestions(testFile, testSmartFolders, {
       llmTemperature: 0.5,
-      llmMaxTokens: 1000,
+      llmMaxTokens: 1000
     });
 
     // The config is passed through deduplicate to generate
@@ -145,7 +142,9 @@ describe('llmSuggester', () => {
     getOllama.mockReturnValueOnce(null);
 
     jest.resetModules();
-    const { getLLMAlternativeSuggestions: getSuggestions } = require('../src/main/services/organization/llmSuggester');
+    const {
+      getLLMAlternativeSuggestions: getSuggestions
+    } = require('../src/main/services/organization/llmSuggester');
 
     const suggestions = await getSuggestions(testFile, testSmartFolders);
 
@@ -157,7 +156,9 @@ describe('llmSuggester', () => {
     getOllamaModel.mockReturnValueOnce(null);
 
     jest.resetModules();
-    const { getLLMAlternativeSuggestions: getSuggestions } = require('../src/main/services/organization/llmSuggester');
+    const {
+      getLLMAlternativeSuggestions: getSuggestions
+    } = require('../src/main/services/organization/llmSuggester');
 
     const suggestions = await getSuggestions(testFile, testSmartFolders);
 
@@ -167,13 +168,10 @@ describe('llmSuggester', () => {
   test('returns empty array when response exceeds size limit', async () => {
     const largeResponse = 'x'.repeat(MAX_RESPONSE_SIZE + 1);
     mockOllama.generate.mockResolvedValueOnce({
-      response: largeResponse,
+      response: largeResponse
     });
 
-    const suggestions = await getLLMAlternativeSuggestions(
-      testFile,
-      testSmartFolders,
-    );
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
     expect(suggestions).toEqual([]);
   });
@@ -181,10 +179,7 @@ describe('llmSuggester', () => {
   test('returns empty array when JSON parsing fails', async () => {
     extractAndParseJSON.mockReturnValueOnce(null);
 
-    const suggestions = await getLLMAlternativeSuggestions(
-      testFile,
-      testSmartFolders,
-    );
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
     expect(suggestions).toEqual([]);
   });
@@ -192,10 +187,7 @@ describe('llmSuggester', () => {
   test('returns empty array when suggestions array is missing', async () => {
     extractAndParseJSON.mockReturnValueOnce({});
 
-    const suggestions = await getLLMAlternativeSuggestions(
-      testFile,
-      testSmartFolders,
-    );
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
     expect(suggestions).toEqual([]);
   });
@@ -203,10 +195,7 @@ describe('llmSuggester', () => {
   test('handles LLM error gracefully', async () => {
     mockDeduplicator.deduplicate.mockRejectedValueOnce(new Error('LLM error'));
 
-    const suggestions = await getLLMAlternativeSuggestions(
-      testFile,
-      testSmartFolders,
-    );
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
     expect(suggestions).toEqual([]);
   });
@@ -218,21 +207,18 @@ describe('llmSuggester', () => {
           folder: 'Archive',
           reasoning: 'Old document',
           confidence: 0.75,
-          strategy: 'temporal',
+          strategy: 'temporal'
         },
         {
           folder: 'Documents',
           reasoning: 'General doc',
           // confidence missing - should default to 0.5
-          strategy: 'fallback',
-        },
-      ],
+          strategy: 'fallback'
+        }
+      ]
     });
 
-    const suggestions = await getLLMAlternativeSuggestions(
-      testFile,
-      testSmartFolders,
-    );
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
 
     expect(suggestions).toHaveLength(2);
 
@@ -250,7 +236,7 @@ describe('llmSuggester', () => {
   test('handles file without analysis', async () => {
     const fileWithoutAnalysis = {
       name: 'mystery.txt',
-      extension: '.txt',
+      extension: '.txt'
     };
 
     await getLLMAlternativeSuggestions(fileWithoutAnalysis, testSmartFolders);
@@ -264,8 +250,8 @@ describe('llmSuggester', () => {
       extension: '.pdf',
       analysis: {
         content: 'x'.repeat(1000),
-        extraField: 'y'.repeat(1000),
-      },
+        extraField: 'y'.repeat(1000)
+      }
     };
 
     await getLLMAlternativeSuggestions(fileWithLongAnalysis, testSmartFolders);

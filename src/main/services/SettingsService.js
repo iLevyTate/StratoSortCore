@@ -3,14 +3,8 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const {
-  backupAndReplace,
-  atomicFileOps,
-} = require('../../shared/atomicFileOperations');
-const {
-  validateSettings,
-  sanitizeSettings,
-} = require('../../shared/settingsValidation');
+const { backupAndReplace, atomicFileOps } = require('../../shared/atomicFileOperations');
+const { validateSettings, sanitizeSettings } = require('../../shared/settingsValidation');
 const { DEFAULT_SETTINGS } = require('../../shared/defaultSettings');
 const { logger } = require('../../shared/logger');
 logger.setContext('SettingsService');
@@ -67,9 +61,7 @@ class SettingsService {
       this._cache = merged;
       this._cacheTimestamp = Date.now();
       if (err && err.code !== 'ENOENT') {
-        logger.warn(
-          `[SettingsService] Failed to read settings, using defaults: ${err.message}`,
-        );
+        logger.warn(`[SettingsService] Failed to read settings, using defaults: ${err.message}`);
       }
       return merged;
     }
@@ -91,7 +83,7 @@ class SettingsService {
       // Log warnings if any
       if (validation.warnings.length > 0) {
         logger.warn('[SettingsService] Validation warnings', {
-          warnings: validation.warnings,
+          warnings: validation.warnings
         });
       }
 
@@ -120,19 +112,16 @@ class SettingsService {
           // CRITICAL FIX: Log when backup returns unsuccessful result (not exception)
           logger.warn(
             `[SettingsService] Backup attempt ${attempt + 1} failed with result:`,
-            backupResult,
+            backupResult
           );
         } catch (error) {
           // CRITICAL FIX: Log each attempt failure with detailed error information
-          logger.error(
-            `[SettingsService] Backup attempt ${attempt + 1} failed with exception:`,
-            {
-              error: error.message,
-              stack: error.stack,
-              attempt: attempt + 1,
-              maxRetries: maxBackupRetries,
-            },
-          );
+          logger.error(`[SettingsService] Backup attempt ${attempt + 1} failed with exception:`, {
+            error: error.message,
+            stack: error.stack,
+            attempt: attempt + 1,
+            maxRetries: maxBackupRetries
+          });
 
           const isLastAttempt = attempt === maxBackupRetries - 1;
           if (isLastAttempt) {
@@ -143,7 +132,7 @@ class SettingsService {
           // Wait before retry with exponential backoff
           const delay = initialBackupDelay * Math.pow(2, attempt);
           logger.warn(
-            `[SettingsService] Retrying backup in ${delay}ms (attempt ${attempt + 2}/${maxBackupRetries})`,
+            `[SettingsService] Retrying backup in ${delay}ms (attempt ${attempt + 2}/${maxBackupRetries})`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -170,7 +159,7 @@ class SettingsService {
           try {
             const result = await backupAndReplace(
               this.settingsPath,
-              JSON.stringify(merged, null, 2),
+              JSON.stringify(merged, null, 2)
             );
             if (!result.success) {
               throw new Error(result.error || 'Failed to save settings');
@@ -193,13 +182,13 @@ class SettingsService {
               // Calculate exponential backoff delay
               const delay = baseSaveDelay * Math.pow(2, attempt);
               logger.warn(
-                `[SettingsService] File lock error on save attempt ${attempt + 1}/${maxSaveRetries}: ${saveError.code}. Retrying in ${delay}ms...`,
+                `[SettingsService] File lock error on save attempt ${attempt + 1}/${maxSaveRetries}: ${saveError.code}. Retrying in ${delay}ms...`
               );
               await new Promise((resolve) => setTimeout(resolve, delay));
             } else if (attempt === maxSaveRetries - 1) {
               // Last attempt failed
               throw new Error(
-                `Failed to save settings after ${maxSaveRetries} attempts due to file lock: ${saveError.message}`,
+                `Failed to save settings after ${maxSaveRetries} attempts due to file lock: ${saveError.message}`
               );
             } else {
               // Non-lock error, fail immediately
@@ -218,7 +207,7 @@ class SettingsService {
         settings: merged,
         validationWarnings: validation.warnings,
         backupCreated: true,
-        backupPath: backupResult.path,
+        backupPath: backupResult.path
       };
     }); // End of mutex wrapper
   }
@@ -253,8 +242,8 @@ class SettingsService {
           reject(
             new Error(
               `Mutex deadlock detected: Previous operation did not complete within ${this._mutexTimeoutMs}ms. ` +
-                `This may indicate a stuck operation or infinite loop.`,
-            ),
+                `This may indicate a stuck operation or infinite loop.`
+            )
           );
         }, this._mutexTimeoutMs);
       });
@@ -280,8 +269,8 @@ class SettingsService {
             reject(
               new Error(
                 `Operation timeout: Function did not complete within ${this._mutexTimeoutMs}ms. ` +
-                  `This may indicate a blocking operation or infinite loop in the save/restore logic.`,
-              ),
+                  `This may indicate a blocking operation or infinite loop in the save/restore logic.`
+              )
             );
           }, this._mutexTimeoutMs);
         });
@@ -300,25 +289,18 @@ class SettingsService {
       // CRITICAL FIX: Always release mutex even on deadlock/timeout errors
       this._mutexAcquiredAt = null;
       if (!resolveMutex) {
-        logger.error(
-          '[SettingsService] Mutex resolver not initialized - this should never happen',
-        );
+        logger.error('[SettingsService] Mutex resolver not initialized - this should never happen');
       } else {
         // Ensure mutex is released even on catastrophic failure
         resolveMutex();
       }
 
       // Log deadlock/timeout errors with extra context
-      if (
-        error.message?.includes('deadlock') ||
-        error.message?.includes('timeout')
-      ) {
+      if (error.message?.includes('deadlock') || error.message?.includes('timeout')) {
         logger.error('[SettingsService] Mutex deadlock or timeout detected', {
           error: error.message,
           mutexAcquiredAt: this._mutexAcquiredAt,
-          timeElapsed: this._mutexAcquiredAt
-            ? Date.now() - this._mutexAcquiredAt
-            : 'N/A',
+          timeElapsed: this._mutexAcquiredAt ? Date.now() - this._mutexAcquiredAt : 'N/A'
         });
       }
 
@@ -355,30 +337,24 @@ class SettingsService {
 
       // Create backup filename with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupPath = path.join(
-        this.backupDir,
-        `settings-${timestamp}.json`,
-      );
+      const backupPath = path.join(this.backupDir, `settings-${timestamp}.json`);
 
       // Write backup with metadata and SHA256 hash for integrity verification
       const backupData = {
         timestamp: new Date().toISOString(),
         appVersion: app.getVersion(),
-        settings,
+        settings
       };
 
       const backupJson = JSON.stringify(backupData, null, 2);
 
       // Calculate SHA256 hash of the backup data for integrity verification
-      const hash = crypto
-        .createHash('sha256')
-        .update(backupJson, 'utf8')
-        .digest('hex');
+      const hash = crypto.createHash('sha256').update(backupJson, 'utf8').digest('hex');
 
       // Store hash in a separate metadata object
       const backupWithHash = {
         ...backupData,
-        hash,
+        hash
       };
 
       const writeContent = JSON.stringify(backupWithHash, null, 2);
@@ -401,15 +377,15 @@ class SettingsService {
       return {
         success: true,
         path: backupPath,
-        timestamp: backupData.timestamp,
+        timestamp: backupData.timestamp
       };
     } catch (error) {
       logger.error('[SettingsService] Failed to create backup', {
-        error: error.message,
+        error: error.message
       });
       return {
         success: false,
-        error: error.message,
+        error: error.message
       };
     }
   }
@@ -445,12 +421,12 @@ class SettingsService {
               timestamp,
               appVersion: data.appVersion || 'unknown',
               size: stats.size,
-              _parsedTime: new Date(timestamp).getTime(), // Fixed: Parse once for efficient sorting
+              _parsedTime: new Date(timestamp).getTime() // Fixed: Parse once for efficient sorting
             });
           } catch (error) {
             // Skip invalid backup files
             logger.warn(`[SettingsService] Invalid backup file: ${file}`, {
-              error: error.message,
+              error: error.message
             });
           }
         }
@@ -466,7 +442,7 @@ class SettingsService {
       return backups;
     } catch (error) {
       logger.error('[SettingsService] Failed to list backups', {
-        error: error.message,
+        error: error.message
       });
       return [];
     }
@@ -485,9 +461,7 @@ class SettingsService {
 
         // Bug #32: Verify JSON structure before processing
         if (!backupData || typeof backupData !== 'object') {
-          throw new Error(
-            'Invalid backup file: corrupted or invalid JSON structure',
-          );
+          throw new Error('Invalid backup file: corrupted or invalid JSON structure');
         }
 
         if (!backupData.settings) {
@@ -511,17 +485,15 @@ class SettingsService {
             throw new Error(
               'Backup integrity check failed: SHA256 hash mismatch. ' +
                 'The backup file may have been tampered with or corrupted. ' +
-                'Please select a different backup file.',
+                'Please select a different backup file.'
             );
           }
 
-          logger.info(
-            '[SettingsService] Backup integrity verified (SHA256 hash match)',
-          );
+          logger.info('[SettingsService] Backup integrity verified (SHA256 hash match)');
         } else {
           // Warn if hash is not present (old backup format)
           logger.warn(
-            '[SettingsService] Restoring from backup without SHA256 verification (old format)',
+            '[SettingsService] Restoring from backup without SHA256 verification (old format)'
           );
         }
 
@@ -545,10 +517,7 @@ class SettingsService {
 
         // Save restored settings
         // backupAndReplace handles directory creation
-        const result = await backupAndReplace(
-          this.settingsPath,
-          JSON.stringify(merged, null, 2),
-        );
+        const result = await backupAndReplace(this.settingsPath, JSON.stringify(merged, null, 2));
 
         if (!result.success) {
           throw new Error(result.error || 'Failed to save restored settings');
@@ -562,17 +531,17 @@ class SettingsService {
           success: true,
           settings: merged,
           validationWarnings: validation.warnings,
-          restoredFrom: backupData.timestamp,
+          restoredFrom: backupData.timestamp
         };
       } catch (error) {
         logger.error('[SettingsService] Failed to restore from backup', {
-          error: error.message,
+          error: error.message
         });
         return {
           success: false,
           error: error.message,
           validationErrors: error.validationErrors,
-          validationWarnings: error.validationWarnings,
+          validationWarnings: error.validationWarnings
         };
       }
     });
@@ -590,7 +559,7 @@ class SettingsService {
       const safeBackups = backups.filter((backup) => {
         if (backup._parsedTime && !Number.isSafeInteger(backup._parsedTime)) {
           logger.warn(
-            `[SettingsService] Backup ${backup.filename} has unsafe timestamp: ${backup._parsedTime}. Skipping for safety.`,
+            `[SettingsService] Backup ${backup.filename} has unsafe timestamp: ${backup._parsedTime}. Skipping for safety.`
           );
           return false;
         }
@@ -605,16 +574,15 @@ class SettingsService {
           try {
             await fs.unlink(backup.path);
           } catch (error) {
-            logger.warn(
-              `[SettingsService] Failed to delete old backup: ${backup.filename}`,
-              { error: error.message },
-            );
+            logger.warn(`[SettingsService] Failed to delete old backup: ${backup.filename}`, {
+              error: error.message
+            });
           }
         }
       }
     } catch (error) {
       logger.error('[SettingsService] Failed to cleanup old backups', {
-        error: error.message,
+        error: error.message
       });
     }
   }
@@ -628,11 +596,11 @@ class SettingsService {
       return { success: true };
     } catch (error) {
       logger.error('[SettingsService] Failed to delete backup', {
-        error: error.message,
+        error: error.message
       });
       return {
         success: false,
-        error: error.message,
+        error: error.message
       };
     }
   }
@@ -650,36 +618,33 @@ class SettingsService {
       }
 
       // Watch the settings file
-      this._fileWatcher = fsSync.watch(
-        this.settingsPath,
-        (eventType, filename) => {
-          // Ignore our own changes
-          if (this._isInternalChange) {
-            return;
+      this._fileWatcher = fsSync.watch(this.settingsPath, (eventType, filename) => {
+        // Ignore our own changes
+        if (this._isInternalChange) {
+          return;
+        }
+
+        // PERFORMANCE FIX: Only handle 'change' events, ignore 'rename' events
+        // 'rename' events are often false positives on Windows (file metadata changes)
+        // This reduces unnecessary file reloads
+        if (eventType === 'change') {
+          // Clear existing debounce timer
+          if (this._debounceTimer) {
+            clearTimeout(this._debounceTimer);
           }
 
-          // PERFORMANCE FIX: Only handle 'change' events, ignore 'rename' events
-          // 'rename' events are often false positives on Windows (file metadata changes)
-          // This reduces unnecessary file reloads
-          if (eventType === 'change') {
-            // Clear existing debounce timer
-            if (this._debounceTimer) {
-              clearTimeout(this._debounceTimer);
-            }
-
-            // Set new debounce timer
-            this._debounceTimer = setTimeout(() => {
-              this._handleExternalFileChange(eventType, filename);
-            }, this._debounceDelay);
-          }
-          // Ignore 'rename' events - they're often false positives on Windows
-        },
-      );
+          // Set new debounce timer
+          this._debounceTimer = setTimeout(() => {
+            this._handleExternalFileChange(eventType, filename);
+          }, this._debounceDelay);
+        }
+        // Ignore 'rename' events - they're often false positives on Windows
+      });
 
       // Handle watcher errors
       this._fileWatcher.on('error', (error) => {
         logger.error('[SettingsService] File watcher error', {
-          error: error.message,
+          error: error.message
         });
         // CRITICAL FIX: Check restart limit before attempting to restart
         // FIX: Clear any existing restart timer to prevent unbounded timers
@@ -693,13 +658,9 @@ class SettingsService {
         }, 5000);
       });
 
-      logger.info(
-        `[SettingsService] File watcher started for: ${this.settingsPath}`,
-      );
+      logger.info(`[SettingsService] File watcher started for: ${this.settingsPath}`);
     } catch (error) {
-      logger.warn(
-        `[SettingsService] Failed to start file watcher: ${error.message}`,
-      );
+      logger.warn(`[SettingsService] Failed to start file watcher: ${error.message}`);
       // Non-fatal - app can still function without file watching
     }
   }
@@ -721,7 +682,7 @@ class SettingsService {
     // Check if restart limit exceeded
     if (this._watcherRestartCount >= this._maxWatcherRestarts) {
       logger.error(
-        `[SettingsService] File watcher restart limit exceeded (${this._maxWatcherRestarts} restarts in ${this._watcherRestartWindow}ms). Disabling file watcher.`,
+        `[SettingsService] File watcher restart limit exceeded (${this._maxWatcherRestarts} restarts in ${this._watcherRestartWindow}ms). Disabling file watcher.`
       );
       this._stopFileWatcher();
       return;
@@ -730,7 +691,7 @@ class SettingsService {
     // Increment counter and restart
     this._watcherRestartCount++;
     logger.info(
-      `[SettingsService] Restarting file watcher (attempt ${this._watcherRestartCount}/${this._maxWatcherRestarts})`,
+      `[SettingsService] Restarting file watcher (attempt ${this._watcherRestartCount}/${this._maxWatcherRestarts})`
     );
 
     this._stopFileWatcher();
@@ -749,7 +710,7 @@ class SettingsService {
         logger.info('[SettingsService] File watcher stopped');
       } catch (error) {
         logger.error('[SettingsService] Error stopping file watcher', {
-          error: error.message,
+          error: error.message
         });
       }
     }
@@ -773,18 +734,14 @@ class SettingsService {
    */
   async _handleExternalFileChange(eventType, filename) {
     try {
-      logger.debug(
-        `[SettingsService] External file change detected: ${eventType}, ${filename}`,
-      );
+      logger.debug(`[SettingsService] External file change detected: ${eventType}, ${filename}`);
 
       // Check if file still exists (might have been deleted)
       try {
         await fs.access(this.settingsPath);
       } catch (error) {
         if (error.code === 'ENOENT') {
-          logger.info(
-            '[SettingsService] Settings file was deleted, using defaults',
-          );
+          logger.info('[SettingsService] Settings file was deleted, using defaults');
           this.invalidateCache();
           this._notifySettingsChanged();
           return;
@@ -803,7 +760,7 @@ class SettingsService {
       this._notifySettingsChanged();
     } catch (error) {
       logger.error('[SettingsService] Failed to handle external file change', {
-        error: error.message,
+        error: error.message
       });
       // Invalidate cache anyway to prevent stale data
       this.invalidateCache();
@@ -827,16 +784,14 @@ class SettingsService {
               win.webContents.send('settings-changed-external');
             } catch (error) {
               logger.warn(
-                `[SettingsService] Failed to send settings-changed event: ${error.message}`,
+                `[SettingsService] Failed to send settings-changed event: ${error.message}`
               );
             }
           }
         });
       }
     } catch (error) {
-      logger.warn(
-        `[SettingsService] Failed to notify settings change: ${error.message}`,
-      );
+      logger.warn(`[SettingsService] Failed to notify settings change: ${error.message}`);
     }
   }
 

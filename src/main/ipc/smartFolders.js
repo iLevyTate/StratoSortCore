@@ -2,17 +2,12 @@ const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
 const { getOllama } = require('../ollamaUtils');
-const {
-  enhanceSmartFolderWithLLM,
-} = require('../services/SmartFoldersLLMService');
+const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMService');
 const { withErrorLogging } = require('./ipcWrappers');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 
 // Import centralized security configuration
-const {
-  getDangerousPaths,
-  ALLOWED_APP_PATHS,
-} = require('../../shared/securityConfig');
+const { getDangerousPaths, ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
 
 /**
  * CRITICAL SECURITY FIX: Sanitize and validate folder paths to prevent path traversal attacks
@@ -45,15 +40,12 @@ function sanitizeFolderPath(inputPath) {
   // Check if path is within allowed directories
   const isAllowed = ALLOWED_BASE_PATHS.some((basePath) => {
     const normalizedBase = path.normalize(path.resolve(basePath));
-    return (
-      normalized.startsWith(normalizedBase + path.sep) ||
-      normalized === normalizedBase
-    );
+    return normalized.startsWith(normalizedBase + path.sep) || normalized === normalizedBase;
   });
 
   if (!isAllowed) {
     throw new Error(
-      'Invalid path: must be within allowed directories (Documents, Downloads, Desktop, Pictures, Videos, Music, or Home)',
+      'Invalid path: must be within allowed directories (Documents, Downloads, Desktop, Pictures, Videos, Music, or Home)'
     );
   }
 
@@ -61,7 +53,7 @@ function sanitizeFolderPath(inputPath) {
   const dangerousPaths = getDangerousPaths();
   const normalizedLower = normalized.toLowerCase();
   const isDangerous = dangerousPaths.some((dangerous) =>
-    normalizedLower.startsWith(dangerous.toLowerCase()),
+    normalizedLower.startsWith(dangerous.toLowerCase())
   );
 
   if (isDangerous) {
@@ -81,7 +73,7 @@ function registerSmartFoldersIpc({
   buildOllamaOptions,
   getOllamaModel,
   getOllamaEmbeddingModel,
-  scanDirectory,
+  scanDirectory
 }) {
   ipcMain.handle(
     IPC_CHANNELS.SMART_FOLDERS.GET,
@@ -91,21 +83,19 @@ function registerSmartFoldersIpc({
         logger.info(
           '[SMART-FOLDERS] Getting Smart Folders for UI:',
           customFolders?.length || 0,
-          'folders',
+          'folders'
         );
 
         if (!Array.isArray(customFolders)) {
           logger.warn(
             '[SMART-FOLDERS] getCustomFolders() returned non-array:',
-            typeof customFolders,
+            typeof customFolders
           );
           return [];
         }
 
         if (customFolders.length === 0) {
-          logger.info(
-            '[SMART-FOLDERS] No custom folders found, returning empty array',
-          );
+          logger.info('[SMART-FOLDERS] No custom folders found, returning empty array');
           return [];
         }
 
@@ -119,40 +109,29 @@ function registerSmartFoldersIpc({
               const stats = await fs.stat(folder.path);
               return { ...folder, physicallyExists: stats.isDirectory() };
             } catch (error) {
-              logger.debug(
-                '[SMART-FOLDERS] Path check failed for:',
-                folder.path,
-                error.message,
-              );
+              logger.debug('[SMART-FOLDERS] Path check failed for:', folder.path, error.message);
               return { ...folder, physicallyExists: false };
             }
-          }),
+          })
         );
 
-        logger.info(
-          '[SMART-FOLDERS] Returning',
-          foldersWithStatus.length,
-          'folders with status',
-        );
+        logger.info('[SMART-FOLDERS] Returning', foldersWithStatus.length, 'folders with status');
         return foldersWithStatus;
       } catch (error) {
         logger.error('[SMART-FOLDERS] Error in GET handler:', error);
         // FIX: Return error response instead of throwing
         return { success: false, error: error.message, folders: [] };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
     IPC_CHANNELS.SMART_FOLDERS.GET_CUSTOM,
     withErrorLogging(logger, async () => {
       const customFolders = getCustomFolders();
-      logger.info(
-        '[SMART-FOLDERS] Getting Custom Folders for UI:',
-        customFolders.length,
-      );
+      logger.info('[SMART-FOLDERS] Getting Custom Folders for UI:', customFolders.length);
       return customFolders;
-    }),
+    })
   );
 
   // Smart folder matching using embeddings/LLM with fallbacks
@@ -161,14 +140,10 @@ function registerSmartFoldersIpc({
     withErrorLogging(logger, async (event, payload) => {
       try {
         const { text, smartFolders = [] } = payload || {};
-        if (
-          !text ||
-          !Array.isArray(smartFolders) ||
-          smartFolders.length === 0
-        ) {
+        if (!text || !Array.isArray(smartFolders) || smartFolders.length === 0) {
           return {
             success: false,
-            error: 'Invalid input for SMART_FOLDERS.MATCH',
+            error: 'Invalid input for SMART_FOLDERS.MATCH'
           };
         }
 
@@ -176,27 +151,21 @@ function registerSmartFoldersIpc({
           const ollama = getOllama();
           const perfOptions = await buildOllamaOptions('embeddings');
           // Use configured embedding model instead of hardcoded value
-          const embeddingModel =
-            getOllamaEmbeddingModel() || 'mxbai-embed-large';
+          const embeddingModel = getOllamaEmbeddingModel() || 'mxbai-embed-large';
           const queryEmbedding = await ollama.embeddings({
             model: embeddingModel,
             prompt: text,
-            options: { ...perfOptions },
+            options: { ...perfOptions }
           });
           const scored = [];
           for (const folder of smartFolders) {
-            const folderText = [folder.name, folder.description]
-              .filter(Boolean)
-              .join(' - ');
+            const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
             const folderEmbedding = await ollama.embeddings({
               model: embeddingModel,
               prompt: folderText,
-              options: { ...perfOptions },
+              options: { ...perfOptions }
             });
-            const score = cosineSimilarity(
-              queryEmbedding.embedding,
-              folderEmbedding.embedding,
-            );
+            const score = cosineSimilarity(queryEmbedding.embedding, folderEmbedding.embedding);
             scored.push({ folder, score });
           }
           scored.sort((a, b) => b.score - a.score);
@@ -209,7 +178,7 @@ function registerSmartFoldersIpc({
             success: true,
             folder: best.folder,
             score: best.score,
-            method: 'embeddings',
+            method: 'embeddings'
           };
         } catch (e) {
           try {
@@ -220,7 +189,7 @@ function registerSmartFoldersIpc({
               model: getOllamaModel() || 'llama3.2:latest',
               prompt,
               format: 'json',
-              options: { ...genPerf, temperature: 0.1, num_predict: 200 },
+              options: { ...genPerf, temperature: 0.1, num_predict: 200 }
             });
             // Use robust JSON extraction with repair for malformed LLM responses
             const parsed = extractAndParseJSON(resp.response, null);
@@ -237,16 +206,13 @@ function registerSmartFoldersIpc({
               success: true,
               folder: smartFolders[idx - 1],
               reason: parsed.reason,
-              method: 'llm',
+              method: 'llm'
             };
           } catch (llmErr) {
             const scored = smartFolders
               .map((f) => {
                 const textLower = text.toLowerCase();
-                const hay = [f.name, f.description]
-                  .filter(Boolean)
-                  .join(' ')
-                  .toLowerCase();
+                const hay = [f.name, f.description].filter(Boolean).join(' ').toLowerCase();
                 let score = 0;
                 textLower.split(/\W+/).forEach((w) => {
                   if (w && hay.includes(w)) score += 1;
@@ -257,7 +223,7 @@ function registerSmartFoldersIpc({
             return {
               success: true,
               folder: scored[0]?.folder || smartFolders[0],
-              method: 'fallback',
+              method: 'fallback'
             };
           }
         }
@@ -265,7 +231,7 @@ function registerSmartFoldersIpc({
         logger.error('[SMART_FOLDERS.MATCH] Failed:', error);
         return { success: false, error: error.message };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -276,7 +242,7 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Folders must be an array',
-            errorCode: 'INVALID_INPUT',
+            errorCode: 'INVALID_INPUT'
           };
 
         // Ensure all folder paths exist as physical directories
@@ -288,7 +254,7 @@ function registerSmartFoldersIpc({
                 return {
                   success: false,
                   error: `Path "${folder.path}" exists but is not a directory`,
-                  errorCode: 'INVALID_PATH',
+                  errorCode: 'INVALID_PATH'
                 };
               }
             } catch (error) {
@@ -296,15 +262,12 @@ function registerSmartFoldersIpc({
                 // Directory doesn't exist, create it
                 try {
                   await fs.mkdir(folder.path, { recursive: true });
-                  logger.info(
-                    '[SMART-FOLDERS] Created directory:',
-                    folder.path,
-                  );
+                  logger.info('[SMART-FOLDERS] Created directory:', folder.path);
                 } catch (createError) {
                   return {
                     success: false,
                     error: `Failed to create directory "${folder.path}": ${createError.message}`,
-                    errorCode: 'DIRECTORY_CREATION_FAILED',
+                    errorCode: 'DIRECTORY_CREATION_FAILED'
                   };
                 }
               } else {
@@ -329,10 +292,10 @@ function registerSmartFoldersIpc({
         return {
           success: false,
           error: error.message,
-          errorCode: 'SAVE_FAILED',
+          errorCode: 'SAVE_FAILED'
         };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -343,7 +306,7 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Folders must be an array',
-            errorCode: 'INVALID_INPUT',
+            errorCode: 'INVALID_INPUT'
           };
 
         // Ensure all folder paths exist as physical directories
@@ -355,7 +318,7 @@ function registerSmartFoldersIpc({
                 return {
                   success: false,
                   error: `Path "${folder.path}" exists but is not a directory`,
-                  errorCode: 'INVALID_PATH',
+                  errorCode: 'INVALID_PATH'
                 };
               }
             } catch (error) {
@@ -363,15 +326,12 @@ function registerSmartFoldersIpc({
                 // Directory doesn't exist, create it
                 try {
                   await fs.mkdir(folder.path, { recursive: true });
-                  logger.info(
-                    '[SMART-FOLDERS] Created directory:',
-                    folder.path,
-                  );
+                  logger.info('[SMART-FOLDERS] Created directory:', folder.path);
                 } catch (createError) {
                   return {
                     success: false,
                     error: `Failed to create directory "${folder.path}": ${createError.message}`,
-                    errorCode: 'DIRECTORY_CREATION_FAILED',
+                    errorCode: 'DIRECTORY_CREATION_FAILED'
                   };
                 }
               } else {
@@ -385,10 +345,7 @@ function registerSmartFoldersIpc({
         try {
           setCustomFolders(folders);
           await saveCustomFolders(folders);
-          logger.info(
-            '[SMART-FOLDERS] Updated Custom Folders:',
-            folders.length,
-          );
+          logger.info('[SMART-FOLDERS] Updated Custom Folders:', folders.length);
           return { success: true, folders: getCustomFolders() };
         } catch (saveError) {
           setCustomFolders(originalFolders);
@@ -399,10 +356,10 @@ function registerSmartFoldersIpc({
         return {
           success: false,
           error: error.message,
-          errorCode: 'UPDATE_FAILED',
+          errorCode: 'UPDATE_FAILED'
         };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -413,13 +370,13 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Valid folder ID is required',
-            errorCode: 'INVALID_FOLDER_ID',
+            errorCode: 'INVALID_FOLDER_ID'
           };
         if (!updatedFolder || typeof updatedFolder !== 'object')
           return {
             success: false,
             error: 'Valid folder data is required',
-            errorCode: 'INVALID_FOLDER_DATA',
+            errorCode: 'INVALID_FOLDER_DATA'
           };
         const customFolders = getCustomFolders();
         const folderIndex = customFolders.findIndex((f) => f.id === folderId);
@@ -427,7 +384,7 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Folder not found',
-            errorCode: 'FOLDER_NOT_FOUND',
+            errorCode: 'FOLDER_NOT_FOUND'
           };
         if (updatedFolder.name) {
           // Fix for issue where " > Subfolder" might be appended
@@ -439,21 +396,19 @@ function registerSmartFoldersIpc({
           if (illegalChars.test(updatedFolder.name)) {
             return {
               success: false,
-              error:
-                'Folder name contains invalid characters. Please avoid: < > : " | ? *',
-              errorCode: 'INVALID_FOLDER_NAME_CHARS',
+              error: 'Folder name contains invalid characters. Please avoid: < > : " | ? *',
+              errorCode: 'INVALID_FOLDER_NAME_CHARS'
             };
           }
           const existingFolder = customFolders.find(
             (f) =>
-              f.id !== folderId &&
-              f.name.toLowerCase() === updatedFolder.name.trim().toLowerCase(),
+              f.id !== folderId && f.name.toLowerCase() === updatedFolder.name.trim().toLowerCase()
           );
           if (existingFolder)
             return {
               success: false,
               error: `A smart folder with name "${updatedFolder.name}" already exists`,
-              errorCode: 'FOLDER_NAME_EXISTS',
+              errorCode: 'FOLDER_NAME_EXISTS'
             };
         }
         if (updatedFolder.path) {
@@ -466,7 +421,7 @@ function registerSmartFoldersIpc({
               return {
                 success: false,
                 error: `Parent directory "${parentDir}" is not a directory`,
-                errorCode: 'PARENT_NOT_DIRECTORY',
+                errorCode: 'PARENT_NOT_DIRECTORY'
               };
             }
             updatedFolder.path = normalizedPath;
@@ -474,7 +429,7 @@ function registerSmartFoldersIpc({
             return {
               success: false,
               error: `Invalid path: ${pathError.message}`,
-              errorCode: 'INVALID_PATH',
+              errorCode: 'INVALID_PATH'
             };
           }
         }
@@ -488,22 +443,17 @@ function registerSmartFoldersIpc({
               return {
                 success: false,
                 error: 'Original path is not a directory',
-                errorCode: 'ORIGINAL_NOT_DIRECTORY',
+                errorCode: 'ORIGINAL_NOT_DIRECTORY'
               };
             await fs.rename(oldPath, newPath);
-            logger.info(
-              `[SMART-FOLDERS] Renamed directory "${oldPath}" -> "${newPath}"`,
-            );
+            logger.info(`[SMART-FOLDERS] Renamed directory "${oldPath}" -> "${newPath}"`);
           } catch (renameErr) {
-            logger.error(
-              '[SMART-FOLDERS] Directory rename failed:',
-              renameErr.message,
-            );
+            logger.error('[SMART-FOLDERS] Directory rename failed:', renameErr.message);
             return {
               success: false,
               error: 'Failed to rename directory',
               errorCode: 'RENAME_FAILED',
-              details: renameErr.message,
+              details: renameErr.message
             };
           }
         }
@@ -511,7 +461,7 @@ function registerSmartFoldersIpc({
           customFolders[folderIndex] = {
             ...customFolders[folderIndex],
             ...updatedFolder,
-            updatedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
           };
           setCustomFolders(customFolders);
           await saveCustomFolders(customFolders);
@@ -519,7 +469,7 @@ function registerSmartFoldersIpc({
           return {
             success: true,
             folder: customFolders[folderIndex],
-            message: 'Smart folder updated successfully',
+            message: 'Smart folder updated successfully'
           };
         } catch (saveError) {
           customFolders[folderIndex] = originalFolder;
@@ -530,10 +480,10 @@ function registerSmartFoldersIpc({
         return {
           success: false,
           error: error.message,
-          errorCode: 'EDIT_FAILED',
+          errorCode: 'EDIT_FAILED'
         };
       }
-    }),
+    })
   );
 
   ipcMain.handle(
@@ -544,7 +494,7 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Valid folder ID is required',
-            errorCode: 'INVALID_FOLDER_ID',
+            errorCode: 'INVALID_FOLDER_ID'
           };
         const customFolders = getCustomFolders();
         const folderIndex = customFolders.findIndex((f) => f.id === folderId);
@@ -552,7 +502,7 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Folder not found',
-            errorCode: 'FOLDER_NOT_FOUND',
+            errorCode: 'FOLDER_NOT_FOUND'
           };
         const originalFolders = [...customFolders];
         const deletedFolder = customFolders[folderIndex];
@@ -576,10 +526,7 @@ function registerSmartFoldersIpc({
             }
           } catch (dirErr) {
             if (dirErr.code !== 'ENOENT') {
-              logger.warn(
-                '[SMART-FOLDERS] Directory removal failed:',
-                dirErr.message,
-              );
+              logger.warn('[SMART-FOLDERS] Directory removal failed:', dirErr.message);
               removalError = dirErr.message;
             }
           }
@@ -591,7 +538,7 @@ function registerSmartFoldersIpc({
             removalError,
             message: `Smart folder "${deletedFolder.name}" deleted successfully${
               directoryRemoved ? ' and its empty directory was removed.' : ''
-            }`,
+            }`
           };
         } catch (saveError) {
           setCustomFolders(originalFolders);
@@ -602,10 +549,10 @@ function registerSmartFoldersIpc({
         return {
           success: false,
           error: error.message,
-          errorCode: 'DELETE_FAILED',
+          errorCode: 'DELETE_FAILED'
         };
       }
-    }),
+    })
   );
 
   // Create/add new smart folder with LLM enhancement
@@ -617,27 +564,19 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: 'Invalid folder data provided',
-            errorCode: 'INVALID_FOLDER_DATA',
+            errorCode: 'INVALID_FOLDER_DATA'
           };
-        if (
-          !folder.name ||
-          typeof folder.name !== 'string' ||
-          !folder.name.trim()
-        )
+        if (!folder.name || typeof folder.name !== 'string' || !folder.name.trim())
           return {
             success: false,
             error: 'Folder name is required and must be a non-empty string',
-            errorCode: 'INVALID_FOLDER_NAME',
+            errorCode: 'INVALID_FOLDER_NAME'
           };
-        if (
-          !folder.path ||
-          typeof folder.path !== 'string' ||
-          !folder.path.trim()
-        )
+        if (!folder.path || typeof folder.path !== 'string' || !folder.path.trim())
           return {
             success: false,
             error: 'Folder path is required and must be a non-empty string',
-            errorCode: 'INVALID_FOLDER_PATH',
+            errorCode: 'INVALID_FOLDER_PATH'
           };
 
         // CRITICAL FIX: Sanitize folder name to remove any accidental path separators or suffixes
@@ -651,9 +590,8 @@ function registerSmartFoldersIpc({
         if (illegalChars.test(sanitizedName))
           return {
             success: false,
-            error:
-              'Folder name contains invalid characters. Please avoid: < > : " | ? *',
-            errorCode: 'INVALID_FOLDER_NAME_CHARS',
+            error: 'Folder name contains invalid characters. Please avoid: < > : " | ? *',
+            errorCode: 'INVALID_FOLDER_NAME_CHARS'
           };
 
         const customFolders = getCustomFolders();
@@ -666,20 +604,18 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: securityError.message,
-            errorCode: 'SECURITY_PATH_VIOLATION',
+            errorCode: 'SECURITY_PATH_VIOLATION'
           };
         }
 
         const existingFolder = customFolders.find(
-          (f) =>
-            f.name.toLowerCase() === sanitizedName.toLowerCase() ||
-            f.path === normalizedPath,
+          (f) => f.name.toLowerCase() === sanitizedName.toLowerCase() || f.path === normalizedPath
         );
         if (existingFolder)
           return {
             success: false,
             error: `A smart folder with name "${existingFolder.name}" or path "${existingFolder.path}" already exists`,
-            errorCode: 'FOLDER_ALREADY_EXISTS',
+            errorCode: 'FOLDER_ALREADY_EXISTS'
           };
         const parentDir = path.dirname(normalizedPath);
         try {
@@ -688,7 +624,7 @@ function registerSmartFoldersIpc({
             return {
               success: false,
               error: `Parent directory "${parentDir}" is not a directory`,
-              errorCode: 'PARENT_NOT_DIRECTORY',
+              errorCode: 'PARENT_NOT_DIRECTORY'
             };
           const tempFile = path.join(parentDir, `.stratotest_${Date.now()}`);
           try {
@@ -698,14 +634,14 @@ function registerSmartFoldersIpc({
             return {
               success: false,
               error: `No write permission in parent directory "${parentDir}"`,
-              errorCode: 'PARENT_NOT_WRITABLE',
+              errorCode: 'PARENT_NOT_WRITABLE'
             };
           }
         } catch {
           return {
             success: false,
             error: `Parent directory "${parentDir}" does not exist or is not accessible`,
-            errorCode: 'PARENT_NOT_ACCESSIBLE',
+            errorCode: 'PARENT_NOT_ACCESSIBLE'
           };
         }
 
@@ -714,14 +650,13 @@ function registerSmartFoldersIpc({
           const llmAnalysis = await enhanceSmartFolderWithLLM(
             folder,
             customFolders,
-            getOllamaModel,
+            getOllamaModel
           );
-          if (llmAnalysis && !llmEnhancedData.error)
-            llmEnhancedData = llmAnalysis;
+          if (llmAnalysis && !llmEnhancedData.error) llmEnhancedData = llmAnalysis;
         } catch (e) {
           logger.warn(
             '[SMART-FOLDERS] LLM enhancement failed, continuing with basic data:',
-            e.message,
+            e.message
           );
         }
 
@@ -741,7 +676,7 @@ function registerSmartFoldersIpc({
           relatedFolders: llmEnhancedData.relatedFolders || [],
           confidenceScore: llmEnhancedData.confidence || 0.8,
           usageCount: 0,
-          lastUsed: null,
+          lastUsed: null
         };
 
         let directoryCreated = false;
@@ -754,7 +689,7 @@ function registerSmartFoldersIpc({
             return {
               success: false,
               error: 'Path exists but is not a directory',
-              errorCode: 'PATH_NOT_DIRECTORY',
+              errorCode: 'PATH_NOT_DIRECTORY'
             };
           }
         } catch (statError) {
@@ -762,15 +697,14 @@ function registerSmartFoldersIpc({
             try {
               await fs.mkdir(normalizedPath, { recursive: true });
               const stats = await fs.stat(normalizedPath);
-              if (!stats.isDirectory())
-                throw new Error('Created path is not a directory');
+              if (!stats.isDirectory()) throw new Error('Created path is not a directory');
               directoryCreated = true;
             } catch (dirError) {
               return {
                 success: false,
                 error: 'Failed to create directory',
                 errorCode: 'DIRECTORY_CREATION_FAILED',
-                details: dirError.message,
+                details: dirError.message
               };
             }
           } else {
@@ -778,7 +712,7 @@ function registerSmartFoldersIpc({
               success: false,
               error: 'Failed to access directory path',
               errorCode: 'PATH_ACCESS_FAILED',
-              details: statError.message,
+              details: statError.message
             };
           }
         }
@@ -797,7 +731,7 @@ function registerSmartFoldersIpc({
               : 'Smart folder added (directory already existed)',
             directoryCreated,
             directoryExisted,
-            llmEnhanced: !!llmEnhancedData.enhancedDescription,
+            llmEnhanced: !!llmEnhancedData.enhancedDescription
           };
         } catch (saveError) {
           setCustomFolders(originalFolders);
@@ -812,7 +746,7 @@ function registerSmartFoldersIpc({
             success: false,
             error: 'Failed to save configuration, changes rolled back',
             errorCode: 'CONFIG_SAVE_FAILED',
-            details: saveError.message,
+            details: saveError.message
           };
         }
       } catch (error) {
@@ -821,10 +755,10 @@ function registerSmartFoldersIpc({
           success: false,
           error: 'Failed to add smart folder',
           errorCode: 'ADD_FOLDER_FAILED',
-          details: error.message,
+          details: error.message
         };
       }
-    }),
+    })
   );
 
   // Scan folder structure
@@ -840,7 +774,7 @@ function registerSmartFoldersIpc({
           return {
             success: false,
             error: securityError.message,
-            errorCode: 'SECURITY_PATH_VIOLATION',
+            errorCode: 'SECURITY_PATH_VIOLATION'
           };
         }
 
@@ -856,7 +790,7 @@ function registerSmartFoldersIpc({
                 name: n.name,
                 path: n.path,
                 type: 'file',
-                size: n.size,
+                size: n.size
               });
             if (Array.isArray(n.children)) out.push(...flatten(n.children));
           }
@@ -869,7 +803,7 @@ function registerSmartFoldersIpc({
         logger.error('[FOLDER-SCAN] Error scanning folder structure:', error);
         return { success: false, error: error.message };
       }
-    }),
+    })
   );
 }
 

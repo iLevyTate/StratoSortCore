@@ -19,7 +19,7 @@ const registry = {
   /** Channels registered via ipcMain.handle() */
   handlers: new Set(),
   /** Channels registered via ipcMain.on() */
-  listeners: new Map(), // channel -> Set of listener functions
+  listeners: new Map() // channel -> Set of listener functions
 };
 
 /**
@@ -39,9 +39,7 @@ function registerHandler(ipcMain, channel, handler) {
 
   // Check for duplicate registration
   if (registry.handlers.has(channel)) {
-    logger.warn(
-      `[REGISTRY] Handler already registered for channel: ${channel}`,
-    );
+    logger.warn(`[REGISTRY] Handler already registered for channel: ${channel}`);
     // Remove old handler before registering new one
     try {
       ipcMain.removeHandler(channel);
@@ -153,10 +151,7 @@ function removeAllRegistered(ipcMain) {
       handlersRemoved++;
       logger.debug(`[REGISTRY] Cleanup: removed handler ${channel}`);
     } catch (e) {
-      logger.error(
-        `[REGISTRY] Cleanup: failed to remove handler ${channel}:`,
-        e,
-      );
+      logger.error(`[REGISTRY] Cleanup: failed to remove handler ${channel}:`, e);
     }
   }
   registry.handlers.clear();
@@ -168,17 +163,14 @@ function removeAllRegistered(ipcMain) {
         ipcMain.removeListener(channel, listener);
         listenersRemoved++;
       } catch (e) {
-        logger.error(
-          `[REGISTRY] Cleanup: failed to remove listener ${channel}:`,
-          e,
-        );
+        logger.error(`[REGISTRY] Cleanup: failed to remove listener ${channel}:`, e);
       }
     }
   }
   registry.listeners.clear();
 
   logger.info(
-    `[REGISTRY] Cleanup complete: ${handlersRemoved} handlers, ${listenersRemoved} listeners removed`,
+    `[REGISTRY] Cleanup complete: ${handlersRemoved} handlers, ${listenersRemoved} listeners removed`
   );
 
   return { handlers: handlersRemoved, listeners: listenersRemoved };
@@ -196,11 +188,8 @@ function getStats() {
 
   return {
     handlers: registry.handlers.size,
-    listeners: Array.from(registry.listeners.values()).reduce(
-      (sum, set) => sum + set.size,
-      0,
-    ),
-    channels: allChannels.sort(),
+    listeners: Array.from(registry.listeners.values()).reduce((sum, set) => sum + set.size, 0),
+    channels: allChannels.sort()
   };
 }
 
@@ -221,9 +210,7 @@ function hasHandler(channel) {
  * @returns {boolean}
  */
 function hasListeners(channel) {
-  return (
-    registry.listeners.has(channel) && registry.listeners.get(channel).size > 0
-  );
+  return registry.listeners.has(channel) && registry.listeners.get(channel).size > 0;
 }
 
 module.exports = {
@@ -234,5 +221,5 @@ module.exports = {
   removeAllRegistered,
   getStats,
   hasHandler,
-  hasListeners,
+  hasListeners
 };

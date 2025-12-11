@@ -8,21 +8,21 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
   createHandler: jest.fn(({ handler }) => handler),
   createErrorResponse: jest.fn((error) => ({
     success: false,
-    error: error.message || String(error),
-  })),
+    error: error.message || String(error)
+  }))
 }));
 
 jest.mock('../src/shared/config/index', () => ({
   dump: jest.fn().mockReturnValue({
     config: { test: 'value' },
-    metadata: { version: '1.0.0' },
+    metadata: { version: '1.0.0' }
   }),
   validate: jest.fn().mockReturnValue({
     valid: true,
     errors: [],
-    warnings: [],
+    warnings: []
   }),
-  get: jest.fn().mockReturnValue('config-value'),
+  get: jest.fn().mockReturnValue('config-value')
 }));
 
 describe('registerSystemIpc', () => {
@@ -44,39 +44,39 @@ describe('registerSystemIpc', () => {
     mockIpcMain = {
       handle: jest.fn((channel, handler) => {
         handlers[channel] = handler;
-      }),
+      })
     };
 
     mockLogger = {
       info: jest.fn(),
       debug: jest.fn(),
       warn: jest.fn(),
-      error: jest.fn(),
+      error: jest.fn()
     };
 
     mockSystemAnalytics = {
       collectMetrics: jest.fn().mockResolvedValue({
         cpu: 50,
         memory: 60,
-        uptime: 3600,
-      }),
+        uptime: 3600
+      })
     };
 
     mockServiceIntegration = {
       analysisHistory: {
         getStatistics: jest.fn().mockResolvedValue({
           totalFiles: 100,
-          totalCategories: 10,
+          totalCategories: 10
         }),
-        getRecentAnalysis: jest.fn().mockResolvedValue([
-          { fileName: 'test.pdf', category: 'documents' },
-        ]),
+        getRecentAnalysis: jest
+          .fn()
+          .mockResolvedValue([{ fileName: 'test.pdf', category: 'documents' }])
       },
       undoRedo: {
-        getActionHistory: jest.fn().mockReturnValue([
-          { type: 'organize', timestamp: new Date().toISOString() },
-        ]),
-      },
+        getActionHistory: jest
+          .fn()
+          .mockReturnValue([{ type: 'organize', timestamp: new Date().toISOString() }])
+      }
     };
 
     registerSystemIpc = require('../src/main/ipc/system');
@@ -85,7 +85,7 @@ describe('registerSystemIpc', () => {
       IPC_CHANNELS,
       logger: mockLogger,
       systemAnalytics: mockSystemAnalytics,
-      getServiceIntegration: () => mockServiceIntegration,
+      getServiceIntegration: () => mockServiceIntegration
     });
   });
 
@@ -124,7 +124,7 @@ describe('registerSystemIpc', () => {
         analysis: { totalFiles: 100, totalCategories: 10 },
         recentActions: expect.any(Array),
         recentAnalysis: expect.any(Array),
-        timestamp: expect.any(String),
+        timestamp: expect.any(String)
       });
     });
 
@@ -143,7 +143,7 @@ describe('registerSystemIpc', () => {
         IPC_CHANNELS,
         logger: mockLogger,
         systemAnalytics: mockSystemAnalytics,
-        getServiceIntegration: () => null,
+        getServiceIntegration: () => null
       });
 
       const handler = handlers[SYSTEM_CHANNELS.GET_APPLICATION_STATISTICS];
@@ -153,7 +153,7 @@ describe('registerSystemIpc', () => {
         analysis: {},
         recentActions: [],
         recentAnalysis: [],
-        timestamp: expect.any(String),
+        timestamp: expect.any(String)
       });
     });
 
@@ -182,7 +182,7 @@ describe('registerSystemIpc', () => {
       expect(result).toEqual({
         cpu: 50,
         memory: 60,
-        uptime: 3600,
+        uptime: 3600
       });
     });
 
@@ -195,9 +195,7 @@ describe('registerSystemIpc', () => {
     });
 
     test('handles errors and returns empty object', async () => {
-      mockSystemAnalytics.collectMetrics.mockRejectedValue(
-        new Error('Metrics error')
-      );
+      mockSystemAnalytics.collectMetrics.mockRejectedValue(new Error('Metrics error'));
 
       const handler = handlers[SYSTEM_CHANNELS.GET_METRICS];
       const result = await handler();
@@ -215,8 +213,8 @@ describe('registerSystemIpc', () => {
       // Mock electron-updater
       jest.mock('electron-updater', () => ({
         autoUpdater: {
-          quitAndInstall: jest.fn(),
-        },
+          quitAndInstall: jest.fn()
+        }
       }));
 
       const handler = handlers[SYSTEM_CHANNELS.APPLY_UPDATE];
@@ -243,8 +241,8 @@ describe('registerSystemIpc', () => {
         validation: {
           valid: true,
           errorCount: 0,
-          warningCount: 0,
-        },
+          warningCount: 0
+        }
       });
     });
 
@@ -262,7 +260,7 @@ describe('registerSystemIpc', () => {
       validate.mockReturnValue({
         valid: false,
         errors: ['Error 1', 'Error 2'],
-        warnings: ['Warning 1'],
+        warnings: ['Warning 1']
       });
 
       const handler = handlers[SYSTEM_CHANNELS.GET_CONFIG];
@@ -271,7 +269,7 @@ describe('registerSystemIpc', () => {
       expect(result.validation).toEqual({
         valid: false,
         errorCount: 2,
-        warningCount: 1,
+        warningCount: 1
       });
     });
 
@@ -298,7 +296,7 @@ describe('registerSystemIpc', () => {
       expect(result).toEqual({
         success: true,
         path: 'test.path',
-        value: 'config-value',
+        value: 'config-value'
       });
     });
 

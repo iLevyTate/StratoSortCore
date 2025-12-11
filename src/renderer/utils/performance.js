@@ -7,8 +7,7 @@
  * @module renderer/utils/performance
  */
 
-// Import core utilities from consolidated module
-const { debounce, throttle } = require('../../shared/promiseUtils');
+import { debounce, throttle } from '../../shared/promiseUtils';
 
 /**
  * LRU (Least Recently Used) cache implementation
@@ -60,7 +59,7 @@ function createLRUCache(maxSize = 100) {
 
     get size() {
       return cache.size;
-    },
+    }
   };
 }
 
@@ -144,14 +143,15 @@ function batchProcessor(fn, wait = 0, maxBatchSize = Infinity) {
         timeoutId = null;
       }
       batch = [];
-    },
+    }
   };
 }
 
-module.exports = {
+export { debounce, throttle, createLRUCache, rafThrottle, batchProcessor };
+export default {
   debounce,
   throttle,
   createLRUCache,
   rafThrottle,
-  batchProcessor,
+  batchProcessor
 };

@@ -13,14 +13,14 @@ const {
   generateQueueItems,
   createMockChromaDBService,
   forceGC,
-  createTimer,
+  createTimer
 } = require('../utils/testUtilities');
 
 // Mock electron
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn(() => '/tmp/test-app'),
-  },
+    getPath: jest.fn(() => '/tmp/test-app')
+  }
 }));
 
 // Mock logger
@@ -30,13 +30,13 @@ jest.mock('../../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock config
 jest.mock('../../src/shared/config', () => ({
-  get: jest.fn((key, defaultValue) => defaultValue),
+  get: jest.fn((key, defaultValue) => defaultValue)
 }));
 
 describe('EmbeddingQueue Stress Tests', () => {
@@ -54,7 +54,7 @@ describe('EmbeddingQueue Stress Tests', () => {
 
     // Mock ChromaDBService
     jest.mock('../../src/main/services/chromadb', () => ({
-      getInstance: () => mockChromaDB,
+      getInstance: () => mockChromaDB
     }));
 
     // Import after mocking
@@ -112,9 +112,7 @@ describe('EmbeddingQueue Stress Tests', () => {
         }
 
         // First item should have been dropped
-        const stillHasFirstItem = EmbeddingQueue.queue.some(
-          (item) => item.id === firstItemId,
-        );
+        const stillHasFirstItem = EmbeddingQueue.queue.some((item) => item.id === firstItemId);
         expect(stillHasFirstItem).toBe(false);
 
         // The oldest items should be gone (dropped 5% at a time = 3 items minimum)
@@ -250,7 +248,7 @@ describe('EmbeddingQueue Stress Tests', () => {
       // Use smaller vectors (128 dims vs 768) for stress tests
       const items = generateQueueItems(itemCount, {
         includeVector: true,
-        vectorDimensions: 128,
+        vectorDimensions: 128
       });
 
       const timer = createTimer();
@@ -355,7 +353,7 @@ describe('EmbeddingQueue Stress Tests', () => {
 
       // Oldest items should be gone
       const hasOldestItem = EmbeddingQueue.deadLetterQueue.some(
-        (entry) => entry.itemId === 'dlq-item-0',
+        (entry) => entry.itemId === 'dlq-item-0'
       );
       expect(hasOldestItem).toBe(false);
     });
@@ -453,7 +451,7 @@ describe('EmbeddingQueue Stress Tests', () => {
         EmbeddingQueue.failedItems.set(`failed-${i}`, {
           item: { id: `failed-${i}` },
           retryCount: 1,
-          lastAttempt: Date.now(),
+          lastAttempt: Date.now()
         });
       }
 
@@ -461,7 +459,7 @@ describe('EmbeddingQueue Stress Tests', () => {
       for (let i = 0; i < 3; i++) {
         EmbeddingQueue.deadLetterQueue.push({
           itemId: `dead-${i}`,
-          item: { id: `dead-${i}` },
+          item: { id: `dead-${i}` }
         });
       }
 

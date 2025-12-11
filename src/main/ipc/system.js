@@ -4,17 +4,14 @@
  * Handles system metrics, application statistics, updates, and configuration.
  */
 const { createHandler, createErrorResponse } = require('./ipcWrappers');
-const {
-  dump: dumpConfig,
-  validate: validateConfig,
-} = require('../../shared/config/index');
+const { dump: dumpConfig, validate: validateConfig } = require('../../shared/config/index');
 
 function registerSystemIpc({
   ipcMain,
   IPC_CHANNELS,
   logger,
   systemAnalytics,
-  getServiceIntegration,
+  getServiceIntegration
 }) {
   const context = 'System';
 
@@ -27,25 +24,22 @@ function registerSystemIpc({
         try {
           const serviceIntegration = getServiceIntegration();
           const [analysisStats, historyRecent] = await Promise.all([
-            serviceIntegration?.analysisHistory?.getStatistics?.() ||
-              Promise.resolve({}),
-            serviceIntegration?.analysisHistory?.getRecentAnalysis?.(20) ||
-              Promise.resolve([]),
+            serviceIntegration?.analysisHistory?.getStatistics?.() || Promise.resolve({}),
+            serviceIntegration?.analysisHistory?.getRecentAnalysis?.(20) || Promise.resolve([])
           ]);
 
           return {
             analysis: analysisStats,
-            recentActions:
-              serviceIntegration?.undoRedo?.getActionHistory?.(20) || [],
+            recentActions: serviceIntegration?.undoRedo?.getActionHistory?.(20) || [],
             recentAnalysis: historyRecent,
-            timestamp: new Date().toISOString(),
+            timestamp: new Date().toISOString()
           };
         } catch (error) {
           logger.error('Failed to get system statistics:', error);
           return {};
         }
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -60,8 +54,8 @@ function registerSystemIpc({
           logger.error('Failed to collect system metrics:', error);
           return {};
         }
-      },
-    }),
+      }
+    })
   );
 
   ipcMain.handle(
@@ -78,8 +72,8 @@ function registerSystemIpc({
           logger.error('Failed to apply update:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Configuration inspection handler for debugging and support
@@ -101,15 +95,15 @@ function registerSystemIpc({
             validation: {
               valid: validation.valid,
               errorCount: validation.errors.length,
-              warningCount: validation.warnings.length,
-            },
+              warningCount: validation.warnings.length
+            }
           };
         } catch (error) {
           logger.error('Failed to get app configuration:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 
   // Get configuration value by path
@@ -128,8 +122,8 @@ function registerSystemIpc({
           logger.error('Failed to get config value:', error);
           return createErrorResponse(error);
         }
-      },
-    }),
+      }
+    })
   );
 }
 

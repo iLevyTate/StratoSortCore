@@ -112,7 +112,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha', client: 'Acme' },
+        analysis: { project: 'Alpha', client: 'Acme' }
       };
 
       const score = scoreFileForStrategy(file, strategies['project-based']);
@@ -124,7 +124,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'random.xyz',
         extension: 'xyz',
-        analysis: {},
+        analysis: {}
       };
 
       const score = scoreFileForStrategy(file, strategies['project-based']);
@@ -136,7 +136,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'project_alpha_report.pdf',
         extension: 'pdf',
-        analysis: {},
+        analysis: {}
       };
 
       const score = scoreFileForStrategy(file, strategies['project-based']);
@@ -152,8 +152,8 @@ describe('Organization Strategies', () => {
         analysis: {
           project: 'Alpha',
           client: 'Acme',
-          task: 'Review',
-        },
+          task: 'Review'
+        }
       };
 
       const score = scoreFileForStrategy(file, strategies['project-based']);
@@ -164,28 +164,19 @@ describe('Organization Strategies', () => {
 
   describe('matchesStrategyPattern', () => {
     test('returns true for matching pattern', () => {
-      const result = matchesStrategyPattern(
-        'project_alpha_report.pdf',
-        'Projects/{project_name}',
-      );
+      const result = matchesStrategyPattern('project_alpha_report.pdf', 'Projects/{project_name}');
 
       expect(result).toBe(true);
     });
 
     test('returns false for non-matching pattern', () => {
-      const result = matchesStrategyPattern(
-        'random_file.txt',
-        'Workflow/{stage}',
-      );
+      const result = matchesStrategyPattern('random_file.txt', 'Workflow/{stage}');
 
       expect(result).toBe(false);
     });
 
     test('is case-insensitive', () => {
-      const result = matchesStrategyPattern(
-        'PROJECT_ALPHA.pdf',
-        'projects/{name}',
-      );
+      const result = matchesStrategyPattern('PROJECT_ALPHA.pdf', 'projects/{name}');
 
       expect(result).toBe(true);
     });
@@ -196,7 +187,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha', category: 'Reports' },
+        analysis: { project: 'Alpha', category: 'Reports' }
       };
 
       const result = mapFileToStrategy(file, strategies['project-based'], []);
@@ -209,7 +200,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'file.pdf',
         extension: 'pdf',
-        analysis: {},
+        analysis: {}
       };
 
       const result = mapFileToStrategy(file, strategies['project-based'], []);
@@ -221,12 +212,10 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha' },
+        analysis: { project: 'Alpha' }
       };
 
-      const smartFolders = [
-        { name: 'Other', path: '/Other' },
-      ];
+      const smartFolders = [{ name: 'Other', path: '/Other' }];
 
       const result = mapFileToStrategy(file, strategies['project-based'], smartFolders);
 
@@ -241,7 +230,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'project_report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha', date: '2024-01-01', category: 'Reports' },
+        analysis: { project: 'Alpha', date: '2024-01-01', category: 'Reports' }
       };
 
       // Use lower threshold to ensure matches
@@ -255,7 +244,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'random.xyz',
         extension: 'xyz',
-        analysis: {},
+        analysis: {}
       };
 
       const suggestions = getStrategyBasedSuggestions(file, [], 0.9);
@@ -267,7 +256,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'project_report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha', category: 'Reports' },
+        analysis: { project: 'Alpha', category: 'Reports' }
       };
 
       const suggestions = getStrategyBasedSuggestions(file, [], 0);
@@ -283,7 +272,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha' },
+        analysis: { project: 'Alpha' }
       };
 
       const result = getApplicableStrategies(file);
@@ -299,7 +288,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'random.xyz',
         extension: 'xyz',
-        analysis: {},
+        analysis: {}
       };
 
       const result = getApplicableStrategies(file);
@@ -312,7 +301,7 @@ describe('Organization Strategies', () => {
       const file = {
         name: 'project_report.pdf',
         extension: 'pdf',
-        analysis: { project: 'Alpha', category: 'Reports' },
+        analysis: { project: 'Alpha', category: 'Reports' }
       };
 
       const result = getApplicableStrategies(file);
@@ -329,7 +318,7 @@ describe('Organization Strategies', () => {
         hasCommonProject: true,
         hasDatePattern: false,
         commonTerms: [],
-        fileTypes: ['pdf'],
+        fileTypes: ['pdf']
       };
 
       const result = selectBestStrategy(patterns);
@@ -342,7 +331,7 @@ describe('Organization Strategies', () => {
         hasCommonProject: false,
         hasDatePattern: true,
         commonTerms: [],
-        fileTypes: ['pdf'],
+        fileTypes: ['pdf']
       };
 
       const result = selectBestStrategy(patterns);
@@ -355,7 +344,7 @@ describe('Organization Strategies', () => {
         hasCommonProject: false,
         hasDatePattern: false,
         commonTerms: [],
-        fileTypes: ['pdf', 'jpg', 'xlsx', 'mp4'],
+        fileTypes: ['pdf', 'jpg', 'xlsx', 'mp4']
       };
 
       const result = selectBestStrategy(patterns);
@@ -368,7 +357,7 @@ describe('Organization Strategies', () => {
         hasCommonProject: false,
         hasDatePattern: false,
         commonTerms: [],
-        fileTypes: ['xyz'],
+        fileTypes: ['xyz']
       };
 
       const result = selectBestStrategy(patterns);
@@ -382,7 +371,7 @@ describe('Organization Strategies', () => {
         hasCommonProject: false,
         hasDatePattern: false,
         commonTerms: [],
-        fileTypes: ['xyz'],
+        fileTypes: ['xyz']
       };
 
       const resultNoFiles = selectBestStrategy(patterns, []);
@@ -405,9 +394,7 @@ describe('Organization Strategies', () => {
 
     test('matches existing smart folder', () => {
       const file = { extension: 'jpg' };
-      const smartFolders = [
-        { name: 'My Images', path: '/My Images' },
-      ];
+      const smartFolders = [{ name: 'My Images', path: '/My Images' }];
 
       const result = getFallbackSuggestion(file, smartFolders);
 

@@ -48,7 +48,7 @@ const {
 
   // Feature Detection
   isFeatureSupported,
-  getFeatureDocumentation,
+  getFeatureDocumentation
 } = require('./crossPlatformUtils');
 
 // ============================================================================
@@ -167,7 +167,7 @@ function getSpawnOptions(options = {}) {
   return {
     windowsHide: true,
     shell: shouldUseShell(options.forceShell),
-    ...options,
+    ...options
   };
 }
 
@@ -215,5 +215,5 @@ module.exports = {
   isUNCPath,
   safePathJoin,
   isFeatureSupported,
-  getFeatureDocumentation,
+  getFeatureDocumentation
 };

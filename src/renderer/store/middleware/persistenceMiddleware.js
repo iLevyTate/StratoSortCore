@@ -44,12 +44,12 @@ function saveWithQuotaHandling(key, stateToSave) {
         organizedFiles: stateToSave.files.organizedFiles?.slice(0, 50) || [],
         fileStates: Object.fromEntries(
           Object.entries(stateToSave.files.fileStates || {}).slice(-25)
-        ),
+        )
       },
       analysis: {
         ...stateToSave.analysis,
-        results: stateToSave.analysis.results?.slice(0, 50) || [],
-      },
+        results: stateToSave.analysis.results?.slice(0, 50) || []
+      }
     };
     localStorage.setItem(key, JSON.stringify(reducedState));
     logger.info('Saved reduced state (50 items per array)');
@@ -67,16 +67,16 @@ function saveWithQuotaHandling(key, stateToSave) {
         namingConvention: stateToSave.files.namingConvention,
         selectedFiles: [],
         organizedFiles: [],
-        fileStates: {},
+        fileStates: {}
       },
       analysis: {
         results: [],
         isAnalyzing: false,
         analysisProgress: { current: 0, total: 0 },
-        currentAnalysisFile: '',
+        currentAnalysisFile: ''
       },
       timestamp: Date.now(),
-      _partial: true, // Flag to indicate partial save
+      _partial: true // Flag to indicate partial save
     };
     localStorage.setItem(key, JSON.stringify(minimalState));
     logger.warn('Saved minimal state (UI + settings only) due to quota limits');
@@ -92,7 +92,7 @@ function saveWithQuotaHandling(key, stateToSave) {
     const emergencyState = {
       ui: { currentPhase: stateToSave.ui?.currentPhase || PHASES.WELCOME },
       timestamp: Date.now(),
-      _emergency: true,
+      _emergency: true
     };
     localStorage.setItem(key, JSON.stringify(emergencyState));
     logger.error('Emergency save: cleared old data, saved only current phase');
@@ -122,10 +122,7 @@ const persistenceMiddleware = (store) => (next) => (action) => {
   const state = store.getState();
 
   // Only save if not in welcome phase and not loading
-  if (
-    state.ui.currentPhase !== PHASES.WELCOME &&
-    action.type.indexOf('setLoading') === -1
-  ) {
+  if (state.ui.currentPhase !== PHASES.WELCOME && action.type.indexOf('setLoading') === -1) {
     // Performance: Skip save if key state hasn't changed
     const currentPhase = state.ui.currentPhase;
     const currentFilesCount = state.files.selectedFiles.length;
@@ -152,7 +149,8 @@ const persistenceMiddleware = (store) => (next) => (action) => {
 
     // FIX #24: Force save if we've been debouncing too long
     const now = Date.now();
-    const shouldForceImmediate = lastSaveAttempt > 0 && (now - lastSaveAttempt) > MAX_DEBOUNCE_WAIT_MS;
+    const shouldForceImmediate =
+      lastSaveAttempt > 0 && now - lastSaveAttempt > MAX_DEBOUNCE_WAIT_MS;
     const delay = shouldForceImmediate ? 0 : SAVE_DEBOUNCE_MS;
 
     saveTimeout = setTimeout(() => {
@@ -170,23 +168,23 @@ const persistenceMiddleware = (store) => (next) => (action) => {
           currentPhase: state.ui.currentPhase,
           theme: state.ui.theme,
           sidebarOpen: state.ui.sidebarOpen,
-          showSettings: state.ui.showSettings,
+          showSettings: state.ui.showSettings
         },
         files: {
           selectedFiles: state.files.selectedFiles.slice(0, 200), // Limit size
           smartFolders: state.files.smartFolders,
           organizedFiles: state.files.organizedFiles.slice(0, 200),
           namingConvention: state.files.namingConvention,
-          fileStates: {},
+          fileStates: {}
         },
         analysis: {
           // Analysis results
           results: state.analysis.results.slice(0, 200),
           isAnalyzing: state.analysis.isAnalyzing,
           analysisProgress: state.analysis.analysisProgress,
-          currentAnalysisFile: state.analysis.currentAnalysisFile,
+          currentAnalysisFile: state.analysis.currentAnalysisFile
         },
-        timestamp: Date.now(),
+        timestamp: Date.now()
       };
 
       // Persist fileStates separately or limited
@@ -194,9 +192,7 @@ const persistenceMiddleware = (store) => (next) => (action) => {
       const fileStatesEntries = Object.entries(state.files.fileStates);
       if (fileStatesEntries.length > 0) {
         // Keep last 100
-        const recentStates = Object.fromEntries(
-          fileStatesEntries.slice(-100),
-        );
+        const recentStates = Object.fromEntries(fileStatesEntries.slice(-100));
         stateToSave.files.fileStates = recentStates;
       }
 

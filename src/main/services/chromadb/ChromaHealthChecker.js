@@ -26,7 +26,7 @@ async function checkHealthViaHttp(serverUrl) {
   const endpoints = [
     '/api/v2/heartbeat', // v2 endpoint (current version)
     '/api/v1/heartbeat', // v1 endpoint (ChromaDB 1.0.x)
-    '/api/v1', // Some versions just have this
+    '/api/v1' // Some versions just have this
   ];
 
   // Try all endpoints in parallel for faster health check
@@ -34,7 +34,7 @@ async function checkHealthViaHttp(serverUrl) {
     try {
       const response = await axios.get(`${serverUrl}${endpoint}`, {
         timeout: 500, // 500ms timeout for quick failure
-        validateStatus: () => true,
+        validateStatus: () => true
       });
 
       if (response.status === 200) {
@@ -43,7 +43,7 @@ async function checkHealthViaHttp(serverUrl) {
           // Check for error responses
           if (typeof response.data === 'object' && response.data.error) {
             logger.debug(
-              `[HealthChecker] Endpoint ${endpoint} returned error: ${response.data.error}`,
+              `[HealthChecker] Endpoint ${endpoint} returned error: ${response.data.error}`
             );
             return null;
           }
@@ -75,7 +75,7 @@ async function checkHealthViaHttp(serverUrl) {
 
   return {
     healthy: !!successfulEndpoint,
-    endpoint: successfulEndpoint,
+    endpoint: successfulEndpoint
   };
 }
 
@@ -93,9 +93,7 @@ async function checkHealthViaClient(client) {
   try {
     const response = await client.heartbeat();
     const isHealthy =
-      response &&
-      (response.nanosecond_heartbeat > 0 ||
-        response['nanosecond heartbeat'] > 0);
+      response && (response.nanosecond_heartbeat > 0 || response['nanosecond heartbeat'] > 0);
 
     if (isHealthy) {
       logger.debug('[HealthChecker] Successful via client.heartbeat()');
@@ -117,12 +115,7 @@ async function checkHealthViaClient(client) {
  * @param {number} options.maxRetries - Max retry attempts (default: 3)
  * @returns {Promise<boolean>}
  */
-async function isServerAvailable({
-  serverUrl,
-  client = null,
-  timeoutMs = 3000,
-  maxRetries = 3,
-}) {
+async function isServerAvailable({ serverUrl, client = null, timeoutMs = 3000, maxRetries = 3 }) {
   let lastError = null;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -132,7 +125,7 @@ async function isServerAvailable({
       const checkClient =
         client ||
         new ChromaClient({
-          path: serverUrl,
+          path: serverUrl
         });
 
       // Wrap heartbeat in Promise.race with timeout
@@ -154,7 +147,7 @@ async function isServerAvailable({
       logger.debug('[HealthChecker] Server heartbeat successful:', {
         hb,
         serverUrl,
-        attempt: attempt + 1,
+        attempt: attempt + 1
       });
       return true;
     } catch (error) {
@@ -162,12 +155,9 @@ async function isServerAvailable({
 
       const isTimeout = error.message && error.message.includes('timeout');
       const isNetworkError =
-        error.code === 'ECONNREFUSED' ||
-        error.code === 'ETIMEDOUT' ||
-        error.code === 'ENOTFOUND';
+        error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND';
 
-      const shouldRetry =
-        (isTimeout || isNetworkError) && attempt < maxRetries - 1;
+      const shouldRetry = (isTimeout || isNetworkError) && attempt < maxRetries - 1;
 
       if (shouldRetry) {
         // Exponential backoff: 500ms, 1000ms, 2000ms
@@ -177,7 +167,7 @@ async function isServerAvailable({
           maxRetries,
           delayMs: delay,
           error: error.message,
-          serverUrl,
+          serverUrl
         });
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
@@ -185,13 +175,13 @@ async function isServerAvailable({
           logger.debug('[HealthChecker] Heartbeat timed out:', {
             timeoutMs,
             serverUrl,
-            attempt: attempt + 1,
+            attempt: attempt + 1
           });
         } else {
           logger.debug('[HealthChecker] Heartbeat failed:', {
             message: error.message,
             serverUrl,
-            attempt: attempt + 1,
+            attempt: attempt + 1
           });
         }
       }
@@ -200,7 +190,7 @@ async function isServerAvailable({
 
   logger.warn('[HealthChecker] Availability check failed after all retries:', {
     maxRetries,
-    lastError: lastError?.message,
+    lastError: lastError?.message
   });
   return false;
 }
@@ -214,22 +204,19 @@ async function isServerAvailable({
  * @returns {Object} Object with interval ID and stop function
  */
 function createHealthCheckInterval({ checkFn, intervalMs }) {
-  const interval = getConfig(
-    'PERFORMANCE.healthCheckInterval',
-    intervalMs || 30000,
-  );
+  const interval = getConfig('PERFORMANCE.healthCheckInterval', intervalMs || 30000);
 
   // Initial check
   checkFn().catch((err) => {
     logger.debug('[HealthChecker] Initial check failed', {
-      error: err.message,
+      error: err.message
     });
   });
 
   const intervalId = setInterval(() => {
     checkFn().catch((err) => {
       logger.debug('[HealthChecker] Periodic check failed', {
-        error: err.message,
+        error: err.message
       });
     });
   }, interval);
@@ -243,7 +230,7 @@ function createHealthCheckInterval({ checkFn, intervalMs }) {
     intervalId,
     stop: () => {
       clearInterval(intervalId);
-    },
+    }
   };
 }
 
@@ -251,5 +238,5 @@ module.exports = {
   checkHealthViaHttp,
   checkHealthViaClient,
   isServerAvailable,
-  createHealthCheckInterval,
+  createHealthCheckInterval
 };

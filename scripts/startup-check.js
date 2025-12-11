@@ -27,7 +27,7 @@ function printStatus(ok, label, details) {
 async function runCmd(cmd, args = []) {
   return await asyncSpawn(cmd, args, {
     encoding: 'utf8',
-    timeout: 5000,
+    timeout: 5000
   });
 }
 
@@ -39,11 +39,7 @@ async function main() {
   const hasWebpackConfig = checkFileExists('webpack.config.js');
   const hasRendererIndex = checkFileExists('src/renderer/index.html');
   printStatus(hasWebpackConfig, 'Webpack config present', 'webpack.config.js');
-  printStatus(
-    hasRendererIndex,
-    'Renderer index present',
-    'src/renderer/index.html',
-  );
+  printStatus(hasRendererIndex, 'Renderer index present', 'src/renderer/index.html');
   printStatus(hasDistIndex, 'Built renderer present', 'dist/index.html');
 
   // Check Ollama (optional) - using async spawn to avoid blocking
@@ -54,29 +50,22 @@ async function main() {
       ? [
           '-NoProfile',
           '-Command',
-          `try { (Invoke-WebRequest -Uri "${ollamaHost}/api/tags" -UseBasicParsing).StatusCode } catch { 0 }`,
+          `try { (Invoke-WebRequest -Uri "${ollamaHost}/api/tags" -UseBasicParsing).StatusCode } catch { 0 }`
         ]
-      : [
-          '-s',
-          '-o',
-          '/dev/null',
-          '-w',
-          '%{http_code}',
-          `${ollamaHost}/api/tags`,
-        ],
+      : ['-s', '-o', '/dev/null', '-w', '%{http_code}', `${ollamaHost}/api/tags`]
   );
   const httpCode = (curl.stdout || '').toString().trim();
   const connected = httpCode && httpCode !== '0' && httpCode !== '000';
   printStatus(
     connected,
     'Ollama reachable',
-    connected ? `${ollamaHost}` : 'Optional: start with "ollama serve"',
+    connected ? `${ollamaHost}` : 'Optional: start with "ollama serve"'
   );
 
   // Final hint
   // eslint-disable-next-line no-console
   console.log(
-    `\n${chalk.gray('Tip:')} Run ${chalk.yellow('npm run dev')} to build and launch in development mode.`,
+    `\n${chalk.gray('Tip:')} Run ${chalk.yellow('npm run dev')} to build and launch in development mode.`
   );
 }
 

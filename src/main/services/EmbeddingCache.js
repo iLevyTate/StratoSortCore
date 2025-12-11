@@ -26,7 +26,7 @@ class EmbeddingCache {
       hits: 0,
       misses: 0,
       evictions: 0,
-      size: 0,
+      size: 0
     };
 
     // Fixed: Don't start interval in constructor - wait for initialize()
@@ -36,7 +36,7 @@ class EmbeddingCache {
 
     logger.info('[EmbeddingCache] Created', {
       maxSize: this.maxSize,
-      ttlMinutes: this.ttlMs / 60000,
+      ttlMinutes: this.ttlMs / 60000
     });
   }
 
@@ -63,7 +63,7 @@ class EmbeddingCache {
 
     logger.info('[EmbeddingCache] Initialized with cleanup interval', {
       maxSize: this.maxSize,
-      ttlMinutes: this.ttlMs / 60000,
+      ttlMinutes: this.ttlMs / 60000
     });
   }
 
@@ -77,10 +77,7 @@ class EmbeddingCache {
   generateKey(text, model) {
     // Normalize text to improve cache hit rate
     const normalized = text.trim().toLowerCase();
-    return crypto
-      .createHash('sha256')
-      .update(`${normalized}:${model}`)
-      .digest('hex');
+    return crypto.createHash('sha256').update(`${normalized}:${model}`).digest('hex');
   }
 
   /**
@@ -105,7 +102,7 @@ class EmbeddingCache {
       this.metrics.misses++;
       logger.debug('[EmbeddingCache] Entry expired', {
         age,
-        ttlMs: this.ttlMs,
+        ttlMs: this.ttlMs
       });
       return null;
     }
@@ -117,7 +114,7 @@ class EmbeddingCache {
     logger.debug('[EmbeddingCache] Cache hit', {
       textLength: text.length,
       model,
-      age,
+      age
     });
 
     return { vector: entry.vector, model: entry.model };
@@ -136,7 +133,7 @@ class EmbeddingCache {
         hasText: !!text,
         hasModel: !!model,
         hasVector: !!vector,
-        isArray: Array.isArray(vector),
+        isArray: Array.isArray(vector)
       });
       return;
     }
@@ -152,7 +149,7 @@ class EmbeddingCache {
       vector,
       model,
       timestamp: Date.now(),
-      accessTime: Date.now(),
+      accessTime: Date.now()
     });
 
     this.metrics.size = this.cache.size;
@@ -161,7 +158,7 @@ class EmbeddingCache {
       textLength: text.length,
       model,
       vectorDim: vector.length,
-      cacheSize: this.cache.size,
+      cacheSize: this.cache.size
     });
   }
 
@@ -185,7 +182,7 @@ class EmbeddingCache {
       this.cache.delete(oldestKey);
       this.metrics.evictions++;
       logger.debug('[EmbeddingCache] Evicted LRU entry', {
-        age: Date.now() - oldestTime,
+        age: Date.now() - oldestTime
       });
     }
   }
@@ -210,7 +207,7 @@ class EmbeddingCache {
       this.metrics.size = this.cache.size;
       logger.debug('[EmbeddingCache] Cleaned expired entries', {
         cleaned,
-        remaining: this.cache.size,
+        remaining: this.cache.size
       });
     }
   }
@@ -237,7 +234,7 @@ class EmbeddingCache {
       hitRate: `${hitRate.toFixed(2)}%`,
       estimatedMB: `${estimatedMB.toFixed(2)} MB`,
       maxSize: this.maxSize,
-      ttlMinutes: this.ttlMs / 60000,
+      ttlMinutes: this.ttlMs / 60000
     };
   }
 
@@ -250,7 +247,7 @@ class EmbeddingCache {
     this.metrics = { hits: 0, misses: 0, evictions: 0, size: 0 };
 
     logger.info('[EmbeddingCache] Cache cleared', {
-      previousSize,
+      previousSize
     });
   }
 
@@ -269,9 +266,7 @@ class EmbeddingCache {
 
     // Verify interval is cleared (defensive check)
     if (this.cleanupInterval !== null) {
-      logger.warn(
-        '[EmbeddingCache] Warning: cleanupInterval was not properly cleared',
-      );
+      logger.warn('[EmbeddingCache] Warning: cleanupInterval was not properly cleared');
       // Force clear again
       this.cleanupInterval = null;
     }

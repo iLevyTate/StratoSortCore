@@ -19,12 +19,10 @@ const {
   setOllamaVisionModel,
   setOllamaEmbeddingModel,
   setOllamaHost,
-  loadOllamaConfig,
+  loadOllamaConfig
 } = require('./ollamaUtils');
 const { buildOllamaOptions } = require('./services/PerformanceService');
-const {
-  getService: getSettingsService,
-} = require('./services/SettingsService');
+const { getService: getSettingsService } = require('./services/SettingsService');
 const DownloadWatcher = require('./services/DownloadWatcher');
 
 // Import service integration
@@ -50,19 +48,12 @@ const path = require('path');
 const {
   initializeGpuConfig,
   handleGpuProcessGone,
-  forceSoftwareRenderer,
+  forceSoftwareRenderer
 } = require('./core/gpuConfig');
 const { createApplicationMenu } = require('./core/applicationMenu');
-const {
-  initializeTrayConfig,
-  createSystemTray,
-  updateTrayMenu,
-} = require('./core/systemTray');
+const { initializeTrayConfig, createSystemTray, updateTrayMenu } = require('./core/systemTray');
 const { verifyIpcHandlersRegistered } = require('./core/ipcVerification');
-const {
-  initializeLifecycle,
-  registerLifecycleHandlers,
-} = require('./core/lifecycle');
+const { initializeLifecycle, registerLifecycleHandlers } = require('./core/lifecycle');
 const { initializeAutoUpdater } = require('./core/autoUpdater');
 const { initializeJumpList } = require('./core/jumpList');
 const { runBackgroundSetup } = require('./core/backgroundSetup');
@@ -93,15 +84,10 @@ let globalProcessListeners = [];
 // GPU configuration is now handled by ./core/gpuConfig
 initializeGpuConfig();
 app.on('child-process-gone', handleGpuProcessGone);
-eventListeners.push(() =>
-  app.removeListener('child-process-gone', handleGpuProcessGone),
-);
+eventListeners.push(() => app.removeListener('child-process-gone', handleGpuProcessGone));
 
 // Custom folders helpers
-const {
-  loadCustomFolders,
-  saveCustomFolders,
-} = require('./core/customFolders');
+const { loadCustomFolders, saveCustomFolders } = require('./core/customFolders');
 
 // System monitoring and analytics
 const systemAnalytics = require('./core/systemAnalytics');
@@ -231,7 +217,7 @@ function updateDownloadWatcher(settings) {
         analyzeImageFile,
         getCustomFolders: () => customFolders,
         autoOrganizeService: serviceIntegration?.autoOrganizeService,
-        settingsService: settingsService,
+        settingsService: settingsService
       });
       downloadWatcher.start();
     }
@@ -273,9 +259,7 @@ if (!gotTheLock) {
     const { restoreWindow } = require('./core/windowState');
 
     if (mainWindow && !mainWindow.isDestroyed()) {
-      logger.debug(
-        '[SECOND-INSTANCE] Restoring window for second instance attempt',
-      );
+      logger.debug('[SECOND-INSTANCE] Restoring window for second instance attempt');
 
       restoreWindow(mainWindow).catch((error) => {
         logger.error('[SECOND-INSTANCE] Error restoring window:', error);
@@ -288,9 +272,7 @@ if (!gotTheLock) {
   app.on('second-instance', secondInstanceHandler);
 
   // Track for cleanup
-  eventListeners.push(() =>
-    app.removeListener('second-instance', secondInstanceHandler),
-  );
+  eventListeners.push(() => app.removeListener('second-instance', secondInstanceHandler));
 
   // Production optimizations - ensure GPU acceleration
   if (!isDev) {
@@ -322,7 +304,7 @@ app.whenReady().then(async () => {
       const logPath = path.join(
         app.getPath('userData'),
         'logs',
-        `dev-${new Date().toISOString().split('T')[0]}.log`,
+        `dev-${new Date().toISOString().split('T')[0]}.log`
       );
       logger.enableFileLogging(logPath);
       logger.info('File logging enabled', { logPath });
@@ -356,7 +338,7 @@ app.whenReady().then(async () => {
       logger.error('[STARTUP] Startup manager failed:', {
         message: error?.message || 'Unknown error',
         stack: error?.stack,
-        error: error,
+        error: error
       });
       // Continue in degraded mode - don't block startup
       logger.warn('[STARTUP] Continuing startup in degraded mode');
@@ -370,17 +352,13 @@ app.whenReady().then(async () => {
 
       // Validate loaded data
       if (!Array.isArray(loadedFolders)) {
-        logger.warn(
-          '[STARTUP] Invalid custom folders data (not an array), using empty array',
-        );
+        logger.warn('[STARTUP] Invalid custom folders data (not an array), using empty array');
         customFolders = [];
       } else {
         // Filter out invalid folder entries
         customFolders = loadedFolders.filter((folder) => {
           if (!folder || typeof folder !== 'object') {
-            logger.warn(
-              '[STARTUP] Skipping invalid folder entry (not an object)',
-            );
+            logger.warn('[STARTUP] Skipping invalid folder entry (not an object)');
             return false;
           }
           if (!folder.id || typeof folder.id !== 'string') {
@@ -388,17 +366,11 @@ app.whenReady().then(async () => {
             return false;
           }
           if (!folder.name || typeof folder.name !== 'string') {
-            logger.warn(
-              '[STARTUP] Skipping folder without valid name:',
-              folder,
-            );
+            logger.warn('[STARTUP] Skipping folder without valid name:', folder);
             return false;
           }
           if (!folder.path || typeof folder.path !== 'string') {
-            logger.warn(
-              '[STARTUP] Skipping folder without valid path:',
-              folder,
-            );
+            logger.warn('[STARTUP] Skipping folder without valid path:', folder);
             return false;
           }
           return true;
@@ -406,16 +378,12 @@ app.whenReady().then(async () => {
 
         if (customFolders.length !== loadedFolders.length) {
           logger.warn(
-            `[STARTUP] Filtered out ${loadedFolders.length - customFolders.length} invalid folder entries`,
+            `[STARTUP] Filtered out ${loadedFolders.length - customFolders.length} invalid folder entries`
           );
         }
       }
 
-      logger.info(
-        '[STARTUP] Loaded custom folders:',
-        customFolders.length,
-        'folders',
-      );
+      logger.info('[STARTUP] Loaded custom folders:', customFolders.length, 'folders');
     } catch (error) {
       logger.error('[STARTUP] Failed to load custom folders:', error.message);
       customFolders = [];
@@ -424,20 +392,15 @@ app.whenReady().then(async () => {
     // Ensure default "Uncategorized" folder exists
     // CRITICAL FIX: Add null checks with optional chaining to prevent NULL dereference
     const hasDefaultFolder =
-      customFolders?.some(
-        (f) => f?.isDefault || f?.name?.toLowerCase() === 'uncategorized',
-      ) ?? false;
+      customFolders?.some((f) => f?.isDefault || f?.name?.toLowerCase() === 'uncategorized') ??
+      false;
 
     if (!hasDefaultFolder) {
       const documentsDir = app.getPath('documents');
       if (!documentsDir || typeof documentsDir !== 'string') {
         throw new Error('Failed to get documents directory path');
       }
-      const defaultFolderPath = path.join(
-        documentsDir,
-        'StratoSort',
-        'Uncategorized',
-      );
+      const defaultFolderPath = path.join(documentsDir, 'StratoSort', 'Uncategorized');
 
       try {
         // Create directory if it doesn't exist
@@ -456,7 +419,7 @@ app.whenReady().then(async () => {
           description: "Default folder for files that don't match any category",
           keywords: [],
           isDefault: true,
-          createdAt: new Date().toISOString(),
+          createdAt: new Date().toISOString()
         };
 
         customFolders.push(defaultFolder);
@@ -465,25 +428,21 @@ app.whenReady().then(async () => {
         // Verify folder was persisted
         const reloadedFolders = await loadCustomFolders();
         const persistedDefault = reloadedFolders.find(
-          (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized',
+          (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized'
         );
 
         if (!persistedDefault) {
-          logger.error(
-            '[STARTUP] Default folder created but failed to persist',
-          );
+          logger.error('[STARTUP] Default folder created but failed to persist');
         } else {
           logger.info(
             '[STARTUP] Created and verified default Uncategorized folder at:',
-            defaultFolderPath,
+            defaultFolderPath
           );
         }
       } catch (error) {
         logger.error('[STARTUP] Failed to create default folder:', error);
         // This is critical - app should not proceed without default folder
-        throw new Error(
-          `Failed to create default Uncategorized folder: ${error.message}`,
-        );
+        throw new Error(`Failed to create default Uncategorized folder: ${error.message}`);
       }
     } else {
       logger.info('[STARTUP] Default folder already exists, skipping creation');
@@ -496,11 +455,7 @@ app.whenReady().then(async () => {
       const initPromise = serviceIntegration.initialize();
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
-          reject(
-            new Error(
-              'Service integration initialization timeout after 30 seconds',
-            ),
-          );
+          reject(new Error('Service integration initialization timeout after 30 seconds'));
         }, TIMEOUTS.SERVICE_STARTUP);
       });
 
@@ -509,11 +464,9 @@ app.whenReady().then(async () => {
     } catch (error) {
       logger.error('[MAIN] Service integration initialization failed:', {
         message: error?.message || 'Unknown error',
-        stack: error?.stack,
+        stack: error?.stack
       });
-      logger.warn(
-        '[MAIN] Continuing in degraded mode without full service integration',
-      );
+      logger.warn('[MAIN] Continuing in degraded mode without full service integration');
       // Don't throw - allow app to continue in degraded mode
     }
 
@@ -524,18 +477,14 @@ app.whenReady().then(async () => {
     // Resume any incomplete organize batches (best-effort)
     try {
       const incompleteBatches =
-        serviceIntegration?.processingState?.getIncompleteOrganizeBatches?.() ||
-        [];
+        serviceIntegration?.processingState?.getIncompleteOrganizeBatches?.() || [];
       if (incompleteBatches.length > 0) {
         logger.warn(
-          `[RESUME] Found ${incompleteBatches.length} incomplete organize batch(es). They will resume when a new organize request starts.`,
+          `[RESUME] Found ${incompleteBatches.length} incomplete organize batch(es). They will resume when a new organize request starts.`
         );
       }
     } catch (resumeErr) {
-      logger.warn(
-        '[RESUME] Failed to check incomplete batches:',
-        resumeErr.message,
-      );
+      logger.warn('[RESUME] Failed to check incomplete batches:', resumeErr.message);
     }
 
     // Verify AI models on startup (only if Ollama is running)
@@ -545,20 +494,13 @@ app.whenReady().then(async () => {
       const modelStatus = await modelVerifier.verifyEssentialModels();
 
       if (!modelStatus.success) {
-        logger.warn(
-          '[STARTUP] Missing AI models detected:',
-          modelStatus.missingModels,
-        );
+        logger.warn('[STARTUP] Missing AI models detected:', modelStatus.missingModels);
         logger.info('[STARTUP] Install missing models:');
-        modelStatus.installationCommands.forEach((cmd) =>
-          logger.info('  ', cmd),
-        );
+        modelStatus.installationCommands.forEach((cmd) => logger.info('  ', cmd));
       } else {
         logger.info('[STARTUP] ✅ All essential AI models verified and ready');
         if (modelStatus.hasWhisper) {
-          logger.info(
-            '[STARTUP] ✅ Whisper model available for audio analysis',
-          );
+          logger.info('[STARTUP] ✅ Whisper model available for audio analysis');
         }
       }
     }
@@ -599,7 +541,7 @@ app.whenReady().then(async () => {
       setOllamaModel,
       setOllamaVisionModel,
       setOllamaEmbeddingModel,
-      onSettingsChanged: handleSettingsChanged,
+      onSettingsChanged: handleSettingsChanged
     });
 
     // Create application menu with theme
@@ -614,7 +556,7 @@ app.whenReady().then(async () => {
           stack: errorData?.stack,
           componentStack: errorData?.componentStack,
           type: errorData?.type || 'unknown',
-          timestamp: errorData?.timestamp || new Date().toISOString(),
+          timestamp: errorData?.timestamp || new Date().toISOString()
         });
       } catch (err) {
         logger.error('[RENDERER ERROR] Failed to process error report:', err);
@@ -624,10 +566,7 @@ app.whenReady().then(async () => {
 
     // FIX: Track renderer-error-report listener for explicit cleanup
     eventListeners.push(() => {
-      ipcMain.removeListener(
-        'renderer-error-report',
-        rendererErrorReportHandler,
-      );
+      ipcMain.removeListener('renderer-error-report', rendererErrorReportHandler);
     });
 
     // HIGH PRIORITY FIX (HIGH-1): Removed unreliable setImmediate delay
@@ -641,10 +580,10 @@ app.whenReady().then(async () => {
 
     if (!handlersReady) {
       logger.error(
-        '[STARTUP] ⚠️ CRITICAL: Some IPC handlers not registered after verification timeout',
+        '[STARTUP] ⚠️ CRITICAL: Some IPC handlers not registered after verification timeout'
       );
       logger.error(
-        '[STARTUP] App may not function correctly. Consider increasing timeout or checking handler registration logic.',
+        '[STARTUP] App may not function correctly. Consider increasing timeout or checking handler registration logic.'
       );
       // Don't throw - allow app to start in degraded mode
       // The handlers may register later or may be optional
@@ -699,7 +638,7 @@ app.whenReady().then(async () => {
         createWindow,
         setIsQuitting: (val) => {
           isQuitting = val;
-        },
+        }
       });
       createSystemTray();
     } catch (e) {
@@ -736,7 +675,7 @@ app.whenReady().then(async () => {
       },
       setIsQuitting: (val) => {
         isQuitting = val;
-      },
+      }
     });
 
     // Register lifecycle handlers (replaces inline before-quit, window-all-closed, etc.)
@@ -753,10 +692,7 @@ app.whenReady().then(async () => {
         // Note: getMainWindow is already defined at line 566 and in scope here
         resumeIncompleteBatches(serviceIntegration, logger, getMainWindow);
       } catch (e) {
-        logger.warn(
-          '[RESUME] Failed to schedule resume of incomplete batches:',
-          e?.message,
-        );
+        logger.warn('[RESUME] Failed to schedule resume of incomplete batches:', e?.message);
       }
     }, 500);
     try {
@@ -767,8 +703,7 @@ app.whenReady().then(async () => {
 
     // Load Ollama config and apply any saved selections (LOW-3: renamed cfg to ollamaConfig)
     const ollamaConfig = await loadOllamaConfig();
-    if (ollamaConfig.selectedTextModel)
-      await setOllamaModel(ollamaConfig.selectedTextModel);
+    if (ollamaConfig.selectedTextModel) await setOllamaModel(ollamaConfig.selectedTextModel);
     if (ollamaConfig.selectedVisionModel)
       await setOllamaVisionModel(ollamaConfig.selectedVisionModel);
     if (ollamaConfig.selectedEmbeddingModel)
@@ -780,14 +715,14 @@ app.whenReady().then(async () => {
       if (isDev && process.env.REACT_DEVTOOLS === 'true') {
         const {
           default: installExtension,
-          REACT_DEVELOPER_TOOLS,
+          REACT_DEVELOPER_TOOLS
         } = require('electron-devtools-installer');
         try {
           await installExtension(REACT_DEVELOPER_TOOLS);
         } catch (error) {
           logger.warn('Failed to install React DevTools', {
             error: error.message,
-            stack: error.stack,
+            stack: error.stack
           });
         }
       }
@@ -805,12 +740,10 @@ app.whenReady().then(async () => {
     logger.error('[STARTUP] Failed to initialize:', {
       message: error?.message || 'Unknown error',
       stack: error?.stack,
-      error: error,
+      error: error
     });
     // Still create window even if startup fails - allow degraded mode
-    logger.warn(
-      '[STARTUP] Creating window in degraded mode due to startup errors',
-    );
+    logger.warn('[STARTUP] Creating window in degraded mode due to startup errors');
     createWindow();
   }
 });
@@ -818,9 +751,7 @@ app.whenReady().then(async () => {
 // ===== APP LIFECYCLE =====
 // Lifecycle handlers (before-quit, window-all-closed, activate, error handling)
 // are now managed by ./core/lifecycle module and registered via registerLifecycleHandlers()
-logger.info(
-  '[STARTUP] Organizer AI App - Main Process Started with Full AI Features',
-);
+logger.info('[STARTUP] Organizer AI App - Main Process Started with Full AI Features');
 logger.info('[UI] Modern UI loaded with GPU acceleration');
 logger.info('StratoSort main process initialized');
 

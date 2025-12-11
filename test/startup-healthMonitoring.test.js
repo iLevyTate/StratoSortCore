@@ -11,30 +11,30 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 jest.mock('../src/main/utils/ollamaApiRetry', () => ({
-  axiosWithRetry: jest.fn(),
+  axiosWithRetry: jest.fn()
 }));
 
 jest.mock('../src/main/services/startup/preflightChecks', () => ({
-  isPortAvailable: jest.fn().mockResolvedValue(true),
+  isPortAvailable: jest.fn().mockResolvedValue(true)
 }));
 
 jest.mock('../src/main/services/startup/chromaService', () => ({
-  checkChromaDBHealth: jest.fn().mockResolvedValue(true),
+  checkChromaDBHealth: jest.fn().mockResolvedValue(true)
 }));
 
 jest.mock('../src/main/services/startup/ollamaService', () => ({
-  checkOllamaHealth: jest.fn().mockResolvedValue(true),
+  checkOllamaHealth: jest.fn().mockResolvedValue(true)
 }));
 
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
-    checkHealth: jest.fn().mockResolvedValue(true),
-  }),
+    checkHealth: jest.fn().mockResolvedValue(true)
+  })
 }));
 
 describe('healthMonitoring', () => {
@@ -67,8 +67,8 @@ describe('healthMonitoring', () => {
       const serviceStatus = {
         chromadb: {
           circuitBreakerTripped: false,
-          circuitBreakerTrippedAt: null,
-        },
+          circuitBreakerTrippedAt: null
+        }
       };
 
       const result = await healthMonitoring.handleCircuitBreakerRecovery(
@@ -86,8 +86,8 @@ describe('healthMonitoring', () => {
         chromadb: {
           circuitBreakerTripped: true,
           circuitBreakerTrippedAt: new Date().toISOString(),
-          recoveryAttempts: 0,
-        },
+          recoveryAttempts: 0
+        }
       };
 
       const result = await healthMonitoring.handleCircuitBreakerRecovery(
@@ -106,8 +106,8 @@ describe('healthMonitoring', () => {
         chromadb: {
           circuitBreakerTripped: true,
           circuitBreakerTrippedAt: trippedAt,
-          recoveryAttempts: 0,
-        },
+          recoveryAttempts: 0
+        }
       };
 
       const startService = jest.fn().mockResolvedValue();
@@ -133,8 +133,8 @@ describe('healthMonitoring', () => {
           circuitBreakerTrippedAt: trippedAt,
           recoveryAttempts: 0,
           restartCount: 3,
-          consecutiveFailures: 5,
-        },
+          consecutiveFailures: 5
+        }
       };
 
       await healthMonitoring.handleCircuitBreakerRecovery(
@@ -156,8 +156,8 @@ describe('healthMonitoring', () => {
         chromadb: {
           circuitBreakerTripped: true,
           circuitBreakerTrippedAt: trippedAt,
-          recoveryAttempts: 0,
-        },
+          recoveryAttempts: 0
+        }
       };
 
       await healthMonitoring.handleCircuitBreakerRecovery(
@@ -178,8 +178,8 @@ describe('healthMonitoring', () => {
         chromadb: {
           circuitBreakerTripped: true,
           circuitBreakerTrippedAt: trippedAt,
-          recoveryAttempts: 5,
-        },
+          recoveryAttempts: 5
+        }
       };
 
       await healthMonitoring.handleCircuitBreakerRecovery(
@@ -197,8 +197,8 @@ describe('healthMonitoring', () => {
     test('skips permanently failed services', async () => {
       const serviceStatus = {
         chromadb: {
-          status: 'permanently_failed',
-        },
+          status: 'permanently_failed'
+        }
       };
 
       await healthMonitoring.checkServiceHealthWithRecovery(
@@ -215,8 +215,8 @@ describe('healthMonitoring', () => {
     test('skips non-running services', async () => {
       const serviceStatus = {
         chromadb: {
-          status: 'stopped',
-        },
+          status: 'stopped'
+        }
       };
 
       await healthMonitoring.checkServiceHealthWithRecovery(
@@ -238,8 +238,8 @@ describe('healthMonitoring', () => {
         chromadb: {
           status: 'running',
           health: 'unknown',
-          consecutiveFailures: 0,
-        },
+          consecutiveFailures: 0
+        }
       };
 
       await healthMonitoring.checkServiceHealthWithRecovery(
@@ -262,8 +262,8 @@ describe('healthMonitoring', () => {
         chromadb: {
           status: 'running',
           health: 'healthy',
-          consecutiveFailures: 0,
-        },
+          consecutiveFailures: 0
+        }
       };
 
       await healthMonitoring.checkServiceHealthWithRecovery(
@@ -287,8 +287,8 @@ describe('healthMonitoring', () => {
           status: 'running',
           health: 'unhealthy',
           consecutiveFailures: 2,
-          restartCount: 0,
-        },
+          restartCount: 0
+        }
       };
 
       const startService = jest.fn().mockResolvedValue();
@@ -314,8 +314,8 @@ describe('healthMonitoring', () => {
           status: 'running',
           health: 'unhealthy',
           consecutiveFailures: 2,
-          restartCount: 5,
-        },
+          restartCount: 5
+        }
       };
 
       await healthMonitoring.checkServiceHealthWithRecovery(
@@ -336,13 +336,13 @@ describe('healthMonitoring', () => {
       const healthMonitor = healthMonitoring.createHealthMonitor({
         serviceStatus: {
           chromadb: { status: 'running' },
-          ollama: { status: 'running' },
+          ollama: { status: 'running' }
         },
         config: { healthCheckInterval: 30000 },
         restartLocks: {},
         startChromaDB: jest.fn(),
         startOllama: jest.fn(),
-        healthCheckState: { inProgress: false },
+        healthCheckState: { inProgress: false }
       });
 
       expect(healthMonitor).toBeDefined();
@@ -358,7 +358,7 @@ describe('healthMonitoring', () => {
         restartLocks: {},
         startChromaDB: jest.fn(),
         startOllama: jest.fn(),
-        healthCheckState,
+        healthCheckState
       });
 
       jest.advanceTimersByTime(100);
@@ -369,19 +369,19 @@ describe('healthMonitoring', () => {
     test('resets stuck health check after timeout', async () => {
       const healthCheckState = {
         inProgress: true,
-        startedAt: Date.now() - 10000,
+        startedAt: Date.now() - 10000
       };
 
       const monitor = healthMonitoring.createHealthMonitor({
         serviceStatus: {
           chromadb: { status: 'stopped' },
-          ollama: { status: 'stopped' },
+          ollama: { status: 'stopped' }
         },
         config: { healthCheckInterval: 100 },
         restartLocks: {},
         startChromaDB: jest.fn(),
         startOllama: jest.fn(),
-        healthCheckState,
+        healthCheckState
       });
 
       await jest.advanceTimersByTimeAsync(100);

@@ -4,15 +4,15 @@
 
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: (_logger, fn) => fn,
-  withValidation: (_logger, _schema, fn) => fn,
+  withValidation: (_logger, _schema, fn) => fn
 }));
 
 // Mock Ollama client
 jest.mock('ollama', () => ({
   Ollama: jest.fn().mockImplementation(({ host }) => ({
     host,
-    list: jest.fn().mockResolvedValue({ models: [] }),
-  })),
+    list: jest.fn().mockResolvedValue({ models: [] })
+  }))
 }));
 
 describe('ollama IPC validation fallback', () => {
@@ -32,7 +32,7 @@ describe('ollama IPC validation fallback', () => {
     const ipcMain = {
       handle: (channel, handler) => {
         ipcHandlers[channel] = handler;
-      },
+      }
     };
 
     const { IPC_CHANNELS } = require('../src/shared/constants');
@@ -49,7 +49,7 @@ describe('ollama IPC validation fallback', () => {
       getOllamaModel: () => 'm',
       getOllamaVisionModel: () => 'v',
       getOllamaEmbeddingModel: () => 'e',
-      getOllamaHost: () => 'http://localhost:11434',
+      getOllamaHost: () => 'http://localhost:11434'
     });
 
     const handler = ipcHandlers[IPC_CHANNELS.OLLAMA.TEST_CONNECTION];

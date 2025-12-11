@@ -28,16 +28,14 @@ function createWithDefaults() {
     // Fallback if not registered yet (e.g. during early init or tests)
     const settingsService = container.resolve(ServiceIds.SETTINGS);
     const folderMatchingService = container.resolve(ServiceIds.FOLDER_MATCHING);
-    const suggestionService = container.resolve(
-      ServiceIds.ORGANIZATION_SUGGESTION,
-    );
+    const suggestionService = container.resolve(ServiceIds.ORGANIZATION_SUGGESTION);
     const undoRedoService = container.resolve(ServiceIds.UNDO_REDO);
 
     return new AutoOrganizeServiceCore({
       suggestionService,
       settingsService,
       folderMatchingService,
-      undoRedoService,
+      undoRedoService
     });
   }
 }

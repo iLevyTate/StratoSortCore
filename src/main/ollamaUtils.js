@@ -27,7 +27,7 @@ function getOllama() {
   // MEDIUM PRIORITY FIX (MED-13): Invalidate instance if host has changed
   if (ollamaInstance && ollamaInstanceHost !== ollamaHost) {
     logger.info(
-      `[OLLAMA] Host changed from ${ollamaInstanceHost} to ${ollamaHost}, recreating instance`,
+      `[OLLAMA] Host changed from ${ollamaInstanceHost} to ${ollamaHost}, recreating instance`
     );
     ollamaInstance = null;
     ollamaInstanceHost = null;
@@ -50,9 +50,9 @@ function getOllama() {
         fetch: (url, opts = {}) => {
           return (global.fetch || require('node-fetch'))(url, {
             agent,
-            ...opts,
+            ...opts
           });
-        },
+        }
       });
     } catch {
       ollamaInstance = new Ollama({ host: ollamaHost });
@@ -81,12 +81,12 @@ function getOllamaEmbeddingModel() {
 async function setOllamaModel(modelName) {
   selectedTextModel = modelName;
   try {
-    const current = await loadOllamaConfig();
+    const current = await loadOllamaConfig(false);
     await saveOllamaConfig({
       ...current,
       selectedTextModel: modelName,
       // Keep legacy field for backward compatibility
-      selectedModel: modelName,
+      selectedModel: modelName
     });
     logger.info(`[OLLAMA] Text model set to: ${modelName} and saved.`);
   } catch (error) {
@@ -97,10 +97,10 @@ async function setOllamaModel(modelName) {
 async function setOllamaVisionModel(modelName) {
   selectedVisionModel = modelName;
   try {
-    const current = await loadOllamaConfig();
+    const current = await loadOllamaConfig(false);
     await saveOllamaConfig({
       ...current,
-      selectedVisionModel: modelName,
+      selectedVisionModel: modelName
     });
     logger.info(`[OLLAMA] Vision model set to: ${modelName} and saved.`);
   } catch (error) {
@@ -111,10 +111,10 @@ async function setOllamaVisionModel(modelName) {
 async function setOllamaEmbeddingModel(modelName) {
   selectedEmbeddingModel = modelName;
   try {
-    const current = await loadOllamaConfig();
+    const current = await loadOllamaConfig(false);
     await saveOllamaConfig({
       ...current,
-      selectedEmbeddingModel: modelName,
+      selectedEmbeddingModel: modelName
     });
     logger.info(`[OLLAMA] Embedding model set to: ${modelName} and saved.`);
   } catch (error) {
@@ -139,7 +139,7 @@ async function setOllamaHost(host) {
         // Remove duplicate protocols (e.g., http://http://...)
         normalizedHost = normalizedHost.replace(
           /^(https?:\/\/)+/i,
-          hasHttps ? 'https://' : 'http://',
+          hasHttps ? 'https://' : 'http://'
         );
       } else {
         // No protocol specified, add http://
@@ -160,16 +160,16 @@ async function setOllamaHost(host) {
           fetch: (url, opts = {}) => {
             return (global.fetch || require('node-fetch'))(url, {
               agent,
-              ...opts,
+              ...opts
             });
-          },
+          }
         });
       } catch {
         ollamaInstance = new Ollama({ host: ollamaHost });
       }
       // Track the host used to create the instance to avoid redundant recreation
       ollamaInstanceHost = ollamaHost;
-      const current = await loadOllamaConfig();
+      const current = await loadOllamaConfig(false);
       await saveOllamaConfig({ ...current, host: ollamaHost });
       logger.info(`[OLLAMA] Host set to: ${ollamaHost}`);
     }
@@ -181,7 +181,7 @@ async function setOllamaHost(host) {
 // Load Ollama configuration (e.g., last selected model).
 // If the config file contains invalid JSON, it is renamed to "*.bak" and
 // defaults are returned so the app can recover on next launch.
-async function loadOllamaConfig() {
+async function loadOllamaConfig(applySideEffects = true) {
   const filePath = getOllamaConfigPath();
   let config = null;
 
@@ -190,15 +190,14 @@ async function loadOllamaConfig() {
     try {
       config = JSON.parse(data);
     } catch (parseError) {
-      logger.error(
-        '[OLLAMA] Invalid JSON in Ollama config, backing up and using defaults',
-        { error: parseError },
-      );
+      logger.error('[OLLAMA] Invalid JSON in Ollama config, backing up and using defaults', {
+        error: parseError
+      });
       try {
         await fs.rename(filePath, `${filePath}.bak`);
       } catch (renameError) {
         logger.error('[OLLAMA] Error backing up corrupt Ollama config file', {
-          error: renameError,
+          error: renameError
         });
       }
     }
@@ -210,55 +209,51 @@ async function loadOllamaConfig() {
   }
 
   if (config) {
-    // Support legacy and new keys
-    if (config.selectedTextModel || config.selectedModel) {
-      selectedTextModel = config.selectedTextModel || config.selectedModel;
-      logger.info(`[OLLAMA] Loaded selected text model: ${selectedTextModel}`);
-    }
-    if (config.selectedVisionModel) {
-      selectedVisionModel = config.selectedVisionModel;
-      logger.info(
-        `[OLLAMA] Loaded selected vision model: ${selectedVisionModel}`,
-      );
-    }
-    if (config.selectedEmbeddingModel) {
-      selectedEmbeddingModel = config.selectedEmbeddingModel;
-      logger.info(
-        `[OLLAMA] Loaded selected embedding model: ${selectedEmbeddingModel}`,
-      );
-    }
-    if (config.host) {
-      ollamaHost = config.host;
-      // Create Ollama instance with keep-alive agent for connection pooling
-      try {
-        const http = require('http');
-        const https = require('https');
-        const isHttps = ollamaHost.startsWith('https://');
-        const agent = isHttps
-          ? new https.Agent({ keepAlive: true, maxSockets: 10 })
-          : new http.Agent({ keepAlive: true, maxSockets: 10 });
-        ollamaInstance = new Ollama({
-          host: ollamaHost,
-          fetch: (url, opts = {}) => {
-            return (global.fetch || require('node-fetch'))(url, {
-              agent,
-              ...opts,
-            });
-          },
-        });
-      } catch {
-        ollamaInstance = new Ollama({ host: ollamaHost });
+    if (applySideEffects) {
+      // Support legacy and new keys
+      if (config.selectedTextModel || config.selectedModel) {
+        selectedTextModel = config.selectedTextModel || config.selectedModel;
+        logger.info(`[OLLAMA] Loaded selected text model: ${selectedTextModel}`);
       }
-      ollamaInstanceHost = ollamaHost;
-      logger.info(`[OLLAMA] Loaded host: ${ollamaHost}`);
+      if (config.selectedVisionModel) {
+        selectedVisionModel = config.selectedVisionModel;
+        logger.info(`[OLLAMA] Loaded selected vision model: ${selectedVisionModel}`);
+      }
+      if (config.selectedEmbeddingModel) {
+        selectedEmbeddingModel = config.selectedEmbeddingModel;
+        logger.info(`[OLLAMA] Loaded selected embedding model: ${selectedEmbeddingModel}`);
+      }
+      if (config.host) {
+        ollamaHost = config.host;
+        // Create Ollama instance with keep-alive agent for connection pooling
+        try {
+          const http = require('http');
+          const https = require('https');
+          const isHttps = ollamaHost.startsWith('https://');
+          const agent = isHttps
+            ? new https.Agent({ keepAlive: true, maxSockets: 10 })
+            : new http.Agent({ keepAlive: true, maxSockets: 10 });
+          ollamaInstance = new Ollama({
+            host: ollamaHost,
+            fetch: (url, opts = {}) => {
+              return (global.fetch || require('node-fetch'))(url, {
+                agent,
+                ...opts
+              });
+            }
+          });
+        } catch {
+          ollamaInstance = new Ollama({ host: ollamaHost });
+        }
+        ollamaInstanceHost = ollamaHost;
+        logger.info(`[OLLAMA] Loaded host: ${ollamaHost}`);
+      }
     }
     return config;
   }
 
-  // Fallback to a default model or leave as null if no configuration is found
-  // You might want to fetch available models and pick one if ollamaModel is still null
-  // For now, let's assume a default if nothing is loaded.
-  if (!selectedTextModel) {
+  // Fallback if no configuration is found
+  if (applySideEffects && !selectedTextModel) {
     // Try to get the first available model or a known default
     try {
       const ollama = getOllama();
@@ -268,9 +263,7 @@ async function loadOllamaConfig() {
         const preferredModels = ['llama3', 'llama2', 'mistral', 'phi'];
         let foundModel = null;
         for (const prefModel of preferredModels) {
-          const model = modelsResponse.models.find((m) =>
-            m.name.includes(prefModel),
-          );
+          const model = modelsResponse.models.find((m) => m.name.includes(prefModel));
           if (model) {
             foundModel = model.name;
             break;
@@ -280,15 +273,13 @@ async function loadOllamaConfig() {
           foundModel = modelsResponse.models[0].name; // Fallback to the first model
         }
         await setOllamaModel(foundModel);
-        logger.info(
-          `[OLLAMA] No saved text model found, defaulted to: ${selectedTextModel}`,
-        );
+        logger.info(`[OLLAMA] No saved text model found, defaulted to: ${selectedTextModel}`);
       } else {
         logger.warn('[OLLAMA] No models available from Ollama server.');
       }
     } catch (listError) {
       logger.error('[OLLAMA] Error fetching model list during initial load', {
-        error: listError,
+        error: listError
       });
     }
   }
@@ -317,7 +308,7 @@ async function saveOllamaConfig(config) {
     }
     const tempFile = path.join(
       dir,
-      `ollama-config.tmp.${Date.now()}.${Math.random().toString(16).slice(2)}`,
+      `ollama-config.tmp.${Date.now()}.${Math.random().toString(16).slice(2)}`
     );
 
     await fs.writeFile(tempFile, content);
@@ -355,5 +346,5 @@ module.exports = {
   setOllamaHost,
   getOllamaConfigPath,
   loadOllamaConfig,
-  saveOllamaConfig,
+  saveOllamaConfig
 };

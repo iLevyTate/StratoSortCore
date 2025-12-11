@@ -31,7 +31,7 @@ let lifecycleConfig = {
   setChildProcessListeners: null,
   getGlobalProcessListeners: null,
   setGlobalProcessListeners: null,
-  setIsQuitting: null,
+  setIsQuitting: null
 };
 
 /**
@@ -50,10 +50,8 @@ async function verifyShutdownCleanup() {
   const issues = [];
 
   const metricsInterval = lifecycleConfig.getMetricsInterval?.();
-  const childProcessListeners =
-    lifecycleConfig.getChildProcessListeners?.() || [];
-  const globalProcessListeners =
-    lifecycleConfig.getGlobalProcessListeners?.() || [];
+  const childProcessListeners = lifecycleConfig.getChildProcessListeners?.() || [];
+  const globalProcessListeners = lifecycleConfig.getGlobalProcessListeners?.() || [];
   const eventListeners = lifecycleConfig.getEventListeners?.() || [];
   const chromaDbProcess = lifecycleConfig.getChromaDbProcess?.();
   const serviceIntegration = lifecycleConfig.getServiceIntegration?.();
@@ -66,16 +64,12 @@ async function verifyShutdownCleanup() {
 
   // 2. Verify child process listeners are cleared
   if (childProcessListeners.length > 0) {
-    issues.push(
-      `childProcessListeners still has ${childProcessListeners.length} entries`,
-    );
+    issues.push(`childProcessListeners still has ${childProcessListeners.length} entries`);
   }
 
   // 3. Verify global process listeners are cleared
   if (globalProcessListeners.length > 0) {
-    issues.push(
-      `globalProcessListeners still has ${globalProcessListeners.length} entries`,
-    );
+    issues.push(`globalProcessListeners still has ${globalProcessListeners.length} entries`);
   }
 
   // 4. Verify app event listeners are cleared
@@ -90,9 +84,7 @@ async function verifyShutdownCleanup() {
     try {
       if (chromaDbProcess.pid) {
         process.kill(chromaDbProcess.pid, 0);
-        issues.push(
-          `ChromaDB process ${chromaDbProcess.pid} may still be running`,
-        );
+        issues.push(`ChromaDB process ${chromaDbProcess.pid} may still be running`);
       }
     } catch (e) {
       if (e.code !== 'ESRCH') {
@@ -121,9 +113,7 @@ async function verifyShutdownCleanup() {
   if (issues.length === 0) {
     logger.info('[SHUTDOWN-VERIFY] All resources verified as released');
   } else {
-    logger.warn(
-      `[SHUTDOWN-VERIFY] Found ${issues.length} potential resource leaks:`,
-    );
+    logger.warn(`[SHUTDOWN-VERIFY] Found ${issues.length} potential resource leaks:`);
     issues.forEach((issue) => logger.warn(`[SHUTDOWN-VERIFY]   - ${issue}`));
   }
 }
@@ -165,31 +155,23 @@ async function handleBeforeQuit() {
     }
 
     // Clean up child process listeners
-    const childProcessListeners =
-      lifecycleConfig.getChildProcessListeners?.() || [];
+    const childProcessListeners = lifecycleConfig.getChildProcessListeners?.() || [];
     for (const cleanup of childProcessListeners) {
       try {
         cleanup();
       } catch (error) {
-        logger.error(
-          '[CLEANUP] Failed to clean up child process listener:',
-          error,
-        );
+        logger.error('[CLEANUP] Failed to clean up child process listener:', error);
       }
     }
     lifecycleConfig.setChildProcessListeners?.([]);
 
     // Clean up global process listeners
-    const globalProcessListeners =
-      lifecycleConfig.getGlobalProcessListeners?.() || [];
+    const globalProcessListeners = lifecycleConfig.getGlobalProcessListeners?.() || [];
     for (const cleanup of globalProcessListeners) {
       try {
         cleanup();
       } catch (error) {
-        logger.error(
-          '[CLEANUP] Failed to clean up global process listener:',
-          error,
-        );
+        logger.error('[CLEANUP] Failed to clean up global process listener:', error);
       }
     }
     lifecycleConfig.setGlobalProcessListeners?.([]);
@@ -210,7 +192,7 @@ async function handleBeforeQuit() {
       const { removeAllRegistered } = require('./ipcRegistry');
       const stats = removeAllRegistered(ipcMain);
       logger.info(
-        `[CLEANUP] IPC cleanup: ${stats.handlers} handlers, ${stats.listeners} listeners removed`,
+        `[CLEANUP] IPC cleanup: ${stats.handlers} handlers, ${stats.listeners} listeners removed`
       );
     } catch (error) {
       logger.error('[CLEANUP] Failed to remove IPC listeners:', error);
@@ -222,10 +204,7 @@ async function handleBeforeQuit() {
       cleanupEventListeners();
       logger.info('[CLEANUP] ChromaDB event listeners cleaned up');
     } catch (error) {
-      logger.error(
-        '[CLEANUP] Failed to clean up ChromaDB event listeners:',
-        error,
-      );
+      logger.error('[CLEANUP] Failed to clean up ChromaDB event listeners:', error);
     }
 
     // Clean up tray
@@ -258,10 +237,7 @@ async function handleBeforeQuit() {
         if (result.success) {
           logger.info('[ChromaDB] Process terminated successfully');
         } else {
-          logger.warn(
-            '[ChromaDB] Process kill may have failed:',
-            result.error?.message,
-          );
+          logger.warn('[ChromaDB] Process kill may have failed:', result.error?.message);
         }
 
         // Brief async wait then verify (replaces blocking sleep)
@@ -269,9 +245,7 @@ async function handleBeforeQuit() {
 
         // Verify process is actually terminated
         if (isProcessRunning(pid)) {
-          logger.warn(
-            '[ChromaDB] Process may still be running after kill attempt!',
-          );
+          logger.warn('[ChromaDB] Process may still be running after kill attempt!');
         } else {
           logger.info('[ChromaDB] Process confirmed terminated');
         }
@@ -289,10 +263,7 @@ async function handleBeforeQuit() {
         await serviceIntegration.shutdown?.();
         logger.info('[CLEANUP] Service integration shut down');
       } catch (error) {
-        logger.error(
-          '[CLEANUP] Failed to shut down service integration:',
-          error,
-        );
+        logger.error('[CLEANUP] Failed to shut down service integration:', error);
       }
     }
 
@@ -322,26 +293,17 @@ async function handleBeforeQuit() {
       await Promise.race([
         verifyShutdownCleanup(),
         new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Shutdown verification timeout')),
-            shutdownTimeout,
-          ),
-        ),
+          setTimeout(() => reject(new Error('Shutdown verification timeout')), shutdownTimeout)
+        )
       ]);
     } catch (error) {
-      logger.warn(
-        '[SHUTDOWN-VERIFY] Verification failed or timed out:',
-        error.message,
-      );
+      logger.warn('[SHUTDOWN-VERIFY] Verification failed or timed out:', error.message);
     }
   })(); // Close cleanup promise wrapper
 
   // HIGH PRIORITY FIX (HIGH-2): Race cleanup against timeout
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(
-      () => reject(new Error('Cleanup timeout exceeded')),
-      CLEANUP_TIMEOUT,
-    ),
+    setTimeout(() => reject(new Error('Cleanup timeout exceeded')), CLEANUP_TIMEOUT)
   );
 
   try {
@@ -351,17 +313,12 @@ async function handleBeforeQuit() {
   } catch (error) {
     const elapsed = Date.now() - cleanupStartTime;
     if (error.message === 'Cleanup timeout exceeded') {
+      logger.error(`[SHUTDOWN] Cleanup timed out after ${elapsed}ms (max: ${CLEANUP_TIMEOUT}ms)`);
       logger.error(
-        `[SHUTDOWN] Cleanup timed out after ${elapsed}ms (max: ${CLEANUP_TIMEOUT}ms)`,
-      );
-      logger.error(
-        '[SHUTDOWN] Forcing app quit to prevent hanging. Some resources may not be properly released.',
+        '[SHUTDOWN] Forcing app quit to prevent hanging. Some resources may not be properly released.'
       );
     } else {
-      logger.error(
-        `[SHUTDOWN] Cleanup failed after ${elapsed}ms:`,
-        error.message,
-      );
+      logger.error(`[SHUTDOWN] Cleanup failed after ${elapsed}ms:`, error.message);
     }
   }
 }
@@ -394,7 +351,7 @@ function handleActivate(createWindow) {
 function handleUncaughtException(error) {
   logger.error('UNCAUGHT EXCEPTION:', {
     message: error.message,
-    stack: error.stack,
+    stack: error.stack
   });
 }
 
@@ -439,7 +396,7 @@ function registerLifecycleHandlers(createWindow) {
     cleanupProcessListeners: () => {
       process.removeListener('uncaughtException', handleUncaughtException);
       process.removeListener('unhandledRejection', handleUnhandledRejection);
-    },
+    }
   };
 }
 
@@ -451,5 +408,5 @@ module.exports = {
   handleActivate,
   handleUncaughtException,
   handleUnhandledRejection,
-  verifyShutdownCleanup,
+  verifyShutdownCleanup
 };

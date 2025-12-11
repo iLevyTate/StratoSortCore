@@ -29,17 +29,17 @@ describe('AnalysisHistoryService', () => {
     const fileInfo = {
       path: 'C:/docs/invoice.pdf',
       size: 1000,
-      lastModified: Date.now(),
+      lastModified: Date.now()
     };
     const analysis = {
       subject: 'Invoice',
       summary: 'Invoice summary',
       tags: ['finance'],
-      confidence: 0.9,
+      confidence: 0.9
     };
     await svc.recordAnalysis(fileInfo, analysis);
     const recent = await svc.getRecentAnalysis(10);
-    expect(recent.results.length).toBeGreaterThan(0);
+    expect(recent.length).toBeGreaterThan(0);
 
     // Corrupt the file, then re-initialize should recover
     const file = path.join(tmpDir, 'analysis-history.json');
@@ -56,15 +56,13 @@ describe('AnalysisHistoryService', () => {
     await svc.initialize();
     await svc.recordAnalysis(
       { path: 'C:/docs/alpha.txt', size: 1, lastModified: Date.now() },
-      { summary: 'Project Alpha notes' },
+      { summary: 'Project Alpha notes' }
     );
     await svc.recordAnalysis(
       { path: 'C:/docs/beta.txt', size: 1, lastModified: Date.now() },
-      { summary: 'Project Beta report' },
+      { summary: 'Project Beta report' }
     );
     const searchResult = await svc.searchAnalysis('alpha');
-    expect(
-      searchResult.results.some((r) => r.originalPath.includes('alpha')),
-    ).toBe(true);
+    expect(searchResult.some((r) => r.originalPath.includes('alpha'))).toBe(true);
   });
 });

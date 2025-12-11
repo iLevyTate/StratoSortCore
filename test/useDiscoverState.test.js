@@ -12,55 +12,55 @@ jest.mock('../src/shared/logger', () => ({
     info: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-    error: jest.fn(),
-  },
+    error: jest.fn()
+  }
 }));
 
 // Mock the store modules
 jest.mock('../src/renderer/store/hooks', () => ({
   useAppSelector: jest.fn((selector) => selector),
-  useAppDispatch: jest.fn(() => jest.fn()),
+  useAppDispatch: jest.fn(() => jest.fn())
 }));
 
 jest.mock('../src/renderer/store/slices/filesSlice', () => ({
   setSelectedFiles: jest.fn((payload) => ({
     type: 'files/setSelectedFiles',
-    payload,
+    payload
   })),
   updateFileState: jest.fn((payload) => ({
     type: 'files/updateFileState',
-    payload,
+    payload
   })),
   setFileStates: jest.fn((payload) => ({
     type: 'files/setFileStates',
-    payload,
+    payload
   })),
   setNamingConvention: jest.fn((payload) => ({
     type: 'files/setNamingConvention',
-    payload,
-  })),
+    payload
+  }))
 }));
 
 jest.mock('../src/renderer/store/slices/analysisSlice', () => ({
   startAnalysis: jest.fn((payload) => ({
     type: 'analysis/startAnalysis',
-    payload,
+    payload
   })),
   updateProgress: jest.fn((payload) => ({
     type: 'analysis/updateProgress',
-    payload,
+    payload
   })),
   stopAnalysis: jest.fn(() => ({ type: 'analysis/stopAnalysis' })),
   setAnalysisResults: jest.fn((payload) => ({
     type: 'analysis/setAnalysisResults',
-    payload,
+    payload
   })),
-  resetAnalysisState: jest.fn(() => ({ type: 'analysis/resetAnalysisState' })),
+  resetAnalysisState: jest.fn(() => ({ type: 'analysis/resetAnalysisState' }))
 }));
 
 jest.mock('../src/renderer/store/slices/uiSlice', () => ({
   setPhase: jest.fn((payload) => ({ type: 'ui/setPhase', payload })),
-  setAnalyzing: jest.fn((payload) => ({ type: 'ui/setAnalyzing', payload })),
+  setAnalyzing: jest.fn((payload) => ({ type: 'ui/setAnalyzing', payload }))
 }));
 
 describe('useDiscoverState', () => {
@@ -77,18 +77,18 @@ describe('useDiscoverState', () => {
         convention: 'original',
         dateFormat: 'YYYY-MM-DD',
         caseConvention: 'original',
-        separator: '-',
-      },
+        separator: '-'
+      }
     },
     analysis: {
       results: [{ path: '/test.txt', analysis: { category: 'documents' } }],
       isAnalyzing: false,
       analysisProgress: { current: 0, total: 0 },
-      currentAnalysisFile: '',
+      currentAnalysisFile: ''
     },
     ui: {
-      phase: 'discover',
-    },
+      phase: 'discover'
+    }
   };
 
   beforeEach(() => {
@@ -106,25 +106,20 @@ describe('useDiscoverState', () => {
       return selector;
     });
 
-    useDiscoverState =
-      require('../src/renderer/phases/discover/useDiscoverState').useDiscoverState;
+    useDiscoverState = require('../src/renderer/phases/discover/useDiscoverState').useDiscoverState;
   });
 
   describe('state selectors', () => {
     test('returns selectedFiles from state', () => {
       const { result } = renderHook(() => useDiscoverState());
 
-      expect(result.current.selectedFiles).toEqual(
-        defaultState.files.selectedFiles,
-      );
+      expect(result.current.selectedFiles).toEqual(defaultState.files.selectedFiles);
     });
 
     test('returns analysisResults from state', () => {
       const { result } = renderHook(() => useDiscoverState());
 
-      expect(result.current.analysisResults).toEqual(
-        defaultState.analysis.results,
-      );
+      expect(result.current.analysisResults).toEqual(defaultState.analysis.results);
     });
 
     test('returns isAnalyzing from state', () => {
@@ -165,10 +160,7 @@ describe('useDiscoverState', () => {
       const { result } = renderHook(() => useDiscoverState());
 
       act(() => {
-        result.current.setSelectedFiles((prev) => [
-          ...prev,
-          { path: '/new.txt' },
-        ]);
+        result.current.setSelectedFiles((prev) => [...prev, { path: '/new.txt' }]);
       });
 
       expect(mockDispatch).toHaveBeenCalled();
@@ -219,7 +211,7 @@ describe('useDiscoverState', () => {
 
       act(() => {
         result.current.updateFileState('/test.txt', 'analyzing', {
-          progress: 50,
+          progress: 50
         });
       });
 
@@ -240,8 +232,8 @@ describe('useDiscoverState', () => {
           ...defaultState,
           analysis: {
             ...defaultState.analysis,
-            results: [{ path: '/test.txt', error: 'Failed' }],
-          },
+            results: [{ path: '/test.txt', error: 'Failed' }]
+          }
         };
         return selector(stateWithError);
       });
@@ -257,8 +249,8 @@ describe('useDiscoverState', () => {
           ...defaultState,
           files: {
             ...defaultState.files,
-            fileStates: { '/test.txt': { state: 'ready' } },
-          },
+            fileStates: { '/test.txt': { state: 'ready' } }
+          }
         };
         return selector(stateWithReady);
       });
@@ -277,7 +269,7 @@ describe('useDiscoverState', () => {
         convention: 'original',
         separator: '-',
         dateFormat: 'YYYY-MM-DD',
-        caseConvention: 'original',
+        caseConvention: 'original'
       });
     });
   });
@@ -309,7 +301,7 @@ describe('useDiscoverState', () => {
       const removeItem = jest.fn();
       Object.defineProperty(global, 'localStorage', {
         value: { removeItem },
-        writable: true,
+        writable: true
       });
 
       const { result } = renderHook(() => useDiscoverState());
@@ -327,9 +319,9 @@ describe('useDiscoverState', () => {
         value: {
           removeItem: () => {
             throw new Error('Storage error');
-          },
+          }
         },
-        writable: true,
+        writable: true
       });
 
       const { result } = renderHook(() => useDiscoverState());

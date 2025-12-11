@@ -14,19 +14,16 @@ const NamingSettings = memo(function NamingSettings({
   caseConvention,
   setCaseConvention,
   separator,
-  setSeparator,
+  setSeparator
 }) {
   const handleConventionChange = useCallback(
     (e) => setNamingConvention(e.target.value),
-    [setNamingConvention],
+    [setNamingConvention]
   );
-  const handleDateFormatChange = useCallback(
-    (e) => setDateFormat(e.target.value),
-    [setDateFormat],
-  );
+  const handleDateFormatChange = useCallback((e) => setDateFormat(e.target.value), [setDateFormat]);
   const handleCaseChange = useCallback(
     (e) => setCaseConvention(e.target.value),
-    [setCaseConvention],
+    [setCaseConvention]
   );
   // FIX #19: Validate separator against unsafe characters that could break file paths
   const handleSeparatorChange = useCallback(
@@ -38,7 +35,7 @@ const NamingSettings = memo(function NamingSettings({
       }
       // Silently reject unsafe characters
     },
-    [setSeparator],
+    [setSeparator]
   );
 
   return (
@@ -104,10 +101,7 @@ const NamingSettings = memo(function NamingSettings({
         </Select>
       </div>
       <div>
-        <label
-          htmlFor="separator"
-          className="block text-sm font-medium text-system-gray-700 mb-2"
-        >
+        <label htmlFor="separator" className="block text-sm font-medium text-system-gray-700 mb-2">
           Separator
         </label>
         <Input
@@ -119,8 +113,7 @@ const NamingSettings = memo(function NamingSettings({
           aria-describedby="separator-hint"
         />
         <p id="separator-hint" className="mt-2 text-xs text-system-gray-500">
-          Use letters, numbers, dash or underscore. Avoid / \\ : * ? &quot; &lt;
-          &gt; |.
+          Use letters, numbers, dash or underscore. Avoid / \\ : * ? &quot; &lt; &gt; |.
         </p>
       </div>
     </div>
@@ -135,7 +128,7 @@ NamingSettings.propTypes = {
   caseConvention: PropTypes.string.isRequired,
   setCaseConvention: PropTypes.func.isRequired,
   separator: PropTypes.string.isRequired,
-  setSeparator: PropTypes.func.isRequired,
+  setSeparator: PropTypes.func.isRequired
 };
 
 export default NamingSettings;

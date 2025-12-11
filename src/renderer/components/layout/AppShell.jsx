@@ -30,5 +30,5 @@ AppShell.propTypes = {
   header: PropTypes.node,
   subheader: PropTypes.node,
   footer: PropTypes.node,
-  children: PropTypes.node,
+  children: PropTypes.node
 };

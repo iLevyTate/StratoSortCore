@@ -92,7 +92,7 @@ class BasePage {
    */
   async screenshot(name) {
     await this.window.screenshot({
-      path: `test-results/e2e/screenshots/${name}_${Date.now()}.png`,
+      path: `test-results/e2e/screenshots/${name}_${Date.now()}.png`
     });
   }
 }
@@ -256,7 +256,7 @@ class SetupPage extends BasePage {
    */
   async continue() {
     const continueButton = this.window.locator('button:has-text("Continue")');
-    if (await continueButton.isVisible() && !(await continueButton.isDisabled())) {
+    if ((await continueButton.isVisible()) && !(await continueButton.isDisabled())) {
       await continueButton.click();
       await this.waitForLoading();
     }
@@ -309,7 +309,7 @@ class DiscoverPage extends BasePage {
    */
   async startAnalysis() {
     const analyzeButton = this.window.locator('button:has-text("Analyze")');
-    if (await analyzeButton.isVisible() && !(await analyzeButton.isDisabled())) {
+    if ((await analyzeButton.isVisible()) && !(await analyzeButton.isDisabled())) {
       await analyzeButton.click();
       await this.waitForLoading();
     }
@@ -363,7 +363,7 @@ class OrganizePage extends BasePage {
    */
   async approveAll() {
     const approveAllButton = this.window.locator('button:has-text("Approve All")');
-    if (await approveAllButton.isVisible() && !(await approveAllButton.isDisabled())) {
+    if ((await approveAllButton.isVisible()) && !(await approveAllButton.isDisabled())) {
       await approveAllButton.click();
     }
   }
@@ -373,7 +373,7 @@ class OrganizePage extends BasePage {
    */
   async organize() {
     const organizeButton = this.window.locator('button:has-text("Organize")');
-    if (await organizeButton.isVisible() && !(await organizeButton.isDisabled())) {
+    if ((await organizeButton.isVisible()) && !(await organizeButton.isDisabled())) {
       await organizeButton.click();
       await this.waitForLoading();
     }
@@ -484,5 +484,5 @@ module.exports = {
   DiscoverPage,
   OrganizePage,
   CompletePage,
-  SettingsPage,
+  SettingsPage
 };
