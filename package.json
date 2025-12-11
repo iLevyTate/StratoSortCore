@@ -99,7 +99,7 @@
     "@reduxjs/toolkit": "^2.11.1",
     "adm-zip": "^0.5.10",
     "axios": "^1.13.2",
-    "chromadb": "^1.7.3",
+    "chromadb": "^3.1.7",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
     "electron-updater": "^6.1.4",
