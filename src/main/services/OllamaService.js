@@ -207,7 +207,12 @@ class OllamaService {
       if (config.host) await setOllamaHost(config.host);
       if (config.textModel) await setOllamaModel(config.textModel);
       if (config.visionModel) await setOllamaVisionModel(config.visionModel);
-      if (config.embeddingModel) await setOllamaEmbeddingModel(config.embeddingModel);
+      const SAFE_EMBED_MODEL = 'mxbai-embed-large';
+      if (config.embeddingModel) {
+        const embedModel =
+          config.embeddingModel === SAFE_EMBED_MODEL ? SAFE_EMBED_MODEL : SAFE_EMBED_MODEL;
+        await setOllamaEmbeddingModel(embedModel);
+      }
 
       await saveOllamaConfig();
       logger.info('[OllamaService] Configuration updated');

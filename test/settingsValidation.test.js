@@ -64,6 +64,26 @@ describe('Settings Validation', () => {
       });
     });
 
+    describe('embedding model validation', () => {
+      test('accepts only the vetted embedding model', () => {
+        const errors = validateSetting(
+          'embeddingModel',
+          'mxbai-embed-large',
+          VALIDATION_RULES.embeddingModel
+        );
+        expect(errors).toHaveLength(0);
+      });
+
+      test('rejects other models to protect Chroma setup', () => {
+        const errors = validateSetting(
+          'embeddingModel',
+          'llama3:latest',
+          VALIDATION_RULES.embeddingModel
+        );
+        expect(errors.length).toBeGreaterThan(0);
+      });
+    });
+
     describe('numeric validation', () => {
       test('accepts valid numbers within range', () => {
         expect(

@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import PropTypes from 'prop-types';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -30,6 +30,16 @@ const SmartFolderItem = memo(function SmartFolderItem({
   onToggleExpand
 }) {
   const isEditing = editingFolder?.id === folder.id;
+  const [hasMounted, setHasMounted] = useState(false);
+
+  // Avoid re-triggering entrance animation on expand/collapse toggles
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  const shouldAnimateEntrance = !hasMounted;
+  const cardAnimationClass = shouldAnimateEntrance ? 'animate-slide-in-right' : '';
+  const cardAnimationDelay = shouldAnimateEntrance ? `${index * 0.05}s` : undefined;
   const [isRebuilding, setIsRebuilding] = useState(false);
 
   // Compact view - just name, path snippet, and expand button
@@ -124,8 +134,8 @@ const SmartFolderItem = memo(function SmartFolderItem({
   if (isEditing) {
     return (
       <div
-        className="bg-white/90 rounded-xl border-2 border-stratosort-blue/40 shadow-lg animate-slide-in-right h-full flex flex-col"
-        style={{ padding: 'var(--spacing-default)', animationDelay: `${index * 0.05}s` }}
+        className={`bg-white/90 rounded-xl border-2 border-stratosort-blue/40 shadow-lg h-full flex flex-col ${cardAnimationClass}`}
+        style={{ padding: 'var(--spacing-default)', animationDelay: cardAnimationDelay }}
       >
         <div
           className="flex flex-col flex-1"
@@ -198,17 +208,48 @@ const SmartFolderItem = memo(function SmartFolderItem({
             className="flex justify-end"
             style={{ gap: 'var(--spacing-cozy)', paddingTop: 'var(--spacing-compact)' }}
           >
-            <Button onClick={onCancelEdit} disabled={isSavingEdit} variant="secondary" size="sm">
-              Cancel
+            <Button
+              onClick={onCancelEdit}
+              disabled={isSavingEdit}
+              variant="secondary"
+              size="sm"
+              title="Cancel edits"
+              aria-label="Cancel edits"
+              className="p-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+              <span className="sr-only">Cancel edits</span>
             </Button>
-            <Button onClick={onSaveEdit} disabled={isSavingEdit} variant="primary" size="sm">
+            <Button
+              onClick={onSaveEdit}
+              disabled={isSavingEdit}
+              variant="primary"
+              size="sm"
+              title="Save smart folder"
+              aria-label="Save smart folder"
+              className="p-2"
+            >
               {isSavingEdit ? (
                 <>
-                  <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  Saving...
+                  <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="sr-only">Saving</span>
                 </>
               ) : (
-                'Save Changes'
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
               )}
             </Button>
           </div>
@@ -220,8 +261,8 @@ const SmartFolderItem = memo(function SmartFolderItem({
   // Expanded view (default)
   return (
     <div
-      className="bg-white/70 rounded-xl border border-border-soft/60 shadow-sm hover:shadow-md transition-all animate-slide-in-right h-full flex flex-col"
-      style={{ padding: 'var(--spacing-default)', animationDelay: `${index * 0.05}s` }}
+      className={`bg-white/70 rounded-xl border border-border-soft/60 shadow-sm hover:shadow-md transition-all h-full flex flex-col ${cardAnimationClass}`}
+      style={{ padding: 'var(--spacing-default)', animationDelay: cardAnimationDelay }}
     >
       <div className="flex flex-col flex-1" style={{ gap: 'var(--spacing-cozy)' }}>
         {/* Header with collapse button (if in compact mode) */}

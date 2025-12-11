@@ -1,4 +1,5 @@
 const { withErrorLogging, withValidation } = require('./ipcWrappers');
+const { optionalUrl: optionalUrlSchema } = require('./validationSchemas');
 const { app, dialog } = require('electron');
 const { getConfigurableLimits } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
@@ -171,14 +172,8 @@ function registerSettingsIpc({
   const settingsSchema = z
     ? z
         .object({
-          // Fixed: Use regex for more permissive URL validation (optional protocol)
-          ollamaHost: z
-            .string()
-            .regex(
-              /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/,
-              'Invalid Ollama URL format'
-            )
-            .optional(),
+          // Shared optional URL validator (allows blank to clear value, optional protocol)
+          ollamaHost: optionalUrlSchema,
           textModel: z.string().optional(),
           visionModel: z.string().optional(),
           embeddingModel: z.string().optional(),

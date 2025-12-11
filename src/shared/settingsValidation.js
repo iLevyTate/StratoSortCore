@@ -87,7 +87,9 @@ const VALIDATION_RULES = {
     type: 'string',
     minLength: 1,
     maxLength: 200,
-    required: false
+    required: false,
+    // Lock to the vetted embedding model to keep vector dimensions consistent
+    enum: ['mxbai-embed-large']
   },
   maxFileSize: {
     type: 'number',

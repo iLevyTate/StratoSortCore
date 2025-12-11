@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, Suspense, lazy } from 'react';
+import { ChevronsDown, ChevronsUp } from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { useNotification } from '../contexts/NotificationContext';
@@ -36,6 +37,8 @@ logger.setContext('SettingsPanel');
 const isElectronAPIAvailable = () => {
   return typeof window !== 'undefined' && window.electronAPI != null;
 };
+
+const SAFE_EMBED_MODEL = 'mxbai-embed-large';
 
 const SettingsPanel = React.memo(function SettingsPanel() {
   const dispatch = useAppDispatch();
@@ -94,10 +97,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     [ollamaModelLists.vision, ollamaModelLists.all]
   );
 
-  const embeddingModelOptions = useMemo(
-    () => (ollamaModelLists.embedding.length ? ollamaModelLists.embedding : ollamaModelLists.all),
-    [ollamaModelLists.embedding, ollamaModelLists.all]
-  );
+  const embeddingModelOptions = useMemo(() => {
+    // Only expose the vetted embedding model to keep vector dimensions stable
+    const allowed = new Set([SAFE_EMBED_MODEL]);
+    if (settings.embeddingModel && settings.embeddingModel === SAFE_EMBED_MODEL) {
+      allowed.add(settings.embeddingModel);
+    }
+    return Array.from(allowed);
+  }, [settings.embeddingModel]);
 
   const pullProgressText = useMemo(() => {
     if (!pullProgress) return null;
@@ -135,22 +142,30 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         vision: [],
         embedding: []
       };
+
       setOllamaModelLists({
         text: (categories.text || []).slice().sort(),
         vision: (categories.vision || []).slice().sort(),
-        embedding: (categories.embedding || []).slice().sort(),
+        // We intentionally do not expose arbitrary embedding models to keep vector size fixed
+        embedding: [SAFE_EMBED_MODEL],
         all: (response?.models || []).slice().sort()
       });
       setModelToDelete((response?.models || [])[0] || '');
       if (response?.ollamaHealth) setOllamaHealth(response.ollamaHealth);
       if (response?.selected) {
-        setSettings((prev) => ({
-          ...prev,
-          textModel: response.selected.textModel || prev.textModel,
-          visionModel: response.selected.visionModel || prev.visionModel,
-          embeddingModel: response.selected.embeddingModel || prev.embeddingModel,
-          ollamaHost: response.host || prev.ollamaHost
-        }));
+        setSettings((prev) => {
+          const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;
+          const nextEmbeddingModel =
+            desiredEmbed === SAFE_EMBED_MODEL ? desiredEmbed : SAFE_EMBED_MODEL;
+
+          return {
+            ...prev,
+            textModel: response.selected.textModel || prev.textModel,
+            visionModel: response.selected.visionModel || prev.visionModel,
+            embeddingModel: nextEmbeddingModel,
+            ollamaHost: response.host || prev.ollamaHost
+          };
+        });
       }
     } catch (error) {
       logger.error('Failed to load Ollama models', {
@@ -374,16 +389,20 @@ const SettingsPanel = React.memo(function SettingsPanel() {
               <Button
                 onClick={expandAll}
                 variant="subtle"
-                className="text-xs px-[var(--spacing-md)] min-w-[110px] justify-center"
+                className="p-[var(--spacing-sm)] min-w-0 justify-center"
+                aria-label="Expand all settings sections"
+                title="Expand all"
               >
-                Expand all
+                <ChevronsDown className="w-4 h-4" />
               </Button>
               <Button
                 onClick={collapseAll}
                 variant="subtle"
-                className="text-xs px-[var(--spacing-md)] min-w-[110px] justify-center"
+                className="p-[var(--spacing-sm)] min-w-0 justify-center"
+                aria-label="Collapse all settings sections"
+                title="Collapse all"
               >
-                Collapse all
+                <ChevronsUp className="w-4 h-4" />
               </Button>
               <Button
                 onClick={handleToggleSettings}

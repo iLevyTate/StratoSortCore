@@ -43,6 +43,8 @@ function SetupPhase() {
   const [editingFolder, setEditingFolder] = useState(null);
   const [defaultLocation, setDefaultLocation] = useState('Documents');
   const [isLoading, setIsLoading] = useState(true);
+  const [showSkeletonLayer, setShowSkeletonLayer] = useState(true);
+  const [contentVisible, setContentVisible] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeletingFolder, setIsDeletingFolder] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -155,6 +157,23 @@ function SetupPhase() {
       isMountedRef.current = false;
     };
   }, [loadSmartFolders, loadDefaultLocation, showError]);
+
+  // Keep skeleton visible until content has had a frame to paint to avoid flash
+  useEffect(() => {
+    let fadeTimeout;
+
+    if (isLoading) {
+      setShowSkeletonLayer(true);
+      setContentVisible(false);
+    } else {
+      setContentVisible(true);
+      fadeTimeout = setTimeout(() => setShowSkeletonLayer(false), 180);
+    }
+
+    return () => {
+      if (fadeTimeout) clearTimeout(fadeTimeout);
+    };
+  }, [isLoading]);
 
   const handleAddFolder = async (newFolder) => {
     try {
@@ -352,9 +371,32 @@ function SetupPhase() {
               {smartFolders.length > 0 && (
                 <button
                   onClick={toggleViewMode}
-                  className="text-xs text-system-gray-500 hover:text-system-gray-700 underline transition-colors"
+                  className="p-2 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-100 rounded-lg transition-colors"
+                  title={isCompactMode ? 'Expand all' : 'Collapse all'}
+                  aria-label={isCompactMode ? 'Expand all folders' : 'Collapse all folders'}
                 >
-                  {isCompactMode ? 'Expand all' : 'Collapse all'}
+                  {isCompactMode ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 15l7-7 7 7"
+                      />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  )}
+                  <span className="sr-only">
+                    {isCompactMode ? 'Expand all folders' : 'Collapse all folders'}
+                  </span>
                 </button>
               )}
             </div>
@@ -414,75 +456,90 @@ function SetupPhase() {
           </div>
 
           {/* Folder list */}
-          <div className="flex-1 min-h-0">
-            {isLoading ? (
-              <SmartFolderSkeleton count={3} compact={isCompactMode} />
-            ) : smartFolders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
-                  <svg
-                    className="w-8 h-8 text-system-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                    />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-medium text-system-gray-800 mb-1">
-                  No smart folders yet
-                </h3>
-                <p className="text-sm text-system-gray-500 mb-4 max-w-sm">
-                  Add at least one destination folder so StratoSort knows where to organize your
-                  files.
-                </p>
-                <Button onClick={() => setIsAddModalOpen(true)} variant="primary">
-                  <svg
-                    className="w-4 h-4 mr-1.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  Add your first folder
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {smartFolders.map((folder, index) => (
-                  <SmartFolderItem
-                    key={folder.id}
-                    folder={folder}
-                    index={index}
-                    editingFolder={editingFolder}
-                    setEditingFolder={setEditingFolder}
-                    isSavingEdit={isSavingEdit}
-                    isDeleting={isDeletingFolder === folder.id}
-                    onSaveEdit={handleSaveEdit}
-                    onCancelEdit={handleCancelEdit}
-                    onEditStart={handleEditFolder}
-                    onDeleteFolder={handleDeleteFolder}
-                    onCreateDirectory={createSingleFolder}
-                    onOpenFolder={handleOpenFolder}
-                    addNotification={addNotification}
-                    compact={isCompactMode}
-                    isExpanded={expandedFolders.has(folder.id)}
-                    onToggleExpand={handleToggleExpand}
-                  />
-                ))}
+          <div className="flex-1 min-h-0 relative">
+            {showSkeletonLayer && (
+              <div
+                className={`transition-opacity duration-200 ${
+                  isLoading ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
+                }`}
+                aria-hidden={!isLoading}
+              >
+                <SmartFolderSkeleton count={3} compact={isCompactMode} />
               </div>
             )}
+
+            <div
+              className={`transition-opacity duration-200 ${
+                contentVisible ? 'opacity-100' : 'opacity-0 pointer-events-none absolute inset-0'
+              }`}
+            >
+              {smartFolders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
+                    <svg
+                      className="w-8 h-8 text-system-gray-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                      />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-system-gray-800 mb-1">
+                    No smart folders yet
+                  </h3>
+                  <p className="text-sm text-system-gray-500 mb-4 max-w-sm">
+                    Add at least one destination folder so StratoSort knows where to organize your
+                    files.
+                  </p>
+                  <Button onClick={() => setIsAddModalOpen(true)} variant="primary">
+                    <svg
+                      className="w-4 h-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 4v16m8-8H4"
+                      />
+                    </svg>
+                    Add your first folder
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {smartFolders.map((folder, index) => (
+                    <SmartFolderItem
+                      key={folder.id}
+                      folder={folder}
+                      index={index}
+                      editingFolder={editingFolder}
+                      setEditingFolder={setEditingFolder}
+                      isSavingEdit={isSavingEdit}
+                      isDeleting={isDeletingFolder === folder.id}
+                      onSaveEdit={handleSaveEdit}
+                      onCancelEdit={handleCancelEdit}
+                      onEditStart={handleEditFolder}
+                      onDeleteFolder={handleDeleteFolder}
+                      onCreateDirectory={createSingleFolder}
+                      onOpenFolder={handleOpenFolder}
+                      addNotification={addNotification}
+                      compact={isCompactMode}
+                      isExpanded={expandedFolders.has(folder.id)}
+                      onToggleExpand={handleToggleExpand}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
