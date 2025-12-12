@@ -2,31 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master, develop]
   pull_request:
-    branches: [main]
+    branches: [main, master, develop]
 
 jobs:
-  ci:
-    runs-on: windows-latest
+  build-and-test:
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [20.x]
+        node-version: [18.x, 20.x]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: npm ci
 
-      - name: Run CI pipeline (format, lint, test, build)
-        run: npm run ci
+      - name: Check Formatting
+        run: npm run format:check
 
-      # Distributables are built in release workflow only to avoid publishing errors
+      - name: Lint Code
+        run: npm run lint
+
+      - name: Run Unit Tests
+        run: npm test
+
+      # Build the application to ensure it compiles correctly
+      - name: Build Application
+        run: npm run build

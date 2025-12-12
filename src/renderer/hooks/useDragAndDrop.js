@@ -30,6 +30,8 @@ const extractName = (pathValue) => {
   return parts[parts.length - 1] || pathValue;
 };
 
+// NOTE: This feature is currently disabled/inactive in the UI but preserved for future use.
+// See: https://github.com/stratosort/stratosort/issues/123 (if applicable)
 export function useDragAndDrop(onFilesDropped) {
   const [isDragging, setIsDragging] = useState(false);
 
