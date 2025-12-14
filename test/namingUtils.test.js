@@ -175,6 +175,52 @@ describe('namingUtils', () => {
     });
   });
 
+  describe('generateSuggestedNameFromAnalysis', () => {
+    const settings = {
+      convention: 'project-subject-date',
+      separator: ' - ',
+      dateFormat: 'YYYYMMDD',
+      caseConvention: 'kebab-case'
+    };
+
+    test('uses analysis fields (project/subject/date) and preserves extension', () => {
+      const result = namingUtils.generateSuggestedNameFromAnalysis({
+        originalFileName: 'Invoice Q1.pdf',
+        analysis: {
+          date: '2024-01-15',
+          project: 'Acme Corp',
+          category: 'Financial Documents',
+          suggestedName: 'Q1 Invoice'
+        },
+        settings
+      });
+
+      // kebab-case will normalize separators and words; date format is YYYYMMDD
+      expect(result).toBe('acme-corp-q1-invoice-20240115.pdf');
+    });
+
+    test('category-subject uses analysis category', () => {
+      const result = namingUtils.generateSuggestedNameFromAnalysis({
+        originalFileName: 'photo.jpg',
+        analysis: { category: 'Research', suggestedName: 'Microscopy Image' },
+        settings: { ...settings, convention: 'category-subject', separator: '_' }
+      });
+
+      // kebab-case normalizes any separators to dashes
+      expect(result).toBe('research-microscopy-image.jpg');
+    });
+
+    test('keep-original preserves original base name and extension', () => {
+      const result = namingUtils.generateSuggestedNameFromAnalysis({
+        originalFileName: 'My Original Name.txt',
+        analysis: { suggestedName: 'Ignored' },
+        settings: { ...settings, convention: 'keep-original', caseConvention: undefined }
+      });
+
+      expect(result).toBe('My Original Name.txt');
+    });
+  });
+
   describe('validateProgressState', () => {
     test('returns true for valid progress', () => {
       const progress = {

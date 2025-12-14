@@ -30,6 +30,73 @@ const ANALYSIS_CACHE_MAX_ENTRIES = 200;
 const ANALYSIS_CACHE_TTL_MS = 3600000; // 1 hour TTL
 const analysisCache = new Map(); // key -> { value, timestamp }
 
+function normalizeCategoryToSmartFolders(category, smartFolders) {
+  const folders = Array.isArray(smartFolders) ? smartFolders : [];
+  if (folders.length === 0) return category;
+
+  const raw = String(category || '').trim();
+  const normalizedRaw = raw.toLowerCase();
+
+  // Prefer Uncategorized if model returns generic buckets
+  const uncategorized = folders.find(
+    (f) => String(f?.name || '').toLowerCase() === 'uncategorized'
+  );
+  if (
+    normalizedRaw === 'document' ||
+    normalizedRaw === 'documents' ||
+    normalizedRaw === 'image' ||
+    normalizedRaw === 'images'
+  ) {
+    return uncategorized?.name || folders[0].name;
+  }
+
+  // Exact match (case-insensitive)
+  const exact = folders.find(
+    (f) =>
+      String(f?.name || '')
+        .trim()
+        .toLowerCase() === normalizedRaw
+  );
+  if (exact) return exact.name;
+
+  // Normalize punctuation/whitespace for near-exact matches
+  const canon = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const rawCanon = canon(raw);
+  if (rawCanon) {
+    const canonMatch = folders.find((f) => canon(f?.name) === rawCanon);
+    if (canonMatch) return canonMatch.name;
+  }
+
+  // Token overlap scoring (simple, deterministic)
+  const tokens = new Set(rawCanon.split(' ').filter(Boolean));
+  let best = null;
+  let bestScore = 0;
+  for (const f of folders) {
+    const name = String(f?.name || '').trim();
+    if (!name) continue;
+    const nameCanon = canon(name);
+    const nameTokens = nameCanon.split(' ').filter(Boolean);
+    if (nameTokens.length === 0) continue;
+    let score = 0;
+    nameTokens.forEach((t) => {
+      if (tokens.has(t)) score += 1;
+    });
+    // Small bias for shorter names to avoid always matching long "Financial Documents" when raw is "Financial"
+    score -= Math.min(0.25, nameTokens.length * 0.01);
+    if (score > bestScore) {
+      bestScore = score;
+      best = name;
+    }
+  }
+
+  if (bestScore > 0.5 && best) return best;
+  return uncategorized?.name || folders[0].name;
+}
+
 function getCacheKey(textContent, model, smartFolders) {
   // FIXED Bug #44: Limit input size to prevent excessive hash computation
   const MAX_TEXT_LENGTH = 50000; // 50KB max for hash key
@@ -319,7 +386,10 @@ ${truncated}`;
           date: parsedJson.date || undefined,
           project: typeof parsedJson.project === 'string' ? parsedJson.project : undefined,
           purpose: typeof parsedJson.purpose === 'string' ? parsedJson.purpose : undefined,
-          category: typeof parsedJson.category === 'string' ? parsedJson.category : 'document',
+          category: normalizeCategoryToSmartFolders(
+            typeof parsedJson.category === 'string' ? parsedJson.category : 'document',
+            smartFolders
+          ),
           suggestedName: (() => {
             if (typeof parsedJson.suggestedName !== 'string') return undefined;
             // Ensure the original file extension is preserved

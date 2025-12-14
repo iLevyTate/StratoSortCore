@@ -252,3 +252,109 @@ export function extractExtension(fileName) {
 export function extractFileName(filePath) {
   return filePath.split(/[\\/]/).pop();
 }
+
+/**
+ * Generate a final suggested filename from analysis + naming settings.
+ *
+ * Unlike generatePreviewName (which is a lightweight UI preview), this uses real
+ * analysis fields (date/project/category/suggestedName) so the user's selected
+ * naming strategy is actually honored.
+ *
+ * @param {Object} params - Parameters
+ * @param {string} params.originalFileName - Original filename (with extension)
+ * @param {Object} params.analysis - Analysis result (may contain date/project/category/suggestedName)
+ * @param {Object} params.settings - Naming settings
+ * @param {string} params.settings.convention - Naming convention
+ * @param {string} params.settings.separator - Separator character
+ * @param {string} params.settings.dateFormat - Date format
+ * @param {string} params.settings.caseConvention - Case convention
+ * @returns {string} Suggested filename (with extension preserved)
+ */
+export function generateSuggestedNameFromAnalysis({ originalFileName, analysis, settings }) {
+  const safeOriginalName = String(originalFileName || '').trim();
+  if (!safeOriginalName) return '';
+
+  const extension = safeOriginalName.includes('.') ? `.${safeOriginalName.split('.').pop()}` : '';
+  const originalBase = safeOriginalName.replace(/\.[^/.]+$/, '');
+
+  const convention = settings?.convention || 'keep-original';
+  const separator = settings?.separator ?? '-';
+  const dateFormat = settings?.dateFormat || 'YYYY-MM-DD';
+  const caseConvention = settings?.caseConvention;
+
+  const rawSubject =
+    typeof analysis?.suggestedName === 'string' && analysis.suggestedName.trim()
+      ? analysis.suggestedName.trim().replace(/\.[^/.]+$/, '')
+      : originalBase;
+
+  const rawProject =
+    typeof analysis?.project === 'string' && analysis.project.trim()
+      ? analysis.project.trim()
+      : 'Project';
+
+  const rawCategory =
+    typeof analysis?.category === 'string' && analysis.category.trim()
+      ? analysis.category.trim()
+      : 'Category';
+
+  // Prefer analysis-provided date, but fall back to "today" if missing/invalid
+  let effectiveDate = new Date();
+  if (typeof analysis?.date === 'string' && analysis.date.trim()) {
+    const raw = analysis.date.trim();
+    // If date is in YYYY-MM-DD, parse without timezone shifting.
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      const year = Number(m[1]);
+      const month = Number(m[2]);
+      const day = Number(m[3]);
+      const local = new Date(year, month - 1, day);
+      if (!Number.isNaN(local.getTime())) {
+        effectiveDate = local;
+      }
+    } else {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) {
+        effectiveDate = parsed;
+      }
+    }
+  }
+
+  // Keep filenames safe across platforms. (Windows particularly)
+  const sanitizeToken = (value) =>
+    String(value || '')
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const subject = sanitizeToken(rawSubject) || originalBase;
+  const project = sanitizeToken(rawProject) || 'Project';
+  const category = sanitizeToken(rawCategory) || 'Category';
+  const formattedDate = formatDate(effectiveDate, dateFormat);
+
+  let base;
+  switch (convention) {
+    case 'subject-date':
+      base = `${subject}${separator}${formattedDate}`;
+      break;
+    case 'date-subject':
+      base = `${formattedDate}${separator}${subject}`;
+      break;
+    case 'project-subject-date':
+      base = `${project}${separator}${subject}${separator}${formattedDate}`;
+      break;
+    case 'category-subject':
+      base = `${category}${separator}${subject}`;
+      break;
+    case 'keep-original':
+      // Preserve the original filename's base; still apply case convention if provided
+      base = originalBase;
+      break;
+    default:
+      base = subject;
+      break;
+  }
+
+  const finalBase = caseConvention ? applyCaseConvention(base, caseConvention) : base;
+  return `${finalBase}${extension}`;
+}

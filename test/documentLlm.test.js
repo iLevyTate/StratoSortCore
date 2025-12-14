@@ -150,6 +150,33 @@ describe('documentLlm', () => {
       );
     });
 
+    test('normalizes category to an existing smart folder name when model returns generic "document"', async () => {
+      const textContent = 'Some generic content';
+      const fileName = 'notes.txt';
+      const smartFolders = [
+        {
+          name: 'Uncategorized',
+          description: "Default folder for files that don't match any category"
+        },
+        { name: 'Research', description: 'Academic papers and research notes' }
+      ];
+
+      mockOllamaClient.generate.mockResolvedValue({
+        response: JSON.stringify({
+          date: '2024-01-15',
+          project: 'Notes',
+          purpose: 'General notes',
+          category: 'document',
+          keywords: ['notes', 'general', 'text'],
+          confidence: 75,
+          suggestedName: 'general_notes'
+        })
+      });
+
+      const result = await analyzeTextWithOllama(textContent, fileName, smartFolders);
+      expect(result.category).toBe('Uncategorized');
+    });
+
     test('should work without smart folders', async () => {
       mockOllamaClient.generate.mockResolvedValue({
         response: JSON.stringify({

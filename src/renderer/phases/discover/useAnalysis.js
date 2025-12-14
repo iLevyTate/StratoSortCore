@@ -14,6 +14,7 @@ import { logger } from '../../../shared/logger';
 import {
   validateProgressState,
   generatePreviewName as generatePreviewNameUtil,
+  generateSuggestedNameFromAnalysis,
   extractFileName
 } from './namingUtils';
 
@@ -238,6 +239,17 @@ export function useAnalysis(options) {
     [namingSettings]
   );
 
+  const generateSuggestedName = useCallback(
+    (originalFileName, analysis) => {
+      return generateSuggestedNameFromAnalysis({
+        originalFileName,
+        analysis,
+        settings: namingSettings
+      });
+    },
+    [namingSettings]
+  );
+
   /**
    * Re-apply naming convention to existing analyses when settings change.
    * Keeps Discover and Organize screens in sync with the user-selected naming.
@@ -247,18 +259,21 @@ export function useAnalysis(options) {
       if (!prev || prev.length === 0) return prev;
       return prev.map((result) => {
         if (!result?.analysis) return result;
-        const baseName =
-          result.analysis.originalSuggestedName ||
-          result.analysis.suggestedName ||
-          result.name ||
-          extractFileName(result.path || '') ||
-          '';
         return {
           ...result,
           analysis: {
             ...result.analysis,
-            suggestedName: generatePreviewName(baseName),
-            namingConvention: namingSettings
+            suggestedName: generateSuggestedName(
+              result.name || extractFileName(result.path || ''),
+              result.analysis
+            ),
+            namingConvention: namingSettings,
+            // Keep a stable "raw subject" for re-naming and user edits.
+            originalSuggestedName:
+              result.analysis.originalSuggestedName ||
+              result.analysis.suggestedName ||
+              result.name ||
+              extractFileName(result.path || '')
           }
         };
       });
@@ -269,18 +284,20 @@ export function useAnalysis(options) {
       const next = { ...prev };
       Object.entries(next).forEach(([filePath, state]) => {
         if (!state?.analysis) return;
-        const baseName =
-          state.analysis.originalSuggestedName ||
-          state.analysis.suggestedName ||
-          state.name ||
-          extractFileName(filePath) ||
-          '';
         next[filePath] = {
           ...state,
           analysis: {
             ...state.analysis,
-            suggestedName: generatePreviewName(baseName),
-            namingConvention: namingSettings
+            suggestedName: generateSuggestedName(
+              state.name || extractFileName(filePath),
+              state.analysis
+            ),
+            namingConvention: namingSettings,
+            originalSuggestedName:
+              state.analysis.originalSuggestedName ||
+              state.analysis.suggestedName ||
+              state.name ||
+              extractFileName(filePath)
           }
         };
       });
@@ -288,7 +305,7 @@ export function useAnalysis(options) {
     });
     // Only re-run when naming settings change; avoid deps on state we set to prevent loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [namingSettings, generatePreviewName, setAnalysisResults, setFileStates]);
+  }, [namingSettings, generateSuggestedName, setAnalysisResults, setFileStates]);
 
   /**
    * Main analysis function
@@ -473,7 +490,7 @@ export function useAnalysis(options) {
                 ...analysis,
                 // Preserve the raw suggestion so we can re-apply naming changes later
                 originalSuggestedName: baseSuggestedName,
-                suggestedName: generatePreviewName(baseSuggestedName),
+                suggestedName: generateSuggestedName(fileName, analysis),
                 namingConvention: namingSettings
               };
               results.push({
@@ -637,7 +654,7 @@ export function useAnalysis(options) {
       updateFileState,
       addNotification,
       actions,
-      generatePreviewName,
+      generateSuggestedName,
       namingSettings,
       resetAnalysisState
     ]
