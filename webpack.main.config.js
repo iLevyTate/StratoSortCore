@@ -60,6 +60,18 @@ module.exports = (env, argv) => {
         })
       ]
     },
+    // pdf-parse (via pdfjs) uses a dynamic require that webpack can't statically analyze.
+    // This is expected for this dependency in an Electron main-process bundle; suppress only this
+    // specific known-safe warning to keep build output actionable.
+    ignoreWarnings: [
+      (warning) =>
+        /Critical dependency: the request of a dependency is an expression/.test(
+          warning?.message || ''
+        ) &&
+        /[\\/]node_modules[\\/]pdf-parse[\\/]dist[\\/]pdf-parse[\\/]cjs[\\/]index\.cjs$/.test(
+          warning?.module?.resource || ''
+        )
+    ],
     plugins: [
       new webpack.DefinePlugin({
         'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development')
