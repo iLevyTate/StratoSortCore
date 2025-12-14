@@ -67,14 +67,44 @@ jest.mock('os', () => ({
   tmpdir: () => MOCK_TMP_DIR
 }));
 
-// Global test utilities
+function shouldSuppressKnownNetworkNoise(args) {
+  // Jest/jsdom VirtualConsole sometimes emits noisy XHR errors when optional services
+  // (e.g., local ChromaDB) are not running. These are not actionable for unit tests.
+  const joined = args
+    .map((a) => {
+      if (!a) return '';
+      if (typeof a === 'string') return a;
+      if (a instanceof Error) return a.message || '';
+      try {
+        return JSON.stringify(a);
+      } catch {
+        return String(a);
+      }
+    })
+    .join(' ');
+
+  return (
+    joined.includes('ECONNREFUSED 127.0.0.1:8000') ||
+    joined.includes('ECONNREFUSED ::1:8000') ||
+    joined.includes('connect ECONNREFUSED 127.0.0.1:8000') ||
+    joined.includes('connect ECONNREFUSED ::1:8000')
+  );
+}
+
+// Global test utilities (keep logs quiet, but don't hide real errors)
 global.console = {
-  ...console,
+  ...global.console,
   log: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
   info: jest.fn(),
-  debug: jest.fn()
+  debug: jest.fn(),
+  warn: jest.fn((...args) => {
+    // Suppress known noisy network warnings (e.g., optional local services not running)
+    if (shouldSuppressKnownNetworkNoise(args)) return;
+  }),
+  error: jest.fn((...args) => {
+    // Suppress known noisy network errors (e.g., optional local services not running)
+    if (shouldSuppressKnownNetworkNoise(args)) return;
+  })
 };
 
 // Mock DOM environment for Electron

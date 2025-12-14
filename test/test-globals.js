@@ -52,6 +52,68 @@ global.document = global.document || {
   }
 };
 
+// Prevent jsdom from attempting real network requests via XMLHttpRequest during unit tests.
+// Some codepaths (e.g. service health checks) may use XHR and generate noisy ECONNREFUSED logs.
+// We stub XHR to a minimal in-memory implementation.
+class MockXMLHttpRequest {
+  constructor() {
+    this.readyState = 0;
+    this.status = 0;
+    this.responseText = '';
+    this.onreadystatechange = null;
+    this.onload = null;
+    this.onerror = null;
+    this._listeners = new Map();
+    this._request = { method: null, url: null };
+  }
+
+  open(method, url) {
+    this._request = { method, url };
+    this.readyState = 1;
+  }
+
+  addEventListener(type, handler) {
+    const list = this._listeners.get(type) || [];
+    list.push(handler);
+    this._listeners.set(type, list);
+  }
+
+  removeEventListener(type, handler) {
+    const list = this._listeners.get(type) || [];
+    this._listeners.set(
+      type,
+      list.filter((h) => h !== handler)
+    );
+  }
+
+  _emit(type) {
+    const list = this._listeners.get(type) || [];
+    list.forEach((h) => {
+      try {
+        h.call(this);
+      } catch {
+        // ignore listener errors in tests
+      }
+    });
+  }
+
+  send() {
+    // Simulate an immediate successful response.
+    this.readyState = 4;
+    this.status = 200;
+    this.responseText = '{}';
+    if (typeof this.onreadystatechange === 'function') this.onreadystatechange();
+    if (typeof this.onload === 'function') this.onload();
+    this._emit('readystatechange');
+    this._emit('load');
+  }
+}
+
+global.XMLHttpRequest = MockXMLHttpRequest;
+if (global.window) {
+  global.window.XMLHttpRequest = MockXMLHttpRequest;
+}
+
 // Mock Element constructor that officeparser checks for
 global.Element =
   global.Element ||
