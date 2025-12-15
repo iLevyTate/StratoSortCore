@@ -6,7 +6,11 @@ const { buildOllamaOptions } = require('../services/PerformanceService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
-const { AI_DEFAULTS, SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+const {
+  AI_DEFAULTS,
+  SUPPORTED_IMAGE_EXTENSIONS,
+  PROCESSING_LIMITS
+} = require('../../shared/constants');
 const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
 const { normalizeAnalysisResult } = require('./utils');
 const {
@@ -41,7 +45,9 @@ const AppConfig = {
     imageAnalysis: {
       defaultModel: AI_DEFAULTS.IMAGE.MODEL,
       defaultHost: AI_DEFAULTS.IMAGE.HOST,
-      timeout: 120000,
+      // Keep image analysis aligned with global processing timeouts so the renderer lock
+      // doesn't get "stuck" for minutes when vision calls hang.
+      timeout: PROCESSING_LIMITS.ANALYSIS_TIMEOUT,
       temperature: AI_DEFAULTS.IMAGE.TEMPERATURE,
       maxTokens: AI_DEFAULTS.IMAGE.MAX_TOKENS
     }
@@ -110,7 +116,7 @@ Analyze this image:`;
     // Enforce a hard timeout and abort the underlying request (supported by Ollama client).
     const abortController = new AbortController();
     let timeoutId = null;
-    const timeoutMs = Number(AppConfig.ai.imageAnalysis.timeout) || 120000;
+    const timeoutMs = Number(AppConfig.ai.imageAnalysis.timeout) || 60000;
     const startedAt = Date.now();
 
     const response = await (async () => {
