@@ -126,7 +126,10 @@ function ReadyFileItem({
               {destination && (
                 <div className="text-sm text-system-gray-600 mt-2 overflow-visible">
                   <strong>Destination:</strong>{' '}
-                  <span className="text-stratosort-blue block mt-1 break-words" title={destination}>
+                  <span
+                    className="text-stratosort-blue block mt-1 break-all line-clamp-2"
+                    title={destination}
+                  >
                     {destination}
                   </span>
                 </div>

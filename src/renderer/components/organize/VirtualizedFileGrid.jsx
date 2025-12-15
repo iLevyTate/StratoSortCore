@@ -1,25 +1,14 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useCallback, useMemo, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import ReadyFileItem from './ReadyFileItem';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
 // Height calculations for responsive grid layout
-// Slightly taller rows to prevent cutting off multi-line text in review cards
-const ITEM_HEIGHT = 320;
+// Slightly taller default rows to prevent cutting off multi-line text in review cards
+const DEFAULT_ROW_HEIGHT = 400;
+const MEASUREMENT_PADDING = 24; // breathing room so measured height has slack
 const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
-
-/**
- * Calculate optimal list height based on file count and viewport
- * Adapts to data volume: sparse data gets compact height, dense data gets more space
- */
-const getListHeight = (itemCount, viewportHeight) => {
-  // Sparse: 35vh, Moderate: 45vh, Dense: 55vh
-  const maxFraction = itemCount <= 10 ? 0.35 : itemCount <= 30 ? 0.45 : 0.55;
-  const contentMinHeight = 300;
-  const maxHeight = Math.round(viewportHeight * maxFraction);
-  return Math.min(Math.max(contentMinHeight, itemCount * 80), maxHeight);
-};
 
 /**
  * Calculate how many columns to render based on container width
@@ -137,9 +126,76 @@ function VirtualizedFileGrid({
   containerWidth = 1200, // Default to xl breakpoint width
   onViewDetails
 }) {
-  const columnsPerRow = getColumnCount(containerWidth);
-  const rowCount = Math.ceil(files.length / columnsPerRow);
+  // Fix: Use ref to measure actual container dimensions
+  const containerRef = React.useRef(null);
+  const [dimensions, setDimensions] = useState({ width: containerWidth, height: 600 });
+  const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        const { width, height } = entry.contentRect;
+        setDimensions({
+          width: width || containerWidth,
+          height: height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
+        });
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [containerWidth]);
+
+  const columnsPerRow = getColumnCount(dimensions.width);
+  const rowCount = Math.max(1, Math.ceil(files.length / columnsPerRow));
   const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
+  const columnWidthEstimate = useMemo(
+    () => Math.max(320, Math.floor(dimensions.width / columnsPerRow) - 16),
+    [dimensions.width, columnsPerRow]
+  );
+
+  const measureRef = useCallback((node) => {
+    if (!node) return;
+    const measured = Math.ceil(node.getBoundingClientRect().height);
+    const paddedHeight = Math.max(DEFAULT_ROW_HEIGHT, measured + MEASUREMENT_PADDING);
+    setRowHeight((prev) => (Math.abs(prev - paddedHeight) > 4 ? paddedHeight : prev));
+  }, []);
+
+  const sampleItem = useMemo(() => {
+    if (!shouldVirtualize || files.length === 0) return null;
+    const sampleIndex = 0;
+    const file = files[sampleIndex];
+    const fileWithEdits = getFileWithEdits(file, sampleIndex);
+    const rawCategory = editingFiles[sampleIndex]?.category || fileWithEdits.analysis?.category;
+    const smartFolder = findSmartFolderForCategory(rawCategory);
+    const currentCategory = smartFolder?.name || rawCategory;
+    const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
+    const destination = smartFolder
+      ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
+      : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
+
+    return {
+      file: fileWithEdits,
+      index: sampleIndex,
+      isSelected: selectedFiles.has(sampleIndex),
+      stateDisplay,
+      smartFolder,
+      currentCategory,
+      destination
+    };
+  }, [
+    shouldVirtualize,
+    files,
+    editingFiles,
+    findSmartFolderForCategory,
+    getFileWithEdits,
+    getFileStateDisplay,
+    defaultLocation,
+    selectedFiles
+  ]);
 
   // react-window v2 expects rowProps (not itemData).
   const rowProps = useMemo(
@@ -175,9 +231,12 @@ function VirtualizedFileGrid({
 
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
-    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
-    return getListHeight(files.length, viewportHeight);
-  }, [files.length]);
+    // Use measured height or fallback to viewport calculation
+    // FIX: Use full available height instead of fractional calculation
+    const availableHeight =
+      dimensions.height || (typeof window !== 'undefined' ? window.innerHeight : 900);
+    return availableHeight;
+  }, [dimensions.height]);
 
   if (isLoading) {
     return (
@@ -191,14 +250,49 @@ function VirtualizedFileGrid({
 
   if (shouldVirtualize) {
     return (
-      <div className="w-full max-h-viewport-lg overflow-y-auto modern-scrollbar">
-        <div className="text-xs text-system-gray-500 mb-2">
-          Showing {files.length} files (virtualized for performance)
+      <div ref={containerRef} className="relative w-full h-full">
+        {/* Helper for measurement only */}
+        <div
+          style={{
+            height: '100%',
+            width: '100%',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            visibility: 'hidden'
+          }}
+        />
+
+        {sampleItem && (
+          <div
+            aria-hidden
+            ref={measureRef}
+            className="absolute opacity-0 pointer-events-none"
+            style={{ width: `${columnWidthEstimate}px`, maxWidth: '100%' }}
+          >
+            <ReadyFileItem
+              file={sampleItem.file}
+              index={sampleItem.index}
+              isSelected={sampleItem.isSelected}
+              onToggleSelected={toggleFileSelection}
+              stateDisplay={sampleItem.stateDisplay}
+              smartFolders={smartFolders}
+              editing={editingFiles[sampleItem.index]}
+              onEdit={handleEditFile}
+              destination={sampleItem.destination}
+              category={sampleItem.currentCategory}
+              onViewDetails={onViewDetails}
+            />
+          </div>
+        )}
+        <div className="text-xs text-system-gray-500 mb-2 absolute top-0 right-0 z-10 bg-white/80 px-2 py-1 rounded backdrop-blur-sm">
+          Showing {files.length} files
         </div>
         <List
           rowComponent={VirtualizedFileRow}
           rowCount={rowCount}
-          rowHeight={ITEM_HEIGHT}
+          rowHeight={rowHeight}
           rowProps={rowProps}
           overscanCount={2}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
@@ -214,7 +308,8 @@ function VirtualizedFileGrid({
   const isSparse = files.length <= 5;
   return (
     <div
-      className={`grid grid-adaptive-lg gap-4 ${isSparse ? 'place-content-center min-h-[300px]' : ''}`}
+      ref={containerRef}
+      className={`grid grid-adaptive-lg gap-4 h-full overflow-y-auto modern-scrollbar ${isSparse ? 'place-content-center' : ''}`}
     >
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);

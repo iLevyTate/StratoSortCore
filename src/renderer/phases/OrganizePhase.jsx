@@ -342,9 +342,9 @@ function OrganizePhase() {
               )}
             </div>
 
-            <div className="flex-1 min-h-0 p-[var(--panel-padding)] overflow-y-auto modern-scrollbar">
+            <div className="flex-1 min-h-0 p-[var(--panel-padding)] overflow-hidden">
               {unprocessedFiles.length === 0 ? (
-                <div className="h-full flex items-start justify-start p-[var(--panel-padding)]">
+                <div className="h-full flex items-start justify-start p-[var(--panel-padding)] overflow-y-auto modern-scrollbar">
                   <div className="text-left flex flex-col items-start gap-[var(--spacing-default)]">
                     <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center">
                       {processedFiles.length > 0 ? (

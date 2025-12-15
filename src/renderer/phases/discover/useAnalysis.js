@@ -492,6 +492,10 @@ export function useAnalysis(options) {
           try {
             const analysis = await analyzeWithRetry(file.path);
 
+            // Fix: Check for abort signal immediately after async operation
+            // This prevents state updates if the user cancelled while analysis was in flight
+            if (abortSignal.aborted) return;
+
             // Increment progress AFTER analysis completes
             completedCount++;
             const progress = {

@@ -5,10 +5,9 @@ import { FileText, Compass } from 'lucide-react';
 import { Button, StatusBadge } from '../ui';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
-// Each item is approximately 140px in height
-const ITEM_HEIGHT = 140;
-const LIST_HEIGHT = 800; // Balanced cap for most screens
-const VIRTUALIZATION_THRESHOLD = 50; // Only virtualize when > 50 items
+// Each item is approximately 176px in height (fits 2-line titles without overlap)
+const ITEM_HEIGHT = 176;
+const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 items
 
 // Normalize confidence values that may arrive as either 0-1 or 0-100 and clamp to 0-100
 const formatConfidence = (value) => {
@@ -44,17 +43,17 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
 
   return (
     <div style={style} className="px-2 py-1.5">
-      <div className="list-row h-full overflow-visible p-4 flex flex-col gap-3">
+      <div className="list-row h-full overflow-hidden p-4 flex flex-col gap-2">
         <div className="flex items-start gap-4">
           <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
           <div className="flex-1 min-w-0 overflow-hidden">
             <div
-              className="font-medium text-system-gray-900 truncate whitespace-normal break-words"
+              className="font-medium text-system-gray-900 clamp-2 break-words leading-snug"
               title={`${file.name}${file.path ? ` (${file.path})` : ''}`}
             >
               {file.name}
             </div>
-            <div className="text-xs text-system-gray-500 truncate whitespace-normal break-words">
+            <div className="text-xs text-system-gray-500 clamp-1 break-words">
               {file.source && file.source !== 'file_selection' && (
                 <>
                   {file.source.replace('_', ' ')}
@@ -64,7 +63,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
               {file.size ? `${Math.round(file.size / 1024)} KB` : ''}
             </div>
             {file.analysis?.category && (
-              <div className="text-xs text-system-gray-600 mt-1 truncate whitespace-normal break-words">
+              <div className="text-xs text-system-gray-600 mt-1 clamp-1 break-words">
                 Category:{' '}
                 <span className="text-stratosort-blue font-medium">{file.analysis.category}</span>
               </div>
@@ -139,28 +138,26 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   const items = useMemo(() => (Array.isArray(results) ? results : []), [results]);
   const handleAction = useCallback((action, path) => onFileAction(action, path), [onFileAction]);
 
-  // FIX #13: Track viewport height for responsive list sizing
-  const [viewportHeight, setViewportHeight] = useState(
-    typeof window !== 'undefined' ? window.innerHeight : 900
-  );
+  // Fix: Use ref to measure actual container dimensions like VirtualizedFileGrid
+  const containerRef = React.useRef(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 600 });
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (!containerRef.current) return;
 
-    let rafId;
-    const handleResize = () => {
-      // Use rAF to debounce resize events
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        setViewportHeight(window.innerHeight);
-      });
-    };
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        const { width, height } = entry.contentRect;
+        setDimensions({
+          width: width || 0,
+          height: height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
+        });
+      }
+    });
 
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
   }, []);
 
   // react-window v2 expects rowProps (not itemData).
@@ -177,21 +174,12 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   // FIX: Use virtualization only for large lists to avoid overhead on small lists
   const shouldVirtualize = items.length > VIRTUALIZATION_THRESHOLD;
 
-  // FIX #13: Now properly depends on viewportHeight from resize listener
-  const computedListHeight = useMemo(() => {
-    // Use up to 65% of viewport, but at least 350px
-    const maxHeight = Math.min(LIST_HEIGHT, Math.max(350, Math.round(viewportHeight * 0.65)));
-    // Also avoid rendering excessive blank space when fewer rows
-    const desired = Math.min(maxHeight, ITEM_HEIGHT * items.length);
-    return Math.max(desired, Math.min(ITEM_HEIGHT * 4, maxHeight));
-  }, [items.length, viewportHeight]);
-
   // Simple wrapper - inline to avoid component identity issues
-  const listContainerClass = `p-4 w-full modern-scrollbar overflow-y-auto flex flex-col gap-3`;
+  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-3`;
 
   if (isEmpty) {
     return (
-      <div className="empty-state">
+      <div className="empty-state p-4">
         <Compass className="w-8 h-8 text-system-gray-400" />
         <div className="space-y-1">
           <p className="text-system-gray-800 font-semibold">No analysis results yet</p>
@@ -205,9 +193,12 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
 
   if (shouldVirtualize) {
     return (
-      <div className={listContainerClass}>
-        <div className="text-xs text-system-gray-500 mb-2">
-          Showing {items.length} files (virtualized for performance)
+      <div
+        ref={containerRef}
+        className="relative w-full h-full px-4 py-2" // Add padding to container not list
+      >
+        <div className="text-xs text-system-gray-500 mb-2 absolute top-0 right-4 z-10 bg-white/80 px-2 py-1 rounded backdrop-blur-sm">
+          Showing {items.length} files (virtualized)
         </div>
         <List
           rowComponent={AnalysisResultRow}
@@ -216,7 +207,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
           rowProps={rowProps}
           overscanCount={5}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-          style={{ height: computedListHeight, width: '100%' }}
+          style={{ height: dimensions.height, width: '100%' }}
         />
       </div>
     );
@@ -224,7 +215,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
 
   // For smaller lists, render normally without virtualization overhead
   return (
-    <div className={listContainerClass}>
+    <div className={`${listContainerClass} p-4`}>
       {/* FIX: Use stable composite key that doesn't rely on array index
           Priority: path > id > name+size+lastModified (all stable file properties) */}
       {items.map((file) => {
@@ -241,17 +232,17 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
         const stableKey =
           file.path || file.id || `${file.name}-${file.size || 0}-${file.lastModified || 'nomod'}`;
         return (
-          <div key={stableKey} className="list-row p-4 overflow-visible">
+          <div key={stableKey} className="list-row p-4 overflow-hidden flex flex-col gap-2">
             <div className="flex items-start gap-4">
               <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
               <div className="flex-1 min-w-0 overflow-hidden">
                 <div
-                  className="font-medium text-system-gray-900 truncate whitespace-normal break-words"
+                  className="font-medium text-system-gray-900 clamp-2 break-words leading-snug"
                   title={`${file.name}${file.path ? ` (${file.path})` : ''}`}
                 >
                   {file.name}
                 </div>
-                <div className="text-xs text-system-gray-500 truncate whitespace-normal break-words">
+                <div className="text-xs text-system-gray-500 clamp-1 break-words">
                   {file.source && file.source !== 'file_selection' && (
                     <>
                       {file.source.replace('_', ' ')}
@@ -261,7 +252,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
                   {file.size ? `${Math.round(file.size / 1024)} KB` : ''}
                 </div>
                 {file.analysis?.category && (
-                  <div className="text-xs text-system-gray-600 mt-1 truncate whitespace-normal break-words">
+                  <div className="text-xs text-system-gray-600 mt-1 clamp-1 break-words">
                     Category:{' '}
                     <span className="text-stratosort-blue font-medium">
                       {file.analysis.category}
