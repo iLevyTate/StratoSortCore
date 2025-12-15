@@ -219,6 +219,26 @@ describe('namingUtils', () => {
 
       expect(result).toBe('My Original Name.txt');
     });
+
+    test('replaces underscores with spaces before casing', () => {
+      // Fix verification: ensure underscores are treated as separators
+      const result = namingUtils.generateSuggestedNameFromAnalysis({
+        originalFileName: 'test.txt',
+        analysis: { suggestedName: 'my_file_name' },
+        // Use 'subject-date' to force reconstruction from components, skipping casing for clarity first
+        settings: {
+          // Use 'subject' logic implied by 'project-subject-date' or similar if we want suggestedName
+          // 'project-subject-date' uses 'suggestedName' as subject.
+          convention: 'project-subject-date',
+          separator: '-',
+          dateFormat: 'YYYYMMDD',
+          caseConvention: undefined // No casing, just sanitation
+        }
+      });
+      // project (Project) - subject (my file name) - date (YYYYMMDD)
+      // sanitizeToken should turn 'my_file_name' into 'my file name'
+      expect(result).toMatch(/Project-my file name-\d{8}\.txt/);
+    });
   });
 
   describe('validateProgressState', () => {

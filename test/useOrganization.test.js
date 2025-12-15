@@ -38,7 +38,7 @@ const mockElectronAPI = {
     onOperationProgress: jest.fn()
   },
   files: {
-    normalizePath: jest.fn((path) => path)
+    normalizePath: jest.fn((path) => path) // Just return path as-is for testing join logic
   }
 };
 
@@ -361,6 +361,29 @@ describe('useOrganization', () => {
         expect(mockElectronAPI.organize.auto).not.toHaveBeenCalled();
         expect(options.executeAction).toHaveBeenCalled();
       });
+
+      test('joins paths with backslashes on Windows-like root', async () => {
+        const options = createMockOptions({
+          defaultLocation: 'C:\\Users\\User\\Documents',
+          findSmartFolderForCategory: jest.fn(() => ({ name: 'SmartFolder', path: null })),
+          unprocessedFiles: [
+            {
+              path: 'test.txt',
+              name: 'test.txt',
+              analysis: { category: 'SmartFolder', suggestedName: 'test.txt' }
+            }
+          ]
+        });
+        const { result } = renderHook(() => useOrganization(options));
+        await act(async () => {
+          await result.current.handleOrganizeFiles();
+        });
+
+        const call = options.executeAction.mock.calls[0][0];
+        const dest = call.operations[0].destination;
+        // Verify destination has backslashes and correct structure
+        expect(dest).toContain('C:\\Users\\User\\Documents\\SmartFolder\\test.txt');
+      });
     });
 
     describe('fallback operations builder', () => {
@@ -451,6 +474,42 @@ describe('useOrganization', () => {
         });
 
         expect(options.markFilesAsProcessed).toHaveBeenCalled();
+      });
+
+      test('onRedo filters out already organized files', async () => {
+        const options = createMockOptions({
+          phaseData: {
+            organizedFiles: [
+              {
+                originalPath: '/test.txt',
+                path: '/Documents/test.txt'
+              }
+            ]
+          },
+          setOrganizedFiles: jest.fn()
+        });
+
+        options.executeAction.mockImplementation(async (action) => {
+          // Simulate redo with SAME file already in state
+          action.callbacks.onRedo({
+            results: [{ success: true, source: '/test.txt', destination: '/Documents/test.txt' }],
+            successCount: 1,
+            failCount: 0
+          });
+          return { results: [{ success: true }] };
+        });
+
+        const { result } = renderHook(() => useOrganization(options));
+
+        await act(async () => {
+          await result.current.handleOrganizeFiles();
+        });
+
+        // setOrganizedFiles should NOT be called because the file is already there
+        // or effectively filtered out.
+        // Wait, if no unique results, setOrganizedFiles is skipped?
+        // Code: if (uniqueResults.length > 0) { ... }
+        expect(options.setOrganizedFiles).not.toHaveBeenCalled();
       });
     });
   });

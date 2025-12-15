@@ -128,6 +128,20 @@ export function useProgressTracking() {
  * @param {string} params.defaultLocation - Default destination location
  * @returns {Object} Processed file info with newName, normalized destination, and categoryChanged flag
  */
+// Helper to normalize paths for comparison (handles mixed / and \)
+const normalizeForComparison = (path) => (path || '').replace(/[\\/]+/g, '/').toLowerCase();
+
+/**
+ * Helper to join paths using the correct separator based on the root
+ */
+const joinPath = (root, ...parts) => {
+  const isWindows = root.includes('\\');
+  const separator = isWindows ? '\\' : '/';
+  const cleanRoot = root.endsWith(separator) ? root.slice(0, -1) : root;
+  const cleanParts = parts.map((p) => (p.startsWith(separator) ? p.slice(1) : p));
+  return [cleanRoot, ...cleanParts].join(separator);
+};
+
 function processFileForOrganization({
   file,
   fileIndexMap,
@@ -153,9 +167,12 @@ function processFileForOrganization({
   }
 
   const smartFolder = findSmartFolderForCategory(currentCategory);
+
+  // FIX: Use platform-aware path joining instead of hardcoded slashes
   const destinationDir = smartFolder
-    ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
-    : `${defaultLocation}/${currentCategory || 'Uncategorized'}`;
+    ? smartFolder.path || joinPath(defaultLocation, smartFolder.name)
+    : joinPath(defaultLocation, currentCategory || 'Uncategorized');
+
   const suggestedName = edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
 
   // Ensure extension is present - use lastIndexOf for more robust extension detection
@@ -166,7 +183,7 @@ function processFileForOrganization({
   const hasExtension = suggestedExtIdx > 0 && suggestedExtIdx > suggestedName.length - 6;
   const newName = hasExtension || !originalExt ? suggestedName : suggestedName + originalExt;
 
-  const dest = `${destinationDir}/${newName}`;
+  const dest = joinPath(destinationDir, newName);
   const normalized = window.electronAPI?.files?.normalizePath?.(dest) || dest;
 
   return { newName, normalized, categoryChanged, originalCategory, finalCategory: currentCategory };
@@ -285,6 +302,10 @@ export function useOrganization({
     isOrganizing,
     setIsOrganizing
   } = useProgressTracking();
+
+  // FIX: Use ref to track latest organizedFiles to avoid stale closure in async callbacks
+  const organizedFilesRef = useRef(phaseData?.organizedFiles || []);
+  organizedFilesRef.current = phaseData?.organizedFiles || [];
 
   const handleOrganizeFiles = useCallback(
     async (filesToOrganize = null) => {
@@ -415,8 +436,9 @@ export function useOrganization({
               if (uiResults.length > 0) {
                 setOrganizedFiles((prev) => [...prev, ...uiResults]);
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
+                // FIX: Use ref to get latest organizedFiles (avoids stale closure)
                 actions.setPhaseData('organizedFiles', [
-                  ...(phaseData.organizedFiles || []),
+                  ...organizedFilesRef.current,
                   ...uiResults
                 ]);
                 addNotification(`Organized ${uiResults.length} files`, 'success');
@@ -439,13 +461,19 @@ export function useOrganization({
                 ? result.results.filter((r) => r.success).map((r) => r.originalPath || r.newPath)
                 : Array.from(sourcePathsSet);
 
-              const undoPathsSet = new Set(successfulUndos);
+              const undoPathsSet = new Set(successfulUndos.map(normalizeForComparison));
 
-              setOrganizedFiles((prev) => prev.filter((of) => !undoPathsSet.has(of.originalPath)));
-              unmarkFilesAsProcessed(Array.from(undoPathsSet));
+              setOrganizedFiles((prev) =>
+                prev.filter((of) => !undoPathsSet.has(normalizeForComparison(of.originalPath)))
+              );
+              unmarkFilesAsProcessed(successfulUndos);
+
+              // FIX: Use ref to get latest organizedFiles (avoids stale closure)
               actions.setPhaseData(
                 'organizedFiles',
-                (phaseData.organizedFiles || []).filter((of) => !undoPathsSet.has(of.originalPath))
+                organizedFilesRef.current.filter(
+                  (of) => !undoPathsSet.has(normalizeForComparison(of.originalPath))
+                )
               );
 
               const successCount = result?.successCount ?? successfulUndos.length;
@@ -494,12 +522,23 @@ export function useOrganization({
                     }));
 
               if (uiResults.length > 0) {
-                setOrganizedFiles((prev) => [...prev, ...uiResults]);
-                markFilesAsProcessed(uiResults.map((r) => r.originalPath));
-                actions.setPhaseData('organizedFiles', [
-                  ...(phaseData.organizedFiles || []),
-                  ...uiResults
-                ]);
+                // FIX: Filter out duplicates before adding to state
+                const existingPaths = new Set(
+                  organizedFilesRef.current.map((f) => normalizeForComparison(f.originalPath))
+                );
+                const uniqueResults = uiResults.filter(
+                  (r) => !existingPaths.has(normalizeForComparison(r.originalPath))
+                );
+
+                if (uniqueResults.length > 0) {
+                  setOrganizedFiles((prev) => [...prev, ...uniqueResults]);
+                  markFilesAsProcessed(uniqueResults.map((r) => r.originalPath));
+                  // FIX: Use ref to get latest organizedFiles (avoids stale closure)
+                  actions.setPhaseData('organizedFiles', [
+                    ...organizedFilesRef.current,
+                    ...uniqueResults
+                  ]);
+                }
               }
 
               const successCount = result?.successCount ?? uiResults.length;
@@ -577,7 +616,7 @@ export function useOrganization({
       markFilesAsProcessed,
       unmarkFilesAsProcessed,
       actions,
-      phaseData,
+      // FIX: Removed phaseData from deps - using organizedFilesRef instead to avoid stale closure
       addNotification,
       executeAction,
       setOrganizedFiles,

@@ -323,6 +323,8 @@ export function generateSuggestedNameFromAnalysis({ originalFileName, analysis, 
   const sanitizeToken = (value) =>
     String(value || '')
       .trim()
+      // Replace underscores with spaces to allow case conventions to work properly
+      .replace(/[_]/g, ' ')
       .replace(/[\\/:*?"<>|]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
