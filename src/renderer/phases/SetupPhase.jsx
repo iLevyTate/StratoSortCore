@@ -89,6 +89,14 @@ function SetupPhase() {
 
   const loadDefaultLocation = useCallback(async () => {
     try {
+      if (!window.electronAPI?.settings?.get) {
+        logger.warn('electronAPI.settings not available, using fallback location');
+        if (documentsPathFromStore) {
+          setDefaultLocation(normalizePathValue(documentsPathFromStore, defaultLocation));
+        }
+        return;
+      }
+
       const settings = await window.electronAPI.settings.get();
       if (settings?.defaultSmartFolderLocation) {
         setDefaultLocation(

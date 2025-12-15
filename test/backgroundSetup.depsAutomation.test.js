@@ -48,24 +48,36 @@ const mockGetStatusSpy = jest.fn().mockResolvedValue({
   chromadb: { pythonModuleInstalled: false, running: false },
   ollama: { installed: false, version: null, running: false }
 });
+const mockDependencyManagerInstance = {
+  getStatus: mockGetStatusSpy,
+  installOllama: mockInstallOllamaSpy,
+  installChromaDb: mockInstallChromaSpy,
+  updateOllama: jest.fn().mockResolvedValue({ success: true }),
+  updateChromaDb: jest.fn().mockResolvedValue({ success: true }),
+  _onProgress: jest.fn()
+};
 jest.mock('../src/main/services/DependencyManagerService', () => ({
-  DependencyManagerService: jest.fn().mockImplementation(() => ({
-    getStatus: mockGetStatusSpy,
-    installOllama: mockInstallOllamaSpy,
-    installChromaDb: mockInstallChromaSpy,
-    updateOllama: jest.fn().mockResolvedValue({ success: true }),
-    updateChromaDb: jest.fn().mockResolvedValue({ success: true })
-  }))
+  DependencyManagerService: jest.fn().mockImplementation(() => mockDependencyManagerInstance),
+  // getInstance returns singleton - used by backgroundSetup
+  getInstance: jest.fn().mockImplementation((options) => {
+    if (options?.onProgress) {
+      mockDependencyManagerInstance._onProgress = options.onProgress;
+    }
+    return mockDependencyManagerInstance;
+  }),
+  resetInstance: jest.fn()
 }));
 
 // Mock StartupManager
 const mockStartOllamaSpy = jest.fn().mockResolvedValue({ success: true });
 const mockStartChromaSpy = jest.fn().mockResolvedValue({ success: true });
+const mockStartupManagerInstance = {
+  startOllama: mockStartOllamaSpy,
+  startChromaDB: mockStartChromaSpy,
+  chromadbDependencyMissing: false // Added for flag clearing fix
+};
 jest.mock('../src/main/services/startup', () => ({
-  getStartupManager: () => ({
-    startOllama: mockStartOllamaSpy,
-    startChromaDB: mockStartChromaSpy
-  })
+  getStartupManager: () => mockStartupManagerInstance
 }));
 
 // Mock SettingsService getService()

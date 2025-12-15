@@ -213,7 +213,9 @@ const IPC_CHANNELS = {
     INSTALL_OLLAMA: 'dependencies-install-ollama',
     INSTALL_CHROMADB: 'dependencies-install-chromadb',
     UPDATE_OLLAMA: 'dependencies-update-ollama',
-    UPDATE_CHROMADB: 'dependencies-update-chromadb'
+    UPDATE_CHROMADB: 'dependencies-update-chromadb',
+    // Events (sent from main to renderer)
+    SERVICE_STATUS_CHANGED: 'dependencies-service-status-changed'
   }
 };
 

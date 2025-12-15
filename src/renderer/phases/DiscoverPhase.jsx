@@ -61,7 +61,8 @@ function DiscoverPhase() {
     updateFileState,
     resetAnalysisState,
     actions,
-    readySelectedFilesCount
+    readySelectedFilesCount,
+    getCurrentPhase
   } = useDiscoverState();
 
   const { addNotification } = useNotification();
@@ -144,7 +145,8 @@ function DiscoverPhase() {
     },
     updateFileState,
     addNotification,
-    actions: extendedActions
+    actions: extendedActions,
+    getCurrentPhase
   });
 
   // File handlers hook

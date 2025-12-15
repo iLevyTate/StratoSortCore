@@ -22,6 +22,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   const [installing, setInstalling] = useState({ ollama: false, chromadb: false });
   const [logLines, setLogLines] = useState([]);
   const unsubRef = useRef(null);
+  const statusUnsubRef = useRef(null);
 
   const refresh = async () => {
     try {
@@ -84,6 +85,29 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       logger.warn('Failed to subscribe to progress events', { error: e?.message });
     }
 
+    // Subscribe to service status changes (auto-refresh when services start/stop/fail)
+    try {
+      if (window.electronAPI?.dependencies?.onServiceStatusChanged) {
+        statusUnsubRef.current = window.electronAPI.dependencies.onServiceStatusChanged((evt) => {
+          try {
+            if (!evt) return;
+            // Log the status change
+            const statusMsg =
+              evt.status === 'permanently_failed'
+                ? `${evt.service} permanently failed (circuit breaker tripped)`
+                : `${evt.service} is now ${evt.status}`;
+            setLogLines((prev) => [...prev.slice(-20), `[status] ${statusMsg}`]);
+            // Auto-refresh status to update UI
+            refresh();
+          } catch (e) {
+            logger.debug('Status change handler error', { error: e?.message });
+          }
+        });
+      }
+    } catch (e) {
+      logger.warn('Failed to subscribe to service status events', { error: e?.message });
+    }
+
     return () => {
       if (typeof unsubRef.current === 'function') {
         try {
@@ -93,6 +117,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
         }
       }
       unsubRef.current = null;
+
+      if (typeof statusUnsubRef.current === 'function') {
+        try {
+          statusUnsubRef.current();
+        } catch {
+          // ignore
+        }
+      }
+      statusUnsubRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);

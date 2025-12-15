@@ -217,7 +217,8 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'operation-error',
   'operation-complete',
   'operation-failed',
-  'chromadb-status-changed' // FIX: ChromaDB status events for UI integration
+  'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
+  'dependencies-service-status-changed' // Service status change notifications
 ];
 
 /**

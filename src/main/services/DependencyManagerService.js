@@ -50,6 +50,28 @@ async function downloadToFile(url, destPath, { onProgress } = {}) {
   await fs.mkdir(path.dirname(destPath), { recursive: true }).catch(() => {});
 
   return new Promise((resolve, reject) => {
+    let fileStream = null;
+    let resolved = false;
+
+    const cleanup = (error) => {
+      if (resolved) return;
+      resolved = true;
+      if (fileStream) {
+        try {
+          fileStream.destroy();
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+      if (error) {
+        // Best-effort removal of partial file
+        fsSync.unlink(destPath, () => {});
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
     const request = https.get(url, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         // Follow redirect
@@ -59,21 +81,30 @@ async function downloadToFile(url, destPath, { onProgress } = {}) {
       }
 
       if (res.statusCode !== 200) {
-        reject(new Error(`Download failed (HTTP ${res.statusCode || 'unknown'})`));
         res.resume();
+        cleanup(new Error(`Download failed (HTTP ${res.statusCode || 'unknown'})`));
         return;
       }
 
       const total = Number(res.headers['content-length'] || 0);
       let received = 0;
-      const fileStream = fsSync.createWriteStream(destPath);
+      fileStream = fsSync.createWriteStream(destPath);
+
+      // Handle file stream errors
+      fileStream.on('error', (e) => {
+        res.destroy();
+        cleanup(e);
+      });
 
       res.on('data', (chunk) => {
+        if (resolved) return;
         received += chunk.length;
         try {
           fileStream.write(chunk);
         } catch (e) {
           res.destroy(e);
+          cleanup(e);
+          return;
         }
         if (typeof onProgress === 'function' && total > 0) {
           onProgress({ receivedBytes: received, totalBytes: total, percent: received / total });
@@ -81,25 +112,24 @@ async function downloadToFile(url, destPath, { onProgress } = {}) {
       });
 
       res.on('end', () => {
+        if (resolved) return;
         try {
-          fileStream.end();
-          resolve();
+          fileStream.end(() => {
+            cleanup(null);
+          });
         } catch (e) {
-          reject(e);
+          cleanup(e);
         }
       });
 
       res.on('error', (e) => {
-        try {
-          fileStream.close();
-        } catch {
-          // ignore
-        }
-        reject(e);
+        cleanup(e);
       });
     });
 
-    request.on('error', reject);
+    request.on('error', (e) => {
+      cleanup(e);
+    });
   });
 }
 
@@ -137,15 +167,41 @@ async function detectOllamaExePath() {
 
 class DependencyManagerService {
   constructor({ onProgress } = {}) {
-    this._onProgress = typeof onProgress === 'function' ? onProgress : () => {};
+    // FIX: Use array of callbacks to support multiple listeners (IPC + backgroundSetup)
+    this._progressCallbacks = [];
+    if (typeof onProgress === 'function') {
+      this._progressCallbacks.push(onProgress);
+    }
     this._lock = Promise.resolve();
   }
 
+  /**
+   * Add a progress callback. Supports multiple listeners.
+   * @param {Function} callback - Progress callback function
+   * @returns {Function} Unsubscribe function
+   */
+  addProgressCallback(callback) {
+    if (typeof callback === 'function') {
+      this._progressCallbacks.push(callback);
+      // Return unsubscribe function
+      return () => {
+        const index = this._progressCallbacks.indexOf(callback);
+        if (index > -1) {
+          this._progressCallbacks.splice(index, 1);
+        }
+      };
+    }
+    return () => {};
+  }
+
   _emitProgress(message, details = {}) {
-    try {
-      this._onProgress({ message, ...details });
-    } catch {
-      // ignore
+    const payload = { message, ...details };
+    for (const callback of this._progressCallbacks) {
+      try {
+        callback(payload);
+      } catch {
+        // ignore individual callback errors
+      }
     }
   }
 
@@ -362,4 +418,36 @@ class DependencyManagerService {
   }
 }
 
-module.exports = { DependencyManagerService };
+// Singleton instance for shared lock coordination
+let singletonInstance = null;
+
+/**
+ * Get the singleton DependencyManagerService instance.
+ * Uses a shared lock to prevent concurrent installations.
+ *
+ * @param {Object} options - Optional progress callback options
+ * @param {Function} options.onProgress - Progress callback (added to existing callbacks, not replaced)
+ * @returns {DependencyManagerService}
+ */
+function getInstance(options = {}) {
+  if (!singletonInstance) {
+    singletonInstance = new DependencyManagerService(options);
+  } else if (options.onProgress) {
+    // FIX: Add callback instead of replacing - supports multiple listeners
+    singletonInstance.addProgressCallback(options.onProgress);
+  }
+  return singletonInstance;
+}
+
+/**
+ * Reset the singleton instance (for testing purposes)
+ */
+function resetInstance() {
+  singletonInstance = null;
+}
+
+module.exports = {
+  DependencyManagerService,
+  getInstance,
+  resetInstance
+};

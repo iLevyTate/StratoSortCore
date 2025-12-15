@@ -126,7 +126,7 @@ export function useProgressTracking() {
  * @param {Function} params.getFileWithEdits - Function to get file with applied edits
  * @param {Function} params.findSmartFolderForCategory - Function to find smart folder
  * @param {string} params.defaultLocation - Default destination location
- * @returns {Object} Processed file info with newName and normalized destination
+ * @returns {Object} Processed file info with newName, normalized destination, and categoryChanged flag
  */
 function processFileForOrganization({
   file,
@@ -140,12 +140,15 @@ function processFileForOrganization({
   const edits = fileIndex >= 0 ? editingFiles[fileIndex] || {} : {};
   const fileWithEdits = fileIndex >= 0 ? getFileWithEdits(file, fileIndex) : file;
   let currentCategory = edits.category || fileWithEdits.analysis?.category;
+  const originalCategory = currentCategory;
+  let categoryChanged = false;
 
   // Filter out "document" category if it's not a smart folder
   if (currentCategory === 'document') {
     const documentFolder = findSmartFolderForCategory('document');
     if (!documentFolder) {
       currentCategory = 'Uncategorized';
+      categoryChanged = true;
     }
   }
 
@@ -166,7 +169,7 @@ function processFileForOrganization({
   const dest = `${destinationDir}/${newName}`;
   const normalized = window.electronAPI?.files?.normalizePath?.(dest) || dest;
 
-  return { newName, normalized };
+  return { newName, normalized, categoryChanged, originalCategory, finalCategory: currentCategory };
 }
 
 /**
@@ -187,7 +190,7 @@ function buildFileIndexMap(filesToProcess, unprocessedFiles) {
 /**
  * Build file operations for organization
  * @param {Object} params - Parameters
- * @returns {Array} Operations array
+ * @returns {Object} Object with operations array and categoryChanges array
  */
 function buildOperations({
   filesToProcess,
@@ -198,18 +201,31 @@ function buildOperations({
   defaultLocation
 }) {
   const fileIndexMap = buildFileIndexMap(filesToProcess, unprocessedFiles);
+  const categoryChanges = [];
 
-  return filesToProcess.map((file) => {
-    const { normalized } = processFileForOrganization({
-      file,
-      fileIndexMap,
-      editingFiles,
-      getFileWithEdits,
-      findSmartFolderForCategory,
-      defaultLocation
-    });
+  const operations = filesToProcess.map((file) => {
+    const { normalized, categoryChanged, originalCategory, finalCategory } =
+      processFileForOrganization({
+        file,
+        fileIndexMap,
+        editingFiles,
+        getFileWithEdits,
+        findSmartFolderForCategory,
+        defaultLocation
+      });
+
+    if (categoryChanged) {
+      categoryChanges.push({
+        fileName: file.name,
+        originalCategory,
+        finalCategory
+      });
+    }
+
     return { type: 'move', source: file.path, destination: normalized };
   });
+
+  return { operations, categoryChanges };
 }
 
 /**
@@ -311,7 +327,6 @@ export function useOrganization({
         const autoOrganizeAvailable = !!window.electronAPI?.organize?.auto;
         logger.info('[ORGANIZE] Auto-organize API available:', autoOrganizeAvailable);
 
-        let operations;
         // IMPORTANT: For the Organize phase, the user has already reviewed/edited
         // the category + name in the UI. Calling auto-organize here can re-run a
         // separate suggestion pipeline and produce a *different* folder than what
@@ -319,7 +334,7 @@ export function useOrganization({
         // To prevent that "disconnect", we always build operations locally from:
         // - file.analysis.category/suggestedName
         // - any user edits in editingFiles
-        operations = buildOperations({
+        const { operations, categoryChanges } = buildOperations({
           filesToProcess,
           unprocessedFiles,
           editingFiles,
@@ -327,6 +342,27 @@ export function useOrganization({
           findSmartFolderForCategory,
           defaultLocation
         });
+
+        // FIX: Notify user when categories were changed due to missing smart folders
+        if (categoryChanges && categoryChanges.length > 0) {
+          const changedCount = categoryChanges.length;
+          if (changedCount === 1) {
+            addNotification(
+              `"${categoryChanges[0].fileName}" category changed from "${categoryChanges[0].originalCategory}" to "${categoryChanges[0].finalCategory}" (no matching smart folder)`,
+              'warning',
+              5000,
+              'category-changed'
+            );
+          } else {
+            addNotification(
+              `${changedCount} files had categories changed to "Uncategorized" (no matching smart folders)`,
+              'warning',
+              5000,
+              'category-changed'
+            );
+          }
+          logger.info('[ORGANIZE] Category changes applied:', categoryChanges);
+        }
 
         if (!operations || operations.length === 0) {
           addNotification(

@@ -16,7 +16,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../../shared/logger');
-const { DependencyManagerService } = require('../services/DependencyManagerService');
+const { getInstance: getDependencyManager } = require('../services/DependencyManagerService');
 const { getStartupManager } = require('../services/startup');
 const { getOllama } = require('../ollamaUtils');
 const { getService: getSettingsService } = require('../services/SettingsService');
@@ -160,7 +160,8 @@ async function runAutomatedDependencySetup() {
   const settingsService = getSettingsService();
   const settings = await settingsService.load();
 
-  const manager = new DependencyManagerService({
+  // Use singleton to share lock with IPC handlers (prevents race conditions)
+  const manager = getDependencyManager({
     onProgress: (data) => emitDependencyProgress(data)
   });
 
@@ -197,6 +198,9 @@ async function runAutomatedDependencySetup() {
     logger.warn('[BACKGROUND] Failed to start Ollama', { error: e?.message });
   }
   try {
+    // CRITICAL FIX: Clear dependency missing flag before starting
+    // This ensures freshly installed ChromaDB module is detected
+    startupManager.chromadbDependencyMissing = false;
     emitDependencyProgress({
       message: 'Starting ChromaDB…',
       dependency: 'chromadb',
@@ -267,23 +271,10 @@ async function runBackgroundSetup() {
     backgroundSetupStatus.completedAt = new Date().toISOString();
     logger.info('[BACKGROUND] Background setup completed successfully');
   } catch (error) {
-    // Track error and notify renderer
+    // Track error - status can be queried via getBackgroundSetupStatus()
     backgroundSetupStatus.error = error.message;
     backgroundSetupStatus.completedAt = new Date().toISOString();
     logger.error('[BACKGROUND] Background setup failed:', error);
-
-    // Notify renderer of degraded state if window exists
-    try {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('startup-degraded', {
-          reason: error.message,
-          component: 'background-setup'
-        });
-      }
-    } catch (notifyError) {
-      logger.debug('[BACKGROUND] Could not notify renderer of error:', notifyError.message);
-    }
   }
 }
 

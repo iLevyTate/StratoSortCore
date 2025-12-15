@@ -178,11 +178,13 @@ describe('DependencyManagerService', () => {
       return req;
     });
 
-    // Mock file stream
+    // Mock file stream with event handler support for error handling
     mockCreateWriteStream.mockReturnValue({
       write: jest.fn(),
-      end: jest.fn(),
-      close: jest.fn()
+      end: jest.fn((cb) => cb && cb()),
+      close: jest.fn(),
+      destroy: jest.fn(),
+      on: jest.fn()
     });
 
     asyncSpawnUtils.asyncSpawn

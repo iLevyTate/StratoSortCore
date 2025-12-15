@@ -281,6 +281,21 @@ async function startChromaDB({
   chromaProcess.on('exit', (code, signal) => {
     logger.warn(`[ChromaDB] Process exited with code ${code}, signal ${signal}`);
     serviceStatus.chromadb.status = 'stopped';
+    // FIX: Also update health status to reflect service is not running
+    serviceStatus.chromadb.health = 'unhealthy';
+
+    // FIX: Emit status change to notify renderer
+    try {
+      const { emitServiceStatusChange } = require('../../ipc/dependencies');
+      emitServiceStatusChange({
+        service: 'chromadb',
+        status: 'stopped',
+        health: 'unhealthy',
+        details: { exitCode: code, signal, reason: 'process_exited' }
+      });
+    } catch (e) {
+      logger.debug('[ChromaDB] Could not emit status change', { error: e?.message });
+    }
   });
 
   return { process: chromaProcess };

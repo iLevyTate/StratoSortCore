@@ -124,6 +124,21 @@ async function startOllama({ serviceStatus }) {
   ollamaProcess.on('exit', (code, signal) => {
     logger.warn(`[Ollama] Process exited with code ${code}, signal ${signal}`);
     serviceStatus.ollama.status = 'stopped';
+    // FIX: Also update health status to reflect service is not running
+    serviceStatus.ollama.health = 'unhealthy';
+
+    // FIX: Emit status change to notify renderer
+    try {
+      const { emitServiceStatusChange } = require('../../ipc/dependencies');
+      emitServiceStatusChange({
+        service: 'ollama',
+        status: 'stopped',
+        health: 'unhealthy',
+        details: { exitCode: code, signal, reason: 'process_exited' }
+      });
+    } catch (e) {
+      logger.debug('[Ollama] Could not emit status change', { error: e?.message });
+    }
   });
 
   // Wait briefly to check for immediate failures

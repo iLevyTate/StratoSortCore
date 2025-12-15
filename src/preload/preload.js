@@ -806,7 +806,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installOllama: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA),
     installChromaDb: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB),
     updateOllama: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.UPDATE_OLLAMA),
-    updateChromaDb: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.UPDATE_CHROMADB)
+    updateChromaDb: () => secureIPC.safeInvoke(IPC_CHANNELS.DEPENDENCIES.UPDATE_CHROMADB),
+    // Event listener for service status changes (ChromaDB/Ollama start/stop/health)
+    onServiceStatusChanged: (callback) =>
+      secureIPC.safeOn(IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED, callback)
   }
 });
 

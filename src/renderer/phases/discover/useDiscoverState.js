@@ -42,6 +42,7 @@ export function useDiscoverState() {
   const currentAnalysisFile = useAppSelector((state) => state.analysis.currentAnalysisFile);
   const fileStates = useAppSelector((state) => state.files.fileStates);
   const namingConventionState = useAppSelector((state) => state.files.namingConvention);
+  const currentPhase = useAppSelector((state) => state.ui.currentPhase);
 
   // Destructure naming convention
   const namingConvention = namingConventionState.convention;
@@ -54,6 +55,7 @@ export function useDiscoverState() {
   const analysisResultsRef = useRef(analysisResults);
   const fileStatesRef = useRef(fileStates);
   const analysisProgressRef = useRef(analysisProgress);
+  const currentPhaseRef = useRef(currentPhase);
 
   useEffect(() => {
     selectedFilesRef.current = selectedFiles;
@@ -70,6 +72,13 @@ export function useDiscoverState() {
   useEffect(() => {
     analysisProgressRef.current = analysisProgress;
   }, [analysisProgress]);
+
+  useEffect(() => {
+    currentPhaseRef.current = currentPhase;
+  }, [currentPhase]);
+
+  // Stable callback to get current phase (for async operations that need to check phase)
+  const getCurrentPhase = useCallback(() => currentPhaseRef.current, []);
 
   // Redux action wrappers
   const setSelectedFiles = useCallback(
@@ -248,6 +257,7 @@ export function useDiscoverState() {
     caseConvention,
     separator,
     namingSettings,
+    currentPhase,
 
     // Setters
     setSelectedFiles,
@@ -266,6 +276,9 @@ export function useDiscoverState() {
     // Actions
     actions,
     dispatch,
+
+    // Callbacks
+    getCurrentPhase,
 
     // Computed values
     successfulAnalysisCount,
