@@ -58,8 +58,12 @@ FolderItem.propTypes = {
 /**
  * Virtualized row component for rendering folder items
  */
-const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, data }) {
-  const { folders, defaultLocation } = data;
+const VirtualizedFolderRow = memo(function VirtualizedFolderRow({
+  index,
+  style,
+  folders,
+  defaultLocation
+}) {
   const folder = folders[index];
 
   if (!folder) return null;
@@ -70,10 +74,8 @@ const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, 
 VirtualizedFolderRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  data: PropTypes.shape({
-    folders: PropTypes.array.isRequired,
-    defaultLocation: PropTypes.string.isRequired
-  }).isRequired
+  folders: PropTypes.array.isRequired,
+  defaultLocation: PropTypes.string.isRequired
 };
 
 const TargetFolderList = memo(function TargetFolderList({
@@ -83,8 +85,8 @@ const TargetFolderList = memo(function TargetFolderList({
 }) {
   const shouldVirtualize = folders.length > VIRTUALIZATION_THRESHOLD;
 
-  // Memoize item data to prevent unnecessary re-renders
-  const itemData = useMemo(
+  // react-window v2 uses rowProps instead of itemData
+  const rowProps = useMemo(
     () => ({
       folders,
       defaultLocation
@@ -118,16 +120,14 @@ const TargetFolderList = memo(function TargetFolderList({
           Showing {folders.length} folders (virtualized for performance)
         </div>
         <List
-          height={listHeight}
-          itemCount={folders.length}
-          itemSize={ITEM_HEIGHT}
-          width="100%"
-          itemData={itemData}
+          rowComponent={VirtualizedFolderRow}
+          rowCount={folders.length}
+          rowHeight={ITEM_HEIGHT}
+          rowProps={rowProps}
           overscanCount={4}
+          style={{ height: listHeight, width: '100%' }}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        >
-          {VirtualizedFolderRow}
-        </List>
+        />
       </div>
     );
   }

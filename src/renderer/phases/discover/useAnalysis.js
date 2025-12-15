@@ -29,6 +29,13 @@ logger.setContext('DiscoverPhase:Analysis');
  * @returns {Promise<Object>} Analysis result
  */
 async function analyzeWithRetry(filePath, attempt = 1) {
+  // Ensure electronAPI is available before attempting analysis
+  if (!window.electronAPI?.files?.analyze) {
+    throw new Error(
+      'File analysis API not available. The application may not have loaded correctly.'
+    );
+  }
+
   let timeoutId;
   try {
     return await Promise.race([
@@ -105,12 +112,14 @@ function mergeFileStates(existingStates, results) {
  * @param {number} params.failureCount - Number of failed analyses
  * @param {Function} params.addNotification - Notification function
  * @param {Object} params.actions - Phase actions
+ * @param {Function} params.getCurrentPhase - Function to get current phase (prevents race condition)
  */
 function showAnalysisCompletionNotification({
   successCount,
   failureCount,
   addNotification,
-  actions
+  actions,
+  getCurrentPhase
 }) {
   if (successCount > 0 && failureCount === 0) {
     addNotification(
@@ -120,7 +129,17 @@ function showAnalysisCompletionNotification({
       'analysis-complete'
     );
     setTimeout(() => {
-      actions.advancePhase(PHASES.ORGANIZE);
+      // FIX: Check if still in DISCOVER phase before auto-advancing
+      // This prevents unexpected navigation if user moved away during the delay
+      const currentPhase = getCurrentPhase?.();
+      if (currentPhase === PHASES.DISCOVER) {
+        actions.advancePhase(PHASES.ORGANIZE);
+      } else {
+        logger.debug('Skipping auto-advance: phase changed during delay', {
+          currentPhase,
+          expectedPhase: PHASES.DISCOVER
+        });
+      }
     }, 2000);
   } else if (successCount > 0) {
     addNotification(
@@ -130,7 +149,16 @@ function showAnalysisCompletionNotification({
       'analysis-complete'
     );
     setTimeout(() => {
-      actions.advancePhase(PHASES.ORGANIZE);
+      // FIX: Check if still in DISCOVER phase before auto-advancing
+      const currentPhase = getCurrentPhase?.();
+      if (currentPhase === PHASES.DISCOVER) {
+        actions.advancePhase(PHASES.ORGANIZE);
+      } else {
+        logger.debug('Skipping auto-advance: phase changed during delay', {
+          currentPhase,
+          expectedPhase: PHASES.DISCOVER
+        });
+      }
     }, 2000);
   } else if (failureCount > 0) {
     addNotification(
@@ -156,6 +184,7 @@ function showAnalysisCompletionNotification({
  * @param {Function} options.updateFileState - File state update function
  * @param {Function} options.addNotification - Notification function
  * @param {Object} options.actions - Phase actions
+ * @param {Function} options.getCurrentPhase - Function to get current phase (for race condition prevention)
  * @returns {Object} Analysis functions and state
  */
 export function useAnalysis(options) {
@@ -175,7 +204,8 @@ export function useAnalysis(options) {
     } = {},
     updateFileState,
     addNotification,
-    actions
+    actions,
+    getCurrentPhase
   } = options;
   const hasResumedRef = useRef(false);
   const analysisLockRef = useRef(false);
@@ -592,7 +622,8 @@ export function useAnalysis(options) {
           successCount,
           failureCount,
           addNotification,
-          actions
+          actions,
+          getCurrentPhase
         });
       } catch (error) {
         if (error.message !== 'Analysis cancelled by user') {
@@ -656,7 +687,8 @@ export function useAnalysis(options) {
       actions,
       generateSuggestedName,
       namingSettings,
-      resetAnalysisState
+      resetAnalysisState,
+      getCurrentPhase
     ]
   );
 

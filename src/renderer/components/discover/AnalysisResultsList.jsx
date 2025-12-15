@@ -21,8 +21,13 @@ const formatConfidence = (value) => {
 /**
  * Individual row component for virtualized list
  */
-const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }) {
-  const { items, handleAction, getFileStateDisplay } = data;
+const AnalysisResultRow = memo(function AnalysisResultRow({
+  index,
+  style,
+  items,
+  handleAction,
+  getFileStateDisplay
+}) {
   const file = items[index];
 
   if (!file) return null;
@@ -120,11 +125,9 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
 AnalysisResultRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  data: PropTypes.shape({
-    items: PropTypes.array.isRequired,
-    handleAction: PropTypes.func.isRequired,
-    getFileStateDisplay: PropTypes.func.isRequired
-  }).isRequired
+  items: PropTypes.array.isRequired,
+  handleAction: PropTypes.func.isRequired,
+  getFileStateDisplay: PropTypes.func.isRequired
 };
 
 /**
@@ -136,8 +139,9 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   const items = useMemo(() => (Array.isArray(results) ? results : []), [results]);
   const handleAction = useCallback((action, path) => onFileAction(action, path), [onFileAction]);
 
-  // Memoize item data to prevent unnecessary re-renders
-  const itemData = useMemo(
+  // react-window v2 expects rowProps (not itemData).
+  // Keep a stable object so the list can memoize rows efficiently.
+  const rowProps = useMemo(
     () => ({
       items,
       handleAction,
@@ -184,16 +188,14 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
           Showing {items.length} files (virtualized for performance)
         </div>
         <List
-          height={computedListHeight}
-          itemCount={items.length}
-          itemSize={ITEM_HEIGHT}
-          width="100%"
-          itemData={itemData}
-          overscanCount={5} // Render 5 extra items above/below viewport
+          rowComponent={AnalysisResultRow}
+          rowCount={items.length}
+          rowHeight={ITEM_HEIGHT}
+          rowProps={rowProps}
+          overscanCount={5}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        >
-          {AnalysisResultRow}
-        </List>
+          style={{ height: computedListHeight, width: '100%' }}
+        />
       </div>
     );
   }

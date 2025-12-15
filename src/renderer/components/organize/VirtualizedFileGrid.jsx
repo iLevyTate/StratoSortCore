@@ -31,32 +31,25 @@ const getColumnCount = (containerWidth) => {
   return 1; // default
 };
 
-// Stable key generator to prevent row/content mismatches during reorders
-const itemKeyForRow = (index, data) => {
-  const startIndex = index * data.columnsPerRow;
-  const file = data.files[startIndex];
-  return file?.path || `row-${index}`;
-};
-
 /**
  * Virtualized row component that renders multiple file items per row
  */
-const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data }) {
-  const {
-    files,
-    columnsPerRow,
-    selectedFiles,
-    toggleFileSelection,
-    getFileWithEdits,
-    editingFiles,
-    findSmartFolderForCategory,
-    getFileStateDisplay,
-    handleEditFile,
-    smartFolders,
-    defaultLocation,
-    onViewDetails
-  } = data;
-
+const VirtualizedFileRow = memo(function VirtualizedFileRow({
+  index,
+  style,
+  files,
+  columnsPerRow,
+  selectedFiles,
+  toggleFileSelection,
+  getFileWithEdits,
+  editingFiles,
+  findSmartFolderForCategory,
+  getFileStateDisplay,
+  handleEditFile,
+  smartFolders,
+  defaultLocation,
+  onViewDetails
+}) {
   const startIndex = index * columnsPerRow;
   const rowItems = [];
 
@@ -111,20 +104,18 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
 VirtualizedFileRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  data: PropTypes.shape({
-    files: PropTypes.array.isRequired,
-    columnsPerRow: PropTypes.number.isRequired,
-    selectedFiles: PropTypes.instanceOf(Set).isRequired,
-    toggleFileSelection: PropTypes.func.isRequired,
-    getFileWithEdits: PropTypes.func.isRequired,
-    editingFiles: PropTypes.object.isRequired,
-    findSmartFolderForCategory: PropTypes.func.isRequired,
-    getFileStateDisplay: PropTypes.func.isRequired,
-    handleEditFile: PropTypes.func.isRequired,
-    smartFolders: PropTypes.array.isRequired,
-    defaultLocation: PropTypes.string.isRequired,
-    onViewDetails: PropTypes.func.isRequired
-  }).isRequired
+  files: PropTypes.array.isRequired,
+  columnsPerRow: PropTypes.number.isRequired,
+  selectedFiles: PropTypes.instanceOf(Set).isRequired,
+  toggleFileSelection: PropTypes.func.isRequired,
+  getFileWithEdits: PropTypes.func.isRequired,
+  editingFiles: PropTypes.object.isRequired,
+  findSmartFolderForCategory: PropTypes.func.isRequired,
+  getFileStateDisplay: PropTypes.func.isRequired,
+  handleEditFile: PropTypes.func.isRequired,
+  smartFolders: PropTypes.array.isRequired,
+  defaultLocation: PropTypes.string.isRequired,
+  onViewDetails: PropTypes.func.isRequired
 };
 
 /**
@@ -150,8 +141,8 @@ function VirtualizedFileGrid({
   const rowCount = Math.ceil(files.length / columnsPerRow);
   const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
 
-  // Memoize item data to prevent unnecessary re-renders
-  const itemData = useMemo(
+  // react-window v2 expects rowProps (not itemData).
+  const rowProps = useMemo(
     () => ({
       files,
       columnsPerRow,
@@ -205,17 +196,14 @@ function VirtualizedFileGrid({
           Showing {files.length} files (virtualized for performance)
         </div>
         <List
-          height={listHeight}
-          itemCount={rowCount}
-          itemSize={ITEM_HEIGHT}
-          width="100%"
-          itemData={itemData}
-          itemKey={itemKeyForRow}
+          rowComponent={VirtualizedFileRow}
+          rowCount={rowCount}
+          rowHeight={ITEM_HEIGHT}
+          rowProps={rowProps}
           overscanCount={2}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        >
-          {VirtualizedFileRow}
-        </List>
+          style={{ height: listHeight, width: '100%' }}
+        />
       </div>
     );
   }

@@ -22,8 +22,7 @@ const getListHeight = (itemCount, viewportHeight) => {
 /**
  * Individual processed file row component
  */
-const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) {
-  const { files } = data;
+const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, files }) {
   const file = files[index];
 
   if (!file) return null;
@@ -51,9 +50,7 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) 
 ProcessedFileRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  data: PropTypes.shape({
-    files: PropTypes.array.isRequired
-  }).isRequired
+  files: PropTypes.array.isRequired
 };
 
 /**
@@ -63,8 +60,8 @@ ProcessedFileRow.propTypes = {
 function VirtualizedProcessedFiles({ files, isLoading = false }) {
   const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
 
-  // Memoize item data to prevent unnecessary re-renders
-  const itemData = useMemo(
+  // react-window v2 uses rowProps instead of itemData
+  const rowProps = useMemo(
     () => ({
       files
     }),
@@ -97,16 +94,14 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
           Showing {files.length} organized files (virtualized for performance)
         </div>
         <List
-          height={listHeight}
-          itemCount={files.length}
-          itemSize={ITEM_HEIGHT}
-          width="100%"
-          itemData={itemData}
+          rowComponent={ProcessedFileRow}
+          rowCount={files.length}
+          rowHeight={ITEM_HEIGHT}
+          rowProps={rowProps}
           overscanCount={5}
+          style={{ height: listHeight, width: '100%' }}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        >
-          {ProcessedFileRow}
-        </List>
+        />
       </div>
     );
   }
