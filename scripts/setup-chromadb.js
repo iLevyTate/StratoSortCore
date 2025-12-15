@@ -150,6 +150,56 @@ async function checkExternalChroma(url) {
   return false;
 }
 
+async function checkChromaExecutable(python) {
+  // 1. Check if 'chroma' is available on PATH
+  const candidates = process.platform === 'win32' ? ['chroma.exe', 'chroma'] : ['chroma'];
+
+  for (const exe of candidates) {
+    try {
+      const res = await tryCmd(exe, ['--help'], 3000);
+      if (res.status === 0) return true;
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  // 2. Check Python script directories
+  const script = [
+    'import os, sys, sysconfig, site',
+    'paths = [sysconfig.get_path("scripts")]',
+    'try:',
+    '    ub = site.getuserbase()',
+    '    if ub:',
+    '        paths.append(os.path.join(ub, "Scripts"))',
+    '        paths.append(os.path.join(ub, "bin"))',
+    '        # Handle Microsoft Store Python paths',
+    '        paths.append(os.path.join(ub, "Python" + str(sys.version_info[0]) + str(sys.version_info[1]), "Scripts"))',
+    'except:',
+    '    pass',
+    'print("\\n".join(paths))'
+  ].join('\n');
+
+  const res = await tryCmd(python.command, [...python.args, '-c', script], 3000);
+
+  if (res.status === 0) {
+    const paths = (res.stdout || '').split(/\r?\n/).filter((p) => p.trim());
+    const exeName = process.platform === 'win32' ? 'chroma.exe' : 'chroma';
+    const fs = require('fs');
+    const path = require('path');
+
+    for (const dir of paths) {
+      const candidate = path.join(dir.trim(), exeName);
+      try {
+        if (fs.existsSync(candidate)) return true;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return false;
+}
+
 async function main({
   argv = process.argv,
   env = process.env,
@@ -158,7 +208,8 @@ async function main({
     checkExternalChroma,
     findPythonLauncher,
     isChromaInstalled,
-    pipInstallChroma
+    pipInstallChroma,
+    checkChromaExecutable
   }
 } = {}) {
   const { auto, check, ciSkip } = parseArgs(argv);
@@ -200,6 +251,17 @@ async function main({
   }
 
   if (check && !auto) {
+    // Check fallback before failing
+    try {
+      const hasExecutable = await deps.checkChromaExecutable(python);
+      if (hasExecutable) {
+        log.log(chalk.green(`✓ ChromaDB CLI executable found (import failed, but CLI exists)`));
+        return 0;
+      }
+    } catch (e) {
+      // Ignore
+    }
+
     log.log(chalk.red('✗ ChromaDB is not installed'));
     return 1;
   }
@@ -228,6 +290,17 @@ async function main({
   if (post.installed) {
     log.log(chalk.bold.green(`✓ ChromaDB installed — version: ${post.version}`));
     return 0;
+  }
+
+  // Fallback: Check if chroma executable exists in Scripts folder (common on Windows)
+  try {
+    const hasExecutable = await deps.checkChromaExecutable(python);
+    if (hasExecutable) {
+      log.log(chalk.bold.green(`✓ ChromaDB CLI executable found (import failed, but CLI exists)`));
+      return 0;
+    }
+  } catch (e) {
+    // Ignore error
   }
 
   log.log(
@@ -260,5 +333,6 @@ module.exports = {
   checkExternalChroma,
   findPythonLauncher,
   isChromaInstalled,
-  pipInstallChroma
+  pipInstallChroma,
+  checkChromaExecutable
 };
