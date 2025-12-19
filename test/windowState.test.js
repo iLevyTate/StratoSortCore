@@ -20,8 +20,8 @@ jest.mock('../src/main/core/platformBehavior', () => ({
   isWindows: false
 }));
 
-// Mock timingConstants
-jest.mock('../src/main/core/timingConstants', () => ({
+// Mock performanceConstants (WINDOW timing constants)
+jest.mock('../src/shared/performanceConstants', () => ({
   WINDOW: {
     RESTORE_SETTLE_MS: 50
   }

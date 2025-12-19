@@ -244,6 +244,28 @@ const GPU_TUNING = {
 };
 
 /**
+ * Window management timing constants
+ * Used for window restore, focus, and visibility operations
+ */
+const WINDOW = {
+  /** Delay after restore() before checking visibility (ms) */
+  RESTORE_SETTLE_MS: 50,
+  /** Duration to keep window "always on top" when forcing foreground on Windows (ms) */
+  ALWAYS_ON_TOP_DURATION_MS: 100
+};
+
+/**
+ * Process management timing constants
+ * Used for graceful shutdown and process termination
+ */
+const PROCESS = {
+  /** Time to wait after SIGTERM before sending SIGKILL (ms) */
+  GRACEFUL_SHUTDOWN_WAIT_MS: 2000,
+  /** Timeout for individual kill commands (ms) */
+  KILL_COMMAND_TIMEOUT_MS: 100
+};
+
+/**
  * Text truncation limits for display and processing
  * Used to prevent memory issues and improve performance
  */
@@ -300,6 +322,8 @@ module.exports = {
   DEBOUNCE,
   CONCURRENCY,
   GPU_TUNING,
+  WINDOW,
+  PROCESS,
   TRUNCATION,
   VIEWPORT
 };

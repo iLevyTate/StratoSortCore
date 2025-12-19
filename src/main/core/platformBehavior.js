@@ -9,7 +9,7 @@
 
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { logger } = require('../../shared/logger');
-const { WINDOW, PROCESS } = require('./timingConstants');
+const { WINDOW, PROCESS } = require('../../shared/performanceConstants');
 
 logger.setContext('Platform');
 
