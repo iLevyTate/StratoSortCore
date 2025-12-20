@@ -58,11 +58,14 @@ const TIMEOUTS = {
   MODEL_LOAD: 60000,
   MODEL_DISCOVERY: 5000, // Model discovery/list timeout
   DELAY_MICRO: 50, // Very short delays for race condition prevention
+  DELAY_TINY: 5, // Minimal delay for inter-file processing
+  DELAY_MINI: 10, // Small delay for inter-batch processing
   DELAY_SHORT: 250,
   DELAY_MEDIUM: 500,
   DELAY_BATCH: 100, // Short delay for batch operations
   DELAY_LOCK_RETRY: 400, // Delay before retrying lock acquisition
   DELAY_NOTIFICATION: 1500,
+  SIGKILL_VERIFY: 100, // Delay to verify SIGKILL termination
   CLEANUP_DELAY: 60000, // Delay before cleanup operations (e.g., temp file removal)
   CLEANUP_MAX: 5000,
   SHUTDOWN_MAX: 10000,
@@ -97,7 +100,10 @@ const RETRY = {
   DATABASE_OFFLINE_MAX: 10,
   ITEM_MAX_RETRIES: 3,
   BACKOFF_BASE_MS: 5000,
-  BACKOFF_MAX_MS: 300000
+  BACKOFF_MAX_MS: 300000,
+  // Atomic operation retry backoff (multiplied by attempt number)
+  ATOMIC_BACKOFF_STEP_MS: 50, // e.g., 50ms, 100ms, 150ms for attempts 1, 2, 3
+  CHROMADB_BACKOFF_STEP_MS: 100 // e.g., 100ms, 200ms, 300ms for attempts 1, 2, 3
 };
 
 const CACHE = {

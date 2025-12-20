@@ -9,7 +9,7 @@
 
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { logger } = require('../../shared/logger');
-const { WINDOW, PROCESS } = require('../../shared/performanceConstants');
+const { WINDOW, PROCESS, TIMEOUTS } = require('../../shared/performanceConstants');
 
 logger.setContext('Platform');
 
@@ -143,7 +143,7 @@ async function killProcessUnix(pid, forceKill) {
     logger.info(`[PLATFORM] Sent SIGKILL to process ${pid}`);
 
     // Brief wait then verify
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.SIGKILL_VERIFY));
 
     try {
       process.kill(pid, 0);

@@ -7,6 +7,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const { logger } = require('../../shared/logger');
+const { RETRY } = require('../../shared/performanceConstants');
 const {
   FileSystemError,
   WatcherError,
@@ -136,7 +137,9 @@ async function safeWriteFile(filePath, data, options = 'utf8') {
         } catch (renameError) {
           lastError = renameError;
           if (renameError.code === 'EPERM' && attempt < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+            await new Promise((resolve) =>
+              setTimeout(resolve, RETRY.ATOMIC_BACKOFF_STEP_MS * (attempt + 1))
+            );
             continue;
           }
           throw renameError;

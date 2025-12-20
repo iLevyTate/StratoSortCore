@@ -18,6 +18,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
+const { RETRY } = require('../../shared/performanceConstants');
 
 logger.setContext('OfflineQueue');
 
@@ -561,7 +562,9 @@ class OfflineQueue extends EventEmitter {
           } catch (renameError) {
             lastError = renameError;
             if (renameError.code === 'EPERM' && attempt < 2) {
-              await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+              await new Promise((resolve) =>
+                setTimeout(resolve, RETRY.ATOMIC_BACKOFF_STEP_MS * (attempt + 1))
+              );
               continue;
             }
             throw renameError;
