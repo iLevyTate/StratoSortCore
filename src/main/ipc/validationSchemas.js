@@ -56,7 +56,7 @@ if (!z) {
     .optional()
     .or(z.literal(''))
     .refine(
-      (val) => val === '' || relaxedUrlRegex.test(val),
+      (val) => val === undefined || val === '' || relaxedUrlRegex.test(val),
       'Invalid Ollama URL format (expected host[:port] with optional http/https)'
     );
 
@@ -290,8 +290,10 @@ if (!z) {
 
   /**
    * Ollama connection test input
+   * Uses relaxed URL validation that allows URLs with or without protocol
+   * (e.g., "localhost:11434", "http://127.0.0.1:11434")
    */
-  const ollamaHostSchema = z.string().url().or(z.string().length(0)).optional();
+  const ollamaHostSchema = optionalUrlSchema;
 
   /**
    * Ollama model pull input

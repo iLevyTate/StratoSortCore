@@ -202,7 +202,7 @@ describe('AutoOrganize File Processor', () => {
       expect(results.organized).toHaveLength(0);
     });
 
-    test('uses fallback for low confidence', async () => {
+    test('sends low confidence files to needsReview', async () => {
       mockSuggestionService.getSuggestionsForFile.mockResolvedValueOnce({
         success: true,
         primary: { folder: 'Documents' },
@@ -217,19 +217,12 @@ describe('AutoOrganize File Processor', () => {
         failed: [],
         operations: []
       };
-      const thresholds = { requireReview: 0.5 };
 
-      await processFilesIndividually(
-        files,
-        [],
-        options,
-        results,
-        mockSuggestionService,
-        thresholds
-      );
+      await processFilesIndividually(files, [], options, results, mockSuggestionService);
 
-      expect(results.organized).toHaveLength(1);
-      expect(results.organized[0].method).toBe('low-confidence-fallback');
+      // With simplified thresholds, files below confidenceThreshold go to needsReview
+      expect(results.needsReview).toHaveLength(1);
+      expect(results.organized).toHaveLength(0);
     });
 
     test('uses fallback when no suggestion', async () => {

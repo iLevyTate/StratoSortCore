@@ -268,51 +268,89 @@ async function extractContentStreaming(filePath) {
 }
 
 async function extractTextFromPdf(filePath, fileName) {
-  const pdfModule = require('pdf-parse');
   // Fixed: Check file size before loading into memory
   await checkFileSize(filePath, fileName);
 
   let dataBuffer = null;
+  let parser = null;
+
   try {
     dataBuffer = await fs.readFile(filePath);
-
     let pdfText = '';
 
-    // pdf-parse 2.x uses PDFParse class with load() and getText() methods
-    if (pdfModule.PDFParse && typeof pdfModule.PDFParse === 'function') {
-      let parser = null;
-      try {
-        parser = new pdfModule.PDFParse({ data: dataBuffer });
-        await parser.load();
-        const textResult = await parser.getText();
+    // pdf-parse 2.x is an ESM module - need to handle both require and dynamic import
+    // The CJS bundle exports PDFParse as a named export
+    try {
+      const pdfModule = require('pdf-parse');
 
-        // getText() returns object with 'text' property (combined text from all pages)
-        if (textResult && textResult.text) {
-          pdfText = textResult.text.trim();
-        }
-      } catch (v2Error) {
-        logger.warn('[PDF] pdf-parse 2.x extraction failed, error:', v2Error.message);
-        throw v2Error;
-      } finally {
-        // Always destroy parser to free memory (required by v2 API)
-        if (parser && typeof parser.destroy === 'function') {
-          try {
-            await parser.destroy();
-          } catch (destroyError) {
-            logger.debug('[PDF] Parser destroy error:', destroyError.message);
+      // pdf-parse 2.x: Check for PDFParse class (named export in CJS bundle)
+      const PDFParseClass = pdfModule.PDFParse || pdfModule.default?.PDFParse;
+
+      if (PDFParseClass && typeof PDFParseClass === 'function') {
+        logger.debug('[PDF] Using pdf-parse 2.x API');
+        try {
+          parser = new PDFParseClass({ data: dataBuffer });
+          await parser.load();
+          const textResult = await parser.getText();
+
+          // getText() returns object with 'text' property (combined text from all pages)
+          if (textResult && textResult.text) {
+            pdfText = textResult.text.trim();
+            logger.debug('[PDF] Extracted text length:', pdfText.length);
           }
+        } catch (v2Error) {
+          logger.warn('[PDF] pdf-parse 2.x extraction failed:', {
+            error: v2Error.message,
+            stack: v2Error.stack
+          });
+          throw v2Error;
         }
+      } else if (typeof pdfModule === 'function') {
+        // pdf-parse 1.x uses direct function call
+        logger.debug('[PDF] Using pdf-parse 1.x API (function)');
+        const pdfData = await pdfModule(dataBuffer);
+        pdfText = pdfData.text || '';
+      } else if (pdfModule.default && typeof pdfModule.default === 'function') {
+        // ESM default export fallback
+        logger.debug('[PDF] Using pdf-parse ESM default export');
+        const pdfData = await pdfModule.default(dataBuffer);
+        pdfText = pdfData.text || '';
+      } else {
+        // Log what we got from require to help debug
+        logger.error('[PDF] Unable to determine pdf-parse API version', {
+          moduleType: typeof pdfModule,
+          hasDefault: !!pdfModule.default,
+          hasPDFParse: !!pdfModule.PDFParse,
+          keys: Object.keys(pdfModule).slice(0, 10)
+        });
+        throw new Error(
+          `Unable to determine pdf-parse API version. Got module type: ${typeof pdfModule}, keys: ${Object.keys(pdfModule).slice(0, 5).join(', ')}`
+        );
       }
-    } else if (typeof pdfModule === 'function') {
-      // pdf-parse 1.x uses direct function call
-      const pdfData = await pdfModule(dataBuffer);
-      pdfText = pdfData.text || '';
-    } else if (pdfModule.default && typeof pdfModule.default === 'function') {
-      // ESM default export fallback
-      const pdfData = await pdfModule.default(dataBuffer);
-      pdfText = pdfData.text || '';
-    } else {
-      throw new Error('Unable to determine pdf-parse API version');
+    } catch (requireError) {
+      // If CommonJS require fails, try dynamic import for ESM
+      logger.warn('[PDF] CommonJS require failed, trying dynamic import:', requireError.message);
+      try {
+        const pdfModule = await import('pdf-parse');
+        const PDFParseClass = pdfModule.PDFParse || pdfModule.default?.PDFParse;
+
+        if (PDFParseClass) {
+          parser = new PDFParseClass({ data: dataBuffer });
+          await parser.load();
+          const textResult = await parser.getText();
+          if (textResult && textResult.text) {
+            pdfText = textResult.text.trim();
+          }
+        } else {
+          throw new Error('PDFParse class not found in dynamic import');
+        }
+      } catch (importError) {
+        logger.error('[PDF] Both require and import failed:', {
+          requireError: requireError.message,
+          importError: importError.message
+        });
+        throw requireError;
+      }
     }
 
     if (!pdfText || pdfText.trim().length === 0) {
@@ -326,6 +364,14 @@ async function extractTextFromPdf(filePath, fileName) {
     dataBuffer = null; // Explicit cleanup to help GC
     return result;
   } finally {
+    // Always destroy parser to free memory (required by v2 API)
+    if (parser && typeof parser.destroy === 'function') {
+      try {
+        await parser.destroy();
+      } catch (destroyError) {
+        logger.debug('[PDF] Parser destroy error:', destroyError.message);
+      }
+    }
     // Ensure buffer is dereferenced even on error
     dataBuffer = null;
   }

@@ -44,7 +44,10 @@ module.exports = (env, argv) => {
       sharp: 'commonjs sharp',
       'node-tesseract-ocr': 'commonjs node-tesseract-ocr',
       chromadb: 'commonjs chromadb',
-      'electron-updater': 'commonjs electron-updater'
+      'electron-updater': 'commonjs electron-updater',
+      // pdf-parse 2.x uses pdfjs-dist which requires a web worker file at runtime.
+      // Keeping it external avoids bundling issues with the worker file.
+      'pdf-parse': 'commonjs pdf-parse'
     },
     optimization: {
       minimize: isProduction,

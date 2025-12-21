@@ -2,10 +2,43 @@ const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const chokidar = require('chokidar');
+const { Notification } = require('electron');
 const { logger } = require('../../shared/logger');
 const { FileSystemError, WatcherError } = require('../errors/FileSystemError');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 logger.setContext('DownloadWatcher');
+
+/**
+ * Show a system notification for organized files
+ * @param {string} fileName - Original file name
+ * @param {string} destination - Destination folder name
+ * @param {number} confidence - Confidence percentage
+ * @param {boolean} notificationsEnabled - Whether notifications are enabled in settings
+ */
+function showOrganizedNotification(fileName, destination, confidence, notificationsEnabled = true) {
+  try {
+    if (!notificationsEnabled) {
+      logger.debug('[DOWNLOAD-WATCHER] Notifications disabled in settings');
+      return;
+    }
+
+    if (!Notification.isSupported()) {
+      logger.debug('[DOWNLOAD-WATCHER] Notifications not supported on this platform');
+      return;
+    }
+
+    const notification = new Notification({
+      title: 'File Organized',
+      body: `${fileName} moved to ${destination} (${confidence}% confidence)`,
+      silent: true // Don't play sound for each file
+    });
+
+    notification.show();
+  } catch (error) {
+    // Don't let notification errors break the watcher
+    logger.debug('[DOWNLOAD-WATCHER] Failed to show notification:', error.message);
+  }
+}
 
 // Simple utility to determine if a path is an image based on extension
 const IMAGE_EXTENSIONS = new Set([
@@ -501,7 +534,7 @@ class DownloadWatcher {
       // Use the new auto-organize service with suggestions
       const result = await this.autoOrganizeService.processNewFile(filePath, folders, {
         autoOrganizeEnabled: settings.autoOrganize,
-        confidenceThreshold: settings.downloadConfidenceThreshold || 0.9,
+        confidenceThreshold: settings.confidenceThreshold || 0.75,
         defaultLocation: settings.defaultSmartFolderLocation || 'Documents'
       });
 
@@ -517,13 +550,21 @@ class DownloadWatcher {
         // Move file with cross-device handling
         await this._moveFile(filePath, result.destination);
 
+        const confidencePercent = Math.round(result.confidence * 100);
+        const fileName = path.basename(filePath);
+        const destFolder = path.basename(path.dirname(result.destination));
+
         logger.info(
           '[DOWNLOAD-WATCHER] Auto-organized with',
-          `${Math.round(result.confidence * 100)}% confidence:`,
+          `${confidencePercent}% confidence:`,
           filePath,
           '=>',
           result.destination
         );
+
+        // Show system notification (respects user's notification preference)
+        const notificationsEnabled = settings.notifications !== false;
+        showOrganizedNotification(fileName, destFolder, confidencePercent, notificationsEnabled);
         return { handled: true, shouldFallback: false };
       } else {
         logger.info('[DOWNLOAD-WATCHER] File not auto-organized (low confidence or disabled)');
@@ -620,6 +661,17 @@ class DownloadWatcher {
       await this._moveFileWithConflictHandling(filePath, destPath, extname);
 
       logger.info('[DOWNLOAD-WATCHER] Moved (fallback)', filePath, '=>', destPath);
+
+      // Show system notification for fallback organization (respects user's notification preference)
+      const confidencePercent = result.confidence ? Math.round(result.confidence * 100) : 70;
+      let notificationsEnabled = true;
+      try {
+        const settings = await this.settingsService?.load?.();
+        notificationsEnabled = settings?.notifications !== false;
+      } catch {
+        // Default to enabled if settings can't be loaded
+      }
+      showOrganizedNotification(baseName, destFolder.name, confidencePercent, notificationsEnabled);
     } catch (e) {
       logger.error('[DOWNLOAD-WATCHER] Failed to move file', {
         source: filePath,

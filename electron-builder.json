@@ -10,7 +10,11 @@
   ],
   "artifactName": "StratoSort-${version}-${os}-${arch}.${ext}",
   "asar": true,
-  "asarUnpack": "**\\*.{node,dll}",
+  "asarUnpack": [
+    "**/*.{node,dll}",
+    "**/node_modules/sharp/**/*",
+    "**/node_modules/@img/**/*"
+  ],
   "files": [
     "dist/**/*",
     "src/shared/**/*",

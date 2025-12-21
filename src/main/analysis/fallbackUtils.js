@@ -246,44 +246,92 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
     return bestCategory;
   }
 
+  // Map extensions to capitalized category names that match typical smart folder names
   const extensionCategories = {
-    '.pdf': 'document',
-    '.doc': 'document',
-    '.docx': 'document',
-    '.txt': 'text',
-    '.md': 'documentation',
-    '.png': 'image',
-    '.jpg': 'image',
-    '.jpeg': 'image',
-    '.gif': 'image',
-    '.svg': 'image',
-    '.mp4': 'video',
-    '.avi': 'video',
-    '.xlsx': 'spreadsheet',
-    '.xls': 'spreadsheet',
-    '.csv': 'data',
-    '.json': 'data',
-    '.xml': 'data',
-    '.zip': 'archive',
-    '.rar': 'archive',
-    '.7z': 'archive'
+    '.pdf': 'Documents',
+    '.doc': 'Documents',
+    '.docx': 'Documents',
+    '.txt': 'Documents',
+    '.rtf': 'Documents',
+    '.odt': 'Documents',
+    '.md': 'Documents',
+    '.png': 'Images',
+    '.jpg': 'Images',
+    '.jpeg': 'Images',
+    '.gif': 'Images',
+    '.svg': 'Images',
+    '.webp': 'Images',
+    '.bmp': 'Images',
+    '.tiff': 'Images',
+    '.mp4': 'Videos',
+    '.avi': 'Videos',
+    '.mov': 'Videos',
+    '.mkv': 'Videos',
+    '.wmv': 'Videos',
+    '.xlsx': 'Spreadsheets',
+    '.xls': 'Spreadsheets',
+    '.csv': 'Data',
+    '.json': 'Data',
+    '.xml': 'Data',
+    '.zip': 'Archives',
+    '.rar': 'Archives',
+    '.7z': 'Archives',
+    '.tar': 'Archives',
+    '.gz': 'Archives',
+    '.mp3': 'Music',
+    '.wav': 'Music',
+    '.flac': 'Music',
+    '.aac': 'Music',
+    '.pptx': 'Presentations',
+    '.ppt': 'Presentations',
+    '.key': 'Presentations'
   };
-  return extensionCategories[extension] || 'document';
+
+  const fallbackCategory = extensionCategories[extension] || 'Documents';
+
+  // Try to find a matching smart folder for the fallback category
+  if (smartFolders && smartFolders.length > 0) {
+    const normalizedFallback = fallbackCategory.toLowerCase();
+    for (const folder of smartFolders) {
+      if (!folder || !folder.name) continue;
+      const normalizedName = folder.name.toLowerCase();
+      // Check if folder name matches fallback category (case-insensitive)
+      if (
+        normalizedName === normalizedFallback ||
+        normalizedName === `${normalizedFallback}s` ||
+        normalizedName === normalizedFallback.replace(/s$/, '')
+      ) {
+        return folder.name; // Return the actual smart folder name (preserves case)
+      }
+    }
+  }
+
+  return fallbackCategory;
 }
 
 function getIntelligentKeywords(fileName, extension) {
   const category = getIntelligentCategory(fileName, extension);
   const lowerFileName = fileName.toLowerCase();
+  const lowerCategory = category.toLowerCase();
   const baseKeywords = {
     financial: ['financial', 'money', 'business'],
     legal: ['legal', 'official', 'formal'],
     project: ['project', 'work', 'development'],
     personal: ['personal', 'individual', 'private'],
     technical: ['technical', 'manual', 'guide'],
+    documents: ['document', 'file', 'text'],
     document: ['document', 'file', 'text'],
-    image: ['image', 'visual', 'graphic']
+    images: ['image', 'visual', 'graphic'],
+    image: ['image', 'visual', 'graphic'],
+    videos: ['video', 'media', 'recording'],
+    video: ['video', 'media', 'recording'],
+    music: ['audio', 'music', 'sound'],
+    data: ['data', 'information', 'records'],
+    archives: ['archive', 'compressed', 'backup'],
+    spreadsheets: ['spreadsheet', 'data', 'table'],
+    presentations: ['presentation', 'slides', 'deck']
   };
-  const keywords = [...(baseKeywords[category] || ['file', 'document'])];
+  const keywords = [...(baseKeywords[lowerCategory] || ['file', 'document'])];
   if (lowerFileName.includes('report')) keywords.push('report');
   if (lowerFileName.includes('summary')) keywords.push('summary');
   if (lowerFileName.includes('analysis')) keywords.push('analysis');

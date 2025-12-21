@@ -22,19 +22,11 @@ const generateSecureId = (prefix) =>
  * Process batch suggestion results
  * @param {Object} batchSuggestions - Batch suggestions from suggestion service
  * @param {Array} files - Files being processed
- * @param {Object} options - Processing options
+ * @param {Object} options - Processing options (includes confidenceThreshold)
  * @param {Object} results - Results object to populate
  * @param {Object} suggestionService - Suggestion service for feedback
- * @param {Object} thresholds - Confidence thresholds
  */
-async function processBatchResults(
-  batchSuggestions,
-  files,
-  options,
-  results,
-  suggestionService,
-  thresholds
-) {
+async function processBatchResults(batchSuggestions, files, options, results, suggestionService) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
 
   // Create a map of files keyed by path (more stable than name)
@@ -119,30 +111,14 @@ async function processBatchResults(
             error: err.message
           });
         });
-      } else if (confidence >= thresholds.requireReview) {
-        // Medium confidence - needs review
+      } else {
+        // Below threshold - needs user review
         results.needsReview.push({
           file: sanitizeFile(file),
           suggestion,
           alternatives: fileWithSuggestion.alternatives,
           confidence,
           explanation: `Batch suggestion with ${Math.round(confidence * 100)}% confidence`
-        });
-      } else {
-        // Low confidence - use fallback
-        const fallbackDestination = getFallbackDestination(file, [], defaultLocation);
-
-        results.organized.push({
-          file: sanitizeFile(file),
-          destination: fallbackDestination,
-          confidence,
-          method: 'batch-low-confidence-fallback'
-        });
-
-        results.operations.push({
-          type: 'move',
-          source: sourcePath,
-          destination: fallbackDestination
         });
       }
     }
@@ -153,9 +129,9 @@ async function processBatchResults(
  * Batch organize with automatic confidence-based filtering
  * @param {Array} files - Files to organize
  * @param {Array} smartFolders - Smart folders
- * @param {Object} options - Options
+ * @param {Object} options - Options (includes confidenceThreshold)
  * @param {Object} suggestionService - Suggestion service
- * @param {Object} thresholds - Confidence thresholds
+ * @param {Object} thresholds - Confidence thresholds (for backwards compatibility)
  * @param {Function} [buildDestFn] - Optional custom buildDestinationPath function
  * @returns {Promise<Object>} Batch results
  */
@@ -164,10 +140,10 @@ async function batchOrganize(
   smartFolders,
   options,
   suggestionService,
-  thresholds,
+  thresholds = {},
   buildDestFn = buildDestinationPath
 ) {
-  const { autoApproveThreshold = thresholds.autoApprove } = options;
+  const { confidenceThreshold = thresholds.confidence || 0.75 } = options;
 
   logger.info('[AutoOrganize] Starting batch organization', {
     fileCount: files.length
@@ -190,7 +166,7 @@ async function batchOrganize(
   // Process groups with error handling
   for (const group of batchSuggestions.groups) {
     try {
-      if (group.confidence >= autoApproveThreshold) {
+      if (group.confidence >= confidenceThreshold) {
         // Auto-approve high confidence groups
         const groupOperations = [];
         const groupFailures = [];

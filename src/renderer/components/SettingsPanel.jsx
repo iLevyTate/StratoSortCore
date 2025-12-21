@@ -87,15 +87,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const didAutoHealthCheckRef = useRef(false);
 
   // Memoized computed values
+  // Text models: use categorized list, but fall back to all if empty (text is the default category)
   const textModelOptions = useMemo(
     () => (ollamaModelLists.text.length ? ollamaModelLists.text : ollamaModelLists.all),
     [ollamaModelLists.text, ollamaModelLists.all]
   );
 
-  const visionModelOptions = useMemo(
-    () => (ollamaModelLists.vision.length ? ollamaModelLists.vision : ollamaModelLists.all),
-    [ollamaModelLists.vision, ollamaModelLists.all]
-  );
+  // Vision models: only show vision-capable models, don't fall back to all models
+  // If no vision models detected, return empty array (UI will show helpful message)
+  const visionModelOptions = useMemo(() => ollamaModelLists.vision, [ollamaModelLists.vision]);
 
   const embeddingModelOptions = useMemo(() => {
     // Only expose the vetted embedding model to keep vector dimensions stable

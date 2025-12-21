@@ -71,36 +71,37 @@ describe('Analysis Fallback Utils', () => {
     });
 
     describe('extension-based fallback', () => {
-      test('returns document for pdf files', () => {
-        expect(getIntelligentCategory('random_file.pdf', '.pdf')).toBe('document');
+      // Note: Function returns capitalized folder names to match typical smart folder names
+      test('returns Documents for pdf files', () => {
+        expect(getIntelligentCategory('random_file.pdf', '.pdf')).toBe('Documents');
       });
 
-      test('returns image for image files', () => {
-        expect(getIntelligentCategory('photo.jpg', '.jpg')).toBe('image');
-        expect(getIntelligentCategory('icon.png', '.png')).toBe('image');
+      test('returns Images for image files', () => {
+        expect(getIntelligentCategory('photo.jpg', '.jpg')).toBe('Images');
+        expect(getIntelligentCategory('icon.png', '.png')).toBe('Images');
       });
 
-      test('returns video for video files', () => {
-        expect(getIntelligentCategory('movie.mp4', '.mp4')).toBe('video');
+      test('returns Videos for video files', () => {
+        expect(getIntelligentCategory('movie.mp4', '.mp4')).toBe('Videos');
       });
 
-      test('returns spreadsheet for spreadsheet files', () => {
+      test('returns Spreadsheets for spreadsheet files', () => {
         // Use filename that doesn't match any pattern keywords
-        expect(getIntelligentCategory('numbers.xlsx', '.xlsx')).toBe('spreadsheet');
+        expect(getIntelligentCategory('numbers.xlsx', '.xlsx')).toBe('Spreadsheets');
       });
 
-      test('returns data for data files', () => {
+      test('returns Data for data files', () => {
         // Use filenames that don't match any pattern keywords
-        expect(getIntelligentCategory('settings.json', '.json')).toBe('data');
-        expect(getIntelligentCategory('records.csv', '.csv')).toBe('data');
+        expect(getIntelligentCategory('settings.json', '.json')).toBe('Data');
+        expect(getIntelligentCategory('records.csv', '.csv')).toBe('Data');
       });
 
-      test('returns archive for archive files', () => {
-        expect(getIntelligentCategory('files.zip', '.zip')).toBe('archive');
+      test('returns Archives for archive files', () => {
+        expect(getIntelligentCategory('files.zip', '.zip')).toBe('Archives');
       });
 
-      test('returns document for unknown extensions', () => {
-        expect(getIntelligentCategory('random.xyz', '.xyz')).toBe('document');
+      test('returns Documents for unknown extensions', () => {
+        expect(getIntelligentCategory('random.xyz', '.xyz')).toBe('Documents');
       });
     });
 

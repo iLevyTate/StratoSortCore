@@ -282,10 +282,24 @@ export function generateSuggestedNameFromAnalysis({ originalFileName, analysis, 
   const dateFormat = settings?.dateFormat || 'YYYY-MM-DD';
   const caseConvention = settings?.caseConvention;
 
-  const rawSubject =
+  // Extract suggested name from analysis, with max length enforcement
+  const MAX_SUBJECT_LENGTH = 50; // Maximum characters for the subject/name portion
+  let rawSubject =
     typeof analysis?.suggestedName === 'string' && analysis.suggestedName.trim()
       ? analysis.suggestedName.trim().replace(/\.[^/.]+$/, '')
       : originalBase;
+
+  // Truncate overly long subjects intelligently (at word boundary if possible)
+  if (rawSubject.length > MAX_SUBJECT_LENGTH) {
+    // Try to break at a word boundary (space, hyphen, underscore)
+    const truncated = rawSubject.slice(0, MAX_SUBJECT_LENGTH);
+    const lastBreak = Math.max(
+      truncated.lastIndexOf(' '),
+      truncated.lastIndexOf('-'),
+      truncated.lastIndexOf('_')
+    );
+    rawSubject = lastBreak > MAX_SUBJECT_LENGTH * 0.5 ? truncated.slice(0, lastBreak) : truncated;
+  }
 
   const rawProject =
     typeof analysis?.project === 'string' && analysis.project.trim()

@@ -401,29 +401,13 @@ const CONFIG_SCHEMA = {
    * Confidence and scoring thresholds
    */
   THRESHOLDS: {
-    /** Confidence threshold for auto-approval */
-    autoApproveThreshold: {
+    /** Single confidence threshold for auto-organization */
+    confidenceThreshold: {
       type: 'number',
-      default: DEFAULT_SETTINGS.autoApproveThreshold,
+      default: DEFAULT_SETTINGS.confidenceThreshold,
       min: 0,
       max: 1,
-      description: 'Minimum confidence for auto-approval'
-    },
-    /** Confidence threshold for review queue */
-    reviewThreshold: {
-      type: 'number',
-      default: DEFAULT_SETTINGS.reviewThreshold,
-      min: 0,
-      max: 1,
-      description: 'Minimum confidence for review queue'
-    },
-    /** Confidence threshold for downloads folder */
-    downloadConfidenceThreshold: {
-      type: 'number',
-      default: DEFAULT_SETTINGS.downloadConfidenceThreshold,
-      min: 0,
-      max: 1,
-      description: 'Confidence threshold for download folder items'
+      description: 'Minimum confidence required to auto-organize files'
     },
     /** Minimum similarity score for matching */
     minSimilarityScore: {

@@ -15,10 +15,9 @@ const DEFAULT_SETTINGS = {
   maxConcurrentAnalysis: CONCURRENCY.DEFAULT_WORKERS,
   autoOrganize: false,
   backgroundMode: false,
-  // Organization Confidence Thresholds
-  autoApproveThreshold: 0.8,
-  downloadConfidenceThreshold: 0.9,
-  reviewThreshold: 0.5,
+  launchOnStartup: false,
+  // Organization Confidence Threshold (files must meet this confidence to be auto-organized)
+  confidenceThreshold: 0.75,
   // AI
   ollamaHost: SERVICE_URLS.OLLAMA_HOST,
   textModel: 'llama3.2:latest',

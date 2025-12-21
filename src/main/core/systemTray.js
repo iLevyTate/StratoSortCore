@@ -58,6 +58,21 @@ function createSystemTray() {
 
     tray = new Tray(trayIcon);
     tray.setToolTip('StratoSort');
+
+    // Single click on tray icon restores the window (except on macOS where it's context menu by default)
+    if (!isMacOS) {
+      tray.on('click', () => {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win) {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        } else if (trayConfig.createWindow) {
+          trayConfig.createWindow();
+        }
+      });
+    }
+
     updateTrayMenu();
   } catch (e) {
     logger.warn('[TRAY] initialization failed', e);

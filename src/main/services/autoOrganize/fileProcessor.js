@@ -80,19 +80,11 @@ async function processFilesWithoutAnalysis(files, smartFolders, defaultLocation,
  * Process files individually as fallback
  * @param {Array} files - Files to process
  * @param {Array} smartFolders - Smart folders
- * @param {Object} options - Processing options
+ * @param {Object} options - Processing options (includes confidenceThreshold)
  * @param {Object} results - Results object to populate
  * @param {Object} suggestionService - Suggestion service
- * @param {Object} thresholds - Confidence thresholds
  */
-async function processFilesIndividually(
-  files,
-  smartFolders,
-  options,
-  results,
-  suggestionService,
-  thresholds
-) {
+async function processFilesIndividually(files, smartFolders, options, results, suggestionService) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
 
   for (const file of files) {
@@ -186,30 +178,14 @@ async function processFilesIndividually(
             error: feedbackError.message
           });
         }
-      } else if (confidence >= thresholds.requireReview) {
-        // Medium confidence - needs review
+      } else {
+        // Below threshold - needs user review
         results.needsReview.push({
           file: sanitizeFile(file),
           suggestion: primary,
           alternatives: suggestion.alternatives,
           confidence,
           explanation: suggestion.explanation
-        });
-      } else {
-        // Low confidence - use fallback
-        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
-
-        results.organized.push({
-          file: sanitizeFile(file),
-          destination: fallbackDestination,
-          confidence,
-          method: 'low-confidence-fallback'
-        });
-
-        results.operations.push({
-          type: 'move',
-          source: file.path,
-          destination: fallbackDestination
         });
       }
     } catch (error) {

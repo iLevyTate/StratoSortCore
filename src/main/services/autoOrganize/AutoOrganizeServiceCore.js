@@ -8,7 +8,8 @@
  */
 
 const { logger } = require('../../../shared/logger');
-const { BATCH, THRESHOLDS } = require('../../../shared/performanceConstants');
+const { BATCH } = require('../../../shared/performanceConstants');
+const { DEFAULT_SETTINGS } = require('../../../shared/defaultSettings');
 
 // Import decomposed modules
 const { getFileTypeCategory, sanitizeFile } = require('./fileTypeUtils');
@@ -47,11 +48,9 @@ class AutoOrganizeServiceCore {
     this.folderMatcher = folderMatchingService;
     this.undoRedo = undoRedoService;
 
-    // Confidence thresholds for automatic organization (from centralized config)
+    // Simplified single confidence threshold (from user settings or default)
     this.thresholds = {
-      autoApprove: THRESHOLDS.CONFIDENCE_HIGH, // Automatically approve >= 80% confidence
-      requireReview: THRESHOLDS.MIN_SIMILARITY_SCORE, // Require review for 50-79% confidence
-      reject: THRESHOLDS.CONFIDENCE_LOW // Reject below 30% confidence
+      confidence: DEFAULT_SETTINGS.confidenceThreshold // 0.75 - files must meet this to be auto-organized
     };
   }
 
@@ -68,7 +67,7 @@ class AutoOrganizeServiceCore {
    */
   async organizeFiles(files, smartFolders, options = {}) {
     const {
-      confidenceThreshold = this.thresholds.autoApprove,
+      confidenceThreshold = this.thresholds.confidence,
       defaultLocation = 'Documents',
       preserveNames = false,
       batchSize = DEFAULT_BATCH_SIZE
@@ -157,14 +156,9 @@ class AutoOrganizeServiceCore {
             await processFilesIndividually(
               batch,
               smartFolders,
-              {
-                confidenceThreshold,
-                defaultLocation,
-                preserveNames
-              },
+              { confidenceThreshold, defaultLocation, preserveNames },
               results,
-              this.suggestionService,
-              this.thresholds
+              this.suggestionService
             );
             continue;
           }
@@ -173,14 +167,9 @@ class AutoOrganizeServiceCore {
           await processBatchResults(
             batchSuggestions,
             batch,
-            {
-              confidenceThreshold,
-              defaultLocation,
-              preserveNames
-            },
+            { confidenceThreshold, defaultLocation, preserveNames },
             results,
-            this.suggestionService,
-            this.thresholds
+            this.suggestionService
           );
 
           // Check if any files from the batch weren't processed
@@ -201,14 +190,9 @@ class AutoOrganizeServiceCore {
             await processFilesIndividually(
               unprocessedFiles,
               smartFolders,
-              {
-                confidenceThreshold,
-                defaultLocation,
-                preserveNames
-              },
+              { confidenceThreshold, defaultLocation, preserveNames },
               results,
-              this.suggestionService,
-              this.thresholds
+              this.suggestionService
             );
           }
         } catch (error) {
@@ -221,14 +205,9 @@ class AutoOrganizeServiceCore {
           await processFilesIndividually(
             batch,
             smartFolders,
-            {
-              confidenceThreshold,
-              defaultLocation,
-              preserveNames
-            },
+            { confidenceThreshold, defaultLocation, preserveNames },
             results,
-            this.suggestionService,
-            this.thresholds
+            this.suggestionService
           );
         }
       }

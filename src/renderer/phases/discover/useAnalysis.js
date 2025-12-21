@@ -277,21 +277,43 @@ export function useAnalysis(options) {
    * Re-apply naming convention to existing analyses when settings change.
    * Keeps Discover and Organize screens in sync with the user-selected naming.
    */
+  // Track the last applied naming settings to prevent unnecessary re-renders
+  const lastAppliedNamingRef = useRef(null);
+
   useEffect(() => {
+    // FIX: Prevent render loop by checking if settings actually changed
+    // Compare by value (JSON stringify) to detect actual changes
+    const currentSettingsKey = JSON.stringify(namingSettings);
+    if (lastAppliedNamingRef.current === currentSettingsKey) {
+      return; // Settings haven't changed, skip update
+    }
+    lastAppliedNamingRef.current = currentSettingsKey;
+
     setAnalysisResults((prev) => {
       if (!prev || prev.length === 0) return prev;
-      return prev.map((result) => {
+
+      // Check if any result actually needs updating
+      let hasChanges = false;
+      const updated = prev.map((result) => {
         if (!result?.analysis) return result;
+
+        const newName = generateSuggestedName(
+          result.name || extractFileName(result.path || ''),
+          result.analysis
+        );
+
+        // Only create new object if name actually changed
+        if (result.analysis.suggestedName === newName) {
+          return result;
+        }
+
+        hasChanges = true;
         return {
           ...result,
           analysis: {
             ...result.analysis,
-            suggestedName: generateSuggestedName(
-              result.name || extractFileName(result.path || ''),
-              result.analysis
-            ),
+            suggestedName: newName,
             namingConvention: namingSettings,
-            // Keep a stable "raw subject" for re-naming and user edits.
             originalSuggestedName:
               result.analysis.originalSuggestedName ||
               result.analysis.suggestedName ||
@@ -300,22 +322,36 @@ export function useAnalysis(options) {
           }
         };
       });
+
+      // Only return new array if there were actual changes
+      return hasChanges ? updated : prev;
     });
 
     setFileStates((prev) => {
-      if (!prev) return prev;
+      if (!prev || Object.keys(prev).length === 0) return prev;
+
+      let hasChanges = false;
       const next = { ...prev };
+
       Object.entries(next).forEach(([filePath, state]) => {
         if (!state?.analysis) return;
+
+        const newName = generateSuggestedName(
+          state.name || extractFileName(filePath),
+          state.analysis
+        );
+
+        // Only update if name actually changed
+        if (state.analysis.suggestedName === newName) {
+          return;
+        }
+
+        hasChanges = true;
         next[filePath] = {
           ...state,
           analysis: {
             ...state.analysis,
-            // Ensure suggested name is regenerated with current settings
-            suggestedName: generateSuggestedName(
-              state.name || extractFileName(filePath),
-              state.analysis
-            ),
+            suggestedName: newName,
             namingConvention: namingSettings,
             originalSuggestedName:
               state.analysis.originalSuggestedName ||
@@ -325,10 +361,10 @@ export function useAnalysis(options) {
           }
         };
       });
-      return next;
+
+      // Only return new object if there were actual changes
+      return hasChanges ? next : prev;
     });
-    // Deps are complete: functional updates (prev =>) don't need current state as deps.
-    // Only re-run when naming convention settings or the name generator changes.
   }, [namingSettings, generateSuggestedName, setAnalysisResults, setFileStates]);
 
   /**
@@ -484,9 +520,14 @@ export function useAnalysis(options) {
           processedFiles.add(file.path);
           updateFileState(file.path, 'analyzing', { fileName });
 
-          // Show current file being processed (progress updates after completion)
+          // FIX: Use flushSync-like approach to ensure file name displays immediately
+          // React batches state updates, so we force an immediate update cycle
+          // by updating state and flushing phase data synchronously
           setCurrentAnalysisFile(fileName);
           actions.setPhaseData('currentAnalysisFile', fileName);
+
+          // Force a microtask yield to allow React to process the state update
+          await Promise.resolve();
           localProgressRef.current = {
             ...localProgressRef.current,
             lastActivity: Date.now()
@@ -648,10 +689,17 @@ export function useAnalysis(options) {
         localAnalyzingRef.current = false;
         isAnalyzingRef.current = false;
         setIsAnalyzing(false);
-        setCurrentAnalysisFile('');
+
+        // FIX: Delay clearing the current file name to allow UI to show final state
+        // This prevents the "file name not updating" issue where quick analyses
+        // would clear the name before it could be rendered
+        setTimeout(() => {
+          setCurrentAnalysisFile('');
+          actions.setPhaseData('currentAnalysisFile', '');
+        }, 500);
+
         setAnalysisProgress({ current: 0, total: 0 });
         actions.setPhaseData('isAnalyzing', false);
-        actions.setPhaseData('currentAnalysisFile', '');
         actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
 
         analysisLockRef.current = false;
@@ -715,11 +763,16 @@ export function useAnalysis(options) {
     // Clear any pending files when cancelling
     pendingFilesRef.current = [];
     setIsAnalyzing(false);
-    setCurrentAnalysisFile('');
     setAnalysisProgress({ current: 0, total: 0 });
     actions.setPhaseData('isAnalyzing', false);
-    actions.setPhaseData('currentAnalysisFile', '');
     actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
+
+    // FIX: Delay clearing the file name to allow UI to settle
+    setTimeout(() => {
+      setCurrentAnalysisFile('');
+      actions.setPhaseData('currentAnalysisFile', '');
+    }, 300);
+
     addNotification('Analysis stopped', 'info', 2000);
   }, [setIsAnalyzing, setCurrentAnalysisFile, setAnalysisProgress, actions, addNotification]);
 

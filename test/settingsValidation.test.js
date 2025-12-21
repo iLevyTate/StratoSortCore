@@ -206,30 +206,30 @@ describe('Settings Validation', () => {
     describe('confidence threshold validation', () => {
       test('accepts valid confidence values (0-1)', () => {
         expect(
-          validateSetting('autoApproveThreshold', 0.8, VALIDATION_RULES.autoApproveThreshold)
+          validateSetting('confidenceThreshold', 0.75, VALIDATION_RULES.confidenceThreshold)
         ).toEqual([]);
         expect(
-          validateSetting('autoApproveThreshold', 0, VALIDATION_RULES.autoApproveThreshold)
+          validateSetting('confidenceThreshold', 0, VALIDATION_RULES.confidenceThreshold)
         ).toEqual([]);
         expect(
-          validateSetting('autoApproveThreshold', 1, VALIDATION_RULES.autoApproveThreshold)
+          validateSetting('confidenceThreshold', 1, VALIDATION_RULES.confidenceThreshold)
         ).toEqual([]);
       });
 
       test('rejects confidence below 0', () => {
         const errors = validateSetting(
-          'autoApproveThreshold',
+          'confidenceThreshold',
           -0.1,
-          VALIDATION_RULES.autoApproveThreshold
+          VALIDATION_RULES.confidenceThreshold
         );
         expect(errors.length).toBeGreaterThan(0);
       });
 
       test('rejects confidence above 1', () => {
         const errors = validateSetting(
-          'autoApproveThreshold',
+          'confidenceThreshold',
           1.5,
-          VALIDATION_RULES.autoApproveThreshold
+          VALIDATION_RULES.confidenceThreshold
         );
         expect(errors.length).toBeGreaterThan(0);
       });
@@ -248,8 +248,7 @@ describe('Settings Validation', () => {
           maxConcurrentAnalysis: 3,
           autoOrganize: false,
           maxFileSize: 100 * 1024 * 1024,
-          autoApproveThreshold: 0.8,
-          reviewThreshold: 0.5
+          confidenceThreshold: 0.75
         };
 
         const result = validateSettings(settings);
@@ -316,59 +315,43 @@ describe('Settings Validation', () => {
       });
     });
 
-    describe('cross-field validation', () => {
-      test('validates autoApproveThreshold >= reviewThreshold', () => {
+    describe('confidence threshold validation', () => {
+      test('validates confidenceThreshold within range', () => {
         const validSettings = {
-          autoApproveThreshold: 0.8,
-          reviewThreshold: 0.5
+          confidenceThreshold: 0.75
         };
 
         const result = validateSettings(validSettings);
         expect(result.valid).toBe(true);
       });
 
-      test('rejects autoApproveThreshold < reviewThreshold', () => {
+      test('rejects confidenceThreshold below 0', () => {
         const invalidSettings = {
-          autoApproveThreshold: 0.4,
-          reviewThreshold: 0.5
+          confidenceThreshold: -0.1
         };
 
         const result = validateSettings(invalidSettings);
         expect(result.valid).toBe(false);
-        expect(result.errors.some((e) => e.includes('autoApproveThreshold'))).toBe(true);
+        expect(result.errors.some((e) => e.includes('confidenceThreshold'))).toBe(true);
       });
 
-      test('validates downloadConfidenceThreshold >= autoApproveThreshold', () => {
-        const validSettings = {
-          downloadConfidenceThreshold: 0.9,
-          autoApproveThreshold: 0.8
-        };
-
-        const result = validateSettings(validSettings);
-        expect(result.valid).toBe(true);
-      });
-
-      test('rejects downloadConfidenceThreshold < autoApproveThreshold', () => {
+      test('rejects confidenceThreshold above 1', () => {
         const invalidSettings = {
-          downloadConfidenceThreshold: 0.7,
-          autoApproveThreshold: 0.8
+          confidenceThreshold: 1.5
         };
 
         const result = validateSettings(invalidSettings);
         expect(result.valid).toBe(false);
       });
 
-      test('handles null values in cross-field validation', () => {
+      test('handles null values in threshold validation', () => {
         const settings = {
-          autoApproveThreshold: null,
-          reviewThreshold: 0.5
+          confidenceThreshold: null
         };
 
         const result = validateSettings(settings);
-        // Should not fail cross-field validation with null
-        expect(
-          result.errors.filter((e) => e.includes('autoApproveThreshold')).length
-        ).toBeLessThanOrEqual(1);
+        // Null values are skipped (not required)
+        expect(result.valid).toBe(true);
       });
     });
 
@@ -475,10 +458,8 @@ describe('Settings Validation', () => {
       expect(getDefaultValue('retryAttempts')).toBe(3);
     });
 
-    test('returns correct default for confidence thresholds', () => {
-      expect(getDefaultValue('autoApproveThreshold')).toBe(0.8);
-      expect(getDefaultValue('downloadConfidenceThreshold')).toBe(0.9);
-      expect(getDefaultValue('reviewThreshold')).toBe(0.5);
+    test('returns correct default for confidence threshold', () => {
+      expect(getDefaultValue('confidenceThreshold')).toBe(0.75);
     });
   });
 

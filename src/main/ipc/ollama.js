@@ -59,6 +59,68 @@ function registerOllamaIpc({
   getOllamaEmbeddingModel,
   getOllamaHost
 }) {
+  // Comprehensive patterns for model categorization
+  // Vision models: Models that can process images
+  const VISION_MODEL_PATTERNS = [
+    /llava/i, // LLaVA family (llava, llava-llama3, llava-phi3, etc.)
+    /bakllava/i, // BakLLaVA
+    /moondream/i, // Moondream vision model
+    /vision/i, // Any model with "vision" in name
+    /llama.*vision/i, // Llama vision variants
+    /gemma.*vision/i, // Gemma vision variants
+    /-v\b/i, // Models ending with -v (like minicpm-v)
+    /minicpm-v/i, // MiniCPM-V
+    /cogvlm/i, // CogVLM
+    /qwen.*vl/i, // Qwen-VL
+    /internvl/i, // InternVL
+    /yi-vl/i, // Yi-VL
+    /deepseek-vl/i, // DeepSeek-VL
+    /clip/i, // CLIP models
+    /blip/i, // BLIP models
+    /sam\b/i // SAM (Segment Anything)
+  ];
+
+  // Embedding models: Models for generating text embeddings
+  const EMBEDDING_MODEL_PATTERNS = [
+    /embed/i, // Any model with "embed" in name
+    /embedding/i, // Any model with "embedding" in name
+    /mxbai-embed/i, // MxBai embedding models
+    /nomic-embed/i, // Nomic embedding models
+    /all-minilm/i, // All-MiniLM models
+    /\bbge\b/i, // BGE embedding models
+    /e5-/i, // E5 embedding models
+    /gte-/i, // GTE embedding models
+    /stella/i, // Stella embedding models
+    /snowflake-arctic-embed/i, // Snowflake Arctic Embed
+    /paraphrase/i // Paraphrase models (typically embeddings)
+  ];
+
+  /**
+   * Categorize a model by its name
+   * @param {string} modelName - The model name to categorize
+   * @returns {'vision' | 'embedding' | 'text'} The category
+   */
+  function categorizeModel(modelName) {
+    const name = modelName || '';
+
+    // Check vision patterns first (more specific)
+    for (const pattern of VISION_MODEL_PATTERNS) {
+      if (pattern.test(name)) {
+        return 'vision';
+      }
+    }
+
+    // Check embedding patterns
+    for (const pattern of EMBEDDING_MODEL_PATTERNS) {
+      if (pattern.test(name)) {
+        return 'embedding';
+      }
+    }
+
+    // Default to text model
+    return 'text';
+  }
+
   ipcMain.handle(
     IPC_CHANNELS.OLLAMA.GET_MODELS,
     withErrorLogging(logger, async () => {
@@ -67,12 +129,17 @@ function registerOllamaIpc({
         const response = await ollama.list();
         const models = response.models || [];
         const categories = { text: [], vision: [], embedding: [] };
+
         for (const m of models) {
           const name = m.name || '';
-          if (/llava|vision|clip|sam/gi.test(name)) categories.vision.push(name);
-          else if (/embed|embedding/gi.test(name)) categories.embedding.push(name);
-          else categories.text.push(name);
+          const category = categorizeModel(name);
+          categories[category].push(name);
         }
+
+        // Sort each category alphabetically for consistent display
+        categories.text.sort((a, b) => a.localeCompare(b));
+        categories.vision.sort((a, b) => a.localeCompare(b));
+        categories.embedding.sort((a, b) => a.localeCompare(b));
         // Ensure we update health on every models fetch
         systemAnalytics.ollamaHealth = {
           status: 'healthy',
@@ -118,11 +185,18 @@ function registerOllamaIpc({
     })
   );
 
-  // Use custom regex for URL validation that properly handles IP addresses
+  // Use relaxed URL validation that allows URLs with or without protocol
+  // Normalize URL before validation to handle user input like "localhost:11434"
+  const relaxedUrlPattern =
+    /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/;
   const hostSchema = z
     ? z
         .string()
-        .regex(OLLAMA_URL_PATTERN, 'Invalid Ollama URL format')
+        .trim()
+        .regex(
+          relaxedUrlPattern,
+          'Invalid Ollama URL format (expected host[:port] with optional http/https)'
+        )
         .or(z.string().length(0))
         .optional()
     : null;
@@ -130,7 +204,7 @@ function registerOllamaIpc({
     z && hostSchema
       ? withValidation(logger, hostSchema, async (event, hostUrl) => {
           try {
-            // DUP-1: Use shared URL normalization utility
+            // DUP-1: Use shared URL normalization utility (adds http:// if missing)
             const testUrl = normalizeOllamaUrl(hostUrl);
 
             const testOllama = new Ollama({ host: testUrl });

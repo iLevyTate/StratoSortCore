@@ -348,6 +348,15 @@ async function handleBeforeQuit() {
  * Handle window-all-closed event
  */
 function handleWindowAllClosed() {
+  // Check if background mode is enabled - if so, don't quit when windows are closed
+  const settingsService = lifecycleConfig.getSettingsService?.();
+  const backgroundMode = settingsService?.get?.('backgroundMode');
+
+  if (backgroundMode) {
+    logger.info('[LIFECYCLE] Background mode enabled - keeping app running in tray');
+    return; // Don't quit, keep running in tray
+  }
+
   // Use platform abstraction instead of direct isMacOS check
   const { shouldQuitOnAllWindowsClosed } = require('./platformBehavior');
   if (shouldQuitOnAllWindowsClosed()) {

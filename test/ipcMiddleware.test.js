@@ -46,16 +46,11 @@ describe('ipcMiddleware', () => {
     mockAddEventListener = jest.fn();
     mockRemoveEventListener = jest.fn();
 
-    // Use Object.defineProperty to properly set up window mock
-    Object.defineProperty(global, 'window', {
-      value: {
-        electronAPI: mockElectronAPI,
-        addEventListener: mockAddEventListener,
-        removeEventListener: mockRemoveEventListener
-      },
-      writable: true,
-      configurable: true
-    });
+    // Set up window mock - assign directly to existing window object
+    global.window = global.window || {};
+    global.window.electronAPI = mockElectronAPI;
+    global.window.addEventListener = mockAddEventListener;
+    global.window.removeEventListener = mockRemoveEventListener;
 
     // Mock module.hot
     global.module = { hot: null };
