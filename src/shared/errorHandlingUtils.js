@@ -80,8 +80,66 @@ function createSuccessResponse(data) {
  */
 const withRetry = consolidatedWithRetry;
 
+/**
+ * Log an error when using a fallback value and return the fallback.
+ * This helper standardizes logging for catch blocks that use fallback values,
+ * making otherwise silent failures visible for debugging.
+ *
+ * @param {Object} logger - Logger instance with debug/warn methods
+ * @param {string} context - Context identifier (e.g., 'DocumentExtractor', 'OllamaUtils')
+ * @param {string} operation - Description of the operation that failed
+ * @param {Error|string} error - The caught error or error message
+ * @param {*} fallbackValue - The fallback value to return
+ * @param {Object} [options] - Additional options
+ * @param {string} [options.level='debug'] - Log level ('debug', 'warn', 'error')
+ * @returns {*} The fallback value
+ *
+ * @example
+ * // In a catch block:
+ * catch (error) {
+ *   return logFallback(logger, 'DocumentExtractor', 'extractTextFromDoc', error, '');
+ * }
+ *
+ * // With warn level:
+ * catch (error) {
+ *   return logFallback(logger, 'OllamaUtils', 'loadConfig', error, {}, { level: 'warn' });
+ * }
+ */
+function logFallback(logger, context, operation, error, fallbackValue, options = {}) {
+  const { level = 'debug' } = options;
+  const errorMessage = error?.message || (typeof error === 'string' ? error : 'Unknown error');
+  const fallbackDisplay =
+    typeof fallbackValue === 'object'
+      ? Array.isArray(fallbackValue)
+        ? `[array(${fallbackValue.length})]`
+        : '[object]'
+      : String(fallbackValue);
+
+  const logMessage = `[${context}] ${operation} failed, using fallback`;
+  const logDetails = {
+    error: errorMessage,
+    fallback: fallbackDisplay
+  };
+
+  // Add error code if available
+  if (error?.code) {
+    logDetails.errorCode = error.code;
+  }
+
+  // Call appropriate log level
+  if (logger && typeof logger[level] === 'function') {
+    logger[level](logMessage, logDetails);
+  } else if (logger && typeof logger.debug === 'function') {
+    // Fallback to debug if specified level not available
+    logger.debug(logMessage, logDetails);
+  }
+
+  return fallbackValue;
+}
+
 module.exports = {
   ERROR_CODES,
   createSuccessResponse,
-  withRetry
+  withRetry,
+  logFallback
 };

@@ -99,6 +99,7 @@
     ]
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
     "chromadb": "^3.1.8",
     "electron-updater": "^6.1.4",
     "electron-window-state": "^5.0.3",
@@ -172,8 +173,8 @@
     "css-loader": "^7.1.2",
     "css-minimizer-webpack-plugin": "^7.0.4",
     "cssnano": "^7.1.2",
-    "daisyui": "^5.5.14",
     "csv-parse": "^6.1.0",
+    "daisyui": "^5.5.14",
     "detect-port": "^2.1.0",
     "dotenv": "^17.2.3",
     "electron": "^39.2.7",
@@ -234,7 +235,7 @@
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",
     "style-loader": "^3.3.4",
-    "tailwindcss": "^4.1.18",
+    "tailwindcss": "^3.4.19",
     "terser-webpack-plugin": "^5.3.16",
     "ts-jest": "^29.4.6",
     "ts-loader": "^9.5.4",

@@ -7,7 +7,7 @@ const {
   SUPPORTED_VIDEO_EXTENSIONS,
   AI_DEFAULTS
 } = require('../../shared/constants');
-const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
+const { TRUNCATION, THRESHOLDS, TIMEOUTS } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
 const { getOllamaModel, loadOllamaConfig } = require('../ollamaUtils');
 const { AppConfig } = require('./documentLlm');
@@ -406,7 +406,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         });
 
         try {
-          await new Promise((resolve) => setTimeout(resolve, 400));
+          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_LOCK_RETRY));
           logExtraction();
           extractedText = await extractOfficeContent();
           logger.info(`Office extraction recovered after retry`, {

@@ -27,6 +27,12 @@ jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
     initialize: jest.fn().mockResolvedValue(),
     isServerAvailable: jest.fn().mockResolvedValue(true)
+  }),
+  registerWithContainer: jest.fn((container, serviceId) => {
+    container.registerSingleton(serviceId, () => ({
+      initialize: jest.fn().mockResolvedValue(),
+      isServerAvailable: jest.fn().mockResolvedValue(true)
+    }));
   })
 }));
 
@@ -45,15 +51,24 @@ jest.mock('../src/main/services/autoOrganize', () => {
 });
 
 jest.mock('../src/main/services/OllamaService', () => ({
-  getInstance: jest.fn().mockReturnValue({})
+  getInstance: jest.fn().mockReturnValue({}),
+  registerWithContainer: jest.fn((container, serviceId) => {
+    container.registerSingleton(serviceId, () => ({}));
+  })
 }));
 
 jest.mock('../src/main/services/OllamaClient', () => ({
-  getInstance: jest.fn().mockReturnValue({})
+  getInstance: jest.fn().mockReturnValue({}),
+  registerWithContainer: jest.fn((container, serviceId) => {
+    container.registerSingleton(serviceId, () => ({}));
+  })
 }));
 
 jest.mock('../src/main/services/ParallelEmbeddingService', () => ({
-  getInstance: jest.fn().mockReturnValue({})
+  getInstance: jest.fn().mockReturnValue({}),
+  registerWithContainer: jest.fn((container, serviceId) => {
+    container.registerSingleton(serviceId, () => ({}));
+  })
 }));
 
 jest.mock('../src/main/services/EmbeddingCache', () => {

@@ -39,6 +39,7 @@ const TIMEOUTS = {
   ANIMATION_SHORT: 200,
   ANIMATION_MEDIUM: 300,
   ANIMATION_LONG: 500,
+  ANIMATION_FADE: 180, // Fade skeleton/overlay animations
   FILE_READ: 5000,
   FILE_WRITE: 10000,
   FILE_COPY: 30000,
@@ -52,18 +53,28 @@ const TIMEOUTS = {
   HEALTH_CHECK: 5000,
   AXIOS_DEFAULT: 5000,
   SERVICE_STARTUP: 30000,
+  SERVICE_INIT_WAIT: 2000, // Wait for service initialization
   DATABASE_INIT: 15000,
   MODEL_LOAD: 60000,
+  MODEL_DISCOVERY: 5000, // Model discovery/list timeout
+  DELAY_MICRO: 50, // Very short delays for race condition prevention
+  DELAY_TINY: 5, // Minimal delay for inter-file processing
+  DELAY_MINI: 10, // Small delay for inter-batch processing
   DELAY_SHORT: 250,
   DELAY_MEDIUM: 500,
-  DELAY_BATCH: 100,
+  DELAY_BATCH: 100, // Short delay for batch operations
+  DELAY_LOCK_RETRY: 400, // Delay before retrying lock acquisition
   DELAY_NOTIFICATION: 1500,
+  SIGKILL_VERIFY: 100, // Delay to verify SIGKILL termination
+  CLEANUP_DELAY: 60000, // Delay before cleanup operations (e.g., temp file removal)
   CLEANUP_MAX: 5000,
   SHUTDOWN_MAX: 10000,
+  PROCESS_KILL_VERIFY: 500, // Delay to verify process termination
   IPC_HANDLER_RETRY_BASE: 100,
   IPC_HANDLER_MAX_WAIT: 2000,
   SEMANTIC_QUERY: 30000,
   FLUSH_MAX_WAIT: 30000,
+  WINDOW_LOAD_DELAY: 100, // Delay before loading window content
   // Analysis lock and monitoring timeouts
   ANALYSIS_LOCK: 5 * 60 * 1000, // 5 minutes - forces lock release if analysis hangs
   GLOBAL_ANALYSIS: 10 * 60 * 1000, // 10 minutes - max total analysis time
@@ -89,7 +100,10 @@ const RETRY = {
   DATABASE_OFFLINE_MAX: 10,
   ITEM_MAX_RETRIES: 3,
   BACKOFF_BASE_MS: 5000,
-  BACKOFF_MAX_MS: 300000
+  BACKOFF_MAX_MS: 300000,
+  // Atomic operation retry backoff (multiplied by attempt number)
+  ATOMIC_BACKOFF_STEP_MS: 50, // e.g., 50ms, 100ms, 150ms for attempts 1, 2, 3
+  CHROMADB_BACKOFF_STEP_MS: 100 // e.g., 100ms, 200ms, 300ms for attempts 1, 2, 3
 };
 
 const CACHE = {
@@ -191,7 +205,7 @@ const LIMITS = {
   RATE_LIMIT_CLEANUP_THRESHOLD: 100,
   RATE_LIMIT_STALE_MS: 60000,
   MAX_NUMERIC_RETRIES: 5000,
-  MAX_FILENAME_LENGTH: 200,
+  MAX_FILENAME_LENGTH: 255, // Standard filesystem limit (NTFS, ext4, HFS+)
   MAX_SETTINGS_BACKUPS: 10,
   MAX_WATCHER_RESTARTS: 10,
   WATCHER_RESTART_WINDOW: 60000,
@@ -241,6 +255,28 @@ const GPU_TUNING = {
   NUM_BATCH_HIGH_MEMORY: 512,
   HIGH_MEMORY_THRESHOLD: 12000,
   MEDIUM_MEMORY_THRESHOLD: 8000
+};
+
+/**
+ * Window management timing constants
+ * Used for window restore, focus, and visibility operations
+ */
+const WINDOW = {
+  /** Delay after restore() before checking visibility (ms) */
+  RESTORE_SETTLE_MS: 50,
+  /** Duration to keep window "always on top" when forcing foreground on Windows (ms) */
+  ALWAYS_ON_TOP_DURATION_MS: 100
+};
+
+/**
+ * Process management timing constants
+ * Used for graceful shutdown and process termination
+ */
+const PROCESS = {
+  /** Time to wait after SIGTERM before sending SIGKILL (ms) */
+  GRACEFUL_SHUTDOWN_WAIT_MS: 2000,
+  /** Timeout for individual kill commands (ms) */
+  KILL_COMMAND_TIMEOUT_MS: 100
 };
 
 /**
@@ -300,6 +336,8 @@ module.exports = {
   DEBOUNCE,
   CONCURRENCY,
   GPU_TUNING,
+  WINDOW,
+  PROCESS,
   TRUNCATION,
   VIEWPORT
 };

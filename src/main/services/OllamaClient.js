@@ -13,6 +13,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 
 logger.setContext('OllamaClient');
 
@@ -152,7 +153,7 @@ class OllamaClient {
       const startTime = Date.now();
 
       while (this._pendingOperations.size > 0 && Date.now() - startTime < timeout) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_BATCH));
       }
 
       if (this._pendingOperations.size > 0) {
@@ -871,19 +872,57 @@ class OllamaClient {
   }
 }
 
-// Singleton instance
-let instance = null;
+// Singleton management - delegates to DI container when available
+let _localInstance = null;
+let _containerRegistered = false;
 
 /**
  * Get or create the singleton instance
+ *
+ * This function provides backward compatibility while the DI container
+ * is the single source of truth for singleton instances.
+ *
  * @param {Object} options - Configuration options
  * @returns {OllamaClient}
  */
 function getInstance(options = {}) {
-  if (!instance) {
-    instance = new OllamaClient(options);
+  // Try to get from DI container first (preferred)
+  try {
+    const { container, ServiceIds } = require('./ServiceContainer');
+    if (container.has(ServiceIds.OLLAMA_CLIENT)) {
+      return container.resolve(ServiceIds.OLLAMA_CLIENT);
+    }
+  } catch {
+    // Container not available yet, use local instance
   }
-  return instance;
+
+  // Fallback to local instance for early startup or testing
+  if (!_localInstance) {
+    _localInstance = new OllamaClient(options);
+  }
+  return _localInstance;
+}
+
+/**
+ * Register this service with the DI container
+ * Called by ServiceIntegration during initialization
+ * @param {ServiceContainer} container - The DI container
+ * @param {string} serviceId - The service identifier
+ */
+function registerWithContainer(container, serviceId) {
+  if (_containerRegistered) return;
+
+  container.registerSingleton(serviceId, () => {
+    // If we have a local instance, migrate it to the container
+    if (_localInstance) {
+      const instance = _localInstance;
+      _localInstance = null; // Clear local reference
+      return instance;
+    }
+    return new OllamaClient();
+  });
+  _containerRegistered = true;
+  logger.debug('[OllamaClient] Registered with DI container');
 }
 
 /**
@@ -891,9 +930,31 @@ function getInstance(options = {}) {
  * @returns {Promise<void>}
  */
 async function resetInstance() {
-  if (instance) {
-    const oldInstance = instance;
-    instance = null; // Clear reference first to prevent reuse during shutdown
+  // Reset container registration flag
+  _containerRegistered = false;
+
+  // Clear from DI container if registered
+  try {
+    const { container, ServiceIds } = require('./ServiceContainer');
+    if (container.has(ServiceIds.OLLAMA_CLIENT)) {
+      const instance = container.tryResolve(ServiceIds.OLLAMA_CLIENT);
+      container.clearInstance(ServiceIds.OLLAMA_CLIENT);
+      if (instance) {
+        try {
+          await instance.shutdown();
+        } catch (e) {
+          logger.warn('[OllamaClient] Error during container instance shutdown:', e.message);
+        }
+      }
+    }
+  } catch {
+    // Container not available
+  }
+
+  // Also clear local instance
+  if (_localInstance) {
+    const oldInstance = _localInstance;
+    _localInstance = null;
     try {
       await oldInstance.shutdown();
     } catch (e) {
@@ -906,5 +967,6 @@ module.exports = {
   OllamaClient,
   getInstance,
   resetInstance,
+  registerWithContainer,
   REQUEST_TYPES
 };

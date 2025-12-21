@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X, Bell } from 'lucide-react';
 import { logger } from '../../shared/logger';
+import { TIMEOUTS } from '../../shared/performanceConstants';
 
 logger.setContext('Toast');
 
@@ -41,7 +42,7 @@ const Toast = ({
       const timer = setTimeout(() => {
         setIsVisible(false);
         // Schedule onClose after animation completes
-        animationTimerRef.current = setTimeout(() => onClose?.(), 300);
+        animationTimerRef.current = setTimeout(() => onClose?.(), TIMEOUTS.ANIMATION_MEDIUM);
       }, duration);
 
       return () => {
@@ -60,7 +61,7 @@ const Toast = ({
   const handleClose = () => {
     setIsVisible(false);
     // FIX: Store timeout in ref for proper cleanup on unmount
-    animationTimerRef.current = setTimeout(() => onClose?.(), 300);
+    animationTimerRef.current = setTimeout(() => onClose?.(), TIMEOUTS.ANIMATION_MEDIUM);
   };
 
   const handleKeyDown = (e) => {

@@ -7,6 +7,7 @@ const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../../shared/logger');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { getOllama, getOllamaHost } = require('../ollamaUtils');
 logger.setContext('ModelManager');
 
@@ -27,6 +28,7 @@ class ModelManager {
     this._isInitializing = false;
 
     // Model categories and their capabilities
+    // These patterns are used for capability detection and model matching
     this.modelCategories = {
       text: [
         'llama',
@@ -38,11 +40,39 @@ class ModelManager {
         'neural-chat',
         'orca',
         'vicuna',
-        'alpaca'
+        'alpaca',
+        'dolphin',
+        'nous-hermes',
+        'openhermes',
+        'zephyr',
+        'starling',
+        'yi',
+        'deepseek'
       ],
-      vision: ['llava', 'bakllava', 'moondream', 'gemma3'],
-      code: ['codellama', 'codegemma', 'starcoder', 'deepseek-coder'],
-      chat: ['llama', 'mistral', 'phi', 'gemma', 'neural-chat', 'orca', 'vicuna']
+      vision: [
+        'llava',
+        'bakllava',
+        'moondream',
+        'minicpm-v',
+        'cogvlm',
+        'internvl',
+        'yi-vl',
+        'deepseek-vl',
+        'qwen-vl',
+        'qwen2-vl'
+      ],
+      embedding: [
+        'mxbai-embed',
+        'nomic-embed',
+        'all-minilm',
+        'bge',
+        'e5',
+        'gte',
+        'stella',
+        'snowflake-arctic-embed'
+      ],
+      code: ['codellama', 'codegemma', 'starcoder', 'deepseek-coder', 'codestral', 'qwen2.5-coder'],
+      chat: ['llama', 'mistral', 'phi', 'gemma', 'neural-chat', 'orca', 'vicuna', 'dolphin']
     };
 
     // Fallback model preferences (in order of preference)
@@ -142,7 +172,10 @@ class ModelManager {
         const discoverPromise = this.discoverModels();
         let timeoutId;
         const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Model discovery timeout')), 5000);
+          timeoutId = setTimeout(
+            () => reject(new Error('Model discovery timeout')),
+            TIMEOUTS.MODEL_DISCOVERY
+          );
           // Ensure timeout doesn't keep process alive
           if (timeoutId && timeoutId.unref) {
             timeoutId.unref();

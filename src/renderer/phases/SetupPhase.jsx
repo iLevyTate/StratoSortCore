@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { PHASES } from '../../shared/constants';
+import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { setSmartFolders as setSmartFoldersAction } from '../store/slices/filesSlice';
@@ -177,7 +178,7 @@ function SetupPhase() {
       setContentVisible(false);
     } else {
       setContentVisible(true);
-      fadeTimeout = setTimeout(() => setShowSkeletonLayer(false), 180);
+      fadeTimeout = setTimeout(() => setShowSkeletonLayer(false), TIMEOUTS.ANIMATION_FADE);
     }
 
     return () => {

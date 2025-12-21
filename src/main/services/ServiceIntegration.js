@@ -1,13 +1,9 @@
 const AnalysisHistoryService = require('./analysisHistory');
 const UndoRedoService = require('./UndoRedoService');
 const ProcessingStateService = require('./ProcessingStateService');
-const { getInstance: getChromaDB } = require('./chromadb');
 const FolderMatchingService = require('./FolderMatchingService');
 const OrganizationSuggestionService = require('./organization');
 const AutoOrganizeService = require('./autoOrganize');
-const { getInstance: getOllamaService } = require('./OllamaService');
-const { getInstance: getOllamaClient } = require('./OllamaClient');
-const { getInstance: getParallelEmbedding } = require('./ParallelEmbeddingService');
 const EmbeddingCache = require('./EmbeddingCache');
 const { container, ServiceIds } = require('./ServiceContainer');
 const { logger } = require('../../shared/logger');
@@ -189,11 +185,10 @@ class ServiceIntegration {
       });
     }
 
-    // Register ChromaDB service (singleton)
+    // Register ChromaDB service (singleton) - using registerWithContainer pattern
     if (!container.has(ServiceIds.CHROMA_DB)) {
-      container.registerSingleton(ServiceIds.CHROMA_DB, () => {
-        return getChromaDB();
-      });
+      const { registerWithContainer: registerChromaDB } = require('./chromadb');
+      registerChromaDB(container, ServiceIds.CHROMA_DB);
     }
 
     // Register state management services
@@ -246,17 +241,15 @@ class ServiceIntegration {
       });
     }
 
-    // Register AI/Embedding services (wrapping existing singletons)
+    // Register AI/Embedding services - using registerWithContainer pattern
     if (!container.has(ServiceIds.OLLAMA_CLIENT)) {
-      container.registerSingleton(ServiceIds.OLLAMA_CLIENT, () => {
-        return getOllamaClient();
-      });
+      const { registerWithContainer: registerOllamaClient } = require('./OllamaClient');
+      registerOllamaClient(container, ServiceIds.OLLAMA_CLIENT);
     }
 
     if (!container.has(ServiceIds.OLLAMA_SERVICE)) {
-      container.registerSingleton(ServiceIds.OLLAMA_SERVICE, () => {
-        return getOllamaService();
-      });
+      const { registerWithContainer: registerOllamaService } = require('./OllamaService');
+      registerOllamaService(container, ServiceIds.OLLAMA_SERVICE);
     }
 
     if (!container.has(ServiceIds.EMBEDDING_CACHE)) {
@@ -266,9 +259,10 @@ class ServiceIntegration {
     }
 
     if (!container.has(ServiceIds.PARALLEL_EMBEDDING)) {
-      container.registerSingleton(ServiceIds.PARALLEL_EMBEDDING, () => {
-        return getParallelEmbedding();
-      });
+      const {
+        registerWithContainer: registerParallelEmbedding
+      } = require('./ParallelEmbeddingService');
+      registerParallelEmbedding(container, ServiceIds.PARALLEL_EMBEDDING);
     }
 
     logger.info('[ServiceIntegration] Core services registered with container');

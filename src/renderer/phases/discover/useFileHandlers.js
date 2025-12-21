@@ -9,6 +9,7 @@
 
 import { useCallback, useState } from 'react';
 import { RENDERER_LIMITS } from '../../../shared/constants';
+import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { extractExtension, extractFileName } from './namingUtils';
 
@@ -118,7 +119,7 @@ export function useFileHandlers({
         const batchResults = await Promise.allSettled(
           batch.map(async (filePath) => {
             try {
-              if (i > 0) await new Promise((resolve) => setTimeout(resolve, 5));
+              if (i > 0) await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_TINY));
               const stats = await window.electronAPI.files.getStats(filePath);
               const fileName = extractFileName(filePath);
               const extension = extractExtension(fileName);
@@ -170,7 +171,7 @@ export function useFileHandlers({
         });
 
         if (i + batchSize < filePaths.length) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
+          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_MINI));
         }
       }
 

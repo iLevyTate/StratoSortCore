@@ -148,7 +148,7 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
             const startupManager = getStartupManager();
             // CRITICAL FIX: Explicitly clear the dependency missing flag before starting
             // This ensures the newly installed ChromaDB module is detected
-            startupManager.chromadbDependencyMissing = false;
+            startupManager.setChromadbDependencyMissing(false);
             sendProgress({
               message: 'Starting ChromaDB service…',
               dependency: 'chromadb',

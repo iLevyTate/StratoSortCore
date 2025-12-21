@@ -160,7 +160,7 @@ describe('AutoOrganize Batch Processor', () => {
       expect(results.organized).toHaveLength(0);
     });
 
-    test('uses fallback for low confidence', async () => {
+    test('sends low confidence files to needsReview', async () => {
       const batchSuggestions = {
         groups: [
           {
@@ -189,19 +189,12 @@ describe('AutoOrganize Batch Processor', () => {
         operations: [],
         failed: []
       };
-      const thresholds = { requireReview: 0.5 };
 
-      await processBatchResults(
-        batchSuggestions,
-        files,
-        options,
-        results,
-        mockSuggestionService,
-        thresholds
-      );
+      await processBatchResults(batchSuggestions, files, options, results, mockSuggestionService);
 
-      expect(results.organized).toHaveLength(1);
-      expect(results.organized[0].method).toBe('batch-low-confidence-fallback');
+      // With simplified thresholds, files below confidenceThreshold go to needsReview
+      expect(results.needsReview).toHaveLength(1);
+      expect(results.organized).toHaveLength(0);
     });
 
     test('uses fallback when no suggestion', async () => {

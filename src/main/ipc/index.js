@@ -12,7 +12,11 @@ const { registerSuggestionsIpc } = require('./suggestions');
 const { registerOrganizeIpc } = require('./organize');
 const { registerChromaDBIpc } = require('./chromadb');
 const { registerDependenciesIpc } = require('./dependencies');
-const { ServiceContainer, createFromLegacyParams } = require('./ServiceContainer');
+const {
+  IpcServiceContext,
+  createFromLegacyParams,
+  ServiceContainer
+} = require('./IpcServiceContext');
 
 // Export IPC utilities for handler creation
 const {
@@ -28,9 +32,9 @@ const {
 const { schemas, z } = require('./validationSchemas');
 
 /**
- * Register all IPC handlers using either a ServiceContainer or legacy parameters
+ * Register all IPC handlers using either an IpcServiceContext or legacy parameters
  *
- * @param {ServiceContainer|Object} servicesOrParams - Either a ServiceContainer instance
+ * @param {IpcServiceContext|Object} servicesOrParams - Either an IpcServiceContext instance
  *   or a legacy parameters object with individual service properties
  *
  * Legacy parameters (for backward compatibility):
@@ -63,9 +67,9 @@ const { schemas, z } = require('./validationSchemas');
  * @param {Function} servicesOrParams.onSettingsChanged - Settings change callback
  */
 function registerAllIpc(servicesOrParams) {
-  // Support both ServiceContainer and legacy parameters
+  // Support both IpcServiceContext and legacy parameters
   let container;
-  if (servicesOrParams instanceof ServiceContainer) {
+  if (servicesOrParams instanceof IpcServiceContext) {
     container = servicesOrParams;
   } else {
     container = createFromLegacyParams(servicesOrParams);
@@ -74,7 +78,9 @@ function registerAllIpc(servicesOrParams) {
   // Validate container
   const validation = container.validate();
   if (!validation.valid) {
-    throw new Error(`ServiceContainer missing required services: ${validation.missing.join(', ')}`);
+    throw new Error(
+      `IpcServiceContext missing required services: ${validation.missing.join(', ')}`
+    );
   }
 
   // Extract commonly used services for local use
@@ -256,9 +262,11 @@ module.exports = {
   // Main registration function
   registerAllIpc,
 
-  // Service container utilities
-  ServiceContainer,
+  // IPC service context utilities
+  IpcServiceContext,
   createFromLegacyParams,
+  // Backward compatibility alias
+  ServiceContainer,
 
   // IPC handler utilities
   createHandler,

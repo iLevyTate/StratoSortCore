@@ -1,16 +1,24 @@
 const os = require('os');
 const { spawn } = require('child_process');
-const { getNvidiaSmiCommand } = require('../../shared/platformUtils');
+const { getNvidiaSmiCommand, isMacOS } = require('../../shared/platformUtils');
 
 /**
  * PerformanceService
  * - Detects system capabilities (CPU threads, GPU availability)
  * - Builds tuned Ollama options to maximize throughput, preferring GPU when available
+ * - Supports NVIDIA (CUDA), AMD (ROCm), Intel, and Apple Silicon (Metal) GPUs
  */
 
 let cachedCapabilities = null;
 
-async function detectNvidiaGpu() {
+/**
+ * Run a command with timeout and return stdout
+ * @param {string} command - Command to run
+ * @param {string[]} args - Command arguments
+ * @param {number} timeout - Timeout in ms
+ * @returns {Promise<{success: boolean, stdout: string}>}
+ */
+async function runCommand(command, args, timeout = 5000) {
   return new Promise((resolve) => {
     let resolved = false;
     let timeoutId = null;
@@ -38,58 +46,168 @@ async function detectNvidiaGpu() {
     };
 
     try {
-      // Use cross-platform utility for nvidia-smi executable name
-      proc = spawn(getNvidiaSmiCommand(), [
-        '--query-gpu=name,memory.total',
-        '--format=csv,noheader,nounits'
-      ]);
+      proc = spawn(command, args, { windowsHide: true });
 
-      // Timeout to prevent hanging processes (5 seconds should be plenty)
       timeoutId = setTimeout(() => {
-        safeResolve({ hasNvidiaGpu: false });
-      }, 5000);
+        safeResolve({ success: false, stdout: '' });
+      }, timeout);
 
       let stdout = '';
       proc.stdout.on('data', (d) => {
         stdout += d.toString();
       });
+      proc.stderr.on('data', () => {}); // Discard stderr
 
-      // Handle stderr to prevent buffer overflow (discard output)
-      proc.stderr.on('data', () => {});
-
-      proc.on('error', () => safeResolve({ hasNvidiaGpu: false }));
+      proc.on('error', () => safeResolve({ success: false, stdout: '' }));
       proc.on('close', (code) => {
-        if (code === 0 && stdout.trim()) {
-          const lines = stdout.trim().split(/\r?\n/);
-          const first = lines[0] || '';
-          const [name, mem] = first.split(',').map((s) => s && s.trim());
-          const gpuMemoryMB = Number(mem) || null;
-          safeResolve({
-            hasNvidiaGpu: true,
-            gpuName: name || 'NVIDIA GPU',
-            gpuMemoryMB
-          });
-        } else {
-          safeResolve({ hasNvidiaGpu: false });
-        }
+        safeResolve({ success: code === 0, stdout: stdout.trim() });
       });
     } catch {
-      safeResolve({ hasNvidiaGpu: false });
+      safeResolve({ success: false, stdout: '' });
     }
   });
+}
+
+/**
+ * Detect NVIDIA GPU via nvidia-smi
+ */
+async function detectNvidiaGpu() {
+  const result = await runCommand(getNvidiaSmiCommand(), [
+    '--query-gpu=name,memory.total',
+    '--format=csv,noheader,nounits'
+  ]);
+
+  if (result.success && result.stdout) {
+    const lines = result.stdout.split(/\r?\n/);
+    const first = lines[0] || '';
+    const [name, mem] = first.split(',').map((s) => s && s.trim());
+    return {
+      vendor: 'nvidia',
+      gpuName: name || 'NVIDIA GPU',
+      gpuMemoryMB: Number(mem) || null
+    };
+  }
+  return null;
+}
+
+/**
+ * Detect AMD GPU via rocm-smi (Linux) or checking for AMD in device list
+ */
+async function detectAmdGpu() {
+  // Try rocm-smi on Linux
+  if (process.platform === 'linux') {
+    const result = await runCommand('rocm-smi', ['--showmeminfo', 'vram', '--csv']);
+    if (result.success && result.stdout) {
+      // Parse rocm-smi output for VRAM
+      const match = result.stdout.match(/(\d+)\s*$/m);
+      const vramMB = match ? Math.floor(Number(match[1]) / (1024 * 1024)) : null;
+      return {
+        vendor: 'amd',
+        gpuName: 'AMD GPU (ROCm)',
+        gpuMemoryMB: vramMB
+      };
+    }
+  }
+
+  // On Windows, check for AMD GPU via WMIC (less reliable for VRAM)
+  if (process.platform === 'win32') {
+    const result = await runCommand('wmic', ['path', 'win32_VideoController', 'get', 'name']);
+    if (result.success && /AMD|Radeon/i.test(result.stdout)) {
+      return {
+        vendor: 'amd',
+        gpuName: 'AMD GPU',
+        gpuMemoryMB: null // WMIC doesn't reliably report VRAM for AMD
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Detect Intel GPU (Arc, Iris, UHD)
+ */
+async function detectIntelGpu() {
+  if (process.platform === 'win32') {
+    const result = await runCommand('wmic', ['path', 'win32_VideoController', 'get', 'name']);
+    if (result.success && /Intel.*(?:Arc|Iris|UHD|Graphics)/i.test(result.stdout)) {
+      return {
+        vendor: 'intel',
+        gpuName: 'Intel GPU',
+        gpuMemoryMB: null
+      };
+    }
+  }
+
+  if (process.platform === 'linux') {
+    const result = await runCommand('lspci', []);
+    if (result.success && /Intel.*(?:Arc|Iris|UHD|Graphics)/i.test(result.stdout)) {
+      return {
+        vendor: 'intel',
+        gpuName: 'Intel GPU',
+        gpuMemoryMB: null
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Detect Apple Silicon GPU (M1, M2, M3, M4)
+ */
+async function detectAppleGpu() {
+  if (!isMacOS) return null;
+
+  const result = await runCommand('sysctl', ['-n', 'machdep.cpu.brand_string']);
+  if (result.success && /Apple M[1-9]/i.test(result.stdout)) {
+    // Get unified memory size (shared between CPU and GPU on Apple Silicon)
+    const memResult = await runCommand('sysctl', ['-n', 'hw.memsize']);
+    const totalMemBytes = memResult.success ? Number(memResult.stdout) : 0;
+    // Apple Silicon uses unified memory - estimate ~70% available for GPU
+    const gpuMemoryMB = totalMemBytes ? Math.floor((totalMemBytes * 0.7) / (1024 * 1024)) : null;
+
+    return {
+      vendor: 'apple',
+      gpuName: result.stdout.trim(),
+      gpuMemoryMB
+    };
+  }
+  return null;
+}
+
+/**
+ * Detect any available GPU (NVIDIA, AMD, Intel, Apple)
+ */
+async function detectGpu() {
+  // Try vendors in order of Ollama optimization level
+  const nvidia = await detectNvidiaGpu();
+  if (nvidia) return nvidia;
+
+  const apple = await detectAppleGpu();
+  if (apple) return apple;
+
+  const amd = await detectAmdGpu();
+  if (amd) return amd;
+
+  const intel = await detectIntelGpu();
+  if (intel) return intel;
+
+  return null;
 }
 
 async function detectSystemCapabilities() {
   if (cachedCapabilities) return cachedCapabilities;
 
   const cpuThreads = Array.isArray(os.cpus()) ? os.cpus().length : 4;
-  const nvidia = await detectNvidiaGpu();
+  const gpu = await detectGpu();
 
   cachedCapabilities = {
     cpuThreads,
-    hasNvidiaGpu: Boolean(nvidia.hasNvidiaGpu),
-    gpuName: nvidia.gpuName || null,
-    gpuMemoryMB: nvidia.gpuMemoryMB || null
+    hasGpu: gpu !== null,
+    gpuVendor: gpu?.vendor || null,
+    gpuName: gpu?.gpuName || null,
+    gpuMemoryMB: gpu?.gpuMemoryMB || null,
+    // Legacy compatibility
+    hasNvidiaGpu: gpu?.vendor === 'nvidia'
   };
   return cachedCapabilities;
 }
@@ -138,7 +256,7 @@ async function buildOllamaOptions(task = 'text') {
 
   // Batch sizing - larger when GPU VRAM is available
   let numBatch = envNumBatch || 256;
-  if (!envNumBatch && caps.hasNvidiaGpu) {
+  if (!envNumBatch && caps.hasGpu) {
     const vram = caps.gpuMemoryMB || 0;
     if (vram >= 16000)
       numBatch = 1024; // 16GB+ VRAM
@@ -148,7 +266,7 @@ async function buildOllamaOptions(task = 'text') {
       numBatch = 384; // 8GB VRAM
     else if (vram >= 6000)
       numBatch = 256; // 6GB VRAM
-    else numBatch = 192; // 4GB VRAM
+    else numBatch = 192; // 4GB+ VRAM or unknown
   } else if (!envNumBatch) {
     numBatch = 128; // CPU-only safe default
   }
@@ -156,13 +274,14 @@ async function buildOllamaOptions(task = 'text') {
   // GPU offload configuration
   // num_gpu: -1 means "use all available GPU layers" (Ollama auto-detects)
   // This is safer than hardcoded 9999 which could exceed actual layer count
+  // Ollama supports NVIDIA (CUDA), AMD (ROCm), Intel (oneAPI), and Apple Silicon (Metal)
   let gpuHints;
-  if (caps.hasNvidiaGpu) {
+  if (caps.hasGpu) {
     const numGpuLayers = envNumGpu !== null ? envNumGpu : -1; // -1 = auto (use all GPU layers)
     gpuHints = {
       num_gpu: numGpuLayers,
-      // Force GPU acceleration - Ollama will use CUDA if available
-      main_gpu: 0 // Use first GPU
+      // Use first GPU - Ollama auto-detects the appropriate backend (CUDA/ROCm/Metal/oneAPI)
+      main_gpu: 0
     };
   } else {
     gpuHints = { num_gpu: 0 }; // CPU-only mode

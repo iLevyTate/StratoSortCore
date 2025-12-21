@@ -339,26 +339,53 @@ app.whenReady().then(async () => {
     // Check for first run moved to background task after window creation
     // to prevent blocking startup
 
-    // Run the new startup manager sequence with timeout
+    // CONSOLIDATED STARTUP: Single coordinated startup sequence with unified timeout
+    // Previously had separate 30s timeouts for StartupManager and ServiceIntegration,
+    // which could result in up to 60s total wait time. Now uses single 45s timeout.
+    const { TIMEOUTS } = require('../shared/performanceConstants');
     let startupResult;
+
+    // Create ServiceIntegration early so it's available for the coordinated startup
+    serviceIntegration = new ServiceIntegration();
+
     try {
-      // Add a hard timeout to prevent hanging
-      const { TIMEOUTS } = require('../shared/performanceConstants');
-      const startupPromise = startupManager.startup();
+      // Coordinated startup with single timeout
+      const coordinatedStartup = async () => {
+        // Phase 1: Start external services (Ollama, ChromaDB)
+        logger.info('[STARTUP] Phase 1: Starting external services...');
+        const servicesResult = await startupManager.startup();
+
+        // Phase 2: Initialize DI container and internal services
+        logger.info('[STARTUP] Phase 2: Initializing service integration...');
+        await serviceIntegration.initialize();
+
+        return servicesResult;
+      };
+
+      // Single timeout for entire coordinated startup (45 seconds)
+      const COORDINATED_STARTUP_TIMEOUT = TIMEOUTS.SERVICE_STARTUP + 15000; // 45s
+      let timeoutId;
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Startup manager timeout after 30 seconds'));
-        }, TIMEOUTS.SERVICE_STARTUP); // 30 second hard timeout
+        timeoutId = setTimeout(() => {
+          reject(
+            new Error(
+              `Coordinated startup timeout after ${COORDINATED_STARTUP_TIMEOUT / 1000} seconds`
+            )
+          );
+        }, COORDINATED_STARTUP_TIMEOUT);
       });
 
-      startupResult = await Promise.race([startupPromise, timeoutPromise]);
-      logger.info('[STARTUP] Startup manager completed successfully');
+      try {
+        startupResult = await Promise.race([coordinatedStartup(), timeoutPromise]);
+        logger.info('[STARTUP] Coordinated startup completed successfully');
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
     } catch (error) {
       // Log full error details for debugging
-      logger.error('[STARTUP] Startup manager failed:', {
+      logger.error('[STARTUP] Coordinated startup failed:', {
         message: error?.message || 'Unknown error',
-        stack: error?.stack,
-        error: error
+        stack: error?.stack
       });
       // Continue in degraded mode - don't block startup
       logger.warn('[STARTUP] Continuing startup in degraded mode');
@@ -468,27 +495,7 @@ app.whenReady().then(async () => {
       logger.info('[STARTUP] Default folder already exists, skipping creation');
     }
 
-    // Initialize service integration with timeout (HIGH-4 FIX)
-    serviceIntegration = new ServiceIntegration();
-    try {
-      const { TIMEOUTS } = require('../shared/performanceConstants');
-      const initPromise = serviceIntegration.initialize();
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Service integration initialization timeout after 30 seconds'));
-        }, TIMEOUTS.SERVICE_STARTUP);
-      });
-
-      await Promise.race([initPromise, timeoutPromise]);
-      logger.info('[MAIN] Service integration initialized successfully');
-    } catch (error) {
-      logger.error('[MAIN] Service integration initialization failed:', {
-        message: error?.message || 'Unknown error',
-        stack: error?.stack
-      });
-      logger.warn('[MAIN] Continuing in degraded mode without full service integration');
-      // Don't throw - allow app to continue in degraded mode
-    }
+    // NOTE: ServiceIntegration is now initialized in the coordinated startup above
 
     // Initialize settings service
     settingsService = getSettingsService();

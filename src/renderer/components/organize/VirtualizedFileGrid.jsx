@@ -2,6 +2,7 @@ import React, { memo, useCallback, useMemo, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import ReadyFileItem from './ReadyFileItem';
+import { joinPath } from '../../utils/platform';
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
 // Height calculations for responsive grid layout
@@ -56,8 +57,8 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
     const isSelected = selectedFiles.has(fileIndex);
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
     const destination = smartFolder
-      ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
-      : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
+      ? smartFolder.path || joinPath(defaultLocation, smartFolder.name)
+      : joinPath(defaultLocation, rawCategory || 'Uncategorized');
 
     rowItems.push(
       <div key={file.path} className="flex-1 min-w-0">
@@ -174,8 +175,8 @@ function VirtualizedFileGrid({
     const currentCategory = smartFolder?.name || rawCategory;
     const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
     const destination = smartFolder
-      ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
-      : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
+      ? smartFolder.path || joinPath(defaultLocation, smartFolder.name)
+      : joinPath(defaultLocation, rawCategory || 'Uncategorized');
 
     return {
       file: fileWithEdits,
@@ -290,6 +291,7 @@ function VirtualizedFileGrid({
           Showing {files.length} files
         </div>
         <List
+          key={`list-${rowHeight}-${columnsPerRow}`}
           rowComponent={VirtualizedFileRow}
           rowCount={rowCount}
           rowHeight={rowHeight}
@@ -321,8 +323,8 @@ function VirtualizedFileGrid({
         const isSelected = selectedFiles.has(index);
         const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
         const destination = smartFolder
-          ? smartFolder.path || `${defaultLocation}/${smartFolder.name}`
-          : `${defaultLocation}/${rawCategory || 'Uncategorized'}`;
+          ? smartFolder.path || joinPath(defaultLocation, smartFolder.name)
+          : joinPath(defaultLocation, rawCategory || 'Uncategorized');
         return (
           <ReadyFileItem
             key={file.path}

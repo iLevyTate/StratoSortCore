@@ -234,8 +234,15 @@ Your response MUST be a valid JSON object with ALL these fields:
   "category": "most appropriate category (must be one of the folder names above)"${folderCategoriesStr},
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "confidence": 85,
-  "suggestedName": "descriptive_name_based_on_content"
+  "suggestedName": "short-descriptive-name (MAX 40 chars, 2-5 key words, NO dates/IDs)"
 }
+
+IMPORTANT FOR suggestedName:
+- Keep it SHORT: maximum 40 characters (excluding extension)
+- Use 2-5 key descriptive words only
+- Do NOT include dates, ticket IDs, project codes, or reference numbers
+- Do NOT just copy the original filename
+- Example: "heart-family-practice-edi-project" instead of the full original name
 
 CRITICAL REQUIREMENTS:
 1. The keywords array MUST contain 3-7 keywords extracted from the document content

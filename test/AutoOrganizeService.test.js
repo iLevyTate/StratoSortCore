@@ -83,9 +83,7 @@ describe('AutoOrganizeService', () => {
   describe('constructor', () => {
     test('initializes with default thresholds', () => {
       expect(service.thresholds).toBeDefined();
-      expect(service.thresholds.autoApprove).toBe(0.8);
-      expect(service.thresholds.requireReview).toBe(0.5);
-      expect(service.thresholds.reject).toBe(0.3);
+      expect(service.thresholds.confidence).toBe(0.75);
     });
 
     test('stores service dependencies', () => {
@@ -229,8 +227,8 @@ describe('AutoOrganizeService', () => {
       });
     });
 
-    describe('low confidence fallback', () => {
-      test('uses fallback for low confidence files', async () => {
+    describe('low confidence handling', () => {
+      test('sends low confidence files to needsReview', async () => {
         const files = [
           {
             name: 'unknown.xyz',
@@ -248,9 +246,9 @@ describe('AutoOrganizeService', () => {
 
         const result = await service.organizeFiles(files, mockSmartFolders);
 
-        expect(result.organized).toHaveLength(1);
-        expect(result.organized[0].method).toBe('low-confidence-fallback');
-        expect(result.organized[0].confidence).toBe(0.2);
+        // With simplified thresholds, files below confidenceThreshold go to needsReview
+        expect(result.needsReview).toHaveLength(1);
+        expect(result.organized).toHaveLength(0);
       });
 
       test('uses fallback when no suggestion available', async () => {
@@ -619,15 +617,15 @@ describe('AutoOrganizeService', () => {
           ]
         });
 
-        // With threshold 0.6, should auto-approve
+        // With threshold 0.6, should auto-approve (0.7 >= 0.6)
         const result1 = await service.batchOrganize(files, mockSmartFolders, {
-          autoApproveThreshold: 0.6
+          confidenceThreshold: 0.6
         });
         expect(result1.groups).toHaveLength(1);
 
-        // With threshold 0.8, should skip
+        // With threshold 0.8, should skip (0.7 < 0.8)
         const result2 = await service.batchOrganize(files, mockSmartFolders, {
-          autoApproveThreshold: 0.8
+          confidenceThreshold: 0.8
         });
         expect(result2.skipped).toHaveLength(1);
       });
@@ -825,33 +823,16 @@ describe('AutoOrganizeService', () => {
   });
 
   describe('updateThresholds', () => {
-    test('updates confidence thresholds', () => {
-      const newThresholds = {
-        autoApprove: 0.9,
-        requireReview: 0.6
-      };
+    test('updates confidence threshold', () => {
+      service.updateThresholds({ confidence: 0.85 });
 
-      service.updateThresholds(newThresholds);
-
-      expect(service.thresholds.autoApprove).toBe(0.9);
-      expect(service.thresholds.requireReview).toBe(0.6);
-      expect(service.thresholds.reject).toBe(0.3); // unchanged
+      expect(service.thresholds.confidence).toBe(0.85);
     });
 
-    test('partially updates thresholds', () => {
-      service.updateThresholds({ autoApprove: 0.85 });
+    test('merges with existing thresholds', () => {
+      service.updateThresholds({ confidence: 0.9 });
 
-      expect(service.thresholds.autoApprove).toBe(0.85);
-      expect(service.thresholds.requireReview).toBe(0.5); // unchanged
-    });
-
-    test('preserves existing thresholds not in update', () => {
-      const original = { ...service.thresholds };
-
-      service.updateThresholds({ autoApprove: 0.75 });
-
-      expect(service.thresholds.requireReview).toBe(original.requireReview);
-      expect(service.thresholds.reject).toBe(original.reject);
+      expect(service.thresholds.confidence).toBe(0.9);
     });
   });
 });

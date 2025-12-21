@@ -44,19 +44,7 @@ const VALIDATION_RULES = {
     type: 'boolean',
     required: false
   },
-  autoApproveThreshold: {
-    type: 'number',
-    min: 0,
-    max: 1,
-    required: false
-  },
-  downloadConfidenceThreshold: {
-    type: 'number',
-    min: 0,
-    max: 1,
-    required: false
-  },
-  reviewThreshold: {
+  confidenceThreshold: {
     type: 'number',
     min: 0,
     max: 1,
@@ -280,28 +268,7 @@ function validateSettings(settings) {
     errors.push(...fieldErrors);
   }
 
-  // Fixed: Cross-field validations with consistent null checks
-  if (
-    settings.autoApproveThreshold !== undefined &&
-    settings.autoApproveThreshold !== null &&
-    settings.reviewThreshold !== undefined &&
-    settings.reviewThreshold !== null &&
-    settings.autoApproveThreshold < settings.reviewThreshold
-  ) {
-    errors.push('autoApproveThreshold must be greater than or equal to reviewThreshold');
-  }
-
-  if (
-    settings.downloadConfidenceThreshold !== undefined &&
-    settings.downloadConfidenceThreshold !== null &&
-    settings.autoApproveThreshold !== undefined &&
-    settings.autoApproveThreshold !== null &&
-    settings.downloadConfidenceThreshold < settings.autoApproveThreshold
-  ) {
-    errors.push(
-      'downloadConfidenceThreshold must be greater than or equal to autoApproveThreshold'
-    );
-  }
+  // Note: Legacy cross-field threshold validations removed - now using single confidenceThreshold
 
   return {
     valid: errors.length === 0,

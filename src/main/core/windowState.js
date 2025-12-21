@@ -10,7 +10,7 @@
 const { screen } = require('electron');
 const { logger } = require('../../shared/logger');
 const { bringWindowToForeground, isWindows } = require('./platformBehavior');
-const { WINDOW } = require('./timingConstants');
+const { WINDOW } = require('../../shared/performanceConstants');
 
 logger.setContext('WindowState');
 

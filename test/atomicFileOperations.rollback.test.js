@@ -67,7 +67,9 @@ describe('AtomicFileOperations rollback and cross-device', () => {
     ops.addOperation(tx, { type: 'unknown-op', source: src, destination: dest });
 
     const result = await ops.commitTransaction(tx);
-    expect(result.success).toBe(true);
+    // FIX: Transaction that fails and rolls back should return success: false
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
 
     // Source should be restored after rollback (exists) and destination absent
     await expect(fs.promises.access(src)).resolves.toBeUndefined();

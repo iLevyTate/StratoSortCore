@@ -5,12 +5,22 @@
 
 class AnalysisError extends Error {
   constructor(code, metadata = {}) {
-    super();
+    // Extract cause from metadata if provided (for error cause chaining)
+    const { cause, ...restMetadata } = metadata;
+
+    // Call super with cause option for proper error chain (ES2022+)
+    super(undefined, cause ? { cause } : undefined);
+
     this.name = 'AnalysisError';
     this.code = code;
-    this.metadata = metadata;
+    this.metadata = restMetadata;
     this.isOperational = true;
     this.timestamp = new Date().toISOString();
+
+    // Store cause reference for environments that don't support Error cause option
+    if (cause && !this.cause) {
+      this.cause = cause;
+    }
 
     // Set error message based on code
     this.message = this.generateMessage();

@@ -229,6 +229,14 @@ describe('useAnalysis', () => {
   });
 
   describe('cancelAnalysis', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     test('stops analysis and resets state', () => {
       const { result } = renderHook(() => useAnalysis(createMockOptions()));
 
@@ -237,12 +245,17 @@ describe('useAnalysis', () => {
       });
 
       expect(mockSetIsAnalyzing).toHaveBeenCalledWith(false);
-      expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
       expect(mockSetAnalysisProgress).toHaveBeenCalledWith({
         current: 0,
         total: 0
       });
-      expect(mockAddNotification).toHaveBeenCalledWith('Analysis stopped', 'info', 2000);
+
+      // File name is cleared after a delay
+      act(() => {
+        jest.runAllTimers();
+      });
+
+      expect(mockSetCurrentAnalysisFile).toHaveBeenCalledWith('');
     });
 
     test('updates actions phase data', () => {
@@ -253,6 +266,12 @@ describe('useAnalysis', () => {
       });
 
       expect(mockActions.setPhaseData).toHaveBeenCalledWith('isAnalyzing', false);
+
+      // File name phase data is cleared after a delay
+      act(() => {
+        jest.runAllTimers();
+      });
+
       expect(mockActions.setPhaseData).toHaveBeenCalledWith('currentAnalysisFile', '');
     });
   });

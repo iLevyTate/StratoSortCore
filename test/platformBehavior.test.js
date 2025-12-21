@@ -14,8 +14,8 @@ jest.mock('../src/shared/logger', () => ({
   }
 }));
 
-// Mock timingConstants
-jest.mock('../src/main/core/timingConstants', () => ({
+// Mock performanceConstants (WINDOW and PROCESS timing constants)
+jest.mock('../src/shared/performanceConstants', () => ({
   WINDOW: {
     ALWAYS_ON_TOP_DURATION_MS: 50
   },

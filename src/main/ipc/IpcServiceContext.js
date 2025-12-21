@@ -1,11 +1,14 @@
 /**
- * Service Container for IPC Handlers
+ * IPC Service Context
  *
- * Groups related dependencies into logical service containers to reduce
- * coupling and make dependency management more maintainable.
+ * Groups related dependencies into logical service contexts to reduce
+ * coupling and make dependency management more maintainable for IPC handlers.
  *
  * This pattern replaces the 28-parameter function signature with
  * organized service groups that are easier to test and modify.
+ *
+ * NOTE: This is distinct from src/main/services/ServiceContainer.js which is
+ * the main DI container. This class specifically handles IPC handler context.
  */
 
 /**
@@ -58,9 +61,10 @@
  */
 
 /**
- * Service Container class that organizes dependencies into logical groups
+ * IPC Service Context class that organizes dependencies into logical groups
+ * for IPC handlers. This is separate from the main DI ServiceContainer.
  */
-class ServiceContainer {
+class IpcServiceContext {
   constructor() {
     this._core = null;
     this._electron = null;
@@ -289,12 +293,12 @@ class ServiceContainer {
 }
 
 /**
- * Factory function to create a ServiceContainer from legacy parameters
+ * Factory function to create an IpcServiceContext from legacy parameters
  * @param {Object} params - Legacy 28-parameter object
- * @returns {ServiceContainer} Configured service container
+ * @returns {IpcServiceContext} Configured IPC service context
  */
 function createFromLegacyParams(params) {
-  return new ServiceContainer()
+  return new IpcServiceContext()
     .setCore({
       ipcMain: params.ipcMain,
       IPC_CHANNELS: params.IPC_CHANNELS,
@@ -337,6 +341,8 @@ function createFromLegacyParams(params) {
 }
 
 module.exports = {
-  ServiceContainer,
-  createFromLegacyParams
+  IpcServiceContext,
+  createFromLegacyParams,
+  // Backward compatibility alias
+  ServiceContainer: IpcServiceContext
 };

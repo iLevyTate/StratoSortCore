@@ -82,6 +82,18 @@ class StartupManager {
     this.onProgressCallback = callback;
   }
 
+  /**
+   * Set the ChromaDB dependency missing flag
+   * Use this instead of directly mutating the property
+   * @param {boolean} value - Whether ChromaDB dependency is missing
+   */
+  setChromadbDependencyMissing(value) {
+    this.chromadbDependencyMissing = Boolean(value);
+    logger.debug('[STARTUP] ChromaDB dependency missing flag set', {
+      value: this.chromadbDependencyMissing
+    });
+  }
+
   reportProgress(phase, message, progress, details = {}) {
     this.startupPhase = phase;
 

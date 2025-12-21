@@ -71,10 +71,12 @@ jest.mock('../src/main/services/DependencyManagerService', () => ({
 // Mock StartupManager
 const mockStartOllamaSpy = jest.fn().mockResolvedValue({ success: true });
 const mockStartChromaSpy = jest.fn().mockResolvedValue({ success: true });
+const mockSetChromadbDependencyMissingSpy = jest.fn();
 const mockStartupManagerInstance = {
   startOllama: mockStartOllamaSpy,
   startChromaDB: mockStartChromaSpy,
-  chromadbDependencyMissing: false // Added for flag clearing fix
+  chromadbDependencyMissing: false,
+  setChromadbDependencyMissing: mockSetChromadbDependencyMissingSpy
 };
 jest.mock('../src/main/services/startup', () => ({
   getStartupManager: () => mockStartupManagerInstance

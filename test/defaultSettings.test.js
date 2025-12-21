@@ -47,24 +47,14 @@ describe('defaultSettings', () => {
     });
   });
 
-  describe('Organization Confidence Thresholds', () => {
-    test('has autoApproveThreshold', () => {
-      expect(DEFAULT_SETTINGS.autoApproveThreshold).toBe(0.8);
+  describe('Organization Confidence Threshold', () => {
+    test('has confidenceThreshold', () => {
+      expect(DEFAULT_SETTINGS.confidenceThreshold).toBe(0.75);
     });
 
-    test('has downloadConfidenceThreshold', () => {
-      expect(DEFAULT_SETTINGS.downloadConfidenceThreshold).toBe(0.9);
-    });
-
-    test('has reviewThreshold', () => {
-      expect(DEFAULT_SETTINGS.reviewThreshold).toBe(0.5);
-    });
-
-    test('thresholds are in correct order', () => {
-      expect(DEFAULT_SETTINGS.reviewThreshold).toBeLessThan(DEFAULT_SETTINGS.autoApproveThreshold);
-      expect(DEFAULT_SETTINGS.autoApproveThreshold).toBeLessThan(
-        DEFAULT_SETTINGS.downloadConfidenceThreshold
-      );
+    test('confidenceThreshold is between 0 and 1', () => {
+      expect(DEFAULT_SETTINGS.confidenceThreshold).toBeGreaterThanOrEqual(0);
+      expect(DEFAULT_SETTINGS.confidenceThreshold).toBeLessThanOrEqual(1);
     });
   });
 
@@ -136,9 +126,7 @@ describe('defaultSettings', () => {
     test('all numeric values are positive', () => {
       const numericKeys = [
         'maxConcurrentAnalysis',
-        'autoApproveThreshold',
-        'downloadConfidenceThreshold',
-        'reviewThreshold',
+        'confidenceThreshold',
         'maxFileSize',
         'maxImageFileSize',
         'maxDocumentFileSize',
@@ -156,13 +144,9 @@ describe('defaultSettings', () => {
       });
     });
 
-    test('threshold values are between 0 and 1', () => {
-      const thresholds = ['autoApproveThreshold', 'downloadConfidenceThreshold', 'reviewThreshold'];
-
-      thresholds.forEach((key) => {
-        expect(DEFAULT_SETTINGS[key]).toBeGreaterThanOrEqual(0);
-        expect(DEFAULT_SETTINGS[key]).toBeLessThanOrEqual(1);
-      });
+    test('confidenceThreshold is between 0 and 1', () => {
+      expect(DEFAULT_SETTINGS.confidenceThreshold).toBeGreaterThanOrEqual(0);
+      expect(DEFAULT_SETTINGS.confidenceThreshold).toBeLessThanOrEqual(1);
     });
 
     test('ollamaHost is a valid URL format', () => {

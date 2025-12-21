@@ -543,19 +543,57 @@ class ParallelEmbeddingService {
   }
 }
 
-// Singleton instance for global use
-let instance = null;
+// Singleton management - delegates to DI container when available
+let _localInstance = null;
+let _containerRegistered = false;
 
 /**
  * Get or create the singleton instance
+ *
+ * This function provides backward compatibility while the DI container
+ * is the single source of truth for singleton instances.
+ *
  * @param {Object} options - Configuration options
  * @returns {ParallelEmbeddingService}
  */
 function getInstance(options = {}) {
-  if (!instance) {
-    instance = new ParallelEmbeddingService(options);
+  // Try to get from DI container first (preferred)
+  try {
+    const { container, ServiceIds } = require('./ServiceContainer');
+    if (container.has(ServiceIds.PARALLEL_EMBEDDING)) {
+      return container.resolve(ServiceIds.PARALLEL_EMBEDDING);
+    }
+  } catch {
+    // Container not available yet, use local instance
   }
-  return instance;
+
+  // Fallback to local instance for early startup or testing
+  if (!_localInstance) {
+    _localInstance = new ParallelEmbeddingService(options);
+  }
+  return _localInstance;
+}
+
+/**
+ * Register this service with the DI container
+ * Called by ServiceIntegration during initialization
+ * @param {ServiceContainer} container - The DI container
+ * @param {string} serviceId - The service identifier
+ */
+function registerWithContainer(container, serviceId) {
+  if (_containerRegistered) return;
+
+  container.registerSingleton(serviceId, () => {
+    // If we have a local instance, migrate it to the container
+    if (_localInstance) {
+      const instance = _localInstance;
+      _localInstance = null; // Clear local reference
+      return instance;
+    }
+    return new ParallelEmbeddingService();
+  });
+  _containerRegistered = true;
+  logger.debug('[ParallelEmbeddingService] Registered with DI container');
 }
 
 /**
@@ -563,18 +601,45 @@ function getInstance(options = {}) {
  * Calls shutdown on existing instance before resetting
  */
 async function resetInstance() {
-  if (instance) {
+  // Reset container registration flag
+  _containerRegistered = false;
+
+  // Clear from DI container if registered
+  try {
+    const { container, ServiceIds } = require('./ServiceContainer');
+    if (container.has(ServiceIds.PARALLEL_EMBEDDING)) {
+      const instance = container.tryResolve(ServiceIds.PARALLEL_EMBEDDING);
+      container.clearInstance(ServiceIds.PARALLEL_EMBEDDING);
+      if (instance && typeof instance.shutdown === 'function') {
+        try {
+          await instance.shutdown();
+        } catch (e) {
+          logger.warn(
+            '[ParallelEmbeddingService] Error during container instance shutdown:',
+            e.message
+          );
+        }
+      }
+    }
+  } catch {
+    // Container not available
+  }
+
+  // Also clear local instance
+  if (_localInstance) {
+    const oldInstance = _localInstance;
+    _localInstance = null;
     try {
-      await instance.shutdown();
+      await oldInstance.shutdown();
     } catch (error) {
       logger.warn('[ParallelEmbeddingService] Error during shutdown in reset:', error.message);
     }
   }
-  instance = null;
 }
 
 module.exports = {
   ParallelEmbeddingService,
   getInstance,
-  resetInstance
+  resetInstance,
+  registerWithContainer
 };

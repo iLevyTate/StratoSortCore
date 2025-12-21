@@ -16,7 +16,8 @@ const {
   LIMITS,
   THRESHOLDS,
   RETRY,
-  CONCURRENCY
+  CONCURRENCY,
+  TIMEOUTS
 } = require('../../../shared/performanceConstants');
 
 const { loadPersistedData, persistQueueData } = require('./persistence');
@@ -68,6 +69,24 @@ class EmbeddingQueue {
     // Track pending operations for graceful shutdown
     this._pendingPersistence = null;
     this._pendingFlush = null;
+
+    // Mutex for flush operation to prevent double-flush race conditions
+    this._flushMutex = Promise.resolve();
+  }
+
+  /**
+   * Acquire flush mutex to prevent concurrent flush operations
+   * @returns {Promise<Function>} Release function to call when done
+   * @private
+   */
+  _acquireFlushMutex() {
+    let release;
+    const next = new Promise((resolve) => {
+      release = resolve;
+    });
+    const current = this._flushMutex;
+    this._flushMutex = next;
+    return current.then(() => release);
   }
 
   /**
@@ -274,124 +293,136 @@ class EmbeddingQueue {
 
   /**
    * Flush pending embeddings to ChromaDB
+   * Uses mutex to prevent race conditions from concurrent flush calls
    */
   async flush() {
-    if (this.isFlushing || this.queue.length === 0) return;
-
-    this.isFlushing = true;
-    const flushStartTime = Date.now();
-
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-
-    const batchSize = Math.min(this.queue.length, this.BATCH_SIZE);
-    const batch = this.queue.slice(0, batchSize);
-
-    this._notifyProgress({
-      phase: 'start',
-      total: batch.length,
-      completed: 0,
-      percent: 0,
-      queueRemaining: this.queue.length - batchSize
-    });
+    // Acquire mutex to prevent concurrent flush operations
+    const release = await this._acquireFlushMutex();
 
     try {
-      logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
-
-      const chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
-      await chromaDbService.initialize();
-
-      if (!chromaDbService.isOnline) {
-        await this._handleOfflineDatabase(batch, batchSize);
+      // Check conditions after acquiring mutex (double-check pattern)
+      if (this.isFlushing || this.queue.length === 0) {
         return;
       }
 
-      this.retryCount = 0;
+      this.isFlushing = true;
+      const flushStartTime = Date.now();
 
-      const fileItems = batch.filter((i) => !i.id.startsWith('folder:'));
-      const folderItems = batch.filter((i) => i.id.startsWith('folder:'));
-      const failedItemIds = new Set();
-      let processedCount = 0;
-
-      // Process files
-      if (fileItems.length > 0) {
-        processedCount = await processItemsInParallel({
-          items: fileItems,
-          type: 'file',
-          chromaDbService,
-          failedItemIds,
-          startProcessedCount: processedCount,
-          totalBatchSize: batch.length,
-          concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
-          onProgress: (p) => this._notifyProgress(p),
-          onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
-        });
+      if (this.flushTimer) {
+        clearTimeout(this.flushTimer);
+        this.flushTimer = null;
       }
 
-      // Process folders
-      if (folderItems.length > 0) {
-        await processItemsInParallel({
-          items: folderItems,
-          type: 'folder',
-          chromaDbService,
-          failedItemIds,
-          startProcessedCount: processedCount,
-          totalBatchSize: batch.length,
-          concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
-          onProgress: (p) => this._notifyProgress(p),
-          onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
-        });
-      }
-
-      // Remove processed items from queue
-      this.queue.splice(0, batchSize);
-
-      const flushDuration = Date.now() - flushStartTime;
-      const successCount = batch.length - failedItemIds.size;
-
-      logger.info('[EmbeddingQueue] Successfully flushed batch', {
-        success: successCount,
-        failed: failedItemIds.size,
-        remaining: this.queue.length,
-        duration: `${flushDuration}ms`
-      });
+      const batchSize = Math.min(this.queue.length, this.BATCH_SIZE);
+      const batch = this.queue.slice(0, batchSize);
 
       this._notifyProgress({
-        phase: 'complete',
+        phase: 'start',
         total: batch.length,
-        completed: successCount,
-        failed: failedItemIds.size,
-        percent: 100,
-        queueRemaining: this.queue.length,
-        duration: flushDuration
+        completed: 0,
+        percent: 0,
+        queueRemaining: this.queue.length - batchSize
       });
 
-      await this.persistQueue();
-      await this._failedItemHandler.retryFailedItems(this.queue, () => this.persistQueue());
+      try {
+        logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
 
-      if (this.queue.length > 0) {
-        this.scheduleFlush();
+        const chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
+        await chromaDbService.initialize();
+
+        if (!chromaDbService.isOnline) {
+          await this._handleOfflineDatabase(batch, batchSize);
+          return;
+        }
+
+        this.retryCount = 0;
+
+        const fileItems = batch.filter((i) => !i.id.startsWith('folder:'));
+        const folderItems = batch.filter((i) => i.id.startsWith('folder:'));
+        const failedItemIds = new Set();
+        let processedCount = 0;
+
+        // Process files
+        if (fileItems.length > 0) {
+          processedCount = await processItemsInParallel({
+            items: fileItems,
+            type: 'file',
+            chromaDbService,
+            failedItemIds,
+            startProcessedCount: processedCount,
+            totalBatchSize: batch.length,
+            concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
+            onProgress: (p) => this._notifyProgress(p),
+            onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
+          });
+        }
+
+        // Process folders
+        if (folderItems.length > 0) {
+          await processItemsInParallel({
+            items: folderItems,
+            type: 'folder',
+            chromaDbService,
+            failedItemIds,
+            startProcessedCount: processedCount,
+            totalBatchSize: batch.length,
+            concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
+            onProgress: (p) => this._notifyProgress(p),
+            onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
+          });
+        }
+
+        // Remove processed items from queue
+        this.queue.splice(0, batchSize);
+
+        const flushDuration = Date.now() - flushStartTime;
+        const successCount = batch.length - failedItemIds.size;
+
+        logger.info('[EmbeddingQueue] Successfully flushed batch', {
+          success: successCount,
+          failed: failedItemIds.size,
+          remaining: this.queue.length,
+          duration: `${flushDuration}ms`
+        });
+
+        this._notifyProgress({
+          phase: 'complete',
+          total: batch.length,
+          completed: successCount,
+          failed: failedItemIds.size,
+          percent: 100,
+          queueRemaining: this.queue.length,
+          duration: flushDuration
+        });
+
+        await this.persistQueue();
+        await this._failedItemHandler.retryFailedItems(this.queue, () => this.persistQueue());
+
+        if (this.queue.length > 0) {
+          this.scheduleFlush();
+        }
+      } catch (error) {
+        logger.error('[EmbeddingQueue] Flush error:', error.message);
+        this._notifyProgress({
+          phase: 'error',
+          error: error.message,
+          retryCount: this.retryCount
+        });
+
+        this.retryCount++;
+        const backoffDelay = Math.min(
+          RETRY.BACKOFF_BASE_MS * Math.pow(2, this.retryCount - 1),
+          RETRY.BACKOFF_MAX_MS
+        );
+        logger.info(`[EmbeddingQueue] Will retry in ${backoffDelay / 1000}s`);
+        const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
+        if (retryTimer.unref) retryTimer.unref();
+      } finally {
+        this.isFlushing = false;
       }
-    } catch (error) {
-      logger.error('[EmbeddingQueue] Flush error:', error.message);
-      this._notifyProgress({
-        phase: 'error',
-        error: error.message,
-        retryCount: this.retryCount
-      });
-
-      this.retryCount++;
-      const backoffDelay = Math.min(
-        RETRY.BACKOFF_BASE_MS * Math.pow(2, this.retryCount - 1),
-        RETRY.BACKOFF_MAX_MS
-      );
-      logger.info(`[EmbeddingQueue] Will retry in ${backoffDelay / 1000}s`);
-      const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
-      if (retryTimer.unref) retryTimer.unref();
     } finally {
-      this.isFlushing = false;
+      // Always release the mutex
+      release();
     }
   }
 
@@ -591,7 +622,7 @@ class EmbeddingQueue {
       const maxWait = 30000;
       const startTime = Date.now();
       while (this.isFlushing && Date.now() - startTime < maxWait) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_BATCH));
       }
     }
 

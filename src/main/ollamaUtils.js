@@ -321,7 +321,11 @@ async function saveOllamaConfig(config) {
 
     const dir = path.dirname(filePath);
     if (typeof fs.mkdir === 'function') {
-      await fs.mkdir(dir, { recursive: true }).catch(() => {});
+      await fs
+        .mkdir(dir, { recursive: true })
+        .catch((err) =>
+          logger.debug('[OLLAMA] Config dir creation failed (may already exist):', err.message)
+        );
     }
     const tempFile = path.join(
       dir,
@@ -341,7 +345,9 @@ async function saveOllamaConfig(config) {
           attempts += 1;
           continue;
         }
-        await fs.unlink(tempFile).catch(() => {});
+        await fs
+          .unlink(tempFile)
+          .catch((err) => logger.debug('[OLLAMA] Temp file cleanup failed:', err.message));
         throw renameError;
       }
     }

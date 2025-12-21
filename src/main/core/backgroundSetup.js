@@ -200,7 +200,7 @@ async function runAutomatedDependencySetup() {
   try {
     // CRITICAL FIX: Clear dependency missing flag before starting
     // This ensures freshly installed ChromaDB module is detected
-    startupManager.chromadbDependencyMissing = false;
+    startupManager.setChromadbDependencyMissing(false);
     emitDependencyProgress({
       message: 'Starting ChromaDB…',
       dependency: 'chromadb',
@@ -227,7 +227,9 @@ async function runAutomatedDependencySetup() {
       dependency: 'ollama',
       stage: 'update'
     });
-    await manager.updateOllama().catch(() => {});
+    await manager
+      .updateOllama()
+      .catch((err) => logger.warn('[BACKGROUND] Ollama auto-update failed:', err.message));
   }
   if (settings?.autoUpdateChromaDb) {
     emitDependencyProgress({
@@ -235,7 +237,9 @@ async function runAutomatedDependencySetup() {
       dependency: 'chromadb',
       stage: 'update'
     });
-    await manager.updateChromaDb().catch(() => {});
+    await manager
+      .updateChromaDb()
+      .catch((err) => logger.warn('[BACKGROUND] ChromaDB auto-update failed:', err.message));
   }
 }
 

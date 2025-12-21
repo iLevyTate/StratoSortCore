@@ -19,10 +19,8 @@ jest.mock('../src/shared/performanceConstants', () => ({
   BATCH: {
     AUTO_ORGANIZE_BATCH_SIZE: 10
   },
-  THRESHOLDS: {
-    CONFIDENCE_HIGH: 0.8,
-    MIN_SIMILARITY_SCORE: 0.5,
-    CONFIDENCE_LOW: 0.3
+  CONCURRENCY: {
+    DEFAULT_WORKERS: 3
   }
 }));
 
@@ -137,10 +135,8 @@ describe('AutoOrganizeServiceCore', () => {
       expect(service.undoRedo).toBe(mockUndoRedoService);
     });
 
-    test('initializes thresholds from constants', () => {
-      expect(service.thresholds.autoApprove).toBe(0.8);
-      expect(service.thresholds.requireReview).toBe(0.5);
-      expect(service.thresholds.reject).toBe(0.3);
+    test('initializes thresholds from defaults', () => {
+      expect(service.thresholds.confidence).toBe(0.75);
     });
   });
 
@@ -358,23 +354,18 @@ describe('AutoOrganizeServiceCore', () => {
   });
 
   describe('updateThresholds', () => {
-    test('updates thresholds', () => {
-      service.updateThresholds({ autoApprove: 0.95 });
+    test('updates confidence threshold', () => {
+      service.updateThresholds({ confidence: 0.85 });
 
-      expect(service.thresholds.autoApprove).toBe(0.95);
-      // Other thresholds should remain unchanged
-      expect(service.thresholds.requireReview).toBe(0.5);
+      expect(service.thresholds.confidence).toBe(0.85);
     });
 
     test('merges with existing thresholds', () => {
       service.updateThresholds({
-        autoApprove: 0.9,
-        requireReview: 0.6
+        confidence: 0.9
       });
 
-      expect(service.thresholds.autoApprove).toBe(0.9);
-      expect(service.thresholds.requireReview).toBe(0.6);
-      expect(service.thresholds.reject).toBe(0.3);
+      expect(service.thresholds.confidence).toBe(0.9);
     });
   });
 });

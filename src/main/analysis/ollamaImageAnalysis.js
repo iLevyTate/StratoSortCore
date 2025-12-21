@@ -91,7 +91,13 @@ Your response should be a JSON object with the following fields:
 - content_type (e.g., 'people', 'landscape', 'text_document', 'interface', 'object', 'animal', 'food', 'vehicle', 'architecture')
 - has_text (boolean indicating if there's readable text in the image)
 - colors (array of 2-4 dominant colors in the image)
-- suggestedName (descriptive name based on image content, underscores, max 50 chars)
+- suggestedName (SHORT descriptive name, MAX 40 chars, 2-5 key words only)
+
+IMPORTANT FOR suggestedName:
+- Keep it SHORT: maximum 40 characters (excluding extension)
+- Use 2-5 key descriptive words only
+- Do NOT include dates, IDs, or reference numbers
+- Example: "sunset_beach_landscape" or "team_meeting_whiteboard"
 
 If you cannot determine a field, omit it from the JSON. Do not make up information. The output MUST be a valid JSON object.
 

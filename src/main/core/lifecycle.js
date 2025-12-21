@@ -9,6 +9,7 @@
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { logger } = require('../../shared/logger');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { destroyTray, getTray } = require('./systemTray');
 const { getStartupManager } = require('../services/startup');
 const systemAnalytics = require('./systemAnalytics');
@@ -241,7 +242,7 @@ async function handleBeforeQuit() {
         }
 
         // Brief async wait then verify (replaces blocking sleep)
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.PROCESS_KILL_VERIFY));
 
         // Verify process is actually terminated
         if (isProcessRunning(pid)) {
@@ -347,6 +348,15 @@ async function handleBeforeQuit() {
  * Handle window-all-closed event
  */
 function handleWindowAllClosed() {
+  // Check if background mode is enabled - if so, don't quit when windows are closed
+  const settingsService = lifecycleConfig.getSettingsService?.();
+  const backgroundMode = settingsService?.get?.('backgroundMode');
+
+  if (backgroundMode) {
+    logger.info('[LIFECYCLE] Background mode enabled - keeping app running in tray');
+    return; // Don't quit, keep running in tray
+  }
+
   // Use platform abstraction instead of direct isMacOS check
   const { shouldQuitOnAllWindowsClosed } = require('./platformBehavior');
   if (shouldQuitOnAllWindowsClosed()) {

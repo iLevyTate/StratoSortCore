@@ -8,6 +8,7 @@
  */
 
 const { logger } = require('../../../shared/logger');
+const { RETRY } = require('../../../shared/performanceConstants');
 const { withRetry } = require('../../../shared/errorHandlingUtils');
 const { sanitizeMetadata } = require('../../../shared/pathSanitization');
 
@@ -421,11 +422,11 @@ async function batchQueryFolders({
         }
 
         if (attempt < maxRetries - 1) {
-          await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, RETRY.CHROMADB_BACKOFF_STEP_MS * (attempt + 1)));
         }
       } catch (e) {
         if (attempt === maxRetries - 1) throw e;
-        await new Promise((r) => setTimeout(r, 100 * (attempt + 1)));
+        await new Promise((r) => setTimeout(r, RETRY.CHROMADB_BACKOFF_STEP_MS * (attempt + 1)));
       }
     }
 

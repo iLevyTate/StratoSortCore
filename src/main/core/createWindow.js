@@ -1,6 +1,7 @@
 const { BrowserWindow, shell, app } = require('electron');
 const path = require('path');
 const { logger } = require('../../shared/logger');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 logger.setContext('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
 const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
@@ -135,11 +136,11 @@ function createMainWindow() {
   // CRITICAL FIX: Ensure webContents is ready before loading
   if (win.webContents.isLoading()) {
     win.webContents.once('did-stop-loading', () => {
-      setTimeout(loadContent, 100);
+      setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
     });
   } else {
     // Add a small delay to ensure window is fully initialized
-    setTimeout(loadContent, 100);
+    setTimeout(loadContent, TIMEOUTS.WINDOW_LOAD_DELAY);
   }
 
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {

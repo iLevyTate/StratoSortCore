@@ -47,7 +47,14 @@ async function downloadToFile(url, destPath, { onProgress } = {}) {
   const https = require('https');
   const fsSync = require('fs');
 
-  await fs.mkdir(path.dirname(destPath), { recursive: true }).catch(() => {});
+  await fs
+    .mkdir(path.dirname(destPath), { recursive: true })
+    .catch((err) =>
+      logger.debug(
+        '[DependencyManager] Directory creation failed (may already exist):',
+        err.message
+      )
+    );
 
   return new Promise((resolve, reject) => {
     let fileStream = null;
@@ -296,11 +303,9 @@ class DependencyManagerService {
         shell: false
       });
 
-      try {
-        await fs.unlink(installerPath).catch(() => {});
-      } catch {
-        // ignore
-      }
+      await fs
+        .unlink(installerPath)
+        .catch((err) => logger.debug('[DependencyManager] Installer cleanup failed:', err.message));
 
       if (installResult.status !== 0) {
         return {

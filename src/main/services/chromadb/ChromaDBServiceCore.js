@@ -16,7 +16,7 @@ const { logger } = require('../../../shared/logger');
 const { get: getConfig } = require('../../../shared/config/index');
 const { CircuitBreaker, CircuitState } = require('../../utils/CircuitBreaker');
 const { OfflineQueue, OperationType } = require('../../utils/OfflineQueue');
-const { NETWORK } = require('../../../shared/performanceConstants');
+const { NETWORK, TIMEOUTS } = require('../../../shared/performanceConstants');
 const { withTimeout } = require('../../../shared/promiseUtils');
 
 // Timeout configuration for ChromaDB operations (prevents UI freeze on slow/unresponsive server)
@@ -565,7 +565,7 @@ class ChromaDBServiceCore extends EventEmitter {
 
       // FIX: Add small delay to allow _initPromise to be set, avoiding race condition
       // where _isInitializing is true but _initPromise hasn't been assigned yet
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_MICRO));
       if (this._initPromise) {
         return this._initPromise;
       }

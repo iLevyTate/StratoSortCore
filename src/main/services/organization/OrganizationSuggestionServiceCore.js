@@ -12,6 +12,7 @@ const fs = require('fs').promises;
 const os = require('os');
 const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
+const { LIMITS } = require('../../../shared/performanceConstants');
 const { globalBatchProcessor } = require('../../utils/llmOptimization');
 
 // Extracted modules
@@ -162,7 +163,7 @@ class OrganizationSuggestionServiceCore {
     if (!Array.isArray(smartFolders)) {
       throw new Error('smartFolders must be an array');
     }
-    if (file.name.length > 255) {
+    if (file.name.length > LIMITS.MAX_FILENAME_LENGTH) {
       throw new Error('Invalid file object: file.name exceeds maximum length');
     }
     if (file.extension.length > 50) {
