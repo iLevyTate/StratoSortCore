@@ -99,7 +99,7 @@
     ]
   },
   "dependencies": {
-    "chokidar": "^4.0.3",
+    "chokidar": "^5.0.0",
     "chromadb": "^3.1.8",
     "electron-updater": "^6.1.4",
     "electron-window-state": "^5.0.3",
