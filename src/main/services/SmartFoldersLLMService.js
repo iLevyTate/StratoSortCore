@@ -4,6 +4,7 @@ const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { fetchWithRetry } = require('../utils/ollamaApiRetry');
 const { getOllamaHost } = require('../ollamaUtils');
 const { DEFAULT_AI_MODELS } = require('../../shared/constants');
+const { SERVICE_URLS } = require('../../shared/configDefaults');
 
 async function enhanceSmartFolderWithLLM(folderData, existingFolders, getOllamaModel) {
   try {
@@ -37,7 +38,7 @@ Please provide a JSON response with the following enhancements:
     const modelToUse =
       (typeof getOllamaModel === 'function' && getOllamaModel()) || DEFAULT_AI_MODELS.TEXT_ANALYSIS;
 
-    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : 'http://127.0.0.1:11434';
+    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : SERVICE_URLS.OLLAMA_HOST;
 
     try {
       const response = await fetchWithRetry(`${host}/api/generate`, {
@@ -86,7 +87,7 @@ async function calculateFolderSimilarities(suggestedCategory, folderCategories, 
     const similarities = [];
     const modelToUse =
       (typeof getOllamaModel === 'function' && getOllamaModel()) || DEFAULT_AI_MODELS.TEXT_ANALYSIS;
-    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : 'http://127.0.0.1:11434';
+    const host = typeof getOllamaHost === 'function' ? getOllamaHost() : SERVICE_URLS.OLLAMA_HOST;
 
     if (!Array.isArray(folderCategories) || folderCategories.length === 0) {
       return [];

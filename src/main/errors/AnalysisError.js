@@ -3,6 +3,8 @@
  * Provides operational error handling with actionable user guidance
  */
 
+const { SERVICE_URLS } = require('../../shared/configDefaults');
+
 class AnalysisError extends Error {
   constructor(code, metadata = {}) {
     // Extract cause from metadata if provided (for error cause chaining)
@@ -104,7 +106,7 @@ class DependencyMissingError extends AnalysisError {
 }
 
 class OllamaConnectionError extends AnalysisError {
-  constructor(host = 'http://127.0.0.1:11434') {
+  constructor(host = SERVICE_URLS.OLLAMA_HOST) {
     super('OLLAMA_CONNECTION_FAILURE', {
       host,
       category: 'connection'

@@ -113,6 +113,32 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
 // ============================================================================
 
 /**
+ * Calculate delay with exponential backoff and optional jitter.
+ * Jitter helps prevent the "thundering herd" problem when multiple
+ * retries happen simultaneously.
+ *
+ * @param {number} attempt - Current attempt number (0-based)
+ * @param {number} initialDelay - Initial delay in ms
+ * @param {number} maxDelay - Maximum delay in ms
+ * @param {number} backoffFactor - Exponential backoff multiplier
+ * @param {number} jitterFactor - Jitter factor (0-1), 0 = no jitter
+ * @returns {number} Delay in milliseconds
+ */
+function calculateRetryDelay(attempt, initialDelay, maxDelay, backoffFactor, jitterFactor = 0) {
+  // Exponential backoff
+  const exponentialDelay = initialDelay * Math.pow(backoffFactor, attempt);
+  const baseDelay = Math.min(exponentialDelay, maxDelay);
+
+  // Add jitter if specified (jitter is +/- jitterFactor of the delay)
+  if (jitterFactor > 0) {
+    const jitter = baseDelay * jitterFactor * (Math.random() - 0.5) * 2;
+    return Math.max(0, Math.floor(baseDelay + jitter));
+  }
+
+  return Math.floor(baseDelay);
+}
+
+/**
  * Wraps an async function with retry logic and exponential backoff.
  * Returns a new function that will automatically retry on failure.
  *
@@ -125,6 +151,7 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
  * @param {number} [options.maxDelay=10000] - Maximum delay between retries in ms
  * @param {number} [options.backoff=2] - Backoff multiplier for exponential delay (alias: backoffFactor)
  * @param {number} [options.backoffFactor] - Alias for backoff
+ * @param {number} [options.jitterFactor=0] - Jitter factor (0-1) to randomize delays, preventing thundering herd
  * @param {string} [options.operationName='Operation'] - Name for logging
  * @param {Function} [options.shouldRetry] - Function(error, attempt) => boolean to determine if retry should occur
  * @param {Function} [options.onRetry] - Callback(error, attempt) called before each retry
@@ -134,6 +161,7 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
  *   maxRetries: 3,
  *   initialDelay: 1000,
  *   backoff: 2,
+ *   jitterFactor: 0.3, // +/- 30% randomization
  *   shouldRetry: (err) => err.code !== 'AUTH_FAILED'
  * });
  * const data = await fetchWithRetry(url);
@@ -147,6 +175,7 @@ function withRetry(fn, options = {}) {
     maxDelay = 10000,
     backoff,
     backoffFactor,
+    jitterFactor = 0,
     operationName = 'Operation',
     shouldRetry = () => true,
     onRetry
@@ -167,9 +196,12 @@ function withRetry(fn, options = {}) {
         lastError = error;
 
         if (attempt < effectiveMaxRetries && shouldRetry(error, attempt)) {
-          const waitTime = Math.min(
-            effectiveInitialDelay * Math.pow(effectiveBackoff, attempt),
-            maxDelay
+          const waitTime = calculateRetryDelay(
+            attempt,
+            effectiveInitialDelay,
+            maxDelay,
+            effectiveBackoff,
+            jitterFactor
           );
 
           logger.warn(
@@ -500,6 +532,7 @@ module.exports = {
   // Retry
   withRetry,
   retry,
+  calculateRetryDelay,
 
   // Safe execution
   safeCall,

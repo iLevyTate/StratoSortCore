@@ -6,12 +6,13 @@
 const { logger } = require('../../shared/logger');
 logger.setContext('ModelVerifier');
 const { DEFAULT_AI_MODELS } = require('../../shared/constants');
+const { SERVICE_URLS } = require('../../shared/configDefaults');
 const { fetchWithRetry } = require('../utils/ollamaApiRetry');
 const { getOllama } = require('../ollamaUtils');
 
 class ModelVerifier {
   constructor() {
-    this.ollamaHost = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+    this.ollamaHost = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
     // Use shared Ollama instance to avoid multiple HTTP connection pools
     this.ollama = getOllama();
     this.essentialModels = [

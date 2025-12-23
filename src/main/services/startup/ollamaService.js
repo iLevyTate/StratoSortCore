@@ -13,6 +13,7 @@ const { logger } = require('../../../shared/logger');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
 const { shouldUseShell } = require('../../../shared/platformUtils');
+const { SERVICE_URLS } = require('../../../shared/configDefaults');
 
 logger.setContext('StartupManager:Ollama');
 
@@ -22,7 +23,7 @@ logger.setContext('StartupManager:Ollama');
  */
 async function checkOllamaHealth() {
   try {
-    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+    const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
     const response = await axios.get(`${baseUrl}/api/tags`, {
       timeout: 2000
     });
@@ -39,7 +40,7 @@ async function checkOllamaHealth() {
  */
 async function isOllamaRunning() {
   try {
-    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+    const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
     const response = await axiosWithRetry(
       () => axios.get(`${baseUrl}/api/tags`, { timeout: 1000 }),
       {
@@ -62,7 +63,7 @@ async function isOllamaRunning() {
  * @returns {Promise<Object>} Start result
  */
 async function startOllama({ serviceStatus }) {
-  const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+  const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
 
   // Check if Ollama is already running
   try {
