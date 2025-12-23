@@ -47,10 +47,9 @@ find the right documentation for your needs.
 
 - **[LLM_OPTIMIZATION.md](./LLM_OPTIMIZATION.md)** - AI/LLM performance tuning strategies
 - **[OPTIMIZATION_DIAGRAM.md](./OPTIMIZATION_DIAGRAM.md)** - Visual optimization flow diagrams
-- **[PERFORMANCE_BENCHMARKING.md](./PERFORMANCE_BENCHMARKING.md)** - Benchmarking methodology and
-  results
-- **[HIDDEN_PERFORMANCE_DRAINS_FIXED.md](./HIDDEN_PERFORMANCE_DRAINS_FIXED.md)** - Previously
-  identified and resolved performance issues
+
+> Legacy/per-version performance reports have been archived locally to `docs/.legacy/archived-docs/`
+> (gitignored).
 
 ## Testing
 
@@ -60,14 +59,13 @@ find the right documentation for your needs.
 
 - **[EDGE_CASE_UTILITIES_GUIDE.md](./EDGE_CASE_UTILITIES_GUIDE.md)** - Edge case handling utilities
   documentation
-- **[CONSOLE_LOG_MIGRATION.md](./CONSOLE_LOG_MIGRATION.md)** - Migration from console.log to
-  structured logging
+
+> Legacy migration notes have been archived locally to `docs/.legacy/archived-docs/` (gitignored).
 
 ## Maintenance
 
-- **[REFACTORING_CANDIDATES.md](./REFACTORING_CANDIDATES.md)** - Identified areas for future
-  refactoring
-- **[BUGFIXES.md](./BUGFIXES.md)** - Notable bug fixes and their solutions
+- **`REFACTORING_CANDIDATES.md`** - (Archived locally; gitignored)
+- **`BUGFIXES.md`** - (Archived locally; gitignored)
 
 > **Note:** Legacy development reports and session logs have been archived to `docs/.legacy/` (not
 > tracked in git).
@@ -86,7 +84,6 @@ Environment variables and configuration are centralized in:
 docs/
 ├── README.md                        # This index file
 ├── ARCHITECTURE.md                  # System design
-├── BUGFIXES.md                      # Notable bug fixes
 ├── CODE_EXAMPLES.md                 # Common patterns
 ├── CODE_QUALITY_STANDARDS.md        # Style guide
 ├── CONFIG.md                        # Environment variables
@@ -96,11 +93,9 @@ docs/
 ├── LEARNING_GUIDE.md                # Developer onboarding
 ├── LLM_OPTIMIZATION.md              # AI tuning
 ├── OPTIMIZATION_DIAGRAM.md          # Optimization visuals
-├── PERFORMANCE_BENCHMARKING.md      # Benchmarks
 ├── REFERENCE_AND_GLOSSARY.md        # Terms and concepts
-├── REFACTORING_CANDIDATES.md        # Future improvements
 ├── TESTING_STRATEGY.md              # Test strategy
-└── .legacy/                         # Archived reports (gitignored)
+└── .legacy/                         # Local-only archived docs/reports (gitignored)
 ```
 
 ## Contributing
