@@ -68,14 +68,30 @@ if (!z) {
       s = s.slice(1, -1).trim();
     }
 
-    // If the user pasted a full command (e.g. "curl ..."), try to extract the first URL-like token.
-    // We prefer http(s)://... first, then host[:port][/path] patterns.
+    // If the user pasted a full command (e.g. "curl ..."), try to extract a URL-like token.
     if (/\s/.test(s)) {
-      const tokenMatch = s.match(
-        /(https?:\/\/[^\s"'`]+|(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/[^\s"'`]+)?)/i
-      );
-      if (tokenMatch?.[1]) {
-        s = tokenMatch[1];
+      // Prefer explicit http(s) URLs first.
+      const httpMatch = s.match(/https?:\/\/[^\s"'`]+/i);
+      if (httpMatch?.[0]) {
+        s = httpMatch[0];
+      } else {
+        // Otherwise, scan tokens for host[:port][/path] and skip command words like "curl".
+        const tokens = s.split(/\s+/).map((t) => t.replace(/^[("'`]+|[)"'`,;]+$/g, '').trim());
+        const isLikelyHost = (t) => {
+          if (!t) return false;
+          const lower = t.toLowerCase();
+          if (['curl', 'wget', 'powershell', 'pwsh', 'invoke-restmethod', 'irm'].includes(lower)) {
+            return false;
+          }
+          // Heuristics: "localhost", IPv4, or something containing "." or ":".
+          if (lower.startsWith('localhost')) return true;
+          if (/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/.*)?$/.test(t)) return true;
+          if (t.includes('.') || t.includes(':')) return true;
+          return false;
+        };
+
+        const candidate = tokens.find((t) => isLikelyHost(t) && relaxedUrlRegex.test(t));
+        if (candidate) s = candidate;
       }
     }
 

@@ -282,6 +282,12 @@ describe('IPC Validation Schemas', () => {
       expect(result.success).toBe(true);
     });
 
+    testIfZod('accepts URL pasted from a command (extracts first URL-like token)', () => {
+      const result = schemas.ollamaHost.safeParse('curl http://127.0.0.1:11434/api/tags');
+      expect(result.success).toBe(true);
+      expect(result.data).toBe('http://127.0.0.1:11434/api/tags');
+    });
+
     testIfZod('accepts empty string', () => {
       const result = schemas.ollamaHost.safeParse('');
       expect(result.success).toBe(true);
