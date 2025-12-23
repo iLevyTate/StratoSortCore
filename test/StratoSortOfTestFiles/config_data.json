@@ -1,0 +1,15 @@
+{
+  "name": "Sample Configuration",
+  "version": "1.0.0",
+  "settings": {
+    "theme": "dark",
+    "language": "en",
+    "autoSave": true
+  },
+  "features": ["analysis", "organization", "smart-folders"],
+  "metadata": {
+    "created": "2024-01-15",
+    "author": "Test User",
+    "category": "configuration"
+  }
+}

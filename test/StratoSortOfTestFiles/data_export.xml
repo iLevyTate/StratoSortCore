@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<export>
+  <metadata>
+    <name>Data Export</name>
+    <date>2024-01-15</date>
+    <category>data</category>
+  </metadata>
+  <records>
+    <record id="1">
+      <title>Sample Record</title>
+      <description>Test data for file analysis</description>
+      <status>active</status>
+    </record>
+    <record id="2">
+      <title>Another Record</title>
+      <description>More test data</description>
+      <status>pending</status>
+    </record>
+  </records>
+</export>
