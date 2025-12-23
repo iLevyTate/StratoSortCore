@@ -48,29 +48,32 @@ if (!z) {
 
   /**
    * Optional URL validation (relaxed: protocol optional, trims whitespace)
+   * Uses .nullish() to allow both null and undefined values
    */
   const relaxedUrlRegex = /^(?:https?:\/\/)?(?:[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/;
   const optionalUrlSchema = z
     .string()
     .trim()
-    .optional()
+    .nullish()
     .or(z.literal(''))
     .refine(
-      (val) => val === undefined || val === '' || relaxedUrlRegex.test(val),
+      (val) => val === undefined || val === null || val === '' || relaxedUrlRegex.test(val),
       'Invalid Ollama URL format (expected host[:port] with optional http/https)'
     );
 
   /**
    * Model name validation - alphanumeric with common separators
+   * Uses .nullish() to allow both null and undefined values
+   * Regex allows forward slashes for registry-style names (e.g., library/model)
    */
   const modelNameSchema = z
     .string()
     .regex(
-      /^[a-zA-Z0-9._:@-]+$/,
-      'Model name must be alphanumeric with hyphens, underscores, dots, @, or colons'
+      /^[a-zA-Z0-9._:@/\\-]+$/,
+      'Model name must be alphanumeric with hyphens, underscores, dots, @, colons, or slashes'
     )
     .max(100, 'Model name too long (max 100 chars)')
-    .optional();
+    .nullish();
 
   // ===== Settings Schemas =====
 

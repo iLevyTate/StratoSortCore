@@ -174,24 +174,24 @@ function registerSettingsIpc({
         .object({
           // Shared optional URL validator (allows blank to clear value, optional protocol)
           ollamaHost: optionalUrlSchema,
-          textModel: z.string().optional(),
-          visionModel: z.string().optional(),
-          embeddingModel: z.string().optional(),
-          autoUpdateOllama: z.boolean().optional(),
-          autoUpdateChromaDb: z.boolean().optional(),
-          dependencyWizardShown: z.boolean().optional(),
+          textModel: z.string().nullish(),
+          visionModel: z.string().nullish(),
+          embeddingModel: z.string().nullish(),
+          autoUpdateOllama: z.boolean().nullish(),
+          autoUpdateChromaDb: z.boolean().nullish(),
+          dependencyWizardShown: z.boolean().nullish(),
           dependencyWizardLastPromptAt: z.string().nullable().optional(),
-          dependencyWizardPromptIntervalDays: z.number().int().min(1).max(365).optional(),
-          launchOnStartup: z.boolean().optional(),
-          autoOrganize: z.boolean().optional(),
-          backgroundMode: z.boolean().optional(),
-          theme: z.string().optional(),
-          language: z.string().optional(),
-          loggingLevel: z.string().optional(),
-          cacheSize: z.number().int().min(0).max(100000).optional(),
-          maxBatchSize: z.number().int().min(1).max(100000).optional(),
-          autoUpdateCheck: z.boolean().optional(),
-          telemetryEnabled: z.boolean().optional()
+          dependencyWizardPromptIntervalDays: z.number().int().min(1).max(365).nullish(),
+          launchOnStartup: z.boolean().nullish(),
+          autoOrganize: z.boolean().nullish(),
+          backgroundMode: z.boolean().nullish(),
+          theme: z.string().nullish(),
+          language: z.string().nullish(),
+          loggingLevel: z.string().nullish(),
+          cacheSize: z.number().int().min(0).max(100000).nullish(),
+          maxBatchSize: z.number().int().min(1).max(100000).nullish(),
+          autoUpdateCheck: z.boolean().nullish(),
+          telemetryEnabled: z.boolean().nullish()
         })
         .partial()
     : null;

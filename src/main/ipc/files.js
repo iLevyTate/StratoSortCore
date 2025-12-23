@@ -11,7 +11,8 @@
  * - files/fileSelectionHandlers.js - File selection dialog (~150 lines)
  * - files/folderHandlers.js - Folder operations (~130 lines)
  * - files/shellHandlers.js - Shell operations (~50 lines)
- * - files/schemas.js - Zod validation schemas (~50 lines)
+ *
+ * Note: Validation schemas are centralized in ../validationSchemas.js
  *
  * @module ipc/files
  */
