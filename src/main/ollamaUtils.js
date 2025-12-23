@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../shared/logger');
 const { atomicFileOps } = require('../shared/atomicFileOperations');
+const { SERVICE_URLS } = require('../shared/configDefaults');
 
 // Optional: set context for clearer log origins
 logger.setContext('ollama-utils');
@@ -15,7 +16,7 @@ const getOllamaConfigPath = () => {
 };
 
 let ollamaInstance = null;
-let ollamaHost = 'http://127.0.0.1:11434';
+let ollamaHost = SERVICE_URLS.OLLAMA_HOST;
 let ollamaInstanceHost = null; // MEDIUM PRIORITY FIX (MED-13): Track host used to create instance
 let currentHttpAgent = null; // FIX: Track HTTP agent for cleanup to prevent socket leaks
 // Selected models persisted in userData config

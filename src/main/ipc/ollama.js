@@ -1,5 +1,6 @@
 const { Ollama } = require('ollama');
 const { withErrorLogging, withValidation } = require('./ipcWrappers');
+const { SERVICE_URLS } = require('../../shared/configDefaults');
 let z;
 
 function isValidOllamaUrl(url) {
@@ -20,7 +21,7 @@ const OLLAMA_URL_PATTERN =
  * @param {string} [defaultUrl='http://127.0.0.1:11434'] - Default URL if none provided
  * @returns {string} Normalized URL with protocol
  */
-function normalizeOllamaUrl(hostUrl, defaultUrl = 'http://127.0.0.1:11434') {
+function normalizeOllamaUrl(hostUrl, defaultUrl = SERVICE_URLS.OLLAMA_HOST) {
   let url = hostUrl || defaultUrl;
 
   if (url && typeof url === 'string') {
@@ -225,7 +226,7 @@ function registerOllamaIpc({
           } catch (error) {
             logger.error('[IPC] Ollama connection test failed:', error);
             // FIX: Use consistent fallback host value
-            const fallbackHost = hostUrl || 'http://127.0.0.1:11434';
+            const fallbackHost = hostUrl || SERVICE_URLS.OLLAMA_HOST;
             systemAnalytics.ollamaHealth = {
               status: 'unhealthy',
               host: fallbackHost,
@@ -266,7 +267,7 @@ function registerOllamaIpc({
           } catch (error) {
             logger.error('[IPC] Ollama connection test failed:', error);
             // FIX: Use consistent fallback host value
-            const fallbackHost = hostUrl || 'http://127.0.0.1:11434';
+            const fallbackHost = hostUrl || SERVICE_URLS.OLLAMA_HOST;
             systemAnalytics.ollamaHealth = {
               status: 'unhealthy',
               host: fallbackHost,

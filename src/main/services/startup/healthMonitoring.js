@@ -10,6 +10,7 @@
 const axios = require('axios');
 const { logger } = require('../../../shared/logger');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
+const { SERVICE_URLS } = require('../../../shared/configDefaults');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { isPortAvailable } = require('./preflightChecks');
 const { checkChromaDBHealth } = require('./chromaService');
@@ -153,7 +154,7 @@ async function checkServiceHealthWithRecovery(
       // FIX: Ensure Boolean result to avoid undefined being treated ambiguously
       isHealthy = Boolean(await chromaDbService?.checkHealth?.());
     } else if (serviceName === 'ollama') {
-      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+      const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
       const response = await axiosWithRetry(
         () => axios.get(`${baseUrl}/api/tags`, { timeout: 10000 }),
         {
@@ -218,7 +219,7 @@ async function checkServiceHealthWithRecovery(
         } else {
           // For Ollama, check port availability first
           if (serviceName === 'ollama') {
-            const baseUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+            const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
             let host = '127.0.0.1';
             let port = 11434;
             try {

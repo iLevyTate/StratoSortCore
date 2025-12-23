@@ -8,7 +8,7 @@ import { fetchSmartFolders } from './store/slices/filesSlice';
 import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
 import { applyPlatformClass } from './utils/platform';
-import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
+import { GlobalErrorBoundary } from './components/ErrorBoundary';
 import './tailwind.css';
 
 // Fetch commonly-used data early so it's cached before components need it

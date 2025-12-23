@@ -1,0 +1,13 @@
+Sample Text Document for Testing
+=================================
+
+This is a sample text file used for testing file type processing
+in the StratoSort application.
+
+Contents:
+- Project planning notes
+- Meeting minutes from Q4 2024
+- Action items for development team
+
+Keywords: document, text, sample, testing, notes
+Category: Documents

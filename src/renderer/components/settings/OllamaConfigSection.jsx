@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Link2, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import { SERVICE_URLS } from '../../../shared/configDefaults';
 
 /**
  * Ollama server configuration section
@@ -36,7 +37,7 @@ function OllamaConfigSection({
                 ollamaHost: e.target.value
               }))
             }
-            placeholder="http://127.0.0.1:11434"
+            placeholder={SERVICE_URLS.OLLAMA_HOST}
             className="flex-1"
           />
           <Button

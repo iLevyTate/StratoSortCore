@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Sample Locations</name>
+    <description>Test KML file for file type detection</description>
+    <Placemark>
+      <name>Office Location</name>
+      <description>Main headquarters</description>
+      <Point>
+        <coordinates>-122.0840,37.4220,0</coordinates>
+      </Point>
+    </Placemark>
+    <Placemark>
+      <name>Warehouse</name>
+      <description>Distribution center</description>
+      <Point>
+        <coordinates>-122.1000,37.4500,0</coordinates>
+      </Point>
+    </Placemark>
+  </Document>
+</kml>

@@ -17,8 +17,8 @@ import { Card, Button } from '../ui';
 import OrganizationSuggestions from './OrganizationSuggestions';
 import BatchOrganizationSuggestions from './BatchOrganizationSuggestions';
 import OrganizationPreview from './OrganizationPreview';
-// HIGH PRIORITY FIX #8: Use GlobalErrorBoundary for better error handling and reporting
-import GlobalErrorBoundary from '../GlobalErrorBoundary';
+// Use unified ErrorBoundary for better error handling and reporting
+import { GlobalErrorBoundary } from '../ErrorBoundary';
 
 // Set logger context for this component
 logger.setContext('SmartOrganizer');

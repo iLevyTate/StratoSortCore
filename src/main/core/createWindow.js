@@ -4,7 +4,7 @@ const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 logger.setContext('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
-const { isDevelopment, getEnvBool } = require('../../shared/configDefaults');
+const { isDevelopment, getEnvBool, SERVICE_URLS } = require('../../shared/configDefaults');
 
 const isDev = isDevelopment();
 const isMac = process.platform === 'darwin';
@@ -121,9 +121,8 @@ function createMainWindow() {
           win.loadFile(path.join(getAppRootPath(), 'src', 'renderer', 'index.html'));
         });
       });
-      if (getEnvBool('FORCE_DEV_TOOLS')) {
-        win.webContents.openDevTools();
-      }
+      // Auto-open DevTools in a detached window during development
+      win.webContents.openDevTools({ mode: 'detach' });
     } else {
       const distPath = getRendererIndexPath();
       win.loadFile(distPath).catch((error) => {
@@ -144,7 +143,7 @@ function createMainWindow() {
   }
 
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    let ollamaHost = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+    let ollamaHost = process.env.OLLAMA_HOST || SERVICE_URLS.OLLAMA_HOST;
     try {
       const { getOllamaHost } = require('../ollamaUtils');
       const configured = typeof getOllamaHost === 'function' ? getOllamaHost() : null;

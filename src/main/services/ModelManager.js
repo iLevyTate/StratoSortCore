@@ -8,11 +8,12 @@ const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { SERVICE_URLS } = require('../../shared/configDefaults');
 const { getOllama, getOllamaHost } = require('../ollamaUtils');
 logger.setContext('ModelManager');
 
 class ModelManager {
-  constructor(host = 'http://127.0.0.1:11434') {
+  constructor(host = SERVICE_URLS.OLLAMA_HOST) {
     // Use shared Ollama instance to avoid multiple HTTP connection pools
     this.ollamaClient = getOllama();
     this.host = getOllamaHost() || host;

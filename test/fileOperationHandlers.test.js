@@ -41,15 +41,17 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withValidation: jest.fn((logger, schema, handler) => handler)
 }));
 
+// Mock validationSchemas
+jest.mock('../src/main/ipc/validationSchemas', () => ({
+  z: null,
+  schemas: {
+    fileOperation: null
+  }
+}));
+
 // Mock batchOrganizeHandler
 jest.mock('../src/main/ipc/files/batchOrganizeHandler', () => ({
   handleBatchOrganize: jest.fn().mockResolvedValue({ success: true })
-}));
-
-// Mock schemas
-jest.mock('../src/main/ipc/files/schemas', () => ({
-  z: null,
-  operationSchema: null
 }));
 
 // Mock chromadb

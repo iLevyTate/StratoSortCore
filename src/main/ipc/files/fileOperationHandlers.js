@@ -12,8 +12,11 @@ const { ACTION_TYPES } = require('../../../shared/constants');
 const { withErrorLogging, withValidation } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
-const { z, operationSchema } = require('./schemas');
+const { z, schemas } = require('../validationSchemas');
 const { validateFileOperationPath } = require('../../../shared/pathSanitization');
+
+// Alias for backward compatibility
+const operationSchema = schemas?.fileOperation || null;
 
 logger.setContext('IPC:Files:Operations');
 

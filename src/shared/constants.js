@@ -3,6 +3,8 @@
  * Constants used across main and renderer processes
  */
 
+const { SERVICE_URLS } = require('./configDefaults');
+
 // ===== STRATOSORT SHARED CONSTANTS =====
 
 // Application phases - centralized for consistency
@@ -454,14 +456,14 @@ const DEFAULT_AI_MODELS = {
 const AI_DEFAULTS = {
   TEXT: {
     MODEL: 'llama3.2:latest',
-    HOST: 'http://127.0.0.1:11434',
+    HOST: SERVICE_URLS.OLLAMA_HOST,
     MAX_CONTENT_LENGTH: 12000,
     TEMPERATURE: 0.1,
     MAX_TOKENS: 800
   },
   IMAGE: {
     MODEL: 'llava:latest',
-    HOST: 'http://127.0.0.1:11434',
+    HOST: SERVICE_URLS.OLLAMA_HOST,
     TEMPERATURE: 0.2,
     MAX_TOKENS: 1000
   }
