@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo, Suspense, laz
 import { ChevronsDown, ChevronsUp } from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
+import { SERVICE_URLS } from '../../shared/configDefaults';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAppDispatch } from '../store/hooks';
 import { toggleSettings } from '../store/slices/uiSlice';
@@ -55,7 +56,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [dispatch]);
 
   const [settings, setSettings] = useState({
-    ollamaHost: 'http://127.0.0.1:11434',
+    ollamaHost: SERVICE_URLS.OLLAMA_HOST,
     textModel: 'llama3.2:latest',
     visionModel: 'llava:latest',
     embeddingModel: 'mxbai-embed-large',
