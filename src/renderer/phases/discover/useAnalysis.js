@@ -119,13 +119,21 @@ function mergeFileStates(existingStates, results) {
       mergedStates[result.path] = {
         state: 'ready',
         timestamp: new Date().toISOString(),
-        analysis: result.analysis
+        analysis: result.analysis,
+        name: result.name,
+        size: result.size,
+        created: result.created,
+        modified: result.modified
       };
     } else if (result.error) {
       mergedStates[result.path] = {
         state: 'error',
         timestamp: new Date().toISOString(),
-        error: result.error
+        error: result.error,
+        name: result.name,
+        size: result.size,
+        created: result.created,
+        modified: result.modified
       };
     }
   });
@@ -291,11 +299,12 @@ export function useAnalysis(options) {
   );
 
   const generateSuggestedName = useCallback(
-    (originalFileName, analysis) => {
+    (originalFileName, analysis, fileTimestamps) => {
       return generateSuggestedNameFromAnalysis({
         originalFileName,
         analysis,
-        settings: namingSettings
+        settings: namingSettings,
+        fileTimestamps
       });
     },
     [namingSettings]
@@ -327,7 +336,8 @@ export function useAnalysis(options) {
 
         const newName = generateSuggestedName(
           result.name || extractFileName(result.path || ''),
-          result.analysis
+          result.analysis,
+          { created: result.created, modified: result.modified }
         );
 
         // Only create new object if name actually changed
@@ -367,7 +377,11 @@ export function useAnalysis(options) {
 
         const newName = generateSuggestedName(
           state.name || extractFileName(filePath),
-          state.analysis
+          state.analysis,
+          {
+            created: state.created,
+            modified: state.modified
+          }
         );
 
         // Only update if name actually changed
@@ -596,7 +610,10 @@ export function useAnalysis(options) {
                 ...analysis,
                 // Preserve the raw suggestion so we can re-apply naming changes later
                 originalSuggestedName: baseSuggestedName,
-                suggestedName: generateSuggestedName(fileName, analysis),
+                suggestedName: generateSuggestedName(fileName, analysis, {
+                  created: fileInfo.created,
+                  modified: fileInfo.modified
+                }),
                 namingConvention: namingSettings
               };
               results.push({
@@ -609,7 +626,9 @@ export function useAnalysis(options) {
                 analysis: enhancedAnalysis,
                 analyzedAt: new Date().toISOString(),
                 name: fileInfo.name,
-                size: fileInfo.size
+                size: fileInfo.size,
+                created: fileInfo.created,
+                modified: fileInfo.modified
               });
             } else {
               results.push({

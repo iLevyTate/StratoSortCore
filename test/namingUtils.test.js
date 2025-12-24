@@ -252,7 +252,9 @@ describe('namingUtils', () => {
           separator: '-',
           dateFormat: 'YYYY-MM-DD',
           caseConvention: 'kebab-case'
-        }
+        },
+        // Even if the model date is present, we prefer real metadata when provided.
+        fileTimestamps: { modified: '2023-04-19' }
       });
 
       expect(result).toBe('brain-inspired-decision-engine-2023-04-19.png');
@@ -270,10 +272,42 @@ describe('namingUtils', () => {
           separator: '-',
           dateFormat: 'YYYY-MM-DD',
           caseConvention: 'kebab-case'
-        }
+        },
+        fileTimestamps: { modified: '2023-04-19' }
       });
 
       expect(result).toBe('brain-inspired-decision-engine-2023-04-19.png');
+    });
+
+    test('prefers date from filename over analysis date', () => {
+      const result = namingUtils.generateSuggestedNameFromAnalysis({
+        originalFileName: 'brain-inspired-decision-engine-2023-04-17.png',
+        analysis: { date: '2025-12-24', suggestedName: 'Brain inspired decision engine' },
+        settings: {
+          convention: 'subject-date',
+          separator: '-',
+          dateFormat: 'YYYY-MM-DD',
+          caseConvention: 'kebab-case'
+        }
+      });
+
+      expect(result).toBe('brain-inspired-decision-engine-2023-04-17.png');
+    });
+
+    test('prefers modified timestamp over analysis date when filename has no date', () => {
+      const result = namingUtils.generateSuggestedNameFromAnalysis({
+        originalFileName: 'brain-inspired-decision-engine.png',
+        analysis: { date: '2023-01-01', suggestedName: 'Brain inspired decision engine' },
+        fileTimestamps: { modified: '2023-04-18' },
+        settings: {
+          convention: 'subject-date',
+          separator: '-',
+          dateFormat: 'YYYY-MM-DD',
+          caseConvention: 'kebab-case'
+        }
+      });
+
+      expect(result).toBe('brain-inspired-decision-engine-2023-04-18.png');
     });
   });
 

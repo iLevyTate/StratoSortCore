@@ -270,7 +270,12 @@ export function extractFileName(filePath) {
  * @param {string} params.settings.caseConvention - Case convention
  * @returns {string} Suggested filename (with extension preserved)
  */
-export function generateSuggestedNameFromAnalysis({ originalFileName, analysis, settings }) {
+export function generateSuggestedNameFromAnalysis({
+  originalFileName,
+  analysis,
+  settings,
+  fileTimestamps
+}) {
   const safeOriginalName = String(originalFileName || '').trim();
   if (!safeOriginalName) return '';
 
@@ -319,27 +324,60 @@ export function generateSuggestedNameFromAnalysis({ originalFileName, analysis, 
       ? analysis.category.trim()
       : 'Category';
 
-  // Prefer analysis-provided date, but fall back to "today" if missing/invalid
-  let effectiveDate = new Date();
-  if (typeof analysis?.date === 'string' && analysis.date.trim()) {
-    const raw = analysis.date.trim();
+  const parseDateLike = (value) => {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof value !== 'string') return null;
+    const raw = value.trim();
+    if (!raw) return null;
     // If date is in YYYY-MM-DD, parse without timezone shifting.
     const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (m) {
-      const year = Number(m[1]);
-      const month = Number(m[2]);
-      const day = Number(m[3]);
-      const local = new Date(year, month - 1, day);
-      if (!Number.isNaN(local.getTime())) {
-        effectiveDate = local;
-      }
-    } else {
-      const parsed = new Date(raw);
-      if (!Number.isNaN(parsed.getTime())) {
-        effectiveDate = parsed;
-      }
+      const local = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return Number.isNaN(local.getTime()) ? null : local;
     }
-  }
+    // If date is in YYYYMMDD, parse without timezone shifting.
+    const m2 = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (m2) {
+      const local = new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
+      return Number.isNaN(local.getTime()) ? null : local;
+    }
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const parseDateFromFileName = (nameBase) => {
+    const s = String(nameBase || '');
+    // Prefer YYYY-MM-DD if present
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    // Then YYYYMMDD
+    const m2 = s.match(/(\d{4})(\d{2})(\d{2})/);
+    if (m2) {
+      const d = new Date(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  };
+
+  // Date source priority:
+  // 1) date already present in original filename
+  // 2) file modified time (real metadata)
+  // 3) file created time (real metadata)
+  // 4) analysis.date (last resort; can be hallucinated by LLM)
+  // 5) today
+  const fileNameDate = parseDateFromFileName(originalBase);
+  const modifiedDate = parseDateLike(fileTimestamps?.modified);
+  const createdDate = parseDateLike(fileTimestamps?.created);
+  const analysisDate = parseDateLike(analysis?.date);
+  const effectiveDate = fileNameDate || modifiedDate || createdDate || analysisDate || new Date();
 
   const formattedDate = formatDate(effectiveDate, dateFormat);
 
