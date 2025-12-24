@@ -5,6 +5,12 @@ const os = require('os');
 const { analyzeImageFile } = require('../src/main/analysis/ollamaImageAnalysis');
 const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
 
+// Mock ollamaDetection to simulate online state
+jest.mock('../src/main/utils/ollamaDetection', () => ({
+  isOllamaRunning: jest.fn().mockResolvedValue(true),
+  isOllamaInstalled: jest.fn().mockResolvedValue(true)
+}));
+
 /**
  * These tests focus on negative/edge-case inputs to ensure the analysers fail
  * gracefully and return structured error objects instead of throwing.

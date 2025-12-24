@@ -3,6 +3,14 @@ const os = require('os');
 const path = require('path');
 
 describe('per-file analysis cache (image)', () => {
+  beforeEach(() => {
+    // Mock ollamaDetection to ensure analysis proceeds
+    jest.mock('../src/main/utils/ollamaDetection', () => ({
+      isOllamaRunning: jest.fn().mockResolvedValue(true),
+      isOllamaInstalled: jest.fn().mockResolvedValue(true)
+    }));
+  });
+
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();

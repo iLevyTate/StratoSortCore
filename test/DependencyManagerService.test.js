@@ -62,6 +62,14 @@ jest.mock('fs', () => ({
   createWriteStream: (...args) => mockCreateWriteStream(...args)
 }));
 
+// Mock ollamaDetection globally for all tests in this file
+jest.mock('../src/main/utils/ollamaDetection', () => ({
+  isOllamaInstalled: jest.fn().mockResolvedValue(true),
+  getOllamaVersion: jest.fn().mockResolvedValue('0.1.0'),
+  isOllamaRunning: jest.fn().mockResolvedValue(true),
+  getInstalledModels: jest.fn().mockResolvedValue([])
+}));
+
 describe('DependencyManagerService', () => {
   let DependencyManagerService;
   let preflight;
@@ -91,13 +99,6 @@ describe('DependencyManagerService', () => {
       version: 'Python 3.12'
     });
     preflight.checkOllamaInstallation.mockResolvedValue({ installed: true, version: '0.1.0' });
-
-    // Mock ollamaDetection utility
-    jest.mock('../src/main/utils/ollamaDetection', () => ({
-      isOllamaInstalled: jest.fn().mockResolvedValue(true),
-      getOllamaVersion: jest.fn().mockResolvedValue('0.1.0'),
-      isOllamaRunning: jest.fn().mockResolvedValue(true)
-    }));
 
     // Update asyncSpawnUtils mocks to match recent refactor
     asyncSpawnUtils.asyncSpawn.mockImplementation((cmd, args) => {
