@@ -27,7 +27,7 @@ function OllamaConfigSection({
         <label className="block text-sm font-medium text-system-gray-700 mb-2">
           Ollama Host URL
         </label>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Input
             type="text"
             value={settings.ollamaHost}
@@ -46,6 +46,8 @@ function OllamaConfigSection({
             type="button"
             title="Test Ollama connection"
             leftIcon={<Link2 className="w-4 h-4" />}
+            size="sm"
+            className="shrink-0"
           >
             Test
           </Button>
@@ -59,6 +61,7 @@ function OllamaConfigSection({
           title="Refresh models"
           disabled={isRefreshingModels}
           leftIcon={isRefreshingModels ? null : <RefreshCw className="w-4 h-4" />}
+          size="sm"
         >
           {isRefreshingModels ? 'Refreshing…' : 'Refresh Models'}
         </Button>
@@ -67,6 +70,7 @@ function OllamaConfigSection({
           variant="subtle"
           type="button"
           title="Toggle raw model list"
+          size="sm"
         >
           {showAllModels ? 'Hide Models' : 'View All Models'}
         </Button>

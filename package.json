@@ -118,6 +118,7 @@
     "react-icons": "^5.5.0",
     "react-redux": "^9.2.0",
     "react-window": "^2.2.3",
+    "reactflow": "^11.11.4",
     "sharp": "^0.34.5",
     "xlsx-populate": "^1.21.0"
   },

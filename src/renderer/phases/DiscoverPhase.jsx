@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Search as SearchIcon, X } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
@@ -16,6 +16,8 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog, useDragAndDrop, useSettingsSubscription } from '../hooks';
 import { Button } from '../components/ui';
 import { FolderOpenIcon, SettingsIcon } from '../components/icons';
+import SemanticSearchModal from '../components/search/SemanticSearchModal';
+import ExploreGraphModal from '../components/explore/ExploreGraphModal';
 import {
   NamingSettingsModal,
   SelectionControls,
@@ -71,6 +73,8 @@ function DiscoverPhase() {
 
   // Local UI state
   const [showNamingSettings, setShowNamingSettings] = useState(false);
+  const [showSemanticSearch, setShowSemanticSearch] = useState(false);
+  const [showExploreGraph, setShowExploreGraph] = useState(false);
   const [totalAnalysisFailure, setTotalAnalysisFailure] = useState(false);
 
   // Refs for analysis state
@@ -281,6 +285,24 @@ function DiscoverPhase() {
             <p className="text-base text-system-gray-600 max-w-2xl">
               Add your files and configure how StratoSort should name them.
             </p>
+          </div>
+          <div className="flex items-center gap-compact">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowSemanticSearch(true)}
+              className="text-sm gap-compact"
+            >
+              <SearchIcon className="w-4 h-4" /> Semantic Search
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowExploreGraph(true)}
+              className="text-sm gap-compact"
+            >
+              Explore
+            </Button>
           </div>
         </div>
 
@@ -543,6 +565,16 @@ function DiscoverPhase() {
         </div>
 
         <ConfirmDialog />
+        <SemanticSearchModal
+          isOpen={showSemanticSearch}
+          onClose={() => setShowSemanticSearch(false)}
+          defaultTopK={20}
+        />
+        <ExploreGraphModal
+          isOpen={showExploreGraph}
+          onClose={() => setShowExploreGraph(false)}
+          defaultTopK={20}
+        />
         <NamingSettingsModal
           isOpen={showNamingSettings}
           onClose={() => setShowNamingSettings(false)}

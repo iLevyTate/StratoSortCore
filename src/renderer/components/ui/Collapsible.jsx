@@ -70,24 +70,24 @@ const Collapsible = memo(function Collapsible({
     return () => window.removeEventListener('storage', onStorage);
   }, [storageKey]);
 
-  // Prefer explicit styling from callers; fall back to the glass default
-  const baseSectionClass =
-    className && className.trim().length > 0 ? className.trim() : 'glass-panel';
-  const sectionClasses = `${baseSectionClass} space-y-5`.trim();
-  // Add padding to header to prevent content clipping from rounded corners
-  const headerPadding = 'px-[var(--panel-padding)] pt-[calc(var(--panel-padding)*0.75)]';
+  // Prefer explicit styling from callers; fall back to a lightweight card surface.
+  // Settings renders many sections; avoid nested heavy blur/padding for better proportions.
+  const baseSectionClass = className && className.trim().length > 0 ? className.trim() : 'list-row';
+  const sectionClasses = `${baseSectionClass} space-y-3`.trim();
+  // Header padding: slightly tighter than a full panel
+  const headerPadding = 'px-[var(--panel-padding)] pt-[calc(var(--panel-padding)*0.65)]';
   // Content padding: use contentClassName if provided, otherwise add default padding
   // Check for any padding class (p-, px-, py-, pt-, pb-, pl-, pr-)
   const hasPadding =
     contentClassName && /(p[xytblr]?-(\d+|\[.+\])|p-(\d+|\[.+\]))/.test(contentClassName);
   const defaultContentPadding = hasPadding
     ? ''
-    : 'px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.9)]';
+    : 'px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.75)]';
 
   return (
     <section className={`${sectionClasses} flex flex-col flex-shrink-0`}>
       <div className={`flex items-center justify-between gap-4 ${headerPadding} flex-shrink-0`}>
-        <h3 className="heading-tertiary m-0">{title}</h3>
+        <h3 className="heading-tertiary m-0 leading-tight">{title}</h3>
         <div className="flex items-center gap-3 text-xs text-system-gray-500">
           <button
             type="button"
@@ -115,7 +115,7 @@ const Collapsible = memo(function Collapsible({
         <div
           id={contentId}
           role="region"
-          className={`mt-4 ${contentClassName || defaultContentPadding}`.trim()}
+          className={`mt-3 ${contentClassName || defaultContentPadding}`.trim()}
         >
           {children}
         </div>
@@ -139,7 +139,7 @@ const Collapsible = memo(function Collapsible({
 });
 
 Collapsible.propTypes = {
-  title: PropTypes.string.isRequired,
+  title: PropTypes.node.isRequired,
   children: PropTypes.node.isRequired,
   actions: PropTypes.node,
   defaultOpen: PropTypes.bool,

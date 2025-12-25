@@ -646,6 +646,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFiles: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
+    search: (query, topK = 20) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
+        query,
+        topK
+      }),
+    scoreFiles: (query, fileIds) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES, {
+        query,
+        fileIds
+      }),
     findSimilar: (fileId, topK = 10) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR, {
         fileId,

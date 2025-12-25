@@ -194,24 +194,6 @@ async function startChromaDB({
     return { success: false, external: true, reason: 'unreachable' };
   }
 
-  const moduleAvailable = await hasPythonModuleAsync('chromadb');
-  if (!moduleAvailable) {
-    serviceStatus.chromadb.status = 'disabled';
-    serviceStatus.chromadb.health = 'missing_dependency';
-    errors.push({
-      service: 'chromadb',
-      error: 'Python module "chromadb" is not installed. Semantic search disabled.',
-      critical: false
-    });
-    logger.warn('[STARTUP] Python module "chromadb" not available. Disabling ChromaDB features.');
-    return {
-      success: false,
-      disabled: true,
-      reason: 'missing_dependency',
-      setDependencyMissing: true
-    };
-  }
-
   // If a ChromaDB server is already reachable, don't try to spawn a second instance.
   // This avoids noisy failures when a previous run (or another service) already started ChromaDB.
   if (await isChromaDBRunning()) {
@@ -248,8 +230,33 @@ async function startChromaDB({
 
     plan = await buildChromaSpawnPlan(serverConfig);
 
+    // IMPORTANT:
+    // Do not hard-require `python -c "import chromadb"` to succeed.
+    // On Windows, users can have a working `chroma.exe` on PATH (different Python install)
+    // while `py -3` cannot import the module. The spawn plan resolver already supports:
+    // - system chroma executable
+    // - python user scripts chroma.exe
+    // - local CLI under node_modules/.bin
+    // - python -m chromadb fallback
     if (!plan) {
-      throw new Error('No viable ChromaDB startup plan found');
+      const moduleAvailable = await hasPythonModuleAsync('chromadb');
+      serviceStatus.chromadb.status = 'disabled';
+      serviceStatus.chromadb.health = 'missing_dependency';
+      errors.push({
+        service: 'chromadb',
+        error:
+          'ChromaDB could not be started (no CLI found and python module "chromadb" is not installed). Semantic search disabled.',
+        critical: false
+      });
+      logger.warn('[STARTUP] No viable ChromaDB startup plan found. Disabling ChromaDB features.', {
+        pythonModuleAvailable: Boolean(moduleAvailable)
+      });
+      return {
+        success: false,
+        disabled: true,
+        reason: 'missing_dependency',
+        setDependencyMissing: true
+      };
     }
 
     // Only cache if it's the system chroma executable

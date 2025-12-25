@@ -1,5 +1,8 @@
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const FolderMatchingService = require('../services/FolderMatchingService');
+const {
+  getInstance: getParallelEmbeddingService
+} = require('../services/ParallelEmbeddingService');
 const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
 const { BATCH, TIMEOUTS, LIMITS } = require('../../shared/performanceConstants');
@@ -448,6 +451,201 @@ function registerEmbeddingsIpc({
         logger.error('[EMBEDDINGS] Find similar failed:', {
           fileId,
           topK,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        });
+        return {
+          success: false,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        };
+      }
+    })
+  );
+
+  // Global semantic search (query -> ranked files)
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.SEARCH,
+    withErrorLogging(logger, async (event, { query, topK = 20 } = {}) => {
+      // CRITICAL FIX: Wait for initialization before executing
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
+      const MAX_TOP_K = LIMITS.MAX_TOP_K;
+
+      try {
+        const cleanQuery = typeof query === 'string' ? query.trim() : '';
+        if (!cleanQuery) {
+          return { success: false, error: 'Query is required' };
+        }
+        if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
+          return { success: false, error: 'Query length must be between 2 and 2000 characters' };
+        }
+
+        // Validate topK parameter
+        if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
+          return {
+            success: false,
+            error: `topK must be between 1 and ${MAX_TOP_K}`
+          };
+        }
+
+        // Create timeout promise
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
+        });
+
+        try {
+          const results = await Promise.race([
+            (async () => {
+              const embeddingService = getParallelEmbeddingService();
+              const { vector } = await embeddingService.embedText(cleanQuery);
+              return chromaDbService.querySimilarFiles(vector, topK);
+            })(),
+            timeoutPromise
+          ]);
+
+          return { success: true, results };
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Search failed:', {
+          topK,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        });
+        return {
+          success: false,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        };
+      }
+    })
+  );
+
+  function cosineSimilarity(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return 0;
+    const len = Math.min(a.length, b.length);
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < len; i += 1) {
+      const av = Number(a[i]) || 0;
+      const bv = Number(b[i]) || 0;
+      dot += av * bv;
+      normA += av * av;
+      normB += bv * bv;
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  // Score a subset of file IDs against a query (for "search within graph")
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.SCORE_FILES,
+    withErrorLogging(logger, async (event, { query, fileIds } = {}) => {
+      // CRITICAL FIX: Wait for initialization before executing
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
+
+      try {
+        const cleanQuery = typeof query === 'string' ? query.trim() : '';
+        if (!cleanQuery) {
+          return { success: false, error: 'Query is required' };
+        }
+        if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
+          return { success: false, error: 'Query length must be between 2 and 2000 characters' };
+        }
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+          return { success: false, error: 'fileIds must be a non-empty array' };
+        }
+
+        // Keep scoring fast and payloads bounded (renderer typically stays < 1000 nodes)
+        const MAX_IDS = 1000;
+        if (fileIds.length > MAX_IDS) {
+          return { success: false, error: `fileIds must contain at most ${MAX_IDS} ids` };
+        }
+
+        const normalizedIds = fileIds
+          .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
+          .slice(0, MAX_IDS);
+
+        if (normalizedIds.length === 0) {
+          return { success: false, error: 'No valid fileIds provided' };
+        }
+
+        // Create timeout promise
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
+        });
+
+        try {
+          const scored = await Promise.race([
+            (async () => {
+              const embeddingService = getParallelEmbeddingService();
+              const { vector: queryVector } = await embeddingService.embedText(cleanQuery);
+
+              await chromaDbService.initialize();
+              const fileResult = await chromaDbService.fileCollection.get({ ids: normalizedIds });
+
+              const ids = Array.isArray(fileResult?.ids) ? fileResult.ids : [];
+              const embeddings = Array.isArray(fileResult?.embeddings) ? fileResult.embeddings : [];
+
+              const scores = [];
+              for (let i = 0; i < ids.length; i += 1) {
+                const vec = embeddings[i];
+                const score = cosineSimilarity(queryVector, vec);
+                scores.push({ id: ids[i], score });
+              }
+
+              scores.sort((a, b) => b.score - a.score);
+              return scores;
+            })(),
+            timeoutPromise
+          ]);
+
+          return { success: true, scores: scored };
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
+      } catch (e) {
+        logger.error('[EMBEDDINGS] scoreFiles failed:', {
+          fileCount: Array.isArray(fileIds) ? fileIds.length : 0,
           error: e.message,
           timeout: e.message.includes('timeout')
         });

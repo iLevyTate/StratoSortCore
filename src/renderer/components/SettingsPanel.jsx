@@ -1,5 +1,17 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo, Suspense, lazy } from 'react';
-import { ChevronsDown, ChevronsUp } from 'lucide-react';
+import {
+  Brain,
+  ChevronsDown,
+  ChevronsUp,
+  FolderOpen,
+  History,
+  Monitor,
+  Save,
+  Settings as SettingsIcon,
+  Wrench,
+  X,
+  Zap
+} from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { SERVICE_URLS } from '../../shared/configDefaults';
@@ -8,6 +20,7 @@ import { useAppDispatch } from '../store/hooks';
 import { toggleSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
+import IconButton from './ui/IconButton';
 import Collapsible from './ui/Collapsible';
 import { ModalLoadingOverlay } from './LoadingSkeleton';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
@@ -239,6 +252,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     };
   }, [isApiAvailable, settingsLoaded, settings.ollamaHost, loadOllamaModels]);
 
+  // UX: allow ESC to close settings
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') handleToggleSettings();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleToggleSettings]);
+
   const saveSettings = useCallback(async () => {
     try {
       setIsSaving(true);
@@ -405,46 +427,67 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-[var(--panel-padding)]">
-      <div className="surface-panel w-full max-w-2xl xl:max-w-4xl 2xl:max-w-5xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
+    <div
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-[var(--panel-padding)]"
+      onMouseDown={(e) => {
+        // UX: click backdrop closes settings (like a real modal)
+        if (e.target === e.currentTarget) handleToggleSettings();
+      }}
+      role="presentation"
+    >
+      <div className="surface-panel w-full max-w-5xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
         <div className="p-[var(--panel-padding)] border-b border-border-soft/70 bg-white/90 backdrop-blur-sm flex-shrink-0 rounded-t-[var(--radius-panel)]">
-          <div className="flex items-center justify-between">
-            <h2 className="heading-secondary">⚙️ Settings</h2>
-            <div className="flex flex-wrap items-center gap-[var(--spacing-md)]">
-              <Button
+          <div className="flex items-start sm:items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <SettingsIcon className="h-5 w-5 text-stratosort-blue" aria-hidden="true" />
+                <h2 className="heading-secondary">Settings</h2>
+              </div>
+              <p className="text-xs text-system-gray-500 mt-1">
+                Configure AI models, performance, default folders, and app behavior.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <IconButton
+                icon={<ChevronsDown className="w-4 h-4" />}
+                size="md"
+                variant="secondary"
                 onClick={expandAll}
-                variant="subtle"
-                className="p-[var(--spacing-sm)] min-w-0 justify-center"
                 aria-label="Expand all settings sections"
                 title="Expand all"
-              >
-                <ChevronsDown className="w-4 h-4" />
-              </Button>
-              <Button
+              />
+              <IconButton
+                icon={<ChevronsUp className="w-4 h-4" />}
+                size="md"
+                variant="secondary"
                 onClick={collapseAll}
-                variant="subtle"
-                className="p-[var(--spacing-sm)] min-w-0 justify-center"
                 aria-label="Collapse all settings sections"
                 title="Collapse all"
-              >
-                <ChevronsUp className="w-4 h-4" />
-              </Button>
-              <Button
-                onClick={handleToggleSettings}
+              />
+              <IconButton
+                icon={<X className="w-4 h-4" />}
+                size="md"
                 variant="ghost"
-                className="text-system-gray-500 hover:text-system-gray-700 p-[var(--spacing-sm)]"
+                onClick={handleToggleSettings}
                 aria-label="Close settings"
-                title="Close settings"
-              >
-                ✕
-              </Button>
+                title="Close"
+              />
             </div>
           </div>
         </div>
 
-        <div className="p-[var(--panel-padding)] flex flex-col gap-[var(--section-gap)] flex-1 min-h-0 overflow-y-auto modern-scrollbar">
-          <Collapsible title="🤖 AI Configuration" defaultOpen persistKey="settings-ai">
-            <div className="flex flex-col gap-[var(--section-gap)]">
+        <div className="p-[var(--panel-padding)] flex flex-col gap-[var(--spacing-default)] flex-1 min-h-0 overflow-y-auto modern-scrollbar">
+          <Collapsible
+            title={
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                <span>AI Configuration</span>
+              </div>
+            }
+            defaultOpen
+            persistKey="settings-ai"
+          >
+            <div className="flex flex-col gap-[var(--spacing-default)]">
               <OllamaConfigSection
                 settings={settings}
                 setSettings={setSettings}
@@ -479,8 +522,17 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             </div>
           </Collapsible>
 
-          <Collapsible title="⚡ Performance" defaultOpen persistKey="settings-performance">
-            <div className="flex flex-col gap-[var(--section-gap)]">
+          <Collapsible
+            title={
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                <span>Performance</span>
+              </div>
+            }
+            defaultOpen
+            persistKey="settings-performance"
+          >
+            <div className="flex flex-col gap-[var(--spacing-default)]">
               <div>
                 <label className="block text-sm font-medium text-system-gray-700 mb-2">
                   Max Concurrent Analysis ({settings.maxConcurrentAnalysis})
@@ -504,16 +556,39 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             </div>
           </Collapsible>
 
-          <Collapsible title="📁 Default Locations" defaultOpen persistKey="settings-defaults">
+          <Collapsible
+            title={
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                <span>Default Locations</span>
+              </div>
+            }
+            defaultOpen
+            persistKey="settings-defaults"
+          >
             <DefaultLocationsSection settings={settings} setSettings={setSettings} />
           </Collapsible>
 
-          <Collapsible title="🖥️ Application" defaultOpen persistKey="settings-app">
+          <Collapsible
+            title={
+              <div className="flex items-center gap-2">
+                <Monitor className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                <span>Application</span>
+              </div>
+            }
+            defaultOpen
+            persistKey="settings-app"
+          >
             <ApplicationSection settings={settings} setSettings={setSettings} />
           </Collapsible>
 
           <Collapsible
-            title="📜 Analysis History"
+            title={
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                <span>Analysis History</span>
+              </div>
+            }
             defaultOpen={false}
             persistKey="settings-history"
           >
@@ -531,16 +606,36 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             </div>
           </Collapsible>
 
-          <Collapsible title="🔧 Backend API Test" defaultOpen={false} persistKey="settings-api">
+          <Collapsible
+            title={
+              <div className="flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                <span>Backend API Test</span>
+              </div>
+            }
+            defaultOpen={false}
+            persistKey="settings-api"
+          >
             <APITestSection addNotification={addNotification} />
           </Collapsible>
         </div>
 
-        <div className="p-[var(--panel-padding)] border-t border-border-soft/70 bg-white/90 backdrop-blur-sm flex flex-wrap justify-end gap-[var(--spacing-xl)] flex-shrink-0 rounded-b-[var(--radius-panel)]">
-          <Button onClick={handleToggleSettings} variant="secondary">
+        <div className="p-[var(--panel-padding)] border-t border-border-soft/70 bg-white/90 backdrop-blur-sm flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[var(--radius-panel)]">
+          <Button
+            onClick={handleToggleSettings}
+            variant="secondary"
+            size="sm"
+            leftIcon={<X className="w-4 h-4" />}
+          >
             Cancel
           </Button>
-          <Button onClick={saveSettings} variant="primary" disabled={isSaving}>
+          <Button
+            onClick={saveSettings}
+            variant="primary"
+            size="sm"
+            disabled={isSaving}
+            leftIcon={<Save className="w-4 h-4" />}
+          >
             {isSaving ? 'Saving...' : 'Save Settings'}
           </Button>
         </div>

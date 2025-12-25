@@ -63,9 +63,11 @@ const ClockIcon = ({ className }) => (
  * @returns {string} Formatted date
  */
 export function formatDate(date, format) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  // Use UTC to avoid timezone-dependent date drift (e.g., near midnight causing off-by-one days)
+  // This keeps filenames stable and aligns with ISO-8601 date expectations in tests and exports.
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
 
   switch (format) {
     case 'YYYY-MM-DD':
