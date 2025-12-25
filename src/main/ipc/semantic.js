@@ -112,6 +112,11 @@ function registerEmbeddingsIpc({
     }, 1000); // 1 second delay for pre-warming, handlers use retries if called earlier
   });
 
+  /**
+   * Rebuild folder embeddings from current smart folders
+   * SAFE: Only resets the 'folder_embeddings' collection (not the entire DB directory).
+   * This is a user-controlled, intentional rebuild that preserves all other data.
+   */
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
     withErrorLogging(logger, async () => {
@@ -138,6 +143,7 @@ function registerEmbeddingsIpc({
 
       try {
         const smartFolders = getCustomFolders().filter((f) => f && f.name);
+        // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
         await chromaDbService.resetFolders();
 
         // Optimization: Batch process folder embeddings
@@ -182,6 +188,12 @@ function registerEmbeddingsIpc({
     })
   );
 
+  /**
+   * Rebuild file embeddings from analysis history
+   * SAFE: Only resets the 'file_embeddings' collection (not the entire DB directory).
+   * This rebuilds the semantic search index from existing analysis history without
+   * re-analyzing files. User-controlled and intentional.
+   */
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
     withErrorLogging(logger, async () => {
@@ -263,7 +275,8 @@ function registerEmbeddingsIpc({
           await chromaDbService.batchUpsertFolders(validFolderPayloads);
         }
 
-        // Reset file vectors to rebuild from scratch
+        // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
+        // This rebuilds the search index from analysis history without re-analyzing files
         await chromaDbService.resetFiles();
 
         // Optimization: Batch process file embeddings
@@ -381,7 +394,39 @@ function registerEmbeddingsIpc({
 
       try {
         const stats = await chromaDbService.getStats();
-        return { success: true, ...stats };
+
+        // Provide lightweight context so the UI can explain *why* embeddings are empty.
+        // This avoids confusing "rebuild embeddings" prompts when users already have analysis history.
+        let analysisHistory = null;
+        try {
+          const serviceIntegration =
+            typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+          const historyService = serviceIntegration?.analysisHistory;
+          if (historyService?.getQuickStats) {
+            analysisHistory = await historyService.getQuickStats();
+          } else if (historyService?.getStatistics) {
+            // Fallback (cached) stats if quick stats not available.
+            const full = await historyService.getStatistics();
+            analysisHistory = {
+              totalFiles: typeof full?.totalFiles === 'number' ? full.totalFiles : 0
+            };
+          }
+        } catch (e) {
+          // Non-fatal: stats still useful without history context
+          analysisHistory = null;
+        }
+
+        const historyTotal =
+          typeof analysisHistory?.totalFiles === 'number' ? analysisHistory.totalFiles : 0;
+        const needsFileEmbeddingRebuild =
+          typeof stats?.files === 'number' && stats.files === 0 && historyTotal > 0;
+
+        return {
+          success: true,
+          ...stats,
+          analysisHistory,
+          needsFileEmbeddingRebuild
+        };
       } catch (e) {
         return { success: false, error: e.message };
       }

@@ -95,6 +95,10 @@ function EmbeddingRebuildSection({ addNotification }) {
             {statsLabel}
             {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
           </p>
+          <p className="text-xs text-system-gray-400 mt-1">
+            Rebuilds recreate embeddings from your current smart folders and analysis history. Your
+            analysis data and ChromaDB database are preserved.
+          </p>
         </div>
         <IconButton
           icon={<RefreshCw className={`w-4 h-4 ${isLoadingStats ? 'animate-spin' : ''}`} />}

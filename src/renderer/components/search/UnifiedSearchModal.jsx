@@ -246,8 +246,9 @@ function EmptyEmbeddingsBanner({
         <div className="flex-1">
           <div className="font-semibold text-system-gray-900">No embeddings yet</div>
           <div className="text-xs text-system-gray-600 mt-1 mb-3">
-            Embeddings enable semantic search — finding files by meaning, not just filename. Build
-            them once after analyzing your files.
+            Semantic search requires file embeddings. If you already analyzed files in the past but
+            this number is still zero, your search index was likely reset and needs a one-time
+            rebuild from analysis history.
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -622,6 +623,17 @@ export default function UnifiedSearchModal({
 
       setNodes((prev) => {
         if (!addMode) return nextNodes;
+
+        // Check if any new nodes need to be added
+        const existingIds = new Set(prev.map((n) => n.id));
+        const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
+
+        if (!hasNewNodes) {
+          // No new nodes to add, preserve reference to prevent unnecessary updates
+          return prev;
+        }
+
+        // Merge new nodes with existing ones
         const map = new Map(prev.map((n) => [n.id, n]));
         nextNodes.forEach((n) => {
           if (!map.has(n.id)) map.set(n.id, n);
@@ -631,6 +643,17 @@ export default function UnifiedSearchModal({
 
       setEdges((prev) => {
         if (!addMode) return nextEdges;
+
+        // Check if any new edges need to be added
+        const existingEdgeIds = new Set(prev.map((e) => e.id));
+        const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
+
+        if (!hasNewEdges) {
+          // No new edges to add, preserve reference to prevent unnecessary updates
+          return prev;
+        }
+
+        // Merge new edges with existing ones
         const map = new Map(prev.map((e) => [e.id, e]));
         nextEdges.forEach((e) => map.set(e.id, e));
         return Array.from(map.values());
@@ -684,6 +707,16 @@ export default function UnifiedSearchModal({
       });
 
       setNodes((prev) => {
+        // Check if any new nodes need to be added
+        const existingIds = new Set(prev.map((n) => n.id));
+        const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
+
+        if (!hasNewNodes) {
+          // No new nodes to add, preserve reference to prevent unnecessary updates
+          return prev;
+        }
+
+        // Merge new nodes with existing ones
         const map = new Map(prev.map((n) => [n.id, n]));
         nextNodes.forEach((n) => {
           if (!map.has(n.id)) map.set(n.id, n);
@@ -691,6 +724,16 @@ export default function UnifiedSearchModal({
         return Array.from(map.values());
       });
       setEdges((prev) => {
+        // Check if any new edges need to be added
+        const existingEdgeIds = new Set(prev.map((e) => e.id));
+        const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
+
+        if (!hasNewEdges) {
+          // No new edges to add, preserve reference to prevent unnecessary updates
+          return prev;
+        }
+
+        // Merge new edges with existing ones
         const map = new Map(prev.map((e) => [e.id, e]));
         nextEdges.forEach((e) => map.set(e.id, e));
         return Array.from(map.values());
@@ -721,14 +764,28 @@ export default function UnifiedSearchModal({
       if (!isOpen) return;
       const q = debouncedWithinQuery;
       if (!q || q.length < 2) {
-        setNodes((prev) =>
-          prev.map((n) => {
+        setNodes((prev) => {
+          let changed = false;
+          const updated = prev.map((n) => {
             if (n.data?.kind !== 'file') return n;
+
+            // Check if we need to update (has withinScore or opacity !== 1)
+            const hasWithinScore = n.data?.withinScore !== undefined;
+            const currentOpacity = n.style?.opacity;
+
+            if (!hasWithinScore && currentOpacity === 1) {
+              return n; // Already cleared, no change needed
+            }
+
+            changed = true;
             const restData = { ...(n.data || {}) };
             delete restData.withinScore;
             return { ...n, data: restData, style: { ...(n.style || {}), opacity: 1 } };
-          })
-        );
+          });
+
+          // Only return new array if something actually changed
+          return changed ? updated : prev;
+        });
         return;
       }
       if (fileNodeIds.length === 0) return;
@@ -747,29 +804,57 @@ export default function UnifiedSearchModal({
         const scores = Array.isArray(resp.scores) ? resp.scores : [];
         const scoreMap = new Map(scores.map((s) => [s.id, clamp01(s.score)]));
 
-        setNodes((prev) =>
-          prev.map((n) => {
+        setNodes((prev) => {
+          let changed = false;
+          const updated = prev.map((n) => {
             if (n.data?.kind !== 'file') return n;
             const s = scoreMap.get(n.id);
-            if (typeof s !== 'number')
+            const currentScore = n.data?.withinScore;
+            const currentOpacity = n.style?.opacity;
+
+            if (typeof s !== 'number') {
+              // No score - check if we need to update
+              if (currentScore === 0 && currentOpacity === 0.3) {
+                return n; // Already set to default, no change needed
+              }
+              changed = true;
               return {
                 ...n,
                 data: { ...n.data, withinScore: 0 },
                 style: { ...(n.style || {}), opacity: 0.3 }
               };
+            }
+
             const opacity = scoreToOpacity(s);
+            const borderColor = s > 0.75 ? 'rgba(37,99,235,0.9)' : undefined;
+            const borderWidth = s > 0.75 ? 2 : undefined;
+
+            // Check if score/opacity actually changed
+            if (
+              currentScore === s &&
+              currentOpacity === opacity &&
+              n.style?.borderColor === borderColor &&
+              n.style?.borderWidth === borderWidth
+            ) {
+              return n; // No change, preserve reference
+            }
+
+            changed = true;
             return {
               ...n,
               data: { ...n.data, withinScore: s },
               style: {
                 ...(n.style || {}),
                 opacity,
-                borderColor: s > 0.75 ? 'rgba(37,99,235,0.9)' : undefined,
-                borderWidth: s > 0.75 ? 2 : undefined
+                borderColor,
+                borderWidth
               }
             };
-          })
-        );
+          });
+
+          // Only return new array if something actually changed
+          return changed ? updated : prev;
+        });
       } catch (e) {
         setError(e?.message || 'Score failed');
       }
@@ -786,31 +871,41 @@ export default function UnifiedSearchModal({
     setSelectedNodeId(node.id);
   }, []);
 
-  // Handle node position changes (dragging)
+  // Handle ReactFlow change events.
+  // Keep selection as a single source of truth (selectedNodeId) to avoid ReactFlow StoreUpdater loops.
   const onNodesChange = useCallback((changes) => {
+    // Sync selection without rewriting node objects
+    for (const change of changes) {
+      if (change.type === 'select') {
+        if (change.selected) setSelectedNodeId(change.id);
+        else setSelectedNodeId((prev) => (prev === change.id ? null : prev));
+      }
+    }
+
+    // Persist node position changes from dragging
+    // CRITICAL: Only update if position actually changed to prevent infinite loops
+    const positionChanges = changes.filter((c) => c.type === 'position' && c.position);
+    if (positionChanges.length === 0) return;
+
     setNodes((nds) => {
-      const updatedNodes = [...nds];
-      changes.forEach((change) => {
-        if (change.type === 'position' && change.position) {
-          const idx = updatedNodes.findIndex((n) => n.id === change.id);
-          if (idx !== -1) {
-            updatedNodes[idx] = {
-              ...updatedNodes[idx],
-              position: change.position
-            };
-          }
+      let changed = false;
+      const updated = nds.map((n) => {
+        const pc = positionChanges.find((c) => c.id === n.id);
+        if (!pc) return n;
+
+        // Only update if position actually changed
+        const currentPos = n.position || { x: 0, y: 0 };
+        const newPos = pc.position;
+        if (currentPos.x === newPos.x && currentPos.y === newPos.y) {
+          return n; // No change, return same object
         }
-        if (change.type === 'select') {
-          const idx = updatedNodes.findIndex((n) => n.id === change.id);
-          if (idx !== -1) {
-            updatedNodes[idx] = {
-              ...updatedNodes[idx],
-              selected: change.selected
-            };
-          }
-        }
+
+        changed = true;
+        return { ...n, position: newPos };
       });
-      return updatedNodes;
+
+      // Only return new array if something actually changed
+      return changed ? updated : nds;
     });
   }, []);
 
@@ -825,9 +920,45 @@ export default function UnifiedSearchModal({
     [expandFromSelected]
   );
 
+  // No-op handler for edge changes to prevent ReactFlow from syncing edges back
+  // Edges are managed internally, we don't need to sync ReactFlow's edge state back
+  const onEdgesChange = useCallback(() => {
+    // No-op: edges are managed internally, don't sync back to avoid loops
+    // ReactFlow will still handle edge rendering, we just don't sync state back
+  }, []);
+
   // ============================================================================
   // Computed values
   // ============================================================================
+
+  // Avoid recreating ReactFlow props on every render; unstable refs can trigger StoreUpdater loops.
+  // CRITICAL: Only create new objects when selection or node data actually changes
+  const rfNodes = useMemo(() => {
+    return nodes.map((n) => {
+      const isSelected = n.id === selectedNodeId;
+      // Only create new object if selection state actually changed
+      // Preserve node reference when possible to prevent unnecessary ReactFlow updates
+      const currentSelected = n.selected === true || n.selected === false ? n.selected : false;
+      if (currentSelected === isSelected) {
+        // Selection hasn't changed, return node as-is to preserve reference stability
+        // This prevents ReactFlow StoreUpdater from detecting false changes
+        return n;
+      }
+      // Selection changed, create new object with updated selected state
+      return {
+        ...n,
+        selected: isSelected
+      };
+    });
+  }, [nodes, selectedNodeId]);
+
+  const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
+  const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
+  const rfProOptions = useMemo(() => ({ hideAttribution: true }), []);
+  const miniMapNodeColor = useCallback(
+    (n) => (n.data?.kind === 'query' ? '#6366f1' : '#3b82f6'),
+    []
+  );
 
   const showEmptyBanner = stats && typeof stats.files === 'number' && stats.files === 0 && !error;
   const selectedPath = selectedNode?.data?.path || '';
@@ -1078,34 +1209,22 @@ export default function UnifiedSearchModal({
                 </div>
               ) : (
                 <ReactFlow
-                  nodes={nodes.map((n) => ({
-                    ...n,
-                    selected: n.id === selectedNodeId,
-                    data: {
-                      ...n.data,
-                      // Pass through for custom node rendering
-                      withinScore: n.data?.withinScore,
-                      style: n.style
-                    }
-                  }))}
+                  nodes={rfNodes}
                   edges={edges}
                   nodeTypes={nodeTypes}
                   onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
                   onNodeClick={onNodeClick}
                   onNodeDoubleClick={onNodeDoubleClick}
                   fitView
-                  fitViewOptions={{ padding: 0.2 }}
+                  fitViewOptions={rfFitViewOptions}
                   minZoom={0.2}
                   maxZoom={2}
-                  defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-                  proOptions={{ hideAttribution: true }}
+                  defaultViewport={rfDefaultViewport}
+                  proOptions={rfProOptions}
                 >
                   <Background color="#e5e7eb" gap={16} />
-                  <MiniMap
-                    pannable
-                    zoomable
-                    nodeColor={(n) => (n.data?.kind === 'query' ? '#6366f1' : '#3b82f6')}
-                  />
+                  <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
                   <Controls showInteractive={false} />
                 </ReactFlow>
               )}

@@ -91,6 +91,27 @@ function DiscoverPhase() {
     setSearchModalOpen(true);
   }, []);
 
+  // Filter out results for files no longer selected (e.g., moved/cleared)
+  const selectedPaths = useMemo(
+    () => new Set((selectedFiles || []).map((f) => f.path)),
+    [selectedFiles]
+  );
+
+  const visibleAnalysisResults = useMemo(
+    () => (analysisResults || []).filter((result) => selectedPaths.has(result.path)),
+    [analysisResults, selectedPaths]
+  );
+
+  const visibleReadyCount = useMemo(
+    () => visibleAnalysisResults.filter((r) => r.analysis && !r.error).length,
+    [visibleAnalysisResults]
+  );
+
+  const visibleFailedCount = useMemo(
+    () => visibleAnalysisResults.filter((r) => r.error).length,
+    [visibleAnalysisResults]
+  );
+
   // Check embeddings and prompt user after first successful analysis
   useEffect(() => {
     // Detect transition from analyzing -> not analyzing (analysis completed)
@@ -106,7 +127,19 @@ function DiscoverPhase() {
     const checkEmbeddings = async () => {
       try {
         const stats = await window.electronAPI?.embeddings?.getStats?.();
-        if (stats?.success && stats.files === 0) {
+        // Only prompt when we have analysis history but the semantic search index is empty.
+        // This avoids confusing prompts when a user hasn't analyzed anything yet.
+        const historyTotal =
+          typeof stats?.analysisHistory?.totalFiles === 'number'
+            ? stats.analysisHistory.totalFiles
+            : 0;
+        const needsRebuild =
+          stats?.success &&
+          typeof stats?.files === 'number' &&
+          stats.files === 0 &&
+          historyTotal > 0;
+
+        if (needsRebuild) {
           // No embeddings yet - show prompt
           setShowEmbeddingPrompt(true);
           hasShownEmbeddingPromptRef.current = true;
@@ -157,27 +190,6 @@ function DiscoverPhase() {
 
   // Refs for analysis state
   const hasResumedRef = useRef(false);
-
-  // Filter out results for files no longer selected (e.g., moved/cleared)
-  const selectedPaths = useMemo(
-    () => new Set((selectedFiles || []).map((f) => f.path)),
-    [selectedFiles]
-  );
-
-  const visibleAnalysisResults = useMemo(
-    () => (analysisResults || []).filter((result) => selectedPaths.has(result.path)),
-    [analysisResults, selectedPaths]
-  );
-
-  const visibleReadyCount = useMemo(
-    () => visibleAnalysisResults.filter((r) => r.analysis && !r.error).length,
-    [visibleAnalysisResults]
-  );
-
-  const visibleFailedCount = useMemo(
-    () => visibleAnalysisResults.filter((r) => r.error).length,
-    [visibleAnalysisResults]
-  );
 
   // Build phaseData for compatibility
   const phaseData = {
@@ -572,8 +584,10 @@ function DiscoverPhase() {
                   Enable Semantic Search
                 </h4>
                 <p className="text-xs text-system-gray-700 mb-cozy">
-                  Your files have been analyzed! Build embeddings to enable semantic search — find
-                  files by describing what you are looking for in natural language.
+                  Semantic search uses a separate index (file embeddings). Your analysis history is
+                  present, but the search index is currently empty — this can happen after an
+                  update/reset. Building embeddings does <strong>not</strong> re-analyze files; it
+                  indexes your existing analysis so you can search by meaning.
                 </p>
                 <div className="flex flex-wrap gap-compact">
                   <Button
