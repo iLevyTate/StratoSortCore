@@ -7,7 +7,7 @@
  * @module core/systemTray
  */
 
-const { app, BrowserWindow, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, globalShortcut } = require('electron');
 const path = require('path');
 const { isWindows, isMacOS } = require('../../shared/platformUtils');
 const { logger } = require('../../shared/logger');
@@ -29,6 +29,9 @@ let trayConfig = {
   createWindow: null,
   setIsQuitting: null
 };
+
+// Global shortcut for semantic search
+const SEARCH_SHORTCUT = isWindows ? 'Ctrl+Shift+F' : 'Cmd+Shift+F';
 
 /**
  * Initialize tray configuration
@@ -80,6 +83,64 @@ function createSystemTray() {
 }
 
 /**
+ * Open or show the main window and trigger semantic search
+ */
+function openSemanticSearch() {
+  let win = BrowserWindow.getAllWindows()[0];
+
+  if (!win) {
+    // Create window if it doesn't exist
+    if (trayConfig.createWindow) {
+      win = trayConfig.createWindow();
+    }
+  }
+
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+
+    // Send message to renderer to open semantic search
+    // Small delay to ensure window is ready
+    setTimeout(() => {
+      win.webContents.send('open-semantic-search');
+    }, 100);
+  }
+}
+
+/**
+ * Register global keyboard shortcut for semantic search
+ */
+function registerGlobalShortcut() {
+  try {
+    const success = globalShortcut.register(SEARCH_SHORTCUT, () => {
+      logger.info(`[TRAY] Global shortcut ${SEARCH_SHORTCUT} triggered`);
+      openSemanticSearch();
+    });
+
+    if (success) {
+      logger.info(`[TRAY] Registered global shortcut: ${SEARCH_SHORTCUT}`);
+    } else {
+      logger.warn(`[TRAY] Failed to register global shortcut: ${SEARCH_SHORTCUT}`);
+    }
+  } catch (error) {
+    logger.warn('[TRAY] Error registering global shortcut:', error.message);
+  }
+}
+
+/**
+ * Unregister global shortcuts
+ */
+function unregisterGlobalShortcuts() {
+  try {
+    globalShortcut.unregisterAll();
+    logger.info('[TRAY] Unregistered all global shortcuts');
+  } catch (error) {
+    logger.warn('[TRAY] Error unregistering shortcuts:', error.message);
+  }
+}
+
+/**
  * Update the tray context menu
  */
 function updateTrayMenu() {
@@ -101,6 +162,12 @@ function updateTrayMenu() {
         }
       }
     },
+    { type: 'separator' },
+    {
+      label: `Semantic Search (${SEARCH_SHORTCUT})`,
+      click: openSemanticSearch
+    },
+    { type: 'separator' },
     {
       label: downloadWatcher ? 'Pause Auto-Sort' : 'Resume Auto-Sort',
       click: async () => {
@@ -162,5 +229,9 @@ module.exports = {
   createSystemTray,
   updateTrayMenu,
   destroyTray,
-  getTray
+  getTray,
+  registerGlobalShortcut,
+  unregisterGlobalShortcuts,
+  openSemanticSearch,
+  SEARCH_SHORTCUT
 };

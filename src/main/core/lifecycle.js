@@ -10,7 +10,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
-const { destroyTray, getTray } = require('./systemTray');
+const { destroyTray, getTray, unregisterGlobalShortcuts } = require('./systemTray');
 const { getStartupManager } = require('../services/startup');
 const systemAnalytics = require('./systemAnalytics');
 const { withTimeout } = require('../../shared/promiseUtils');
@@ -136,6 +136,14 @@ async function handleBeforeQuit() {
 
   // Wrap ALL cleanup in a timeout promise
   const cleanupPromise = (async () => {
+    // Unregister global shortcuts first
+    try {
+      unregisterGlobalShortcuts();
+      logger.info('[CLEANUP] Global shortcuts unregistered');
+    } catch (error) {
+      logger.warn('[CLEANUP] Failed to unregister global shortcuts:', error.message);
+    }
+
     // Clean up all intervals first
     const metricsInterval = lifecycleConfig.getMetricsInterval?.();
     if (metricsInterval) {
