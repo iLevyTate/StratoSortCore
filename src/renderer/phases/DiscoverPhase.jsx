@@ -13,10 +13,10 @@ import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
+import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import { useConfirmDialog, useDragAndDrop, useSettingsSubscription } from '../hooks';
 import { Button } from '../components/ui';
 import { FolderOpenIcon, SettingsIcon } from '../components/icons';
-import UnifiedSearchModal from '../components/search/UnifiedSearchModal';
 import {
   NamingSettingsModal,
   SelectionControls,
@@ -69,11 +69,10 @@ function DiscoverPhase() {
 
   const { addNotification } = useNotification();
   const { showConfirm, ConfirmDialog } = useConfirmDialog();
+  const { openSearchModal } = useFloatingSearch();
 
   // Local UI state
   const [showNamingSettings, setShowNamingSettings] = useState(false);
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [searchModalTab, setSearchModalTab] = useState('search'); // 'search' | 'graph'
   const [totalAnalysisFailure, setTotalAnalysisFailure] = useState(false);
   const [showEmbeddingPrompt, setShowEmbeddingPrompt] = useState(false);
   const [isRebuildingEmbeddings, setIsRebuildingEmbeddings] = useState(false);
@@ -84,12 +83,6 @@ function DiscoverPhase() {
   const hasShownEmbeddingPromptRef = useRef(
     localStorage.getItem('stratosort_embedding_prompt_dismissed') === 'true'
   );
-
-  // Helper to open unified search modal with specific tab
-  const openSearchModal = useCallback((tab = 'search') => {
-    setSearchModalTab(tab);
-    setSearchModalOpen(true);
-  }, []);
 
   // Filter out results for files no longer selected (e.g., moved/cleared)
   const selectedPaths = useMemo(
@@ -448,46 +441,6 @@ function DiscoverPhase() {
                 isScanning={isScanning}
                 className="w-full max-w-sm justify-center"
               />
-
-              {/* Semantic Search Prompt - shown when no files selected */}
-              {selectedFiles.length === 0 && (
-                <div className="mt-6 pt-6 border-t border-system-gray-200/50 w-full max-w-md">
-                  <div className="glass-panel border border-stratosort-blue/20 bg-gradient-to-br from-stratosort-blue/5 to-stratosort-indigo/5 p-4 rounded-xl">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-stratosort-blue/10 rounded-lg shrink-0">
-                        <Sparkles className="w-5 h-5 text-stratosort-blue" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-semibold text-system-gray-900 mb-1">
-                          Looking for a file?
-                        </h4>
-                        <p className="text-xs text-system-gray-600 mb-3">
-                          Use Semantic Search to find files by meaning — describe what you are
-                          looking for in natural language.
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => openSearchModal('search')}
-                            className="text-xs"
-                          >
-                            <SearchIcon className="w-3.5 h-3.5" /> Try Semantic Search
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => openSearchModal('graph')}
-                            className="text-xs"
-                          >
-                            <Network className="w-3.5 h-3.5" /> Explore Graph
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 
@@ -765,12 +718,6 @@ function DiscoverPhase() {
         </div>
 
         <ConfirmDialog />
-        <UnifiedSearchModal
-          isOpen={searchModalOpen}
-          onClose={() => setSearchModalOpen(false)}
-          defaultTopK={20}
-          initialTab={searchModalTab}
-        />
         <NamingSettingsModal
           isOpen={showNamingSettings}
           onClose={() => setShowNamingSettings(false)}
