@@ -8,11 +8,12 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Search as SearchIcon, X, Network, Sparkles, RefreshCw } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
+import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import { useConfirmDialog, useDragAndDrop, useSettingsSubscription } from '../hooks';
 import { Button } from '../components/ui';
 import { FolderOpenIcon, SettingsIcon } from '../components/icons';
@@ -68,13 +69,20 @@ function DiscoverPhase() {
 
   const { addNotification } = useNotification();
   const { showConfirm, ConfirmDialog } = useConfirmDialog();
+  const { openSearchModal } = useFloatingSearch();
 
   // Local UI state
   const [showNamingSettings, setShowNamingSettings] = useState(false);
   const [totalAnalysisFailure, setTotalAnalysisFailure] = useState(false);
+  const [showEmbeddingPrompt, setShowEmbeddingPrompt] = useState(false);
+  const [isRebuildingEmbeddings, setIsRebuildingEmbeddings] = useState(false);
 
-  // Refs for analysis state
-  const hasResumedRef = useRef(false);
+  // Track previous analyzing state for detecting completion
+  const prevAnalyzingRef = useRef(isAnalyzing);
+  // Check localStorage to see if user has dismissed the prompt before
+  const hasShownEmbeddingPromptRef = useRef(
+    localStorage.getItem('stratosort_embedding_prompt_dismissed') === 'true'
+  );
 
   // Filter out results for files no longer selected (e.g., moved/cleared)
   const selectedPaths = useMemo(
@@ -96,6 +104,85 @@ function DiscoverPhase() {
     () => visibleAnalysisResults.filter((r) => r.error).length,
     [visibleAnalysisResults]
   );
+
+  // Check embeddings and prompt user after first successful analysis
+  useEffect(() => {
+    // Detect transition from analyzing -> not analyzing (analysis completed)
+    const wasAnalyzing = prevAnalyzingRef.current;
+    prevAnalyzingRef.current = isAnalyzing;
+
+    // Early returns for non-completion scenarios
+    if (!wasAnalyzing || isAnalyzing) return undefined; // Not a completion transition
+    if (hasShownEmbeddingPromptRef.current) return undefined; // Already prompted this session
+    if (visibleReadyCount === 0) return undefined; // No successful analyses
+
+    // Check if embeddings exist
+    const checkEmbeddings = async () => {
+      try {
+        const stats = await window.electronAPI?.embeddings?.getStats?.();
+        // Only prompt when we have analysis history but the semantic search index is empty.
+        // This avoids confusing prompts when a user hasn't analyzed anything yet.
+        const historyTotal =
+          typeof stats?.analysisHistory?.totalFiles === 'number'
+            ? stats.analysisHistory.totalFiles
+            : 0;
+        const needsRebuild =
+          stats?.success &&
+          typeof stats?.files === 'number' &&
+          stats.files === 0 &&
+          historyTotal > 0;
+
+        if (needsRebuild) {
+          // No embeddings yet - show prompt
+          setShowEmbeddingPrompt(true);
+          hasShownEmbeddingPromptRef.current = true;
+        }
+      } catch (e) {
+        logger.warn('Failed to check embedding stats', e);
+      }
+    };
+
+    // Small delay to let UI settle
+    const timeoutId = setTimeout(checkEmbeddings, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [isAnalyzing, visibleReadyCount]);
+
+  // Dismiss embedding prompt (with optional persistence)
+  const dismissEmbeddingPrompt = useCallback((permanent = false) => {
+    setShowEmbeddingPrompt(false);
+    if (permanent) {
+      localStorage.setItem('stratosort_embedding_prompt_dismissed', 'true');
+      hasShownEmbeddingPromptRef.current = true;
+    }
+  }, []);
+
+  // Handle embedding rebuild from the prompt
+  const handleRebuildEmbeddings = useCallback(async () => {
+    setIsRebuildingEmbeddings(true);
+    try {
+      // Rebuild files (which is the main one users need)
+      const res = await window.electronAPI?.embeddings?.rebuildFiles?.();
+      if (res?.success) {
+        addNotification(
+          `Indexed ${res.files || 0} files for semantic search`,
+          'success',
+          4000,
+          'embedding-rebuild'
+        );
+        // Permanently dismiss since they built embeddings
+        dismissEmbeddingPrompt(true);
+      } else {
+        throw new Error(res?.error || 'Failed to build embeddings');
+      }
+    } catch (e) {
+      addNotification(e?.message || 'Failed to build embeddings', 'error', 5000, 'embedding-error');
+    } finally {
+      setIsRebuildingEmbeddings(false);
+    }
+  }, [addNotification, dismissEmbeddingPrompt]);
+
+  // Refs for analysis state
+  const hasResumedRef = useRef(false);
 
   // Build phaseData for compatibility
   const phaseData = {
@@ -282,6 +369,26 @@ function DiscoverPhase() {
               Add your files and configure how StratoSort should name them.
             </p>
           </div>
+          <div className="flex items-center gap-compact">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openSearchModal('search')}
+              className="text-sm gap-compact"
+              title="Search your library by meaning, not just filename"
+            >
+              <SearchIcon className="w-4 h-4" /> Semantic Search
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openSearchModal('graph')}
+              className="text-sm gap-compact"
+              title="Visualize file relationships in an interactive graph"
+            >
+              <Network className="w-4 h-4" /> Explore Graph
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 flex flex-col gap-default">
@@ -417,6 +524,74 @@ function DiscoverPhase() {
             </div>
           )}
         </div>
+
+        {/* Embedding Prompt Banner - shown after first successful analysis */}
+        {showEmbeddingPrompt && !isAnalyzing && (
+          <div className="flex-shrink-0 glass-panel border border-stratosort-blue/30 bg-gradient-to-r from-stratosort-blue/5 to-stratosort-indigo/5 backdrop-blur-md animate-fade-in p-default">
+            <div className="flex items-start gap-cozy">
+              <div className="p-2 bg-stratosort-blue/10 rounded-lg shrink-0">
+                <Sparkles className="w-5 h-5 text-stratosort-blue" />
+              </div>
+              <div className="flex-1">
+                <h4 className="heading-tertiary text-stratosort-blue mb-compact">
+                  Enable Semantic Search
+                </h4>
+                <p className="text-xs text-system-gray-700 mb-cozy">
+                  Semantic search uses a separate index (file embeddings). Your analysis history is
+                  present, but the search index is currently empty — this can happen after an
+                  update/reset. Building embeddings does <strong>not</strong> re-analyze files; it
+                  indexes your existing analysis so you can search by meaning.
+                </p>
+                <div className="flex flex-wrap gap-compact">
+                  <Button
+                    onClick={handleRebuildEmbeddings}
+                    variant="primary"
+                    size="sm"
+                    disabled={isRebuildingEmbeddings}
+                  >
+                    {isRebuildingEmbeddings ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" /> Building...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" /> Build Embeddings
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={() => dismissEmbeddingPrompt(false)}
+                    variant="ghost"
+                    size="sm"
+                    title="Dismiss for now (will ask again next session)"
+                  >
+                    Maybe Later
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      dismissEmbeddingPrompt(true);
+                      openSearchModal('search');
+                    }}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    <SearchIcon className="w-4 h-4" /> Open Search
+                  </Button>
+                </div>
+              </div>
+              <Button
+                onClick={() => dismissEmbeddingPrompt(true)}
+                variant="ghost"
+                size="sm"
+                className="text-system-gray-400 hover:text-system-gray-600 p-compact"
+                aria-label="Dismiss permanently"
+                title="Don't show this again"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Analysis Failure Recovery Banner */}
         {totalAnalysisFailure && (

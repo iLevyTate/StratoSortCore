@@ -1,12 +1,15 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { FloatingSearchProvider } from '../contexts/FloatingSearchContext';
 import { UndoRedoProvider } from './UndoRedoSystem';
 
 function AppProviders({ children }) {
   return (
     <NotificationProvider>
-      <UndoRedoProvider>{children}</UndoRedoProvider>
+      <FloatingSearchProvider>
+        <UndoRedoProvider>{children}</UndoRedoProvider>
+      </FloatingSearchProvider>
     </NotificationProvider>
   );
 }

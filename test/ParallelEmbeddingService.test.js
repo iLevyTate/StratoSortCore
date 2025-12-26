@@ -16,7 +16,8 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock ollamaUtils
 const mockOllama = {
-  embeddings: jest.fn(),
+  embeddings: jest.fn(), // Legacy API (deprecated)
+  embed: jest.fn(), // New API
   list: jest.fn()
 };
 
@@ -49,7 +50,8 @@ describe('ParallelEmbeddingService', () => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    mockOllama.embeddings.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
+    // New API uses embed() with embeddings array response
+    mockOllama.embed.mockResolvedValue({ embeddings: [[0.1, 0.2, 0.3]] });
     mockOllama.list.mockResolvedValue({ models: [] });
 
     const module = require('../src/main/services/ParallelEmbeddingService');

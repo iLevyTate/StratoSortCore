@@ -51,11 +51,12 @@ describe('FolderMatchingService', () => {
       })
     };
 
-    // Setup mock Ollama
+    // Setup mock Ollama (embed is the new API, embeddings is legacy)
     mockOllama = {
-      embeddings: jest.fn().mockResolvedValue({
-        embedding: new Array(1024).fill(0.1)
-      })
+      embed: jest.fn().mockResolvedValue({
+        embeddings: [new Array(1024).fill(0.1)]
+      }),
+      embeddings: jest.fn() // Legacy - kept for compatibility but not used
     };
 
     const { getOllama } = require('../src/main/ollamaUtils');
@@ -83,9 +84,10 @@ describe('FolderMatchingService', () => {
       expect(result.vector).toBeInstanceOf(Array);
       expect(result.vector.length).toBe(1024);
       expect(result.model).toBe('mxbai-embed-large');
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      // New API uses embed() with 'input' instead of embeddings() with 'prompt'
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: text,
+        input: text,
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
@@ -95,11 +97,11 @@ describe('FolderMatchingService', () => {
 
       // First call - cache miss
       const result1 = await service.embedText(text);
-      expect(mockOllama.embeddings).toHaveBeenCalledTimes(1);
+      expect(mockOllama.embed).toHaveBeenCalledTimes(1);
 
       // Second call - cache hit
       const result2 = await service.embedText(text);
-      expect(mockOllama.embeddings).toHaveBeenCalledTimes(1); // Still only called once
+      expect(mockOllama.embed).toHaveBeenCalledTimes(1); // Still only called once
       expect(result2).toEqual(result1);
     });
 
@@ -108,15 +110,15 @@ describe('FolderMatchingService', () => {
 
       expect(result).toBeDefined();
       expect(result.vector).toBeInstanceOf(Array);
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: '',
+        input: '',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
 
     test('should return fallback vector on error', async () => {
-      mockOllama.embeddings.mockRejectedValueOnce(new Error('Ollama connection failed'));
+      mockOllama.embed.mockRejectedValueOnce(new Error('Ollama connection failed'));
 
       const result = await service.embedText('test text');
 
@@ -133,19 +135,19 @@ describe('FolderMatchingService', () => {
 
       // First model
       getOllamaEmbeddingModel.mockReturnValueOnce('model1');
-      mockOllama.embeddings.mockResolvedValueOnce({
-        embedding: new Array(1024).fill(0.1)
+      mockOllama.embed.mockResolvedValueOnce({
+        embeddings: [new Array(1024).fill(0.1)]
       });
       const result1 = await service.embedText(text);
 
       // Second model - should not use cache
       getOllamaEmbeddingModel.mockReturnValueOnce('model2');
-      mockOllama.embeddings.mockResolvedValueOnce({
-        embedding: new Array(1024).fill(0.2)
+      mockOllama.embed.mockResolvedValueOnce({
+        embeddings: [new Array(1024).fill(0.2)]
       });
       const result2 = await service.embedText(text);
 
-      expect(mockOllama.embeddings).toHaveBeenCalledTimes(2);
+      expect(mockOllama.embed).toHaveBeenCalledTimes(2);
       expect(result1.vector[0]).toBe(0.1);
       expect(result2.vector[0]).toBe(0.2);
     });
@@ -246,9 +248,9 @@ describe('FolderMatchingService', () => {
 
       await service.upsertFolderEmbedding(folder);
 
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: 'Projects - Active development projects',
+        input: 'Projects - Active development projects',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
@@ -261,9 +263,9 @@ describe('FolderMatchingService', () => {
       const result = await service.upsertFolderEmbedding(folder);
 
       expect(result.description).toBe('');
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: 'SimpleFolder',
+        input: 'SimpleFolder',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
@@ -289,9 +291,9 @@ describe('FolderMatchingService', () => {
 
       await service.upsertFileEmbedding(fileId, contentSummary, fileMeta);
 
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: contentSummary,
+        input: contentSummary,
         options: { num_gpu: -1, main_gpu: 0 }
       });
 
@@ -307,9 +309,9 @@ describe('FolderMatchingService', () => {
     test('should handle empty content summary', async () => {
       await service.upsertFileEmbedding('file-123', '', {});
 
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: '',
+        input: '',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
@@ -317,9 +319,9 @@ describe('FolderMatchingService', () => {
     test('should handle null content summary', async () => {
       await service.upsertFileEmbedding('file-123', null, {});
 
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: '',
+        input: '',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
@@ -533,9 +535,9 @@ describe('FolderMatchingService', () => {
       const result = await service.embedText(longText);
 
       expect(result).toBeDefined();
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: longText,
+        input: longText,
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });

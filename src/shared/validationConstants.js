@@ -29,7 +29,7 @@ const LOGGING_LEVELS = ['error', 'warn', 'info', 'debug'];
  */
 const NUMERIC_LIMITS = {
   cacheSize: { min: 0, max: 100000 },
-  maxBatchSize: { min: 1, max: 100000 }
+  maxBatchSize: { min: 1, max: 1000 }
 };
 
 /**
@@ -50,8 +50,9 @@ const LENIENT_URL_PATTERN =
 /**
  * Model name validation pattern
  * Allows alphanumeric with hyphens, underscores, dots, @, colons, slashes
+ * Updated to allow single-char names and trailing special chars (e.g., "llama3:")
  */
-const MODEL_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*[a-zA-Z0-9]$/;
+const MODEL_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*$/;
 
 /**
  * Maximum model name length

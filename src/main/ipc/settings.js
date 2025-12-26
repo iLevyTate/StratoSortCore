@@ -4,6 +4,47 @@ const { getConfigurableLimits } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
 const { sanitizeSettings } = require('../../shared/settingsValidation');
 
+/**
+ * Standardized IPC response format
+ * @typedef {Object} IpcResponse
+ * @property {boolean} success - Whether the operation succeeded
+ * @property {string} [error] - Error message if failed
+ * @property {boolean} [canceled] - True if user canceled a dialog
+ * @property {string[]} [warnings] - Validation or other warnings
+ */
+
+/**
+ * Create a standardized success response
+ * @param {Object} data - Response data to include
+ * @param {string[]} [warnings] - Optional warnings
+ * @returns {IpcResponse}
+ */
+function successResponse(data = {}, warnings = []) {
+  const response = { success: true, ...data };
+  if (warnings && warnings.length > 0) {
+    response.warnings = warnings;
+  }
+  return response;
+}
+
+/**
+ * Create a standardized error response
+ * @param {string} error - Error message
+ * @param {Object} [extras] - Additional fields (e.g., validationErrors)
+ * @returns {IpcResponse}
+ */
+function errorResponse(error, extras = {}) {
+  return { success: false, error, ...extras };
+}
+
+/**
+ * Create a standardized canceled response
+ * @returns {IpcResponse}
+ */
+function canceledResponse() {
+  return { success: false, canceled: true };
+}
+
 // Import centralized security configuration
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
 const {
@@ -20,6 +61,34 @@ try {
   z = require('zod');
 } catch {
   z = null;
+}
+
+/**
+ * Apply settings to Ollama services and system configuration
+ * Extracted to avoid code duplication across save/import/restore handlers
+ * @param {object} merged - The merged settings object
+ * @param {object} context - Context containing service setters and logger
+ * @returns {Promise<void>}
+ */
+async function applySettingsToServices(
+  merged,
+  { setOllamaHost, setOllamaModel, setOllamaVisionModel, setOllamaEmbeddingModel, logger }
+) {
+  if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
+  if (merged.textModel) await setOllamaModel(merged.textModel);
+  if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
+  if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function') {
+    await setOllamaEmbeddingModel(merged.embeddingModel);
+  }
+  if (typeof merged.launchOnStartup === 'boolean') {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: merged.launchOnStartup
+      });
+    } catch (error) {
+      logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
+    }
+  }
 }
 
 /**
@@ -43,8 +112,9 @@ function validateImportedSettings(settings, logger) {
   const MODEL_REGEX = SETTINGS_VALIDATION.patterns.modelName;
 
   // Check for prototype pollution attempts using centralized config
+  // Use Object.hasOwn to check own properties only, not prototype chain
   for (const key of PROTOTYPE_POLLUTION_KEYS) {
-    if (key in settings) {
+    if (Object.hasOwn(settings, key)) {
       throw new Error(`Security: Prototype pollution attempt detected (${key})`);
     }
   }
@@ -226,20 +296,13 @@ function registerSettingsIpc({
             const merged = saveResult.settings || saveResult; // Backward compatibility
             const validationWarnings = saveResult.validationWarnings || [];
 
-            if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
-            if (merged.textModel) await setOllamaModel(merged.textModel);
-            if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
-            if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
-              await setOllamaEmbeddingModel(merged.embeddingModel);
-            if (typeof merged.launchOnStartup === 'boolean') {
-              try {
-                app.setLoginItemSettings({
-                  openAtLogin: merged.launchOnStartup
-                });
-              } catch (error) {
-                logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
-              }
-            }
+            await applySettingsToServices(merged, {
+              setOllamaHost,
+              setOllamaModel,
+              setOllamaVisionModel,
+              setOllamaEmbeddingModel,
+              logger
+            });
             logger.info('[SETTINGS] Saved settings');
 
             // Fixed: Enhanced settings propagation with error logging
@@ -294,20 +357,13 @@ function registerSettingsIpc({
             const merged = saveResult.settings || saveResult; // Backward compatibility
             const validationWarnings = saveResult.validationWarnings || [];
 
-            if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
-            if (merged.textModel) await setOllamaModel(merged.textModel);
-            if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
-            if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
-              await setOllamaEmbeddingModel(merged.embeddingModel);
-            if (typeof merged.launchOnStartup === 'boolean') {
-              try {
-                app.setLoginItemSettings({
-                  openAtLogin: merged.launchOnStartup
-                });
-              } catch (error) {
-                logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
-              }
-            }
+            await applySettingsToServices(merged, {
+              setOllamaHost,
+              setOllamaModel,
+              setOllamaVisionModel,
+              setOllamaEmbeddingModel,
+              logger
+            });
             logger.info('[SETTINGS] Saved settings');
 
             // Fixed: Enhanced settings propagation with error logging
@@ -383,7 +439,7 @@ function registerSettingsIpc({
           });
 
           if (result.canceled) {
-            return { success: false, canceled: true };
+            return canceledResponse();
           }
 
           filePath = result.filePath;
@@ -407,16 +463,10 @@ function registerSettingsIpc({
 
         logger.info('[SETTINGS] Exported settings to:', filePath);
 
-        return {
-          success: true,
-          path: filePath
-        };
+        return successResponse({ path: filePath });
       } catch (error) {
         logger.error('[SETTINGS] Failed to export settings:', error);
-        return {
-          success: false,
-          error: error.message
-        };
+        return errorResponse(error.message);
       }
     })
   );
@@ -440,10 +490,19 @@ function registerSettingsIpc({
           });
 
           if (result.canceled) {
-            return { success: false, canceled: true };
+            return canceledResponse();
           }
 
           filePath = result.filePaths[0];
+        }
+
+        // SECURITY FIX: Check file size before reading to prevent DoS
+        const MAX_IMPORT_SIZE = 1 * 1024 * 1024; // 1MB limit for settings files
+        const stats = await fs.stat(filePath);
+        if (stats.size > MAX_IMPORT_SIZE) {
+          throw new Error(
+            `Import file too large (${Math.round(stats.size / 1024)}KB). Maximum size is 1MB.`
+          );
         }
 
         // Read and parse import file
@@ -471,22 +530,14 @@ function registerSettingsIpc({
         const merged = saveResult.settings || saveResult;
         const validationWarnings = saveResult.validationWarnings || [];
 
-        // Apply settings
-        if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
-        if (merged.textModel) await setOllamaModel(merged.textModel);
-        if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
-        if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
-          await setOllamaEmbeddingModel(merged.embeddingModel);
-
-        if (typeof merged.launchOnStartup === 'boolean') {
-          try {
-            app.setLoginItemSettings({
-              openAtLogin: merged.launchOnStartup
-            });
-          } catch (error) {
-            logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
-          }
-        }
+        // Apply settings using shared helper
+        await applySettingsToServices(merged, {
+          setOllamaHost,
+          setOllamaModel,
+          setOllamaVisionModel,
+          setOllamaEmbeddingModel,
+          logger
+        });
 
         // Notify settings changed
         if (typeof onSettingsChanged === 'function') {
@@ -495,22 +546,20 @@ function registerSettingsIpc({
 
         logger.info('[SETTINGS] Imported settings from:', filePath);
 
-        return {
-          success: true,
-          settings: merged,
-          validationWarnings,
-          importInfo: {
-            version: importData.version,
-            exportDate: importData.exportDate,
-            appVersion: importData.appVersion
-          }
-        };
+        return successResponse(
+          {
+            settings: merged,
+            importInfo: {
+              version: importData.version,
+              exportDate: importData.exportDate,
+              appVersion: importData.appVersion
+            }
+          },
+          validationWarnings
+        );
       } catch (error) {
         logger.error('[SETTINGS] Failed to import settings:', error);
-        return {
-          success: false,
-          error: error.message
-        };
+        return errorResponse(error.message);
       }
     })
   );
@@ -521,14 +570,14 @@ function registerSettingsIpc({
     withErrorLogging(logger, async () => {
       try {
         const result = await settingsService.createBackup();
-        logger.info('[SETTINGS] Backup created:', result.path);
-        return result;
+        if (result.success) {
+          logger.info('[SETTINGS] Backup created:', result.path);
+          return successResponse({ path: result.path, timestamp: result.timestamp });
+        }
+        return errorResponse(result.error || 'Unknown backup error');
       } catch (error) {
         logger.error('[SETTINGS] Failed to create backup:', error);
-        return {
-          success: false,
-          error: error.message
-        };
+        return errorResponse(error.message);
       }
     })
   );
@@ -538,17 +587,10 @@ function registerSettingsIpc({
     withErrorLogging(logger, async () => {
       try {
         const backups = await settingsService.listBackups();
-        return {
-          success: true,
-          backups
-        };
+        return successResponse({ backups });
       } catch (error) {
         logger.error('[SETTINGS] Failed to list backups:', error);
-        return {
-          success: false,
-          error: error.message,
-          backups: []
-        };
+        return errorResponse(error.message, { backups: [] });
       }
     })
   );
@@ -561,24 +603,16 @@ function registerSettingsIpc({
         const result = await settingsService.restoreFromBackup(backupPath);
 
         if (result.success) {
-          // Apply restored settings
+          // Apply restored settings using shared helper
           const merged = result.settings;
 
-          if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
-          if (merged.textModel) await setOllamaModel(merged.textModel);
-          if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
-          if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function')
-            await setOllamaEmbeddingModel(merged.embeddingModel);
-
-          if (typeof merged.launchOnStartup === 'boolean') {
-            try {
-              app.setLoginItemSettings({
-                openAtLogin: merged.launchOnStartup
-              });
-            } catch (error) {
-              logger.warn('[SETTINGS] Failed to set login item settings:', error.message);
-            }
-          }
+          await applySettingsToServices(merged, {
+            setOllamaHost,
+            setOllamaModel,
+            setOllamaVisionModel,
+            setOllamaEmbeddingModel,
+            logger
+          });
 
           // Notify settings changed
           if (typeof onSettingsChanged === 'function') {
@@ -586,15 +620,18 @@ function registerSettingsIpc({
           }
 
           logger.info('[SETTINGS] Restored from backup:', backupPath);
+          return successResponse(
+            { settings: merged, restoredFrom: result.restoredFrom },
+            result.validationWarnings
+          );
         }
 
-        return result;
+        return errorResponse(result.error || 'Unknown restore error', {
+          validationErrors: result.validationErrors
+        });
       } catch (error) {
         logger.error('[SETTINGS] Failed to restore backup:', error);
-        return {
-          success: false,
-          error: error.message
-        };
+        return errorResponse(error.message);
       }
     })
   );
@@ -607,14 +644,12 @@ function registerSettingsIpc({
         const result = await settingsService.deleteBackup(backupPath);
         if (result.success) {
           logger.info('[SETTINGS] Deleted backup:', backupPath);
+          return successResponse();
         }
-        return result;
+        return errorResponse(result.error || 'Unknown delete error');
       } catch (error) {
         logger.error('[SETTINGS] Failed to delete backup:', error);
-        return {
-          success: false,
-          error: error.message
-        };
+        return errorResponse(error.message);
       }
     })
   );

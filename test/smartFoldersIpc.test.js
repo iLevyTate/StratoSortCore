@@ -48,9 +48,13 @@ jest.mock('../src/shared/logger', () => ({
 // Mock ollamaUtils
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(() => ({
-    embeddings: jest.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+    // New API: embed() with embeddings array response
+    embed: jest.fn().mockResolvedValue({ embeddings: [[0.1, 0.2, 0.3]] }),
+    embeddings: jest.fn(), // Legacy - kept for compatibility but not used
     generate: jest.fn().mockResolvedValue({ response: '{"index": 1, "reason": "test"}' })
-  }))
+  })),
+  getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large'),
+  getOllamaModel: jest.fn(() => 'llama3.2:latest')
 }));
 
 // Mock SmartFoldersLLMService

@@ -23,26 +23,61 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState({ ollama: false, chromadb: false });
+  const [downloadingModels, setDownloadingModels] = useState(false);
   const [logLines, setLogLines] = useState([]); // Now stores { id, text } objects
+  const [installedModels, setInstalledModels] = useState([]); // Models already downloaded
   const unsubRef = useRef(null);
   const statusUnsubRef = useRef(null);
+  const logContainerRef = useRef(null);
+
+  // Helper to add a log entry
+  const addLogEntry = useCallback((text) => {
+    setLogLines((prev) => [...prev.slice(-20), { id: ++logIdCounter, text }]);
+  }, []);
 
   // Memoized refresh function - stable reference for use in effects
   const refresh = useCallback(async () => {
     try {
       setLoading(true);
+      // Validate API availability before calling
+      if (!window.electronAPI?.dependencies?.getStatus) {
+        addLogEntry('[error] Dependencies API not available. Please restart the application.');
+        setStatus(null);
+        setSettings({});
+        return;
+      }
       const [s, st] = await Promise.all([
         window.electronAPI?.settings?.get?.(),
-        window.electronAPI?.dependencies?.getStatus?.()
+        window.electronAPI.dependencies.getStatus()
       ]);
+      // Handle error responses from IPC
+      if (st?.success === false) {
+        logger.error('Failed to get dependency status', { error: st?.error });
+        addLogEntry(
+          `[error] Failed to get status: ${st?.error?.message || st?.error || 'Unknown'}`
+        );
+      }
       setSettings(s || {});
       setStatus(st?.status || null);
+
+      // Fetch installed models if Ollama is running
+      if (st?.status?.ollama?.running && window.electronAPI?.ollama?.getModels) {
+        try {
+          const modelsRes = await window.electronAPI.ollama.getModels();
+          if (modelsRes?.models) {
+            setInstalledModels(modelsRes.models);
+          }
+        } catch {
+          // Non-fatal - just won't show installed models
+        }
+      }
     } catch (e) {
       logger.error('Failed to refresh dependency status', { error: e?.message });
+      addLogEntry(`[error] Refresh failed: ${e?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
-  }, []); // Empty deps: only uses setters (stable) and window.electronAPI (global)
+  }, [addLogEntry]); // addLogEntry is stable (useCallback with empty deps)
 
   const recommendedModels = useMemo(() => {
     const text = normalizeOllamaModelName(settings?.textModel);
@@ -136,6 +171,13 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
     };
   }, [isOpen, refresh]); // refresh is stable (useCallback with empty deps)
 
+  // Auto-scroll log container to latest entry
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logLines]);
+
   const saveSetting = async (patch) => {
     const next = { ...(settings || {}), ...(patch || {}) };
     setSettings(next);
@@ -147,43 +189,96 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   };
 
   const installOllama = async () => {
+    // Validate API availability
+    if (!window.electronAPI?.dependencies?.installOllama) {
+      addLogEntry('[error] Install API not available. Please restart the application.');
+      return;
+    }
     setInstalling((p) => ({ ...p, ollama: true }));
     try {
-      await window.electronAPI?.dependencies?.installOllama?.();
+      const result = await window.electronAPI.dependencies.installOllama();
+      // Check for failure response
+      if (result && !result.success) {
+        addLogEntry(`[error] Ollama install failed: ${result.error || 'Unknown error'}`);
+      } else if (result?.startupError) {
+        // Installed but failed to start
+        addLogEntry(`[warning] Ollama installed but failed to start: ${result.startupError}`);
+      }
       await refresh();
+    } catch (e) {
+      logger.error('Failed to install Ollama', { error: e?.message });
+      addLogEntry(`[error] Installation failed: ${e?.message || 'Unknown error'}`);
     } finally {
       setInstalling((p) => ({ ...p, ollama: false }));
     }
   };
 
   const installChromaDb = async () => {
+    // Validate API availability
+    if (!window.electronAPI?.dependencies?.installChromaDb) {
+      addLogEntry('[error] Install API not available. Please restart the application.');
+      return;
+    }
     setInstalling((p) => ({ ...p, chromadb: true }));
     try {
-      await window.electronAPI?.dependencies?.installChromaDb?.();
+      const result = await window.electronAPI.dependencies.installChromaDb();
+      // Check for failure response
+      if (result && !result.success) {
+        addLogEntry(`[error] ChromaDB install failed: ${result.error || 'Unknown error'}`);
+      } else if (result?.startupError) {
+        // Installed but failed to start
+        addLogEntry(`[warning] ChromaDB installed but failed to start: ${result.startupError}`);
+      }
       await refresh();
+    } catch (e) {
+      logger.error('Failed to install ChromaDB', { error: e?.message });
+      addLogEntry(`[error] Installation failed: ${e?.message || 'Unknown error'}`);
     } finally {
       setInstalling((p) => ({ ...p, chromadb: false }));
     }
   };
 
   const downloadModels = async () => {
-    if (!recommendedModels.length) return;
+    if (!recommendedModels.length || downloadingModels) return;
+    // Validate API availability
+    if (!window.electronAPI?.ollama?.pullModels) {
+      addLogEntry('[error] Ollama API not available. Please restart the application.');
+      return;
+    }
+    setDownloadingModels(true);
     try {
-      await window.electronAPI?.ollama?.pullModels?.(recommendedModels);
+      const result = await window.electronAPI.ollama.pullModels(recommendedModels);
+      if (result && !result.success) {
+        addLogEntry(`[error] Model download failed: ${result.error || 'Unknown error'}`);
+      } else if (result?.results) {
+        // Log individual model results
+        for (const r of result.results) {
+          if (r.success) {
+            addLogEntry(`[success] Downloaded ${r.model}`);
+          } else {
+            addLogEntry(`[error] Failed to download ${r.model}: ${r.error || 'Unknown'}`);
+          }
+        }
+      }
       await refresh();
     } catch (e) {
       logger.error('Failed to download models', { error: e?.message });
+      addLogEntry(`[error] Model download failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setDownloadingModels(false);
     }
   };
 
   const ollamaOk = Boolean(status?.ollama?.installed);
   const ollamaRunning = Boolean(status?.ollama?.running);
+  const ollamaVersion = status?.ollama?.version || null;
   const chromaExternal = Boolean(status?.chromadb?.external);
   const chromaOk = Boolean(
     chromaExternal ? status?.chromadb?.running : status?.chromadb?.pythonModuleInstalled
   );
   const chromaRunning = Boolean(status?.chromadb?.running);
   const pythonOk = Boolean(status?.python?.installed);
+  const pythonVersion = status?.python?.version || null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="AI Components Setup" size="large">
@@ -200,6 +295,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 <div className="font-semibold text-system-gray-800">Ollama</div>
                 <div className="text-xs text-system-gray-500 mt-1">
                   Status: {ollamaOk ? 'Installed' : 'Not installed'}
+                  {ollamaVersion ? ` (v${ollamaVersion})` : ''}
                   {ollamaOk ? ` • ${ollamaRunning ? 'Running' : 'Not running'}` : ''}
                 </div>
               </div>
@@ -217,17 +313,42 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               <Button
                 variant="secondary"
                 onClick={downloadModels}
-                disabled={!ollamaOk || !ollamaRunning || recommendedModels.length === 0}
+                disabled={
+                  !ollamaOk || !ollamaRunning || recommendedModels.length === 0 || downloadingModels
+                }
                 title={
-                  !ollamaRunning
-                    ? 'Ollama must be running to download models'
-                    : 'Download recommended models in the background'
+                  downloadingModels
+                    ? 'Downloading models...'
+                    : !ollamaRunning
+                      ? 'Ollama must be running to download models'
+                      : 'Download recommended models in the background'
                 }
               >
-                Download recommended models
+                {downloadingModels ? 'Downloading…' : 'Download recommended models'}
               </Button>
               <div className="text-xs text-system-gray-500">
-                Models: {recommendedModels.length ? recommendedModels.join(', ') : 'None selected'}
+                {recommendedModels.length ? (
+                  <>
+                    Models:{' '}
+                    {recommendedModels.map((model, idx) => {
+                      // Check if model is installed (handle tag matching like "llama3.2:latest")
+                      const isInstalled = installedModels.some(
+                        (m) => m === model || m.startsWith(`${model.split(':')[0]}:`)
+                      );
+                      return (
+                        <span key={model}>
+                          {idx > 0 && ', '}
+                          <span className={isInstalled ? 'text-green-600' : 'text-system-gray-500'}>
+                            {model.replace(':latest', '')}
+                            {isInstalled ? ' ✓' : ''}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </>
+                ) : (
+                  'Models: None selected'
+                )}
               </div>
             </div>
           </div>
@@ -244,7 +365,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                     </>
                   ) : (
                     <>
-                      Python: {pythonOk ? 'Detected' : 'Missing'} • Module:{' '}
+                      Python: {pythonOk ? `${pythonVersion || 'Detected'}` : 'Missing'} • Module:{' '}
                       {chromaOk ? 'Installed' : 'Not installed'}
                       {chromaOk ? ` • ${chromaRunning ? 'Running' : 'Not running'}` : ''}
                     </>
@@ -319,7 +440,10 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
             </Button>
           </div>
 
-          <div className="mt-3 bg-system-gray-50 rounded-lg p-3 max-h-40 overflow-auto text-xs text-system-gray-700 modern-scrollbar">
+          <div
+            ref={logContainerRef}
+            className="mt-3 bg-system-gray-50 rounded-lg p-3 max-h-40 overflow-auto text-xs text-system-gray-700 modern-scrollbar"
+          >
             {logLines.length === 0 ? (
               <div className="text-system-gray-500">No activity yet.</div>
             ) : (

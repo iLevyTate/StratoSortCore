@@ -15,6 +15,7 @@ import { PHASES, PHASE_TRANSITIONS, PHASE_METADATA } from '../../shared/constant
 import { logger } from '../../shared/logger';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setPhase, toggleSettings } from '../store/slices/uiSlice';
+import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import UpdateIndicator from './UpdateIndicator';
 import { isMac } from '../utils/platform';
 
@@ -221,12 +222,31 @@ NavTab.propTypes = {
 };
 
 /**
- * Action buttons (settings, update indicator)
+ * Action buttons (settings, update indicator, floating search)
  */
 const NavActions = memo(function NavActions({ onSettingsClick }) {
+  const { isWidgetOpen, openWidget, closeWidget } = useFloatingSearch();
+
   return (
     <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
       <UpdateIndicator />
+      <button
+        type="button"
+        onClick={isWidgetOpen ? closeWidget : openWidget}
+        className={`
+          h-9 w-9 rounded-lg flex items-center justify-center
+          text-system-gray-500 hover:text-stratosort-blue
+          bg-white/80 hover:bg-white border border-system-gray-200 hover:border-stratosort-blue/30
+          shadow-sm hover:shadow-md
+          transition-all duration-200 ease-out
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
+          ${isWidgetOpen ? 'bg-stratosort-blue/10 border-stratosort-blue/50 text-stratosort-blue' : ''}
+        `}
+        aria-label={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget'}
+        title={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget'}
+      >
+        <SearchIcon className="h-5 w-5" />
+      </button>
       <button
         type="button"
         onClick={onSettingsClick}

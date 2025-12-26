@@ -51,7 +51,12 @@ const {
   forceSoftwareRenderer
 } = require('./core/gpuConfig');
 const { createApplicationMenu } = require('./core/applicationMenu');
-const { initializeTrayConfig, createSystemTray, updateTrayMenu } = require('./core/systemTray');
+const {
+  initializeTrayConfig,
+  createSystemTray,
+  updateTrayMenu,
+  registerGlobalShortcut
+} = require('./core/systemTray');
 const { verifyIpcHandlersRegistered } = require('./core/ipcVerification');
 const { initializeLifecycle, registerLifecycleHandlers } = require('./core/lifecycle');
 const { initializeAutoUpdater } = require('./core/autoUpdater');
@@ -664,6 +669,8 @@ app.whenReady().then(async () => {
         }
       });
       createSystemTray();
+      // Register global shortcut for quick semantic search
+      registerGlobalShortcut();
     } catch (e) {
       logger.warn('[TRAY] Failed to initialize tray:', e.message);
     }

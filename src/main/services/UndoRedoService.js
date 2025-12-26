@@ -657,15 +657,14 @@ class UndoRedoService {
     try {
       const chromaDb = getChromaDbService();
       if (chromaDb) {
+        const newMeta = {
+          path: newPath,
+          name: path.basename(newPath)
+        };
+        // Update both file: and image: prefixed entries
         await chromaDb.updateFilePaths([
-          {
-            oldId: `file:${oldPath}`,
-            newId: `file:${newPath}`,
-            newMeta: {
-              path: newPath,
-              name: path.basename(newPath)
-            }
-          }
+          { oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta },
+          { oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta }
         ]);
       }
     } catch (error) {
@@ -688,14 +687,16 @@ class UndoRedoService {
     try {
       const chromaDb = getChromaDbService();
       if (chromaDb) {
-        const updates = pathChanges.map(({ oldPath, newPath }) => ({
-          oldId: `file:${oldPath}`,
-          newId: `file:${newPath}`,
-          newMeta: {
+        // Update both file: and image: prefixed entries for each path change
+        const updates = [];
+        for (const { oldPath, newPath } of pathChanges) {
+          const newMeta = {
             path: newPath,
             name: path.basename(newPath)
-          }
-        }));
+          };
+          updates.push({ oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta });
+          updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
+        }
         await chromaDb.updateFilePaths(updates);
       }
     } catch (error) {

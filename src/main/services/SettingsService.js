@@ -2,42 +2,51 @@ const { app } = require('electron');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
-const crypto = require('crypto');
-const { backupAndReplace, atomicFileOps } = require('../../shared/atomicFileOperations');
+const { backupAndReplace } = require('../../shared/atomicFileOperations');
 const { validateSettings, sanitizeSettings } = require('../../shared/settingsValidation');
 const { DEFAULT_SETTINGS } = require('../../shared/defaultSettings');
 const { logger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
+const { LIMITS, DEBOUNCE, TIMEOUTS } = require('../../shared/performanceConstants');
+const { SettingsBackupService } = require('./SettingsBackupService');
 logger.setContext('SettingsService');
 
 class SettingsService {
   constructor() {
     this.settingsPath = path.join(app.getPath('userData'), 'settings.json');
     this.backupDir = path.join(app.getPath('userData'), 'settings-backups');
-    this.maxBackups = 10; // Keep last 10 backups
+    // Use centralized constants from performanceConstants.js
+    this.maxBackups = LIMITS.MAX_SETTINGS_BACKUPS;
     this.defaults = DEFAULT_SETTINGS;
     this._cache = null;
     this._cacheTimestamp = 0;
     this._cacheTtlMs = 2_000; // short TTL to avoid repeated disk reads
     this._fileWatcher = null;
     this._debounceTimer = null;
-    // PERFORMANCE FIX: Increased debounce delay from 500ms to 1000ms
-    // Settings file changes are not time-critical, so longer delay reduces overhead
-    this._debounceDelay = 1000; // 1000ms (1 second) debounce
+    // PERFORMANCE FIX: Use centralized debounce constant
+    this._debounceDelay = DEBOUNCE.SETTINGS_SAVE;
     this._isInternalChange = false; // Flag to ignore changes we made ourselves
 
     // Fixed: Add mutex to prevent concurrent save operations
     this._saveMutex = Promise.resolve();
     this._saveQueue = [];
     this._mutexAcquiredAt = null; // Track when mutex was acquired for deadlock detection
-    this._mutexTimeoutMs = 30000; // 30 seconds max for any operation
+    this._mutexTimeoutMs = TIMEOUTS.SERVICE_STARTUP; // Use centralized timeout
 
-    // CRITICAL FIX: Add maximum restart attempts counter to prevent infinite restart loops
+    // CRITICAL FIX: Use centralized constants for watcher restart limits
     this._watcherRestartCount = 0;
-    this._maxWatcherRestarts = 10; // Maximum 10 restart attempts
-    this._watcherRestartWindow = 60000; // 1 minute window
+    this._maxWatcherRestarts = LIMITS.MAX_WATCHER_RESTARTS;
+    this._watcherRestartWindow = LIMITS.WATCHER_RESTART_WINDOW;
     this._watcherRestartWindowStart = Date.now();
     this._restartTimer = null; // FIX: Track restart timer to prevent unbounded timers
+
+    // Initialize backup service (extracted for better separation of concerns)
+    this._backupService = new SettingsBackupService({
+      backupDir: this.backupDir,
+      maxBackups: this.maxBackups,
+      defaults: this.defaults,
+      loadSettings: () => this.load()
+    });
 
     // Start file watching
     this._startFileWatcher();
@@ -282,8 +291,8 @@ class SettingsService {
               this.settingsPath,
               JSON.stringify(merged, null, 2)
             );
-            if (!result.success) {
-              throw new Error(result.error || 'Failed to save settings');
+            if (!result || !result.success) {
+              throw new Error((result && result.error) || 'Failed to save settings');
             }
 
             // Invalidate and update cache immediately
@@ -443,228 +452,46 @@ class SettingsService {
     return await this.load();
   }
 
-  // Fixed: Add permanent backup management
+  // Backup operations delegated to SettingsBackupService for better separation of concerns
+
   /**
    * Create a permanent backup of current settings
+   * @returns {Promise<{success: boolean, path?: string, timestamp?: string, error?: string}>}
    */
   async createBackup() {
-    try {
-      // Ensure backup directory exists (works with mocked fs)
-      if (typeof fs.mkdir === 'function') {
-        await fs.mkdir(this.backupDir, { recursive: true });
-      }
-
-      const settings = await this.load();
-
-      // Create backup filename with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupPath = path.join(this.backupDir, `settings-${timestamp}.json`);
-
-      // Write backup with metadata and SHA256 hash for integrity verification
-      const backupData = {
-        timestamp: new Date().toISOString(),
-        appVersion: app.getVersion(),
-        settings
-      };
-
-      const backupJson = JSON.stringify(backupData, null, 2);
-
-      // Calculate SHA256 hash of the backup data for integrity verification
-      const hash = crypto.createHash('sha256').update(backupJson, 'utf8').digest('hex');
-
-      // Store hash in a separate metadata object
-      const backupWithHash = {
-        ...backupData,
-        hash
-      };
-
-      const writeContent = JSON.stringify(backupWithHash, null, 2);
-
-      // Write using atomicFileOps when available, otherwise fall back to fs.writeFile (mock-friendly)
-      if (atomicFileOps?.safeWriteFile) {
-        try {
-          await atomicFileOps.safeWriteFile(backupPath, writeContent);
-        } catch (atomicError) {
-          // Fall back to direct write for test environments where atomic ops may be mocked away
-          await fs.writeFile(backupPath, writeContent);
-        }
-      } else {
-        await fs.writeFile(backupPath, writeContent);
-      }
-
-      // Clean up old backups
-      await this.cleanupOldBackups();
-
-      return {
-        success: true,
-        path: backupPath,
-        timestamp: backupData.timestamp
-      };
-    } catch (error) {
-      logger.error('[SettingsService] Failed to create backup', {
-        error: error.message
-      });
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._backupService.createBackup();
   }
 
   /**
    * List all available backups
+   * @returns {Promise<Array<{filename: string, path: string, timestamp: string, appVersion: string, size: number}>>}
    */
   async listBackups() {
-    try {
-      // Ensure backup directory exists
-      await fs.mkdir(this.backupDir, { recursive: true });
-
-      // Read backup directory
-      const files = await fs.readdir(this.backupDir);
-
-      // Filter and parse backup files
-      const backups = [];
-      for (const file of files) {
-        if (file.startsWith('settings-') && file.endsWith('.json')) {
-          const filePath = path.join(this.backupDir, file);
-
-          try {
-            const content = await fs.readFile(filePath, 'utf8');
-            const data = JSON.parse(content);
-
-            const stats = await fs.stat(filePath);
-
-            const timestamp = data.timestamp || stats.mtime.toISOString();
-
-            backups.push({
-              filename: file,
-              path: filePath,
-              timestamp,
-              appVersion: data.appVersion || 'unknown',
-              size: stats.size,
-              _parsedTime: new Date(timestamp).getTime() // Fixed: Parse once for efficient sorting
-            });
-          } catch (error) {
-            // Skip invalid backup files
-            logger.warn(`[SettingsService] Invalid backup file: ${file}`, {
-              error: error.message
-            });
-          }
-        }
-      }
-
-      // Fixed: Optimized sort using pre-parsed timestamps
-      backups.sort((a, b) => b._parsedTime - a._parsedTime);
-
-      backups.forEach((backup) => {
-        delete backup._parsedTime;
-      });
-
-      return backups;
-    } catch (error) {
-      logger.error('[SettingsService] Failed to list backups', {
-        error: error.message
-      });
-      return [];
-    }
+    return this._backupService.listBackups();
   }
 
   /**
    * Restore settings from a backup
+   * @param {string} backupPath - Path to backup file
+   * @returns {Promise<{success: boolean, settings?: Object, error?: string}>}
    */
   async restoreFromBackup(backupPath) {
-    // Fixed: Use mutex to prevent race conditions during restore
+    // Use mutex to prevent race conditions during restore
     return this._withMutex(async () => {
-      try {
-        // Read backup file
-        const content = await fs.readFile(backupPath, 'utf8');
-        const backupData = JSON.parse(content);
-
-        // Bug #32: Verify JSON structure before processing
-        if (!backupData || typeof backupData !== 'object') {
-          throw new Error('Invalid backup file: corrupted or invalid JSON structure');
+      const result = await this._backupService.restoreFromBackup(backupPath, async (merged) => {
+        // Save restored settings using backupAndReplace
+        const saveResult = await backupAndReplace(
+          this.settingsPath,
+          JSON.stringify(merged, null, 2)
+        );
+        if (!saveResult.success) {
+          throw new Error(saveResult.error || 'Failed to save restored settings');
         }
-
-        if (!backupData.settings) {
-          throw new Error('Invalid backup file: missing settings object');
-        }
-
-        // Bug #32: Verify SHA256 hash if present (for backups created after this fix)
-        if (backupData.hash) {
-          // Reconstruct the original backup data without the hash
-          const { hash: storedHash, ...originalData } = backupData;
-          const originalJson = JSON.stringify(originalData, null, 2);
-
-          // Calculate hash of the original data
-          const calculatedHash = crypto
-            .createHash('sha256')
-            .update(originalJson, 'utf8')
-            .digest('hex');
-
-          // Compare hashes
-          if (calculatedHash !== storedHash) {
-            throw new Error(
-              'Backup integrity check failed: SHA256 hash mismatch. ' +
-                'The backup file may have been tampered with or corrupted. ' +
-                'Please select a different backup file.'
-            );
-          }
-
-          logger.info('[SettingsService] Backup integrity verified (SHA256 hash match)');
-        } else {
-          // Warn if hash is not present (old backup format)
-          logger.warn(
-            '[SettingsService] Restoring from backup without SHA256 verification (old format)'
-          );
-        }
-
-        // Create a backup of current settings before restoring
-        await this.createBackup();
-
-        // Validate backup settings
-        const validation = validateSettings(backupData.settings);
-        if (!validation.valid) {
-          const error = new Error('Backup contains invalid settings');
-          error.validationErrors = validation.errors;
-          error.validationWarnings = validation.warnings;
-          throw error;
-        }
-
-        // Sanitize settings
-        const sanitized = sanitizeSettings(backupData.settings);
-
-        // Merge with defaults to ensure all required fields exist
-        const merged = { ...this.defaults, ...sanitized };
-
-        // Save restored settings
-        // backupAndReplace handles directory creation
-        const result = await backupAndReplace(this.settingsPath, JSON.stringify(merged, null, 2));
-
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to save restored settings');
-        }
-
-        // Invalidate cache
+        // Update cache
         this._cache = merged;
         this._cacheTimestamp = Date.now();
-
-        return {
-          success: true,
-          settings: merged,
-          validationWarnings: validation.warnings,
-          restoredFrom: backupData.timestamp
-        };
-      } catch (error) {
-        logger.error('[SettingsService] Failed to restore from backup', {
-          error: error.message
-        });
-        return {
-          success: false,
-          error: error.message,
-          validationErrors: error.validationErrors,
-          validationWarnings: error.validationWarnings
-        };
-      }
+      });
+      return result;
     });
   }
 
@@ -672,58 +499,16 @@ class SettingsService {
    * Clean up old backups, keeping only the most recent ones
    */
   async cleanupOldBackups() {
-    try {
-      const backups = await this.listBackups();
-
-      // Bug #36: Add Number.MAX_SAFE_INTEGER check before timestamp comparisons
-      // Filter out backups with unsafe timestamps to prevent comparison issues
-      const safeBackups = backups.filter((backup) => {
-        if (backup._parsedTime && !Number.isSafeInteger(backup._parsedTime)) {
-          logger.warn(
-            `[SettingsService] Backup ${backup.filename} has unsafe timestamp: ${backup._parsedTime}. Skipping for safety.`
-          );
-          return false;
-        }
-        return true;
-      });
-
-      // Keep only the most recent backups
-      if (safeBackups.length > this.maxBackups) {
-        const backupsToDelete = safeBackups.slice(this.maxBackups);
-
-        for (const backup of backupsToDelete) {
-          try {
-            await fs.unlink(backup.path);
-          } catch (error) {
-            logger.warn(`[SettingsService] Failed to delete old backup: ${backup.filename}`, {
-              error: error.message
-            });
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('[SettingsService] Failed to cleanup old backups', {
-        error: error.message
-      });
-    }
+    return this._backupService.cleanupOldBackups();
   }
 
   /**
    * Delete a specific backup
+   * @param {string} backupPath - Path to backup file
+   * @returns {Promise<{success: boolean, error?: string}>}
    */
   async deleteBackup(backupPath) {
-    try {
-      await fs.unlink(backupPath);
-      return { success: true };
-    } catch (error) {
-      logger.error('[SettingsService] Failed to delete backup', {
-        error: error.message
-      });
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    return this._backupService.deleteBackup(backupPath);
   }
 
   /**

@@ -22,7 +22,7 @@ function ModelManagementSection({
     <div className="border-t border-system-gray-200 pt-6 mt-6 space-y-6">
       <div>
         <label className="block text-sm font-medium text-system-gray-700 mb-2">Add Model</label>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Input
             type="text"
             value={newModel}
@@ -36,6 +36,8 @@ function ModelManagementSection({
             type="button"
             disabled={isAddingModel}
             title="Pull model"
+            size="sm"
+            className="shrink-0"
           >
             {isAddingModel ? 'Adding…' : 'Add'}
           </Button>
@@ -43,7 +45,7 @@ function ModelManagementSection({
       </div>
       <div>
         <label className="block text-sm font-medium text-system-gray-700 mb-2">Delete Model</label>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Select
             value={modelToDelete}
             onChange={(e) => setModelToDelete(e.target.value)}
@@ -64,6 +66,8 @@ function ModelManagementSection({
             type="button"
             disabled={isDeletingModel || !modelToDelete}
             title="Delete model"
+            size="sm"
+            className="shrink-0"
           >
             {isDeletingModel ? 'Deleting…' : 'Delete'}
           </Button>

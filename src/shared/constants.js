@@ -118,7 +118,11 @@ const IPC_CHANNELS = {
     BATCH: 'batch-organize-files',
     PROCESS_NEW: 'process-new-file',
     GET_STATS: 'get-organize-stats',
-    UPDATE_THRESHOLDS: 'update-organize-thresholds'
+    UPDATE_THRESHOLDS: 'update-organize-thresholds',
+    // Cluster-based organization
+    CLUSTER_BATCH: 'cluster-batch-organize',
+    IDENTIFY_OUTLIERS: 'identify-organization-outliers',
+    GET_CLUSTER_SUGGESTIONS: 'get-cluster-suggestions'
   },
 
   // Settings
@@ -141,7 +145,20 @@ const IPC_CHANNELS = {
     REBUILD_FILES: 'embeddings-rebuild-files',
     CLEAR_STORE: 'embeddings-clear-store',
     GET_STATS: 'embeddings-get-stats',
-    FIND_SIMILAR: 'embeddings-find-similar'
+    FIND_SIMILAR: 'embeddings-find-similar',
+    SEARCH: 'embeddings-search',
+    SCORE_FILES: 'embeddings-score-files',
+    // Hybrid search
+    HYBRID_SEARCH: 'embeddings-hybrid-search',
+    REBUILD_BM25_INDEX: 'embeddings-rebuild-bm25-index',
+    GET_SEARCH_STATUS: 'embeddings-get-search-status',
+    // Multi-hop expansion
+    FIND_MULTI_HOP: 'embeddings-find-multi-hop',
+    // Clustering
+    COMPUTE_CLUSTERS: 'embeddings-compute-clusters',
+    GET_CLUSTERS: 'embeddings-get-clusters',
+    GET_CLUSTER_MEMBERS: 'embeddings-get-cluster-members',
+    GET_SIMILARITY_EDGES: 'embeddings-get-similarity-edges'
   },
 
   // Ollama

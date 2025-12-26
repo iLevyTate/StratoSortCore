@@ -25,7 +25,7 @@ function DefaultLocationsSection({ settings, setSettings }) {
         <label className="block text-sm font-medium text-system-gray-700 mb-2">
           Default Smart Folder Location
         </label>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Input
             type="text"
             value={settings.defaultSmartFolderLocation}
@@ -45,6 +45,8 @@ function DefaultLocationsSection({ settings, setSettings }) {
             title="Browse"
             aria-label="Browse for default folder"
             leftIcon={<FolderOpen className="w-4 h-4" />}
+            size="sm"
+            className="shrink-0"
           >
             Browse
           </Button>

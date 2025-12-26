@@ -1,0 +1,158 @@
+/**
+ * Vector Math Utilities
+ *
+ * Shared math functions for vector operations used across the codebase.
+ * Centralizes implementations to avoid duplication.
+ *
+ * @module shared/vectorMath
+ */
+
+/**
+ * Calculate cosine similarity between two vectors
+ * Uses loop unrolling (4x) for better CPU cache performance
+ *
+ * @param {number[]} a - First vector
+ * @param {number[]} b - Second vector
+ * @returns {number} Cosine similarity (-1 to 1), or 0 if vectors are invalid
+ */
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return 0;
+  }
+
+  const len = a.length;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  // Loop unrolling (4x) for better performance on typical embedding sizes (384, 768, 1024)
+  const unrollLimit = len - 3;
+  let i = 0;
+
+  for (; i < unrollLimit; i += 4) {
+    dot += a[i] * b[i] + a[i + 1] * b[i + 1] + a[i + 2] * b[i + 2] + a[i + 3] * b[i + 3];
+    normA += a[i] * a[i] + a[i + 1] * a[i + 1] + a[i + 2] * a[i + 2] + a[i + 3] * a[i + 3];
+    normB += b[i] * b[i] + b[i + 1] * b[i + 1] + b[i + 2] * b[i + 2] + b[i + 3] * b[i + 3];
+  }
+
+  // Handle remaining elements
+  for (; i < len; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Calculate Euclidean distance between two vectors
+ *
+ * @param {number[]} a - First vector
+ * @param {number[]} b - Second vector
+ * @returns {number} Euclidean distance, or Infinity if vectors are invalid
+ */
+function euclideanDistance(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return Infinity;
+  }
+
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const diff = a[i] - b[i];
+    sum += diff * diff;
+  }
+  return Math.sqrt(sum);
+}
+
+/**
+ * Calculate squared Euclidean distance between two vectors
+ * More efficient for comparisons (avoids sqrt)
+ * Uses loop unrolling (4x) for better CPU cache performance
+ *
+ * @param {number[]} a - First vector
+ * @param {number[]} b - Second vector
+ * @returns {number} Squared Euclidean distance, or Infinity if vectors are invalid
+ */
+function squaredEuclideanDistance(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return Infinity;
+  }
+
+  const len = a.length;
+  let sum = 0;
+
+  // Loop unrolling (4x) for better performance on typical embedding sizes
+  const unrollLimit = len - 3;
+  let i = 0;
+
+  for (; i < unrollLimit; i += 4) {
+    const d0 = a[i] - b[i];
+    const d1 = a[i + 1] - b[i + 1];
+    const d2 = a[i + 2] - b[i + 2];
+    const d3 = a[i + 3] - b[i + 3];
+    sum += d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+  }
+
+  // Handle remaining elements
+  for (; i < len; i++) {
+    const diff = a[i] - b[i];
+    sum += diff * diff;
+  }
+
+  return sum;
+}
+
+/**
+ * Normalize a vector to unit length
+ *
+ * @param {number[]} v - Vector to normalize
+ * @returns {number[]} Normalized vector, or original if zero-length
+ */
+function normalizeVector(v) {
+  if (!Array.isArray(v) || v.length === 0) return v;
+
+  let norm = 0;
+  for (let i = 0; i < v.length; i++) {
+    norm += v[i] * v[i];
+  }
+
+  if (norm === 0) return v;
+
+  norm = Math.sqrt(norm);
+  return v.map((x) => x / norm);
+}
+
+/**
+ * Calculate the centroid (mean) of multiple vectors
+ *
+ * @param {number[][]} vectors - Array of vectors
+ * @returns {number[]} Centroid vector, or empty array if no vectors
+ */
+function calculateCentroid(vectors) {
+  if (!Array.isArray(vectors) || vectors.length === 0) return [];
+
+  const dim = vectors[0].length;
+  const centroid = new Array(dim).fill(0);
+
+  for (const v of vectors) {
+    for (let i = 0; i < dim; i++) {
+      centroid[i] += v[i];
+    }
+  }
+
+  for (let i = 0; i < dim; i++) {
+    centroid[i] /= vectors.length;
+  }
+
+  return centroid;
+}
+
+module.exports = {
+  cosineSimilarity,
+  euclideanDistance,
+  squaredEuclideanDistance,
+  normalizeVector,
+  calculateCentroid
+};

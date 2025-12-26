@@ -40,15 +40,23 @@ function createWithDefaults(config = {}) {
   const { getInstance: getChromaDB } = require('../chromadb');
   const FolderMatchingService = require('../FolderMatchingService');
   const { getService: getSettingsService } = require('../SettingsService');
+  const { ClusteringService } = require('../ClusteringService');
+  const { getInstance: getOllamaInstance } = require('../OllamaService');
 
   const chromaDbService = getChromaDB();
   const folderMatchingService = new FolderMatchingService(chromaDbService);
   const settingsService = getSettingsService();
+  const ollamaService = getOllamaInstance();
+  const clusteringService = new ClusteringService({
+    chromaDbService,
+    ollamaService
+  });
 
   return new OrganizationSuggestionService({
     chromaDbService,
     folderMatchingService,
     settingsService,
+    clusteringService,
     config
   });
 }

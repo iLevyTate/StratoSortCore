@@ -268,6 +268,25 @@ async function runBackgroundSetup() {
       await markSetupComplete();
     } else {
       logger.debug('[BACKGROUND] Not first run, skipping automated dependency setup');
+
+      // Reliability improvement:
+      // Even after first-run, users can end up with ChromaDB stopped (crash, killed process, reboot).
+      // On normal launches we should still attempt a best-effort restart so semantic features recover.
+      try {
+        const startupManager = getStartupManager();
+        const { isChromaDBRunning } = require('../services/startup/chromaService');
+        const running = await isChromaDBRunning();
+        if (!running) {
+          emitDependencyProgress({
+            message: 'ChromaDB is offline. Attempting restart…',
+            dependency: 'chromadb',
+            stage: 'recover'
+          });
+          await startupManager.startChromaDB();
+        }
+      } catch (e) {
+        logger.debug('[BACKGROUND] Non-fatal ChromaDB restart attempt failed:', e?.message);
+      }
     }
 
     // Mark background setup as complete

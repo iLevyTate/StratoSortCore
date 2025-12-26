@@ -65,7 +65,8 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock ollama
 const mockOllama = {
-  embeddings: jest.fn(),
+  embeddings: jest.fn(), // Legacy API (deprecated)
+  embed: jest.fn(), // New API
   generate: jest.fn(),
   list: jest.fn()
 };
@@ -87,7 +88,8 @@ describe('OllamaClient', () => {
 
     mockFs.readFile.mockRejectedValue({ code: 'ENOENT' });
     mockOllama.list.mockResolvedValue({ models: [] });
-    mockOllama.embeddings.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
+    // New API uses embed() with embeddings array response
+    mockOllama.embed.mockResolvedValue({ embeddings: [[0.1, 0.2, 0.3]] });
     mockOllama.generate.mockResolvedValue({ response: 'test' });
 
     const module = require('../src/main/services/OllamaClient');
@@ -269,13 +271,15 @@ describe('OllamaClient', () => {
     test('retries on retryable error', async () => {
       jest.useRealTimers(); // Need real timers for retry delays
 
-      mockOllama.embeddings
+      // New API: mock embed() which is called internally
+      mockOllama.embed
         .mockRejectedValueOnce(new Error('fetch failed'))
-        .mockResolvedValueOnce({ embedding: [0.1] });
+        .mockResolvedValueOnce({ embeddings: [[0.1]] });
 
       const client = new OllamaClient({ maxRetries: 1, initialRetryDelay: 10 });
       await client.initialize();
 
+      // Public API is still embeddings() for backward compatibility
       const result = await client.embeddings({
         model: 'test',
         prompt: 'hello'
@@ -286,7 +290,8 @@ describe('OllamaClient', () => {
     });
 
     test('adds to offline queue when unhealthy', async () => {
-      mockOllama.embeddings.mockRejectedValue(new Error('fetch failed'));
+      // New API: mock embed() which is called internally
+      mockOllama.embed.mockRejectedValue(new Error('fetch failed'));
 
       const client = new OllamaClient({ maxRetries: 0 });
       await client.initialize();
@@ -363,8 +368,9 @@ describe('OllamaClient', () => {
     });
 
     test('collects errors for failed items', async () => {
-      mockOllama.embeddings
-        .mockResolvedValueOnce({ embedding: [0.1] })
+      // New API: mock embed() which is called internally
+      mockOllama.embed
+        .mockResolvedValueOnce({ embeddings: [[0.1]] })
         .mockRejectedValueOnce(new Error('bad request'));
 
       const client = new OllamaClient({ maxRetries: 0 });

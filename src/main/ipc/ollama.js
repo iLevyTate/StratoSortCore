@@ -3,17 +3,14 @@ const { withErrorLogging, withValidation } = require('./ipcWrappers');
 const { optionalUrl: optionalUrlSchema } = require('./validationSchemas');
 const { SERVICE_URLS } = require('../../shared/configDefaults');
 const { normalizeOllamaUrl } = require('../ollamaUtils');
+const { URL_PATTERN } = require('../../shared/validationConstants');
 let z;
 
 function isValidOllamaUrl(url) {
   if (!url || typeof url !== 'string') return false;
-  return OLLAMA_URL_PATTERN.test(url.trim());
+  // Use shared URL_PATTERN from validationConstants to avoid duplicate regex definitions
+  return URL_PATTERN.test(url.trim());
 }
-
-// URL pattern that properly matches IP addresses and hostnames
-// Matches: http://127.0.0.1:11434, https://localhost:11434, http://ollama.local:11434
-const OLLAMA_URL_PATTERN =
-  /^https?:\/\/([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(:\d{1,5})?(\/.*)?$|^https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d{1,5})?(\/.*)?$|^https?:\/\/localhost(:\d{1,5})?(\/.*)?$/;
 
 // Note: normalizeOllamaUrl is imported from shared ollamaUtils module
 

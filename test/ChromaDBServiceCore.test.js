@@ -47,7 +47,8 @@ jest.mock('fs', () => ({
   promises: {
     mkdir: jest.fn().mockResolvedValue(undefined),
     readFile: jest.fn().mockResolvedValue(''),
-    rm: jest.fn().mockResolvedValue(undefined)
+    rm: jest.fn().mockResolvedValue(undefined),
+    rename: jest.fn().mockResolvedValue(undefined)
   },
   existsSync: jest.fn().mockReturnValue(false)
 }));
@@ -578,6 +579,206 @@ describe('ChromaDBServiceCore', () => {
       expect(stats).toHaveProperty('serverUrl');
       expect(stats).toHaveProperty('initialized');
       expect(stats).toHaveProperty('queryCache');
+    });
+  });
+
+  describe('auto-reset prevention', () => {
+    let fsSync;
+    let originalExistsSync;
+
+    beforeEach(() => {
+      jest.resetModules();
+      fsSync = require('fs');
+      originalExistsSync = fsSync.existsSync;
+      delete process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET;
+    });
+
+    afterEach(() => {
+      fsSync.existsSync = originalExistsSync;
+      delete process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET;
+    });
+
+    test('does NOT rename DB directory when auto-reset is disabled (default)', async () => {
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
+
+      const fs = require('fs');
+      const fsPromises = require('fs').promises;
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+      fs.existsSync = jest.fn().mockReturnValue(true);
+
+      const { ChromaClient } = require('chromadb');
+      ChromaClient.mockImplementationOnce(() => ({
+        getOrCreateCollection: jest.fn().mockRejectedValue(new Error('default_tenant not found'))
+      }));
+
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      const ChromaDBServiceCore = module.ChromaDBServiceCore;
+      const testService = new ChromaDBServiceCore();
+
+      await expect(testService.initialize()).rejects.toThrow();
+
+      // Should NOT rename the DB directory when auto-reset is disabled
+      expect(renameSpy).not.toHaveBeenCalled();
+
+      renameSpy.mockRestore();
+    });
+
+    test('renames DB directory when auto-reset is explicitly enabled', async () => {
+      process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET = '1';
+
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
+
+      const fs = require('fs');
+      const fsPromises = require('fs').promises;
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+      fs.existsSync = jest.fn().mockReturnValue(true);
+
+      const { ChromaClient } = require('chromadb');
+      ChromaClient.mockImplementationOnce(() => ({
+        getOrCreateCollection: jest.fn().mockRejectedValue(new Error('default_tenant not found'))
+      }));
+
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      const ChromaDBServiceCore = module.ChromaDBServiceCore;
+      const testService = new ChromaDBServiceCore();
+
+      await expect(testService.initialize()).rejects.toThrow();
+
+      // Should rename the DB directory when auto-reset is enabled
+      expect(renameSpy).toHaveBeenCalled();
+      expect(renameSpy.mock.calls[0][1]).toMatch(/\.bak\.\d+$/);
+
+      renameSpy.mockRestore();
+    });
+
+    test('does NOT rename DB directory when server is unhealthy', async () => {
+      process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET = '1';
+
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      checkHealthViaHttp.mockRejectedValueOnce(new Error('Server unreachable'));
+
+      const fsPromises = require('fs').promises;
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+
+      const { ChromaClient } = require('chromadb');
+      ChromaClient.mockImplementationOnce(() => ({
+        getOrCreateCollection: jest.fn().mockRejectedValue(new Error('default_tenant not found'))
+      }));
+
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      const ChromaDBServiceCore = module.ChromaDBServiceCore;
+      const testService = new ChromaDBServiceCore();
+
+      await expect(testService.initialize()).rejects.toThrow();
+
+      // Should NOT rename when server is unhealthy (could be transient)
+      expect(renameSpy).not.toHaveBeenCalled();
+
+      renameSpy.mockRestore();
+    });
+
+    test('does NOT rename DB directory for non-corruption errors', async () => {
+      process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET = '1';
+
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
+
+      const fsPromises = require('fs').promises;
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+
+      const { ChromaClient } = require('chromadb');
+      ChromaClient.mockImplementationOnce(() => ({
+        getOrCreateCollection: jest.fn().mockRejectedValue(new Error('Network timeout'))
+      }));
+
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      const ChromaDBServiceCore = module.ChromaDBServiceCore;
+      const testService = new ChromaDBServiceCore();
+
+      await expect(testService.initialize()).rejects.toThrow();
+
+      // Should NOT rename for non-corruption errors
+      expect(renameSpy).not.toHaveBeenCalled();
+
+      renameSpy.mockRestore();
+    });
+
+    test('only attempts auto-reset once per instance', async () => {
+      process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET = '1';
+
+      const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+      checkHealthViaHttp.mockResolvedValue({ healthy: true });
+
+      const fs = require('fs');
+      const fsPromises = require('fs').promises;
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+      fs.existsSync = jest.fn().mockReturnValue(true);
+
+      const { ChromaClient } = require('chromadb');
+      ChromaClient.mockImplementation(() => ({
+        getOrCreateCollection: jest.fn().mockRejectedValue(new Error('default_tenant not found'))
+      }));
+
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      const ChromaDBServiceCore = module.ChromaDBServiceCore;
+      const testService = new ChromaDBServiceCore();
+
+      // First attempt - should rename
+      await expect(testService.initialize()).rejects.toThrow();
+      expect(renameSpy).toHaveBeenCalledTimes(1);
+      expect(testService._recoveryAttempted).toBe(true);
+
+      // Reset the promise to allow retry, but keep _recoveryAttempted = true
+      testService._initPromise = null;
+      testService._isInitializing = false;
+      // DO NOT reset _recoveryAttempted - this is the key test
+
+      // Second attempt - should NOT rename again because _recoveryAttempted is still true
+      await expect(testService.initialize()).rejects.toThrow();
+      expect(renameSpy).toHaveBeenCalledTimes(1); // Still only once
+
+      renameSpy.mockRestore();
+    });
+
+    test('detects various corruption-like error patterns', async () => {
+      const corruptionErrors = [
+        'default_tenant not found',
+        'Could not find tenant',
+        'no such table: embeddings',
+        'SQLite error: database disk image is malformed'
+      ];
+
+      for (const errorMsg of corruptionErrors) {
+        jest.resetModules();
+        delete process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET;
+
+        const { checkHealthViaHttp } = require('../src/main/services/chromadb/ChromaHealthChecker');
+        checkHealthViaHttp.mockResolvedValueOnce({ healthy: true });
+
+        const logger = require('../src/shared/logger');
+        const warnSpy = jest.spyOn(logger.logger, 'warn');
+
+        const { ChromaClient } = require('chromadb');
+        ChromaClient.mockImplementationOnce(() => ({
+          getOrCreateCollection: jest.fn().mockRejectedValue(new Error(errorMsg))
+        }));
+
+        const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+        const ChromaDBServiceCore = module.ChromaDBServiceCore;
+        const testService = new ChromaDBServiceCore();
+
+        await expect(testService.initialize()).rejects.toThrow();
+
+        // Should log corruption detection
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('[ChromaDB] Detected likely DB/tenant corruption'),
+          expect.any(Object)
+        );
+
+        warnSpy.mockRestore();
+      }
     });
   });
 

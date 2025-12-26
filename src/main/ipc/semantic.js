@@ -1,5 +1,10 @@
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const FolderMatchingService = require('../services/FolderMatchingService');
+const {
+  getInstance: getParallelEmbeddingService
+} = require('../services/ParallelEmbeddingService');
+const { SearchService } = require('../services/SearchService');
+const { ClusteringService } = require('../services/ClusteringService');
 const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
 const { BATCH, TIMEOUTS, LIMITS } = require('../../shared/performanceConstants');
@@ -15,6 +20,38 @@ function registerEmbeddingsIpc({
   // Use ChromaDB singleton instance
   const chromaDbService = getChromaDB();
   const folderMatcher = new FolderMatchingService(chromaDbService);
+
+  // SearchService will be initialized lazily when needed
+  let searchService = null;
+  let clusteringService = null;
+
+  function getSearchService() {
+    if (!searchService) {
+      const serviceIntegration = getServiceIntegration && getServiceIntegration();
+      const historyService = serviceIntegration?.analysisHistory;
+      const embeddingService = getParallelEmbeddingService();
+
+      searchService = new SearchService({
+        chromaDbService,
+        analysisHistoryService: historyService,
+        parallelEmbeddingService: embeddingService
+      });
+    }
+    return searchService;
+  }
+
+  function getClusteringService() {
+    if (!clusteringService) {
+      const serviceIntegration = getServiceIntegration && getServiceIntegration();
+      const ollamaService = serviceIntegration?.ollamaService;
+
+      clusteringService = new ClusteringService({
+        chromaDbService,
+        ollamaService
+      });
+    }
+    return clusteringService;
+  }
 
   // CRITICAL FIX: Track initialization state to prevent race conditions
   let initializationPromise = null;
@@ -68,6 +105,20 @@ function registerEmbeddingsIpc({
 
           logger.info('[SEMANTIC] Initialization complete');
           isInitialized = true;
+
+          // Warm up search service in background (non-blocking)
+          // This pre-builds the BM25 index for faster first search
+          setImmediate(() => {
+            try {
+              const searchSvc = getSearchService();
+              searchSvc.warmUp({ buildBM25: true, warmChroma: false }).catch((warmErr) => {
+                logger.debug('[SEMANTIC] Search warm-up skipped:', warmErr.message);
+              });
+            } catch (warmErr) {
+              logger.debug('[SEMANTIC] Search warm-up init skipped:', warmErr.message);
+            }
+          });
+
           return; // Success - exit retry loop
         } catch (error) {
           logger.warn(`[SEMANTIC] Initialization attempt ${attempt} failed:`, error.message);
@@ -109,6 +160,11 @@ function registerEmbeddingsIpc({
     }, 1000); // 1 second delay for pre-warming, handlers use retries if called earlier
   });
 
+  /**
+   * Rebuild folder embeddings from current smart folders
+   * SAFE: Only resets the 'folder_embeddings' collection (not the entire DB directory).
+   * This is a user-controlled, intentional rebuild that preserves all other data.
+   */
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
     withErrorLogging(logger, async () => {
@@ -135,6 +191,7 @@ function registerEmbeddingsIpc({
 
       try {
         const smartFolders = getCustomFolders().filter((f) => f && f.name);
+        // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
         await chromaDbService.resetFolders();
 
         // Optimization: Batch process folder embeddings
@@ -179,6 +236,12 @@ function registerEmbeddingsIpc({
     })
   );
 
+  /**
+   * Rebuild file embeddings from analysis history
+   * SAFE: Only resets the 'file_embeddings' collection (not the entire DB directory).
+   * This rebuilds the semantic search index from existing analysis history without
+   * re-analyzing files. User-controlled and intentional.
+   */
   ipcMain.handle(
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
     withErrorLogging(logger, async () => {
@@ -260,7 +323,8 @@ function registerEmbeddingsIpc({
           await chromaDbService.batchUpsertFolders(validFolderPayloads);
         }
 
-        // Reset file vectors to rebuild from scratch
+        // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
+        // This rebuilds the search index from analysis history without re-analyzing files
         await chromaDbService.resetFiles();
 
         // Optimization: Batch process file embeddings
@@ -378,7 +442,39 @@ function registerEmbeddingsIpc({
 
       try {
         const stats = await chromaDbService.getStats();
-        return { success: true, ...stats };
+
+        // Provide lightweight context so the UI can explain *why* embeddings are empty.
+        // This avoids confusing "rebuild embeddings" prompts when users already have analysis history.
+        let analysisHistory = null;
+        try {
+          const serviceIntegration =
+            typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+          const historyService = serviceIntegration?.analysisHistory;
+          if (historyService?.getQuickStats) {
+            analysisHistory = await historyService.getQuickStats();
+          } else if (historyService?.getStatistics) {
+            // Fallback (cached) stats if quick stats not available.
+            const full = await historyService.getStatistics();
+            analysisHistory = {
+              totalFiles: typeof full?.totalFiles === 'number' ? full.totalFiles : 0
+            };
+          }
+        } catch (e) {
+          // Non-fatal: stats still useful without history context
+          analysisHistory = null;
+        }
+
+        const historyTotal =
+          typeof analysisHistory?.totalFiles === 'number' ? analysisHistory.totalFiles : 0;
+        const needsFileEmbeddingRebuild =
+          typeof stats?.files === 'number' && stats.files === 0 && historyTotal > 0;
+
+        return {
+          success: true,
+          ...stats,
+          analysisHistory,
+          needsFileEmbeddingRebuild
+        };
       } catch (e) {
         return { success: false, error: e.message };
       }
@@ -458,6 +554,450 @@ function registerEmbeddingsIpc({
         };
       }
     })
+  );
+
+  // Global semantic search (query -> ranked files)
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.SEARCH,
+    withErrorLogging(logger, async (event, { query, topK = 20 } = {}) => {
+      // CRITICAL FIX: Wait for initialization before executing
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
+      const MAX_TOP_K = LIMITS.MAX_TOP_K;
+
+      try {
+        const cleanQuery = typeof query === 'string' ? query.trim() : '';
+        if (!cleanQuery) {
+          return { success: false, error: 'Query is required' };
+        }
+        if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
+          return { success: false, error: 'Query length must be between 2 and 2000 characters' };
+        }
+
+        // Validate topK parameter
+        if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
+          return {
+            success: false,
+            error: `topK must be between 1 and ${MAX_TOP_K}`
+          };
+        }
+
+        // Create timeout promise
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
+        });
+
+        try {
+          const results = await Promise.race([
+            (async () => {
+              const embeddingService = getParallelEmbeddingService();
+              const { vector } = await embeddingService.embedText(cleanQuery);
+              return chromaDbService.querySimilarFiles(vector, topK);
+            })(),
+            timeoutPromise
+          ]);
+
+          return { success: true, results };
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Search failed:', {
+          topK,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        });
+        return {
+          success: false,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        };
+      }
+    })
+  );
+
+  function cosineSimilarity(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return 0;
+    const len = Math.min(a.length, b.length);
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < len; i += 1) {
+      const av = Number(a[i]) || 0;
+      const bv = Number(b[i]) || 0;
+      dot += av * bv;
+      normA += av * av;
+      normB += bv * bv;
+    }
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  // Score a subset of file IDs against a query (for "search within graph")
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.SCORE_FILES,
+    withErrorLogging(logger, async (event, { query, fileIds } = {}) => {
+      // CRITICAL FIX: Wait for initialization before executing
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
+
+      try {
+        const cleanQuery = typeof query === 'string' ? query.trim() : '';
+        if (!cleanQuery) {
+          return { success: false, error: 'Query is required' };
+        }
+        if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
+          return { success: false, error: 'Query length must be between 2 and 2000 characters' };
+        }
+
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+          return { success: false, error: 'fileIds must be a non-empty array' };
+        }
+
+        // Keep scoring fast and payloads bounded (renderer typically stays < 1000 nodes)
+        const MAX_IDS = 1000;
+        if (fileIds.length > MAX_IDS) {
+          return { success: false, error: `fileIds must contain at most ${MAX_IDS} ids` };
+        }
+
+        const normalizedIds = fileIds
+          .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
+          .slice(0, MAX_IDS);
+
+        if (normalizedIds.length === 0) {
+          return { success: false, error: 'No valid fileIds provided' };
+        }
+
+        // Create timeout promise
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
+        });
+
+        try {
+          const scored = await Promise.race([
+            (async () => {
+              const embeddingService = getParallelEmbeddingService();
+              const { vector: queryVector } = await embeddingService.embedText(cleanQuery);
+
+              await chromaDbService.initialize();
+              const fileResult = await chromaDbService.fileCollection.get({ ids: normalizedIds });
+
+              const ids = Array.isArray(fileResult?.ids) ? fileResult.ids : [];
+              const embeddings = Array.isArray(fileResult?.embeddings) ? fileResult.embeddings : [];
+
+              const scores = [];
+              for (let i = 0; i < ids.length; i += 1) {
+                const vec = embeddings[i];
+                const score = cosineSimilarity(queryVector, vec);
+                scores.push({ id: ids[i], score });
+              }
+
+              scores.sort((a, b) => b.score - a.score);
+              return scores;
+            })(),
+            timeoutPromise
+          ]);
+
+          return { success: true, scores: scored };
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+        }
+      } catch (e) {
+        logger.error('[EMBEDDINGS] scoreFiles failed:', {
+          fileCount: Array.isArray(fileIds) ? fileIds.length : 0,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        });
+        return {
+          success: false,
+          error: e.message,
+          timeout: e.message.includes('timeout')
+        };
+      }
+    })
+  );
+
+  // ============================================================================
+  // Hybrid Search Handlers
+  // ============================================================================
+
+  /**
+   * Perform hybrid search combining BM25 keyword search with vector similarity
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.HYBRID_SEARCH,
+    withErrorLogging(logger, async (event, { query, options = {} } = {}) => {
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      try {
+        const service = getSearchService();
+        const result = await service.hybridSearch(query, options);
+        return result;
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Hybrid search failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  /**
+   * Rebuild the BM25 keyword search index
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX,
+    withErrorLogging(logger, async () => {
+      try {
+        const service = getSearchService();
+        const result = await service.rebuildIndex();
+        return result;
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Rebuild BM25 index failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  /**
+   * Get the current search index status
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS,
+    withErrorLogging(logger, async () => {
+      try {
+        const service = getSearchService();
+        return { success: true, status: service.getIndexStatus() };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Get search status failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  // ============================================================================
+  // Multi-Hop Expansion Handlers
+  // ============================================================================
+
+  /**
+   * Find similar files with multi-hop expansion
+   * Explores neighbors of neighbors with decay scoring
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP,
+    withErrorLogging(logger, async (event, { seedIds, options = {} } = {}) => {
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      try {
+        if (!Array.isArray(seedIds) || seedIds.length === 0) {
+          return { success: false, error: 'seedIds must be a non-empty array' };
+        }
+
+        const validIds = seedIds
+          .filter((id) => typeof id === 'string' && id.length > 0)
+          .slice(0, 10); // Limit to 10 seeds for performance
+
+        if (validIds.length === 0) {
+          return { success: false, error: 'No valid seedIds provided' };
+        }
+
+        const results = await folderMatcher.findMultiHopNeighbors(validIds, options);
+        return { success: true, results };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Multi-hop expansion failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  // ============================================================================
+  // Clustering Handlers (placeholder for ClusteringService)
+  // ============================================================================
+
+  /**
+   * Compute semantic clusters of files
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS,
+    withErrorLogging(logger, async (event, { k = 'auto', generateLabels = true } = {}) => {
+      try {
+        await ensureInitialized();
+      } catch (initError) {
+        return {
+          success: false,
+          error: 'ChromaDB is not available.',
+          unavailable: true
+        };
+      }
+      if (!isInitialized) {
+        return {
+          success: false,
+          error: 'ChromaDB initialization pending.',
+          pending: true
+        };
+      }
+
+      try {
+        const service = getClusteringService();
+        const result = await service.computeClusters(k);
+
+        // Optionally generate LLM labels for clusters
+        if (result.success && generateLabels && result.clusters.length > 0) {
+          await service.generateClusterLabels();
+          // Update result with labels
+          result.clusters = service.getClustersForGraph();
+        }
+
+        return result;
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Cluster computation failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  /**
+   * Get computed clusters
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.GET_CLUSTERS,
+    withErrorLogging(logger, async () => {
+      try {
+        const service = getClusteringService();
+        const clusters = service.getClustersForGraph();
+        const crossClusterEdges = service.findCrossClusterEdges(0.5);
+
+        return {
+          success: true,
+          clusters,
+          crossClusterEdges,
+          stale: service.isClustersStale()
+        };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Get clusters failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  /**
+   * Get members of a specific cluster
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.GET_CLUSTER_MEMBERS,
+    withErrorLogging(logger, async (event, { clusterId } = {}) => {
+      try {
+        if (typeof clusterId !== 'number') {
+          return { success: false, error: 'clusterId must be a number' };
+        }
+
+        const service = getClusteringService();
+        // Now async - fetches fresh metadata from ChromaDB
+        const members = await service.getClusterMembers(clusterId);
+
+        return {
+          success: true,
+          clusterId,
+          members
+        };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Get cluster members failed:', e);
+        return { success: false, error: e.message };
+      }
+    })
+  );
+
+  /**
+   * Get similarity edges between files for graph visualization
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.GET_SIMILARITY_EDGES,
+    withErrorLogging(
+      logger,
+      async (event, { fileIds, threshold = 0.5, maxEdgesPerNode = 3 } = {}) => {
+        try {
+          if (!Array.isArray(fileIds) || fileIds.length < 2) {
+            return { success: true, edges: [] };
+          }
+
+          const service = getClusteringService();
+          const edges = await service.findFileSimilarityEdges(fileIds, {
+            threshold,
+            maxEdgesPerNode
+          });
+
+          return {
+            success: true,
+            edges
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Get similarity edges failed:', e);
+          return { success: false, error: e.message, edges: [] };
+        }
+      }
+    )
   );
 
   // Cleanup on app quit - FIX #15: Use once() to prevent multiple listener registration

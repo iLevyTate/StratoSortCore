@@ -59,7 +59,8 @@ const ALLOWED_CHANNELS = {
 // FIX: Use IPC_CHANNELS constant instead of hardcoded string
 const ALLOWED_RECEIVE_CHANNELS = [
   ...SECURITY_RECEIVE_CHANNELS,
-  IPC_CHANNELS.CHROMADB.STATUS_CHANGED // ChromaDB status events
+  IPC_CHANNELS.CHROMADB.STATUS_CHANGED, // ChromaDB status events
+  'open-semantic-search' // Global shortcut trigger from tray
 ];
 
 // Allowed send channels (for ipcRenderer.send, not invoke)
@@ -646,10 +647,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFiles: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
+    search: (query, topK = 20) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
+        query,
+        topK
+      }),
+    scoreFiles: (query, fileIds) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES, {
+        query,
+        fileIds
+      }),
     findSimilar: (fileId, topK = 10) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR, {
         fileId,
         topK
+      }),
+    // Hybrid search (BM25 + vector with RRF)
+    hybridSearch: (query, options = {}) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.HYBRID_SEARCH, {
+        query,
+        options
+      }),
+    rebuildBM25Index: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX),
+    getSearchStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS),
+    // Multi-hop expansion
+    findMultiHop: (seedIds, options = {}) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP, {
+        seedIds,
+        options
+      }),
+    // Clustering
+    computeClusters: (k = 'auto') =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS, { k }),
+    getClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_CLUSTERS),
+    getClusterMembers: (clusterId) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_CLUSTER_MEMBERS, { clusterId }),
+    getSimilarityEdges: (fileIds, options = {}) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_SIMILARITY_EDGES, {
+        fileIds,
+        threshold: options.threshold,
+        maxEdgesPerNode: options.maxEdgesPerNode
       })
   },
 
@@ -698,7 +735,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateThresholds: (thresholds) =>
       secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.UPDATE_THRESHOLDS, {
         thresholds
-      })
+      }),
+    // Cluster-based organization
+    clusterBatch: (files, smartFolders) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH, { files, smartFolders }),
+    identifyOutliers: (files) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.IDENTIFY_OUTLIERS, { files }),
+    getClusterSuggestions: (file, smartFolders) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.ORGANIZE.GET_CLUSTER_SUGGESTIONS, { file, smartFolders })
   },
 
   // Undo/Redo System
@@ -722,7 +766,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
         : undefined,
     // FIX: Expose config handlers that were registered but not exposed
     getConfig: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG),
-    getConfigValue: (path) => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE, path)
+    getConfigValue: (path) => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE, path),
+    // Listen for semantic search trigger from tray/global shortcut
+    onOpenSemanticSearch: (callback) => {
+      const channel = 'open-semantic-search';
+      const handler = () => {
+        try {
+          callback();
+        } catch (error) {
+          log.error('[Preload] Error in semantic search callback:', error);
+        }
+      };
+      ipcRenderer.on(channel, handler);
+      // Return cleanup function
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
+    }
   },
 
   // Window controls (Windows custom title bar)

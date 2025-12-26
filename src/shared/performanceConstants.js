@@ -253,8 +253,30 @@ const GPU_TUNING = {
   NUM_BATCH_LOW_MEMORY: 256,
   NUM_BATCH_MEDIUM_MEMORY: 384,
   NUM_BATCH_HIGH_MEMORY: 512,
+  NUM_BATCH_VERY_HIGH_MEMORY: 1024, // 16GB+ VRAM
   HIGH_MEMORY_THRESHOLD: 12000,
-  MEDIUM_MEMORY_THRESHOLD: 8000
+  MEDIUM_MEMORY_THRESHOLD: 8000,
+  VERY_HIGH_MEMORY_THRESHOLD: 16000
+};
+
+/**
+ * Ollama-specific performance tuning constants
+ * Based on 2025 best practices for local LLM inference
+ */
+const OLLAMA = {
+  // Recommended max loaded models (reduces VRAM pressure)
+  MAX_LOADED_MODELS: 1,
+  // Parallel requests for embeddings (1 is more stable)
+  NUM_PARALLEL_EMBEDDINGS: 1,
+  // Keep model in memory duration
+  KEEP_ALIVE_DEFAULT: '10m',
+  // Context window sizes by task type
+  CONTEXT_EMBEDDINGS: 512,
+  CONTEXT_VISION: 2048,
+  CONTEXT_TEXT: 8192,
+  // Rate limiting
+  MAX_REQUESTS_PER_SECOND: 5,
+  RATE_LIMIT_WINDOW_MS: 1000
 };
 
 /**
@@ -336,6 +358,7 @@ module.exports = {
   DEBOUNCE,
   CONCURRENCY,
   GPU_TUNING,
+  OLLAMA,
   WINDOW,
   PROCESS,
   TRUNCATION,

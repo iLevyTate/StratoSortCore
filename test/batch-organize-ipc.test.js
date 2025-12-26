@@ -128,12 +128,18 @@ describe('Files IPC - batch organize', () => {
       expect(Array.isArray(results)).toBe(true);
       expect(serviceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalled();
 
-      // Verify database update was called
+      // Verify database update was called with both file: and image: prefixes
       expect(mockUpdateFilePaths).toHaveBeenCalled();
       const updateCalls = mockUpdateFilePaths.mock.calls[0][0];
-      expect(updateCalls).toHaveLength(2);
-      expect(updateCalls[0].oldId).toContain('src_A');
-      expect(updateCalls[0].newId).toContain('dest_A');
+      // Expect 4 entries: file: and image: prefix for each of the 2 files
+      expect(updateCalls).toHaveLength(4);
+      // Check file: prefixes are present for both source files
+      const fileUpdates = updateCalls.filter((u) => u.oldId.startsWith('file:'));
+      const imageUpdates = updateCalls.filter((u) => u.oldId.startsWith('image:'));
+      expect(fileUpdates).toHaveLength(2);
+      expect(imageUpdates).toHaveLength(2);
+      expect(fileUpdates[0].oldId).toContain('src_A');
+      expect(fileUpdates[0].newId).toContain('dest_A');
     } finally {
       if (tmpBase) await fs.rm(tmpBase, { recursive: true, force: true });
     }

@@ -308,7 +308,83 @@ async function buildOllamaOptions(task = 'text') {
   };
 }
 
+/**
+ * Get recommended environment variables for optimal Ollama performance
+ * Users can set these in their shell profile or system environment
+ * @returns {Promise<Object>} Recommended environment variable settings
+ */
+async function getRecommendedEnvSettings() {
+  const caps = await detectSystemCapabilities();
+
+  const recommendations = {
+    // Limit to 1 model in memory to reduce VRAM usage
+    OLLAMA_MAX_LOADED_MODELS: '1',
+    // Single parallel request for embedding workloads (more stable)
+    OLLAMA_NUM_PARALLEL: '1',
+    // Keep model loaded for 10 minutes to avoid reload latency
+    OLLAMA_KEEP_ALIVE: '10m'
+  };
+
+  // Thread optimization: use physical cores, not logical
+  const physicalCores = Math.max(2, Math.floor(caps.cpuThreads / 2));
+  recommendations.OLLAMA_NUM_THREAD = String(Math.min(physicalCores, 8));
+
+  // GPU-specific recommendations
+  if (caps.hasGpu) {
+    recommendations.OLLAMA_NUM_GPU = '-1'; // Auto-detect all GPU layers
+
+    // Batch size based on VRAM
+    const vram = caps.gpuMemoryMB || 0;
+    if (vram >= 16000) {
+      recommendations.OLLAMA_NUM_BATCH = '1024';
+    } else if (vram >= 12000) {
+      recommendations.OLLAMA_NUM_BATCH = '512';
+    } else if (vram >= 8000) {
+      recommendations.OLLAMA_NUM_BATCH = '384';
+    } else {
+      recommendations.OLLAMA_NUM_BATCH = '256';
+    }
+  } else {
+    recommendations.OLLAMA_NUM_GPU = '0';
+    recommendations.OLLAMA_NUM_BATCH = '128';
+  }
+
+  return {
+    recommendations,
+    capabilities: caps,
+    notes: [
+      'Set these in your shell profile (~/.bashrc, ~/.zshrc) or system environment',
+      'OLLAMA_NUM_THREAD should match physical CPU cores (not logical/hyperthreaded)',
+      'OLLAMA_KEEP_ALIVE prevents costly model reloading between requests',
+      'For embedding workloads, OLLAMA_NUM_PARALLEL=1 is more stable'
+    ]
+  };
+}
+
+/**
+ * Get optimal embedding model recommendations
+ * @returns {Object} Recommended embedding models by use case
+ */
+function getRecommendedEmbeddingModels() {
+  return {
+    // Best balance of speed and quality for local use
+    recommended: 'mxbai-embed-large',
+    alternatives: [
+      { model: 'nomic-embed-text', note: 'Good quality, fast, 768 dimensions' },
+      { model: 'mxbai-embed-large', note: 'Higher quality, 1024 dimensions' },
+      { model: 'all-minilm', note: 'Fastest, lower quality, 384 dimensions' }
+    ],
+    notes: [
+      'mxbai-embed-large offers best quality for document similarity',
+      'nomic-embed-text is faster with slightly lower quality',
+      'Use all-minilm only if speed is critical and quality can be sacrificed'
+    ]
+  };
+}
+
 module.exports = {
   detectSystemCapabilities,
-  buildOllamaOptions
+  buildOllamaOptions,
+  getRecommendedEnvSettings,
+  getRecommendedEmbeddingModels
 };

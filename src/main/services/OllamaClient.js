@@ -480,8 +480,18 @@ class OllamaClient {
     const ollama = getOllama();
 
     switch (request.type) {
-      case REQUEST_TYPES.EMBEDDING:
-        return ollama.embeddings(request.payload);
+      case REQUEST_TYPES.EMBEDDING: {
+        // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+        // Convert payload.prompt → input for the new API
+        const { prompt, ...rest } = request.payload;
+        const response = await ollama.embed({ ...rest, input: prompt });
+        // Convert response back to legacy format for backward compatibility
+        const embedding =
+          Array.isArray(response.embeddings) && response.embeddings.length > 0
+            ? response.embeddings[0]
+            : [];
+        return { ...response, embedding };
+      }
       case REQUEST_TYPES.GENERATE:
         return ollama.generate(request.payload);
       default:
@@ -516,7 +526,16 @@ class OllamaClient {
           async () => {
             const { getOllama } = require('../ollamaUtils');
             const ollama = getOllama();
-            return ollama.embeddings(options);
+            // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+            // Convert options.prompt → input for the new API
+            const { prompt, ...rest } = options;
+            const response = await ollama.embed({ ...rest, input: prompt });
+            // Convert response back to legacy format for backward compatibility
+            const embedding =
+              Array.isArray(response.embeddings) && response.embeddings.length > 0
+                ? response.embeddings[0]
+                : [];
+            return { ...response, embedding };
           },
           { operation: `Embedding (${options.model})` }
         );

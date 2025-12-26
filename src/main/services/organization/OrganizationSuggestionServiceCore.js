@@ -14,6 +14,7 @@ const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { globalBatchProcessor } = require('../../utils/llmOptimization');
+const { cosineSimilarity } = require('../../../shared/vectorMath');
 
 // Extracted modules
 const {
@@ -67,12 +68,20 @@ class OrganizationSuggestionServiceCore {
    * @param {Object} dependencies.chromaDbService - ChromaDB service
    * @param {Object} dependencies.folderMatchingService - Folder matching service
    * @param {Object} dependencies.settingsService - Settings service
+   * @param {Object} dependencies.clusteringService - Clustering service (optional)
    * @param {Object} dependencies.config - Configuration options
    */
-  constructor({ chromaDbService, folderMatchingService, settingsService, config = {} }) {
+  constructor({
+    chromaDbService,
+    folderMatchingService,
+    settingsService,
+    clusteringService,
+    config = {}
+  }) {
     this.chromaDb = chromaDbService;
     this.folderMatcher = folderMatchingService;
     this.settings = settingsService;
+    this.clustering = clusteringService || null;
 
     // Configuration
     this.config = {
@@ -83,6 +92,11 @@ class OrganizationSuggestionServiceCore {
       maxFeedbackHistory: config.maxFeedbackHistory || 1000,
       llmTemperature: config.llmTemperature || 0.7,
       llmMaxTokens: config.llmMaxTokens || 500,
+      // Cluster-based organization settings
+      useClusterSuggestions: config.useClusterSuggestions !== false, // Enabled by default
+      clusterBoostFactor: config.clusterBoostFactor || 1.3, // Boost for cluster-consistent suggestions
+      minClusterConfidence: config.minClusterConfidence || 0.5,
+      outlierThreshold: config.outlierThreshold || 0.3, // Below this = outlier
       ...config
     };
 
@@ -190,6 +204,9 @@ class OrganizationSuggestionServiceCore {
       const llmSuggestions = await getLLMAlternativeSuggestions(file, smartFolders, this.config);
       const improvementSuggestions = await this.getImprovementSuggestions(file, smartFolders);
 
+      // Get cluster-based suggestions (if clustering is available)
+      const clusterSuggestions = await this.getClusterBasedSuggestions(file, smartFolders);
+
       // Combine and tag suggestions
       const allSuggestions = [];
       for (const match of semanticMatches) {
@@ -212,9 +229,16 @@ class OrganizationSuggestionServiceCore {
         suggestion.source = 'improvement';
         allSuggestions.push(suggestion);
       }
+      for (const suggestion of clusterSuggestions) {
+        suggestion.source = 'cluster';
+        allSuggestions.push(suggestion);
+      }
 
-      // Rank suggestions
-      const rankedSuggestions = rankSuggestions(allSuggestions);
+      // Rank suggestions (cluster-consistent ones get boosted)
+      let rankedSuggestions = rankSuggestions(allSuggestions);
+
+      // Apply additional cluster boost to top suggestions
+      rankedSuggestions = await this.boostClusterConsistentSuggestions(file, rankedSuggestions);
 
       // Ensure files always get a folder
       if (rankedSuggestions.length === 0) {
@@ -558,6 +582,405 @@ class OrganizationSuggestionServiceCore {
    */
   findOverlappingFolders(smartFolders) {
     return findOverlappingFolders(smartFolders);
+  }
+
+  // ============================================================================
+  // Cluster-Based Organization Methods
+  // ============================================================================
+
+  /**
+   * Get cluster-based suggestions for a file
+   * Uses cluster membership to suggest organizing files with their cluster peers
+   *
+   * @param {Object} file - File to get suggestions for
+   * @param {Array} smartFolders - Available smart folders
+   * @returns {Promise<Array>} Cluster-based suggestions
+   */
+  async getClusterBasedSuggestions(file, smartFolders) {
+    if (!this.clustering || !this.config.useClusterSuggestions) {
+      return [];
+    }
+
+    try {
+      const fileId = `file:${file.path}`;
+
+      // Ensure clusters are computed (use cached if fresh)
+      if (this.clustering.isClustersStale()) {
+        await this.clustering.computeClusters('auto');
+      }
+
+      // Find which cluster this file belongs to
+      const clusters = this.clustering.clusters || [];
+      let fileCluster = null;
+      let fileClusterScore = 0;
+
+      for (const cluster of clusters) {
+        const member = cluster.members?.find((m) => m.id === fileId);
+        if (member) {
+          // Calculate how central this file is to the cluster
+          const centroid = this.clustering.centroids[cluster.id];
+          if (centroid && member.embedding) {
+            fileClusterScore = cosineSimilarity(member.embedding, centroid);
+          } else {
+            fileClusterScore = 0.7; // Default if no embedding available
+          }
+          fileCluster = cluster;
+          break;
+        }
+      }
+
+      if (!fileCluster || fileClusterScore < this.config.minClusterConfidence) {
+        return [];
+      }
+
+      // Get the most common folder assignments for cluster members
+      const folderVotes = new Map();
+
+      for (const member of fileCluster.members) {
+        if (member.id === fileId) continue;
+
+        const memberPath = member.metadata?.path || member.id;
+        // Check if this cluster member has been organized to a smart folder
+        for (const folder of smartFolders) {
+          if (memberPath.startsWith(folder.path)) {
+            const current = folderVotes.get(folder.path) || { folder, count: 0, totalScore: 0 };
+            current.count++;
+            current.totalScore += member.score || 0.5;
+            folderVotes.set(folder.path, current);
+          }
+        }
+      }
+
+      // Convert votes to suggestions
+      const suggestions = [];
+      for (const [, vote] of folderVotes) {
+        const avgScore = vote.count > 0 ? vote.totalScore / vote.count : 0;
+        const clusterConsistency = vote.count / fileCluster.members.length;
+
+        suggestions.push({
+          folder: vote.folder.name,
+          path: vote.folder.path,
+          score: avgScore * clusterConsistency * this.config.clusterBoostFactor,
+          confidence: clusterConsistency,
+          description: vote.folder.description,
+          method: 'cluster_membership',
+          clusterLabel: fileCluster.label || `Cluster ${fileCluster.id}`,
+          clusterSize: fileCluster.members.length,
+          clusterPeersInFolder: vote.count,
+          isSmartFolder: true
+        });
+      }
+
+      // If no cluster members are in folders yet, suggest based on cluster label
+      if (suggestions.length === 0 && fileCluster.label) {
+        const labelLower = fileCluster.label.toLowerCase();
+        for (const folder of smartFolders) {
+          const folderNameLower = folder.name.toLowerCase();
+          const folderDescLower = (folder.description || '').toLowerCase();
+
+          // Check if folder name/description matches cluster label
+          if (
+            folderNameLower.includes(labelLower) ||
+            labelLower.includes(folderNameLower) ||
+            folderDescLower.includes(labelLower)
+          ) {
+            suggestions.push({
+              folder: folder.name,
+              path: folder.path,
+              score: 0.6 * this.config.clusterBoostFactor,
+              confidence: 0.6,
+              description: folder.description,
+              method: 'cluster_label_match',
+              clusterLabel: fileCluster.label,
+              clusterSize: fileCluster.members.length,
+              isSmartFolder: true
+            });
+          }
+        }
+      }
+
+      return suggestions.sort((a, b) => b.score - a.score);
+    } catch (error) {
+      logger.warn('[OrganizationSuggestionService] Cluster suggestions failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get batch suggestions organized by clusters
+   * Groups files by their cluster and suggests organizing each cluster together
+   *
+   * @param {Array} files - Files to organize
+   * @param {Array} smartFolders - Available smart folders
+   * @returns {Promise<Object>} Cluster-based batch suggestions
+   */
+  async getClusterBatchSuggestions(files, smartFolders = []) {
+    if (!this.clustering) {
+      return { success: false, error: 'Clustering service not available', groups: [] };
+    }
+
+    try {
+      // Ensure clusters are fresh
+      const computeResult = await this.clustering.computeClusters('auto');
+      if (!computeResult.success) {
+        return { success: false, error: computeResult.error, groups: [] };
+      }
+
+      // Generate labels if not done
+      if (this.clustering.clusterLabels.size === 0) {
+        await this.clustering.generateClusterLabels();
+      }
+
+      const clusters = this.clustering.clusters || [];
+      const fileIdSet = new Set(files.map((f) => `file:${f.path}`));
+      const groups = [];
+      const outliers = [];
+
+      // Group files by cluster
+      for (const cluster of clusters) {
+        const clusterFiles = [];
+
+        for (const member of cluster.members) {
+          if (fileIdSet.has(member.id)) {
+            const file = files.find((f) => `file:${f.path}` === member.id);
+            if (file) {
+              clusterFiles.push({
+                ...file,
+                clusterScore: member.score || 0.7
+              });
+            }
+          }
+        }
+
+        if (clusterFiles.length > 0) {
+          // Find best folder for this cluster
+          const clusterSuggestion = await this._suggestFolderForCluster(cluster, smartFolders);
+
+          groups.push({
+            clusterId: cluster.id,
+            clusterLabel: cluster.label || `Cluster ${cluster.id + 1}`,
+            files: clusterFiles,
+            fileCount: clusterFiles.length,
+            suggestedFolder: clusterSuggestion,
+            confidence: clusterSuggestion?.confidence || 0.5,
+            method: 'cluster_batch'
+          });
+        }
+      }
+
+      // Find files not in any cluster (outliers)
+      const clusteredFileIds = new Set();
+      for (const cluster of clusters) {
+        for (const member of cluster.members) {
+          clusteredFileIds.add(member.id);
+        }
+      }
+
+      for (const file of files) {
+        const fileId = `file:${file.path}`;
+        if (!clusteredFileIds.has(fileId)) {
+          outliers.push({
+            ...file,
+            reason: 'not_in_cluster'
+          });
+        }
+      }
+
+      return {
+        success: true,
+        groups: groups.sort((a, b) => b.fileCount - a.fileCount),
+        outliers,
+        totalClustered: groups.reduce((sum, g) => sum + g.fileCount, 0),
+        totalOutliers: outliers.length,
+        clusterCount: groups.length
+      };
+    } catch (error) {
+      logger.error('[OrganizationSuggestionService] Cluster batch suggestions failed:', error);
+      return { success: false, error: error.message, groups: [] };
+    }
+  }
+
+  /**
+   * Suggest the best folder for a cluster
+   * @private
+   */
+  async _suggestFolderForCluster(cluster, smartFolders) {
+    if (!smartFolders || smartFolders.length === 0) {
+      return null;
+    }
+
+    // Try to match cluster label to folder
+    const labelLower = (cluster.label || '').toLowerCase();
+
+    // First pass: exact or close match on folder name
+    for (const folder of smartFolders) {
+      const folderNameLower = folder.name.toLowerCase();
+      if (folderNameLower === labelLower || folderNameLower.includes(labelLower)) {
+        return {
+          folder: folder.name,
+          path: folder.path,
+          confidence: 0.85,
+          method: 'cluster_label_match'
+        };
+      }
+    }
+
+    // Second pass: keyword overlap
+    const labelWords = labelLower.split(/\s+/);
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const folder of smartFolders) {
+      const folderWords = [
+        folder.name.toLowerCase(),
+        ...(folder.description || '').toLowerCase().split(/\s+/),
+        ...(folder.keywords || []).map((k) => k.toLowerCase())
+      ];
+
+      const overlap = labelWords.filter((w) => folderWords.some((fw) => fw.includes(w))).length;
+      const score = overlap / labelWords.length;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = folder;
+      }
+    }
+
+    if (bestMatch && bestScore > 0.3) {
+      return {
+        folder: bestMatch.name,
+        path: bestMatch.path,
+        confidence: bestScore * 0.8,
+        method: 'cluster_keyword_match'
+      };
+    }
+
+    // Fallback: suggest creating a new folder based on cluster label
+    if (cluster.label && cluster.label !== `Cluster ${cluster.id + 1}`) {
+      return {
+        folder: cluster.label,
+        path: null, // Will need to be created
+        confidence: 0.6,
+        method: 'cluster_new_folder',
+        isNewFolder: true
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Identify outlier files that don't fit well into any cluster
+   *
+   * @param {Array} files - Files to analyze
+   * @returns {Promise<Object>} Outlier analysis results
+   */
+  async identifyOutliers(files) {
+    if (!this.clustering) {
+      return { success: false, error: 'Clustering service not available', outliers: [] };
+    }
+
+    try {
+      // Ensure clusters are computed
+      if (this.clustering.isClustersStale()) {
+        await this.clustering.computeClusters('auto');
+      }
+
+      const clusters = this.clustering.clusters || [];
+      const centroids = this.clustering.centroids || [];
+      const outliers = [];
+      const wellClustered = [];
+
+      for (const file of files) {
+        const fileId = `file:${file.path}`;
+
+        // Find this file's cluster membership
+        let bestClusterScore = 0;
+        let belongsToCluster = null;
+
+        for (const cluster of clusters) {
+          const member = cluster.members?.find((m) => m.id === fileId);
+          if (member) {
+            const centroid = centroids[cluster.id];
+            if (centroid && member.embedding) {
+              const score = cosineSimilarity(member.embedding, centroid);
+              if (score > bestClusterScore) {
+                bestClusterScore = score;
+                belongsToCluster = cluster;
+              }
+            }
+          }
+        }
+
+        if (bestClusterScore < this.config.outlierThreshold || !belongsToCluster) {
+          outliers.push({
+            file,
+            clusterScore: bestClusterScore,
+            reason: bestClusterScore === 0 ? 'not_in_cluster' : 'weak_cluster_fit',
+            suggestedAction: 'review_manually'
+          });
+        } else {
+          wellClustered.push({
+            file,
+            clusterId: belongsToCluster.id,
+            clusterLabel: belongsToCluster.label,
+            clusterScore: bestClusterScore
+          });
+        }
+      }
+
+      return {
+        success: true,
+        outliers,
+        wellClustered,
+        outlierCount: outliers.length,
+        clusteredCount: wellClustered.length,
+        outlierRatio: files.length > 0 ? outliers.length / files.length : 0
+      };
+    } catch (error) {
+      logger.error('[OrganizationSuggestionService] Outlier detection failed:', error);
+      return { success: false, error: error.message, outliers: [] };
+    }
+  }
+
+  /**
+   * Boost suggestions that are consistent with cluster membership
+   * Called internally to enhance ranking
+   *
+   * @param {Object} file - File being organized
+   * @param {Array} suggestions - Current suggestions
+   * @returns {Promise<Array>} Boosted suggestions
+   */
+  async boostClusterConsistentSuggestions(file, suggestions) {
+    if (!this.clustering || !this.config.useClusterSuggestions || suggestions.length === 0) {
+      return suggestions;
+    }
+
+    try {
+      const clusterSuggestions = await this.getClusterBasedSuggestions(file, []);
+
+      if (clusterSuggestions.length === 0) {
+        return suggestions;
+      }
+
+      // Create a set of folders recommended by cluster analysis
+      const clusterRecommendedFolders = new Set(clusterSuggestions.map((s) => s.path));
+
+      // Boost matching suggestions
+      return suggestions.map((s) => {
+        if (clusterRecommendedFolders.has(s.path)) {
+          return {
+            ...s,
+            score: s.score * this.config.clusterBoostFactor,
+            clusterBoosted: true
+          };
+        }
+        return s;
+      });
+    } catch (error) {
+      logger.warn('[OrganizationSuggestionService] Cluster boost failed:', error);
+      return suggestions;
+    }
   }
 
   /**

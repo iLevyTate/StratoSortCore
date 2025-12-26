@@ -16,7 +16,8 @@ const sourceWeights = {
   strategy: 1.0, // Strategy-based are standard
   llm: 0.8, // LLM suggestions need validation
   pattern: 1.1, // Pattern matches are reliable
-  llm_creative: 0.7 // Creative suggestions are experimental
+  llm_creative: 0.7, // Creative suggestions are experimental
+  cluster: 1.4 // Cluster-based suggestions are highly consistent
 };
 
 /**
@@ -113,7 +114,13 @@ function generateExplanation(suggestion, file) {
     llm_creative: suggestion.reasoning || 'Alternative way to organize this file',
     folder_improvement: `"${suggestion.folder}" could be enhanced for this type of file`,
     improvement: suggestion.improvement || `Suggested improvement for better organization`,
-    new_folder_suggestion: 'A new folder would be perfect for this file type'
+    new_folder_suggestion: 'A new folder would be perfect for this file type',
+    cluster: suggestion.clusterLabel
+      ? `This file clusters with ${suggestion.clusterPeersInFolder || 'similar'} files in "${suggestion.folder}" (${suggestion.clusterLabel})`
+      : `Similar files are grouped together in "${suggestion.folder}"`,
+    cluster_membership: `${suggestion.clusterPeersInFolder || 'Multiple'} similar files from "${suggestion.clusterLabel || 'the same cluster'}" are already in this folder`,
+    cluster_label_match: `The "${suggestion.clusterLabel}" cluster matches this folder's purpose`,
+    cluster_batch: `Organize this cluster of ${suggestion.clusterSize || 'related'} files together`
   };
 
   // Add confidence-based prefix

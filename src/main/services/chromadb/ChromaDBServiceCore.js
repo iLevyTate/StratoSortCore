@@ -110,6 +110,7 @@ class ChromaDBServiceCore extends EventEmitter {
     // Initialization mutex to prevent race conditions
     this._initPromise = null;
     this._isInitializing = false;
+    this._recoveryAttempted = false;
 
     // Query cache
     this.queryCache = new ChromaQueryCache({
@@ -759,28 +760,51 @@ class ChromaDBServiceCore extends EventEmitter {
           serverHealthy = false;
         }
 
-        if (serverHealthy && corruptionLike && !this._recoveryAttempted) {
-          this._recoveryAttempted = true;
-          logger.warn(
-            '[ChromaDB] Detected likely on-disk DB corruption while server is healthy. Backing up DB directory and resetting local data...'
-          );
+        // IMPORTANT:
+        // Never auto-reset the user's local ChromaDB directory in production by default.
+        // We have seen tenant/db errors ("default_tenant", sqlite issues) that can be transient
+        // or caused by an externally-managed Chroma server. Automatically renaming/deleting the
+        // local directory risks silent data loss (and won't help in external-server mode).
+        //
+        // If someone needs the old behavior for debugging, it can be explicitly enabled via:
+        //   STRATOSORT_ALLOW_CHROMADB_AUTO_RESET=1
+        const allowAutoReset = process.env.STRATOSORT_ALLOW_CHROMADB_AUTO_RESET === '1';
 
-          try {
-            const fsSync = require('fs');
-            if (fsSync.existsSync(this.dbPath)) {
-              const backupPath = `${this.dbPath}.bak.${Date.now()}`;
-              await fs.rename(this.dbPath, backupPath);
-              logger.warn('[ChromaDB] Backed up database directory', { backupPath });
-            }
+        if (serverHealthy && corruptionLike) {
+          logger.warn('[ChromaDB] Detected likely DB/tenant corruption while server is healthy', {
+            serverUrl: this.serverUrl,
+            dbPath: this.dbPath,
+            allowAutoReset,
+            error: errorMsg
+          });
 
-            await this.ensureDbDirectory();
-
-            // Note: the running Chroma server must be restarted to pick up the new database directory.
+          if (allowAutoReset && !this._recoveryAttempted) {
+            this._recoveryAttempted = true;
             logger.warn(
-              '[ChromaDB] Local database reset complete. Please restart the application.'
+              '[ChromaDB] Auto-reset is enabled. Backing up DB directory and resetting local data...'
             );
-          } catch (recoveryError) {
-            logger.error('[ChromaDB] Recovery attempt failed:', recoveryError.message);
+
+            try {
+              const fsSync = require('fs');
+              if (fsSync.existsSync(this.dbPath)) {
+                const backupPath = `${this.dbPath}.bak.${Date.now()}`;
+                await fs.rename(this.dbPath, backupPath);
+                logger.warn('[ChromaDB] Backed up database directory', { backupPath });
+              }
+
+              await this.ensureDbDirectory();
+
+              // Note: the running Chroma server must be restarted to pick up the new database directory.
+              logger.warn(
+                '[ChromaDB] Local database reset complete. Please restart the application.'
+              );
+            } catch (recoveryError) {
+              logger.error('[ChromaDB] Recovery attempt failed:', recoveryError.message);
+            }
+          } else {
+            logger.warn(
+              '[ChromaDB] Auto-reset is disabled. To recover, fix/restart ChromaDB or use the in-app "Clear/Rebuild embeddings" tools. Your existing DB directory was left untouched.'
+            );
           }
         }
 

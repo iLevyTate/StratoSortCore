@@ -152,20 +152,23 @@ function registerSmartFoldersIpc({
           const perfOptions = await buildOllamaOptions('embeddings');
           // Use configured embedding model instead of hardcoded value
           const embeddingModel = getOllamaEmbeddingModel() || 'mxbai-embed-large';
-          const queryEmbedding = await ollama.embeddings({
+          // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+          const queryEmbedding = await ollama.embed({
             model: embeddingModel,
-            prompt: text,
+            input: text,
             options: { ...perfOptions }
           });
+          const queryVector = queryEmbedding.embeddings?.[0] || [];
           const scored = [];
           for (const folder of smartFolders) {
             const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
-            const folderEmbedding = await ollama.embeddings({
+            const folderEmbedding = await ollama.embed({
               model: embeddingModel,
-              prompt: folderText,
+              input: folderText,
               options: { ...perfOptions }
             });
-            const score = cosineSimilarity(queryEmbedding.embedding, folderEmbedding.embedding);
+            const folderVector = folderEmbedding.embeddings?.[0] || [];
+            const score = cosineSimilarity(queryVector, folderVector);
             scored.push({ folder, score });
           }
           scored.sort((a, b) => b.score - a.score);

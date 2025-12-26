@@ -161,13 +161,18 @@ class FolderMatchingService {
       }
 
       // Cache miss - generate embedding via API
-      const response = await ollama.embeddings({
+      // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+      const response = await ollama.embed({
         model,
-        prompt: text || '',
+        input: text || '',
         options: { ...perfOptions }
       });
 
-      let vector = Array.isArray(response.embedding) ? response.embedding : [];
+      // embed() returns embeddings array; extract first vector
+      let vector =
+        Array.isArray(response.embeddings) && response.embeddings.length > 0
+          ? response.embeddings[0]
+          : [];
       const expectedDim = getEmbeddingDimension(model);
       if (vector.length < expectedDim) {
         vector = vector.concat(new Array(expectedDim - vector.length).fill(0));
@@ -773,6 +778,119 @@ class FolderMatchingService {
       return await this.chromaDbService.querySimilarFiles(fileEmbedding, topK);
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to find similar files:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find similar files with multi-hop expansion
+   * Explores neighbors of neighbors with decay scoring (Degree of Interest)
+   *
+   * @param {string[]} seedIds - Array of starting file IDs
+   * @param {Object} options - Expansion options
+   * @param {number} options.maxHops - Maximum number of hops (1-3)
+   * @param {number} options.topKPerHop - Results per expansion hop
+   * @param {number} options.decayFactor - Score decay per hop (0.5-0.9)
+   * @returns {Promise<Array>} Array of results with scores, hop levels, and paths
+   */
+  async findMultiHopNeighbors(seedIds, options = {}) {
+    const { maxHops = 2, topKPerHop = 5, decayFactor = 0.7 } = options;
+
+    // Validate inputs
+    if (!Array.isArray(seedIds) || seedIds.length === 0) {
+      logger.warn('[FolderMatchingService] findMultiHopNeighbors called with no seeds');
+      return [];
+    }
+
+    const clampedMaxHops = Math.min(3, Math.max(1, maxHops));
+    const clampedTopK = Math.min(10, Math.max(1, topKPerHop));
+    const clampedDecay = Math.min(0.9, Math.max(0.5, decayFactor));
+
+    try {
+      // CRITICAL FIX: Ensure ChromaDB is initialized
+      if (!this.chromaDbService) {
+        logger.error('[FolderMatchingService] ChromaDB service not available');
+        return [];
+      }
+      await this.chromaDbService.initialize();
+
+      const visited = new Set(seedIds);
+      const allResults = new Map();
+
+      // Initialize frontier with seed nodes
+      let frontier = seedIds.map((id) => ({
+        id,
+        score: 1.0,
+        hop: 0,
+        path: [id]
+      }));
+
+      // Explore each hop level
+      for (let hop = 1; hop <= clampedMaxHops; hop++) {
+        const nextFrontier = [];
+
+        // Process each node in the current frontier
+        for (const node of frontier) {
+          try {
+            // Find similar files to this node
+            const neighbors = await this.findSimilarFiles(node.id, clampedTopK);
+
+            for (const neighbor of neighbors) {
+              // Skip already visited nodes
+              if (visited.has(neighbor.id)) continue;
+              visited.add(neighbor.id);
+
+              // Calculate decayed score
+              // DOI formula: parentScore * neighborScore * decay^hop
+              const neighborScore = neighbor.score || 1 - (neighbor.distance || 0);
+              const decayedScore = node.score * neighborScore * Math.pow(clampedDecay, hop);
+
+              // Store result
+              const result = {
+                id: neighbor.id,
+                score: decayedScore,
+                hop,
+                path: [...node.path, neighbor.id],
+                metadata: neighbor.metadata || {}
+              };
+
+              allResults.set(neighbor.id, result);
+
+              // Add to next frontier for further exploration
+              nextFrontier.push({
+                id: neighbor.id,
+                score: decayedScore,
+                hop,
+                path: result.path
+              });
+            }
+          } catch (error) {
+            logger.warn('[FolderMatchingService] Failed to expand node:', node.id, error.message);
+          }
+        }
+
+        // Update frontier for next hop
+        frontier = nextFrontier;
+
+        // Early exit if no more nodes to explore
+        if (frontier.length === 0) {
+          logger.debug('[FolderMatchingService] Multi-hop exhausted at hop', hop);
+          break;
+        }
+      }
+
+      // Sort by score and return
+      const results = Array.from(allResults.values()).sort((a, b) => b.score - a.score);
+
+      logger.info('[FolderMatchingService] Multi-hop expansion complete', {
+        seeds: seedIds.length,
+        hops: clampedMaxHops,
+        results: results.length
+      });
+
+      return results;
+    } catch (error) {
+      logger.error('[FolderMatchingService] Multi-hop expansion failed:', error);
       return [];
     }
   }

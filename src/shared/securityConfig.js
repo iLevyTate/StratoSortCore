@@ -154,7 +154,23 @@ const SETTINGS_VALIDATION = {
     'cacheSize',
     'maxBatchSize',
     'autoUpdateCheck',
-    'telemetryEnabled'
+    'telemetryEnabled',
+    // UI settings
+    'notifications',
+    'defaultSmartFolderLocation',
+    'confidenceThreshold',
+    // Processing limits
+    'maxConcurrentAnalysis',
+    'maxFileSize',
+    'maxImageFileSize',
+    'maxDocumentFileSize',
+    'maxTextFileSize',
+    'analysisTimeout',
+    'fileOperationTimeout',
+    'retryAttempts',
+    // UI limits
+    'workflowRestoreMaxAge',
+    'saveDebounceMs'
   ]),
 
   // Valid values for enum fields (from shared validationConstants)

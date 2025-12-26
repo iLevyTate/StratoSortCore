@@ -332,6 +332,9 @@ describe('SettingsService', () => {
   });
 
   describe('restoreFromBackup', () => {
+    // Use paths within the backup directory to pass path traversal protection
+    const validBackupPath = '/tmp/test-app/settings-backups/backup.json';
+
     test('restores settings from backup', async () => {
       mockFs.readFile.mockResolvedValueOnce(
         JSON.stringify({
@@ -340,7 +343,7 @@ describe('SettingsService', () => {
         })
       );
 
-      const result = await service.restoreFromBackup('/path/to/backup.json');
+      const result = await service.restoreFromBackup(validBackupPath);
 
       expect(result.success).toBe(true);
       expect(result.settings.theme).toBe('dark');
@@ -358,7 +361,7 @@ describe('SettingsService', () => {
 
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(backupData));
 
-      const result = await service.restoreFromBackup('/path/to/backup.json');
+      const result = await service.restoreFromBackup(validBackupPath);
 
       // Should fail hash verification
       expect(result.success).toBe(false);
@@ -368,25 +371,42 @@ describe('SettingsService', () => {
     test('handles missing settings in backup', async () => {
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ timestamp: '2024-01-01T00:00:00Z' }));
 
-      const result = await service.restoreFromBackup('/path/to/backup.json');
+      const result = await service.restoreFromBackup(validBackupPath);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('missing settings');
     });
+
+    test('rejects paths outside backup directory (path traversal protection)', async () => {
+      const result = await service.restoreFromBackup('/path/to/backup.json');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be within backup directory');
+    });
   });
 
   describe('deleteBackup', () => {
+    // Use paths within the backup directory to pass path traversal protection
+    const validBackupPath = '/tmp/test-app/settings-backups/backup.json';
+
     test('deletes backup file', async () => {
-      const result = await service.deleteBackup('/path/to/backup.json');
+      const result = await service.deleteBackup(validBackupPath);
 
       expect(result.success).toBe(true);
-      expect(mockFs.unlink).toHaveBeenCalledWith('/path/to/backup.json');
+      expect(mockFs.unlink).toHaveBeenCalledWith(validBackupPath);
+    });
+
+    test('rejects paths outside backup directory (path traversal protection)', async () => {
+      const result = await service.deleteBackup('/path/to/backup.json');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be within backup directory');
     });
 
     test('handles errors', async () => {
       mockFs.unlink.mockRejectedValueOnce(new Error('File not found'));
 
-      const result = await service.deleteBackup('/path/to/backup.json');
+      const result = await service.deleteBackup(validBackupPath);
 
       expect(result.success).toBe(false);
     });
@@ -396,12 +416,13 @@ describe('SettingsService', () => {
     test('keeps only maxBackups most recent', async () => {
       const backups = Array.from({ length: 15 }, (_, i) => ({
         filename: `settings-2024-01-${String(i + 1).padStart(2, '0')}T00-00-00.json`,
-        path: `/path/settings-${i}.json`,
+        path: `/tmp/test-app/settings-backups/settings-${i}.json`,
         timestamp: new Date(2024, 0, i + 1).toISOString(),
         _parsedTime: new Date(2024, 0, i + 1).getTime()
       }));
 
-      jest.spyOn(service, 'listBackups').mockResolvedValueOnce(backups);
+      // Spy on the backup service's listBackups (used internally by cleanupOldBackups)
+      jest.spyOn(service._backupService, 'listBackups').mockResolvedValueOnce(backups);
 
       await service.cleanupOldBackups();
 

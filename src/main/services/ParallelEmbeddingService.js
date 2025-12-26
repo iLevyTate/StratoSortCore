@@ -199,12 +199,18 @@ class ParallelEmbeddingService {
         async () => {
           const ollama = getOllama();
           const perfOptions = await buildOllamaOptions('embeddings');
-          const response = await ollama.embeddings({
+          // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+          const response = await ollama.embed({
             model,
-            prompt: text || '',
+            input: text || '',
             options: { ...perfOptions }
           });
-          return { vector: response.embedding, model };
+          // embed() returns embeddings array; extract first vector
+          const vector =
+            Array.isArray(response.embeddings) && response.embeddings.length > 0
+              ? response.embeddings[0]
+              : [];
+          return { vector, model };
         },
         {
           operation: 'ParallelEmbeddingService.embedText',

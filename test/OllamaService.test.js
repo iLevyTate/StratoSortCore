@@ -35,7 +35,8 @@ jest.mock('ollama', () => {
   const mockOllamaInstance = {
     list: jest.fn(),
     pull: jest.fn(),
-    embeddings: jest.fn(),
+    embeddings: jest.fn(), // Legacy API (deprecated)
+    embed: jest.fn(), // New API
     generate: jest.fn()
   };
 
@@ -100,7 +101,8 @@ describe('OllamaService', () => {
     mockOllama = {
       list: jest.fn(),
       pull: jest.fn(),
-      embeddings: jest.fn(),
+      embeddings: jest.fn(), // Legacy API (deprecated)
+      embed: jest.fn(), // New API
       generate: jest.fn()
     };
 
@@ -358,49 +360,51 @@ describe('OllamaService', () => {
   describe('generateEmbedding', () => {
     test('should generate embedding successfully', async () => {
       const mockEmbedding = new Array(1024).fill(0.1);
-      mockOllama.embeddings.mockResolvedValue({ embedding: mockEmbedding });
+      // New API uses embed() with embeddings array response
+      mockOllama.embed.mockResolvedValue({ embeddings: [mockEmbedding] });
 
       const result = await OllamaServiceModule.generateEmbedding('test text');
 
       expect(result.success).toBe(true);
       expect(result.embedding).toEqual(mockEmbedding);
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      // New API uses embed() with 'input' instead of embeddings() with 'prompt'
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: 'test text',
+        input: 'test text',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
 
     test('should use custom model', async () => {
-      mockOllama.embeddings.mockResolvedValue({ embedding: [] });
+      mockOllama.embed.mockResolvedValue({ embeddings: [[]] });
 
       await OllamaServiceModule.generateEmbedding('text', {
         model: 'custom-embed-model'
       });
 
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'custom-embed-model',
-        prompt: 'text',
+        input: 'text',
         options: { num_gpu: -1, main_gpu: 0 }
       });
     });
 
     test('should pass ollama options', async () => {
-      mockOllama.embeddings.mockResolvedValue({ embedding: [] });
+      mockOllama.embed.mockResolvedValue({ embeddings: [[]] });
 
       await OllamaServiceModule.generateEmbedding('text', {
         ollamaOptions: { temperature: 0.5 }
       });
 
-      expect(mockOllama.embeddings).toHaveBeenCalledWith({
+      expect(mockOllama.embed).toHaveBeenCalledWith({
         model: 'mxbai-embed-large',
-        prompt: 'text',
+        input: 'text',
         options: { num_gpu: -1, main_gpu: 0, temperature: 0.5 }
       });
     });
 
     test('should handle embedding errors', async () => {
-      mockOllama.embeddings.mockRejectedValue(new Error('Embedding failed'));
+      mockOllama.embed.mockRejectedValue(new Error('Embedding failed'));
 
       const result = await OllamaServiceModule.generateEmbedding('text');
 
@@ -538,7 +542,8 @@ describe('OllamaService', () => {
 
   describe('Edge Cases and Integration', () => {
     test('should handle concurrent operations', async () => {
-      mockOllama.embeddings.mockResolvedValue({ embedding: [0.1] });
+      // New API uses embed() with embeddings array response
+      mockOllama.embed.mockResolvedValue({ embeddings: [[0.1]] });
       mockOllama.generate.mockResolvedValue({ response: 'result' });
 
       const results = await Promise.all([
@@ -567,7 +572,8 @@ describe('OllamaService', () => {
     });
 
     test('should handle rapid repeated calls', async () => {
-      mockOllama.embeddings.mockResolvedValue({ embedding: [0.1] });
+      // New API uses embed() with embeddings array response
+      mockOllama.embed.mockResolvedValue({ embeddings: [[0.1]] });
 
       const calls = Array(100)
         .fill(null)

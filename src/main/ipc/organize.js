@@ -317,6 +317,231 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
     })
   );
 
+  // ============================================================================
+  // Cluster-Based Organization Handlers
+  // ============================================================================
+
+  // Cluster batch organize - organize files grouped by semantic clusters
+  ipcMain.handle(
+    IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH,
+    createHandler({
+      logger,
+      context,
+      serviceName: 'autoOrganizeService',
+      getService: getOrganizeService,
+      fallbackResponse: {
+        success: false,
+        error: 'Auto-organize service not available',
+        groups: [],
+        outliers: []
+      },
+      handler: async (event, { files, smartFolders }, service) => {
+        const path = require('path');
+
+        try {
+          // Validate source files
+          const { valid: validFiles, invalid: invalidFiles } = await validateSourceFiles(files);
+
+          if (validFiles.length === 0) {
+            return {
+              success: false,
+              error: 'No valid files to organize',
+              groups: [],
+              outliers: [],
+              failed: invalidFiles
+            };
+          }
+
+          // Ensure extension exists
+          const filesWithExtension = validFiles.map((file) => {
+            if (!file.extension && file.path) {
+              const ext = path.extname(file.path).toLowerCase();
+              return { ...file, extension: ext };
+            }
+            return file;
+          });
+
+          logger.info('[ORGANIZE] Starting cluster batch organize', {
+            fileCount: filesWithExtension.length
+          });
+
+          const folders = smartFolders || getCustomFolders();
+
+          // Get cluster-based batch suggestions from the suggestion service
+          const suggestionService = service.suggestionService;
+          if (!suggestionService) {
+            return {
+              success: false,
+              error: 'Suggestion service not available',
+              groups: [],
+              outliers: []
+            };
+          }
+
+          const result = await suggestionService.getClusterBatchSuggestions(
+            filesWithExtension,
+            folders
+          );
+
+          logger.info('[ORGANIZE] Cluster batch organize complete', {
+            groups: result.groups?.length || 0,
+            outliers: result.outliers?.length || 0
+          });
+
+          return result;
+        } catch (error) {
+          logger.error('[ORGANIZE] Cluster batch organize failed:', error);
+          return createErrorResponse(error, {
+            groups: [],
+            outliers: []
+          });
+        }
+      }
+    })
+  );
+
+  // Identify outliers - find files that don't fit well into any cluster
+  ipcMain.handle(
+    IPC_CHANNELS.ORGANIZE.IDENTIFY_OUTLIERS,
+    createHandler({
+      logger,
+      context,
+      serviceName: 'autoOrganizeService',
+      getService: getOrganizeService,
+      fallbackResponse: {
+        success: false,
+        error: 'Auto-organize service not available',
+        outliers: [],
+        wellClustered: []
+      },
+      handler: async (event, { files }, service) => {
+        const path = require('path');
+
+        try {
+          // Validate source files
+          const { valid: validFiles } = await validateSourceFiles(files);
+
+          if (validFiles.length === 0) {
+            return {
+              success: false,
+              error: 'No valid files to analyze',
+              outliers: [],
+              wellClustered: []
+            };
+          }
+
+          // Ensure extension exists
+          const filesWithExtension = validFiles.map((file) => {
+            if (!file.extension && file.path) {
+              const ext = path.extname(file.path).toLowerCase();
+              return { ...file, extension: ext };
+            }
+            return file;
+          });
+
+          logger.info('[ORGANIZE] Identifying outliers', {
+            fileCount: filesWithExtension.length
+          });
+
+          const suggestionService = service.suggestionService;
+          if (!suggestionService) {
+            return {
+              success: false,
+              error: 'Suggestion service not available',
+              outliers: [],
+              wellClustered: []
+            };
+          }
+
+          const result = await suggestionService.identifyOutliers(filesWithExtension);
+
+          logger.info('[ORGANIZE] Outlier detection complete', {
+            outliers: result.outlierCount || 0,
+            wellClustered: result.clusteredCount || 0
+          });
+
+          return result;
+        } catch (error) {
+          logger.error('[ORGANIZE] Outlier detection failed:', error);
+          return createErrorResponse(error, {
+            outliers: [],
+            wellClustered: []
+          });
+        }
+      }
+    })
+  );
+
+  // Get cluster-based suggestions for a single file
+  ipcMain.handle(
+    IPC_CHANNELS.ORGANIZE.GET_CLUSTER_SUGGESTIONS,
+    createHandler({
+      logger,
+      context,
+      serviceName: 'autoOrganizeService',
+      getService: getOrganizeService,
+      fallbackResponse: {
+        success: false,
+        error: 'Auto-organize service not available',
+        suggestions: []
+      },
+      handler: async (event, { file, smartFolders }, service) => {
+        const path = require('path');
+
+        try {
+          // Validate source file
+          if (!file?.path) {
+            return {
+              success: false,
+              error: 'No file provided',
+              suggestions: []
+            };
+          }
+
+          await validateSourceFile(file.path);
+
+          // Ensure extension exists
+          const fileWithExtension = { ...file };
+          if (!fileWithExtension.extension && fileWithExtension.path) {
+            fileWithExtension.extension = path.extname(fileWithExtension.path).toLowerCase();
+          }
+
+          const folders = smartFolders || getCustomFolders();
+
+          const suggestionService = service.suggestionService;
+          if (!suggestionService) {
+            return {
+              success: false,
+              error: 'Suggestion service not available',
+              suggestions: []
+            };
+          }
+
+          const suggestions = await suggestionService.getClusterBasedSuggestions(
+            fileWithExtension,
+            folders
+          );
+
+          return {
+            success: true,
+            suggestions,
+            clusterInfo: suggestions[0]
+              ? {
+                  clusterLabel: suggestions[0].clusterLabel,
+                  clusterSize: suggestions[0].clusterSize
+                }
+              : null
+          };
+        } catch (error) {
+          logger.error('[ORGANIZE] Get cluster suggestions failed:', error);
+          return createErrorResponse(error, {
+            suggestions: []
+          });
+        }
+      }
+    })
+  );
+
   logger.info('[IPC] Auto-organize handlers registered');
 }
 

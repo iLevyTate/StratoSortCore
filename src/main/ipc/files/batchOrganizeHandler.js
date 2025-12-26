@@ -592,23 +592,38 @@ async function recordUndoAndUpdateDatabase(
     // Non-fatal
   }
 
-  // Update ChromaDB paths
+  // Update ChromaDB paths for both file: and image: prefixed entries
   if (successCount > 0) {
     try {
       const { getInstance: getChromaDB } = require('../../services/chromadb');
       const chromaDbService = getChromaDB();
 
       if (chromaDbService) {
-        const pathUpdates = results
-          .filter((r) => r.success && r.source && r.destination)
-          .map((r) => ({
+        const successfulResults = results.filter((r) => r.success && r.source && r.destination);
+
+        // Create path updates for both file: and image: prefixes
+        // Documents use file: prefix, images use image: prefix
+        const pathUpdates = [];
+        for (const r of successfulResults) {
+          const newMeta = {
+            path: r.destination,
+            name: path.basename(r.destination)
+          };
+
+          // Add file: prefixed update (for documents)
+          pathUpdates.push({
             oldId: `file:${r.source}`,
             newId: `file:${r.destination}`,
-            newMeta: {
-              path: r.destination,
-              name: path.basename(r.destination)
-            }
-          }));
+            newMeta
+          });
+
+          // Add image: prefixed update (for images)
+          pathUpdates.push({
+            oldId: `image:${r.source}`,
+            newId: `image:${r.destination}`,
+            newMeta
+          });
+        }
 
         if (pathUpdates.length > 0) {
           await chromaDbService.updateFilePaths(pathUpdates);

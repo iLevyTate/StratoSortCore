@@ -81,6 +81,7 @@ async function validateOperationPaths(source, destination, log) {
 
 /**
  * Update database path after file move
+ * Updates both file: and image: prefixes to handle all file types
  */
 async function updateDatabasePath(source, destination, log) {
   let dbSyncWarning = null;
@@ -88,17 +89,14 @@ async function updateDatabasePath(source, destination, log) {
     const { getInstance: getChromaDB } = require('../../services/chromadb');
     const chromaDbService = getChromaDB();
     if (chromaDbService) {
-      const oldId = `file:${source}`;
-      const newId = `file:${destination}`;
+      const newMeta = {
+        path: destination,
+        name: path.basename(destination)
+      };
+      // Update both file: and image: prefixes to handle all file types
       await chromaDbService.updateFilePaths([
-        {
-          oldId,
-          newId,
-          newMeta: {
-            path: destination,
-            name: path.basename(destination)
-          }
-        }
+        { oldId: `file:${source}`, newId: `file:${destination}`, newMeta },
+        { oldId: `image:${source}`, newId: `image:${destination}`, newMeta }
       ]);
     }
   } catch (dbError) {
@@ -112,6 +110,7 @@ async function updateDatabasePath(source, destination, log) {
 
 /**
  * Delete file from database and clean up pending embeddings
+ * Deletes both file: and image: prefixes to handle all file types
  */
 async function deleteFromDatabase(filePath, log) {
   let dbDeleteWarning = null;
@@ -132,12 +131,13 @@ async function deleteFromDatabase(filePath, log) {
     });
   }
 
-  // Delete from ChromaDB
+  // Delete from ChromaDB - try both file: and image: prefixes
   try {
     const { getInstance: getChromaDB } = require('../../services/chromadb');
     const chromaDbService = getChromaDB();
     if (chromaDbService) {
       await chromaDbService.deleteFileEmbedding(`file:${filePath}`);
+      await chromaDbService.deleteFileEmbedding(`image:${filePath}`);
     }
   } catch (dbError) {
     log.warn('[FILE-OPS] Database entry delete failed', {

@@ -218,13 +218,24 @@ class ServiceIntegration {
       });
     }
 
-    // Register organization suggestion service (depends on ChromaDB, FolderMatching, Settings)
+    // Register organization suggestion service (depends on ChromaDB, FolderMatching, Settings, Clustering)
     if (!container.has(ServiceIds.ORGANIZATION_SUGGESTION)) {
       container.registerSingleton(ServiceIds.ORGANIZATION_SUGGESTION, (c) => {
+        const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
+        const { ClusteringService } = require('./ClusteringService');
+        const { getInstance: getOllamaInstance } = require('./OllamaService');
+
+        // Create ClusteringService for cluster-based organization suggestions
+        const clusteringService = new ClusteringService({
+          chromaDbService,
+          ollamaService: getOllamaInstance()
+        });
+
         return new OrganizationSuggestionService({
-          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
+          chromaDbService,
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
-          settingsService: c.resolve(ServiceIds.SETTINGS)
+          settingsService: c.resolve(ServiceIds.SETTINGS),
+          clusteringService
         });
       });
     }

@@ -335,15 +335,22 @@ class OllamaService {
         const perfOptions = await buildOllamaOptions('embeddings');
         const mergedOptions = { ...perfOptions, ...(options.ollamaOptions || {}) };
 
-        const response = await ollama.embeddings({
+        // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+        const response = await ollama.embed({
           model,
-          prompt: text,
+          input: text,
           options: mergedOptions
         });
 
+        // embed() returns embeddings array; extract first vector
+        const embedding =
+          Array.isArray(response.embeddings) && response.embeddings.length > 0
+            ? response.embeddings[0]
+            : [];
+
         return {
           success: true,
-          embedding: response.embedding
+          embedding
         };
       },
       {

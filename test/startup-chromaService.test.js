@@ -269,7 +269,7 @@ describe('chromaService', () => {
       expect(spawn).not.toHaveBeenCalled();
     });
 
-    test('checks for chromadb Python module', async () => {
+    test('does not require python module when a chroma CLI spawn plan exists', async () => {
       hasPythonModuleAsync.mockResolvedValue(false);
 
       const result = await chromaService.startChromaDB({
@@ -280,12 +280,16 @@ describe('chromaService', () => {
         setCachedSpawnPlan: jest.fn()
       });
 
-      expect(hasPythonModuleAsync).toHaveBeenCalledWith('chromadb');
-      expect(result.setDependencyMissing).toBe(true);
+      // The spawn plan resolver can use a system/local chroma executable even if `py -3` cannot import chromadb.
+      expect(buildChromaSpawnPlan).toHaveBeenCalled();
+      expect(hasPythonModuleAsync).not.toHaveBeenCalled();
+      expect(spawn).toHaveBeenCalled();
+      expect(result.process).toBeDefined();
     });
 
     test('adds error when chromadb module missing', async () => {
       hasPythonModuleAsync.mockResolvedValue(false);
+      buildChromaSpawnPlan.mockResolvedValue(null);
 
       await chromaService.startChromaDB({
         serviceStatus,
@@ -365,18 +369,22 @@ describe('chromaService', () => {
       expect(setCachedSpawnPlan).not.toHaveBeenCalled();
     });
 
-    test('throws when no spawn plan found', async () => {
+    test('disables ChromaDB features when no spawn plan found', async () => {
       buildChromaSpawnPlan.mockResolvedValue(null);
+      hasPythonModuleAsync.mockResolvedValue(false);
 
-      await expect(
-        chromaService.startChromaDB({
-          serviceStatus,
-          errors,
-          chromadbDependencyMissing: false,
-          cachedChromaSpawnPlan: null,
-          setCachedSpawnPlan: jest.fn()
-        })
-      ).rejects.toThrow('No viable ChromaDB startup plan found');
+      const result = await chromaService.startChromaDB({
+        serviceStatus,
+        errors,
+        chromadbDependencyMissing: false,
+        cachedChromaSpawnPlan: null,
+        setCachedSpawnPlan: jest.fn()
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.disabled).toBe(true);
+      expect(result.reason).toBe('missing_dependency');
+      expect(result.setDependencyMissing).toBe(true);
     });
 
     test('spawns ChromaDB process', async () => {
