@@ -16,7 +16,10 @@ export function FloatingSearchProvider({ children }) {
 
   // Listen for global shortcut / tray trigger to open semantic search
   useEffect(() => {
-    const cleanup = window.electronAPI?.system?.onOpenSemanticSearch?.(() => {
+    const api = window.electronAPI?.system?.onOpenSemanticSearch;
+    if (!api) return undefined;
+
+    const cleanup = api(() => {
       setModalInitialTab('search');
       setIsModalOpen(true);
       setIsWidgetOpen(false);
