@@ -177,7 +177,7 @@ describe('DependencyManagerService', () => {
     expect(result.alreadyInstalled).toBe(true);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests -- Complex integration test requiring real FS operations; kept for reference
+  // eslint-disable-next-line jest/no-disabled-tests -- Complex integration test requiring real FS operations
   test.skip('installOllama downloads installer, runs silent install, and attempts to spawn ollama serve', async () => {
     preflight.checkOllamaInstallation
       .mockResolvedValueOnce({ installed: false, version: null }) // pre
