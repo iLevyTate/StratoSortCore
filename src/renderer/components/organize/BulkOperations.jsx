@@ -19,14 +19,18 @@ function BulkOperations({
     <div className="surface-quiet flex items-center justify-between flex-wrap gap-4">
       <div className="flex items-center gap-3 flex-wrap">
         <input
+          id="bulk-select-all"
           type="checkbox"
           checked={selectedCount === total && total > 0}
           onChange={onSelectAll}
           className="form-checkbox accent-stratosort-blue"
+          aria-label={
+            selectedCount > 0 ? `${selectedCount} of ${total} items selected` : 'Select all items'
+          }
         />
-        <span className="text-sm font-medium">
+        <label htmlFor="bulk-select-all" className="text-sm font-medium cursor-pointer">
           {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
-        </span>
+        </label>
         {selectedCount > 0 && (
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={onApproveSelected} variant="primary" className="text-sm">
@@ -61,6 +65,7 @@ function BulkOperations({
             variant="primary"
             className="text-sm"
             disabled={!bulkCategory}
+            title={!bulkCategory ? 'Select a category first' : 'Apply category to selected items'}
           >
             Apply
           </Button>

@@ -23,6 +23,7 @@ import Button from './ui/Button';
 import IconButton from './ui/IconButton';
 import Collapsible from './ui/Collapsible';
 import { ModalLoadingOverlay } from './LoadingSkeleton';
+import { ConfirmModal } from './Modal';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 import OllamaConfigSection from './settings/OllamaConfigSection';
@@ -112,6 +113,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const progressUnsubRef = useRef(null);
   const [showAllModels, setShowAllModels] = useState(false);
   const [showAnalysisHistory, setShowAnalysisHistory] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [analysisStats, setAnalysisStats] = useState(null);
   const didAutoHealthCheckRef = useRef(false);
   const skipAutoSaveRef = useRef(false);
@@ -207,10 +209,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         stack: error.stack
       });
       setOllamaModelLists({ text: [], vision: [], embedding: [], all: [] });
+      // Notify user about the failure so they know models couldn't be loaded
+      addNotification('Failed to load Ollama models. Check if Ollama is running.', 'warning');
     } finally {
       setIsRefreshingModels(false);
     }
-  }, []);
+  }, [addNotification]);
 
   useEffect(() => {
     // Don't run if API is not available
@@ -294,13 +298,18 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       } else {
         addNotification('Settings saved successfully!', 'success');
       }
+      // Only close panel on successful save
       handleToggleSettings();
     } catch (error) {
       logger.error('Failed to save settings', {
         error: error.message,
         stack: error.stack
       });
-      addNotification('Failed to save settings', 'error');
+      // Keep panel open on error so user can fix issues
+      addNotification(
+        'Failed to save settings. Please check your settings and try again.',
+        'error'
+      );
     } finally {
       setIsSaving(false);
     }
@@ -550,7 +559,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 isAddingModel={isAddingModel}
                 isDeletingModel={isDeletingModel}
                 onAddModel={addOllamaModel}
-                onDeleteModel={deleteOllamaModel}
+                onDeleteModel={() => modelToDelete && setShowDeleteConfirm(true)}
               />
               <EmbeddingRebuildSection addNotification={addNotification} />
             </div>
@@ -693,6 +702,18 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           />
         </Suspense>
       )}
+
+      {/* Delete model confirmation modal */}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={deleteOllamaModel}
+        title="Delete Model?"
+        message={`Are you sure you want to delete "${modelToDelete}"? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </div>
   );
 });
