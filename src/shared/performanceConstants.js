@@ -187,7 +187,30 @@ const THRESHOLDS = {
   MIN_MATCH_CONFIDENCE: 0.6,
   FOLDER_MATCH_CONFIDENCE: 0.55, // Min score for folder categorization
   QUEUE_HIGH_WATERMARK: 0.75,
-  QUEUE_CRITICAL_WATERMARK: 0.9
+  QUEUE_CRITICAL_WATERMARK: 0.9,
+  // Similarity edge thresholds
+  SIMILARITY_EDGE_DEFAULT: 0.5,
+  SIMILARITY_EDGE_MAX_PER_NODE: 3
+};
+
+/**
+ * Search and Ranking Constants
+ * Parameters for hybrid search, RRF fusion, and scoring
+ */
+const SEARCH = {
+  // Reciprocal Rank Fusion constant (higher = more weight to top results)
+  RRF_K: 60,
+  // RRF score blending weights (for combining normalized RRF with original score)
+  RRF_NORMALIZED_WEIGHT: 0.7,
+  RRF_ORIGINAL_WEIGHT: 0.3,
+  // Hybrid search weights
+  VECTOR_WEIGHT: 0.6,
+  BM25_WEIGHT: 0.4,
+  // Default topK values by context
+  DEFAULT_TOP_K: 20,
+  DEFAULT_TOP_K_SIMILAR: 10,
+  // Minimum epsilon for division safety
+  MIN_EPSILON: 0.001
 };
 
 const LIMITS = {
@@ -356,6 +379,7 @@ module.exports = {
   FILE_SIZE,
   PAGINATION,
   THRESHOLDS,
+  SEARCH,
   LIMITS,
   IMAGE,
   NETWORK,

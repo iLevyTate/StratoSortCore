@@ -148,8 +148,7 @@ const IPC_CHANNELS = {
     FIND_SIMILAR: 'embeddings-find-similar',
     SEARCH: 'embeddings-search',
     SCORE_FILES: 'embeddings-score-files',
-    // Hybrid search
-    HYBRID_SEARCH: 'embeddings-hybrid-search',
+    // Hybrid search (SEARCH handler now supports mode: 'hybrid' | 'vector' | 'bm25')
     REBUILD_BM25_INDEX: 'embeddings-rebuild-bm25-index',
     GET_SEARCH_STATUS: 'embeddings-get-search-status',
     // Multi-hop expansion
@@ -361,16 +360,11 @@ const THEMES = {
   AUTO: 'auto' // Alias for 'system' - follow system theme
 };
 
-// Keyboard shortcuts
+// Keyboard shortcuts (only define shortcuts that are actually used in the app)
 const SHORTCUTS = {
   UNDO: 'Ctrl+Z',
   REDO: 'Ctrl+Y',
-  SELECT_ALL: 'Ctrl+A',
-  DELETE: 'Delete',
-  ESCAPE: 'Escape',
-  ENTER: 'Enter',
-  TAB: 'Tab',
-  SPACE: 'Space'
+  SELECT_ALL: 'Ctrl+A'
 };
 
 // File size limits

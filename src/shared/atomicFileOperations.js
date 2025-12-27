@@ -147,7 +147,9 @@ class AtomicFileOperations {
 
       if (sourceStats.size !== backupStats.size) {
         // Clean up failed backup
-        await fs.unlink(backupPath).catch(() => {});
+        await fs.unlink(backupPath).catch((err) => {
+          logger.debug('[ATOMIC-OPS] Failed to clean up corrupted backup:', err.message);
+        });
         throw new IntegrityError(FILE_SYSTEM_ERROR_CODES.SIZE_MISMATCH, backupPath, {
           expectedSize: sourceStats.size,
           actualSize: backupStats.size,
@@ -440,7 +442,9 @@ class AtomicFileOperations {
         ]);
 
         if (sourceStats.size !== destStats.size) {
-          await fs.unlink(finalDestination).catch(() => {});
+          await fs.unlink(finalDestination).catch((err) => {
+            logger.debug('[ATOMIC-OPS] Failed to clean up corrupted copy:', err.message);
+          });
           throw new IntegrityError(FILE_SYSTEM_ERROR_CODES.SIZE_MISMATCH, finalDestination, {
             expectedSize: sourceStats.size,
             actualSize: destStats.size,
