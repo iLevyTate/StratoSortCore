@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Search as SearchIcon, Network, X, GripVertical } from 'lucide-react';
 import { Button } from '../ui';
+import { isMac } from '../../utils/platform';
 
 /**
  * FloatingSearchWidget - A draggable floating widget for quick access to semantic search
@@ -140,6 +141,13 @@ const FloatingSearchWidget = ({ isOpen, onClose, onOpenSearch, onOpenGraph }) =>
               <Button variant="secondary" size="sm" onClick={onOpenGraph} className="text-xs">
                 <Network className="w-3.5 h-3.5" /> Explore Graph
               </Button>
+            </div>
+            <div className="mt-2 text-[10px] text-system-gray-400">
+              Tip: Press{' '}
+              <kbd className="px-1 py-0.5 bg-system-gray-100 rounded text-system-gray-600 font-mono">
+                {isMac ? '⌘K' : 'Ctrl+K'}
+              </kbd>{' '}
+              anytime to search
             </div>
           </div>
         </div>

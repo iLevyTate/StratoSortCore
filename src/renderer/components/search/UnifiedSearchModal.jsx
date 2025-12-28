@@ -40,6 +40,34 @@ import SimilarityEdge from './SimilarityEdge';
 
 logger.setContext('UnifiedSearchModal');
 
+// Maximum nodes allowed in graph to prevent memory exhaustion
+const MAX_GRAPH_NODES = 300;
+
+/**
+ * Format error messages to be more user-friendly and actionable
+ */
+const getErrorMessage = (error, context = 'Operation') => {
+  const msg = error?.message || '';
+
+  // Connection errors - service unavailable
+  if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
+    return `${context} failed: Embedding service unavailable. Is Ollama running?`;
+  }
+
+  // Timeout errors
+  if (msg.includes('timeout') || msg.includes('Timeout')) {
+    return `${context} timed out. Try a shorter query or fewer files.`;
+  }
+
+  // ChromaDB not available
+  if (msg.includes('ChromaDB') || msg.includes('not available yet')) {
+    return `${context} failed: Semantic search is initializing. Please wait a moment and try again.`;
+  }
+
+  // Generic fallback with original message
+  return msg || `${context} failed`;
+};
+
 // ============================================================================
 // Custom Node Components
 // ============================================================================
@@ -389,6 +417,9 @@ export default function UnifiedSearchModal({
   const lastSearchRef = useRef(0);
   const withinReqRef = useRef(0);
 
+  // Refs for tracking auto-load state
+  const hasAutoLoadedClusters = useRef(false);
+
   // ============================================================================
   // Reset on open
   // ============================================================================
@@ -397,6 +428,7 @@ export default function UnifiedSearchModal({
     if (!isOpen) {
       // Cancel any pending layout operations when modal closes
       cancelPendingLayout();
+      hasAutoLoadedClusters.current = false;
       return () => {};
     }
     setActiveTab(initialTab);
@@ -469,7 +501,7 @@ export default function UnifiedSearchModal({
       if (!res?.success) throw new Error(res?.error || 'Folder rebuild failed');
       await refreshStats();
     } catch (e) {
-      setError(e?.message || 'Folder rebuild failed');
+      setError(getErrorMessage(e, 'Folder rebuild'));
     } finally {
       setIsRebuildingFolders(false);
     }
@@ -484,7 +516,7 @@ export default function UnifiedSearchModal({
       if (!res?.success) throw new Error(res?.error || 'File rebuild failed');
       await refreshStats();
     } catch (e) {
-      setError(e?.message || 'File rebuild failed');
+      setError(getErrorMessage(e, 'File rebuild'));
     } finally {
       setIsRebuildingFiles(false);
     }
@@ -570,7 +602,7 @@ export default function UnifiedSearchModal({
         if (!response || response.success !== true) {
           setSearchResults([]);
           setSelectedSearchId(null);
-          setError(response?.error || 'Search failed');
+          setError(getErrorMessage({ message: response?.error }, 'Search'));
           return;
         }
 
@@ -582,7 +614,7 @@ export default function UnifiedSearchModal({
         if (lastSearchRef.current !== requestId) return;
         setSearchResults([]);
         setSelectedSearchId(null);
-        setError(e?.message || 'Search failed');
+        setError(getErrorMessage(e, 'Search'));
       } finally {
         if (!cancelled && lastSearchRef.current === requestId) {
           setIsSearching(false);
@@ -752,12 +784,24 @@ export default function UnifiedSearchModal({
         }
       }
     } catch (e) {
-      setError(e?.message || 'Failed to load clusters');
+      setError(getErrorMessage(e, 'Cluster loading'));
       setGraphStatus('');
     } finally {
       setIsComputingClusters(false);
     }
   }, []);
+
+  // Auto-load clusters when opening graph tab (if files are indexed)
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'graph') return;
+    if (hasAutoLoadedClusters.current) return;
+    if (nodes.length > 0) return; // Already have nodes
+    if (!stats?.files || stats.files === 0) return; // No indexed files
+
+    // Auto-load clusters to give users something to explore
+    hasAutoLoadedClusters.current = true;
+    loadClusters();
+  }, [isOpen, activeTab, stats, nodes.length, loadClusters]);
 
   /**
    * Expand a cluster to show its members with current file names
@@ -861,7 +905,7 @@ export default function UnifiedSearchModal({
 
         setGraphStatus(`Expanded: +${layoutedMemberNodes.length} files`);
       } catch (e) {
-        setError(e?.message || 'Failed to expand cluster');
+        setError(getErrorMessage(e, 'Cluster expansion'));
         setGraphStatus('');
       }
     },
@@ -871,6 +915,9 @@ export default function UnifiedSearchModal({
   const runGraphSearch = useCallback(async () => {
     const q = query.trim();
     if (q.length < 2) return;
+
+    // Capture addMode at search start to prevent race condition if user toggles during async operation
+    const shouldAddMode = addMode;
 
     setError('');
     setGraphStatus('Searching...');
@@ -918,7 +965,16 @@ export default function UnifiedSearchModal({
       });
 
       setNodes((prev) => {
-        if (!addMode) return nextNodes;
+        if (!shouldAddMode) {
+          // Check limit for new graph
+          if (nextNodes.length > MAX_GRAPH_NODES) {
+            setError(
+              `Graph limit (${MAX_GRAPH_NODES} nodes) exceeded. Showing first ${MAX_GRAPH_NODES} results.`
+            );
+            return nextNodes.slice(0, MAX_GRAPH_NODES);
+          }
+          return nextNodes;
+        }
 
         // Check if any new nodes need to be added
         const existingIds = new Set(prev.map((n) => n.id));
@@ -934,11 +990,19 @@ export default function UnifiedSearchModal({
         nextNodes.forEach((n) => {
           if (!map.has(n.id)) map.set(n.id, n);
         });
-        return Array.from(map.values());
+        const merged = Array.from(map.values());
+
+        // Check limit for merged graph
+        if (merged.length > MAX_GRAPH_NODES) {
+          setError(`Graph limit (${MAX_GRAPH_NODES} nodes) reached. Clear graph to start fresh.`);
+          return prev; // Don't add more nodes
+        }
+
+        return merged;
       });
 
       setEdges((prev) => {
-        if (!addMode) return nextEdges;
+        if (!shouldAddMode) return nextEdges;
 
         // Check if any new edges need to be added
         const existingEdgeIds = new Set(prev.map((e) => e.id));
@@ -963,7 +1027,7 @@ export default function UnifiedSearchModal({
         setGraphStatus('Applying layout...');
         try {
           // Get the final nodes from state for layout
-          const finalNodes = addMode
+          const finalNodes = shouldAddMode
             ? (() => {
                 const map = new Map(nodes.map((n) => [n.id, n]));
                 nextNodes.forEach((n) => {
@@ -973,7 +1037,7 @@ export default function UnifiedSearchModal({
               })()
             : nextNodes;
 
-          const finalEdges = addMode
+          const finalEdges = shouldAddMode
             ? (() => {
                 const map = new Map(edges.map((e) => [e.id, e]));
                 nextEdges.forEach((e) => map.set(e.id, e));
@@ -1068,7 +1132,7 @@ export default function UnifiedSearchModal({
       }
     } catch (e) {
       setGraphStatus('');
-      setError(e?.message || 'Search failed');
+      setError(getErrorMessage(e, 'Graph search'));
     }
   }, [query, defaultTopK, addMode, upsertFileNode, autoLayout, nodes, edges]);
 
@@ -1208,7 +1272,7 @@ export default function UnifiedSearchModal({
       }
     } catch (e) {
       setGraphStatus('');
-      setError(e?.message || 'Expand failed');
+      setError(getErrorMessage(e, 'Node expansion'));
     }
   }, [selectedNode, upsertFileNode, autoLayout, nodes, edges, hopCount, decayFactor]);
 
@@ -1322,7 +1386,7 @@ export default function UnifiedSearchModal({
           return changed ? updated : prev;
         });
       } catch (e) {
-        setError(e?.message || 'Score failed');
+        setError(getErrorMessage(e, 'File scoring'));
       }
     };
 
