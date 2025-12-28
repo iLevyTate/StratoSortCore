@@ -14,6 +14,7 @@ const { ACTION_TYPES, PROCESSING_LIMITS } = require('../../../shared/constants')
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { logger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 
 logger.setContext('IPC:Files:BatchOrganize');
 
@@ -41,31 +42,6 @@ async function computeFileChecksum(filePath) {
       reject(err);
     });
   });
-}
-
-/**
- * Verify source file exists and is a file (not a directory).
- *
- * @param {string} sourcePath - Path to verify
- * @throws {Error} If source doesn't exist or isn't a file
- */
-async function verifySourceFile(sourcePath) {
-  try {
-    if (typeof fs.stat === 'function') {
-      const sourceStat = await fs.stat(sourcePath);
-      if (!sourceStat.isFile()) {
-        throw new Error(`Source is not a file (may be a directory): ${sourcePath}`);
-      }
-    } else {
-      // Fallback for mocked fs that does not implement stat
-      await fs.access(sourcePath);
-    }
-  } catch (statErr) {
-    if (statErr.code === 'ENOENT') {
-      throw new Error(`Source file does not exist: ${sourcePath}`);
-    }
-    throw statErr;
-  }
 }
 
 /**
@@ -151,6 +127,32 @@ function validateBatchOperation(operation, log) {
       maxAllowed: MAX_BATCH_SIZE,
       provided: operation.operations.length
     };
+  }
+
+  // Validate individual operation objects have required fields
+  for (let i = 0; i < operation.operations.length; i++) {
+    const op = operation.operations[i];
+    if (!op || typeof op !== 'object') {
+      return {
+        success: false,
+        error: `Invalid operation at index ${i}: must be an object`,
+        errorCode: 'INVALID_OPERATION'
+      };
+    }
+    if (!op.source || typeof op.source !== 'string') {
+      return {
+        success: false,
+        error: `Invalid operation at index ${i}: missing or invalid source path`,
+        errorCode: 'INVALID_OPERATION'
+      };
+    }
+    if (!op.destination || typeof op.destination !== 'string') {
+      return {
+        success: false,
+        error: `Invalid operation at index ${i}: missing or invalid destination path`,
+        errorCode: 'INVALID_OPERATION'
+      };
+    }
   }
 
   return null; // Valid
@@ -256,15 +258,49 @@ async function handleBatchOrganize({
           );
         }
 
+        // SECURITY: Validate paths before any file operations
+        const sourceValidation = await validateFileOperationPath(op.source, {
+          checkSymlinks: true
+        });
+        if (!sourceValidation.valid) {
+          throw new Error(`Invalid source path: ${sourceValidation.error}`);
+        }
+        const destValidation = await validateFileOperationPath(op.destination, {
+          checkSymlinks: false // Destination may not exist yet
+        });
+        if (!destValidation.valid) {
+          throw new Error(`Invalid destination path: ${destValidation.error}`);
+        }
+        // Use validated paths
+        op.source = sourceValidation.normalizedPath;
+        op.destination = destValidation.normalizedPath;
+
         // Ensure destination directory exists
         const destDir = path.dirname(op.destination);
         await fs.mkdir(destDir, { recursive: true });
 
-        // Verify source exists and is a file (not a directory)
-        await verifySourceFile(op.source);
-
         // Handle file move with collision handling
-        const moveResult = await performFileMove(op, log, computeFileChecksum);
+        // TOCTOU fix: removed verifySourceFile pre-check, handle ENOENT from move directly
+        let moveResult;
+        try {
+          moveResult = await performFileMove(op, log, computeFileChecksum);
+        } catch (moveError) {
+          if (moveError.code === 'ENOENT') {
+            // Source file disappeared between batch start and this operation
+            log.debug('[FILE-OPS] Source file no longer exists, skipping:', op.source);
+            results.push({
+              success: false,
+              source: op.source,
+              destination: op.destination,
+              error: 'Source file no longer exists',
+              operation: op.type || 'move',
+              skipped: true
+            });
+            failCount++;
+            continue;
+          }
+          throw moveError;
+        }
         op.destination = moveResult.destination;
 
         // Post-move verification: ensure destination exists and source is gone

@@ -8,8 +8,11 @@
 
 const path = require('path');
 const fs = require('fs').promises;
+const os = require('os');
+const { app } = require('electron');
 const { withErrorLogging } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 const {
   isNotFoundError,
   isPermissionError,
@@ -42,6 +45,32 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
         }
 
         const normalizedPath = path.resolve(fullPath);
+
+        // Validate path is within allowed directories to prevent path traversal
+        const allowedPaths = [
+          os.homedir(),
+          app.getPath('documents'),
+          app.getPath('downloads'),
+          app.getPath('desktop')
+        ];
+
+        const validation = await validateFileOperationPath(normalizedPath, {
+          allowedBasePaths: allowedPaths,
+          checkSymlinks: true
+        });
+
+        if (!validation.valid) {
+          logger.warn('[FILE-OPS] Folder creation blocked - path traversal attempt', {
+            path: fullPath,
+            normalized: normalizedPath,
+            error: validation.error
+          });
+          return {
+            success: false,
+            error: validation.error || 'Path is outside allowed directories',
+            errorCode: 'PATH_NOT_ALLOWED'
+          };
+        }
 
         // Check if folder already exists
         try {

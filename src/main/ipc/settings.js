@@ -97,16 +97,33 @@ function validateImportedSettings(settings, logger) {
 
     // Validate value based on key type
     switch (key) {
-      case 'ollamaHost':
+      case 'ollamaHost': {
         if (typeof value !== 'string' || !URL_REGEX.test(value)) {
           throw new Error(`Invalid ${key}: must be a valid URL`);
         }
-        // Block potentially dangerous localhost redirects
-        if (value.includes('0.0.0.0') || value.includes('[::]') || value.includes('[::1]')) {
+        // Block bind-all addresses (0.0.0.0, [::]) which are not valid connection targets
+        // Note: localhost/127.0.0.1 are allowed since Ollama legitimately runs there
+        const lowerValue = value.toLowerCase();
+        if (lowerValue.includes('0.0.0.0') || lowerValue.includes('[::]')) {
           logger.warn(`[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${value}`);
           throw new Error(`Invalid ${key}: potentially unsafe URL pattern detected`);
         }
+        // Block URL credential attacks (e.g., http://attacker@127.0.0.1)
+        try {
+          const parsed = new URL(value);
+          if (parsed.username || parsed.password) {
+            logger.warn(`[SETTINGS-IMPORT] Blocking URL with credentials: ${value}`);
+            throw new Error(`Invalid ${key}: URLs with credentials are not allowed`);
+          }
+        } catch (urlError) {
+          if (urlError.message.includes('credentials')) {
+            throw urlError;
+          }
+          // URL parsing failed but regex passed - allow with warning
+          logger.warn(`[SETTINGS-IMPORT] URL parsing failed but pattern valid: ${value}`);
+        }
         break;
+      }
 
       case 'textModel':
       case 'visionModel':
@@ -313,8 +330,18 @@ function registerSettingsIpc({
           theme: z.string().nullish(),
           language: z.string().nullish(),
           loggingLevel: z.string().nullish(),
-          cacheSize: z.number().int().min(0).max(100000).nullish(),
-          maxBatchSize: z.number().int().min(1).max(100000).nullish(),
+          cacheSize: z
+            .number()
+            .int()
+            .min(NUMERIC_LIMITS.cacheSize.min)
+            .max(NUMERIC_LIMITS.cacheSize.max)
+            .nullish(),
+          maxBatchSize: z
+            .number()
+            .int()
+            .min(NUMERIC_LIMITS.maxBatchSize.min)
+            .max(NUMERIC_LIMITS.maxBatchSize.max)
+            .nullish(),
           autoUpdateCheck: z.boolean().nullish(),
           telemetryEnabled: z.boolean().nullish()
         })

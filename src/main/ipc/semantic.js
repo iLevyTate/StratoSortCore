@@ -734,7 +734,7 @@ function registerEmbeddingsIpc({
   );
 
   // ============================================================================
-  // Clustering Handlers (placeholder for ClusteringService)
+  // Clustering Handlers
   // ============================================================================
 
   /**

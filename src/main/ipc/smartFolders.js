@@ -6,6 +6,7 @@ const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMServic
 const { withErrorLogging } = require('./ipcWrappers');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { cosineSimilarity } = require('../../shared/vectorMath');
+const { isNotFoundError } = require('../../shared/errorClassifier');
 
 // Import centralized security configuration
 const { getDangerousPaths, ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
@@ -262,7 +263,7 @@ function registerSmartFoldersIpc({
                 };
               }
             } catch (error) {
-              if (error.code === 'ENOENT') {
+              if (isNotFoundError(error)) {
                 // Directory doesn't exist, create it
                 try {
                   await fs.mkdir(folder.path, { recursive: true });
@@ -326,7 +327,7 @@ function registerSmartFoldersIpc({
                 };
               }
             } catch (error) {
-              if (error.code === 'ENOENT') {
+              if (isNotFoundError(error)) {
                 // Directory doesn't exist, create it
                 try {
                   await fs.mkdir(folder.path, { recursive: true });

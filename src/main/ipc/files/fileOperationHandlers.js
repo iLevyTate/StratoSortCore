@@ -86,17 +86,38 @@ async function validateOperationPaths(source, destination, log) {
 async function updateDatabasePath(source, destination, log) {
   let dbSyncWarning = null;
   try {
+    // Re-validate paths before database update to prevent path traversal
+    const sourceValidation = await validateFileOperationPath(source, { checkSymlinks: false });
+    const destValidation = await validateFileOperationPath(destination, { checkSymlinks: false });
+
+    if (!sourceValidation.valid) {
+      log.warn('[FILE-OPS] Invalid source path for DB update', {
+        source,
+        error: sourceValidation.error
+      });
+      return `Database sync skipped: Invalid source path`;
+    }
+    if (!destValidation.valid) {
+      log.warn('[FILE-OPS] Invalid destination path for DB update', {
+        destination,
+        error: destValidation.error
+      });
+      return `Database sync skipped: Invalid destination path`;
+    }
+
     const { getInstance: getChromaDB } = require('../../services/chromadb');
     const chromaDbService = getChromaDB();
     if (chromaDbService) {
+      const safeSource = sourceValidation.normalizedPath;
+      const safeDest = destValidation.normalizedPath;
       const newMeta = {
-        path: destination,
-        name: path.basename(destination)
+        path: safeDest,
+        name: path.basename(safeDest)
       };
       // Update both file: and image: prefixes to handle all file types
       await chromaDbService.updateFilePaths([
-        { oldId: `file:${source}`, newId: `file:${destination}`, newMeta },
-        { oldId: `image:${source}`, newId: `image:${destination}`, newMeta }
+        { oldId: `file:${safeSource}`, newId: `file:${safeDest}`, newMeta },
+        { oldId: `image:${safeSource}`, newId: `image:${safeDest}`, newMeta }
       ]);
     }
   } catch (dbError) {
