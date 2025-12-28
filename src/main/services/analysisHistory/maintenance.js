@@ -143,18 +143,97 @@ async function removeExpiredEntries(
 }
 
 /**
- * Migrate history to new schema version (placeholder for future)
- * @param {Object} _history - History object (unused until migration logic is implemented)
+ * Current schema version - increment when making breaking changes
  */
-// eslint-disable-next-line no-unused-vars
-async function migrateHistory(_history) {
-  // Future migration logic for schema changes
-  logger.debug('[AnalysisHistoryService] Schema migration not yet implemented');
+const CURRENT_SCHEMA_VERSION = '1.0.0';
+
+/**
+ * Migration functions for each schema version upgrade
+ * Key: target version, Value: function to migrate from previous version
+ */
+const MIGRATIONS = {
+  // Example migration for future use:
+  // '1.1.0': (history) => {
+  //   // Add new field to all entries
+  //   for (const entry of Object.values(history.entries || {})) {
+  //     entry.newField = entry.newField ?? 'default';
+  //   }
+  //   return history;
+  // }
+};
+
+/**
+ * Compare semver versions
+ * @param {string} v1 - First version
+ * @param {string} v2 - Second version
+ * @returns {number} -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+ */
+function compareVersions(v1, v2) {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const p1 = parts1[i] || 0;
+    const p2 = parts2[i] || 0;
+    if (p1 < p2) return -1;
+    if (p1 > p2) return 1;
+  }
+  return 0;
+}
+
+/**
+ * Migrate history to current schema version
+ * Applies migrations sequentially from the history's version to the current version
+ * @param {Object} history - History object to migrate
+ * @returns {Object} Migrated history object
+ */
+async function migrateHistory(history) {
+  const historyVersion = history.schemaVersion || '1.0.0';
+
+  if (compareVersions(historyVersion, CURRENT_SCHEMA_VERSION) >= 0) {
+    logger.debug('[AnalysisHistoryService] History already at current schema version');
+    return history;
+  }
+
+  logger.info(
+    `[AnalysisHistoryService] Migrating history from v${historyVersion} to v${CURRENT_SCHEMA_VERSION}`
+  );
+
+  // Get ordered list of versions to migrate through
+  const migrationVersions = Object.keys(MIGRATIONS)
+    .filter((v) => compareVersions(v, historyVersion) > 0)
+    .filter((v) => compareVersions(v, CURRENT_SCHEMA_VERSION) <= 0)
+    .sort(compareVersions);
+
+  let migratedHistory = { ...history };
+
+  for (const targetVersion of migrationVersions) {
+    try {
+      logger.debug(`[AnalysisHistoryService] Applying migration to v${targetVersion}`);
+      migratedHistory = await MIGRATIONS[targetVersion](migratedHistory);
+      migratedHistory.schemaVersion = targetVersion;
+    } catch (error) {
+      logger.error(`[AnalysisHistoryService] Migration to v${targetVersion} failed:`, error);
+      throw new Error(`Schema migration failed at version ${targetVersion}: ${error.message}`);
+    }
+  }
+
+  // Update to current version even if no migrations were needed
+  migratedHistory.schemaVersion = CURRENT_SCHEMA_VERSION;
+  migratedHistory.metadata = migratedHistory.metadata || {};
+  migratedHistory.metadata.lastMigration = new Date().toISOString();
+  migratedHistory.metadata.migratedFrom = historyVersion;
+
+  logger.info('[AnalysisHistoryService] Schema migration completed successfully');
+  return migratedHistory;
 }
 
 module.exports = {
   performMaintenanceIfNeeded,
   cleanupOldEntries,
   removeExpiredEntries,
-  migrateHistory
+  migrateHistory,
+  // Export for testing and external use
+  CURRENT_SCHEMA_VERSION,
+  compareVersions
 };

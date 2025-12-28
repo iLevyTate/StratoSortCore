@@ -34,10 +34,13 @@ function createCacheStore() {
 
     // Embedding cache for semantic search (entryId -> { vector, model })
     entryEmbeddings: new Map(),
+    entryEmbeddingsMaxSize: 5000, // Limit to prevent memory exhaustion
 
     // Category/tag query caches with pagination support
     categoryResults: new Map(),
+    categoryResultsMaxSize: 100, // Limit category cache entries
     tagResults: new Map(),
+    tagResultsMaxSize: 100, // Limit tag cache entries
 
     // Incremental statistics - updated on each record/delete
     // These avoid recalculating totals from scratch
@@ -111,6 +114,18 @@ function maintainCacheSize(cacheMap, maxSize) {
     const keysToRemove = Array.from(cacheMap.keys()).slice(0, cacheMap.size - maxSize);
     keysToRemove.forEach((key) => cacheMap.delete(key));
   }
+}
+
+/**
+ * Maintain size limits on all unbounded caches
+ * Should be called periodically or after adding entries
+ * @param {Object} cache - Cache store object
+ */
+function maintainAllCaches(cache) {
+  maintainCacheSize(cache.searchResults, cache.searchResultsMaxSize);
+  maintainCacheSize(cache.entryEmbeddings, cache.entryEmbeddingsMaxSize);
+  maintainCacheSize(cache.categoryResults, cache.categoryResultsMaxSize);
+  maintainCacheSize(cache.tagResults, cache.tagResultsMaxSize);
 }
 
 /**
@@ -222,6 +237,7 @@ module.exports = {
   invalidateCachesOnAdd,
   invalidateCachesOnRemove,
   maintainCacheSize,
+  maintainAllCaches,
   getSearchCacheKey,
   updateIncrementalStatsOnAdd,
   updateIncrementalStatsOnRemove,

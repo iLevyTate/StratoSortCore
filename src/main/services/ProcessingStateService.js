@@ -3,6 +3,7 @@ const path = require('path');
 const { app } = require('electron');
 // FIX: Add logger for error reporting
 const { logger } = require('../../shared/logger');
+const { isNotFoundError } = require('../../shared/errorClassifier');
 const { RETRY } = require('../../shared/performanceConstants');
 logger.setContext('ProcessingStateService');
 
@@ -89,7 +90,7 @@ class ProcessingStateService {
         this.state.schemaVersion = this.SCHEMA_VERSION;
       }
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (isNotFoundError(error)) {
         this.state = this.createEmptyState();
       } else {
         throw error;
@@ -139,18 +140,55 @@ class ProcessingStateService {
 
   /**
    * Save state with write lock to prevent concurrent writes
+   * Race condition fix: Captures state snapshot before chaining to prevent
+   * state mutations between queue and save
    */
   async saveState() {
-    const previousLock = this._writeLock;
+    // Update the state timestamp immediately (for callers that check it)
+    const now = new Date().toISOString();
+    this.state.updatedAt = now;
 
-    // Wait for previous lock to complete, but log any errors
-    await previousLock.catch((err) => {
-      logger.warn('[ProcessingStateService] Previous save had error:', err?.message);
-    });
+    // Capture state snapshot NOW, before waiting for lock
+    // This ensures we save the state as it was when saveState was called
+    const stateSnapshot = JSON.parse(JSON.stringify(this.state));
 
-    // Create save operation and update the lock chain
-    const savePromise = this._saveStateInternal();
-    this._writeLock = savePromise
+    // Chain this save after any pending saves complete
+    const saveOperation = async () => {
+      await this.ensureParentDirectory(this.statePath);
+      const tempPath = `${this.statePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+      try {
+        await fs.writeFile(tempPath, JSON.stringify(stateSnapshot, null, 2));
+        // Retry rename on Windows EPERM errors (file handle race condition)
+        let lastError;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await fs.rename(tempPath, this.statePath);
+            return; // Success
+          } catch (renameError) {
+            lastError = renameError;
+            if (renameError.code === 'EPERM' && attempt < 2) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, RETRY.ATOMIC_BACKOFF_STEP_MS * (attempt + 1))
+              );
+              continue;
+            }
+            throw renameError;
+          }
+        }
+        throw lastError;
+      } catch (error) {
+        // Clean up temp file on failure
+        try {
+          await fs.unlink(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+        throw error;
+      }
+    };
+
+    this._writeLock = this._writeLock
+      .then(() => saveOperation())
       .then(() => {
         this._consecutiveSaveFailures = 0;
       })
@@ -167,14 +205,7 @@ class ProcessingStateService {
         }
       });
 
-    try {
-      return await savePromise;
-    } catch (error) {
-      logger.error('[ProcessingStateService] Save failed', {
-        error: error?.message
-      });
-      throw error;
-    }
+    return this._writeLock;
   }
 
   // ===== Analysis tracking =====

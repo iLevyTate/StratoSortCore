@@ -4,6 +4,7 @@ const os = require('os');
 const chokidar = require('chokidar');
 const { Notification } = require('electron');
 const { logger } = require('../../shared/logger');
+const { isNotFoundError } = require('../../shared/errorClassifier');
 const { FileSystemError, WatcherError } = require('../errors/FileSystemError');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 logger.setContext('DownloadWatcher');
@@ -353,7 +354,7 @@ class DownloadWatcher {
       await fs.access(filePath);
       return true;
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (isNotFoundError(error)) {
         logger.debug(`[DOWNLOAD-WATCHER] File no longer exists (${context}), skipping:`, filePath);
         return false;
       }
@@ -487,7 +488,7 @@ class DownloadWatcher {
         return false;
       }
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (isNotFoundError(error)) {
         logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping:', filePath);
         return false;
       }
@@ -539,16 +540,19 @@ class DownloadWatcher {
       });
 
       if (result && result.destination) {
-        // CRITICAL FIX: Verify file still exists before renaming
-        if (!(await this._ensureFileExists(filePath, 'before organization'))) {
-          return { handled: true, shouldFallback: false };
-        }
-
         // Create destination directory with error handling
         await this._ensureDirectory(path.dirname(result.destination), 'destination', true);
 
-        // Move file with cross-device handling
-        await this._moveFile(filePath, result.destination);
+        // Move file with atomic error handling (TOCTOU fix: handle ENOENT from move directly)
+        try {
+          await this._moveFile(filePath, result.destination);
+        } catch (moveError) {
+          if (moveError.code === 'ENOENT') {
+            logger.debug('[DOWNLOAD-WATCHER] File disappeared before move:', filePath);
+            return { handled: true, shouldFallback: false };
+          }
+          throw moveError;
+        }
 
         const confidencePercent = Math.round(result.confidence * 100);
         const fileName = path.basename(filePath);
@@ -594,7 +598,7 @@ class DownloadWatcher {
     try {
       await fs.access(filePath);
     } catch (error) {
-      if (error.code === 'ENOENT') {
+      if (isNotFoundError(error)) {
         logger.debug('[DOWNLOAD-WATCHER] File no longer exists for fallback, skipping:', filePath);
         return;
       }

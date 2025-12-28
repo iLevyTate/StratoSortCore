@@ -6,6 +6,7 @@ const { backupAndReplace } = require('../../shared/atomicFileOperations');
 const { validateSettings, sanitizeSettings } = require('../../shared/settingsValidation');
 const { DEFAULT_SETTINGS } = require('../../shared/defaultSettings');
 const { logger } = require('../../shared/logger');
+const { isNotFoundError } = require('../../shared/errorClassifier');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { LIMITS, DEBOUNCE, TIMEOUTS } = require('../../shared/performanceConstants');
 const { SettingsBackupService } = require('./SettingsBackupService');
@@ -646,7 +647,7 @@ class SettingsService {
       try {
         await fs.access(this.settingsPath);
       } catch (error) {
-        if (error.code === 'ENOENT') {
+        if (isNotFoundError(error)) {
           logger.info('[SettingsService] Settings file was deleted, using defaults');
           this.invalidateCache();
           this._notifySettingsChanged();
