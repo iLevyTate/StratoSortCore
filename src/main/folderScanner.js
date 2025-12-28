@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../shared/logger');
+const { isPermissionError } = require('../shared/errorClassifier');
 logger.setContext('FolderScanner');
 
 const DEFAULT_IGNORE_PATTERNS = [
@@ -80,7 +81,7 @@ async function scanDirectory(dirPath, ignorePatterns = DEFAULT_IGNORE_PATTERNS) 
       code: error.code
     });
     // Optionally, rethrow or return a specific error structure
-    if (error.code === 'EACCES' || error.code === 'EPERM') {
+    if (isPermissionError(error)) {
       // Handle permission errors gracefully, e.g., by skipping the directory
       return [
         {

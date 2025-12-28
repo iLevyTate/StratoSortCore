@@ -261,7 +261,12 @@ class SecureIPCManager {
         // Only remove null bytes and dangerous characters, but preserve path structure
         return this.stripControlChars(obj).replace(/[<>"|?*]/g, '');
       }
-      // Basic HTML sanitization for non-file-path strings
+      // URLs should NOT be HTML sanitized - encoding slashes breaks URL validation
+      if (this.looksLikeUrl(obj)) {
+        // Only remove null bytes and dangerous characters, preserve URL structure
+        return this.stripControlChars(obj).replace(/[<>"|*]/g, '');
+      }
+      // Basic HTML sanitization for non-file-path, non-URL strings
       return this.basicSanitizeHtml(obj);
     }
 
@@ -352,6 +357,33 @@ class SecureIPCManager {
         return true;
       }
     }
+
+    return false;
+  }
+
+  /**
+   * Check if a string looks like a URL
+   * Used to skip HTML sanitization which would break URL structure
+   */
+  looksLikeUrl(str) {
+    if (typeof str !== 'string' || str.length === 0) return false;
+
+    // Check for HTML tags first - if it contains < or >, it's likely HTML, not a URL
+    if (str.includes('<') || str.includes('>')) {
+      return false;
+    }
+
+    // HTTP/HTTPS URLs
+    if (/^https?:\/\//i.test(str)) return true;
+
+    // Common localhost patterns (with port)
+    if (/^localhost(:\d+)?/i.test(str)) return true;
+
+    // IP address with optional port
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?/.test(str)) return true;
+
+    // IPv6 URLs
+    if (/^\[[\da-fA-F:]+\](:\d+)?/.test(str)) return true;
 
     return false;
   }

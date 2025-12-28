@@ -34,6 +34,9 @@ const { getStartupManager } = require('./services/startup');
 // Import shared constants
 const { IPC_CHANNELS } = require('../shared/constants');
 
+// Import path sanitization for security checks
+const { isPathDangerous } = require('../shared/pathSanitization');
+
 // Import services
 const { analyzeDocumentFile } = require('./analysis/ollamaDocumentAnalysis');
 const { analyzeImageFile } = require('./analysis/ollamaImageAnalysis');
@@ -423,6 +426,11 @@ app.whenReady().then(async () => {
           }
           if (!folder.path || typeof folder.path !== 'string') {
             logger.warn('[STARTUP] Skipping folder without valid path:', folder);
+            return false;
+          }
+          // Security: skip folders with dangerous system paths
+          if (isPathDangerous(folder.path)) {
+            logger.warn('[STARTUP] Skipping folder with dangerous path:', folder.path);
             return false;
           }
           return true;
