@@ -1,6 +1,11 @@
 {
   "permissions": {
-    "allow": ["Bash(find:*)", "Bash(cat:*)", "Bash(xargs ls:*)"],
+    "allow": [
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(xargs ls:*)",
+      "Bash(npm test:*)"
+    ],
     "deny": [],
     "ask": []
   }

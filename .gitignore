@@ -104,5 +104,8 @@ assets/**/workspaceStorage_*/*
 # Internal planning documents
 .internal/
 
+# Local testing documents
+LOCAL_TESTING_CHECKLIST.md
+
 # Legacy documentation (archived reports and session logs)
 docs/.legacy/
