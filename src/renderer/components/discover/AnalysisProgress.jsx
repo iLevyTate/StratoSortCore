@@ -17,7 +17,8 @@ const AnalysisProgress = memo(function AnalysisProgress({
   const percent = hasTotals ? Math.min(100, Math.round((current / total) * 100)) : 0;
 
   return (
-    <div className="surface-card p-5">
+    // FIX: Add aria-live for screen reader accessibility
+    <div className="surface-card p-5" role="status" aria-live="polite" aria-atomic="true">
       <div className="flex items-center justify-between gap-4 mb-4">
         <div className="flex items-center gap-3">
           <div className="relative h-10 w-10">

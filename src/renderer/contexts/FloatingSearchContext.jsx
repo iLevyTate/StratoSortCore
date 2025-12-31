@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import PropTypes from 'prop-types';
 import FloatingSearchWidget from '../components/search/FloatingSearchWidget';
 import UnifiedSearchModal from '../components/search/UnifiedSearchModal';
+import { TIMEOUTS } from '../../shared/performanceConstants';
 
 const FloatingSearchContext = createContext(null);
 
@@ -59,8 +60,8 @@ export function FloatingSearchProvider({ children }) {
       }
     };
 
-    // Delay to let the app settle
-    const timer = setTimeout(checkAndShow, 1500);
+    // FIX: Use centralized timeout constant
+    const timer = setTimeout(checkAndShow, TIMEOUTS.WIDGET_AUTO_SHOW);
     return () => {
       isMounted = false;
       clearTimeout(timer);
