@@ -15,6 +15,8 @@ const { LIMITS } = require('../../../shared/performanceConstants');
 const { logger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
 const { validateFileOperationPath } = require('../../../shared/pathSanitization');
+// FIX: Import centralized error codes for consistent error handling
+const { ERROR_CODES } = require('../../../shared/errorHandlingUtils');
 
 logger.setContext('IPC:Files:BatchOrganize');
 
@@ -104,7 +106,7 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: 'Invalid batch: operations must be an array',
-      errorCode: 'INVALID_BATCH'
+      errorCode: ERROR_CODES.INVALID_BATCH
     };
   }
 
@@ -112,7 +114,7 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: 'Invalid batch: no operations provided',
-      errorCode: 'EMPTY_BATCH'
+      errorCode: ERROR_CODES.EMPTY_BATCH
     };
   }
 
@@ -123,7 +125,7 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-      errorCode: 'BATCH_TOO_LARGE',
+      errorCode: ERROR_CODES.BATCH_TOO_LARGE,
       maxAllowed: MAX_BATCH_SIZE,
       provided: operation.operations.length
     };
@@ -136,21 +138,21 @@ function validateBatchOperation(operation, log) {
       return {
         success: false,
         error: `Invalid operation at index ${i}: must be an object`,
-        errorCode: 'INVALID_OPERATION'
+        errorCode: ERROR_CODES.INVALID_OPERATION
       };
     }
     if (!op.source || typeof op.source !== 'string') {
       return {
         success: false,
         error: `Invalid operation at index ${i}: missing or invalid source path`,
-        errorCode: 'INVALID_OPERATION'
+        errorCode: ERROR_CODES.INVALID_OPERATION
       };
     }
     if (!op.destination || typeof op.destination !== 'string') {
       return {
         success: false,
         error: `Invalid operation at index ${i}: missing or invalid destination path`,
-        errorCode: 'INVALID_OPERATION'
+        errorCode: ERROR_CODES.INVALID_OPERATION
       };
     }
   }
@@ -218,7 +220,7 @@ async function handleBatchOrganize({
       return {
         success: false,
         error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-        errorCode: 'BATCH_TOO_LARGE',
+        errorCode: ERROR_CODES.BATCH_TOO_LARGE,
         maxAllowed: MAX_BATCH_SIZE,
         provided: totalOperations
       };
@@ -422,7 +424,7 @@ async function handleBatchOrganize({
     return {
       success: false,
       error: error.message,
-      errorCode: 'BATCH_OPERATION_FAILED',
+      errorCode: ERROR_CODES.BATCH_OPERATION_FAILED,
       results,
       successCount,
       failCount,

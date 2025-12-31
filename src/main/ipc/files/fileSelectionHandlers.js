@@ -15,8 +15,60 @@ const {
 } = require('../../../shared/constants');
 const { withErrorLogging } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
+const SettingsService = require('../../services/SettingsService');
 
 logger.setContext('IPC:Files:Selection');
+
+/**
+ * Get the last browsed path from settings, falling back to documents folder
+ * @returns {Promise<string|undefined>} The default path for file dialogs
+ */
+async function getDefaultBrowsePath() {
+  try {
+    const settingsService = SettingsService.getInstance();
+    const settings = await settingsService.load();
+    if (settings.lastBrowsedPath) {
+      // Verify the path still exists
+      try {
+        await fs.access(settings.lastBrowsedPath);
+        return settings.lastBrowsedPath;
+      } catch {
+        // Path no longer exists, fall through to default
+      }
+    }
+  } catch (err) {
+    logger.warn('[FILE-SELECTION] Failed to get last browsed path:', err.message);
+  }
+  // Return undefined to let the dialog use its default
+  return undefined;
+}
+
+/**
+ * Save the last browsed path to settings
+ * @param {string} browsedPath - The path that was browsed/selected
+ */
+async function saveLastBrowsedPath(browsedPath) {
+  try {
+    if (!browsedPath) return;
+
+    // Get the directory of the selected path
+    const dirPath = (await fs.stat(browsedPath)).isDirectory()
+      ? browsedPath
+      : path.dirname(browsedPath);
+
+    const settingsService = SettingsService.getInstance();
+    const settings = await settingsService.load();
+
+    // Only save if different from current
+    if (settings.lastBrowsedPath !== dirPath) {
+      await settingsService.save({ ...settings, lastBrowsedPath: dirPath });
+      logger.debug('[FILE-SELECTION] Saved last browsed path:', dirPath);
+    }
+  } catch (err) {
+    // Non-fatal - just log and continue
+    logger.warn('[FILE-SELECTION] Failed to save last browsed path:', err.message);
+  }
+}
 
 /**
  * Build file filters for dialog
@@ -114,17 +166,26 @@ function registerFileSelectionHandlers({
       const mainWindow = getMainWindow();
 
       try {
+        // Get the last browsed path to use as default
+        const defaultPath = await getDefaultBrowsePath();
+
         const result = await dialog.showOpenDialog(mainWindow || null, {
           properties: ['openDirectory', 'createDirectory'],
           title: 'Select Folder',
-          buttonLabel: 'Select Folder'
+          buttonLabel: 'Select Folder',
+          defaultPath
         });
 
         if (result.canceled || !result.filePaths.length) {
           return { success: false, path: null };
         }
 
-        return { success: true, path: result.filePaths[0] };
+        const selectedPath = result.filePaths[0];
+
+        // Save the selected path for future dialogs
+        await saveLastBrowsedPath(selectedPath);
+
+        return { success: true, path: selectedPath };
       } catch (error) {
         log.error('[FILE-SELECTION] Error selecting directory:', error);
         return { success: false, error: error.message, path: null };
@@ -230,11 +291,15 @@ function registerFileSelectionHandlers({
           });
         }
 
+        // Get the last browsed path to use as default
+        const defaultPath = await getDefaultBrowsePath();
+
         const result = await dialog.showOpenDialog(mainWindow || null, {
           properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
           title: 'Select Files to Organize',
           buttonLabel: 'Select Files',
-          filters: buildFileFilters()
+          filters: buildFileFilters(),
+          defaultPath
         });
 
         log.info('[MAIN-FILE-SELECT] Dialog closed, result:', result);
@@ -266,6 +331,11 @@ function registerFileSelectionHandlers({
         }
 
         log.info(`[FILE-SELECTION] Total files after expansion: ${allFiles.length}`);
+
+        // Save the selected path for future dialogs (use first selected path)
+        if (result.filePaths.length > 0) {
+          await saveLastBrowsedPath(result.filePaths[0]);
+        }
 
         return {
           success: true,

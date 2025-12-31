@@ -12,6 +12,7 @@ const {
   NUMERIC_LIMITS
 } = require('../../shared/validationConstants');
 const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
+const { logger } = require('../../shared/logger');
 
 // Try to load zod
 let z;
@@ -20,9 +21,8 @@ try {
   z = require('zod');
 } catch (error) {
   if (process.env.NODE_ENV === 'test') {
-    // Surface why zod could not be loaded during tests
-    // eslint-disable-next-line no-console
-    console.warn('zod import failed in validationSchemas', error);
+    // FIX: Use logger instead of console.warn for consistency
+    logger.warn('zod import failed in validationSchemas', { error: error.message });
   }
   zodLoadError = error;
   z = null;

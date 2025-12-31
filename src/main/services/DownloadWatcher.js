@@ -4,7 +4,11 @@ const os = require('os');
 const chokidar = require('chokidar');
 const { Notification } = require('electron');
 const { logger } = require('../../shared/logger');
-const { isNotFoundError } = require('../../shared/errorClassifier');
+const {
+  isNotFoundError,
+  isCrossDeviceError,
+  isExistsError
+} = require('../../shared/errorClassifier');
 const { FileSystemError, WatcherError } = require('../errors/FileSystemError');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 logger.setContext('DownloadWatcher');
@@ -113,6 +117,7 @@ class DownloadWatcher {
     this.processingFiles = new Set(); // Track files being processed to avoid duplicates
     this.debounceTimers = new Map(); // Debounce timers for each file
     this.debounceDelay = 500; // 500ms debounce for rapid events
+    this.restartTimer = null; // Track restart timer for cleanup
   }
 
   async start() {
@@ -307,11 +312,12 @@ class DownloadWatcher {
       // Stop the current watcher
       this.stop();
 
-      // Schedule restart
-      const restartTimer = setTimeout(() => {
+      // Schedule restart (track timer for cleanup)
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null;
         this.start();
       }, this.restartDelay * this.restartAttempts); // Exponential backoff
-      restartTimer.unref();
+      this.restartTimer.unref();
     } else if (this.restartAttempts >= this.maxRestartAttempts) {
       logger.error('[DOWNLOAD-WATCHER] Max restart attempts reached. Watcher disabled.');
       this.stop();
@@ -319,6 +325,12 @@ class DownloadWatcher {
   }
 
   stop() {
+    // Clear pending restart timer
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+
     // Clear all debounce timers
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
@@ -536,7 +548,13 @@ class DownloadWatcher {
       const result = await this.autoOrganizeService.processNewFile(filePath, folders, {
         autoOrganizeEnabled: settings.autoOrganize,
         confidenceThreshold: settings.confidenceThreshold || 0.75,
-        defaultLocation: settings.defaultSmartFolderLocation || 'Documents'
+        defaultLocation: settings.defaultSmartFolderLocation || 'Documents',
+        namingSettings: {
+          convention: settings.namingConvention,
+          separator: settings.separator,
+          dateFormat: settings.dateFormat,
+          caseConvention: settings.caseConvention
+        }
       });
 
       if (result && result.destination) {
@@ -547,7 +565,7 @@ class DownloadWatcher {
         try {
           await this._moveFile(filePath, result.destination);
         } catch (moveError) {
-          if (moveError.code === 'ENOENT') {
+          if (isNotFoundError(moveError)) {
             logger.debug('[DOWNLOAD-WATCHER] File disappeared before move:', filePath);
             return { handled: true, shouldFallback: false };
           }
@@ -696,7 +714,7 @@ class DownloadWatcher {
       await fs.rename(source, destination);
     } catch (renameError) {
       // Handle cross-device move (different drives)
-      if (renameError.code === 'EXDEV') {
+      if (isCrossDeviceError(renameError)) {
         logger.debug(
           '[DOWNLOAD-WATCHER] Cross-device move detected, using crossDeviceMove utility'
         );
@@ -736,13 +754,13 @@ class DownloadWatcher {
     try {
       await fs.rename(source, destPath);
     } catch (renameError) {
-      if (renameError.code === 'EXDEV') {
+      if (isCrossDeviceError(renameError)) {
         // Cross-device move using shared utility
         logger.debug(
           '[DOWNLOAD-WATCHER] Cross-device move in fallback, using crossDeviceMove utility'
         );
         await crossDeviceMove(source, destPath, { verify: true });
-      } else if (renameError.code === 'EEXIST') {
+      } else if (isExistsError(renameError)) {
         // Handle file exists - generate unique name
         let counter = 1;
         let uniquePath = destPath;

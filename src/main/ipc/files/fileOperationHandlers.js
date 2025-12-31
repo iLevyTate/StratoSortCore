@@ -231,6 +231,52 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             log
           );
 
+          // Notify renderer of file operation for search index invalidation
+          try {
+            const mainWindow = getMainWindow();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('file-operation-complete', {
+                operation: 'move',
+                oldPath: moveValidation.source,
+                newPath: moveValidation.destination
+              });
+            }
+          } catch (notifyErr) {
+            log.warn('[FILE-OPS] Failed to notify renderer of file move', {
+              error: notifyErr.message
+            });
+          }
+
+          // Invalidate search index after file move
+          try {
+            const { getSearchServiceInstance } = require('../semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService) {
+              searchService.invalidateIndex({
+                reason: 'file-move',
+                oldPath: moveValidation.source,
+                newPath: moveValidation.destination
+              });
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate search index', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Invalidate clustering cache after file move
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+              error: invalidateErr.message
+            });
+          }
+
           return {
             success: true,
             message: `Moved ${moveValidation.source} to ${moveValidation.destination}`,
@@ -273,6 +319,50 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
 
           await fs.unlink(deleteValidation.source);
           const dbDeleteWarning = await deleteFromDatabase(deleteValidation.source, log);
+
+          // Notify renderer of file operation for search index invalidation
+          try {
+            const mainWindow = getMainWindow();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('file-operation-complete', {
+                operation: 'delete',
+                oldPath: deleteValidation.source
+              });
+            }
+          } catch (notifyErr) {
+            log.warn('[FILE-OPS] Failed to notify renderer of file delete', {
+              error: notifyErr.message
+            });
+          }
+
+          // Invalidate search index after file delete
+          try {
+            const { getSearchServiceInstance } = require('../semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService) {
+              searchService.invalidateIndex({
+                reason: 'file-delete',
+                oldPath: deleteValidation.source
+              });
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate search index', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Invalidate clustering cache after file delete
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+              error: invalidateErr.message
+            });
+          }
 
           return {
             success: true,

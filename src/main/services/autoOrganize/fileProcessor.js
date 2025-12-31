@@ -7,9 +7,11 @@
  */
 
 const path = require('path');
+const fs = require('fs').promises;
 const crypto = require('crypto');
 const { logger } = require('../../../shared/logger');
 const { sanitizeFile } = require('./fileTypeUtils');
+const { generateSuggestedNameFromAnalysis } = require('./namingUtils');
 const {
   createDefaultFolder,
   getFallbackDestination,
@@ -239,7 +241,22 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     const extension = path.extname(filePath).toLowerCase();
 
     let analysis;
-    if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].includes(extension)) {
+    // Supported image extensions (includes modern formats)
+    const imageExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.bmp',
+      '.webp',
+      '.tiff',
+      '.tif',
+      '.svg',
+      '.heic',
+      '.heif',
+      '.avif'
+    ];
+    if (imageExtensions.includes(extension)) {
       analysis = await analyzeImageFile(filePath, smartFolders);
     } else {
       analysis = await analyzeDocumentFile(filePath, smartFolders);
@@ -257,6 +274,31 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
       extension,
       analysis
     };
+
+    // Apply naming convention if settings are provided
+    if (options.namingSettings) {
+      try {
+        const stats = await fs.stat(filePath);
+        const fileTimestamps = {
+          created: stats.birthtime,
+          modified: stats.mtime
+        };
+
+        const suggestedName = generateSuggestedNameFromAnalysis({
+          originalFileName: file.name,
+          analysis,
+          settings: options.namingSettings,
+          fileTimestamps
+        });
+
+        if (suggestedName) {
+          analysis.suggestedName = suggestedName;
+          logger.debug('[AutoOrganize] Applied naming convention:', suggestedName);
+        }
+      } catch (namingError) {
+        logger.warn('[AutoOrganize] Failed to apply naming convention:', namingError.message);
+      }
+    }
 
     // Get suggestion
     const suggestion = await suggestionService.getSuggestionsForFile(file, smartFolders, {
