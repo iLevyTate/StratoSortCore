@@ -20,6 +20,13 @@ const Toast = ({
 }) => {
   const [isVisible, setIsVisible] = useState(show);
   const animationTimerRef = useRef(null);
+  // FIX: Use ref for onClose to prevent timer reset when parent re-renders with new callback
+  const onCloseRef = useRef(onClose);
+
+  // Keep onClose ref in sync
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     setIsVisible(show);
@@ -34,11 +41,15 @@ const Toast = ({
     };
   }, []);
 
+  // FIX: Removed onClose from dependency array - use ref instead
   useEffect(() => {
     if (show && duration > 0) {
       const timer = setTimeout(() => {
         setIsVisible(false);
-        animationTimerRef.current = setTimeout(() => onClose?.(), TIMEOUTS.ANIMATION_MEDIUM);
+        animationTimerRef.current = setTimeout(
+          () => onCloseRef.current?.(),
+          TIMEOUTS.ANIMATION_MEDIUM
+        );
       }, duration);
 
       return () => {
@@ -51,11 +62,12 @@ const Toast = ({
     }
 
     return undefined;
-  }, [show, duration, onClose]);
+  }, [show, duration]); // FIX: Removed onClose - using ref instead
 
   const handleClose = () => {
     setIsVisible(false);
-    animationTimerRef.current = setTimeout(() => onClose?.(), TIMEOUTS.ANIMATION_MEDIUM);
+    // FIX: Use ref for consistency with other timer callbacks
+    animationTimerRef.current = setTimeout(() => onCloseRef.current?.(), TIMEOUTS.ANIMATION_MEDIUM);
   };
 
   const handleKeyDown = (e) => {

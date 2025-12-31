@@ -118,4 +118,26 @@ export function useKeyboardShortcuts() {
     return () => document.removeEventListener('keydown', handleKeyDown);
     // Only re-attach when actions or addNotification change (both are memoized/stable)
   }, [actions, addNotification]);
+
+  // Handle menu actions from main process (File menu shortcuts)
+  useEffect(() => {
+    const cleanup = window.electronAPI?.events?.onMenuAction?.((action) => {
+      switch (action) {
+        case 'open-settings':
+          actions.toggleSettings();
+          break;
+        case 'select-files':
+          // Dispatch custom event for DiscoverPhase to handle
+          window.dispatchEvent(new CustomEvent('app:select-files'));
+          break;
+        case 'select-folder':
+          // Dispatch custom event for DiscoverPhase to handle
+          window.dispatchEvent(new CustomEvent('app:select-folder'));
+          break;
+        default:
+          logger.debug('Unknown menu action:', action);
+      }
+    });
+    return cleanup;
+  }, [actions]);
 }

@@ -12,6 +12,8 @@ let lastSavedResultsCount = -1;
 // FIX: Track fileStates changes to ensure file state updates trigger persistence
 let lastSavedFileStatesCount = -1;
 let lastSavedFileStatesHash = '';
+// FIX: Re-entry guard to prevent infinite loops if save triggers actions
+let isSaving = false;
 
 /**
  * FIX #1: Graceful quota handling - try progressively smaller saves
@@ -121,6 +123,11 @@ const persistenceMiddleware = (store) => (next) => (action) => {
   const result = next(action);
   const state = store.getState();
 
+  // FIX: Skip if we're currently in a save operation to prevent infinite loops
+  if (isSaving) {
+    return result;
+  }
+
   // Only save if not in welcome phase and not loading
   if (state.ui.currentPhase !== PHASES.WELCOME && action.type.indexOf('setLoading') === -1) {
     // Performance: Skip save if key state hasn't changed
@@ -154,50 +161,58 @@ const persistenceMiddleware = (store) => (next) => (action) => {
     const delay = shouldForceImmediate ? 0 : SAVE_DEBOUNCE_MS;
 
     saveTimeout = setTimeout(() => {
-      // Update tracking variables
-      lastSavedPhase = currentPhase;
-      lastSavedFilesCount = currentFilesCount;
-      lastSavedResultsCount = currentResultsCount;
-      // FIX: Update fileStates tracking variables
-      lastSavedFileStatesCount = currentFileStatesCount;
-      lastSavedFileStatesHash = currentFileStatesHash;
-      lastSaveAttempt = Date.now();
+      // FIX: Set re-entry guard before save
+      isSaving = true;
 
-      const stateToSave = {
-        ui: {
-          currentPhase: state.ui.currentPhase,
-          theme: state.ui.theme,
-          sidebarOpen: state.ui.sidebarOpen,
-          showSettings: state.ui.showSettings
-        },
-        files: {
-          selectedFiles: state.files.selectedFiles.slice(0, 200), // Limit size
-          smartFolders: state.files.smartFolders,
-          organizedFiles: state.files.organizedFiles.slice(0, 200),
-          namingConvention: state.files.namingConvention,
-          fileStates: {}
-        },
-        analysis: {
-          // Analysis results
-          results: state.analysis.results.slice(0, 200),
-          isAnalyzing: state.analysis.isAnalyzing,
-          analysisProgress: state.analysis.analysisProgress,
-          currentAnalysisFile: state.analysis.currentAnalysisFile
-        },
-        timestamp: Date.now()
-      };
+      try {
+        // Update tracking variables
+        lastSavedPhase = currentPhase;
+        lastSavedFilesCount = currentFilesCount;
+        lastSavedResultsCount = currentResultsCount;
+        // FIX: Update fileStates tracking variables
+        lastSavedFileStatesCount = currentFileStatesCount;
+        lastSavedFileStatesHash = currentFileStatesHash;
+        lastSaveAttempt = Date.now();
 
-      // Persist fileStates separately or limited
-      // Deep copy or just careful selection
-      const fileStatesEntries = Object.entries(state.files.fileStates);
-      if (fileStatesEntries.length > 0) {
-        // Keep last 100
-        const recentStates = Object.fromEntries(fileStatesEntries.slice(-100));
-        stateToSave.files.fileStates = recentStates;
+        const stateToSave = {
+          ui: {
+            currentPhase: state.ui.currentPhase,
+            theme: state.ui.theme,
+            sidebarOpen: state.ui.sidebarOpen,
+            showSettings: state.ui.showSettings
+          },
+          files: {
+            selectedFiles: state.files.selectedFiles.slice(0, 200), // Limit size
+            smartFolders: state.files.smartFolders,
+            organizedFiles: state.files.organizedFiles.slice(0, 200),
+            namingConvention: state.files.namingConvention,
+            fileStates: {}
+          },
+          analysis: {
+            // Analysis results
+            results: state.analysis.results.slice(0, 200),
+            isAnalyzing: state.analysis.isAnalyzing,
+            analysisProgress: state.analysis.analysisProgress,
+            currentAnalysisFile: state.analysis.currentAnalysisFile
+          },
+          timestamp: Date.now()
+        };
+
+        // Persist fileStates separately or limited
+        // Deep copy or just careful selection
+        const fileStatesEntries = Object.entries(state.files.fileStates);
+        if (fileStatesEntries.length > 0) {
+          // Keep last 100
+          const recentStates = Object.fromEntries(fileStatesEntries.slice(-100));
+          stateToSave.files.fileStates = recentStates;
+        }
+
+        // FIX #1: Use graceful quota handling instead of silent data loss
+        saveWithQuotaHandling('stratosort_redux_state', stateToSave);
+      } finally {
+        // FIX: Clear re-entry guard
+        isSaving = false;
       }
-
-      // FIX #1: Use graceful quota handling instead of silent data loss
-      saveWithQuotaHandling('stratosort_redux_state', stateToSave);
     }, delay);
   }
 

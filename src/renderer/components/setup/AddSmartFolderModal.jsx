@@ -63,12 +63,36 @@ function AddSmartFolderModal({
       return;
     }
 
-    // Build target path
-    let targetPath = folderPath.trim() || `${defaultLocation}/${folderName.trim()}`;
+    // Check if defaultLocation is a valid absolute path
+    const isDefaultLocationAbsolute =
+      /^[A-Za-z]:[\\/]/.test(defaultLocation) || defaultLocation.startsWith('/');
+    if (!isDefaultLocationAbsolute && !folderPath.trim()) {
+      showNotification?.(
+        'System is still loading. Please wait a moment or browse to select a folder.',
+        'warning'
+      );
+      return;
+    }
 
-    // Make absolute if needed
+    // Build target path - use browsed path if provided, otherwise construct from defaultLocation
+    let targetPath = folderPath.trim();
+    if (!targetPath) {
+      // Use path.join equivalent with forward slash, will be normalized by backend
+      targetPath = `${defaultLocation}/${folderName.trim()}`;
+    }
+
+    // Ensure path is absolute
     if (!/^[A-Za-z]:[\\/]/.test(targetPath) && !targetPath.startsWith('/')) {
-      targetPath = `${defaultLocation}/${targetPath}`;
+      // If still relative after construction, prefix with defaultLocation
+      if (isDefaultLocationAbsolute) {
+        targetPath = `${defaultLocation}/${targetPath}`;
+      } else {
+        showNotification?.(
+          'Unable to determine folder location. Please browse to select a folder.',
+          'error'
+        );
+        return;
+      }
     }
 
     // Check for duplicates
@@ -104,7 +128,7 @@ function AddSmartFolderModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-modal flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-folder-title"
@@ -117,7 +141,7 @@ function AddSmartFolderModal({
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-modal-enter">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-system-gray-100">
           <h2 id="add-folder-title" className="text-lg font-semibold text-system-gray-900">
