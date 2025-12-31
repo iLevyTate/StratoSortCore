@@ -48,6 +48,19 @@ class ClusteringService {
 
     // Staleness threshold (30 minutes)
     this.STALE_MS = 30 * 60 * 1000;
+
+    // Lock to prevent concurrent cluster computation (race condition fix)
+    this._computePromise = null;
+  }
+
+  /**
+   * Invalidate cached clusters (called when files are moved/deleted)
+   * Forces recomputation on next access
+   */
+  invalidateClusters() {
+    logger.info('[ClusteringService] Invalidating cached clusters');
+    this.lastComputedAt = null;
+    // Don't clear clusters/centroids so UI can still show stale data while recomputing
   }
 
   /**
@@ -71,7 +84,14 @@ class ClusteringService {
     try {
       await this.chromaDb.initialize();
 
-      const result = await this.chromaDb.fileCollection.get({
+      // Null check for fileCollection to prevent runtime crash
+      const fileCollection = this.chromaDb.fileCollection;
+      if (!fileCollection) {
+        logger.warn('[ClusteringService] File collection not available');
+        return [];
+      }
+
+      const result = await fileCollection.get({
         include: ['embeddings', 'metadatas']
       });
 
@@ -142,13 +162,30 @@ class ClusteringService {
       if (totalDist === 0) break;
 
       let threshold = Math.random() * totalDist;
+      let selected = false;
       for (let i = 0; i < files.length; i++) {
         if (used.has(i)) continue;
         threshold -= distances[i];
         if (threshold <= 0) {
           centroids.push([...files[i].embedding]);
           used.add(i);
+          selected = true;
           break;
+        }
+      }
+
+      // Fallback: if weighted selection failed (floating point edge case),
+      // select a random unused point to prevent infinite loop
+      if (!selected) {
+        const unusedIndices = [];
+        for (let i = 0; i < files.length; i++) {
+          if (!used.has(i)) unusedIndices.push(i);
+        }
+        if (unusedIndices.length > 0) {
+          const randomIdx = unusedIndices[Math.floor(Math.random() * unusedIndices.length)];
+          centroids.push([...files[randomIdx].embedding]);
+          used.add(randomIdx);
+          logger.debug('[ClusteringService] K-means++ used fallback selection');
         }
       }
     }
@@ -182,6 +219,7 @@ class ClusteringService {
 
   /**
    * Update centroids based on current assignments
+   * Handles empty clusters by reinitializing them with the farthest point
    *
    * @param {Array} files - Files with embeddings
    * @param {number[]} assignments - Cluster assignments
@@ -204,8 +242,30 @@ class ClusteringService {
 
     for (let c = 0; c < centroids.length; c++) {
       if (counts[c] > 0) {
+        // Normal case: update centroid to mean of assigned points
         for (let d = 0; d < dim; d++) {
           centroids[c][d] = sums[c][d] / counts[c];
+        }
+      } else {
+        // Empty cluster fix: reinitialize with the point farthest from its assigned centroid
+        // This helps the algorithm recover from pathological cases
+        let maxDist = -1;
+        let farthestIdx = -1;
+
+        for (let i = 0; i < files.length; i++) {
+          const assignedCentroid = centroids[assignments[i]];
+          const dist = squaredEuclideanDistance(files[i].embedding, assignedCentroid);
+          if (dist > maxDist) {
+            maxDist = dist;
+            farthestIdx = i;
+          }
+        }
+
+        if (farthestIdx >= 0) {
+          for (let d = 0; d < dim; d++) {
+            centroids[c][d] = files[farthestIdx].embedding[d];
+          }
+          logger.debug(`[ClusteringService] Reinitialized empty cluster ${c} with farthest point`);
         }
       }
     }
@@ -316,6 +376,25 @@ class ClusteringService {
    * @returns {Promise<{success: boolean, clusters: Array, centroids: Array}>}
    */
   async computeClusters(k = 'auto') {
+    // Prevent concurrent cluster computation - return existing promise if computing
+    if (this._computePromise) {
+      logger.debug('[ClusteringService] Cluster computation already in progress, waiting...');
+      return this._computePromise;
+    }
+
+    this._computePromise = this._doComputeClusters(k);
+    try {
+      return await this._computePromise;
+    } finally {
+      this._computePromise = null;
+    }
+  }
+
+  /**
+   * Internal implementation of cluster computation
+   * @private
+   */
+  async _doComputeClusters(k) {
     try {
       logger.info('[ClusteringService] Computing clusters...', { k });
 
@@ -374,8 +453,170 @@ class ClusteringService {
   }
 
   /**
-   * Generate labels for clusters using LLM
-   * Uses parallel processing for better performance with rate limiting
+   * Helper: Get most frequent item from array
+   * @private
+   */
+  _getMostFrequent(arr) {
+    if (!arr || arr.length === 0) return null;
+    const counts = {};
+    arr.forEach((item) => {
+      if (item) counts[item] = (counts[item] || 0) + 1;
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return sorted.length > 0 ? { item: sorted[0][0], count: sorted[0][1] } : null;
+  }
+
+  /**
+   * Helper: Get common tags that appear in at least threshold% of items
+   * @private
+   */
+  _getCommonTags(members, threshold = 0.4) {
+    const tagCounts = {};
+    members.forEach((m) => {
+      // Parse tags from JSON string if needed
+      let tags = m.metadata?.tags || [];
+      if (typeof tags === 'string') {
+        try {
+          tags = JSON.parse(tags);
+        } catch {
+          tags = [];
+        }
+      }
+      if (Array.isArray(tags)) {
+        tags.forEach((tag) => {
+          if (tag) tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        });
+      }
+    });
+
+    const minCount = Math.ceil(members.length * threshold);
+    return Object.entries(tagCounts)
+      .filter(([, count]) => count >= minCount)
+      .sort((a, b) => b[1] - a[1])
+      .map(([tag]) => tag);
+  }
+
+  /**
+   * Generate a label for a single cluster using metadata-first approach
+   * @private
+   */
+  async _generateSingleClusterLabel(cluster) {
+    const members = cluster.members || [];
+    if (members.length === 0) {
+      return {
+        label: `Cluster ${cluster.id + 1}`,
+        confidence: 'low',
+        dominantCategory: null,
+        commonTags: []
+      };
+    }
+
+    // 1. Extract categories from all members
+    const categories = members.map((m) => m.metadata?.category).filter(Boolean);
+    const dominantCategoryResult = this._getMostFrequent(categories);
+    const dominantCategory = dominantCategoryResult?.item;
+    const categoryCount = dominantCategoryResult?.count || 0;
+
+    // 2. Extract common tags (appear in >40% of files)
+    const commonTags = this._getCommonTags(members, 0.4);
+
+    // 3. If we have strong metadata signals, use them directly (no LLM needed)
+    if (dominantCategory && commonTags.length > 0) {
+      const tagPart = commonTags.slice(0, 2).join(' ');
+      return {
+        label: `${tagPart} ${dominantCategory}`.trim(),
+        confidence: 'high',
+        reason: `${categoryCount}/${members.length} files share category`,
+        dominantCategory,
+        commonTags
+      };
+    }
+
+    // 4. If only dominant category, use it
+    if (dominantCategory && categoryCount >= members.length * 0.5) {
+      return {
+        label: dominantCategory,
+        confidence: 'medium',
+        reason: 'Based on dominant category',
+        dominantCategory,
+        commonTags
+      };
+    }
+
+    // 5. If only common tags, use them
+    if (commonTags.length >= 2) {
+      return {
+        label: commonTags.slice(0, 3).join(', '),
+        confidence: 'medium',
+        reason: 'Based on common tags',
+        dominantCategory,
+        commonTags
+      };
+    }
+
+    // 6. Fallback to LLM with enriched context (if available)
+    if (this.ollama) {
+      try {
+        const fileNames = members
+          .slice(0, 5)
+          .map((f) => f.metadata?.name || f.id)
+          .filter(Boolean)
+          .join(', ');
+
+        const subjects = members
+          .slice(0, 3)
+          .map((f) => f.metadata?.subject)
+          .filter(Boolean)
+          .join('; ');
+
+        const prompt = `Generate a 2-4 word category label for these files:
+
+Files: ${fileNames}
+${subjects ? `Subjects: ${subjects}` : ''}
+${dominantCategory ? `Possible category: ${dominantCategory}` : ''}
+${commonTags.length > 0 ? `Related tags: ${commonTags.join(', ')}` : ''}
+
+Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Project Proposals", "Meeting Notes"`;
+
+        const response = await this.ollama.analyzeText(prompt, {
+          model: getOllamaModel() || 'qwen3:0.6b',
+          maxTokens: 20
+        });
+
+        const label = (response?.response || response || '').trim().replace(/["']/g, '');
+        if (label && label.length > 0 && label.length < 50) {
+          return {
+            label,
+            confidence: 'medium',
+            reason: 'LLM generated',
+            dominantCategory,
+            commonTags
+          };
+        }
+      } catch (llmError) {
+        logger.warn('[ClusteringService] LLM label generation failed for cluster', cluster.id);
+      }
+    }
+
+    // 7. Final fallback - use any available metadata
+    if (dominantCategory) {
+      return { label: dominantCategory, confidence: 'low', dominantCategory, commonTags };
+    }
+    if (commonTags.length > 0) {
+      return { label: commonTags[0], confidence: 'low', dominantCategory, commonTags };
+    }
+
+    return {
+      label: `Cluster ${cluster.id + 1}`,
+      confidence: 'low',
+      dominantCategory: null,
+      commonTags: []
+    };
+  }
+
+  /**
+   * Generate labels for clusters using metadata-first approach
+   * Falls back to LLM only when metadata is insufficient
    *
    * @param {Object} options - Label generation options
    * @param {number} [options.concurrency=3] - Max concurrent LLM calls
@@ -386,68 +627,36 @@ class ClusteringService {
       return { success: false, error: 'No clusters computed yet' };
     }
 
-    if (!this.ollama) {
-      return { success: false, error: 'Ollama service not available' };
-    }
-
     const { concurrency = 3 } = options;
 
     try {
       const labels = new Map();
 
-      // Prepare label generation tasks
-      const labelTasks = this.clusters.map((cluster) => ({
-        cluster,
-        fileNames: cluster.members
-          .slice(0, 5)
-          .map((f) => f.metadata?.name || f.id)
-          .filter(Boolean)
-          .join(', ')
-      }));
-
-      // Process in batches for controlled parallelism
-      for (let i = 0; i < labelTasks.length; i += concurrency) {
-        const batch = labelTasks.slice(i, i + concurrency);
+      // Process clusters in batches
+      for (let i = 0; i < this.clusters.length; i += concurrency) {
+        const batch = this.clusters.slice(i, i + concurrency);
 
         const batchResults = await Promise.allSettled(
-          batch.map(async ({ cluster, fileNames }) => {
-            if (!fileNames) {
-              return { clusterId: cluster.id, label: `Cluster ${cluster.id + 1}` };
-            }
-
-            const prompt = `Based on these file names, generate a 2-4 word category label that describes what type of files these are:
-
-Files: ${fileNames}
-
-Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Project Proposals", "Meeting Notes"`;
-
-            try {
-              const response = await this.ollama.analyzeText(prompt, {
-                model: getOllamaModel() || 'qwen3:0.6b',
-                maxTokens: 20
-              });
-
-              const label = (response?.response || response || '').trim().replace(/["']/g, '');
-              return { clusterId: cluster.id, label: label || `Cluster ${cluster.id + 1}` };
-            } catch (llmError) {
-              logger.warn(
-                '[ClusteringService] LLM label generation failed for cluster',
-                cluster.id
-              );
-              return { clusterId: cluster.id, label: `Cluster ${cluster.id + 1}` };
-            }
-          })
+          batch.map((cluster) => this._generateSingleClusterLabel(cluster))
         );
 
         // Process batch results
-        batchResults.forEach((result) => {
+        batchResults.forEach((result, idx) => {
+          const cluster = batch[idx];
           if (result.status === 'fulfilled') {
-            const { clusterId, label } = result.value;
-            labels.set(clusterId, label);
+            const { label, confidence, reason, dominantCategory, commonTags } = result.value;
+            labels.set(cluster.id, label);
 
-            // Update cluster object
-            const cluster = this.clusters.find((c) => c.id === clusterId);
-            if (cluster) cluster.label = label;
+            // Update cluster object with rich metadata
+            cluster.label = label;
+            cluster.labelConfidence = confidence;
+            cluster.labelReason = reason;
+            cluster.dominantCategory = dominantCategory;
+            cluster.commonTags = commonTags || [];
+          } else {
+            labels.set(cluster.id, `Cluster ${cluster.id + 1}`);
+            cluster.label = `Cluster ${cluster.id + 1}`;
+            cluster.labelConfidence = 'low';
           }
         });
       }
@@ -455,7 +664,9 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
       this.clusterLabels = labels;
 
       logger.info('[ClusteringService] Generated labels for clusters', {
-        count: labels.size
+        count: labels.size,
+        highConfidence: this.clusters.filter((c) => c.labelConfidence === 'high').length,
+        mediumConfidence: this.clusters.filter((c) => c.labelConfidence === 'medium').length
       });
 
       return {
@@ -471,7 +682,7 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
   /**
    * Get computed clusters for graph visualization
    *
-   * @returns {Array} Clusters with labels and member info
+   * @returns {Array} Clusters with labels, metadata, and member info
    */
   getClustersForGraph() {
     return this.clusters.map((c) => ({
@@ -479,7 +690,12 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
       clusterId: c.id,
       label: c.label || this.clusterLabels.get(c.id) || `Cluster ${c.id + 1}`,
       memberCount: c.members.length,
-      memberIds: c.members.map((m) => m.id)
+      memberIds: c.members.map((m) => m.id),
+      // Rich metadata for meaningful display
+      confidence: c.labelConfidence || 'low',
+      reason: c.labelReason || '',
+      dominantCategory: c.dominantCategory || null,
+      commonTags: c.commonTags || []
     }));
   }
 
@@ -503,6 +719,12 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
         ids: memberIds,
         include: ['metadatas']
       });
+
+      // Guard against null/malformed result from ChromaDB
+      if (!result || !Array.isArray(result.ids)) {
+        logger.warn('[ClusteringService] ChromaDB returned invalid result, using cached metadata');
+        return cluster.members.map((m) => ({ id: m.id, metadata: m.metadata }));
+      }
 
       // Build a map of fresh metadata
       const freshMetadata = new Map();
@@ -616,6 +838,9 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
           const embA = embeddings.get(idA);
           const embB = embeddings.get(idB);
 
+          // Skip if either embedding is missing or malformed
+          if (!embA?.vector || !embB?.vector) continue;
+
           const similarity = cosineSimilarity(embA.vector, embB.vector);
 
           if (similarity >= threshold) {
@@ -652,6 +877,188 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
       logger.error('[ClusteringService] Failed to find similarity edges:', error);
       return [];
     }
+  }
+
+  /**
+   * Find near-duplicate files across the entire indexed collection
+   *
+   * @param {Object} options - Search options
+   * @param {number} options.threshold - Similarity threshold (default: 0.9 for near-duplicates)
+   * @param {number} options.maxResults - Maximum duplicate groups to return (default: 50)
+   * @returns {Promise<Object>} Object with duplicate groups and metadata
+   */
+  async findNearDuplicates(options = {}) {
+    const { threshold = 0.9, maxResults = 50 } = options;
+
+    try {
+      await this.chromaDb.initialize();
+
+      // Get all files with embeddings
+      const collection = this.chromaDb.fileCollection;
+      const count = await collection.count();
+
+      if (count < 2) {
+        return { success: true, groups: [], totalDuplicates: 0 };
+      }
+
+      // Get all embeddings (limited to prevent memory issues)
+      const limit = Math.min(count, 1000);
+      const result = await collection.get({
+        limit,
+        include: ['embeddings', 'metadatas']
+      });
+
+      if (!result.ids || result.ids.length < 2) {
+        return { success: true, groups: [], totalDuplicates: 0 };
+      }
+
+      // Build embedding map
+      const embeddings = new Map();
+      for (let i = 0; i < result.ids.length; i++) {
+        if (result.embeddings?.[i]) {
+          embeddings.set(result.ids[i], {
+            vector: result.embeddings[i],
+            metadata: result.metadatas?.[i] || {}
+          });
+        }
+      }
+
+      // Find all high-similarity pairs
+      const duplicatePairs = [];
+      const ids = Array.from(embeddings.keys());
+
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          const idA = ids[i];
+          const idB = ids[j];
+          const embA = embeddings.get(idA);
+          const embB = embeddings.get(idB);
+
+          const similarity = cosineSimilarity(embA.vector, embB.vector);
+
+          if (similarity >= threshold) {
+            duplicatePairs.push({
+              source: idA,
+              target: idB,
+              similarity,
+              sourceMetadata: embA.metadata,
+              targetMetadata: embB.metadata
+            });
+          }
+        }
+      }
+
+      // Group connected duplicates using union-find
+      const parent = new Map();
+      const find = (x) => {
+        if (!parent.has(x)) parent.set(x, x);
+        if (parent.get(x) !== x) {
+          parent.set(x, find(parent.get(x)));
+        }
+        return parent.get(x);
+      };
+      const union = (a, b) => {
+        const rootA = find(a);
+        const rootB = find(b);
+        if (rootA !== rootB) {
+          parent.set(rootA, rootB);
+        }
+      };
+
+      // Union all duplicate pairs
+      for (const pair of duplicatePairs) {
+        union(pair.source, pair.target);
+      }
+
+      // Group by root
+      const groupMap = new Map();
+      for (const pair of duplicatePairs) {
+        const root = find(pair.source);
+        if (!groupMap.has(root)) {
+          groupMap.set(root, new Set());
+        }
+        groupMap.get(root).add(pair.source);
+        groupMap.get(root).add(pair.target);
+      }
+
+      // Build result groups with metadata
+      const groups = [];
+      for (const [, memberSet] of groupMap) {
+        const members = Array.from(memberSet).map((id) => ({
+          id,
+          ...embeddings.get(id)?.metadata
+        }));
+
+        // Calculate average similarity within group
+        let totalSim = 0;
+        let simCount = 0;
+        for (const pair of duplicatePairs) {
+          if (memberSet.has(pair.source) && memberSet.has(pair.target)) {
+            totalSim += pair.similarity;
+            simCount++;
+          }
+        }
+
+        groups.push({
+          id: `dup-group-${groups.length}`,
+          members,
+          memberCount: members.length,
+          averageSimilarity:
+            simCount > 0 ? Math.round((totalSim / simCount) * 100) / 100 : threshold
+        });
+      }
+
+      // Sort by group size (largest first) and limit results
+      groups.sort((a, b) => b.memberCount - a.memberCount);
+      const limitedGroups = groups.slice(0, maxResults);
+
+      const totalDuplicates = limitedGroups.reduce((sum, g) => sum + g.memberCount, 0);
+
+      logger.info('[ClusteringService] Found near-duplicates', {
+        pairCount: duplicatePairs.length,
+        groupCount: limitedGroups.length,
+        totalDuplicates
+      });
+
+      return {
+        success: true,
+        groups: limitedGroups,
+        totalDuplicates,
+        threshold
+      };
+    } catch (error) {
+      logger.error('[ClusteringService] Failed to find near-duplicates:', error);
+      return {
+        success: false,
+        error: error.message,
+        groups: [],
+        totalDuplicates: 0
+      };
+    }
+  }
+
+  /**
+   * Cleanup resources on shutdown
+   * Clears all cached data and pending operations
+   */
+  cleanup() {
+    logger.info('[ClusteringService] Cleaning up...');
+
+    // Clear all cached data
+    this.clusters = [];
+    this.centroids = [];
+    this.clusterLabels.clear();
+    this.lastComputedAt = null;
+    this._computePromise = null;
+
+    logger.info('[ClusteringService] Cleanup complete');
+  }
+
+  /**
+   * Alias for cleanup (for consistency with other services)
+   */
+  shutdown() {
+    this.cleanup();
   }
 }
 

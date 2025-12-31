@@ -83,6 +83,9 @@ class AnalysisHistoryServiceCore {
 
     // Performance: Track if full recalculation is needed
     this._statsNeedFullRecalc = true;
+
+    // Write lock to prevent concurrent modifications
+    this._writeLock = null;
   }
 
   _normalizeResults(result) {
@@ -235,100 +238,116 @@ class AnalysisHistoryServiceCore {
   async recordAnalysis(fileInfo, analysisResults) {
     await this.initialize();
 
-    const timestamp = new Date().toISOString();
-    const fileHash = generateFileHash(fileInfo.path, fileInfo.size, fileInfo.lastModified);
+    // Acquire write lock to prevent concurrent modifications
+    while (this._writeLock) {
+      await this._writeLock;
+    }
 
-    const analysisEntry = {
-      id: crypto.randomUUID(),
-      fileHash: fileHash,
-      timestamp: timestamp,
-
-      // File information
-      originalPath: fileInfo.path,
-      fileName: path.basename(fileInfo.path),
-      fileExtension: path.extname(fileInfo.path).toLowerCase(),
-      fileSize: fileInfo.size,
-      lastModified: fileInfo.lastModified,
-      mimeType: fileInfo.mimeType || null,
-
-      // Analysis results
-      analysis: {
-        subject: analysisResults.subject || null,
-        category: analysisResults.category || null,
-        tags: analysisResults.tags || [],
-        confidence: analysisResults.confidence || 0,
-        summary: analysisResults.summary || null,
-        extractedText: analysisResults.extractedText || null,
-        keyEntities: analysisResults.keyEntities || [],
-        dates: analysisResults.dates || [],
-        amounts: analysisResults.amounts || [],
-        language: analysisResults.language || null,
-        sentiment: analysisResults.sentiment || null
-      },
-
-      // Processing metadata
-      processing: {
-        model: analysisResults.model || 'unknown',
-        processingTimeMs: analysisResults.processingTime || 0,
-        version: this.SCHEMA_VERSION,
-        errorCount: analysisResults.errorCount || 0,
-        warnings: analysisResults.warnings || []
-      },
-
-      // Organization results (if file was moved/renamed)
-      organization: {
-        suggested: analysisResults.suggestedPath || null,
-        actual: analysisResults.actualPath || null,
-        renamed: analysisResults.renamed || false,
-        newName: analysisResults.newName || null,
-        smartFolder: analysisResults.smartFolder || null
-      },
-
-      // Future expansion fields
-      embedding: null, // For RAG functionality
-      relations: [], // Related files
-      userFeedback: null, // User corrections/ratings
-      exportHistory: [], // Export/share history
-      accessCount: 0,
-      lastAccessed: timestamp
-    };
-
-    // Store the entry
-    this.analysisHistory.entries[analysisEntry.id] = analysisEntry;
-    this.analysisHistory.totalAnalyzed++;
-    this.analysisHistory.totalSize += fileInfo.size;
-    this.analysisHistory.updatedAt = timestamp;
-    this.analysisHistory.metadata.totalEntries++;
-
-    // Update indexes
-    updateIndexes(this.analysisIndex, analysisEntry);
-
-    // Update incremental stats (avoids full recalculation)
-    updateIncrementalStatsOnAdd(this._cache, analysisEntry);
-
-    // Invalidate relevant caches (surgical invalidation, not full)
-    invalidateCachesOnAdd(this._cache);
-
-    // Save to disk
-    const saveResults = await Promise.allSettled([this.saveHistory(), this.saveIndex()]);
-    saveResults.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        logger.warn(`[ANALYSIS-HISTORY] Save operation ${index} failed:`, result.reason?.message);
-      }
+    let releaseLock;
+    this._writeLock = new Promise((resolve) => {
+      releaseLock = resolve;
     });
 
-    // Cleanup if needed
-    await performMaintenanceIfNeeded(
-      this.analysisHistory,
-      this.analysisIndex,
-      this._cache,
-      this,
-      this.config,
-      () => this.saveHistory(),
-      () => this.saveIndex()
-    );
+    try {
+      const timestamp = new Date().toISOString();
+      const fileHash = generateFileHash(fileInfo.path, fileInfo.size, fileInfo.lastModified);
 
-    return analysisEntry.id;
+      const analysisEntry = {
+        id: crypto.randomUUID(),
+        fileHash: fileHash,
+        timestamp: timestamp,
+
+        // File information
+        originalPath: fileInfo.path,
+        fileName: path.basename(fileInfo.path),
+        fileExtension: path.extname(fileInfo.path).toLowerCase(),
+        fileSize: fileInfo.size,
+        lastModified: fileInfo.lastModified,
+        mimeType: fileInfo.mimeType || null,
+
+        // Analysis results
+        analysis: {
+          subject: analysisResults.subject || null,
+          category: analysisResults.category || null,
+          tags: analysisResults.tags || [],
+          confidence: analysisResults.confidence || 0,
+          summary: analysisResults.summary || null,
+          extractedText: analysisResults.extractedText || null,
+          keyEntities: analysisResults.keyEntities || [],
+          dates: analysisResults.dates || [],
+          amounts: analysisResults.amounts || [],
+          language: analysisResults.language || null,
+          sentiment: analysisResults.sentiment || null
+        },
+
+        // Processing metadata
+        processing: {
+          model: analysisResults.model || 'unknown',
+          processingTimeMs: analysisResults.processingTime || 0,
+          version: this.SCHEMA_VERSION,
+          errorCount: analysisResults.errorCount || 0,
+          warnings: analysisResults.warnings || []
+        },
+
+        // Organization results (if file was moved/renamed)
+        organization: {
+          suggested: analysisResults.suggestedPath || null,
+          actual: analysisResults.actualPath || null,
+          renamed: analysisResults.renamed || false,
+          newName: analysisResults.newName || null,
+          smartFolder: analysisResults.smartFolder || null
+        },
+
+        // Future expansion fields
+        embedding: null, // For RAG functionality
+        relations: [], // Related files
+        userFeedback: null, // User corrections/ratings
+        exportHistory: [], // Export/share history
+        accessCount: 0,
+        lastAccessed: timestamp
+      };
+
+      // Store the entry
+      this.analysisHistory.entries[analysisEntry.id] = analysisEntry;
+      this.analysisHistory.totalAnalyzed++;
+      this.analysisHistory.totalSize += fileInfo.size;
+      this.analysisHistory.updatedAt = timestamp;
+      this.analysisHistory.metadata.totalEntries++;
+
+      // Update indexes
+      updateIndexes(this.analysisIndex, analysisEntry);
+
+      // Update incremental stats (avoids full recalculation)
+      updateIncrementalStatsOnAdd(this._cache, analysisEntry);
+
+      // Invalidate relevant caches (surgical invalidation, not full)
+      invalidateCachesOnAdd(this._cache);
+
+      // Save to disk
+      const saveResults = await Promise.allSettled([this.saveHistory(), this.saveIndex()]);
+      saveResults.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          logger.warn(`[ANALYSIS-HISTORY] Save operation ${index} failed:`, result.reason?.message);
+        }
+      });
+
+      // Cleanup if needed
+      await performMaintenanceIfNeeded(
+        this.analysisHistory,
+        this.analysisIndex,
+        this._cache,
+        this,
+        this.config,
+        () => this.saveHistory(),
+        () => this.saveIndex()
+      );
+
+      return analysisEntry.id;
+    } finally {
+      // Release write lock
+      this._writeLock = null;
+      releaseLock();
+    }
   }
 
   async searchAnalysis(query, options = {}) {

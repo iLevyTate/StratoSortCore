@@ -79,7 +79,7 @@ class SettingsService {
       const merged = { ...this.defaults };
       this._cache = merged;
       this._cacheTimestamp = Date.now();
-      if (err && err.code !== 'ENOENT') {
+      if (err && !isNotFoundError(err)) {
         logger.warn(`[SettingsService] Failed to read settings, using defaults: ${err.message}`);
       }
       return merged;

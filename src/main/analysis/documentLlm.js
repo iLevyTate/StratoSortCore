@@ -139,34 +139,44 @@ Document content (${truncated.length} characters, ${chunkCount} chunk(s)):
 ${truncated}`;
 
     // Use deduplicator to prevent duplicate LLM calls for identical content
+    // CRITICAL: Include 'type' and 'fileName' to prevent cross-file cache contamination
     const deduplicationKey = globalDeduplicator.generateKey({
+      type: 'document', // Prevent cross-type contamination with image analysis
+      fileName: originalFileName, // Ensure file-specific uniqueness
+      contentLength: truncated.length, // Additional uniqueness for truncated content
       text: truncated,
       model: modelToUse,
-      folders: smartFolders.map((f) => f.name).join(',')
+      folders: smartFolders
+        .map((f) => f?.name || '')
+        .filter(Boolean)
+        .join(',')
     });
 
     const client = await getOllama();
     const perfOptions = await buildOllamaOptions('text');
-    const generatePromise = globalDeduplicator.deduplicate(deduplicationKey, () =>
-      generateWithRetry(
-        client,
-        {
-          model: modelToUse,
-          prompt,
-          options: {
-            temperature: AppConfig.ai.textAnalysis.temperature,
-            num_predict: AppConfig.ai.textAnalysis.maxTokens,
-            ...perfOptions
+    const generatePromise = globalDeduplicator.deduplicate(
+      deduplicationKey,
+      () =>
+        generateWithRetry(
+          client,
+          {
+            model: modelToUse,
+            prompt,
+            options: {
+              temperature: AppConfig.ai.textAnalysis.temperature,
+              num_predict: AppConfig.ai.textAnalysis.maxTokens,
+              ...perfOptions
+            },
+            format: 'json'
           },
-          format: 'json'
-        },
-        {
-          operation: `Document analysis for ${originalFileName}`,
-          maxRetries: 3,
-          initialDelay: 1000,
-          maxDelay: 4000
-        }
-      )
+          {
+            operation: `Document analysis for ${originalFileName}`,
+            maxRetries: 3,
+            initialDelay: 1000,
+            maxDelay: 4000
+          }
+        ),
+      { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
     );
     // FIX: Store timeout ID outside Promise.race to ensure cleanup
     let timeoutId;

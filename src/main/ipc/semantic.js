@@ -17,6 +17,48 @@ const {
 const { withErrorLogging, withChromaInit } = require('./ipcWrappers');
 const { cosineSimilarity } = require('../../shared/vectorMath');
 
+// Module-level reference to SearchService for cross-module access
+let _searchServiceRef = null;
+
+// Module-level reference to ClusteringService for cross-module access
+let _clusteringServiceRef = null;
+
+/**
+ * Get the SearchService instance (if initialized)
+ * Used by fileOperationHandlers to invalidate index after file moves
+ * @returns {SearchService|null}
+ */
+function getSearchServiceInstance() {
+  return _searchServiceRef;
+}
+
+/**
+ * Set the SearchService instance reference
+ * Called internally after initialization
+ * @param {SearchService} service
+ */
+function setSearchServiceInstance(service) {
+  _searchServiceRef = service;
+}
+
+/**
+ * Get the ClusteringService instance (if initialized)
+ * Used by fileOperationHandlers to invalidate clusters after file moves/deletes
+ * @returns {ClusteringService|null}
+ */
+function getClusteringServiceInstance() {
+  return _clusteringServiceRef;
+}
+
+/**
+ * Set the ClusteringService instance reference
+ * Called internally after initialization
+ * @param {ClusteringService} service
+ */
+function setClusteringServiceInstance(service) {
+  _clusteringServiceRef = service;
+}
+
 function registerEmbeddingsIpc({
   ipcMain,
   IPC_CHANNELS,
@@ -44,6 +86,9 @@ function registerEmbeddingsIpc({
         analysisHistoryService: historyService,
         parallelEmbeddingService: embeddingService
       });
+
+      // Store reference for cross-module access (e.g., fileOperationHandlers)
+      setSearchServiceInstance(searchService);
     }
     return searchService;
   }
@@ -57,6 +102,8 @@ function registerEmbeddingsIpc({
         chromaDbService,
         ollamaService
       });
+      // Store reference for cross-module access (e.g., fileOperationHandlers)
+      setClusteringServiceInstance(clusteringService);
     }
     return clusteringService;
   }
@@ -360,6 +407,12 @@ function registerEmbeddingsIpc({
             // Use renamed name if available, otherwise fall back to original basename
             const displayName = entry.organization?.newName || path.basename(filePath);
 
+            // Extract rich metadata for graph visualization
+            const tags = Array.isArray(entry.analysis?.tags) ? entry.analysis.tags : [];
+            const category = entry.analysis?.category || '';
+            const subject = entry.analysis?.subject || '';
+            const summaryText = (entry.analysis?.summary || '').slice(0, 200);
+
             filePayloads.push({
               id: fileId,
               vector,
@@ -367,7 +420,12 @@ function registerEmbeddingsIpc({
               meta: {
                 path: filePath,
                 name: displayName,
-                type: isImage ? 'image' : 'document'
+                type: isImage ? 'image' : 'document',
+                // Rich metadata for meaningful graph visualization
+                tags: JSON.stringify(tags), // ChromaDB requires string, will parse on read
+                category,
+                subject,
+                summary: summaryText
               },
               updatedAt: new Date().toISOString()
             });
@@ -891,10 +949,114 @@ function registerEmbeddingsIpc({
     )
   );
 
+  /**
+   * Get fresh file metadata from ChromaDB
+   * Used to get current file paths after files have been moved/organized
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA,
+    withErrorLogging(logger, async (event, { fileIds } = {}) => {
+      try {
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+          return { success: true, metadata: {} };
+        }
+
+        // Validate and limit file IDs
+        const validIds = fileIds
+          .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
+          .slice(0, 100); // Limit to 100 files per request
+
+        if (validIds.length === 0) {
+          return { success: true, metadata: {} };
+        }
+
+        await chromaDbService.initialize();
+        const fileCollection = chromaDbService.fileCollection;
+
+        if (!fileCollection) {
+          return { success: false, error: 'File collection not available', metadata: {} };
+        }
+
+        const result = await fileCollection.get({
+          ids: validIds,
+          include: ['metadatas']
+        });
+
+        // Build metadata map from results
+        const metadata = {};
+        if (Array.isArray(result?.ids) && Array.isArray(result?.metadatas)) {
+          for (let i = 0; i < result.ids.length; i++) {
+            metadata[result.ids[i]] = result.metadatas[i] || {};
+          }
+        }
+
+        return { success: true, metadata };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Get file metadata failed:', e);
+        return { success: false, error: e.message, metadata: {} };
+      }
+    })
+  );
+
+  /**
+   * Find near-duplicate files across the indexed collection
+   * Groups files with high semantic similarity (>=0.9 by default)
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES,
+    withErrorLogging(logger, async (event, { threshold = 0.9, maxResults = 50 } = {}) => {
+      try {
+        // Validate threshold (should be between 0.7 and 1.0 for duplicates)
+        const numThreshold = Number(threshold);
+        if (isNaN(numThreshold) || numThreshold < 0.7 || numThreshold > 1) {
+          return {
+            success: false,
+            error: 'threshold must be a number between 0.7 and 1.0',
+            groups: [],
+            totalDuplicates: 0
+          };
+        }
+
+        // Validate maxResults
+        const numMaxResults = Number(maxResults);
+        if (!Number.isInteger(numMaxResults) || numMaxResults < 1 || numMaxResults > 200) {
+          return {
+            success: false,
+            error: 'maxResults must be an integer between 1 and 200',
+            groups: [],
+            totalDuplicates: 0
+          };
+        }
+
+        const service = getClusteringService();
+        const result = await service.findNearDuplicates({
+          threshold: numThreshold,
+          maxResults: numMaxResults
+        });
+
+        return result;
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Find duplicates failed:', e);
+        return {
+          success: false,
+          error: e.message,
+          groups: [],
+          totalDuplicates: 0
+        };
+      }
+    })
+  );
+
   // Cleanup on app quit - FIX #15: Use once() to prevent multiple listener registration
   const { app } = require('electron');
   app.once('before-quit', async () => {
     try {
+      // FIX: Clear module-level service references to prevent memory leaks
+      _searchServiceRef = null;
+      _clusteringServiceRef = null;
+      searchService = null;
+      clusteringService = null;
+
       await chromaDbService.cleanup();
     } catch (error) {
       logger.error('[ChromaDB] Cleanup error:', error);
@@ -903,3 +1065,5 @@ function registerEmbeddingsIpc({
 }
 
 module.exports = registerEmbeddingsIpc;
+module.exports.getSearchServiceInstance = getSearchServiceInstance;
+module.exports.getClusteringServiceInstance = getClusteringServiceInstance;

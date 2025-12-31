@@ -71,6 +71,12 @@ class SearchService {
     // Cached serialized index for faster rebuilds
     this._serializedIndex = null;
     this._serializedDocMap = null;
+
+    // Lock to prevent concurrent index builds (race condition fix)
+    this._indexBuildPromise = null;
+
+    // Maximum cache size in bytes (50MB) to prevent unbounded growth
+    this._maxCacheSize = 50 * 1024 * 1024;
   }
 
   /**
@@ -87,10 +93,30 @@ class SearchService {
 
   /**
    * Build or rebuild the BM25 index from analysis history
+   * Uses a lock to prevent concurrent builds (race condition safe)
    *
    * @returns {Promise<{success: boolean, indexed: number, error?: string}>}
    */
   async buildBM25Index() {
+    // Prevent concurrent index builds - return existing promise if building
+    if (this._indexBuildPromise) {
+      logger.debug('[SearchService] Index build already in progress, waiting...');
+      return this._indexBuildPromise;
+    }
+
+    this._indexBuildPromise = this._doBuildBM25Index();
+    try {
+      return await this._indexBuildPromise;
+    } finally {
+      this._indexBuildPromise = null;
+    }
+  }
+
+  /**
+   * Internal method to actually build the BM25 index
+   * @private
+   */
+  async _doBuildBM25Index() {
     try {
       logger.info('[SearchService] Building BM25 index...');
 
@@ -152,14 +178,31 @@ class SearchService {
       this.indexBuiltAt = Date.now();
       this.indexVersion++;
 
-      // Cache serialized index for faster subsequent loads
+      // Cache serialized index for faster subsequent loads (with size limit)
       // Lunr indexes support JSON serialization
       try {
-        this._serializedIndex = JSON.stringify(this.bm25Index);
-        this._serializedDocMap = JSON.stringify(Array.from(this.documentMap.entries()));
-        logger.debug('[SearchService] Index serialized for caching');
+        const serializedIndex = JSON.stringify(this.bm25Index);
+        const serializedDocMap = JSON.stringify(Array.from(this.documentMap.entries()));
+        const totalSize = serializedIndex.length + serializedDocMap.length;
+
+        if (totalSize < this._maxCacheSize) {
+          this._serializedIndex = serializedIndex;
+          this._serializedDocMap = serializedDocMap;
+          logger.debug(
+            `[SearchService] Index serialized for caching (${Math.round(totalSize / 1024)}KB)`
+          );
+        } else {
+          // Clear cache if too large to prevent memory issues
+          this._serializedIndex = null;
+          this._serializedDocMap = null;
+          logger.warn(
+            `[SearchService] Index too large to cache (${Math.round(totalSize / 1024 / 1024)}MB > ${this._maxCacheSize / 1024 / 1024}MB limit)`
+          );
+        }
       } catch (serializeErr) {
         logger.warn('[SearchService] Failed to serialize index:', serializeErr.message);
+        this._serializedIndex = null;
+        this._serializedDocMap = null;
       }
 
       logger.info(`[SearchService] BM25 index built with ${documents.length} documents`);
@@ -229,15 +272,34 @@ class SearchService {
 
       return results.slice(0, topK).map((result) => {
         const meta = this.documentMap.get(result.ref) || {};
+
+        // Extract matched terms and fields from Lunr matchData for match explanations
+        const matchedTerms = [];
+        const matchedFields = new Set();
+
+        if (result.matchData && result.matchData.metadata) {
+          Object.entries(result.matchData.metadata).forEach(([term, fields]) => {
+            matchedTerms.push(term);
+            Object.keys(fields).forEach((field) => matchedFields.add(field));
+          });
+        }
+
         return {
           id: result.ref,
           score: result.score,
           metadata: {
             path: meta.path,
             name: meta.name,
-            type: meta.type
+            type: meta.type,
+            tags: meta.tags || [],
+            category: meta.category || '',
+            subject: meta.subject || ''
           },
-          source: 'bm25'
+          source: 'bm25',
+          matchDetails: {
+            matchedTerms: matchedTerms.slice(0, 5), // Limit to top 5 terms
+            matchedFields: Array.from(matchedFields)
+          }
         };
       });
     } catch (error) {
@@ -282,12 +344,40 @@ class SearchService {
         return [];
       }
 
-      return chromaResults.map((result) => ({
-        id: result.id,
-        score: result.score || 1 - (result.distance || 0),
-        metadata: result.metadata || {},
-        source: 'vector'
-      }));
+      // Extract query words for tag/category matching
+      const queryWords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
+      return chromaResults.map((result) => {
+        const semanticScore = result.score || 1 - (result.distance || 0);
+        const metadata = result.metadata || {};
+
+        // Find query terms that appear in tags
+        const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+        const queryTermsInTags = tags.filter((tag) =>
+          queryWords.some((word) => tag.toLowerCase().includes(word))
+        );
+
+        // Check if query terms appear in category
+        const category = metadata.category || '';
+        const queryTermsInCategory = queryWords.some((word) =>
+          category.toLowerCase().includes(word)
+        );
+
+        return {
+          id: result.id,
+          score: semanticScore,
+          metadata,
+          source: 'vector',
+          matchDetails: {
+            semanticScore,
+            queryTermsInTags: queryTermsInTags.slice(0, 3),
+            queryTermsInCategory
+          }
+        };
+      });
     } catch (error) {
       logger.error('[SearchService] Vector search failed:', error);
       return [];
@@ -339,6 +429,7 @@ class SearchService {
     const rrfScores = new Map();
     const originalScores = new Map(); // Track original scores for blending
     const resultData = new Map();
+    const matchDetailsMap = new Map(); // Track and merge match details from all sources
 
     // Normalize scores within each result set for fair comparison
     const normalizedSets = normalizeScores
@@ -348,7 +439,13 @@ class SearchService {
     for (const results of normalizedSets) {
       for (let rank = 0; rank < results.length; rank++) {
         const result = results[rank];
-        const id = result.id;
+        const id = result?.id;
+
+        // Skip results with missing ID to prevent corruption
+        if (!id) {
+          logger.warn('[SearchService] Skipping result with missing id in RRF fusion');
+          continue;
+        }
 
         // RRF score contribution
         const rrfContribution = 1 / (k + rank + 1);
@@ -359,6 +456,15 @@ class SearchService {
           const currentMax = originalScores.get(id) || 0;
           originalScores.set(id, Math.max(currentMax, result.score || 0));
         }
+
+        // Merge match details from all sources
+        const existingDetails = matchDetailsMap.get(id) || { sources: [] };
+        const newDetails = result.matchDetails || {};
+        matchDetailsMap.set(id, {
+          ...existingDetails,
+          ...newDetails,
+          sources: [...existingDetails.sources, result.source].filter(Boolean)
+        });
 
         // Prefer vector search metadata (has current file names) over BM25 (may have old names)
         // Vector search uses ChromaDB which is updated when files are organized
@@ -393,7 +499,8 @@ class SearchService {
           score: finalScore,
           rrfScore: normalizedRrf,
           metadata: original.metadata || {},
-          sources: original.source ? [original.source] : ['fused']
+          sources: original.source ? [original.source] : ['fused'],
+          matchDetails: matchDetailsMap.get(id) || {}
         };
       });
 
@@ -402,6 +509,7 @@ class SearchService {
 
   /**
    * Execute vector search with timeout, falling back to empty results on timeout
+   * Properly clears timeout to prevent timer leaks
    *
    * @param {string} query - Search query
    * @param {number} topK - Number of results
@@ -409,15 +517,30 @@ class SearchService {
    * @returns {Promise<{results: Array, timedOut: boolean}>}
    */
   async _vectorSearchWithTimeout(query, topK, timeout = VECTOR_SEARCH_TIMEOUT) {
+    let timeoutId = null;
+
     try {
       const result = await Promise.race([
-        this.vectorSearch(query, topK).then((results) => ({ results, timedOut: false })),
-        new Promise((resolve) =>
-          setTimeout(() => resolve({ results: [], timedOut: true }), timeout)
-        )
+        this.vectorSearch(query, topK).then((results) => {
+          // Clear timeout immediately when search completes to prevent leak
+          if (timeoutId) clearTimeout(timeoutId);
+          return { results, timedOut: false };
+        }),
+        new Promise((resolve) => {
+          timeoutId = setTimeout(() => resolve({ results: [], timedOut: true }), timeout);
+        })
       ]);
+
+      // Ensure timeout is cleared in case of timeout winning the race
+      if (timeoutId && result.timedOut) {
+        // Timeout already fired, but clear for safety
+        clearTimeout(timeoutId);
+      }
+
       return result;
     } catch (error) {
+      // Clear timeout on error to prevent leak
+      if (timeoutId) clearTimeout(timeoutId);
       logger.warn('[SearchService] Vector search error, falling back:', error.message);
       return { results: [], timedOut: false, error: error.message };
     }
@@ -589,6 +712,29 @@ class SearchService {
   }
 
   /**
+   * Invalidate the BM25 index to force rebuild on next search
+   * Call this after file moves/deletes to ensure fresh results
+   *
+   * @param {Object} options - Invalidation options
+   * @param {string} [options.reason] - Reason for invalidation (for logging)
+   * @param {string} [options.oldPath] - Old file path (for move operations)
+   * @param {string} [options.newPath] - New file path (for move operations)
+   */
+  invalidateIndex(options = {}) {
+    const { reason = 'manual', oldPath, newPath } = options;
+
+    // Mark index as stale by setting indexBuiltAt to past
+    if (this.indexBuiltAt) {
+      this.indexBuiltAt = 0;
+      logger.info('[SearchService] BM25 index invalidated', { reason, oldPath, newPath });
+    }
+
+    // Clear serialized cache to force full rebuild
+    this._serializedIndex = null;
+    this._serializedDocMap = null;
+  }
+
+  /**
    * Warm up the search service by pre-building indices
    * Call this during app startup for faster first search
    *
@@ -649,6 +795,31 @@ class SearchService {
       cachedIndexSize: this._serializedIndex?.length || 0,
       documentCount: this.documentMap.size
     };
+  }
+
+  /**
+   * Cleanup resources on shutdown
+   * Clears all cached data and pending operations
+   */
+  cleanup() {
+    logger.info('[SearchService] Cleaning up...');
+
+    // Clear index and cache
+    this.bm25Index = null;
+    this.documentMap.clear();
+    this._serializedIndex = null;
+    this._serializedDocMap = null;
+    this.indexBuiltAt = null;
+    this._indexBuildPromise = null;
+
+    logger.info('[SearchService] Cleanup complete');
+  }
+
+  /**
+   * Alias for cleanup (for consistency with other services)
+   */
+  shutdown() {
+    this.cleanup();
   }
 }
 
