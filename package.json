@@ -253,7 +253,7 @@
     "webpack-cli": "^6.0.1",
     "webpack-merge": "^6.0.1",
     "xlsx-populate": "^1.21.0",
-    "zod": "^4.3.2"
+    "zod": "^4.3.4"
   },
   "lint-staged": {
     "*.{js,jsx}": [
