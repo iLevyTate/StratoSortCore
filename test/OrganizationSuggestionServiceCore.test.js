@@ -484,17 +484,17 @@ describe('OrganizationSuggestionServiceCore', () => {
   });
 
   describe('recordFeedback', () => {
-    test('records feedback in pattern matcher', () => {
+    test('records feedback in pattern matcher', async () => {
       const file = { name: 'test.pdf' };
       const suggestion = { folder: 'Documents' };
 
-      service.recordFeedback(file, suggestion, true);
+      await service.recordFeedback(file, suggestion, true);
 
       expect(mockPatternMatcher.recordFeedback).toHaveBeenCalledWith(file, suggestion, true);
     });
 
     test('saves patterns after feedback', async () => {
-      service.recordFeedback({}, {}, true);
+      await service.recordFeedback({}, {}, true);
 
       // Give time for async save
       await new Promise((resolve) => setTimeout(resolve, 10));

@@ -89,14 +89,16 @@ describe('Custom Folders', () => {
       expect(folders[0].name).toBe('Documents');
     });
 
-    test('creates default Uncategorized folder when file does not exist', async () => {
+    test('creates default smart folders when file does not exist', async () => {
       mockFs.readFile.mockRejectedValueOnce(new Error('ENOENT'));
 
       const folders = await customFolders.loadCustomFolders();
 
-      expect(folders).toHaveLength(1);
-      expect(folders[0].name).toBe('Uncategorized');
-      expect(folders[0].isDefault).toBe(true);
+      // Now creates 8 default folders: Documents, Images, Videos, Music, Spreadsheets, Presentations, Archives, Uncategorized
+      expect(folders).toHaveLength(8);
+      expect(folders.some((f) => f.name === 'Documents')).toBe(true);
+      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
+      expect(folders.every((f) => f.isDefault)).toBe(true);
       expect(mockFs.mkdir).toHaveBeenCalled();
     });
 
@@ -138,8 +140,9 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      // Should create default folder
-      expect(folders[0].name).toBe('Uncategorized');
+      // Should create all 8 default folders when JSON is invalid
+      expect(folders).toHaveLength(8);
+      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
     });
   });
 
@@ -180,21 +183,21 @@ describe('Custom Folders', () => {
       expect(mockFs.writeFile).toHaveBeenCalled();
     });
 
-    test('cleans up temp file on write failure', async () => {
+    test('cleans up temp file on write failure and re-throws', async () => {
       const folders = [{ id: 'folder1', name: 'Test', path: '/test' }];
       mockFs.writeFile.mockRejectedValueOnce(new Error('Write failed'));
 
-      await customFolders.saveCustomFolders(folders);
-
-      // Logger should have logged the error
+      // saveCustomFolders now re-throws errors
+      await expect(customFolders.saveCustomFolders(folders)).rejects.toThrow('Write failed');
     });
 
-    test('handles rename failure by cleaning up temp file', async () => {
+    test('handles rename failure by cleaning up temp file and re-throws', async () => {
       const folders = [{ id: 'folder1', name: 'Test', path: '/test' }];
+      // First writeFile call succeeds (for backup), second writeFile succeeds (for temp), rename fails
+      mockFs.writeFile.mockResolvedValue(undefined);
       mockFs.rename.mockRejectedValueOnce(new Error('Rename failed'));
 
-      await customFolders.saveCustomFolders(folders);
-
+      await expect(customFolders.saveCustomFolders(folders)).rejects.toThrow('Rename failed');
       expect(mockFs.unlink).toHaveBeenCalled();
     });
   });

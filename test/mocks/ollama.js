@@ -13,8 +13,13 @@ class Ollama {
       })
     };
   }
+  // Legacy API (deprecated)
   async embeddings() {
     return { embedding: Array.from({ length: 10 }, () => 0.1) };
+  }
+  // New API - uses 'input' parameter and returns 'embeddings' array
+  async embed() {
+    return { embeddings: [Array.from({ length: 10 }, () => 0.1)] };
   }
   async list() {
     return { models: [{ name: 'llama3.2:latest' }] };

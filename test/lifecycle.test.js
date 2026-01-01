@@ -201,17 +201,19 @@ describe('Lifecycle', () => {
   });
 
   describe('handleUnhandledRejection', () => {
-    test('logs unhandled rejections', () => {
+    test('logs unhandled rejections with classification', () => {
       const { logger } = require('../src/shared/logger');
       const reason = 'Test rejection reason';
       const promise = Promise.reject(reason).catch(() => {}); // Prevent actual rejection
 
       lifecycle.handleUnhandledRejection(reason, promise);
 
+      // FIX: Updated test to match enhanced error handler
       expect(logger.error).toHaveBeenCalledWith(
-        'UNHANDLED REJECTION',
+        'UNHANDLED REJECTION:',
         expect.objectContaining({
-          reason: 'Test rejection reason'
+          message: 'Test rejection reason',
+          errorType: 'UNKNOWN'
         })
       );
     });

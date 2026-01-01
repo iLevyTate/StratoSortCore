@@ -13,6 +13,17 @@ describe('Embeddings/Semantic IPC', () => {
     // IMPROVED BEHAVIOR: Now uses batch operations for better performance
     // Track batch upserts instead of individual upsertFolderEmbedding calls
     const batchUpserts = [];
+
+    // FIX: Mock Ollama utilities for model verification
+    jest.doMock('../src/main/ollamaUtils', () => ({
+      getOllama: jest.fn(() => ({
+        list: jest.fn().mockResolvedValue({
+          models: [{ name: 'embeddinggemma:latest' }]
+        })
+      })),
+      getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+    }));
+
     const mockFolderMatcher = {
       // New batch processing requires embedText method
       // eslint-disable-next-line no-unused-vars
@@ -88,6 +99,17 @@ describe('Embeddings/Semantic IPC', () => {
     const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
     // IMPROVED BEHAVIOR: Now uses batch operations for better performance
     const inserted = [];
+
+    // FIX: Mock Ollama utilities for model verification
+    jest.doMock('../src/main/ollamaUtils', () => ({
+      getOllama: jest.fn(() => ({
+        list: jest.fn().mockResolvedValue({
+          models: [{ name: 'embeddinggemma:latest' }]
+        })
+      })),
+      getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+    }));
+
     const mockFolderMatcher = {
       // New batch processing requires embedText method
       // eslint-disable-next-line no-unused-vars
@@ -562,6 +584,16 @@ describe('Embeddings/Semantic IPC', () => {
       const resetFoldersCalls = [];
       const fsOperations = [];
 
+      // FIX: Mock Ollama utilities for model verification
+      jest.doMock('../src/main/ollamaUtils', () => ({
+        getOllama: jest.fn(() => ({
+          list: jest.fn().mockResolvedValue({
+            models: [{ name: 'embeddinggemma:latest' }]
+          })
+        })),
+        getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+      }));
+
       jest.doMock('../src/main/services/FolderMatchingService', () => ({
         getInstance: () => ({
           embedText: jest.fn(async () => ({
@@ -642,6 +674,16 @@ describe('Embeddings/Semantic IPC', () => {
       const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
       const resetFilesCalls = [];
       const fsOperations = [];
+
+      // FIX: Mock Ollama utilities for model verification
+      jest.doMock('../src/main/ollamaUtils', () => ({
+        getOllama: jest.fn(() => ({
+          list: jest.fn().mockResolvedValue({
+            models: [{ name: 'embeddinggemma:latest' }]
+          })
+        })),
+        getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+      }));
 
       jest.doMock('../src/main/services/FolderMatchingService', () => ({
         getInstance: () => ({

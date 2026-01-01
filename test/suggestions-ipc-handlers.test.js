@@ -51,7 +51,10 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
     success: false,
     error: error.message || error,
     ...extras
-  })
+  }),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock validation schemas

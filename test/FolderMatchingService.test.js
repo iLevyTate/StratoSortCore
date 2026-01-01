@@ -117,16 +117,14 @@ describe('FolderMatchingService', () => {
       });
     });
 
-    test('should return fallback vector on error', async () => {
+    test('should throw error on embedding failure', async () => {
       mockOllama.embed.mockRejectedValueOnce(new Error('Ollama connection failed'));
 
-      const result = await service.embedText('test text');
-
-      expect(result).toBeDefined();
-      expect(result.vector).toBeInstanceOf(Array);
-      expect(result.vector.length).toBe(1024);
-      expect(result.model).toBe('fallback');
-      expect(result.vector.every((v) => v === 0)).toBe(true);
+      // FIX: Now throws error instead of returning fallback zero vector
+      // Zero vectors are useless for semantic search and pollute the database
+      await expect(service.embedText('test text')).rejects.toThrow(
+        'Embedding generation failed: Ollama connection failed'
+      );
     });
 
     test('should cache results per model', async () => {
@@ -484,6 +482,37 @@ describe('FolderMatchingService', () => {
       const cache2 = newService.embeddingCache;
 
       expect(cache1).toBe(cache2);
+      newService.shutdown();
+    });
+
+    test('should handle concurrent initialization safely (race condition fix)', async () => {
+      // Test that multiple concurrent calls to initialize() all receive the same promise
+      // and don't cause multiple initializations or race conditions
+      const newService = new FolderMatchingService(mockChromaDBService);
+      expect(newService.embeddingCache.initialized).toBe(false);
+
+      // Fire multiple initialize calls concurrently
+      const promises = [
+        newService.initialize(),
+        newService.initialize(),
+        newService.initialize(),
+        newService.initialize(),
+        newService.initialize()
+      ];
+
+      // All should resolve successfully
+      await Promise.all(promises);
+
+      // Service should only be initialized once
+      expect(newService.embeddingCache.initialized).toBe(true);
+
+      // The _initPromise should still exist (not cleared)
+      expect(newService._initPromise).toBeDefined();
+
+      // Subsequent calls should still work
+      await newService.initialize();
+      expect(newService.embeddingCache.initialized).toBe(true);
+
       newService.shutdown();
     });
 

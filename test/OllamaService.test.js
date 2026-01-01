@@ -399,13 +399,32 @@ describe('OllamaService', () => {
       });
     });
 
-    test('should handle embedding errors', async () => {
+    test('should handle embedding errors with fallback chain', async () => {
+      // FIX: Updated test to match new fallback behavior
+      // The service now tries multiple models before failing
       mockOllama.embed.mockRejectedValue(new Error('Embedding failed'));
 
       const result = await OllamaServiceModule.generateEmbedding('text');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Embedding failed');
+      // Error message now includes all attempted models
+      expect(result.error).toContain('All embedding models failed');
+      expect(result.attemptedModels).toBeDefined();
+      expect(result.errors).toBeDefined();
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    test('should skip fallback chain when specific model is requested', async () => {
+      mockOllama.embed.mockRejectedValue(new Error('Model not found'));
+
+      // When a specific model is requested, don't use fallback
+      const result = await OllamaServiceModule.generateEmbedding('text', {
+        model: 'specific-model'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Model not found');
+      expect(result.model).toBe('specific-model');
     });
   });
 

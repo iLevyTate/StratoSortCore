@@ -427,4 +427,59 @@ describe('ClusteringService', () => {
       }
     });
   });
+
+  describe('duplicate detection thresholds', () => {
+    test('enforces MIN_SAFE_THRESHOLD for duplicate detection', async () => {
+      // Create mock with high similarity embeddings
+      const nearDuplicateEmbedding = createMockEmbedding(1);
+
+      // Add count method required by findNearDuplicates
+      mockChromaDb.fileCollection.count = jest.fn().mockResolvedValue(2);
+      mockChromaDb.fileCollection.get.mockResolvedValue({
+        ids: ['file1', 'file2'],
+        embeddings: [nearDuplicateEmbedding, nearDuplicateEmbedding],
+        metadatas: [
+          { name: 'doc1.pdf', type: 'pdf' },
+          { name: 'doc2.pdf', type: 'pdf' }
+        ]
+      });
+
+      // Try to use unsafe low threshold (0.3) - should be clamped to MIN_SAFE_THRESHOLD (0.7)
+      const result = await service.findNearDuplicates({ threshold: 0.3 });
+
+      // Should not throw and should return valid result
+      expect(result).toBeDefined();
+      expect(result.success).toBe(true);
+    });
+
+    test('respects MAX_PAIRS_LIMIT for duplicate detection', async () => {
+      // Create many similar files that would generate many pairs
+      const embedding = createMockEmbedding(1);
+      const manyFiles = [];
+      const manyEmbeddings = [];
+      const manyMetadatas = [];
+
+      // Generate 200 files which would be 19900 pairs without limit
+      for (let i = 0; i < 200; i++) {
+        manyFiles.push(`file${i}`);
+        manyEmbeddings.push(embedding); // Same embedding = all duplicates
+        manyMetadatas.push({ name: `doc${i}.pdf`, type: 'pdf' });
+      }
+
+      // Add count method required by findNearDuplicates
+      mockChromaDb.fileCollection.count = jest.fn().mockResolvedValue(200);
+      mockChromaDb.fileCollection.get.mockResolvedValue({
+        ids: manyFiles,
+        embeddings: manyEmbeddings,
+        metadatas: manyMetadatas
+      });
+
+      // Should complete without memory exhaustion
+      const result = await service.findNearDuplicates({ threshold: 0.99 });
+
+      // Should have limited results (MAX_PAIRS_LIMIT = 10000)
+      expect(result.success).toBe(true);
+      expect(result.groups.length).toBeLessThanOrEqual(10000);
+    });
+  });
 });

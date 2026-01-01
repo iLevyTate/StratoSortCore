@@ -37,8 +37,12 @@ jest.mock('../src/shared/logger', () => ({
 }));
 
 // Mock IPC wrappers - createHandler passes through the handler function
+// safeHandle uses the registry which also needs to be mocked
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  createHandler: ({ handler }) => handler
+  createHandler: ({ handler }) => handler,
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock DependencyManagerService

@@ -16,7 +16,10 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler)
+  withErrorLogging: jest.fn((logger, handler) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock fs.promises for path validation

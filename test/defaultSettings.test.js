@@ -68,7 +68,7 @@ describe('defaultSettings', () => {
     });
 
     test('has visionModel', () => {
-      expect(DEFAULT_SETTINGS.visionModel).toBe('smolvlm2:2.2b');
+      expect(DEFAULT_SETTINGS.visionModel).toBe('gemma3:latest');
     });
 
     test('has embeddingModel', () => {

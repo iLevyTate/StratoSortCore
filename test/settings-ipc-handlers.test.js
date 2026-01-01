@@ -132,7 +132,10 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
     return response;
   },
   errorResponse: (error, extras = {}) => ({ success: false, error, ...extras }),
-  canceledResponse: () => ({ success: false, canceled: true })
+  canceledResponse: () => ({ success: false, canceled: true }),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock zod - return null to use the fallback path without validation

@@ -24,9 +24,12 @@ jest.mock('../src/shared/errorHandlingUtils', () => ({
   }
 }));
 
-// Mock ipcRegistry
+// Mock ipcRegistry - must forward to ipcMain.handle
 jest.mock('../src/main/core/ipcRegistry', () => ({
-  registerHandler: jest.fn()
+  registerHandler: jest.fn((ipcMain, channel, handler) => {
+    // Forward to the mocked ipcMain.handle
+    ipcMain.handle(channel, handler);
+  })
 }));
 
 describe('IPC Wrappers', () => {

@@ -460,7 +460,7 @@ describe('Settings Validation', () => {
     test('returns correct default for all standard settings', () => {
       expect(getDefaultValue('ollamaHost')).toBe('http://127.0.0.1:11434');
       expect(getDefaultValue('textModel')).toBe('qwen3:0.6b');
-      expect(getDefaultValue('visionModel')).toBe('smolvlm2:2.2b');
+      expect(getDefaultValue('visionModel')).toBe('gemma3:latest');
       expect(getDefaultValue('embeddingModel')).toBe('embeddinggemma');
       expect(getDefaultValue('autoOrganize')).toBe(false);
       expect(getDefaultValue('backgroundMode')).toBe(false);

@@ -30,7 +30,7 @@ jest.mock('../src/shared/constants', () => ({
   SUPPORTED_ARCHIVE_EXTENSIONS: ['.zip', '.rar'],
   DEFAULT_AI_MODELS: {
     TEXT_ANALYSIS: 'qwen3:0.6b',
-    IMAGE_ANALYSIS: 'smolvlm2:2.2b',
+    IMAGE_ANALYSIS: 'gemma3:latest',
     EMBEDDING: 'embeddinggemma'
   }
 }));
@@ -47,7 +47,10 @@ jest.mock('../src/shared/performanceConstants', () => ({
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler)
+  withErrorLogging: jest.fn((logger, handler) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock electron

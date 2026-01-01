@@ -23,9 +23,32 @@ jest.mock('../src/shared/errorHandlingUtils', () => ({
   }
 }));
 
-// Mock ipcRegistry
+// Mock ipcRegistry - must forward to ipcMain.handle
 jest.mock('../src/main/core/ipcRegistry', () => ({
-  registerHandler: jest.fn()
+  registerHandler: jest.fn((ipcMain, channel, handler) => {
+    // Forward to the mocked ipcMain.handle
+    ipcMain.handle(channel, handler);
+  })
+}));
+
+// Mock ipcWrappers
+jest.mock('../src/main/ipc/ipcWrappers', () => ({
+  createHandler: jest.fn(({ handler, getService, fallbackResponse }) => {
+    return async (event, ...args) => {
+      const service = getService ? getService() : null;
+      if (!service) {
+        return fallbackResponse;
+      }
+      // For handlers that take (event, arg, service) vs (event, service)
+      if (args.length > 0 && args[0] !== undefined) {
+        return await handler(event, args[0], service);
+      }
+      return await handler(event, service);
+    };
+  }),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 describe('Undo/Redo IPC Handlers', () => {
