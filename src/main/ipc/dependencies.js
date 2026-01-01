@@ -1,4 +1,4 @@
-const { createHandler } = require('./ipcWrappers');
+const { createHandler, safeHandle } = require('./ipcWrappers');
 const { getInstance: getDependencyManager } = require('../services/DependencyManagerService');
 const { getStartupManager } = require('../services/startup');
 
@@ -76,7 +76,8 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
     onProgress: (data) => sendProgress(data)
   });
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.DEPENDENCIES.GET_STATUS,
     createHandler({
       logger: safeLogger,
@@ -88,7 +89,8 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA,
     createHandler({
       logger: safeLogger,
@@ -119,7 +121,8 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.DEPENDENCIES.UPDATE_OLLAMA,
     createHandler({
       logger: safeLogger,
@@ -132,7 +135,8 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB,
     createHandler({
       logger: safeLogger,
@@ -180,7 +184,8 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.DEPENDENCIES.UPDATE_CHROMADB,
     createHandler({
       logger: safeLogger,

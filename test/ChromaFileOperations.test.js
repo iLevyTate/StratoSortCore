@@ -547,16 +547,22 @@ describe('ChromaDB File Operations', () => {
   });
 
   describe('resetFiles', () => {
+    const mockEmbeddingFunction = { generate: jest.fn() };
+
     test('deletes and recreates collection', async () => {
-      const result = await resetFiles({ client: mockClient });
+      const result = await resetFiles({
+        client: mockClient,
+        embeddingFunction: mockEmbeddingFunction
+      });
 
       expect(mockClient.deleteCollection).toHaveBeenCalledWith({
         name: 'file_embeddings'
       });
       expect(mockClient.createCollection).toHaveBeenCalledWith({
         name: 'file_embeddings',
+        embeddingFunction: mockEmbeddingFunction,
         metadata: expect.objectContaining({
-          hnsw_space: 'cosine'
+          'hnsw:space': 'cosine'
         })
       });
       expect(result).toBe(mockFileCollection);
@@ -565,7 +571,9 @@ describe('ChromaDB File Operations', () => {
     test('throws on failure', async () => {
       mockClient.deleteCollection.mockRejectedValueOnce(new Error('Reset failed'));
 
-      await expect(resetFiles({ client: mockClient })).rejects.toThrow('Reset failed');
+      await expect(
+        resetFiles({ client: mockClient, embeddingFunction: mockEmbeddingFunction })
+      ).rejects.toThrow('Reset failed');
     });
   });
 });

@@ -38,7 +38,10 @@ jest.mock('../src/shared/constants', () => ({
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: jest.fn((logger, handler) => handler),
-  withValidation: jest.fn((logger, schema, handler) => handler)
+  withValidation: jest.fn((logger, schema, handler) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock validationSchemas

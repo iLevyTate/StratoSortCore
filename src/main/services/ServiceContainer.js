@@ -380,60 +380,91 @@ class ServiceContainer {
    * Shutdown the container and all services
    *
    * Calls shutdown/cleanup methods on all singleton services that implement them.
+   * Uses SHUTDOWN_ORDER to ensure dependent services are stopped before their dependencies.
    * Should be called when the application is closing.
    *
+   * @param {string[]} [shutdownOrder] - Optional custom shutdown order (defaults to SHUTDOWN_ORDER)
    * @returns {Promise<void>}
    */
-  async shutdown() {
+  async shutdown(shutdownOrder = null) {
     if (this._isShuttingDown) {
       logger.warn('[ServiceContainer] Shutdown already in progress');
       return;
     }
 
     this._isShuttingDown = true;
-    logger.info('[ServiceContainer] Starting shutdown...');
+    logger.info('[ServiceContainer] Starting coordinated shutdown...');
 
-    const shutdownPromises = [];
+    // Track which services have been shut down
+    const shutdownComplete = new Set();
 
-    for (const [name, registration] of this._registrations) {
-      if (registration.lifetime === ServiceLifetime.SINGLETON && registration.instance !== null) {
-        const instance = registration.instance;
+    /**
+     * Shutdown a single service by name
+     * @param {string} name - Service name
+     * @returns {Promise<void>}
+     */
+    const shutdownService = async (name) => {
+      if (shutdownComplete.has(name)) return;
 
-        // Try to call shutdown or cleanup methods
+      const registration = this._registrations.get(name);
+      if (!registration) return;
+      if (registration.lifetime !== ServiceLifetime.SINGLETON) return;
+      if (registration.instance === null) return;
+
+      const instance = registration.instance;
+      shutdownComplete.add(name);
+
+      try {
         if (typeof instance.shutdown === 'function') {
           logger.debug(`[ServiceContainer] Calling shutdown on: ${name}`);
-          shutdownPromises.push(
-            Promise.resolve(instance.shutdown()).catch((error) => {
-              logger.error(`[ServiceContainer] Error shutting down ${name}:`, error);
-            })
-          );
+          await Promise.resolve(instance.shutdown());
         } else if (typeof instance.cleanup === 'function') {
           logger.debug(`[ServiceContainer] Calling cleanup on: ${name}`);
-          shutdownPromises.push(
-            Promise.resolve(instance.cleanup()).catch((error) => {
-              logger.error(`[ServiceContainer] Error cleaning up ${name}:`, error);
-            })
-          );
+          await Promise.resolve(instance.cleanup());
         } else if (typeof instance.dispose === 'function') {
           logger.debug(`[ServiceContainer] Calling dispose on: ${name}`);
-          shutdownPromises.push(
-            Promise.resolve(instance.dispose()).catch((error) => {
-              logger.error(`[ServiceContainer] Error disposing ${name}:`, error);
-            })
-          );
+          await Promise.resolve(instance.dispose());
         }
+        logger.debug(`[ServiceContainer] Successfully shut down: ${name}`);
+      } catch (error) {
+        logger.error(`[ServiceContainer] Error shutting down ${name}:`, error?.message || error);
+      }
+    };
+
+    // Phase 1: Shutdown services in the specified order (sequentially)
+    // This ensures dependent services stop before their dependencies
+    // Use provided order or import default SHUTDOWN_ORDER
+    const order = shutdownOrder || [];
+
+    for (const serviceName of order) {
+      await shutdownService(serviceName);
+    }
+
+    // Phase 2: Shutdown any remaining services not in the order list (parallel)
+    const remainingServices = [];
+    for (const [name, registration] of this._registrations) {
+      if (
+        !shutdownComplete.has(name) &&
+        registration.lifetime === ServiceLifetime.SINGLETON &&
+        registration.instance !== null
+      ) {
+        remainingServices.push(shutdownService(name));
       }
     }
 
-    // Wait for all shutdown operations
-    await Promise.allSettled(shutdownPromises);
+    if (remainingServices.length > 0) {
+      logger.debug(
+        `[ServiceContainer] Shutting down ${remainingServices.length} unordered services...`
+      );
+      await Promise.allSettled(remainingServices);
+    }
 
     // Clear all registrations
     this._registrations.clear();
     this._initPromises.clear();
     this._resolutionStack.clear();
 
-    logger.info('[ServiceContainer] Shutdown complete');
+    logger.info(`[ServiceContainer] Shutdown complete (${shutdownComplete.size} services stopped)`);
   }
 
   /**
@@ -472,11 +503,13 @@ const ServiceIds = {
   OLLAMA_CLIENT: 'ollamaClient',
   PARALLEL_EMBEDDING: 'parallelEmbedding',
   EMBEDDING_CACHE: 'embeddingCache',
+  MODEL_MANAGER: 'modelManager',
 
   // Analysis services
   FOLDER_MATCHING: 'folderMatching',
   ORGANIZATION_SUGGESTION: 'organizationSuggestion',
   AUTO_ORGANIZE: 'autoOrganize',
+  CLUSTERING: 'clustering', // FIX: Added as separate DI entry to avoid circular dependency
 
   // State services
   ANALYSIS_HISTORY: 'analysisHistory',
@@ -488,9 +521,38 @@ const ServiceIds = {
   FILE_ACCESS_POLICY: 'fileAccessPolicy'
 };
 
+/**
+ * Shutdown order for services (reverse of initialization dependency order)
+ * Services are shut down in this order to ensure dependent services
+ * are stopped before their dependencies.
+ * @readonly
+ * @type {string[]}
+ */
+const SHUTDOWN_ORDER = [
+  // First: High-level services that use other services
+  ServiceIds.AUTO_ORGANIZE,
+  ServiceIds.ORGANIZATION_SUGGESTION,
+  ServiceIds.CLUSTERING, // FIX: HIGH - Added to shutdown order (was missing, causing improper cleanup)
+  ServiceIds.PARALLEL_EMBEDDING,
+  ServiceIds.FOLDER_MATCHING,
+  // Second: Core infrastructure services
+  ServiceIds.EMBEDDING_CACHE,
+  ServiceIds.MODEL_MANAGER,
+  ServiceIds.OLLAMA_SERVICE,
+  ServiceIds.OLLAMA_CLIENT,
+  ServiceIds.CHROMA_DB,
+  // Third: State management services
+  ServiceIds.PROCESSING_STATE,
+  ServiceIds.UNDO_REDO,
+  ServiceIds.ANALYSIS_HISTORY,
+  // Last: Settings and config
+  ServiceIds.SETTINGS
+];
+
 module.exports = {
   ServiceContainer,
   container,
   ServiceLifetime,
-  ServiceIds
+  ServiceIds,
+  SHUTDOWN_ORDER
 };

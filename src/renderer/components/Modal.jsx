@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 
@@ -257,6 +257,34 @@ export const ConfirmModal = ({
   variant = 'default', // default, danger, warning, info
   fileName = null // For file operations
 }) => {
+  // FIX: Add loading state to prevent race condition with async onConfirm handlers
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  // FIX: Reset loading state when modal closes/opens
+  useEffect(() => {
+    if (!isOpen) {
+      setIsConfirming(false);
+    }
+  }, [isOpen]);
+
+  // FIX: Handle async onConfirm properly - wait for completion before closing
+  const handleConfirm = useCallback(async () => {
+    if (isConfirming) return; // Prevent double-clicks
+
+    setIsConfirming(true);
+    try {
+      // Await onConfirm in case it's async
+      await onConfirm();
+      onClose();
+    } catch (error) {
+      // If onConfirm throws, still allow closing but log the error
+      console.error('[ConfirmModal] onConfirm failed:', error);
+      onClose();
+    } finally {
+      setIsConfirming(false);
+    }
+  }, [isConfirming, onConfirm, onClose]);
+
   const getConfirmButtonClass = () => {
     const baseClass =
       'px-[var(--panel-padding)] py-[var(--spacing-cozy)] rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 transform hover:scale-105 active:scale-95';
@@ -339,18 +367,16 @@ export const ConfirmModal = ({
 
         {/* Action Buttons */}
         <div className="flex gap-[var(--spacing-cozy)] justify-end pt-[var(--spacing-default)] border-t border-border-soft/70">
-          <button onClick={onClose} className={getCancelButtonClass()}>
+          <button onClick={onClose} className={getCancelButtonClass()} disabled={isConfirming}>
             {cancelText}
           </button>
           <button
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+            onClick={handleConfirm}
             className={getConfirmButtonClass()}
+            disabled={isConfirming}
             autoFocus
           >
-            {confirmText}
+            {isConfirming ? 'Processing...' : confirmText}
           </button>
         </div>
       </div>

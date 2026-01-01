@@ -3,7 +3,7 @@
  * TIER 2 - Critical for Ollama model management and fallback handling
  */
 
-const ModelManager = require('../src/main/services/ModelManager');
+const { ModelManager } = require('../src/main/services/ModelManager');
 const fs = require('fs').promises;
 
 // Mock electron app

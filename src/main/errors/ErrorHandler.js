@@ -76,7 +76,8 @@ function sanitizeLogData(data) {
 
 class ErrorHandler {
   constructor() {
-    this.logPath = path.join(app.getPath('userData'), 'logs');
+    // FIX: Defer getting logPath until app is ready
+    this.logPath = null;
     this.currentLogFile = null;
     this.errorQueue = [];
     this.isInitialized = false;
@@ -84,6 +85,9 @@ class ErrorHandler {
 
   async initialize() {
     try {
+      // FIX: Set logPath here when app is ready (not in constructor)
+      this.logPath = path.join(app.getPath('userData'), 'logs');
+
       // Create logs directory
       await fs.mkdir(this.logPath, { recursive: true });
 
@@ -105,17 +109,14 @@ class ErrorHandler {
   }
 
   setupGlobalHandlers() {
-    // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      this.handleCriticalError('Uncaught Exception', error);
-    });
+    // NOTE: process.on('uncaughtException') and process.on('unhandledRejection')
+    // are handled by lifecycle.js with proper cleanup. Do NOT register them here
+    // to avoid duplicate handlers which cause:
+    // 1. Double logging of errors
+    // 2. Memory leaks from untracked listeners
+    // 3. Conflicting error handling logic
 
-    // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason) => {
-      this.handleCriticalError('Unhandled Promise Rejection', reason);
-    });
-
-    // Handle Electron errors
+    // Handle Electron-specific errors only (these are not in lifecycle.js)
     app.on('render-process-gone', (event, webContents, details) => {
       this.handleCriticalError('Renderer Process Crashed', details);
     });
@@ -159,35 +160,57 @@ class ErrorHandler {
   }
 
   /**
-   * Parse error to extract useful information
+   * Parse error to extract useful information with user-friendly messages
    */
   parseError(error) {
     const errorInfo = {
       type: ERROR_TYPES.UNKNOWN,
-      message: 'An unexpected error occurred',
+      message: 'Something went wrong. Please try again.',
       details: {},
       stack: error?.stack
     };
 
     if (error instanceof Error) {
-      errorInfo.message = error.message;
-
-      // Determine error type using centralized error classifier
+      // Determine error type and provide actionable messages
       // Note: AI/Ollama check comes before network check because Ollama connection
       // errors should be classified as AI_UNAVAILABLE, not NETWORK_ERROR
       if (isNotFoundError(error)) {
         errorInfo.type = ERROR_TYPES.FILE_NOT_FOUND;
-        errorInfo.message = 'File or directory not found';
+        errorInfo.message = 'Could not find the file or folder. It may have been moved or deleted.';
       } else if (isPermissionError(error)) {
         errorInfo.type = ERROR_TYPES.PERMISSION_DENIED;
-        errorInfo.message = 'Permission denied';
+        errorInfo.message =
+          'Access denied. Check that you have permission to access this location.';
       } else if (error.message.includes('AI') || error.message.includes('Ollama')) {
         errorInfo.type = ERROR_TYPES.AI_UNAVAILABLE;
-        errorInfo.message = 'AI service is unavailable';
+        // Provide specific guidance based on the error
+        if (error.message.includes('ECONNREFUSED') || error.message.includes('connection')) {
+          errorInfo.message =
+            'Cannot connect to Ollama. Make sure Ollama is running (ollama serve).';
+        } else if (error.message.includes('model')) {
+          errorInfo.message =
+            'AI model not available. Check Settings to ensure your model is installed.';
+        } else {
+          errorInfo.message =
+            'AI service unavailable. Check that Ollama is running and configured in Settings.';
+        }
       } else if (isNetworkError(error)) {
         errorInfo.type = ERROR_TYPES.NETWORK_ERROR;
-        errorInfo.message = 'Network connection error';
+        if (error.message.includes('timeout')) {
+          errorInfo.message =
+            'Request timed out. The AI model may be loading or your system is busy.';
+        } else {
+          errorInfo.message = 'Connection issue. Check your network and Ollama status.';
+        }
+      } else {
+        // Keep original message if it's user-friendly, otherwise provide generic
+        const msg = error.message || '';
+        // Check if message is already user-friendly (contains actionable language)
+        if (msg.length < 100 && !msg.includes('undefined') && !msg.includes('null')) {
+          errorInfo.message = msg;
+        }
       }
+      errorInfo.details = { originalMessage: error.message };
     }
 
     return errorInfo;
@@ -291,7 +314,9 @@ class ErrorHandler {
 
     try {
       const logLine = `${JSON.stringify(logEntry)}\n`;
-      await fs.appendFile(this.currentLogFile, logLine);
+      // FIX: Use sync version to avoid async issues during startup
+      const fsSync = require('fs');
+      fsSync.appendFileSync(this.currentLogFile, logLine);
     } catch (error) {
       logger.error('Failed to write to log file:', { error: error.message });
     }
@@ -320,17 +345,19 @@ class ErrorHandler {
    */
   async cleanupLogs(daysToKeep = 7) {
     try {
-      const files = await fs.readdir(this.logPath);
+      // FIX: Use sync operations to avoid async issues during startup
+      const fsSync = require('fs');
+      const files = fsSync.readdirSync(this.logPath);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
 
       for (const file of files) {
         if (file.startsWith('stratosort-') && file.endsWith('.log')) {
           const filePath = path.join(this.logPath, file);
-          const stats = await fs.stat(filePath);
+          const stats = fsSync.statSync(filePath);
 
           if (stats.mtime < cutoffDate) {
-            await fs.unlink(filePath);
+            fsSync.unlinkSync(filePath);
             await this.log('info', `Cleaned up old log file: ${file}`);
           }
         }

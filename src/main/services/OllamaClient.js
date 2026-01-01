@@ -410,7 +410,11 @@ class OllamaClient {
 
     this.offlineQueueTimer = setInterval(() => {
       if (this.isHealthy && this.offlineQueue.length > 0 && !this.isProcessingOfflineQueue) {
-        this._processOfflineQueue();
+        // FIX: Add .catch() to handle rejected promises from async processing
+        // Previously, unhandled promise rejections could crash Node.js in strict mode
+        this._processOfflineQueue().catch((err) => {
+          logger.error('[OllamaClient] Offline queue processing error:', err.message);
+        });
       }
     }, this.config.offlineQueueFlushInterval);
 
@@ -494,6 +498,13 @@ class OllamaClient {
       }
       case REQUEST_TYPES.GENERATE:
         return ollama.generate(request.payload);
+      case REQUEST_TYPES.VISION:
+        // FIX: Handle VISION requests in offline queue
+        // Vision requests use generate() with images array
+        return ollama.generate(request.payload);
+      case REQUEST_TYPES.LIST:
+        // FIX: Handle LIST requests in offline queue (for model listing)
+        return ollama.list();
       default:
         throw new Error(`Unknown request type: ${request.type}`);
     }
@@ -529,13 +540,37 @@ class OllamaClient {
             // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
             // Convert options.prompt → input for the new API
             const { prompt, ...rest } = options;
-            const response = await ollama.embed({ ...rest, input: prompt });
-            // Convert response back to legacy format for backward compatibility
-            const embedding =
-              Array.isArray(response.embeddings) && response.embeddings.length > 0
-                ? response.embeddings[0]
-                : [];
-            return { ...response, embedding };
+
+            // FIX: CRITICAL - Add per-request timeout to prevent indefinite hangs
+            // Previously, if model was loading or Ollama was unresponsive, this would hang forever
+            const requestTimeout = TIMEOUTS.EMBEDDING_REQUEST;
+            // FIX: Store timeout ID so we can clear it to prevent memory leak
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+              timeoutId = setTimeout(() => {
+                reject(new Error(`Embedding request timeout after ${requestTimeout}ms`));
+              }, requestTimeout);
+            });
+
+            try {
+              const response = await Promise.race([
+                ollama.embed({ ...rest, input: prompt }),
+                timeoutPromise
+              ]);
+              // FIX: Clear timeout on success to prevent memory leak
+              clearTimeout(timeoutId);
+
+              // Convert response back to legacy format for backward compatibility
+              const embedding =
+                Array.isArray(response.embeddings) && response.embeddings.length > 0
+                  ? response.embeddings[0]
+                  : [];
+              return { ...response, embedding };
+            } catch (raceError) {
+              // FIX: Clear timeout on error as well
+              clearTimeout(timeoutId);
+              throw raceError;
+            }
           },
           { operation: `Embedding (${options.model})` }
         );

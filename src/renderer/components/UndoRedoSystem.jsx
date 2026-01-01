@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
 import { ConfirmModal } from './Modal';
+import { useNotification } from '../contexts/NotificationContext';
 
 // Set logger context for this component
 logger.setContext('UndoRedoSystem');
@@ -16,27 +17,6 @@ const generateSecureId = () => {
 
 // Undo/Redo Context
 const UndoRedoContext = createContext();
-
-// Simple notification interface for UndoRedo system
-function useSimpleNotifications() {
-  return {
-    showSuccess: (title, description) => {
-      // Debug logging in development mode
-      if (process.env.NODE_ENV === 'development') {
-        logger.debug('Undo/Redo success', { title, description });
-      }
-    },
-    showError: (title, description) => {
-      logger.error('Undo/Redo error', { title, description });
-    },
-    showInfo: (title, description) => {
-      // Debug logging in development mode
-      if (process.env.NODE_ENV === 'development') {
-        logger.debug('Undo/Redo info', { title, description });
-      }
-    }
-  };
-}
 
 // Use shared action type constants so renderer/main/tests are aligned
 import { ACTION_TYPES as SHARED_ACTION_TYPES } from '../../shared/constants';
@@ -197,7 +177,7 @@ export function UndoRedoProvider({ children }) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isHistoryVisible, setIsHistoryVisible] = useState(false);
-  const { showSuccess, showError, showInfo } = useSimpleNotifications();
+  const { showSuccess, showError, showInfo } = useNotification();
 
   // FIX: Track mounted state to prevent listener updates after unmount
   const isMountedRef = React.useRef(true);
@@ -207,6 +187,10 @@ export function UndoRedoProvider({ children }) {
       isMountedRef.current = false;
     };
   }, []);
+
+  // FIX: Add mutex to prevent concurrent action execution
+  const actionMutexRef = React.useRef(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   // Local confirmation dialog state for nicer UX than window.confirm
   const [confirmState, setConfirmState] = useState({
@@ -264,7 +248,17 @@ export function UndoRedoProvider({ children }) {
   }, [undoStack, updateState]);
 
   // Execute action with undo capability
+  // FIX: Added mutex to prevent concurrent action execution
   const executeAction = async (actionConfig) => {
+    // Prevent concurrent actions
+    if (actionMutexRef.current) {
+      showInfo('Please wait for the current action to complete');
+      return null;
+    }
+
+    actionMutexRef.current = true;
+    setIsExecuting(true);
+
     try {
       // Execute the action
       const result = await actionConfig.execute();
@@ -279,20 +273,30 @@ export function UndoRedoProvider({ children }) {
         result
       });
 
-      showSuccess('Action Completed', `${actionConfig.description} completed successfully`);
+      showSuccess(`${actionConfig.description} completed`);
 
       return result;
     } catch (error) {
       showError(
-        'Action Failed',
-        `Failed to ${actionConfig.description.toLowerCase()}: ${error.message}`
+        `Failed to ${actionConfig.description.toLowerCase()}: ${error?.message || String(error)}`
       );
       throw error;
+    } finally {
+      actionMutexRef.current = false;
+      if (isMountedRef.current) {
+        setIsExecuting(false);
+      }
     }
   };
 
   // Undo last action with confirmation for important operations
+  // FIX: Added mutex check to prevent concurrent operations
   const undo = async () => {
+    if (actionMutexRef.current) {
+      showInfo('Please wait for the current action to complete');
+      return;
+    }
+
     const action = undoStack.peek();
     if (!action) return;
 
@@ -322,31 +326,57 @@ export function UndoRedoProvider({ children }) {
       }
     }
 
+    actionMutexRef.current = true;
+    setIsExecuting(true);
+
     const undoAction = undoStack.undo();
-    if (!undoAction) return;
+    if (!undoAction) {
+      actionMutexRef.current = false;
+      if (isMountedRef.current) setIsExecuting(false);
+      return;
+    }
 
     try {
       await undoAction.undo();
-      showInfo('Action Undone', `Undid: ${undoAction.description}`);
+      showSuccess(`Undid: ${undoAction.description}`);
     } catch (error) {
       // If undo fails, restore the action to the stack
       undoStack.push(undoAction);
-      showError('Undo Failed', `Failed to undo ${undoAction.description}: ${error.message}`);
+      showError(`Failed to undo ${undoAction.description}: ${error?.message || String(error)}`);
+    } finally {
+      actionMutexRef.current = false;
+      if (isMountedRef.current) setIsExecuting(false);
     }
   };
 
   // Redo last undone action
+  // FIX: Added mutex check to prevent concurrent operations
   const redo = async () => {
+    if (actionMutexRef.current) {
+      showInfo('Please wait for the current action to complete');
+      return;
+    }
+
+    actionMutexRef.current = true;
+    setIsExecuting(true);
+
     const action = undoStack.redo();
-    if (!action) return;
+    if (!action) {
+      actionMutexRef.current = false;
+      if (isMountedRef.current) setIsExecuting(false);
+      return;
+    }
 
     try {
       await action.redo();
-      showInfo('Action Redone', `Redid: ${action.description}`);
+      showSuccess(`Redid: ${action.description}`);
     } catch (error) {
       // If redo fails, safely revert the pointer using the class method
       undoStack.revertRedo();
-      showError('Redo Failed', `Failed to redo ${action.description}: ${error.message}`);
+      showError(`Failed to redo ${action.description}: ${error?.message || String(error)}`);
+    } finally {
+      actionMutexRef.current = false;
+      if (isMountedRef.current) setIsExecuting(false);
     }
   };
 
@@ -362,7 +392,7 @@ export function UndoRedoProvider({ children }) {
   // Clear history
   const clearHistory = () => {
     undoStack.clear();
-    showInfo('History Cleared', 'Undo/redo history has been cleared');
+    showInfo('Undo/redo history cleared');
   };
 
   const contextValue = {
@@ -371,6 +401,7 @@ export function UndoRedoProvider({ children }) {
     redo,
     canUndo,
     canRedo,
+    isExecuting, // FIX: Expose execution state to prevent UI race conditions
     getHistory: () => undoStack.getHistory(),
     peek: () => undoStack.peek(),
     peekRedo: () => undoStack.peekRedo(),

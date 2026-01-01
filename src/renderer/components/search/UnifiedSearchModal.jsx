@@ -5,6 +5,7 @@ import 'reactflow/dist/style.css';
 import {
   ExternalLink,
   FolderOpen,
+  FolderInput,
   RefreshCw,
   Search as SearchIcon,
   Sparkles,
@@ -16,35 +17,98 @@ import {
   MessageSquare,
   LayoutGrid,
   Layers,
-  GitBranch
+  GitBranch,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
-import Modal from '../Modal';
+import Modal, { ConfirmModal } from '../Modal';
 import { Button, Input } from '../ui';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { safeBasename } from '../../utils/pathUtils';
 import { formatScore, scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
 import { makeQueryNodeId, defaultNodePosition } from '../../utils/graphUtils';
-import { elkLayout, clusterRadialLayout, clusterExpansionLayout } from '../../utils/elkLayout';
+import {
+  elkLayout,
+  debouncedElkLayout,
+  cancelPendingLayout,
+  smartLayout,
+  clusterRadialLayout,
+  clusterExpansionLayout,
+  LARGE_GRAPH_THRESHOLD
+} from '../../utils/elkLayout';
 import ClusterNode from './ClusterNode';
 import SimilarityEdge from './SimilarityEdge';
+import QueryMatchEdge from './QueryMatchEdge';
+import SearchAutocomplete from './SearchAutocomplete';
+import ClusterLegend from './ClusterLegend';
 
 logger.setContext('UnifiedSearchModal');
+
+// Maximum nodes allowed in graph to prevent memory exhaustion
+const MAX_GRAPH_NODES = 300;
+
+/**
+ * Format error messages to be more user-friendly and actionable
+ */
+const getErrorMessage = (error, context = 'Operation') => {
+  const msg = error?.message || '';
+
+  // Connection errors - service unavailable
+  if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
+    return `${context} failed: Embedding service unavailable. Is Ollama running?`;
+  }
+
+  // Timeout errors
+  if (msg.includes('timeout') || msg.includes('Timeout')) {
+    return `${context} timed out. Try a shorter query or fewer files.`;
+  }
+
+  // ChromaDB not available
+  if (msg.includes('ChromaDB') || msg.includes('not available yet')) {
+    return `${context} failed: Semantic search is initializing. Please wait a moment and try again.`;
+  }
+
+  // Generic fallback with original message
+  return msg || `${context} failed`;
+};
 
 // ============================================================================
 // Custom Node Components
 // ============================================================================
 
 const FileNode = memo(({ data, selected }) => {
+  const [showActions, setShowActions] = useState(false);
   const score = data?.withinScore ?? data?.score;
   const hasScore = typeof score === 'number';
+  const filePath = data?.path || '';
+
+  const handleOpen = useCallback(
+    (e) => {
+      e.stopPropagation();
+      if (filePath) {
+        window.electronAPI?.files?.open?.(filePath);
+      }
+    },
+    [filePath]
+  );
+
+  const handleReveal = useCallback(
+    (e) => {
+      e.stopPropagation();
+      if (filePath) {
+        window.electronAPI?.files?.reveal?.(filePath);
+      }
+    },
+    [filePath]
+  );
 
   return (
     <div
       className={`
-        px-3 py-2 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
-        transition-all duration-200 cursor-pointer
+        relative px-3 py-2 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
+        transition-all duration-200 cursor-pointer group
         ${
           selected
             ? 'border-stratosort-blue bg-stratosort-blue/10 shadow-md ring-2 ring-stratosort-blue/30'
@@ -52,8 +116,31 @@ const FileNode = memo(({ data, selected }) => {
         }
       `}
       style={{ opacity: data?.style?.opacity ?? 1 }}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
     >
       <Handle type="target" position={Position.Left} className="!bg-stratosort-blue !w-2 !h-2" />
+
+      {/* Quick actions on hover */}
+      {showActions && filePath && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex gap-1 bg-white shadow-md rounded-lg px-1.5 py-1 border border-system-gray-200 z-10">
+          <button
+            onClick={handleOpen}
+            className="p-1 rounded hover:bg-stratosort-blue/10 transition-colors"
+            title="Open file"
+          >
+            <ExternalLink className="w-3 h-3 text-stratosort-blue" />
+          </button>
+          <button
+            onClick={handleReveal}
+            className="p-1 rounded hover:bg-stratosort-blue/10 transition-colors"
+            title="Reveal in folder"
+          >
+            <FolderOpen className="w-3 h-3 text-stratosort-blue" />
+          </button>
+        </div>
+      )}
+
       <div className="flex items-start gap-2">
         <FileText className="w-4 h-4 text-stratosort-blue shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -79,6 +166,7 @@ FileNode.propTypes = {
     withinScore: PropTypes.number,
     score: PropTypes.number,
     label: PropTypes.string,
+    path: PropTypes.string,
     style: PropTypes.shape({
       opacity: PropTypes.number
     })
@@ -133,28 +221,62 @@ const nodeTypes = {
 
 // Edge types for ReactFlow
 const edgeTypes = {
-  similarity: SimilarityEdge
+  similarity: SimilarityEdge,
+  queryMatch: QueryMatchEdge
 };
 
 // ============================================================================
 // Sub-Components
 // ============================================================================
 
-function ResultRow({ result, isSelected, onSelect, onOpen, onReveal, onCopyPath }) {
+function ResultRow({
+  result,
+  isSelected,
+  isBulkSelected,
+  onSelect,
+  onToggleBulk,
+  onOpen,
+  onReveal,
+  onCopyPath
+}) {
   const path = result?.metadata?.path || '';
   const name = result?.metadata?.name || safeBasename(path) || result?.id || 'Unknown';
   const type = result?.metadata?.type || '';
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(result)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(result);
+        }
+      }}
       className={`
-        w-full text-left rounded-xl border p-3 transition-colors
+        w-full text-left rounded-xl border p-3 transition-colors cursor-pointer
         ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-border-soft bg-white/70 hover:bg-white'}
+        ${isBulkSelected ? 'ring-2 ring-stratosort-blue/30' : ''}
       `}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        {/* Bulk selection checkbox */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleBulk(result.id);
+          }}
+          className="shrink-0 mt-0.5 p-0.5 rounded hover:bg-system-gray-100 transition-colors"
+          title={isBulkSelected ? 'Deselect' : 'Select for bulk action'}
+        >
+          {isBulkSelected ? (
+            <CheckSquare className="w-4 h-4 text-stratosort-blue" />
+          ) : (
+            <Square className="w-4 h-4 text-system-gray-400" />
+          )}
+        </button>
+
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-semibold text-system-gray-900 truncate">{name}</span>
@@ -165,6 +287,50 @@ function ResultRow({ result, isSelected, onSelect, onOpen, onReveal, onCopyPath 
             ) : null}
           </div>
           <div className="mt-1 text-xs text-system-gray-500 break-all">{path}</div>
+
+          {/* Match details - shows why this result matched */}
+          {result?.matchDetails && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {/* Matched keywords from BM25 */}
+              {result.matchDetails.matchedTerms?.slice(0, 3).map((term) => (
+                <span
+                  key={term}
+                  className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded border border-amber-200"
+                  title={`Keyword match: "${term}"`}
+                >
+                  {term}
+                </span>
+              ))}
+              {/* Category match from vector search */}
+              {result.matchDetails.queryTermsInCategory && result.metadata?.category && (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200"
+                  title="Category matches your query"
+                >
+                  {result.metadata.category}
+                </span>
+              )}
+              {/* Tags that match query terms */}
+              {result.matchDetails.queryTermsInTags?.slice(0, 2).map((tag) => (
+                <span
+                  key={tag}
+                  className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-700 rounded border border-green-200"
+                  title={`Tag matches your query: ${tag}`}
+                >
+                  {tag}
+                </span>
+              ))}
+              {/* Search sources indicator */}
+              {result.matchDetails.sources?.length > 1 && (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded border border-purple-200"
+                  title="Found by both keyword and semantic search"
+                >
+                  hybrid
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="shrink-0 text-xs font-medium text-system-gray-600">
           {formatScore(result?.score)}
@@ -196,18 +362,21 @@ function ResultRow({ result, isSelected, onSelect, onOpen, onReveal, onCopyPath 
           </Button>
         </div>
       ) : null}
-    </button>
+    </div>
   );
 }
 
 ResultRow.propTypes = {
   result: PropTypes.object.isRequired,
   isSelected: PropTypes.bool.isRequired,
+  isBulkSelected: PropTypes.bool.isRequired,
   onSelect: PropTypes.func.isRequired,
+  onToggleBulk: PropTypes.func.isRequired,
   onOpen: PropTypes.func.isRequired,
   onReveal: PropTypes.func.isRequired,
   onCopyPath: PropTypes.func.isRequired
 };
+ResultRow.displayName = 'ResultRow';
 
 function StatsDisplay({ stats, isLoadingStats, onRefresh }) {
   return (
@@ -241,6 +410,7 @@ StatsDisplay.propTypes = {
   isLoadingStats: PropTypes.bool.isRequired,
   onRefresh: PropTypes.func.isRequired
 };
+StatsDisplay.displayName = 'StatsDisplay';
 
 function EmptyEmbeddingsBanner({
   onRebuildFolders,
@@ -291,6 +461,7 @@ EmptyEmbeddingsBanner.propTypes = {
   isRebuildingFolders: PropTypes.bool.isRequired,
   isRebuildingFiles: PropTypes.bool.isRequired
 };
+EmptyEmbeddingsBanner.displayName = 'EmptyEmbeddingsBanner';
 
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
@@ -318,6 +489,7 @@ TabButton.propTypes = {
   icon: PropTypes.elementType.isRequired,
   label: PropTypes.string.isRequired
 };
+TabButton.displayName = 'TabButton';
 
 // ============================================================================
 // Main Component
@@ -345,11 +517,15 @@ export default function UnifiedSearchModal({
   const [searchResults, setSearchResults] = useState([]);
   const [selectedSearchId, setSelectedSearchId] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
+  const [searchRefreshTrigger, setSearchRefreshTrigger] = useState(0);
 
   // Graph tab state
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [freshMetadata, setFreshMetadata] = useState(null);
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [addMode, setAddMode] = useState(true);
   const [withinQuery, setWithinQuery] = useState('');
   const [debouncedWithinQuery, setDebouncedWithinQuery] = useState('');
@@ -367,16 +543,36 @@ export default function UnifiedSearchModal({
   const [showClusters, setShowClusters] = useState(false);
   const [isComputingClusters, setIsComputingClusters] = useState(false);
 
+  // Duplicates detection state (duplicateGroups stored for potential future export feature)
+  // eslint-disable-next-line no-unused-vars
+  const [duplicateGroups, setDuplicateGroups] = useState([]);
+  const [isFindingDuplicates, setIsFindingDuplicates] = useState(false);
+
+  // Confirmation modal state
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   // Refs
   const lastSearchRef = useRef(0);
   const withinReqRef = useRef(0);
+  const reactFlowInstance = useRef(null);
+
+  // Refs for tracking auto-load state
+  const hasAutoLoadedClusters = useRef(false);
+
+  // Ref to avoid temporal dead zone with loadClusters in keyboard shortcuts
+  const loadClustersRef = useRef(null);
 
   // ============================================================================
   // Reset on open
   // ============================================================================
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // Cancel any pending layout operations when modal closes
+      cancelPendingLayout();
+      hasAutoLoadedClusters.current = false;
+      return () => {};
+    }
     setActiveTab(initialTab);
     setQuery('');
     setDebouncedQuery('');
@@ -385,6 +581,7 @@ export default function UnifiedSearchModal({
     setSearchResults([]);
     setSelectedSearchId(null);
     setIsSearching(false);
+    setBulkSelectedIds(new Set());
     // Graph state
     setNodes([]);
     setEdges([]);
@@ -402,7 +599,64 @@ export default function UnifiedSearchModal({
     // Clustering state
     setShowClusters(false);
     setIsComputingClusters(false);
+    // Duplicates state
+    setDuplicateGroups([]);
+    setIsFindingDuplicates(false);
+
+    // Cleanup pending layouts on unmount
+    return () => cancelPendingLayout();
   }, [isOpen, initialTab]);
+
+  // ============================================================================
+  // Keyboard Shortcuts
+  // ============================================================================
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleKeyDown = (e) => {
+      // Ctrl/Cmd + F: Focus search input
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        // Find and focus the search input
+        const searchInput = document.querySelector(
+          '[aria-label="Search query"], [aria-label="Search to add nodes"]'
+        );
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+      }
+
+      // Escape: Close modal (handled by Modal component, but also clear selection)
+      if (e.key === 'Escape') {
+        if (selectedNodeId) {
+          setSelectedNodeId(null);
+        }
+      }
+
+      // Ctrl/Cmd + Enter: Run search or load clusters
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (activeTab === 'graph' && nodes.length === 0) {
+          loadClustersRef.current?.();
+        }
+      }
+
+      // Tab switching: Ctrl + 1/2
+      if (e.ctrlKey && e.key === '1') {
+        e.preventDefault();
+        setActiveTab('search');
+      }
+      if (e.ctrlKey && e.key === '2') {
+        e.preventDefault();
+        setActiveTab('graph');
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, activeTab, selectedNodeId, nodes.length]);
 
   // ============================================================================
   // Shared: Stats & Rebuild
@@ -422,7 +676,8 @@ export default function UnifiedSearchModal({
       } else {
         setStats(null);
       }
-    } catch {
+    } catch (e) {
+      logger.warn('Failed to load embedding stats', { error: e?.message });
       setStats(null);
     } finally {
       setIsLoadingStats(false);
@@ -434,6 +689,27 @@ export default function UnifiedSearchModal({
     refreshStats();
   }, [isOpen, refreshStats]);
 
+  // Listen for file operation events (move/delete) to refresh search results
+  useEffect(() => {
+    // Guard: Exit early if API not available to prevent unnecessary effect re-runs
+    const api = window.electronAPI?.events?.onFileOperationComplete;
+    if (!api) return undefined;
+
+    const cleanup = api((data) => {
+      if (data?.operation === 'move' || data?.operation === 'delete') {
+        logger.debug('[Search] File operation detected, refreshing search', {
+          operation: data.operation,
+          oldPath: data.oldPath
+        });
+        // Trigger search refresh by incrementing counter
+        setSearchRefreshTrigger((prev) => prev + 1);
+        // Also refresh stats
+        refreshStats();
+      }
+    });
+    return cleanup;
+  }, [refreshStats]);
+
   const rebuildFolders = useCallback(async () => {
     if (!window?.electronAPI?.embeddings?.rebuildFolders) return;
     setIsRebuildingFolders(true);
@@ -443,7 +719,7 @@ export default function UnifiedSearchModal({
       if (!res?.success) throw new Error(res?.error || 'Folder rebuild failed');
       await refreshStats();
     } catch (e) {
-      setError(e?.message || 'Folder rebuild failed');
+      setError(getErrorMessage(e, 'Folder rebuild'));
     } finally {
       setIsRebuildingFolders(false);
     }
@@ -458,7 +734,7 @@ export default function UnifiedSearchModal({
       if (!res?.success) throw new Error(res?.error || 'File rebuild failed');
       await refreshStats();
     } catch (e) {
-      setError(e?.message || 'File rebuild failed');
+      setError(getErrorMessage(e, 'File rebuild'));
     } finally {
       setIsRebuildingFiles(false);
     }
@@ -494,6 +770,308 @@ export default function UnifiedSearchModal({
       logger.warn('[Search] Clipboard write failed', e?.message || e);
     }
   }, []);
+
+  // ============================================================================
+  // Bulk Selection Handlers
+  // ============================================================================
+
+  const toggleBulkSelection = useCallback((resultId) => {
+    setBulkSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(resultId)) {
+        next.delete(resultId);
+      } else {
+        next.add(resultId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllResults = useCallback(() => {
+    setBulkSelectedIds(new Set(searchResults.map((r) => r.id)));
+  }, [searchResults]);
+
+  const clearBulkSelection = useCallback(() => {
+    setBulkSelectedIds(new Set());
+  }, []);
+
+  const copySelectedPaths = useCallback(async () => {
+    const paths = searchResults
+      .filter((r) => bulkSelectedIds.has(r.id))
+      .map((r) => r.metadata?.path)
+      .filter(Boolean);
+    if (paths.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(paths.join('\n'));
+      setGraphStatus(`Copied ${paths.length} path(s) to clipboard`);
+    } catch (e) {
+      logger.warn('[Search] Clipboard write failed', e);
+      setError('Could not copy to clipboard. Check browser permissions.');
+    }
+  }, [searchResults, bulkSelectedIds]);
+
+  const moveSelectedToFolder = useCallback(async () => {
+    const selectedFiles = searchResults.filter((r) => bulkSelectedIds.has(r.id));
+    if (selectedFiles.length === 0) return;
+
+    try {
+      const dirResult = await window.electronAPI?.files?.selectDirectory?.();
+      if (!dirResult?.success || !dirResult?.path) return;
+
+      const destFolder = dirResult.path;
+      const totalFiles = selectedFiles.length;
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < totalFiles; i++) {
+        const file = selectedFiles[i];
+        const sourcePath = file.metadata?.path;
+        if (!sourcePath) continue;
+
+        // Show progress indicator for large batch operations
+        if (totalFiles > 3) {
+          setGraphStatus(`Moving file ${i + 1} of ${totalFiles}...`);
+        }
+
+        const fileName = safeBasename(sourcePath);
+        try {
+          await window.electronAPI?.files?.performOperation?.({
+            operation: 'move',
+            source: sourcePath,
+            destination: `${destFolder}/${fileName}`
+          });
+          successCount++;
+        } catch (e) {
+          logger.error('[Search] Failed to move file', { path: sourcePath, error: e });
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        setGraphStatus(`Moved ${successCount} file(s) to ${safeBasename(destFolder)}`);
+        clearBulkSelection();
+        // Optionally refresh search results
+      }
+      if (failCount > 0) {
+        setError(`Failed to move ${failCount} file(s)`);
+      }
+    } catch (e) {
+      logger.error('[Search] Move operation failed', e);
+      setError(`Move failed: ${e?.message || 'Unknown error'}`);
+    }
+  }, [searchResults, bulkSelectedIds, clearBulkSelection]);
+
+  /**
+   * Create a Smart Folder from a cluster's metadata
+   * Uses the cluster's label, category, and tags to define the folder
+   */
+  const handleCreateSmartFolderFromCluster = useCallback(async (clusterData) => {
+    try {
+      // Prompt user to select destination directory
+      const dirResult = await window.electronAPI?.files?.selectDirectory?.();
+      if (!dirResult?.success || !dirResult?.path) {
+        // User cancelled
+        return;
+      }
+
+      const basePath = dirResult.path;
+      const folderName = clusterData.label || 'Cluster Folder';
+
+      // Build the full path for the new smart folder
+      const folderPath = `${basePath}/${folderName}`;
+
+      // Create the smart folder using existing API
+      const result = await window.electronAPI?.smartFolders?.add?.({
+        name: folderName,
+        path: folderPath,
+        description: `Auto-created from cluster with ${clusterData.memberCount || 0} similar files`,
+        keywords: clusterData.commonTags || [],
+        category: clusterData.dominantCategory || 'General'
+      });
+
+      if (result?.success) {
+        setError(''); // Clear any existing error
+        setGraphStatus(`Smart folder "${folderName}" created successfully!`);
+        logger.info('[Graph] Created smart folder from cluster', {
+          folderName,
+          memberCount: clusterData.memberCount
+        });
+      } else {
+        setError(`Failed to create folder: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (e) {
+      logger.error('[Graph] Failed to create smart folder from cluster', e);
+      setError(`Failed to create folder: ${e?.message || 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Move all files in a cluster to a selected folder
+   * Uses the existing FILES.PERFORM_OPERATION handler
+   */
+  const handleMoveAllToFolder = useCallback(async (clusterData) => {
+    try {
+      const memberIds = clusterData?.memberIds || [];
+      if (memberIds.length === 0) {
+        setError('No files in this cluster');
+        return;
+      }
+
+      // Prompt user to select destination
+      const dirResult = await window.electronAPI?.files?.selectDirectory?.();
+      if (!dirResult?.success || !dirResult?.path) {
+        return; // User cancelled
+      }
+
+      const destFolder = dirResult.path;
+
+      // Get file metadata for all members in one call
+      const metadataResult = await window.electronAPI?.embeddings?.getFileMetadata?.(memberIds);
+      if (!metadataResult?.success) {
+        setError('Failed to retrieve file metadata');
+        return;
+      }
+
+      const metadata = metadataResult.metadata || {};
+      let successCount = 0;
+      let failCount = 0;
+
+      // Move each file
+      for (const id of memberIds) {
+        try {
+          const fileMetadata = metadata[id];
+          const sourcePath = fileMetadata?.path;
+          if (!sourcePath) {
+            failCount++;
+            continue;
+          }
+
+          const fileName = safeBasename(sourcePath);
+          await window.electronAPI?.files?.performOperation?.({
+            operation: 'move',
+            source: sourcePath,
+            destination: `${destFolder}/${fileName}`
+          });
+          successCount++;
+        } catch (e) {
+          logger.error('[Graph] Failed to move cluster file', { id, error: e });
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        setGraphStatus(`Moved ${successCount} file(s) to ${safeBasename(destFolder)}`);
+      }
+      if (failCount > 0) {
+        setError(`Failed to move ${failCount} file(s)`);
+      }
+    } catch (e) {
+      logger.error('[Graph] Move all to folder failed', e);
+      setError(`Move failed: ${e?.message || 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Export a list of file paths from a cluster to clipboard
+   */
+  const handleExportFileList = useCallback(async (clusterData) => {
+    try {
+      const memberIds = clusterData?.memberIds || [];
+      if (memberIds.length === 0) {
+        setError('No files in this cluster');
+        return;
+      }
+
+      // Get file metadata for all members in one call
+      const metadataResult = await window.electronAPI?.embeddings?.getFileMetadata?.(memberIds);
+      if (!metadataResult?.success) {
+        setError('Failed to retrieve file metadata');
+        return;
+      }
+
+      const metadata = metadataResult.metadata || {};
+      const paths = memberIds.map((id) => metadata[id]?.path).filter(Boolean);
+
+      if (paths.length === 0) {
+        setError('Could not retrieve file paths');
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(paths.join('\n'));
+        setGraphStatus(`Copied ${paths.length} file path(s) to clipboard`);
+      } catch (clipboardErr) {
+        logger.error('[Graph] Clipboard write failed', clipboardErr);
+        setError('Could not copy to clipboard. Check browser permissions.');
+      }
+    } catch (e) {
+      logger.error('[Graph] Export file list failed', e);
+      setError(`Export failed: ${e?.message || 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Find near-duplicate files across the collection
+   * Displays them as special clusters in the graph
+   */
+  const handleFindDuplicates = useCallback(async () => {
+    setIsFindingDuplicates(true);
+    setError('');
+    setDuplicateGroups([]);
+
+    try {
+      const result = await window.electronAPI?.embeddings?.findDuplicates?.({
+        threshold: 0.9,
+        maxResults: 30
+      });
+
+      if (!result?.success) {
+        setError(result?.error || 'Failed to find duplicates');
+        return;
+      }
+
+      if (result.groups.length === 0) {
+        setGraphStatus('No duplicate files found');
+        return;
+      }
+
+      // Store duplicate groups
+      setDuplicateGroups(result.groups);
+
+      // Display duplicates as special cluster nodes
+      const dupNodes = result.groups.map((group, idx) => ({
+        id: group.id,
+        type: 'clusterNode',
+        position: defaultNodePosition(idx),
+        data: {
+          kind: 'duplicate',
+          label: `Duplicates (${Math.round(group.averageSimilarity * 100)}% similar)`,
+          memberCount: group.memberCount,
+          memberIds: group.members.map((m) => m.id),
+          expanded: false,
+          confidence: 'high',
+          dominantCategory: 'Duplicate Group',
+          commonTags: [],
+          onCreateSmartFolder: handleCreateSmartFolderFromCluster,
+          onMoveAllToFolder: handleMoveAllToFolder,
+          onExportFileList: handleExportFileList
+        },
+        draggable: true
+      }));
+
+      setNodes(dupNodes);
+      setEdges([]);
+      setShowClusters(false);
+      setGraphStatus(
+        `Found ${result.groups.length} duplicate group(s) with ${result.totalDuplicates} files`
+      );
+    } catch (e) {
+      logger.error('[Graph] Find duplicates failed', e);
+      setError(`Find duplicates failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setIsFindingDuplicates(false);
+    }
+  }, [handleCreateSmartFolderFromCluster, handleMoveAllToFolder, handleExportFileList]);
 
   // ============================================================================
   // Debounce query
@@ -533,26 +1111,31 @@ export default function UnifiedSearchModal({
       setError('');
 
       try {
-        const response = await window.electronAPI?.embeddings?.search?.(q, defaultTopK);
+        // Use hybrid search with options
+        const response = await window.electronAPI?.embeddings?.search?.(q, {
+          topK: defaultTopK,
+          mode: 'hybrid'
+        });
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
 
         if (!response || response.success !== true) {
           setSearchResults([]);
           setSelectedSearchId(null);
-          setError(response?.error || 'Search failed');
+          setError(getErrorMessage({ message: response?.error }, 'Search'));
           return;
         }
 
         const next = Array.isArray(response.results) ? response.results : [];
         setSearchResults(next);
         setSelectedSearchId(next[0]?.id || null);
+        setBulkSelectedIds(new Set()); // Clear bulk selection on new results
       } catch (e) {
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
         setSearchResults([]);
         setSelectedSearchId(null);
-        setError(e?.message || 'Search failed');
+        setError(getErrorMessage(e, 'Search'));
       } finally {
         if (!cancelled && lastSearchRef.current === requestId) {
           setIsSearching(false);
@@ -564,7 +1147,8 @@ export default function UnifiedSearchModal({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, isOpen, defaultTopK, activeTab]);
+    // searchRefreshTrigger triggers re-search when files are moved/deleted
+  }, [debouncedQuery, isOpen, defaultTopK, activeTab, searchRefreshTrigger]);
 
   const searchStatusLabel = useMemo(() => {
     if (isSearching) return 'Searching...';
@@ -587,6 +1171,38 @@ export default function UnifiedSearchModal({
     [nodes, selectedNodeId]
   );
 
+  // Fetch fresh metadata from ChromaDB when a file node is selected
+  // This ensures we show the CURRENT file path after files have been moved/organized
+  useEffect(() => {
+    if (!selectedNode || selectedNode.data?.kind !== 'file') {
+      setFreshMetadata(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const nodeId = selectedNode.id;
+
+    const fetchFreshMetadata = async () => {
+      setIsLoadingMetadata(true);
+      try {
+        const resp = await window.electronAPI?.embeddings?.getFileMetadata?.([nodeId]);
+        if (!cancelled && resp?.success) {
+          setFreshMetadata(resp.metadata?.[nodeId] || null);
+        }
+      } catch (e) {
+        // Silently fail - use cached metadata from node
+        if (!cancelled) setFreshMetadata(null);
+      } finally {
+        if (!cancelled) setIsLoadingMetadata(false);
+      }
+    };
+
+    fetchFreshMetadata();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedNode]);
+
   const upsertFileNode = useCallback((result, preferredPosition) => {
     const id = result?.id;
     if (!id) return null;
@@ -595,10 +1211,20 @@ export default function UnifiedSearchModal({
     const name = metadata.name || safeBasename(path) || id;
     const score = typeof result?.score === 'number' ? result.score : undefined;
 
-    // Include tags, category, subject for edge tooltips
-    const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+    // Parse tags from JSON string (ChromaDB stores as string) or use array directly
+    let tags = [];
+    if (Array.isArray(metadata.tags)) {
+      tags = metadata.tags;
+    } else if (typeof metadata.tags === 'string' && metadata.tags) {
+      try {
+        tags = JSON.parse(metadata.tags);
+      } catch {
+        tags = [];
+      }
+    }
     const category = metadata.category || '';
     const subject = metadata.subject || '';
+    const summary = metadata.summary || '';
 
     return {
       id,
@@ -611,7 +1237,8 @@ export default function UnifiedSearchModal({
         score,
         tags,
         category,
-        subject
+        subject,
+        summary
       },
       draggable: true
     };
@@ -672,7 +1299,7 @@ export default function UnifiedSearchModal({
         return;
       }
 
-      // Create cluster nodes
+      // Create cluster nodes with rich metadata
       const clusterNodes = clusters.map((cluster, idx) => ({
         id: cluster.id,
         type: 'clusterNode',
@@ -682,7 +1309,15 @@ export default function UnifiedSearchModal({
           label: cluster.label,
           memberCount: cluster.memberCount,
           memberIds: cluster.memberIds,
-          expanded: false
+          expanded: false,
+          // Rich metadata for meaningful cluster display
+          confidence: cluster.confidence || 'low',
+          dominantCategory: cluster.dominantCategory || null,
+          commonTags: cluster.commonTags || [],
+          // Action callbacks for cluster context menu
+          onCreateSmartFolder: handleCreateSmartFolderFromCluster,
+          onMoveAllToFolder: handleMoveAllToFolder,
+          onExportFileList: handleExportFileList
         },
         draggable: true
       }));
@@ -722,12 +1357,27 @@ export default function UnifiedSearchModal({
         }
       }
     } catch (e) {
-      setError(e?.message || 'Failed to load clusters');
+      setError(getErrorMessage(e, 'Cluster loading'));
       setGraphStatus('');
     } finally {
       setIsComputingClusters(false);
     }
-  }, []);
+  }, [handleCreateSmartFolderFromCluster, handleMoveAllToFolder, handleExportFileList]);
+
+  // Assign to ref so keyboard shortcuts can access it
+  loadClustersRef.current = loadClusters;
+
+  // Auto-load clusters when opening graph tab (if files are indexed)
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'graph') return;
+    if (hasAutoLoadedClusters.current) return;
+    if (nodes.length > 0) return; // Already have nodes
+    if (!stats?.files || stats.files === 0) return; // No indexed files
+
+    // Auto-load clusters to give users something to explore
+    hasAutoLoadedClusters.current = true;
+    loadClusters();
+  }, [isOpen, activeTab, stats, nodes.length, loadClusters]);
 
   /**
    * Expand a cluster to show its members with current file names
@@ -831,7 +1481,7 @@ export default function UnifiedSearchModal({
 
         setGraphStatus(`Expanded: +${layoutedMemberNodes.length} files`);
       } catch (e) {
-        setError(e?.message || 'Failed to expand cluster');
+        setError(getErrorMessage(e, 'Cluster expansion'));
         setGraphStatus('');
       }
     },
@@ -842,11 +1492,18 @@ export default function UnifiedSearchModal({
     const q = query.trim();
     if (q.length < 2) return;
 
+    // Capture addMode at search start to prevent race condition if user toggles during async operation
+    const shouldAddMode = addMode;
+
     setError('');
     setGraphStatus('Searching...');
 
     try {
-      const resp = await window.electronAPI?.embeddings?.search?.(q, defaultTopK);
+      // Use hybrid search with options
+      const resp = await window.electronAPI?.embeddings?.search?.(q, {
+        topK: defaultTopK,
+        mode: 'hybrid'
+      });
       if (!resp || resp.success !== true) {
         throw new Error(resp?.error || 'Search failed');
       }
@@ -876,84 +1533,111 @@ export default function UnifiedSearchModal({
           id: `e:${queryNodeId}->${node.id}`,
           source: queryNodeId,
           target: node.id,
-          type: 'default',
-          animated: true, // Animated edge for visual interest
-          style: { stroke: '#6366f1', strokeWidth: 2 },
-          data: { kind: 'query_match', weight: r.score }
+          type: 'queryMatch',
+          animated: false, // Using custom edge with hover effects
+          data: {
+            kind: 'query_match',
+            score: r.score,
+            matchDetails: r.matchDetails || {}
+          }
         });
       });
 
-      setNodes((prev) => {
-        if (!addMode) return nextNodes;
+      // Compute final nodes and edges FIRST to avoid stale closure issues
+      // These values are used for both state update and layout calculation
+      let finalNodes;
+      let finalEdges;
+      let nodeLimitReached = false;
 
-        // Check if any new nodes need to be added
-        const existingIds = new Set(prev.map((n) => n.id));
-        const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
+      if (!shouldAddMode) {
+        // Replace mode - use nextNodes directly
+        if (nextNodes.length > MAX_GRAPH_NODES) {
+          finalNodes = nextNodes.slice(0, MAX_GRAPH_NODES);
+          nodeLimitReached = true;
+          setError(
+            `Graph limit (${MAX_GRAPH_NODES} nodes) exceeded. Showing first ${MAX_GRAPH_NODES} results.`
+          );
+        } else {
+          finalNodes = nextNodes;
+        }
+        finalEdges = nextEdges;
+      } else {
+        // Add mode - merge with current state (captured at function start)
+        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+        nextNodes.forEach((n) => {
+          if (!nodeMap.has(n.id)) nodeMap.set(n.id, n);
+        });
+        const merged = Array.from(nodeMap.values());
 
-        if (!hasNewNodes) {
-          // No new nodes to add, preserve reference to prevent unnecessary updates
-          return prev;
+        if (merged.length > MAX_GRAPH_NODES) {
+          // Don't add more nodes if limit reached
+          finalNodes = nodes;
+          nodeLimitReached = true;
+          setError(`Graph limit (${MAX_GRAPH_NODES} nodes) reached. Clear graph to start fresh.`);
+        } else {
+          finalNodes = merged;
         }
 
-        // Merge new nodes with existing ones
-        const map = new Map(prev.map((n) => [n.id, n]));
-        nextNodes.forEach((n) => {
-          if (!map.has(n.id)) map.set(n.id, n);
-        });
-        return Array.from(map.values());
+        const edgeMap = new Map(edges.map((e) => [e.id, e]));
+        nextEdges.forEach((e) => edgeMap.set(e.id, e));
+        finalEdges = Array.from(edgeMap.values());
+      }
+
+      // Now update state with computed values (only if there are changes)
+      setNodes((prev) => {
+        // Skip update if nothing changed (add mode and limit reached)
+        if (nodeLimitReached && shouldAddMode) return prev;
+        // Check if update is needed
+        if (prev.length === finalNodes.length && prev.every((n, i) => n.id === finalNodes[i]?.id)) {
+          return prev;
+        }
+        return finalNodes;
       });
 
       setEdges((prev) => {
-        if (!addMode) return nextEdges;
-
-        // Check if any new edges need to be added
-        const existingEdgeIds = new Set(prev.map((e) => e.id));
-        const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
-
-        if (!hasNewEdges) {
-          // No new edges to add, preserve reference to prevent unnecessary updates
+        if (nodeLimitReached && shouldAddMode) return prev;
+        if (prev.length === finalEdges.length && prev.every((e, i) => e.id === finalEdges[i]?.id)) {
           return prev;
         }
-
-        // Merge new edges with existing ones
-        const map = new Map(prev.map((e) => [e.id, e]));
-        nextEdges.forEach((e) => map.set(e.id, e));
-        return Array.from(map.values());
+        return finalEdges;
       });
 
       setSelectedNodeId(results[0]?.id || queryNodeId);
       setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'}`);
 
-      // Apply auto-layout if enabled
-      if (autoLayout && nextNodes.length > 1) {
+      // Apply auto-layout if enabled (debounced to prevent rapid re-layouts)
+      // Uses pre-computed finalNodes/finalEdges to avoid stale state issues
+      if (autoLayout && finalNodes.length > 1 && !nodeLimitReached) {
         setGraphStatus('Applying layout...');
         try {
-          // Get the final nodes from state for layout
-          const finalNodes = addMode
-            ? (() => {
-                const map = new Map(nodes.map((n) => [n.id, n]));
-                nextNodes.forEach((n) => {
-                  if (!map.has(n.id)) map.set(n.id, n);
-                });
-                return Array.from(map.values());
-              })()
-            : nextNodes;
-
-          const finalEdges = addMode
-            ? (() => {
-                const map = new Map(edges.map((e) => [e.id, e]));
-                nextEdges.forEach((e) => map.set(e.id, e));
-                return Array.from(map.values());
-              })()
-            : nextEdges;
-
-          const layoutedNodes = await elkLayout(finalNodes, finalEdges, {
-            direction: 'RIGHT',
-            spacing: 80,
-            layerSpacing: 120
-          });
+          // Use smart layout for large graphs (progressive rendering)
+          // Use debounced layout for smaller graphs
+          let layoutedNodes;
+          if (finalNodes.length > LARGE_GRAPH_THRESHOLD) {
+            const result = await smartLayout(finalNodes, finalEdges, {
+              direction: 'RIGHT',
+              spacing: 80,
+              layerSpacing: 120,
+              progressive: true
+            });
+            layoutedNodes = result.nodes;
+            if (result.isPartial) {
+              setGraphStatus(
+                `${results.length} results (${result.layoutedCount} laid out, ${finalNodes.length - result.layoutedCount} in grid)`
+              );
+            }
+          } else {
+            layoutedNodes = await debouncedElkLayout(finalNodes, finalEdges, {
+              direction: 'RIGHT',
+              spacing: 80,
+              layerSpacing: 120,
+              debounceMs: 150
+            });
+          }
           setNodes(layoutedNodes);
-          setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'} (laid out)`);
+          if (finalNodes.length <= LARGE_GRAPH_THRESHOLD) {
+            setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'} (laid out)`);
+          }
         } catch (layoutError) {
           logger.warn('[Graph] Auto-layout failed:', layoutError);
         }
@@ -1013,140 +1697,153 @@ export default function UnifiedSearchModal({
       }
     } catch (e) {
       setGraphStatus('');
-      setError(e?.message || 'Search failed');
+      setError(getErrorMessage(e, 'Graph search'));
     }
   }, [query, defaultTopK, addMode, upsertFileNode, autoLayout, nodes, edges]);
 
-  const expandFromSelected = useCallback(async () => {
-    const seed = selectedNode;
-    if (!seed || seed.data?.kind !== 'file') return;
-    const seedId = seed.id;
+  const expandFromSelected = useCallback(
+    async (overrideNode = null) => {
+      // Use provided node or fall back to selectedNode (fixes stale closure in onNodeDoubleClick)
+      const seed = overrideNode || selectedNode;
+      if (!seed || seed.data?.kind !== 'file') return;
+      const seedId = seed.id;
 
-    setError('');
-    setGraphStatus('Expanding...');
+      setError('');
+      setGraphStatus(`Expanding (${hopCount} hop${hopCount > 1 ? 's' : ''})...`);
 
-    try {
-      const resp = await window.electronAPI?.embeddings?.findSimilar?.(seedId, 10);
-      if (!resp || resp.success !== true) {
-        throw new Error(resp?.error || 'Expand failed');
-      }
-
-      const results = Array.isArray(resp.results) ? resp.results : [];
-      const seedPos = seed.position || { x: 200, y: 200 };
-
-      const nextNodes = [];
-      const nextEdges = [];
-
-      // Get seed node data for tooltips
-      const seedNodeData = {
-        label: seed.data?.label || '',
-        tags: seed.data?.tags || [],
-        category: seed.data?.category || '',
-        subject: seed.data?.subject || ''
-      };
-
-      results.forEach((r, idx) => {
-        const pos = {
-          x: seedPos.x + 280,
-          y: seedPos.y + idx * 80
-        };
-        const node = upsertFileNode(r, pos);
-        if (!node) return;
-        nextNodes.push(node);
-
-        // Get target node data for tooltip
-        const targetNodeData = {
-          label: node.data?.label || '',
-          tags: node.data?.tags || [],
-          category: node.data?.category || '',
-          subject: node.data?.subject || ''
-        };
-
-        nextEdges.push({
-          id: `e:${seedId}->${node.id}`,
-          source: seedId,
-          target: node.id,
-          type: 'similarity', // Use custom edge component
-          animated: false,
-          data: {
-            kind: 'similarity',
-            similarity: r.score || 0,
-            sourceData: seedNodeData,
-            targetData: targetNodeData
-          }
-        });
-      });
-
-      setNodes((prev) => {
-        // Check if any new nodes need to be added
-        const existingIds = new Set(prev.map((n) => n.id));
-        const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
-
-        if (!hasNewNodes) {
-          // No new nodes to add, preserve reference to prevent unnecessary updates
-          return prev;
+      try {
+        // Use multi-hop expansion when hopCount > 1, otherwise use findSimilar for single hop
+        const resp =
+          hopCount > 1
+            ? await window.electronAPI?.embeddings?.findMultiHop?.([seedId], {
+                hops: hopCount,
+                decay: decayFactor
+              })
+            : await window.electronAPI?.embeddings?.findSimilar?.(seedId, 10);
+        if (!resp || resp.success !== true) {
+          throw new Error(resp?.error || 'Expand failed');
         }
 
-        // Merge new nodes with existing ones
-        const map = new Map(prev.map((n) => [n.id, n]));
-        nextNodes.forEach((n) => {
-          if (!map.has(n.id)) map.set(n.id, n);
-        });
-        return Array.from(map.values());
-      });
-      setEdges((prev) => {
-        // Check if any new edges need to be added
-        const existingEdgeIds = new Set(prev.map((e) => e.id));
-        const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
+        const results = Array.isArray(resp.results) ? resp.results : [];
+        const seedPos = seed.position || { x: 200, y: 200 };
 
-        if (!hasNewEdges) {
-          // No new edges to add, preserve reference to prevent unnecessary updates
-          return prev;
-        }
+        const nextNodes = [];
+        const nextEdges = [];
 
-        // Merge new edges with existing ones
-        const map = new Map(prev.map((e) => [e.id, e]));
-        nextEdges.forEach((e) => map.set(e.id, e));
-        return Array.from(map.values());
-      });
+        // Get seed node data for tooltips
+        const seedNodeData = {
+          label: seed.data?.label || '',
+          tags: seed.data?.tags || [],
+          category: seed.data?.category || '',
+          subject: seed.data?.subject || ''
+        };
 
-      setGraphStatus(`Expanded: +${results.length}`);
+        results.forEach((r, idx) => {
+          const pos = {
+            x: seedPos.x + 280,
+            y: seedPos.y + idx * 80
+          };
+          const node = upsertFileNode(r, pos);
+          if (!node) return;
+          nextNodes.push(node);
 
-      // Apply auto-layout if enabled
-      if (autoLayout && nextNodes.length > 0) {
-        setGraphStatus('Applying layout...');
-        try {
-          // Get the final nodes and edges for layout
-          const finalNodes = (() => {
-            const map = new Map(nodes.map((n) => [n.id, n]));
-            nextNodes.forEach((n) => {
-              if (!map.has(n.id)) map.set(n.id, n);
-            });
-            return Array.from(map.values());
-          })();
+          // Get target node data for tooltip
+          const targetNodeData = {
+            label: node.data?.label || '',
+            tags: node.data?.tags || [],
+            category: node.data?.category || '',
+            subject: node.data?.subject || ''
+          };
 
-          const finalEdges = (() => {
-            const map = new Map(edges.map((e) => [e.id, e]));
-            nextEdges.forEach((e) => map.set(e.id, e));
-            return Array.from(map.values());
-          })();
-
-          const layoutedNodes = await elkLayout(finalNodes, finalEdges, {
-            direction: 'RIGHT',
-            spacing: 80,
-            layerSpacing: 120
+          nextEdges.push({
+            id: `e:${seedId}->${node.id}`,
+            source: seedId,
+            target: node.id,
+            type: 'similarity', // Use custom edge component
+            animated: false,
+            data: {
+              kind: 'similarity',
+              similarity: r.score || 0,
+              sourceData: seedNodeData,
+              targetData: targetNodeData
+            }
           });
-          setNodes(layoutedNodes);
-          setGraphStatus(`Expanded: +${results.length} (laid out)`);
-        } catch (layoutError) {
-          logger.warn('[Graph] Auto-layout after expand failed:', layoutError);
+        });
+
+        setNodes((prev) => {
+          // Check if any new nodes need to be added
+          const existingIds = new Set(prev.map((n) => n.id));
+          const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
+
+          if (!hasNewNodes) {
+            // No new nodes to add, preserve reference to prevent unnecessary updates
+            return prev;
+          }
+
+          // Merge new nodes with existing ones
+          const map = new Map(prev.map((n) => [n.id, n]));
+          nextNodes.forEach((n) => {
+            if (!map.has(n.id)) map.set(n.id, n);
+          });
+          return Array.from(map.values());
+        });
+        setEdges((prev) => {
+          // Check if any new edges need to be added
+          const existingEdgeIds = new Set(prev.map((e) => e.id));
+          const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
+
+          if (!hasNewEdges) {
+            // No new edges to add, preserve reference to prevent unnecessary updates
+            return prev;
+          }
+
+          // Merge new edges with existing ones
+          const map = new Map(prev.map((e) => [e.id, e]));
+          nextEdges.forEach((e) => map.set(e.id, e));
+          return Array.from(map.values());
+        });
+
+        setGraphStatus(`Expanded: +${results.length}`);
+
+        // Apply auto-layout if enabled (debounced)
+        if (autoLayout && nextNodes.length > 0) {
+          setGraphStatus('Applying layout...');
+          try {
+            // Get the final nodes and edges for layout
+            const finalNodes = (() => {
+              const map = new Map(nodes.map((n) => [n.id, n]));
+              nextNodes.forEach((n) => {
+                if (!map.has(n.id)) map.set(n.id, n);
+              });
+              return Array.from(map.values());
+            })();
+
+            const finalEdges = (() => {
+              const map = new Map(edges.map((e) => [e.id, e]));
+              nextEdges.forEach((e) => map.set(e.id, e));
+              return Array.from(map.values());
+            })();
+
+            // Use debounced layout for expansion
+            const layoutedNodes = await debouncedElkLayout(finalNodes, finalEdges, {
+              direction: 'RIGHT',
+              spacing: 80,
+              layerSpacing: 120,
+              debounceMs: 100 // Shorter debounce for explicit user action
+            });
+            setNodes(layoutedNodes);
+            setGraphStatus(`Expanded: +${results.length} (laid out)`);
+          } catch (layoutError) {
+            logger.warn('[Graph] Auto-layout after expand failed:', layoutError);
+          }
         }
+      } catch (e) {
+        setGraphStatus('');
+        setError(getErrorMessage(e, 'Node expansion'));
       }
-    } catch (e) {
-      setGraphStatus('');
-      setError(e?.message || 'Expand failed');
-    }
-  }, [selectedNode, upsertFileNode, autoLayout, nodes, edges]);
+    },
+    [selectedNode, upsertFileNode, autoLayout, nodes, edges, hopCount, decayFactor]
+  );
 
   // Debounce within-graph query
   useEffect(() => {
@@ -1257,8 +1954,27 @@ export default function UnifiedSearchModal({
           // Only return new array if something actually changed
           return changed ? updated : prev;
         });
+
+        // Jump to top matches - find nodes with good scores and zoom to them
+        const topMatches = scores
+          .filter((s) => s.score > 0.5)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5);
+
+        if (topMatches.length > 0 && reactFlowInstance.current) {
+          // Zoom to the top matching nodes
+          reactFlowInstance.current.fitView({
+            nodes: topMatches.map((m) => ({ id: m.id })),
+            padding: 0.3,
+            duration: 300,
+            maxZoom: 1.5
+          });
+
+          // Auto-select the best match
+          setSelectedNodeId(topMatches[0].id);
+        }
       } catch (e) {
-        setError(e?.message || 'Score failed');
+        setError(getErrorMessage(e, 'File scoring'));
       }
     };
 
@@ -1330,7 +2046,8 @@ export default function UnifiedSearchModal({
       // Handle file node double-click
       if (kind === 'file') {
         setSelectedNodeId(node.id);
-        expandFromSelected();
+        // Pass node directly to avoid stale closure (selectedNode won't update until re-render)
+        expandFromSelected(node);
       }
     },
     [expandFromSelected, expandCluster]
@@ -1377,8 +2094,9 @@ export default function UnifiedSearchModal({
   );
 
   const showEmptyBanner = stats && typeof stats.files === 'number' && stats.files === 0 && !error;
-  const selectedPath = selectedNode?.data?.path || '';
-  const selectedLabel = selectedNode?.data?.label || selectedNode?.id || '';
+  // Use fresh metadata from ChromaDB when available (for current file paths after moves)
+  const selectedPath = freshMetadata?.path || selectedNode?.data?.path || '';
+  const selectedLabel = freshMetadata?.name || selectedNode?.data?.label || selectedNode?.id || '';
   const selectedKind = selectedNode?.data?.kind || '';
 
   // ============================================================================
@@ -1427,21 +2145,50 @@ export default function UnifiedSearchModal({
         {/* Search Tab Content */}
         {activeTab === 'search' && (
           <div className="flex flex-col gap-4 flex-1">
-            {/* Search input */}
+            {/* Search input with autocomplete */}
             <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search your library (e.g., W2 2024, car registration renewal)"
-                  aria-label="Search query"
-                />
-              </div>
+              <SearchAutocomplete
+                value={query}
+                onChange={setQuery}
+                onSearch={(q) => {
+                  setQuery(q);
+                  // The debounced search will trigger automatically
+                }}
+                placeholder="Search your library (e.g., W2 2024, car registration renewal)"
+                ariaLabel="Search query"
+                className="flex-1"
+                autoFocus
+              />
               <div className="flex items-center gap-2 text-xs text-system-gray-500 shrink-0">
                 <SearchIcon className="h-4 w-4" aria-hidden="true" />
                 <span>{searchStatusLabel}</span>
               </div>
             </div>
+
+            {/* Bulk action bar - shown when items are selected */}
+            {bulkSelectedIds.size > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-stratosort-blue/10 border border-stratosort-blue/20 rounded-xl">
+                <span className="text-sm font-medium text-stratosort-blue">
+                  {bulkSelectedIds.size} selected
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="primary" size="sm" onClick={moveSelectedToFolder}>
+                    <FolderInput className="h-4 w-4" /> Move to Folder
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={copySelectedPaths}>
+                    <Copy className="h-4 w-4" /> Copy Paths
+                  </Button>
+                </div>
+                <div className="ml-auto flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={selectAllResults}>
+                    Select All ({searchResults.length})
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={clearBulkSelection}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Results grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
@@ -1486,7 +2233,9 @@ export default function UnifiedSearchModal({
                     key={r.id}
                     result={r}
                     isSelected={r.id === selectedSearchId}
+                    isBulkSelected={bulkSelectedIds.has(r.id)}
                     onSelect={(res) => setSelectedSearchId(res.id)}
+                    onToggleBulk={toggleBulkSelection}
                     onOpen={openFile}
                     onReveal={revealFile}
                     onCopyPath={copyPath}
@@ -1554,11 +2303,12 @@ export default function UnifiedSearchModal({
                 <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
                   Add to Graph
                 </div>
-                <Input
+                <SearchAutocomplete
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={setQuery}
+                  onSearch={runGraphSearch}
                   placeholder="Search to add nodes..."
-                  aria-label="Search to add nodes"
+                  ariaLabel="Search to add nodes"
                 />
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
@@ -1666,13 +2416,12 @@ export default function UnifiedSearchModal({
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setNodes([]);
-                      setEdges([]);
-                      setSelectedNodeId(null);
-                      setError('');
-                      setGraphStatus('');
-                      setShowClusters(false);
+                      if (nodes.length > 0) {
+                        setShowClearConfirm(true);
+                      }
                     }}
+                    disabled={nodes.length === 0}
+                    title={nodes.length === 0 ? 'Nothing to clear' : 'Clear all nodes from graph'}
                   >
                     Clear
                   </Button>
@@ -1684,7 +2433,7 @@ export default function UnifiedSearchModal({
                 <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
                   Clustering
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant={showClusters ? 'primary' : 'secondary'}
                     size="sm"
@@ -1699,6 +2448,16 @@ export default function UnifiedSearchModal({
                         ? 'Refresh Clusters'
                         : 'Show Clusters'}
                   </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleFindDuplicates}
+                    disabled={isFindingDuplicates}
+                    title="Find near-duplicate files (90%+ similarity)"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {isFindingDuplicates ? 'Searching...' : 'Find Duplicates'}
+                  </Button>
                 </div>
                 <div className="mt-1 text-xs text-system-gray-400">
                   Group similar files into clusters. Double-click to expand.
@@ -1709,7 +2468,7 @@ export default function UnifiedSearchModal({
             </div>
 
             {/* Center: Graph */}
-            <div className="surface-panel p-0 overflow-hidden min-h-[50vh] rounded-xl border border-system-gray-200">
+            <div className="surface-panel p-0 overflow-hidden min-h-[50vh] rounded-xl border border-system-gray-200 relative">
               {nodes.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-8">
                   <Network className="w-12 h-12 text-system-gray-300 mb-3" />
@@ -1737,6 +2496,26 @@ export default function UnifiedSearchModal({
                     </div>
                   </div>
 
+                  {/* Empty state guidance */}
+                  {stats?.files === 0 && (
+                    <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg max-w-xs">
+                      <div className="font-medium mb-1">No files indexed yet</div>
+                      <div className="text-amber-600">
+                        Go to Settings &rarr; Embeddings &rarr; Rebuild Files to index your analyzed
+                        files for semantic search.
+                      </div>
+                    </div>
+                  )}
+
+                  {stats?.files > 0 && stats?.files < 10 && (
+                    <div className="mb-4 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-4 py-3 rounded-lg max-w-xs">
+                      <div className="font-medium mb-1">Few files indexed ({stats.files})</div>
+                      <div className="text-blue-600">
+                        Analyze more files to see richer clusters and connections.
+                      </div>
+                    </div>
+                  )}
+
                   <div className="text-xs text-system-gray-400 max-w-xs space-y-1 border-t border-system-gray-200 pt-3">
                     <div className="font-medium text-system-gray-500 mb-1">Tips:</div>
                     <div>
@@ -1748,29 +2527,49 @@ export default function UnifiedSearchModal({
                     <div>
                       <strong>Drag</strong> nodes to rearrange
                     </div>
+                    <div className="pt-1">
+                      <strong>Ctrl+F</strong> to focus search
+                    </div>
                   </div>
                 </div>
               ) : (
-                <ReactFlow
-                  nodes={rfNodes}
-                  edges={edges}
-                  nodeTypes={nodeTypes}
-                  edgeTypes={edgeTypes}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onNodeClick={onNodeClick}
-                  onNodeDoubleClick={onNodeDoubleClick}
-                  fitView
-                  fitViewOptions={rfFitViewOptions}
-                  minZoom={0.2}
-                  maxZoom={2}
-                  defaultViewport={rfDefaultViewport}
-                  proOptions={rfProOptions}
-                >
-                  <Background color="#e5e7eb" gap={16} />
-                  <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
-                  <Controls showInteractive={false} />
-                </ReactFlow>
+                <>
+                  <ReactFlow
+                    nodes={rfNodes}
+                    edges={edges}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeClick={onNodeClick}
+                    onNodeDoubleClick={onNodeDoubleClick}
+                    onInit={(instance) => {
+                      reactFlowInstance.current = instance;
+                    }}
+                    fitView
+                    fitViewOptions={rfFitViewOptions}
+                    minZoom={0.2}
+                    maxZoom={2}
+                    defaultViewport={rfDefaultViewport}
+                    proOptions={rfProOptions}
+                  >
+                    <Background color="#e5e7eb" gap={16} />
+                    <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
+                    <Controls showInteractive={false} />
+                  </ReactFlow>
+
+                  {/* Legend overlay - show when clusters are visible */}
+                  {showClusters && (
+                    <ClusterLegend className="absolute top-3 left-3 z-10 shadow-md" />
+                  )}
+
+                  {/* Compact legend for non-cluster view */}
+                  {!showClusters && nodes.length > 0 && (
+                    <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg px-3 py-2">
+                      <ClusterLegend compact />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -1787,7 +2586,12 @@ export default function UnifiedSearchModal({
                     {selectedLabel}
                   </div>
                   {selectedPath && (
-                    <div className="text-xs text-system-gray-500 break-all">{selectedPath}</div>
+                    <div className="text-xs text-system-gray-500 break-all flex items-center gap-1">
+                      {isLoadingMetadata && (
+                        <span className="inline-block w-3 h-3 border border-system-gray-300 border-t-stratosort-blue rounded-full animate-spin flex-shrink-0" />
+                      )}
+                      <span>{selectedPath}</span>
+                    </div>
                   )}
 
                   <div className="pt-2 flex flex-wrap gap-2">
@@ -1822,6 +2626,25 @@ export default function UnifiedSearchModal({
           </div>
         )}
       </div>
+
+      {/* Clear confirmation modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={() => {
+          setNodes([]);
+          setEdges([]);
+          setSelectedNodeId(null);
+          setError('');
+          setGraphStatus('');
+          setShowClusters(false);
+        }}
+        title="Clear Graph?"
+        message="This will remove all nodes and connections from your exploration. This cannot be undone."
+        confirmText="Clear Graph"
+        cancelText="Cancel"
+        variant="warning"
+      />
     </Modal>
   );
 }

@@ -1,22 +1,79 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import FloatingSearchWidget from '../components/search/FloatingSearchWidget';
 import UnifiedSearchModal from '../components/search/UnifiedSearchModal';
+import { TIMEOUTS } from '../../shared/performanceConstants';
 
 const FloatingSearchContext = createContext(null);
+
+// Session storage key to track if widget was auto-shown this session
+const WIDGET_AUTO_SHOWN_KEY = 'floatingSearchWidgetAutoShown';
 
 export function FloatingSearchProvider({ children }) {
   const [isWidgetOpen, setIsWidgetOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialTab, setModalInitialTab] = useState('search');
+  const autoShowChecked = useRef(false);
 
   const openWidget = useCallback(() => {
     setIsWidgetOpen(true);
   }, []);
 
+  // Auto-show widget once per session when files are indexed
+  useEffect(() => {
+    if (autoShowChecked.current) {
+      return undefined;
+    }
+    autoShowChecked.current = true;
+
+    // Check if already shown this session
+    let alreadyShown = false;
+    try {
+      alreadyShown = Boolean(sessionStorage.getItem(WIDGET_AUTO_SHOWN_KEY));
+    } catch {
+      // sessionStorage not available, proceed with check
+    }
+
+    if (alreadyShown) {
+      return undefined;
+    }
+
+    // Track mounted state to prevent setState after unmount
+    let isMounted = true;
+
+    // Check if there are indexed files
+    const checkAndShow = async () => {
+      try {
+        const stats = await window.electronAPI?.embeddings?.getStats?.();
+        // Only update state if component is still mounted
+        if (isMounted && stats?.success && stats.files > 0) {
+          // Files are indexed, show the widget to help users discover semantic search
+          setIsWidgetOpen(true);
+          try {
+            sessionStorage.setItem(WIDGET_AUTO_SHOWN_KEY, 'true');
+          } catch {
+            // sessionStorage write failed, widget will show again next session
+          }
+        }
+      } catch {
+        // Stats check failed, don't show widget
+      }
+    };
+
+    // FIX: Use centralized timeout constant
+    const timer = setTimeout(checkAndShow, TIMEOUTS.WIDGET_AUTO_SHOW);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, []);
+
   // Listen for global shortcut / tray trigger to open semantic search
   useEffect(() => {
-    const cleanup = window.electronAPI?.system?.onOpenSemanticSearch?.(() => {
+    const api = window.electronAPI?.system?.onOpenSemanticSearch;
+    if (!api) return undefined;
+
+    const cleanup = api(() => {
       setModalInitialTab('search');
       setIsModalOpen(true);
       setIsWidgetOpen(false);
@@ -27,6 +84,21 @@ export function FloatingSearchProvider({ children }) {
         cleanup();
       }
     };
+  }, []);
+
+  // Keyboard shortcut: Ctrl+K / Cmd+K to open search modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setModalInitialTab('search');
+        setIsModalOpen(true);
+        setIsWidgetOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const closeWidget = useCallback(() => {

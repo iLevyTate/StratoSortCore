@@ -1,6 +1,7 @@
 const { Ollama } = require('ollama');
 const { logger } = require('../shared/logger');
 const { SERVICE_URLS } = require('../shared/configDefaults');
+const { normalizeServiceUrl } = require('../shared/urlUtils');
 // Lazy load SettingsService to avoid circular dependency if any (though typically fine)
 let settingsService = null;
 function getSettings() {
@@ -13,11 +14,6 @@ function getSettings() {
 // Optional: set context for clearer log origins
 logger.setContext('ollama-utils');
 
-// Path for storing Ollama configuration - DEPRECATED, managed by SettingsService
-const getOllamaConfigPath = () => {
-  return null;
-};
-
 let ollamaInstance = null;
 let ollamaHost = SERVICE_URLS.OLLAMA_HOST;
 let ollamaInstanceHost = null; // MEDIUM PRIORITY FIX (MED-13): Track host used to create instance
@@ -29,32 +25,14 @@ let selectedEmbeddingModel = null;
 
 /**
  * Normalize a URL for Ollama server connection
- * Handles missing protocol, extra whitespace, and double-protocol issues
+ * Delegates to shared normalizeServiceUrl utility
  *
  * @param {string} [hostUrl] - The URL to normalize
  * @param {string} [defaultUrl] - Default URL if none provided
  * @returns {string} Normalized URL with protocol
  */
 function normalizeOllamaUrl(hostUrl, defaultUrl = SERVICE_URLS.OLLAMA_HOST) {
-  let url = hostUrl || defaultUrl;
-
-  if (url && typeof url === 'string') {
-    url = url.trim();
-
-    // Check if URL already has a protocol
-    const hasHttps = url.toLowerCase().startsWith('https://');
-    const hasHttp = url.toLowerCase().startsWith('http://');
-
-    if (hasHttps || hasHttp) {
-      // Remove duplicate protocols (e.g., http://http://...)
-      url = url.replace(/^(https?:\/\/)+/i, hasHttps ? 'https://' : 'http://');
-    } else {
-      // No protocol specified, add http://
-      url = `http://${url}`;
-    }
-  }
-
-  return url;
+  return normalizeServiceUrl(hostUrl, { defaultUrl });
 }
 
 // Helper to destroy HTTP agent and prevent socket leaks
@@ -229,14 +207,16 @@ async function loadOllamaConfig(applySideEffects = true) {
             const http = require('http');
             const https = require('https');
             const isHttps = ollamaHost.startsWith('https://');
-            const agent = isHttps
+            // FIX: Destroy old agent to prevent socket leaks, and update currentHttpAgent
+            destroyCurrentAgent();
+            currentHttpAgent = isHttps
               ? new https.Agent({ keepAlive: true, maxSockets: 10 })
               : new http.Agent({ keepAlive: true, maxSockets: 10 });
             ollamaInstance = new Ollama({
               host: ollamaHost,
               fetch: (url, opts = {}) => {
                 return (global.fetch || require('node-fetch'))(url, {
-                  agent,
+                  agent: currentHttpAgent,
                   ...opts
                 });
               }
@@ -264,23 +244,6 @@ async function loadOllamaConfig(applySideEffects = true) {
   }
 }
 
-// Deprecated: Alias to update settings via SettingsService
-async function saveOllamaConfig(config) {
-  try {
-    const updates = {};
-    if (config.selectedTextModel || config.selectedModel)
-      updates.textModel = config.selectedTextModel || config.selectedModel;
-    if (config.selectedVisionModel) updates.visionModel = config.selectedVisionModel;
-    if (config.selectedEmbeddingModel) updates.embeddingModel = config.selectedEmbeddingModel;
-    if (config.host) updates.ollamaHost = config.host;
-
-    await getSettings().save(updates);
-  } catch (error) {
-    logger.error('[OLLAMA] Error saving config', { error });
-    throw error;
-  }
-}
-
 module.exports = {
   getOllama,
   getOllamaModel,
@@ -291,8 +254,6 @@ module.exports = {
   setOllamaEmbeddingModel,
   getOllamaHost,
   setOllamaHost,
-  getOllamaConfigPath,
   loadOllamaConfig,
-  saveOllamaConfig,
   normalizeOllamaUrl
 };

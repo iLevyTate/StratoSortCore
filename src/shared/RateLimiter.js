@@ -63,11 +63,20 @@ class SlidingWindowRateLimiter {
 
   /**
    * Wait until a slot is available
+   * FIX: HIGH - Add maximum wait time to prevent indefinite blocking
    * @param {number} pollIntervalMs - Polling interval (default: TIMEOUTS.DELAY_BATCH)
+   * @param {number} maxWaitMs - Maximum time to wait (default: 30 seconds)
    * @returns {Promise<void>}
+   * @throws {Error} If max wait time is exceeded
    */
-  async waitForSlot(pollIntervalMs = TIMEOUTS?.DELAY_BATCH || 100) {
+  async waitForSlot(pollIntervalMs = TIMEOUTS?.DELAY_BATCH || 100, maxWaitMs = 30000) {
+    const startTime = Date.now();
+
     while (!this.canCall()) {
+      // FIX: Check if max wait time exceeded
+      if (Date.now() - startTime > maxWaitMs) {
+        throw new Error(`Rate limiter wait timeout exceeded (${maxWaitMs}ms)`);
+      }
       await new Promise((r) => setTimeout(r, pollIntervalMs));
     }
   }

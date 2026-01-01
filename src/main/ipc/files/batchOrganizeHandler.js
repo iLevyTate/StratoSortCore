@@ -14,6 +14,9 @@ const { ACTION_TYPES, PROCESSING_LIMITS } = require('../../../shared/constants')
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { logger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
+// FIX: Import centralized error codes for consistent error handling
+const { ERROR_CODES } = require('../../../shared/errorHandlingUtils');
 
 logger.setContext('IPC:Files:BatchOrganize');
 
@@ -41,31 +44,6 @@ async function computeFileChecksum(filePath) {
       reject(err);
     });
   });
-}
-
-/**
- * Verify source file exists and is a file (not a directory).
- *
- * @param {string} sourcePath - Path to verify
- * @throws {Error} If source doesn't exist or isn't a file
- */
-async function verifySourceFile(sourcePath) {
-  try {
-    if (typeof fs.stat === 'function') {
-      const sourceStat = await fs.stat(sourcePath);
-      if (!sourceStat.isFile()) {
-        throw new Error(`Source is not a file (may be a directory): ${sourcePath}`);
-      }
-    } else {
-      // Fallback for mocked fs that does not implement stat
-      await fs.access(sourcePath);
-    }
-  } catch (statErr) {
-    if (statErr.code === 'ENOENT') {
-      throw new Error(`Source file does not exist: ${sourcePath}`);
-    }
-    throw statErr;
-  }
 }
 
 /**
@@ -128,7 +106,7 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: 'Invalid batch: operations must be an array',
-      errorCode: 'INVALID_BATCH'
+      errorCode: ERROR_CODES.INVALID_BATCH
     };
   }
 
@@ -136,7 +114,7 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: 'Invalid batch: no operations provided',
-      errorCode: 'EMPTY_BATCH'
+      errorCode: ERROR_CODES.EMPTY_BATCH
     };
   }
 
@@ -147,10 +125,36 @@ function validateBatchOperation(operation, log) {
     return {
       success: false,
       error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-      errorCode: 'BATCH_TOO_LARGE',
+      errorCode: ERROR_CODES.BATCH_TOO_LARGE,
       maxAllowed: MAX_BATCH_SIZE,
       provided: operation.operations.length
     };
+  }
+
+  // Validate individual operation objects have required fields
+  for (let i = 0; i < operation.operations.length; i++) {
+    const op = operation.operations[i];
+    if (!op || typeof op !== 'object') {
+      return {
+        success: false,
+        error: `Invalid operation at index ${i}: must be an object`,
+        errorCode: ERROR_CODES.INVALID_OPERATION
+      };
+    }
+    if (!op.source || typeof op.source !== 'string') {
+      return {
+        success: false,
+        error: `Invalid operation at index ${i}: missing or invalid source path`,
+        errorCode: ERROR_CODES.INVALID_OPERATION
+      };
+    }
+    if (!op.destination || typeof op.destination !== 'string') {
+      return {
+        success: false,
+        error: `Invalid operation at index ${i}: missing or invalid destination path`,
+        errorCode: ERROR_CODES.INVALID_OPERATION
+      };
+    }
   }
 
   return null; // Valid
@@ -189,7 +193,6 @@ async function handleBatchOrganize({
   const batchStartTime = Date.now();
   let shouldRollback = false;
   let rollbackReason = null;
-  let dbSyncWarning = null;
 
   try {
     const svc = getServiceIntegration();
@@ -217,7 +220,7 @@ async function handleBatchOrganize({
       return {
         success: false,
         error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-        errorCode: 'BATCH_TOO_LARGE',
+        errorCode: ERROR_CODES.BATCH_TOO_LARGE,
         maxAllowed: MAX_BATCH_SIZE,
         provided: totalOperations
       };
@@ -257,15 +260,49 @@ async function handleBatchOrganize({
           );
         }
 
+        // SECURITY: Validate paths before any file operations
+        const sourceValidation = await validateFileOperationPath(op.source, {
+          checkSymlinks: true
+        });
+        if (!sourceValidation.valid) {
+          throw new Error(`Invalid source path: ${sourceValidation.error}`);
+        }
+        const destValidation = await validateFileOperationPath(op.destination, {
+          checkSymlinks: false // Destination may not exist yet
+        });
+        if (!destValidation.valid) {
+          throw new Error(`Invalid destination path: ${destValidation.error}`);
+        }
+        // Use validated paths
+        op.source = sourceValidation.normalizedPath;
+        op.destination = destValidation.normalizedPath;
+
         // Ensure destination directory exists
         const destDir = path.dirname(op.destination);
         await fs.mkdir(destDir, { recursive: true });
 
-        // Verify source exists and is a file (not a directory)
-        await verifySourceFile(op.source);
-
         // Handle file move with collision handling
-        const moveResult = await performFileMove(op, log, computeFileChecksum);
+        // TOCTOU fix: removed verifySourceFile pre-check, handle ENOENT from move directly
+        let moveResult;
+        try {
+          moveResult = await performFileMove(op, log, computeFileChecksum);
+        } catch (moveError) {
+          if (moveError.code === 'ENOENT') {
+            // Source file disappeared between batch start and this operation
+            log.debug('[FILE-OPS] Source file no longer exists, skipping:', op.source);
+            results.push({
+              success: false,
+              source: op.source,
+              destination: op.destination,
+              error: 'Source file no longer exists',
+              operation: op.type || 'move',
+              skipped: true
+            });
+            failCount++;
+            continue;
+          }
+          throw moveError;
+        }
         op.destination = moveResult.destination;
 
         // Post-move verification: ensure destination exists and source is gone
@@ -357,9 +394,6 @@ async function handleBatchOrganize({
         getServiceIntegration,
         log
       );
-
-      // Check for database sync warnings
-      dbSyncWarning = await getDbSyncWarning(results, batchId, log);
     }
   } catch (error) {
     // Log the error - don't silently swallow it
@@ -390,7 +424,7 @@ async function handleBatchOrganize({
     return {
       success: false,
       error: error.message,
-      errorCode: 'BATCH_OPERATION_FAILED',
+      errorCode: ERROR_CODES.BATCH_OPERATION_FAILED,
       results,
       successCount,
       failCount,
@@ -406,8 +440,7 @@ async function handleBatchOrganize({
     failCount,
     completedOperations: completedOperations.length,
     summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
-    batchId,
-    ...(dbSyncWarning && { warning: dbSyncWarning })
+    batchId
   };
 }
 
@@ -637,16 +670,6 @@ async function recordUndoAndUpdateDatabase(
     }
   }
 }
-
-/**
- * Get database sync warning if applicable
- * Note: Currently a placeholder - returns null
- */
-// eslint-disable-next-line no-unused-vars
-async function getDbSyncWarning(_results, _batchId, _log) {
-  return null;
-}
-
 module.exports = {
   handleBatchOrganize,
   computeFileChecksum,

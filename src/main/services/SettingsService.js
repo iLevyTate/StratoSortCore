@@ -6,10 +6,24 @@ const { backupAndReplace } = require('../../shared/atomicFileOperations');
 const { validateSettings, sanitizeSettings } = require('../../shared/settingsValidation');
 const { DEFAULT_SETTINGS } = require('../../shared/defaultSettings');
 const { logger } = require('../../shared/logger');
+const { isNotFoundError } = require('../../shared/errorClassifier');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { LIMITS, DEBOUNCE, TIMEOUTS } = require('../../shared/performanceConstants');
 const { SettingsBackupService } = require('./SettingsBackupService');
 logger.setContext('SettingsService');
+
+/**
+ * Custom error class for mutex timeout/deadlock errors
+ * Provides better error identification and context for debugging
+ */
+class MutexTimeoutError extends Error {
+  constructor(message, context = {}) {
+    super(message);
+    this.name = 'MutexTimeoutError';
+    this.context = context;
+    this.timestamp = Date.now();
+  }
+}
 
 class SettingsService {
   constructor() {
@@ -26,6 +40,7 @@ class SettingsService {
     // PERFORMANCE FIX: Use centralized debounce constant
     this._debounceDelay = DEBOUNCE.SETTINGS_SAVE;
     this._isInternalChange = false; // Flag to ignore changes we made ourselves
+    this._internalChangeTimer = null; // FIX: Track internal change reset timer for cleanup
 
     // Fixed: Add mutex to prevent concurrent save operations
     this._saveMutex = Promise.resolve();
@@ -75,13 +90,70 @@ class SettingsService {
       this._cacheTimestamp = now;
       return merged;
     } catch (err) {
+      // FIX: Attempt auto-recovery from backup if settings file is corrupted
+      if (err && !isNotFoundError(err)) {
+        logger.warn(
+          `[SettingsService] Failed to read settings: ${err.message}, attempting recovery from backup`
+        );
+        const recovered = await this._attemptAutoRecovery();
+        if (recovered) {
+          return recovered;
+        }
+      }
+
       const merged = { ...this.defaults };
       this._cache = merged;
       this._cacheTimestamp = Date.now();
-      if (err && err.code !== 'ENOENT') {
-        logger.warn(`[SettingsService] Failed to read settings, using defaults: ${err.message}`);
+      if (err && !isNotFoundError(err)) {
+        logger.warn(`[SettingsService] Recovery failed, using defaults`);
       }
       return merged;
+    }
+  }
+
+  /**
+   * FIX: Attempt auto-recovery from the most recent valid backup
+   * @private
+   * @returns {Promise<Object|null>} Recovered settings or null if recovery failed
+   */
+  async _attemptAutoRecovery() {
+    try {
+      const backups = await this._backupService.listBackups();
+      if (!backups || backups.length === 0) {
+        logger.warn('[SettingsService] No backups available for auto-recovery');
+        return null;
+      }
+
+      // Try backups in order (most recent first)
+      for (const backup of backups) {
+        try {
+          logger.info(`[SettingsService] Attempting recovery from backup: ${backup.filename}`);
+          const result = await this._backupService.restoreBackup(backup.filename);
+          if (result.success) {
+            logger.info(
+              `[SettingsService] Successfully recovered settings from backup: ${backup.filename}`
+            );
+            // Reload the restored settings
+            const raw = await fs.readFile(this.settingsPath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            const merged = { ...this.defaults, ...parsed };
+            this._cache = merged;
+            this._cacheTimestamp = Date.now();
+            return merged;
+          }
+        } catch (backupErr) {
+          logger.warn(
+            `[SettingsService] Failed to restore backup ${backup.filename}: ${backupErr.message}`
+          );
+          // Continue to next backup
+        }
+      }
+
+      logger.error('[SettingsService] All backup recovery attempts failed');
+      return null;
+    } catch (err) {
+      logger.error(`[SettingsService] Auto-recovery failed: ${err.message}`);
+      return null;
     }
   }
 
@@ -328,8 +400,13 @@ class SettingsService {
         }
       } finally {
         // Reset flag after a short delay to allow file system to settle
-        setTimeout(() => {
+        // FIX: Track timer for cleanup during shutdown
+        if (this._internalChangeTimer) {
+          clearTimeout(this._internalChangeTimer);
+        }
+        this._internalChangeTimer = setTimeout(() => {
           this._isInternalChange = false;
+          this._internalChangeTimer = null;
         }, 100);
       }
 
@@ -370,9 +447,10 @@ class SettingsService {
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(
-            new Error(
+            new MutexTimeoutError(
               `Mutex deadlock detected: Previous operation did not complete within ${this._mutexTimeoutMs}ms. ` +
-                `This may indicate a stuck operation or infinite loop.`
+                `This may indicate a stuck operation or infinite loop.`,
+              { phase: 'mutex_acquisition', timeoutMs: this._mutexTimeoutMs }
             )
           );
         }, this._mutexTimeoutMs);
@@ -397,9 +475,14 @@ class SettingsService {
         const operationTimeout = new Promise((_, reject) => {
           operationTimeoutId = setTimeout(() => {
             reject(
-              new Error(
+              new MutexTimeoutError(
                 `Operation timeout: Function did not complete within ${this._mutexTimeoutMs}ms. ` +
-                  `This may indicate a blocking operation or infinite loop in the save/restore logic.`
+                  `This may indicate a blocking operation or infinite loop in the save/restore logic.`,
+                {
+                  phase: 'operation_execution',
+                  timeoutMs: this._mutexTimeoutMs,
+                  mutexAcquiredAt: this._mutexAcquiredAt
+                }
               )
             );
           }, this._mutexTimeoutMs);
@@ -416,6 +499,10 @@ class SettingsService {
         resolveMutex();
       }
     } catch (error) {
+      // FIX: Preserve error context BEFORE clearing _mutexAcquiredAt
+      const acquiredAt = this._mutexAcquiredAt;
+      const timeElapsed = acquiredAt ? Date.now() - acquiredAt : null;
+
       // CRITICAL FIX: Always release mutex even on deadlock/timeout errors
       this._mutexAcquiredAt = null;
       if (!resolveMutex) {
@@ -426,11 +513,17 @@ class SettingsService {
       }
 
       // Log deadlock/timeout errors with extra context
-      if (error.message?.includes('deadlock') || error.message?.includes('timeout')) {
+      if (
+        error instanceof MutexTimeoutError ||
+        error.message?.includes('deadlock') ||
+        error.message?.includes('timeout')
+      ) {
         logger.error('[SettingsService] Mutex deadlock or timeout detected', {
           error: error.message,
-          mutexAcquiredAt: this._mutexAcquiredAt,
-          timeElapsed: this._mutexAcquiredAt ? Date.now() - this._mutexAcquiredAt : 'N/A'
+          errorType: error.name,
+          errorContext: error instanceof MutexTimeoutError ? error.context : undefined,
+          mutexAcquiredAt: acquiredAt,
+          timeElapsed: timeElapsed ?? 'N/A'
         });
       }
 
@@ -646,7 +739,7 @@ class SettingsService {
       try {
         await fs.access(this.settingsPath);
       } catch (error) {
-        if (error.code === 'ENOENT') {
+        if (isNotFoundError(error)) {
           logger.info('[SettingsService] Settings file was deleted, using defaults');
           this.invalidateCache();
           this._notifySettingsChanged();
@@ -705,6 +798,11 @@ class SettingsService {
    * @returns {Promise<void>}
    */
   async shutdown() {
+    // FIX: Clear all timers to prevent memory leaks
+    if (this._internalChangeTimer) {
+      clearTimeout(this._internalChangeTimer);
+      this._internalChangeTimer = null;
+    }
     this._stopFileWatcher();
   }
 }

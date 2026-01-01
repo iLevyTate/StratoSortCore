@@ -31,7 +31,6 @@ const Select = memo(
         <select
           ref={ref}
           className={classes}
-          role="combobox"
           aria-invalid={invalid || !!error}
           aria-required={required}
           {...rest}
@@ -58,7 +57,6 @@ const Select = memo(
           ref={ref}
           id={id}
           className={classes}
-          role="combobox"
           aria-invalid={invalid || !!error}
           aria-describedby={error ? errorId : undefined}
           aria-required={required}

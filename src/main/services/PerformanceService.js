@@ -1,6 +1,7 @@
 const os = require('os');
 const { spawn } = require('child_process');
 const { getNvidiaSmiCommand, isMacOS } = require('../../shared/platformUtils');
+const { GPU_TUNING, OLLAMA } = require('../../shared/performanceConstants');
 
 /**
  * PerformanceService
@@ -52,6 +53,11 @@ async function runCommand(command, args, timeout = 5000) {
         safeResolve({ success: false, stdout: '' });
       }, timeout);
 
+      // Prevent timer from keeping Node.js process alive
+      if (timeoutId && typeof timeoutId.unref === 'function') {
+        timeoutId.unref();
+      }
+
       let stdout = '';
       proc.stdout.on('data', (d) => {
         stdout += d.toString();
@@ -62,7 +68,9 @@ async function runCommand(command, args, timeout = 5000) {
       proc.on('close', (code) => {
         safeResolve({ success: code === 0, stdout: stdout.trim() });
       });
-    } catch {
+    } catch (spawnErr) {
+      // Intentionally handled: command may not exist on this system (e.g., nvidia-smi on non-NVIDIA)
+      // Debug-level logging to avoid noise in logs for expected failures
       safeResolve({ success: false, stdout: '' });
     }
   });
@@ -243,32 +251,30 @@ async function buildOllamaOptions(task = 'text') {
   let numCtx;
   switch (task) {
     case 'vision':
-      numCtx = 2048; // Vision models have image token overhead
+      numCtx = OLLAMA.CONTEXT_VISION;
       break;
     case 'embeddings':
-      numCtx = 512; // Embeddings need minimal context
+      numCtx = OLLAMA.CONTEXT_EMBEDDINGS;
       break;
     case 'text':
     default:
-      numCtx = 8192; // Text models benefit from larger context for document analysis
+      numCtx = OLLAMA.CONTEXT_TEXT;
       break;
   }
 
   // Batch sizing - larger when GPU VRAM is available
-  let numBatch = envNumBatch || 256;
+  let numBatch = envNumBatch || GPU_TUNING.NUM_BATCH_LOW_MEMORY;
   if (!envNumBatch && caps.hasGpu) {
     const vram = caps.gpuMemoryMB || 0;
-    if (vram >= 16000)
-      numBatch = 1024; // 16GB+ VRAM
-    else if (vram >= 12000)
-      numBatch = 512; // 12GB VRAM
-    else if (vram >= 8000)
-      numBatch = 384; // 8GB VRAM
-    else if (vram >= 6000)
-      numBatch = 256; // 6GB VRAM
-    else numBatch = 192; // 4GB+ VRAM or unknown
+    if (vram >= GPU_TUNING.VERY_HIGH_MEMORY_THRESHOLD)
+      numBatch = GPU_TUNING.NUM_BATCH_VERY_HIGH_MEMORY;
+    else if (vram >= GPU_TUNING.HIGH_MEMORY_THRESHOLD) numBatch = GPU_TUNING.NUM_BATCH_HIGH_MEMORY;
+    else if (vram >= GPU_TUNING.MEDIUM_MEMORY_THRESHOLD)
+      numBatch = GPU_TUNING.NUM_BATCH_MEDIUM_MEMORY;
+    else if (vram >= GPU_TUNING.LOW_MEMORY_THRESHOLD) numBatch = GPU_TUNING.NUM_BATCH_LOW_MEMORY;
+    else numBatch = GPU_TUNING.NUM_BATCH_MINIMAL;
   } else if (!envNumBatch) {
-    numBatch = 128; // CPU-only safe default
+    numBatch = GPU_TUNING.NUM_BATCH_CPU_ONLY;
   }
 
   // GPU offload configuration
@@ -335,18 +341,18 @@ async function getRecommendedEnvSettings() {
 
     // Batch size based on VRAM
     const vram = caps.gpuMemoryMB || 0;
-    if (vram >= 16000) {
-      recommendations.OLLAMA_NUM_BATCH = '1024';
-    } else if (vram >= 12000) {
-      recommendations.OLLAMA_NUM_BATCH = '512';
-    } else if (vram >= 8000) {
-      recommendations.OLLAMA_NUM_BATCH = '384';
+    if (vram >= GPU_TUNING.VERY_HIGH_MEMORY_THRESHOLD) {
+      recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_VERY_HIGH_MEMORY);
+    } else if (vram >= GPU_TUNING.HIGH_MEMORY_THRESHOLD) {
+      recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_HIGH_MEMORY);
+    } else if (vram >= GPU_TUNING.MEDIUM_MEMORY_THRESHOLD) {
+      recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_MEDIUM_MEMORY);
     } else {
-      recommendations.OLLAMA_NUM_BATCH = '256';
+      recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_LOW_MEMORY);
     }
   } else {
     recommendations.OLLAMA_NUM_GPU = '0';
-    recommendations.OLLAMA_NUM_BATCH = '128';
+    recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_CPU_ONLY);
   }
 
   return {
@@ -367,17 +373,18 @@ async function getRecommendedEnvSettings() {
  */
 function getRecommendedEmbeddingModels() {
   return {
-    // Best balance of speed and quality for local use
-    recommended: 'mxbai-embed-large',
+    // Best balance of speed, size, and quality for accessibility
+    recommended: 'embeddinggemma',
     alternatives: [
+      { model: 'embeddinggemma', note: 'Google best-in-class, 308MB, 768 dims, <15ms' },
       { model: 'nomic-embed-text', note: 'Good quality, fast, 768 dimensions' },
-      { model: 'mxbai-embed-large', note: 'Higher quality, 1024 dimensions' },
+      { model: 'mxbai-embed-large', note: 'Higher quality, 1024 dimensions (legacy)' },
       { model: 'all-minilm', note: 'Fastest, lower quality, 384 dimensions' }
     ],
     notes: [
-      'mxbai-embed-large offers best quality for document similarity',
-      'nomic-embed-text is faster with slightly lower quality',
-      'Use all-minilm only if speed is critical and quality can be sacrificed'
+      'embeddinggemma offers best speed/quality ratio at 308MB',
+      'nomic-embed-text is a good alternative with same dimensions',
+      'mxbai-embed-large requires re-embedding if switching (1024 vs 768 dims)'
     ]
   };
 }

@@ -64,15 +64,15 @@ describe('defaultSettings', () => {
     });
 
     test('has textModel', () => {
-      expect(DEFAULT_SETTINGS.textModel).toBe('llama3.2:latest');
+      expect(DEFAULT_SETTINGS.textModel).toBe('qwen3:0.6b');
     });
 
     test('has visionModel', () => {
-      expect(DEFAULT_SETTINGS.visionModel).toBe('llava:latest');
+      expect(DEFAULT_SETTINGS.visionModel).toBe('gemma3:latest');
     });
 
     test('has embeddingModel', () => {
-      expect(DEFAULT_SETTINGS.embeddingModel).toBe('mxbai-embed-large');
+      expect(DEFAULT_SETTINGS.embeddingModel).toBe('embeddinggemma');
     });
   });
 

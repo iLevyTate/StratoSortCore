@@ -5,7 +5,19 @@
 
 const { DEFAULT_SETTINGS } = require('./defaultSettings');
 const { PROTOTYPE_POLLUTION_KEYS } = require('./securityConfig');
-const { THEME_VALUES, LENIENT_URL_PATTERN } = require('./validationConstants');
+const {
+  THEME_VALUES,
+  LENIENT_URL_PATTERN,
+  LOGGING_LEVELS,
+  NUMERIC_LIMITS
+} = require('./validationConstants');
+const {
+  normalizeSlashes,
+  normalizeProtocolCase,
+  extractBaseUrl,
+  hasProtocol
+} = require('./urlUtils');
+const { isValidEmbeddingModel } = require('./modelCategorization');
 
 /**
  * Shared URL validation regex (from validationConstants)
@@ -31,6 +43,11 @@ const VALIDATION_RULES = {
     type: 'string',
     minLength: 1,
     maxLength: 500,
+    required: false
+  },
+  lastBrowsedPath: {
+    type: 'string',
+    maxLength: 1000,
     required: false
   },
   maxConcurrentAnalysis: {
@@ -82,8 +99,12 @@ const VALIDATION_RULES = {
     minLength: 1,
     maxLength: 200,
     required: false,
-    // Lock to the vetted embedding model to keep vector dimensions consistent
-    enum: ['mxbai-embed-large']
+    // Pattern-based validation using modelCategorization.js
+    // NOTE: changing models requires re-embedding (dimension mismatch)
+    // Common models: embeddinggemma (768), mxbai-embed-large (1024), nomic-embed-text (768)
+    validator: isValidEmbeddingModel,
+    validatorMessage:
+      'embeddingModel must be a valid embedding model (e.g., embeddinggemma, mxbai-embed-large, nomic-embed-text)'
   },
   autoUpdateOllama: {
     type: 'boolean',
@@ -179,6 +200,32 @@ const VALIDATION_RULES = {
     max: 5000,
     integer: true,
     required: false
+  },
+  // Additional settings from securityConfig.allowedKeys
+  language: {
+    type: 'string',
+    maxLength: 20,
+    required: false
+  },
+  loggingLevel: {
+    type: 'string',
+    enum: LOGGING_LEVELS,
+    required: false
+  },
+  cacheSize: {
+    type: 'number',
+    min: NUMERIC_LIMITS.cacheSize.min,
+    max: NUMERIC_LIMITS.cacheSize.max,
+    integer: true,
+    required: false
+  },
+  autoUpdateCheck: {
+    type: 'boolean',
+    required: false
+  },
+  telemetryEnabled: {
+    type: 'boolean',
+    required: false
   }
 };
 
@@ -194,8 +241,15 @@ function validateSetting(key, value, rule) {
     return errors;
   }
 
-  // Enum validation
-  if (rule.enum && !rule.enum.includes(value)) {
+  // Custom validator function (takes precedence over enum)
+  if (rule.validator && typeof rule.validator === 'function') {
+    if (!rule.validator(value)) {
+      const message = rule.validatorMessage || `${key} failed custom validation`;
+      errors.push(message);
+    }
+  }
+  // Enum validation (only if no custom validator)
+  else if (rule.enum && !rule.enum.includes(value)) {
     errors.push(`${key} must be one of [${rule.enum.join(', ')}], got "${value}"`);
   }
 
@@ -325,21 +379,14 @@ function sanitizeSettings(settings) {
       // Examples:
       // - "HTTP://127.0.0.1:11434/" -> "http://127.0.0.1:11434"
       // - "http:\\\\127.0.0.1:11434\\api\\tags" -> "http://127.0.0.1:11434"
-      s = s.replace(/\\/g, '/');
-      if (/^https?:\/\//i.test(s)) {
-        const isHttps = /^https:\/\//i.test(s);
-        s = s.replace(/^https?:\/\//i, isHttps ? 'https://' : 'http://');
+      s = normalizeSlashes(s);
+      if (hasProtocol(s)) {
+        s = normalizeProtocolCase(s);
       }
 
       // Remove path/query/hash and keep only protocol + host[:port]
       // (users often paste "/api/tags" or other endpoints).
-      try {
-        const urlForParse = s.includes('://') ? s : `http://${s}`;
-        const u = new URL(urlForParse);
-        s = `${u.protocol}//${u.host}`;
-      } catch {
-        // If parsing fails, keep trimmed/cleaned input (validation will decide).
-      }
+      s = extractBaseUrl(s);
 
       normalizedValue = s;
     }

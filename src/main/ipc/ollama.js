@@ -1,15 +1,41 @@
 const { Ollama } = require('ollama');
-const { withErrorLogging, withValidation } = require('./ipcWrappers');
+const { withErrorLogging, withValidation, safeHandle } = require('./ipcWrappers');
 const { optionalUrl: optionalUrlSchema } = require('./validationSchemas');
 const { SERVICE_URLS } = require('../../shared/configDefaults');
 const { normalizeOllamaUrl } = require('../ollamaUtils');
-const { URL_PATTERN } = require('../../shared/validationConstants');
+const { LENIENT_URL_PATTERN } = require('../../shared/validationConstants');
+const { categorizeModels } = require('../../shared/modelCategorization');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 let z;
+
+/**
+ * FIX: CRITICAL - Helper to add timeout to Ollama API calls in IPC handlers
+ * Previously, IPC handlers called Ollama directly without timeout, potentially hanging the main process
+ * @param {Promise} promise - The promise to wrap with timeout
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} operation - Operation name for error message
+ * @returns {Promise} - Promise that rejects if timeout is exceeded
+ */
+async function withOllamaTimeout(promise, timeoutMs, operation) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${operation} timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    return result;
+  } finally {
+    // FIX: Clear timeout on success or error to prevent timer leak
+    clearTimeout(timeoutId);
+  }
+}
 
 function isValidOllamaUrl(url) {
   if (!url || typeof url !== 'string') return false;
-  // Use shared URL_PATTERN from validationConstants to avoid duplicate regex definitions
-  return URL_PATTERN.test(url.trim());
+  // Use lenient URL pattern that allows URLs with or without protocol
+  return LENIENT_URL_PATTERN.test(url.trim());
 }
 
 // Note: normalizeOllamaUrl is imported from shared ollamaUtils module
@@ -32,87 +58,25 @@ function registerOllamaIpc({
   getOllamaEmbeddingModel,
   getOllamaHost
 }) {
-  // Comprehensive patterns for model categorization
-  // Vision models: Models that can process images
-  const VISION_MODEL_PATTERNS = [
-    /llava/i, // LLaVA family (llava, llava-llama3, llava-phi3, etc.)
-    /bakllava/i, // BakLLaVA
-    /moondream/i, // Moondream vision model
-    /vision/i, // Any model with "vision" in name
-    /llama.*vision/i, // Llama vision variants
-    /gemma.*vision/i, // Gemma vision variants
-    /-v\b/i, // Models ending with -v (like minicpm-v)
-    /minicpm-v/i, // MiniCPM-V
-    /cogvlm/i, // CogVLM
-    /qwen.*vl/i, // Qwen-VL
-    /internvl/i, // InternVL
-    /yi-vl/i, // Yi-VL
-    /deepseek-vl/i, // DeepSeek-VL
-    /clip/i, // CLIP models
-    /blip/i, // BLIP models
-    /sam\b/i // SAM (Segment Anything)
-  ];
+  // Model categorization is now handled by shared/modelCategorization.js
 
-  // Embedding models: Models for generating text embeddings
-  const EMBEDDING_MODEL_PATTERNS = [
-    /embed/i, // Any model with "embed" in name
-    /embedding/i, // Any model with "embedding" in name
-    /mxbai-embed/i, // MxBai embedding models
-    /nomic-embed/i, // Nomic embedding models
-    /all-minilm/i, // All-MiniLM models
-    /\bbge\b/i, // BGE embedding models
-    /e5-/i, // E5 embedding models
-    /gte-/i, // GTE embedding models
-    /stella/i, // Stella embedding models
-    /snowflake-arctic-embed/i, // Snowflake Arctic Embed
-    /paraphrase/i // Paraphrase models (typically embeddings)
-  ];
-
-  /**
-   * Categorize a model by its name
-   * @param {string} modelName - The model name to categorize
-   * @returns {'vision' | 'embedding' | 'text'} The category
-   */
-  function categorizeModel(modelName) {
-    const name = modelName || '';
-
-    // Check vision patterns first (more specific)
-    for (const pattern of VISION_MODEL_PATTERNS) {
-      if (pattern.test(name)) {
-        return 'vision';
-      }
-    }
-
-    // Check embedding patterns
-    for (const pattern of EMBEDDING_MODEL_PATTERNS) {
-      if (pattern.test(name)) {
-        return 'embedding';
-      }
-    }
-
-    // Default to text model
-    return 'text';
-  }
-
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.OLLAMA.GET_MODELS,
     withErrorLogging(logger, async () => {
       try {
         const ollama = getOllama();
-        const response = await ollama.list();
+        // FIX: Add timeout to prevent main process hang if Ollama is unresponsive
+        const response = await withOllamaTimeout(
+          ollama.list(),
+          TIMEOUTS.MODEL_DISCOVERY,
+          'Get models'
+        );
         const models = response.models || [];
-        const categories = { text: [], vision: [], embedding: [] };
 
-        for (const m of models) {
-          const name = m.name || '';
-          const category = categorizeModel(name);
-          categories[category].push(name);
-        }
+        // Use shared categorization utility (handles sorting)
+        const categories = categorizeModels(models);
 
-        // Sort each category alphabetically for consistent display
-        categories.text.sort((a, b) => a.localeCompare(b));
-        categories.vision.sort((a, b) => a.localeCompare(b));
-        categories.embedding.sort((a, b) => a.localeCompare(b));
         // Ensure we update health on every models fetch
         systemAnalytics.ollamaHealth = {
           status: 'healthy',
@@ -169,7 +133,12 @@ function registerOllamaIpc({
             const testUrl = normalizeOllamaUrl(hostUrl);
 
             const testOllama = new Ollama({ host: testUrl });
-            const response = await testOllama.list();
+            // FIX: Add timeout to prevent main process hang during connection test
+            const response = await withOllamaTimeout(
+              testOllama.list(),
+              TIMEOUTS.API_REQUEST,
+              'Test connection'
+            );
             systemAnalytics.ollamaHealth = {
               status: 'healthy',
               host: testUrl,
@@ -210,7 +179,12 @@ function registerOllamaIpc({
             }
 
             const testOllama = new Ollama({ host: testUrl });
-            const response = await testOllama.list();
+            // FIX: Add timeout to prevent main process hang during connection test
+            const response = await withOllamaTimeout(
+              testOllama.list(),
+              TIMEOUTS.API_REQUEST,
+              'Test connection'
+            );
             systemAnalytics.ollamaHealth = {
               status: 'healthy',
               host: testUrl,
@@ -242,10 +216,11 @@ function registerOllamaIpc({
             };
           }
         });
-  ipcMain.handle(IPC_CHANNELS.OLLAMA.TEST_CONNECTION, testConnectionHandler);
+  safeHandle(ipcMain, IPC_CHANNELS.OLLAMA.TEST_CONNECTION, testConnectionHandler);
 
   // Pull models (best-effort, returns status per model)
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.OLLAMA.PULL_MODELS,
     withErrorLogging(logger, async (_event, models = []) => {
       try {
@@ -285,12 +260,18 @@ function registerOllamaIpc({
   );
 
   // Delete a model
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.OLLAMA.DELETE_MODEL,
     withErrorLogging(logger, async (_event, model) => {
       try {
         const ollama = getOllama();
-        await ollama.delete({ model });
+        // FIX: Add timeout to prevent main process hang during model deletion
+        await withOllamaTimeout(
+          ollama.delete({ model }),
+          TIMEOUTS.API_REQUEST_SLOW,
+          'Delete model'
+        );
         return { success: true };
       } catch (error) {
         logger.error('[IPC] Delete model failed]:', error);

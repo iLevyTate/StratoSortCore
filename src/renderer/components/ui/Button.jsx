@@ -57,7 +57,10 @@ const Button = memo(function Button({
     const variantClass = VARIANT_TO_CLASS[variant] || VARIANT_TO_CLASS.primary;
     const sizeClass = SIZE_TO_CLASS[size] || SIZE_TO_CLASS.md;
     const disabledClass = disabled || isLoading ? 'opacity-50 cursor-not-allowed' : '';
-    return `${variantClass} ${sizeClass} ${disabledClass} ${className}`.trim();
+    // Accessibility: Add focus-visible ring for keyboard navigation
+    const focusClass =
+      'focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 focus-visible:outline-none';
+    return `${variantClass} ${sizeClass} ${focusClass} ${disabledClass} ${className}`.trim();
   }, [variant, size, disabled, isLoading, className]);
 
   // Bug #39: Ensure button has accessible label

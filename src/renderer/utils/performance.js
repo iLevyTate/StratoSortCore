@@ -10,6 +10,92 @@
 import { debounce, throttle } from '../../shared/promiseUtils';
 
 /**
+ * RAF (requestAnimationFrame) throttle for smooth UI updates
+ * Only allows one execution per animation frame
+ *
+ * @param {Function} fn - Function to throttle
+ * @returns {Function} Throttled function with cancel method
+ */
+function rafThrottle(fn) {
+  let rafId = null;
+  let lastArgs = null;
+
+  const throttled = (...args) => {
+    lastArgs = args;
+    if (rafId === null) {
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        fn(...lastArgs);
+      });
+    }
+  };
+
+  throttled.cancel = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  };
+
+  return throttled;
+}
+
+/**
+ * Batch processor for collecting items and processing them together
+ *
+ * @param {Function} processFn - Function to process batch of items
+ * @param {number} wait - Delay in ms before processing (default: 0)
+ * @param {number} maxBatchSize - Maximum batch size before immediate processing (optional)
+ * @returns {Object} Processor with add, flush, and clear methods
+ */
+function batchProcessor(processFn, wait = 0, maxBatchSize = Infinity) {
+  let batch = [];
+  let timeoutId = null;
+
+  const process = () => {
+    if (batch.length === 0) return;
+    const items = batch;
+    batch = [];
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    processFn(items);
+  };
+
+  const scheduleProcess = () => {
+    if (timeoutId !== null) return;
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      process();
+    }, wait);
+  };
+
+  return {
+    add(item) {
+      batch.push(item);
+      if (batch.length >= maxBatchSize) {
+        process();
+      } else {
+        scheduleProcess();
+      }
+    },
+
+    async flush() {
+      process();
+    },
+
+    clear() {
+      batch = [];
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    }
+  };
+}
+
+/**
  * LRU (Least Recently Used) cache implementation
  *
  * @param {number} maxSize - Maximum number of items in cache
@@ -59,90 +145,6 @@ function createLRUCache(maxSize = 100) {
 
     get size() {
       return cache.size;
-    }
-  };
-}
-
-/**
- * Request animation frame throttle for smooth animations
- *
- * @param {Function} callback - The function to throttle
- * @returns {Function} The throttled function
- */
-function rafThrottle(callback) {
-  let requestId = null;
-  let lastArgs;
-
-  const throttled = function (...args) {
-    lastArgs = args;
-
-    if (requestId === null) {
-      requestId = requestAnimationFrame(() => {
-        callback.apply(this, lastArgs);
-        requestId = null;
-      });
-    }
-  };
-
-  throttled.cancel = () => {
-    if (requestId !== null) {
-      cancelAnimationFrame(requestId);
-      requestId = null;
-    }
-  };
-
-  return throttled;
-}
-
-/**
- * Creates a function that batches multiple calls into a single async operation
- *
- * @param {Function} fn - The function to batch
- * @param {number} wait - Time to wait before executing batch
- * @param {number} maxBatchSize - Maximum batch size
- * @returns {Function} The batched function
- */
-function batchProcessor(fn, wait = 0, maxBatchSize = Infinity) {
-  let batch = [];
-  let timeoutId;
-
-  const processBatch = async () => {
-    const currentBatch = batch;
-    batch = [];
-    timeoutId = null;
-
-    if (currentBatch.length > 0) {
-      await fn(currentBatch);
-    }
-  };
-
-  return {
-    add(item) {
-      batch.push(item);
-
-      if (batch.length >= maxBatchSize) {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        processBatch();
-      } else if (!timeoutId) {
-        timeoutId = setTimeout(processBatch, wait);
-      }
-    },
-
-    flush() {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      return processBatch();
-    },
-
-    clear() {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      batch = [];
     }
   };
 }

@@ -2,6 +2,10 @@
  * Test Setup for Stratosort Document Processing Tests
  * Initializes mocks, global variables, and test utilities
  */
+
+// Import jest-dom for React Testing Library matchers (toBeInTheDocument, etc.)
+require('@testing-library/jest-dom');
+
 const { vol, fs: memfs } = require('memfs');
 const path = require('path');
 const { EventEmitter } = require('events');

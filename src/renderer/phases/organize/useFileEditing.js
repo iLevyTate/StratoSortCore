@@ -234,12 +234,38 @@ export function useBulkOperations({
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
 
+  // FIX: Use refs to always get latest values and prevent stale closures
+  const selectedFilesRef = useRef(selectedFiles);
+  const editingFilesRef = useRef(editingFiles);
+  const bulkCategoryRef = useRef(bulkCategory);
+  const addNotificationRef = useRef(addNotification);
+
+  // Keep refs in sync with latest values
+  useEffect(() => {
+    selectedFilesRef.current = selectedFiles;
+  }, [selectedFiles]);
+  useEffect(() => {
+    editingFilesRef.current = editingFiles;
+  }, [editingFiles]);
+  useEffect(() => {
+    bulkCategoryRef.current = bulkCategory;
+  }, [bulkCategory]);
+  useEffect(() => {
+    addNotificationRef.current = addNotification;
+  }, [addNotification]);
+
   // Debounced bulk category change ref
   const debouncedBulkCategoryChangeRef = useRef(null);
 
-  // Initialize debounced function
+  // Initialize debounced function once - uses refs for latest values
   useEffect(() => {
-    debouncedBulkCategoryChangeRef.current = debounce((category, selected, edits, notify) => {
+    debouncedBulkCategoryChangeRef.current = debounce(() => {
+      // FIX: Read from refs to get latest values at execution time, not call time
+      const category = bulkCategoryRef.current;
+      const selected = selectedFilesRef.current;
+      const edits = editingFilesRef.current;
+      const notify = addNotificationRef.current;
+
       if (!category) return;
       const newEdits = {};
       selected.forEach((i) => {
@@ -259,17 +285,13 @@ export function useBulkOperations({
         debouncedBulkCategoryChangeRef.current = null;
       }
     };
-  }, [setEditingFiles, setBulkEditMode, setBulkCategory, setSelectedFiles]);
+  }, [setEditingFiles, setSelectedFiles]); // Only stable setters needed
 
+  // FIX: Simplified - just triggers the debounced function which reads from refs
   const applyBulkCategoryChange = useCallback(() => {
-    if (!bulkCategory) return;
-    debouncedBulkCategoryChangeRef.current(
-      bulkCategory,
-      selectedFiles,
-      editingFiles,
-      addNotification
-    );
-  }, [bulkCategory, selectedFiles, editingFiles, addNotification]);
+    if (!bulkCategoryRef.current) return;
+    debouncedBulkCategoryChangeRef.current?.();
+  }, []);
 
   return {
     bulkEditMode,

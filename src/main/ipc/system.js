@@ -3,7 +3,7 @@
  *
  * Handles system metrics, application statistics, updates, and configuration.
  */
-const { createHandler, createErrorResponse } = require('./ipcWrappers');
+const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
 const { dump: dumpConfig, validate: validateConfig } = require('../../shared/config/index');
 
 function registerSystemIpc({
@@ -15,7 +15,8 @@ function registerSystemIpc({
 }) {
   const context = 'System';
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SYSTEM.GET_APPLICATION_STATISTICS,
     createHandler({
       logger,
@@ -42,7 +43,8 @@ function registerSystemIpc({
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SYSTEM.GET_METRICS,
     createHandler({
       logger,
@@ -58,7 +60,8 @@ function registerSystemIpc({
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SYSTEM.APPLY_UPDATE,
     createHandler({
       logger,
@@ -78,7 +81,8 @@ function registerSystemIpc({
 
   // Configuration inspection handler for debugging and support
   // FIX: Use IPC_CHANNELS constant instead of string literal
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SYSTEM.GET_CONFIG,
     createHandler({
       logger,
@@ -108,7 +112,8 @@ function registerSystemIpc({
 
   // Get configuration value by path
   // FIX: Use IPC_CHANNELS constant instead of string literal
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE,
     createHandler({
       logger,

@@ -9,7 +9,10 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
   createErrorResponse: jest.fn((error) => ({
     success: false,
     error: error.message || String(error)
-  }))
+  })),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 jest.mock('../src/shared/config/index', () => ({

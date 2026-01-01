@@ -20,6 +20,8 @@ const path = require('path');
 // Configuration
 const APP_ROOT = path.resolve(__dirname, '../../..');
 const MAIN_ENTRY = path.join(APP_ROOT, 'src/main/simple-main.js');
+// Use relative path from APP_ROOT for proper app.getAppPath() resolution
+const MAIN_ENTRY_RELATIVE = './src/main/simple-main.js';
 const ELECTRON_PATH = require('electron');
 
 // Default launch options
@@ -57,17 +59,20 @@ async function launchApp(options = {}) {
   };
 
   // Add args for headless mode if not headed
-  const args = [MAIN_ENTRY];
+  // Use relative path from APP_ROOT so app.getAppPath() returns correct root
+  const args = [MAIN_ENTRY_RELATIVE];
   if (!options.headed) {
     args.push('--disable-gpu');
   }
 
   console.log('[E2E] Launching Electron app...');
-  console.log('[E2E] Main entry:', MAIN_ENTRY);
+  console.log('[E2E] Main entry:', MAIN_ENTRY_RELATIVE);
+  console.log('[E2E] Working directory:', APP_ROOT);
 
   const app = await electron.launch({
     executablePath: ELECTRON_PATH,
     args,
+    cwd: APP_ROOT, // Set working directory so app.getAppPath() returns correct path
     env: mergedOptions.env,
     timeout: mergedOptions.timeout
   });
@@ -162,7 +167,71 @@ async function waitForAppReady(window, timeout = 30000) {
       });
   }
 
+  // Dismiss any modal dialogs that might be blocking (e.g., Dependency Wizard)
+  await dismissModals(window);
+
   console.log('[E2E] App is ready');
+}
+
+/**
+ * Dismiss any modal dialogs that might be blocking the UI
+ * This handles the Dependency Wizard and other modals that appear on first launch
+ *
+ * @param {Page} window - The Playwright page object
+ */
+async function dismissModals(window) {
+  // Check for modal overlay
+  const modalOverlay = window.locator('[role="presentation"].fixed.inset-0, .z-modal');
+  const hasModal = await modalOverlay
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  if (hasModal) {
+    console.log('[E2E] Modal detected, attempting to dismiss...');
+
+    // Try clicking "Skip" or "Later" or "Close" buttons
+    const dismissButtons = [
+      'button:has-text("Skip")',
+      'button:has-text("Later")',
+      'button:has-text("Close")',
+      'button:has-text("Not Now")',
+      'button:has-text("Dismiss")',
+      'button[aria-label="Close"]',
+      '[role="dialog"] button:has-text("×")',
+      '[role="dialog"] button:has-text("X")'
+    ];
+
+    for (const selector of dismissButtons) {
+      const button = window.locator(selector).first();
+      const isVisible = await button.isVisible().catch(() => false);
+      if (isVisible) {
+        console.log(`[E2E] Clicking dismiss button: ${selector}`);
+        await button.click().catch(() => {});
+        await window.waitForTimeout(300);
+        break;
+      }
+    }
+
+    // If no dismiss button found, try pressing Escape
+    const stillHasModal = await modalOverlay
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (stillHasModal) {
+      console.log('[E2E] Pressing Escape to dismiss modal');
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
+    }
+
+    // Wait for modal to close
+    await modalOverlay
+      .first()
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => {
+        console.log('[E2E] Modal may still be visible');
+      });
+  }
 }
 
 /**
@@ -247,6 +316,7 @@ module.exports = {
   closeApp,
   getMainWindow,
   waitForAppReady,
+  dismissModals,
   takeScreenshot,
   evaluateInMain,
   getAppInfo,

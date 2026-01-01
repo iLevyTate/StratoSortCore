@@ -90,9 +90,10 @@ describe('FolderMatchingService Batch Operations', () => {
       stats: { total: 2, successful: 2, failed: 0 }
     });
 
+    // FIX: Include id to match mock response (ID-based matching now used)
     const folders = [
-      { name: 'F1', description: 'D1' },
-      { name: 'F2', description: 'D2' }
+      { id: 'folder:1', name: 'F1', description: 'D1' },
+      { id: 'folder:2', name: 'F2', description: 'D2' }
     ];
 
     const result = await service.batchUpsertFolders(folders);
@@ -130,9 +131,10 @@ describe('FolderMatchingService Batch Operations', () => {
       stats: { total: 2, successful: 2, failed: 0 }
     });
 
+    // FIX: Include id to match mock response (ID-based matching now used)
     const folders = [
-      { name: 'Success', description: 'D1' },
-      { name: 'Fail', description: 'D2' }
+      { id: 'folder:1', name: 'Success', description: 'D1' },
+      { id: 'folder:2', name: 'Fail', description: 'D2' }
     ];
 
     const result = await service.batchUpsertFolders(folders);
@@ -164,9 +166,10 @@ describe('FolderMatchingService Batch Operations', () => {
       stats: { total: 2, successful: 1, failed: 1 }
     });
 
+    // FIX: Include id to match mock response (ID-based matching now used)
     const folders = [
-      { name: 'Success', description: 'D1' },
-      { name: 'Fail', description: 'D2' }
+      { id: 'folder:1', name: 'Success', description: 'D1' },
+      { id: 'folder:2', name: 'Fail', description: 'D2' }
     ];
 
     const result = await service.batchUpsertFolders(folders);

@@ -234,7 +234,7 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
         type="button"
         onClick={isWidgetOpen ? closeWidget : openWidget}
         className={`
-          h-9 w-9 rounded-lg flex items-center justify-center
+          h-9 px-3 rounded-lg flex items-center justify-center gap-2
           text-system-gray-500 hover:text-stratosort-blue
           bg-white/80 hover:bg-white border border-system-gray-200 hover:border-stratosort-blue/30
           shadow-sm hover:shadow-md
@@ -242,10 +242,14 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
           focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
           ${isWidgetOpen ? 'bg-stratosort-blue/10 border-stratosort-blue/50 text-stratosort-blue' : ''}
         `}
-        aria-label={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget'}
-        title={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget'}
+        aria-label={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget (Ctrl+K)'}
+        title={isWidgetOpen ? 'Close Search Widget' : 'Search files (Ctrl+K)'}
       >
-        <SearchIcon className="h-5 w-5" />
+        <SearchIcon className="h-4 w-4" />
+        <span className="text-xs font-medium hidden sm:inline">Search</span>
+        <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-system-gray-100 rounded text-[10px] font-mono text-system-gray-500">
+          {isMac ? '⌘' : 'Ctrl+'}K
+        </kbd>
       </button>
       <button
         type="button"
@@ -286,18 +290,35 @@ const WindowControls = memo(function WindowControls() {
 
   useEffect(() => {
     let isMounted = true;
+    let resizeTimeout = null;
 
     const updateState = async () => {
       if (!isMounted) return;
       await refreshMaximizedState();
     };
 
+    // Debounced resize handler to prevent excessive IPC calls
+    const handleResize = () => {
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+      resizeTimeout = setTimeout(() => {
+        if (isMounted) {
+          updateState();
+        }
+      }, 150); // 150ms debounce
+    };
+
+    // Initial state check
     updateState();
-    window.addEventListener('resize', updateState);
+    window.addEventListener('resize', handleResize, { passive: true });
 
     return () => {
       isMounted = false;
-      window.removeEventListener('resize', updateState);
+      if (resizeTimeout) {
+        clearTimeout(resizeTimeout);
+      }
+      window.removeEventListener('resize', handleResize);
     };
   }, [refreshMaximizedState]);
 
@@ -405,15 +426,32 @@ function NavigationBar() {
     [dispatch]
   );
 
-  // Scroll effect for glass morphism
+  // Scroll effect for glass morphism - throttled to prevent excessive re-renders
   useEffect(() => {
+    let scrollTimeout = null;
+    let isMounted = true;
+
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10);
+      if (scrollTimeout) {
+        return; // Skip if already scheduled
+      }
+      scrollTimeout = requestAnimationFrame(() => {
+        scrollTimeout = null;
+        if (isMounted) {
+          setIsScrolled(window.scrollY > 10);
+        }
+      });
     };
 
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    return () => {
+      isMounted = false;
+      if (scrollTimeout) {
+        cancelAnimationFrame(scrollTimeout);
+      }
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   // Phase navigation handler
@@ -441,19 +479,17 @@ function NavigationBar() {
     <header
       className={`
         fixed inset-x-0 top-0 z-[100]
-        border-b backdrop-blur-xl backdrop-saturate-150
+        backdrop-blur-xl backdrop-saturate-150
         transition-all duration-300 ease-out
-        ${
-          isScrolled
-            ? 'bg-white/95 border-system-gray-200/60 shadow-md'
-            : 'bg-white/85 border-white/60 shadow-sm'
-        }
+        ${isScrolled ? 'bg-white/95 shadow-md' : 'bg-white/85 shadow-sm'}
       `}
-      style={{ WebkitAppRegion: 'drag' }}
+      style={{
+        WebkitAppRegion: 'drag',
+        isolation: 'isolate',
+        borderBottom: '1px solid rgba(226, 232, 240, 0.6)',
+        willChange: 'auto'
+      }}
     >
-      {/* Top highlight line */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gradient-primary-start/20 to-transparent" />
-
       <div className="relative flex h-14 items-center justify-between px-4 lg:px-6">
         {/* Left: Brand */}
         <div style={{ WebkitAppRegion: 'no-drag' }}>

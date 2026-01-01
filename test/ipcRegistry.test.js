@@ -38,7 +38,8 @@ describe('ipcRegistry', () => {
 
       ipcRegistry.registerHandler(mockIpcMain, 'test-channel', handler);
 
-      expect(mockIpcMain.handle).toHaveBeenCalledWith('test-channel', handler);
+      // FIX: Handler is now wrapped with shutdown gate, so check for any function
+      expect(mockIpcMain.handle).toHaveBeenCalledWith('test-channel', expect.any(Function));
     });
 
     test('tracks registered handler', () => {
@@ -314,6 +315,64 @@ describe('ipcRegistry', () => {
       ipcRegistry.removeListener(mockIpcMain, 'channel', listener);
 
       expect(ipcRegistry.hasListeners('channel')).toBe(false);
+    });
+  });
+
+  describe('shutdown gate', () => {
+    test('setShuttingDown sets shutdown state', () => {
+      expect(ipcRegistry.isShuttingDown()).toBe(false);
+
+      ipcRegistry.setShuttingDown(true);
+      expect(ipcRegistry.isShuttingDown()).toBe(true);
+
+      ipcRegistry.setShuttingDown(false);
+      expect(ipcRegistry.isShuttingDown()).toBe(false);
+    });
+
+    test('wrapped handler returns error when shutting down', async () => {
+      const handler = jest.fn().mockResolvedValue({ success: true });
+      ipcRegistry.registerHandler(mockIpcMain, 'test-channel', handler);
+
+      // Get the wrapped handler that was registered
+      const wrappedHandler = mockIpcMain.handle.mock.calls[0][1];
+
+      // Set shutdown state
+      ipcRegistry.setShuttingDown(true);
+
+      // Call the wrapped handler
+      const result = await wrappedHandler({}, 'arg1', 'arg2');
+
+      // Should return shutdown error without calling original handler
+      expect(result).toEqual({
+        success: false,
+        error: {
+          code: 'APP_SHUTTING_DOWN',
+          message: 'Application is shutting down'
+        }
+      });
+      expect(handler).not.toHaveBeenCalled();
+
+      // Reset for other tests
+      ipcRegistry.setShuttingDown(false);
+    });
+
+    test('wrapped handler calls original handler when not shutting down', async () => {
+      const handler = jest.fn().mockResolvedValue({ success: true, data: 'test' });
+      ipcRegistry.registerHandler(mockIpcMain, 'normal-channel', handler);
+
+      // Get the wrapped handler
+      const wrappedHandler = mockIpcMain.handle.mock.calls[0][1];
+
+      // Ensure not shutting down
+      ipcRegistry.setShuttingDown(false);
+
+      // Call the wrapped handler
+      const mockEvent = { sender: {} };
+      const result = await wrappedHandler(mockEvent, 'arg1', 'arg2');
+
+      // Should call original handler and return its result
+      expect(handler).toHaveBeenCalledWith(mockEvent, 'arg1', 'arg2');
+      expect(result).toEqual({ success: true, data: 'test' });
     });
   });
 });

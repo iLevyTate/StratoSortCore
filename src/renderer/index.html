@@ -7,25 +7,57 @@
     <!-- CSP is set by the main process. Keeping meta minimal to avoid conflicts. -->
   </head>
   <body data-theme="stratosort">
-    <!-- Initial loading screen -->
+    <!-- Initial loading screen with polished design -->
     <div
       id="initial-loading"
-      class="h-screen flex items-center justify-center font-sans"
+      class="splash-screen"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading StratoSort application"
     >
-      <section class="text-center max-w-[400px]">
-        <div class="animate-float text-[48px] mb-4" aria-hidden="true">🚀</div>
-        <h1 class="text-system-gray-800 m-0 text-xl font-semibold">
-          Loading StratoSort
-        </h1>
-        <p class="text-system-gray-500 mt-2 text-sm">
-          AI-Powered File Organization
-        </p>
-        <div class="mt-6">
-          <div
-            class="loading-spinner w-6 h-6 border-2 border-system-gray-200 border-b-stratosort-blue rounded-full mx-auto"
-          ></div>
+      <!-- Background gradient -->
+      <div class="splash-background"></div>
+
+      <!-- Content container -->
+      <section class="splash-content">
+        <!-- Logo/Icon container with glow effect -->
+        <div class="splash-logo-container">
+          <div class="splash-logo-glow"></div>
+          <div class="splash-logo" aria-hidden="true">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#4f8bff"/>
+                  <stop offset="100%" style="stop-color:#6c7ffb"/>
+                </linearGradient>
+              </defs>
+              <rect x="8" y="12" width="48" height="6" rx="3" fill="url(#logoGradient)" opacity="0.9"/>
+              <rect x="8" y="24" width="36" height="6" rx="3" fill="url(#logoGradient)" opacity="0.7"/>
+              <rect x="8" y="36" width="42" height="6" rx="3" fill="url(#logoGradient)" opacity="0.5"/>
+              <rect x="8" y="48" width="28" height="6" rx="3" fill="url(#logoGradient)" opacity="0.3"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- App name -->
+        <h1 class="splash-title">StratoSort</h1>
+
+        <!-- Tagline -->
+        <p class="splash-tagline">AI-Powered File Organization</p>
+
+        <!-- Loading indicator -->
+        <div class="splash-loader-container">
+          <div class="splash-loader">
+            <div class="splash-loader-bar"></div>
+          </div>
+          <p id="splash-status" class="splash-status">Initializing...</p>
         </div>
       </section>
+
+      <!-- Version info (optional) -->
+      <div class="splash-footer">
+        <span class="splash-version">Loading application</span>
+      </div>
     </div>
 
     <!-- React root container (must be empty for React to work) -->

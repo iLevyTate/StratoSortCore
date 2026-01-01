@@ -68,7 +68,8 @@ class OrganizationSuggestionServiceCore {
    * @param {Object} dependencies.chromaDbService - ChromaDB service
    * @param {Object} dependencies.folderMatchingService - Folder matching service
    * @param {Object} dependencies.settingsService - Settings service
-   * @param {Object} dependencies.clusteringService - Clustering service (optional)
+   * @param {Object} [dependencies.clusteringService] - Clustering service (optional, for backward compat)
+   * @param {Function} [dependencies.getClusteringService] - Lazy getter for clustering service (preferred)
    * @param {Object} dependencies.config - Configuration options
    */
   constructor({
@@ -76,12 +77,30 @@ class OrganizationSuggestionServiceCore {
     folderMatchingService,
     settingsService,
     clusteringService,
+    getClusteringService,
     config = {}
-  }) {
+  } = {}) {
+    // Validate required dependencies
+    if (!chromaDbService) {
+      throw new Error('OrganizationSuggestionServiceCore requires chromaDbService dependency');
+    }
+    if (!folderMatchingService) {
+      throw new Error(
+        'OrganizationSuggestionServiceCore requires folderMatchingService dependency'
+      );
+    }
+    if (!settingsService) {
+      throw new Error('OrganizationSuggestionServiceCore requires settingsService dependency');
+    }
+
     this.chromaDb = chromaDbService;
     this.folderMatcher = folderMatchingService;
     this.settings = settingsService;
-    this.clustering = clusteringService || null;
+
+    // FIX: Support both direct injection and lazy getter to break circular dependencies
+    // Lazy getter is preferred as it allows ClusteringService to be resolved when first needed
+    this._clusteringService = clusteringService || null;
+    this._getClusteringService = getClusteringService || null;
 
     // Configuration
     this.config = {
@@ -117,8 +136,52 @@ class OrganizationSuggestionServiceCore {
       saveThrottleMs: 5000
     });
 
-    // Load patterns on initialization
-    this._loadPatternsAsync();
+    // FIX: CRITICAL - Track loading promise to prevent race condition
+    // Previously, this was fire-and-forget which could cause:
+    // 1. Suggestions generated without historical patterns
+    // 2. recordFeedback overwriting patterns before they're loaded
+    this._loadingPatterns = this._loadPatternsAsync();
+  }
+
+  /**
+   * FIX: Ensure patterns are loaded before accessing them
+   * Must be called by any method that reads or writes patterns
+   * @private
+   * @returns {Promise<void>}
+   */
+  async _ensurePatternsLoaded() {
+    if (this._loadingPatterns) {
+      await this._loadingPatterns;
+      this._loadingPatterns = null;
+    }
+  }
+
+  /**
+   * FIX: Lazy getter for clustering service
+   * Resolves the clustering service on first access to break circular dependencies
+   * @returns {Object|null} ClusteringService instance or null if not available
+   */
+  get clustering() {
+    // Return cached instance if available
+    if (this._clusteringService) {
+      return this._clusteringService;
+    }
+
+    // Try lazy resolution if getter is provided
+    if (this._getClusteringService && typeof this._getClusteringService === 'function') {
+      try {
+        this._clusteringService = this._getClusteringService();
+        return this._clusteringService;
+      } catch (error) {
+        logger.warn(
+          '[OrganizationSuggestionService] Failed to resolve ClusteringService:',
+          error.message
+        );
+        return null;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -162,6 +225,9 @@ class OrganizationSuggestionServiceCore {
    * Get organization suggestions for a single file
    */
   async getSuggestionsForFile(file, smartFolders = [], options = {}) {
+    // FIX: Ensure patterns are loaded before generating suggestions
+    await this._ensurePatternsLoaded();
+
     const { includeStructureAnalysis = true, includeAlternatives = true } = options;
 
     // Validate inputs
@@ -331,6 +397,9 @@ class OrganizationSuggestionServiceCore {
    * Get suggestions for batch organization
    */
   async getBatchSuggestions(files, smartFolders = [], options = {}) {
+    // FIX: Ensure patterns are loaded before generating suggestions
+    await this._ensurePatternsLoaded();
+
     try {
       const patterns = analyzeFilePatterns(files);
       const groups = new Map();
@@ -544,6 +613,10 @@ class OrganizationSuggestionServiceCore {
    * @returns {Promise<void>}
    */
   async recordFeedback(file, suggestion, accepted) {
+    // FIX: Ensure patterns are loaded before modifying them
+    // This prevents overwriting patterns that haven't been loaded yet
+    await this._ensurePatternsLoaded();
+
     this.patternMatcher.recordFeedback(file, suggestion, accepted);
     return this._savePatterns();
   }

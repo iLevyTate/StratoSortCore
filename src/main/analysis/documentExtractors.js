@@ -3,6 +3,7 @@ const { createReadStream } = require('fs');
 
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
+const { LIMITS } = require('../../shared/constants');
 let XMLParser;
 try {
   // Prefer the full parser when available
@@ -55,7 +56,7 @@ const REGEX_PATTERNS = {
 };
 
 // Memory management constants
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB max file size
+// Note: MAX_FILE_SIZE is imported from shared/constants.js as LIMITS.MAX_FILE_SIZE
 const MAX_TEXT_LENGTH = 500000; // 500k characters max output
 const MAX_XLSX_ROWS = 10000; // Limit spreadsheet rows to prevent memory issues
 const xmlParser = new XMLParser({
@@ -75,11 +76,11 @@ const xmlParser = new XMLParser({
 async function checkFileSize(filePath, fileName) {
   try {
     const stats = await fs.stat(filePath);
-    if (stats.size > MAX_FILE_SIZE) {
+    if (stats.size > LIMITS.MAX_FILE_SIZE) {
       throw new FileProcessingError('FILE_TOO_LARGE', fileName, {
-        suggestion: `File size ${(stats.size / 1024 / 1024).toFixed(1)}MB exceeds limit of ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+        suggestion: `File size ${(stats.size / 1024 / 1024).toFixed(1)}MB exceeds limit of ${LIMITS.MAX_FILE_SIZE / 1024 / 1024}MB`,
         fileSize: stats.size,
-        maxSize: MAX_FILE_SIZE
+        maxSize: LIMITS.MAX_FILE_SIZE
       });
     }
     return stats.size;

@@ -27,7 +27,18 @@ jest.mock('fs', () => ({
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler)
+  withErrorLogging: jest.fn((logger, handler) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
+}));
+
+// Mock pathSanitization to allow test paths
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPath: jest.fn().mockImplementation((filePath) => ({
+    valid: true,
+    normalizedPath: filePath
+  }))
 }));
 
 describe('Folder Handlers', () => {

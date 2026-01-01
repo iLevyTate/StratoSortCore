@@ -37,15 +37,27 @@ const { logger } = require('./logger');
 /**
  * Get a Node-style require that bypasses Webpack static analysis when bundled.
  * In Electron main, Webpack exposes __non_webpack_require__ for this purpose.
- * Fallback uses eval to avoid Webpack treating it as a dependency graph input.
+ * FIX: Replaced eval('require') with safer alternatives to eliminate security risk.
  */
 function getNodeRequire() {
   /* global __non_webpack_require__ */
+  // Webpack's escape hatch for dynamic require in bundled code
   if (typeof __non_webpack_require__ !== 'undefined') {
     return __non_webpack_require__;
   }
-  // eslint-disable-next-line no-eval
-  return eval('require');
+  // In Node.js/Electron main process, require is available on global
+  if (typeof global !== 'undefined' && typeof global.require === 'function') {
+    return global.require;
+  }
+  // CommonJS module's own require function
+  if (typeof module !== 'undefined' && typeof module.require === 'function') {
+    return module.require.bind(module);
+  }
+  // Last resort: direct require (works in non-bundled Node.js)
+  if (typeof require === 'function') {
+    return require;
+  }
+  throw new Error('Cannot access Node.js require - running in unsupported environment');
 }
 
 /**

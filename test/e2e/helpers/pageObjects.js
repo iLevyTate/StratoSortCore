@@ -128,7 +128,10 @@ class NavigationPage extends BasePage {
       throw new Error(`Unknown phase: ${phase}`);
     }
 
-    const button = this.window.locator(`button:has-text("${navLabel}")`);
+    // Target buttons specifically inside the phase navigation area
+    const button = this.window.locator(
+      `nav[aria-label="Phase navigation"] button:has-text("${navLabel}")`
+    );
     const isDisabled = await button.isDisabled();
 
     if (isDisabled) {
@@ -148,7 +151,9 @@ class NavigationPage extends BasePage {
    */
   async isPhaseAccessible(phase) {
     const navLabel = PHASE_NAV_LABELS[phase];
-    const button = this.window.locator(`button:has-text("${navLabel}")`);
+    const button = this.window.locator(
+      `nav[aria-label="Phase navigation"] button:has-text("${navLabel}")`
+    );
     return !(await button.isDisabled());
   }
 
@@ -157,7 +162,8 @@ class NavigationPage extends BasePage {
    */
   async openSettings() {
     await this.click(SELECTORS.settingsButton);
-    await this.waitForVisible('[role="dialog"]', TIMEOUTS.SHORT);
+    // Settings panel uses role="presentation" backdrop, check for heading instead
+    await this.waitForVisible('h2:has-text("Settings")', TIMEOUTS.SHORT);
   }
 
   /**
@@ -440,18 +446,19 @@ class SettingsPage extends BasePage {
    * Wait for settings to load
    */
   async waitForLoad() {
-    await this.waitForVisible('[role="dialog"]', TIMEOUTS.SHORT);
+    // Settings uses h2 with "Settings" text, not role="dialog"
+    await this.waitForVisible('h2:has-text("Settings")', TIMEOUTS.SHORT);
   }
 
   /**
    * Close settings panel
    */
   async close() {
-    const closeButton = this.window.locator('[aria-label="Close Settings"], [aria-label="Close"]');
+    const closeButton = this.window.locator('[aria-label="Close settings"], [aria-label="Close"]');
     if (await closeButton.isVisible()) {
       await closeButton.click();
     }
-    await this.waitForHidden('[role="dialog"]', TIMEOUTS.SHORT);
+    await this.waitForHidden('h2:has-text("Settings")', TIMEOUTS.SHORT);
   }
 
   /**

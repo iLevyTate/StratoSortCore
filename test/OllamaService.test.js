@@ -18,7 +18,6 @@ jest.mock('../src/shared/logger', () => ({
 // Mock ollama utils
 jest.mock('../src/main/ollamaUtils', () => ({
   loadOllamaConfig: jest.fn().mockResolvedValue(true),
-  saveOllamaConfig: jest.fn().mockResolvedValue(true),
   getOllama: jest.fn(),
   getOllamaHost: jest.fn().mockReturnValue('http://localhost:11434'),
   getOllamaModel: jest.fn().mockReturnValue('llama2'),
@@ -78,7 +77,6 @@ describe('OllamaService', () => {
   let mockOllama;
   let MockOllama;
   const {
-    saveOllamaConfig,
     getOllama,
     getOllamaHost,
     getOllamaModel,
@@ -150,7 +148,6 @@ describe('OllamaService', () => {
       expect(setOllamaModel).toHaveBeenCalledWith('mistral');
       expect(setOllamaVisionModel).toHaveBeenCalledWith('bakllava');
       expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('mxbai-embed-large');
-      expect(saveOllamaConfig).toHaveBeenCalled();
     });
 
     test('should update partial config', async () => {
@@ -162,7 +159,6 @@ describe('OllamaService', () => {
       expect(setOllamaModel).toHaveBeenCalledWith('llama3');
       expect(setOllamaHost).not.toHaveBeenCalled();
       expect(setOllamaVisionModel).not.toHaveBeenCalled();
-      expect(saveOllamaConfig).toHaveBeenCalled();
     });
 
     test('should handle update errors gracefully', async () => {
@@ -403,13 +399,32 @@ describe('OllamaService', () => {
       });
     });
 
-    test('should handle embedding errors', async () => {
+    test('should handle embedding errors with fallback chain', async () => {
+      // FIX: Updated test to match new fallback behavior
+      // The service now tries multiple models before failing
       mockOllama.embed.mockRejectedValue(new Error('Embedding failed'));
 
       const result = await OllamaServiceModule.generateEmbedding('text');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Embedding failed');
+      // Error message now includes all attempted models
+      expect(result.error).toContain('All embedding models failed');
+      expect(result.attemptedModels).toBeDefined();
+      expect(result.errors).toBeDefined();
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    test('should skip fallback chain when specific model is requested', async () => {
+      mockOllama.embed.mockRejectedValue(new Error('Model not found'));
+
+      // When a specific model is requested, don't use fallback
+      const result = await OllamaServiceModule.generateEmbedding('text', {
+        model: 'specific-model'
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Model not found');
+      expect(result.model).toBe('specific-model');
     });
   });
 
@@ -537,6 +552,149 @@ describe('OllamaService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Vision model failed');
+    });
+  });
+
+  describe('batchGenerateEmbeddings', () => {
+    test('should batch generate embeddings successfully', async () => {
+      const mockEmbedding = new Array(768).fill(0.1);
+      mockOllama.embed.mockResolvedValue({ embeddings: [mockEmbedding] });
+
+      const items = [
+        { id: 'item1', text: 'First text' },
+        { id: 'item2', text: 'Second text' }
+      ];
+
+      const result = await OllamaServiceModule.batchGenerateEmbeddings(items);
+
+      expect(result.success).toBe(true);
+      expect(result.results).toHaveLength(2);
+      expect(result.errors).toHaveLength(0);
+      expect(result.stats.total).toBe(2);
+      expect(result.stats.successful).toBe(2);
+      expect(result.stats.failed).toBe(0);
+    });
+
+    test('should handle partial failures in batch', async () => {
+      const mockEmbedding = new Array(768).fill(0.1);
+      mockOllama.embed
+        .mockResolvedValueOnce({ embeddings: [mockEmbedding] })
+        .mockRejectedValueOnce(new Error('Embedding failed'));
+
+      const items = [
+        { id: 'item1', text: 'Success text' },
+        { id: 'item2', text: 'Fail text' }
+      ];
+
+      const result = await OllamaServiceModule.batchGenerateEmbeddings(items);
+
+      expect(result.success).toBe(false);
+      expect(result.results).toHaveLength(1);
+      expect(result.errors).toHaveLength(1);
+      expect(result.stats.successful).toBe(1);
+      expect(result.stats.failed).toBe(1);
+    });
+
+    test('should call onProgress callback', async () => {
+      const mockEmbedding = new Array(768).fill(0.1);
+      mockOllama.embed.mockResolvedValue({ embeddings: [mockEmbedding] });
+
+      const items = [
+        { id: 'item1', text: 'Text 1' },
+        { id: 'item2', text: 'Text 2' }
+      ];
+
+      const onProgress = jest.fn();
+      await OllamaServiceModule.batchGenerateEmbeddings(items, { onProgress });
+
+      expect(onProgress).toHaveBeenCalled();
+      // Progress callback should be called for each item
+      expect(onProgress).toHaveBeenCalledTimes(2);
+    });
+
+    test('should use custom model for batch embeddings', async () => {
+      const mockEmbedding = new Array(768).fill(0.1);
+      mockOllama.embed.mockResolvedValue({ embeddings: [mockEmbedding] });
+
+      const items = [{ id: 'item1', text: 'Test text' }];
+
+      await OllamaServiceModule.batchGenerateEmbeddings(items, {
+        model: 'custom-embed-model'
+      });
+
+      expect(mockOllama.embed).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'custom-embed-model' })
+      );
+    });
+
+    test('should return stats with duration', async () => {
+      const mockEmbedding = new Array(768).fill(0.1);
+      mockOllama.embed.mockResolvedValue({ embeddings: [mockEmbedding] });
+
+      const items = [{ id: 'item1', text: 'Test text' }];
+
+      const result = await OllamaServiceModule.batchGenerateEmbeddings(items);
+
+      expect(result.stats).toHaveProperty('duration');
+      expect(typeof result.stats.duration).toBe('number');
+      expect(result.stats.duration).toBeGreaterThanOrEqual(0);
+    });
+
+    test('should handle empty items array', async () => {
+      const result = await OllamaServiceModule.batchGenerateEmbeddings([]);
+
+      expect(result.success).toBe(true);
+      expect(result.results).toHaveLength(0);
+      expect(result.stats.total).toBe(0);
+    });
+  });
+
+  describe('onModelChange', () => {
+    test('should subscribe to model change events', async () => {
+      const callback = jest.fn();
+
+      // Reset to get fresh instance
+      OllamaServiceModule.resetInstance();
+      const instance = OllamaServiceModule.getInstance();
+      instance.onModelChange(callback);
+
+      // Trigger a config update that changes the model
+      getOllamaModel.mockReturnValue('oldModel');
+      await instance.updateConfig({ textModel: 'newModel' });
+
+      expect(callback).toHaveBeenCalledWith({
+        type: 'text',
+        previousModel: 'oldModel',
+        newModel: 'newModel'
+      });
+    });
+
+    test('should return unsubscribe function', async () => {
+      const callback = jest.fn();
+
+      OllamaServiceModule.resetInstance();
+      const instance = OllamaServiceModule.getInstance();
+      const unsubscribe = instance.onModelChange(callback);
+
+      expect(typeof unsubscribe).toBe('function');
+
+      // Unsubscribe
+      unsubscribe();
+
+      // Trigger update - callback should not be called
+      getOllamaModel.mockReturnValue('oldModel');
+      await instance.updateConfig({ textModel: 'newModel' });
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    test('should throw if callback is not a function', () => {
+      OllamaServiceModule.resetInstance();
+      const instance = OllamaServiceModule.getInstance();
+
+      expect(() => instance.onModelChange('not a function')).toThrow(
+        'onModelChange requires a function callback'
+      );
     });
   });
 

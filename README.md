@@ -172,7 +172,7 @@ ollama serve
 
 # In a new terminal, pull the models (~6GB total)
 ollama pull llama3.2:latest      # Text analysis model
-ollama pull llava:latest         # Vision/image analysis model
+ollama pull gemma3:latest        # Vision/image analysis model (multimodal)
 ollama pull mxbai-embed-large    # Embedding model for similarity search
 ```
 

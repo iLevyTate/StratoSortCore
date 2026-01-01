@@ -196,7 +196,10 @@ describe('ProcessingStateService', () => {
     test('cleans up temp file on write failure', async () => {
       mockFs.writeFile.mockRejectedValueOnce(new Error('Write failed'));
 
-      await expect(service.saveState()).rejects.toThrow('Write failed');
+      // saveState swallows errors for resilience (logs them instead of throwing)
+      await service.saveState();
+
+      // But it should still clean up the temp file
       expect(mockFs.unlink).toHaveBeenCalled();
     });
   });

@@ -7,7 +7,7 @@
  */
 
 const fs = require('fs').promises;
-const { withErrorLogging } = require('../ipcWrappers');
+const { withErrorLogging, safeHandle } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
 const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 
@@ -23,7 +23,8 @@ logger.setContext('IPC:Files:Shell');
  */
 function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
   // Open file with default application
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.OPEN_FILE,
     withErrorLogging(logger, async (event, filePath) => {
       try {
@@ -80,7 +81,8 @@ function registerShellHandlers({ ipcMain, IPC_CHANNELS, shell }) {
   );
 
   // Reveal file in file explorer
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.REVEAL_FILE,
     withErrorLogging(logger, async (event, filePath) => {
       try {

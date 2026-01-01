@@ -4,7 +4,7 @@
  * Handles undo, redo, and action history operations.
  * Demonstrates the service check pattern with fallback responses.
  */
-const { createHandler } = require('./ipcWrappers');
+const { createHandler, safeHandle } = require('./ipcWrappers');
 
 function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegration }) {
   const context = 'UndoRedo';
@@ -13,7 +13,8 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
   const getUndoRedoService = () => getServiceIntegration()?.undoRedo;
 
   // Undo action
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.UNDO_REDO.UNDO,
     createHandler({
       logger,
@@ -38,7 +39,8 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
   );
 
   // Redo action
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.UNDO_REDO.REDO,
     createHandler({
       logger,
@@ -63,7 +65,8 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
   );
 
   // Get action history
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.UNDO_REDO.GET_HISTORY,
     createHandler({
       logger,
@@ -83,7 +86,8 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
   );
 
   // Clear action history
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.UNDO_REDO.CLEAR_HISTORY,
     createHandler({
       logger,
@@ -103,7 +107,8 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
   );
 
   // Check if undo is available
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.UNDO_REDO.CAN_UNDO,
     createHandler({
       logger,
@@ -123,7 +128,8 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
   );
 
   // Check if redo is available
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.UNDO_REDO.CAN_REDO,
     createHandler({
       logger,

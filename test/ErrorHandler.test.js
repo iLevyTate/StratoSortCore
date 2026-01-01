@@ -20,7 +20,7 @@ jest.mock('electron', () => ({
 }));
 
 // Mock fs
-const mockFs = {
+const mockFsPromises = {
   mkdir: jest.fn().mockResolvedValue(undefined),
   appendFile: jest.fn().mockResolvedValue(undefined),
   readFile: jest.fn(),
@@ -28,8 +28,18 @@ const mockFs = {
   stat: jest.fn(),
   unlink: jest.fn().mockResolvedValue(undefined)
 };
+
+const mockFsSync = {
+  appendFileSync: jest.fn(),
+  readdirSync: jest.fn().mockReturnValue([]),
+  statSync: jest.fn(),
+  unlinkSync: jest.fn(),
+  existsSync: jest.fn().mockReturnValue(true)
+};
+
 jest.mock('fs', () => ({
-  promises: mockFs
+  promises: mockFsPromises,
+  ...mockFsSync
 }));
 
 // Mock logger
@@ -73,7 +83,7 @@ describe('ErrorHandler', () => {
     test('creates logs directory', async () => {
       await errorHandler.initialize();
 
-      expect(mockFs.mkdir).toHaveBeenCalledWith(expect.stringContaining('logs'), {
+      expect(mockFsPromises.mkdir).toHaveBeenCalledWith(expect.stringContaining('logs'), {
         recursive: true
       });
     });
@@ -92,7 +102,7 @@ describe('ErrorHandler', () => {
     });
 
     test('handles initialization errors gracefully', async () => {
-      mockFs.mkdir.mockRejectedValueOnce(new Error('Permission denied'));
+      mockFsPromises.mkdir.mockRejectedValueOnce(new Error('Permission denied'));
 
       await errorHandler.initialize();
 
@@ -240,7 +250,7 @@ describe('ErrorHandler', () => {
 
       await errorHandler.handleError(error, { operation: 'read' });
 
-      expect(mockFs.appendFile).toHaveBeenCalled();
+      expect(mockFsSync.appendFileSync).toHaveBeenCalled();
     });
 
     test('returns parsed error info', async () => {
@@ -256,12 +266,12 @@ describe('ErrorHandler', () => {
   describe('log', () => {
     test('writes to log file when initialized', async () => {
       await errorHandler.initialize();
-      mockFs.appendFile.mockClear(); // Clear init log call
+      mockFsSync.appendFileSync.mockClear(); // Clear init log call
 
       await errorHandler.log('info', 'Test message', { data: 'value' });
 
-      expect(mockFs.appendFile).toHaveBeenCalled();
-      const logContent = mockFs.appendFile.mock.calls[0][1];
+      expect(mockFsSync.appendFileSync).toHaveBeenCalled();
+      const logContent = mockFsSync.appendFileSync.mock.calls[0][1];
       expect(logContent).toContain('Test message');
     });
 
@@ -275,7 +285,9 @@ describe('ErrorHandler', () => {
 
     test('handles write errors gracefully', async () => {
       await errorHandler.initialize();
-      mockFs.appendFile.mockRejectedValueOnce(new Error('Write failed'));
+      mockFsSync.appendFileSync.mockImplementationOnce(() => {
+        throw new Error('Write failed');
+      });
 
       await errorHandler.log('info', 'Test message');
 
@@ -289,7 +301,7 @@ describe('ErrorHandler', () => {
     });
 
     test('returns empty array when log file is empty', async () => {
-      mockFs.readFile.mockResolvedValue('');
+      mockFsPromises.readFile.mockResolvedValue('');
 
       const errors = await errorHandler.getRecentErrors();
 
@@ -304,7 +316,7 @@ describe('ErrorHandler', () => {
         '{"level":"DEBUG","message":"debug message"}'
       ].join('\n');
 
-      mockFs.readFile.mockResolvedValue(logContent);
+      mockFsPromises.readFile.mockResolvedValue(logContent);
 
       const errors = await errorHandler.getRecentErrors();
 
@@ -320,7 +332,7 @@ describe('ErrorHandler', () => {
         '{"level":"ERROR","message":"error 3"}'
       ].join('\n');
 
-      mockFs.readFile.mockResolvedValue(logContent);
+      mockFsPromises.readFile.mockResolvedValue(logContent);
 
       const errors = await errorHandler.getRecentErrors(2);
 
@@ -334,7 +346,7 @@ describe('ErrorHandler', () => {
         '{"level":"ERROR","message":"also valid"}'
       ].join('\n');
 
-      mockFs.readFile.mockResolvedValue(logContent);
+      mockFsPromises.readFile.mockResolvedValue(logContent);
 
       const errors = await errorHandler.getRecentErrors();
 
@@ -342,7 +354,7 @@ describe('ErrorHandler', () => {
     });
 
     test('handles read errors gracefully', async () => {
-      mockFs.readFile.mockRejectedValue(new Error('Read failed'));
+      mockFsPromises.readFile.mockRejectedValue(new Error('Read failed'));
 
       const errors = await errorHandler.getRecentErrors();
 
@@ -359,37 +371,39 @@ describe('ErrorHandler', () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 10);
 
-      mockFs.readdir.mockResolvedValue(['stratosort-old.log', 'stratosort-new.log']);
-      mockFs.stat
-        .mockResolvedValueOnce({ mtime: oldDate })
-        .mockResolvedValueOnce({ mtime: new Date() });
+      mockFsSync.readdirSync.mockReturnValue(['stratosort-old.log', 'stratosort-new.log']);
+      mockFsSync.statSync
+        .mockReturnValueOnce({ mtime: oldDate })
+        .mockReturnValueOnce({ mtime: new Date() });
 
       await errorHandler.cleanupLogs(7);
 
-      expect(mockFs.unlink).toHaveBeenCalledTimes(1);
+      expect(mockFsSync.unlinkSync).toHaveBeenCalledTimes(1);
     });
 
     test('keeps recent log files', async () => {
-      mockFs.readdir.mockResolvedValue(['stratosort-new.log']);
-      mockFs.stat.mockResolvedValue({ mtime: new Date() });
+      mockFsSync.readdirSync.mockReturnValue(['stratosort-new.log']);
+      mockFsSync.statSync.mockReturnValue({ mtime: new Date() });
 
       await errorHandler.cleanupLogs(7);
 
-      expect(mockFs.unlink).not.toHaveBeenCalled();
+      expect(mockFsSync.unlinkSync).not.toHaveBeenCalled();
     });
 
     test('only processes stratosort log files', async () => {
-      mockFs.readdir.mockResolvedValue(['other-file.log', 'stratosort-test.log']);
-      mockFs.stat.mockResolvedValue({ mtime: new Date(0) });
+      mockFsSync.readdirSync.mockReturnValue(['other-file.log', 'stratosort-test.log']);
+      mockFsSync.statSync.mockReturnValue({ mtime: new Date(0) });
 
       await errorHandler.cleanupLogs(7);
 
       // Should only check the stratosort file
-      expect(mockFs.stat).toHaveBeenCalledTimes(1);
+      expect(mockFsSync.statSync).toHaveBeenCalledTimes(1);
     });
 
     test('handles cleanup errors gracefully', async () => {
-      mockFs.readdir.mockRejectedValue(new Error('Read failed'));
+      mockFsSync.readdirSync.mockImplementation(() => {
+        throw new Error('Read failed');
+      });
 
       await errorHandler.cleanupLogs();
 

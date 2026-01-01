@@ -7,7 +7,7 @@
  * @module renderer/utils/reactEdgeCaseUtils
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { debounce } from '../../shared/promiseUtils';
 
 /**
@@ -27,11 +27,11 @@ function useSafeState(initialValue) {
     };
   }, []);
 
-  const setSafeState = (newValue) => {
+  const setSafeState = useCallback((newValue) => {
     if (isMountedRef.current) {
       setState(newValue);
     }
-  };
+  }, []);
 
   return [state, setSafeState];
 }

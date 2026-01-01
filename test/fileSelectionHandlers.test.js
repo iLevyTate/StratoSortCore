@@ -27,19 +27,30 @@ jest.mock('fs', () => ({
 jest.mock('../src/shared/constants', () => ({
   SUPPORTED_DOCUMENT_EXTENSIONS: ['.pdf', '.doc', '.docx'],
   SUPPORTED_IMAGE_EXTENSIONS: ['.jpg', '.png', '.gif'],
-  SUPPORTED_ARCHIVE_EXTENSIONS: ['.zip', '.rar']
+  SUPPORTED_ARCHIVE_EXTENSIONS: ['.zip', '.rar'],
+  DEFAULT_AI_MODELS: {
+    TEXT_ANALYSIS: 'qwen3:0.6b',
+    IMAGE_ANALYSIS: 'gemma3:latest',
+    EMBEDDING: 'embeddinggemma'
+  }
 }));
 
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   TIMEOUTS: {
     DELAY_BATCH: 50
+  },
+  CONCURRENCY: {
+    DEFAULT_WORKERS: 3
   }
 }));
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler)
+  withErrorLogging: jest.fn((logger, handler) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock electron

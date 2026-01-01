@@ -4,7 +4,10 @@
 
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: (_logger, fn) => fn,
-  withValidation: (_logger, _schema, fn) => fn
+  withValidation: (_logger, _schema, fn) => fn,
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock Ollama client

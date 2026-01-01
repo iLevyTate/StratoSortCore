@@ -1,6 +1,16 @@
 import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { CheckCircle, Lightbulb, Info, ChevronRight, FileText } from 'lucide-react';
+import {
+  CheckCircle,
+  Lightbulb,
+  Info,
+  ChevronRight,
+  FileText,
+  Folder,
+  ArrowRight,
+  X,
+  Eye
+} from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 
@@ -10,9 +20,10 @@ function BatchOrganizationSuggestions({
   onCustomizeGroup,
   onRejectAll
 }) {
-  const { addNotification } = useNotification();
+  useNotification();
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [selectedStrategy, setSelectedStrategy] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // FIX: Memoize toggleGroup to prevent unnecessary re-renders
   const toggleGroup = useCallback((groupIndex) => {
@@ -282,10 +293,10 @@ function BatchOrganizationSuggestions({
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            onClick={() => {
-              addNotification('Preview feature coming soon', 'info');
-            }}
+            onClick={() => setShowPreview(true)}
+            className="flex items-center gap-1.5"
           >
+            <Eye className="w-4 h-4" />
             Preview Changes
           </Button>
           <Button
@@ -297,6 +308,96 @@ function BatchOrganizationSuggestions({
           </Button>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl max-h-[80vh] overflow-hidden m-4 flex flex-col">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-medium text-system-gray-900">
+                Preview Organization Changes
+              </h3>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="p-1 hover:bg-system-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-system-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-4">
+                {groups.map((group, index) => (
+                  <div key={group.folder || index} className="border rounded-lg overflow-hidden">
+                    <div className="bg-system-gray-50 p-3 flex items-center gap-2">
+                      <Folder className="w-5 h-5 text-stratosort-blue" />
+                      <span className="font-medium">{group.folder}</span>
+                      <span className="text-sm text-system-gray-500">
+                        ({group.files.length} file{group.files.length !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+                    <div className="divide-y divide-system-gray-100">
+                      {group.files.map((file) => (
+                        <div
+                          key={file.path || file.name}
+                          className="p-3 flex items-center gap-3 text-sm"
+                        >
+                          <FileText className="w-4 h-4 text-system-gray-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="truncate font-medium">{file.name}</div>
+                            {file.currentPath && (
+                              <div className="flex items-center gap-2 text-xs text-system-gray-500 mt-1">
+                                <span className="truncate">{file.currentPath}</span>
+                                <ArrowRight className="w-3 h-3 flex-shrink-0" />
+                                <span className="truncate text-stratosort-blue">
+                                  {group.folder}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          {file.suggestion?.confidence && (
+                            <span className="text-xs bg-system-gray-100 px-2 py-0.5 rounded">
+                              {Math.round(file.suggestion.confidence * 100)}%
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary */}
+              <div className="mt-4 p-3 bg-stratosort-blue/5 rounded-lg border border-stratosort-blue/20">
+                <div className="text-sm text-system-gray-700">
+                  <span className="font-medium">{groups.length}</span> folder
+                  {groups.length !== 1 ? 's' : ''} will receive{' '}
+                  <span className="font-medium">
+                    {groups.reduce((sum, g) => sum + g.files.length, 0)}
+                  </span>{' '}
+                  file{groups.reduce((sum, g) => sum + g.files.length, 0) !== 1 ? 's' : ''} total
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setShowPreview(false)}>
+                Close Preview
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setShowPreview(false);
+                  handleStrategyAccept();
+                }}
+                className="bg-stratosort-blue hover:bg-stratosort-blue/90"
+              >
+                Apply All Changes
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -28,7 +28,7 @@ ollama serve
 
 # Pull models (~6GB total download)
 ollama pull llama3.2:latest      # Text analysis
-ollama pull llava:latest         # Vision/image analysis
+ollama pull gemma3:latest        # Vision/image analysis (multimodal)
 ollama pull mxbai-embed-large    # Embedding model
 ```
 

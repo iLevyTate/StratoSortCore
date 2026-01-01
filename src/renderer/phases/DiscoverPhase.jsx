@@ -79,9 +79,15 @@ function DiscoverPhase() {
 
   // Track previous analyzing state for detecting completion
   const prevAnalyzingRef = useRef(isAnalyzing);
-  // Check localStorage to see if user has dismissed the prompt before
+  // FIX: Wrap localStorage access in try-catch for private browsing mode compatibility
   const hasShownEmbeddingPromptRef = useRef(
-    localStorage.getItem('stratosort_embedding_prompt_dismissed') === 'true'
+    (() => {
+      try {
+        return localStorage.getItem('stratosort_embedding_prompt_dismissed') === 'true';
+      } catch {
+        return false; // Private browsing mode or storage unavailable
+      }
+    })()
   );
 
   // Filter out results for files no longer selected (e.g., moved/cleared)
@@ -142,16 +148,21 @@ function DiscoverPhase() {
       }
     };
 
-    // Small delay to let UI settle
-    const timeoutId = setTimeout(checkEmbeddings, 1000);
+    // FIX: Use centralized timeout constant
+    const timeoutId = setTimeout(checkEmbeddings, TIMEOUTS.EMBEDDING_CHECK);
     return () => clearTimeout(timeoutId);
   }, [isAnalyzing, visibleReadyCount]);
 
   // Dismiss embedding prompt (with optional persistence)
+  // FIX: Wrap localStorage setItem in try-catch for private browsing mode
   const dismissEmbeddingPrompt = useCallback((permanent = false) => {
     setShowEmbeddingPrompt(false);
     if (permanent) {
-      localStorage.setItem('stratosort_embedding_prompt_dismissed', 'true');
+      try {
+        localStorage.setItem('stratosort_embedding_prompt_dismissed', 'true');
+      } catch {
+        // Private browsing mode or storage unavailable - continue without persistence
+      }
       hasShownEmbeddingPromptRef.current = true;
     }
   }, []);
@@ -182,7 +193,7 @@ function DiscoverPhase() {
   }, [addNotification, dismissEmbeddingPrompt]);
 
   // Refs for analysis state
-  const hasResumedRef = useRef(false);
+  // Note: hasResumedRef was previously used for resume logic that was moved to useAnalysis hook
 
   // Build phaseData for compatibility
   const phaseData = {
@@ -280,12 +291,7 @@ function DiscoverPhase() {
       (changedSettings) => {
         logger.info('Settings changed externally:', Object.keys(changedSettings));
         if (changedSettings.ollamaHost && !isAnalyzing) {
-          addNotification(
-            'Ollama settings updated. New analyses will use the updated configuration.',
-            'info',
-            3000,
-            'settings-changed'
-          );
+          addNotification('Ollama settings saved', 'info', 2000, 'settings-changed');
         }
       },
       [isAnalyzing, addNotification]
@@ -295,6 +301,20 @@ function DiscoverPhase() {
       watchKeys: ['ollamaHost', 'ollamaModels', 'analysisSettings']
     }
   );
+
+  // Listen for menu-triggered file/folder selection (Ctrl+O, Ctrl+Shift+O from menu)
+  useEffect(() => {
+    const onSelectFiles = () => handleFileSelection();
+    const onSelectFolder = () => handleFolderSelection();
+
+    window.addEventListener('app:select-files', onSelectFiles);
+    window.addEventListener('app:select-folder', onSelectFolder);
+
+    return () => {
+      window.removeEventListener('app:select-files', onSelectFiles);
+      window.removeEventListener('app:select-folder', onSelectFolder);
+    };
+  }, [handleFileSelection, handleFolderSelection]);
 
   // Check for stuck analysis on mount
   useEffect(() => {
@@ -319,32 +339,22 @@ function DiscoverPhase() {
 
   // Auto-reset stuck/stalled analysis
   useEffect(() => {
-    if (!isAnalyzing || !hasResumedRef.current) return;
+    if (!isAnalyzing) return;
 
     const lastActivity = analysisProgress?.lastActivity || Date.now();
     const timeSinceActivity = Date.now() - lastActivity;
     const current = analysisProgress?.current || 0;
     const total = analysisProgress?.total || 0;
 
-    const twoMinutes = 2 * 60 * 1000;
-    if (current === 0 && total > 0 && timeSinceActivity > twoMinutes) {
-      addNotification(
-        'Analysis stalled with no progress - auto-resetting',
-        'warning',
-        5000,
-        'analysis-stalled'
-      );
+    // FIX: Use centralized timeout constant
+    if (current === 0 && total > 0 && timeSinceActivity > TIMEOUTS.STUCK_ANALYSIS_CHECK) {
+      addNotification('Analysis paused. Restarting...', 'info', 3000, 'analysis-stalled');
       resetAnalysisState('Analysis stalled with no progress after 2 minutes');
       return;
     }
 
     if (timeSinceActivity > TIMEOUTS.ANALYSIS_LOCK) {
-      addNotification(
-        'Detected stuck analysis state - auto-resetting',
-        'warning',
-        5000,
-        'analysis-auto-reset'
-      );
+      addNotification('Analysis timed out. Ready to retry.', 'info', 3000, 'analysis-auto-reset');
       resetAnalysisState('Stuck analysis state after 5 minutes of inactivity');
     }
   }, [isAnalyzing, analysisProgress, addNotification, resetAnalysisState]);
@@ -470,7 +480,8 @@ function DiscoverPhase() {
                       Stop Analysis
                     </Button>
                     {analysisProgress.lastActivity &&
-                      Date.now() - analysisProgress.lastActivity > 2 * 60 * 1000 && (
+                      Date.now() - analysisProgress.lastActivity >
+                        TIMEOUTS.STUCK_ANALYSIS_CHECK && (
                         <Button
                           onClick={() => resetAnalysisState('User forced reset')}
                           variant="secondary"

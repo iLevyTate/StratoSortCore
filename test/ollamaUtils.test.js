@@ -62,13 +62,6 @@ describe('ollamaUtils', () => {
     ollamaUtils = require('../src/main/ollamaUtils');
   });
 
-  describe('getOllamaConfigPath', () => {
-    test('returns null as it is deprecated', () => {
-      const configPath = ollamaUtils.getOllamaConfigPath();
-      expect(configPath).toBeNull();
-    });
-  });
-
   describe('getOllama', () => {
     test('returns Ollama instance', () => {
       const ollama = ollamaUtils.getOllama();
@@ -134,19 +127,6 @@ describe('ollamaUtils', () => {
       expect(config.selectedVisionModel).toBe('llava');
       expect(config.host).toBe('http://localhost:11434');
       expect(mockSettingsService.load).toHaveBeenCalled();
-    });
-  });
-
-  describe('saveOllamaConfig', () => {
-    test('delegates to SettingsService.save', async () => {
-      const config = { selectedTextModel: 'llama3', host: 'http://localhost:11434' };
-      await ollamaUtils.saveOllamaConfig(config);
-      expect(mockSettingsService.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          textModel: 'llama3',
-          ollamaHost: 'http://localhost:11434'
-        })
-      );
     });
   });
 });

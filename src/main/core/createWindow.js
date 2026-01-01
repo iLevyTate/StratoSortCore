@@ -12,7 +12,13 @@ const isMac = process.platform === 'darwin';
 function getAppRootPath() {
   // Works in both dev (repo root) and packaged (app.asar)
   try {
-    return app.getAppPath();
+    const appPath = app.getAppPath();
+    // When running from src/main/simple-main.js, app.getAppPath() returns src/main
+    // We need to go up to the repo root in that case
+    if (appPath.endsWith('src/main') || appPath.endsWith('src\\main')) {
+      return path.resolve(appPath, '../..');
+    }
+    return appPath;
   } catch {
     return process.cwd();
   }

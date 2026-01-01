@@ -1,9 +1,26 @@
 /**
- * Atomic File Operations System
+ * Atomic File Operations System (Full Transaction Support)
  *
  * Provides transactional file operations with rollback capabilities
  * to prevent data loss during file organization. Addresses the safety
  * concerns identified in the architectural analysis.
+ *
+ * USE THIS MODULE FOR:
+ * - Multi-file operations that must succeed or fail together
+ * - File moves/copies that need rollback on failure
+ * - Complex transactions with state journaling
+ * - Backup-and-replace patterns with integrity checking
+ *
+ * USE atomicFile.js INSTEAD FOR:
+ * - Simple JSON persistence (settings, config files, state)
+ * - Single-file write operations
+ * - Cases where you don't need transaction rollback
+ *
+ * Key features:
+ * - Transaction journaling for crash recovery
+ * - Automatic rollback on failure
+ * - SHA256 integrity verification
+ * - Orphaned operation cleanup
  */
 
 const fs = require('fs').promises;
@@ -130,7 +147,9 @@ class AtomicFileOperations {
 
       if (sourceStats.size !== backupStats.size) {
         // Clean up failed backup
-        await fs.unlink(backupPath).catch(() => {});
+        await fs.unlink(backupPath).catch((err) => {
+          logger.debug('[ATOMIC-OPS] Failed to clean up corrupted backup:', err.message);
+        });
         throw new IntegrityError(FILE_SYSTEM_ERROR_CODES.SIZE_MISMATCH, backupPath, {
           expectedSize: sourceStats.size,
           actualSize: backupStats.size,
@@ -423,7 +442,9 @@ class AtomicFileOperations {
         ]);
 
         if (sourceStats.size !== destStats.size) {
-          await fs.unlink(finalDestination).catch(() => {});
+          await fs.unlink(finalDestination).catch((err) => {
+            logger.debug('[ATOMIC-OPS] Failed to clean up corrupted copy:', err.message);
+          });
           throw new IntegrityError(FILE_SYSTEM_ERROR_CODES.SIZE_MISMATCH, finalDestination, {
             expectedSize: sourceStats.size,
             actualSize: destStats.size,

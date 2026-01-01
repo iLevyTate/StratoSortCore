@@ -1,14 +1,135 @@
 const { getInstance: getChromaDB } = require('../services/chromadb');
-const FolderMatchingService = require('../services/FolderMatchingService');
+const { getInstance: getFolderMatcher } = require('../services/FolderMatchingService');
 const {
   getInstance: getParallelEmbeddingService
 } = require('../services/ParallelEmbeddingService');
 const { SearchService } = require('../services/SearchService');
 const { ClusteringService } = require('../services/ClusteringService');
 const path = require('path');
-const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
-const { BATCH, TIMEOUTS, LIMITS } = require('../../shared/performanceConstants');
-const { withErrorLogging } = require('./ipcWrappers');
+const { SUPPORTED_IMAGE_EXTENSIONS, AI_DEFAULTS } = require('../../shared/constants');
+const {
+  BATCH,
+  TIMEOUTS,
+  LIMITS,
+  SEARCH,
+  THRESHOLDS
+} = require('../../shared/performanceConstants');
+const { withErrorLogging, withChromaInit, safeHandle } = require('./ipcWrappers');
+const { cosineSimilarity } = require('../../shared/vectorMath');
+const { getOllamaEmbeddingModel, getOllama } = require('../ollamaUtils');
+
+/**
+ * Verify embedding model is available in Ollama
+ * @param {Object} logger - Logger instance
+ * @returns {Promise<{available: boolean, model: string, error?: string}>}
+ */
+async function verifyEmbeddingModelAvailable(logger) {
+  const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+
+  try {
+    const ollama = getOllama();
+    const response = await ollama.list();
+    const models = response?.models || [];
+
+    // Check if the configured model (or a variant) is installed
+    const modelNames = models.map((m) => m.name?.toLowerCase() || '');
+    const normalizedModel = model.toLowerCase();
+
+    // Check for exact match or prefix match (e.g., "embeddinggemma:latest" matches "embeddinggemma")
+    const isAvailable = modelNames.some(
+      (name) =>
+        name === normalizedModel ||
+        name.startsWith(`${normalizedModel}:`) ||
+        normalizedModel.startsWith(name.split(':')[0])
+    );
+
+    if (!isAvailable) {
+      // Try fallback models
+      const fallbackModels = AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS || [];
+      for (const fallback of fallbackModels) {
+        const normalizedFallback = fallback.toLowerCase();
+        const fallbackAvailable = modelNames.some(
+          (name) =>
+            name === normalizedFallback ||
+            name.startsWith(`${normalizedFallback}:`) ||
+            normalizedFallback.startsWith(name.split(':')[0])
+        );
+        if (fallbackAvailable) {
+          logger.info('[EMBEDDINGS] Primary model not found, using fallback', {
+            primary: model,
+            fallback,
+            availableModels: modelNames.slice(0, 10)
+          });
+          return { available: true, model: fallback };
+        }
+      }
+
+      logger.error('[EMBEDDINGS] No embedding model available', {
+        configured: model,
+        fallbacks: fallbackModels,
+        availableModels: modelNames.slice(0, 10)
+      });
+
+      return {
+        available: false,
+        model,
+        error: `Embedding model "${model}" not installed. Install it with: ollama pull ${model}`,
+        availableModels: modelNames.slice(0, 10)
+      };
+    }
+
+    return { available: true, model };
+  } catch (error) {
+    logger.error('[EMBEDDINGS] Failed to verify embedding model:', error.message);
+    return {
+      available: false,
+      model,
+      error: `Cannot connect to Ollama: ${error.message}. Make sure Ollama is running.`
+    };
+  }
+}
+
+// Module-level reference to SearchService for cross-module access
+let _searchServiceRef = null;
+
+// Module-level reference to ClusteringService for cross-module access
+let _clusteringServiceRef = null;
+
+/**
+ * Get the SearchService instance (if initialized)
+ * Used by fileOperationHandlers to invalidate index after file moves
+ * @returns {SearchService|null}
+ */
+function getSearchServiceInstance() {
+  return _searchServiceRef;
+}
+
+/**
+ * Set the SearchService instance reference
+ * Called internally after initialization
+ * @param {SearchService} service
+ */
+function setSearchServiceInstance(service) {
+  _searchServiceRef = service;
+}
+
+/**
+ * Get the ClusteringService instance (if initialized)
+ * Used by fileOperationHandlers to invalidate clusters after file moves/deletes
+ * @returns {ClusteringService|null}
+ */
+function getClusteringServiceInstance() {
+  return _clusteringServiceRef;
+}
+
+/**
+ * Set the ClusteringService instance reference
+ * Called internally after initialization
+ * @param {ClusteringService} service
+ */
+function setClusteringServiceInstance(service) {
+  _clusteringServiceRef = service;
+}
 
 function registerEmbeddingsIpc({
   ipcMain,
@@ -17,9 +138,10 @@ function registerEmbeddingsIpc({
   getCustomFolders,
   getServiceIntegration
 }) {
-  // Use ChromaDB singleton instance
+  // Use ChromaDB and FolderMatcher singleton instances
+  // FIX: Use singleton pattern instead of creating duplicate instance
   const chromaDbService = getChromaDB();
-  const folderMatcher = new FolderMatchingService(chromaDbService);
+  const folderMatcher = getFolderMatcher();
 
   // SearchService will be initialized lazily when needed
   let searchService = null;
@@ -36,6 +158,9 @@ function registerEmbeddingsIpc({
         analysisHistoryService: historyService,
         parallelEmbeddingService: embeddingService
       });
+
+      // Store reference for cross-module access (e.g., fileOperationHandlers)
+      setSearchServiceInstance(searchService);
     }
     return searchService;
   }
@@ -49,25 +174,51 @@ function registerEmbeddingsIpc({
         chromaDbService,
         ollamaService
       });
+      // Store reference for cross-module access (e.g., fileOperationHandlers)
+      setClusteringServiceInstance(clusteringService);
     }
     return clusteringService;
   }
 
-  // CRITICAL FIX: Track initialization state to prevent race conditions
-  let initializationPromise = null;
-  let isInitialized = false;
+  // CRITICAL FIX: Use proper state machine to prevent race conditions
+  // State machine prevents concurrent re-initialization attempts
+  const INIT_STATES = {
+    PENDING: 'pending',
+    IN_PROGRESS: 'in_progress',
+    COMPLETED: 'completed',
+    FAILED: 'failed'
+  };
+
+  let initState = INIT_STATES.PENDING;
+  let initPromise = null;
 
   /**
    * Ensures services are initialized before IPC handlers execute
-   * FIX: Added retry logic and better error handling for ChromaDB startup race condition
+   * FIX: Uses state machine to prevent race conditions during initialization
    * @returns {Promise<void>}
    */
   async function ensureInitialized() {
-    // FIX: Consistent return values - all paths return Promise<void>
-    if (isInitialized) return Promise.resolve();
-    if (initializationPromise) return initializationPromise;
+    // Already initialized successfully
+    if (initState === INIT_STATES.COMPLETED) {
+      return Promise.resolve();
+    }
 
-    initializationPromise = (async () => {
+    // Previously failed - allow retry by resetting state
+    if (initState === INIT_STATES.FAILED) {
+      logger.info('[SEMANTIC] Previous initialization failed, retrying...');
+      initState = INIT_STATES.PENDING;
+      initPromise = null;
+    }
+
+    // Initialization in progress - wait for it
+    if (initState === INIT_STATES.IN_PROGRESS && initPromise) {
+      return initPromise;
+    }
+
+    // Start new initialization
+    initState = INIT_STATES.IN_PROGRESS;
+
+    initPromise = (async () => {
       const MAX_RETRIES = 5;
       const RETRY_DELAY_BASE = 2000; // 2 seconds base delay
 
@@ -104,7 +255,7 @@ function registerEmbeddingsIpc({
           }
 
           logger.info('[SEMANTIC] Initialization complete');
-          isInitialized = true;
+          initState = INIT_STATES.COMPLETED;
 
           // Warm up search service in background (non-blocking)
           // This pre-builds the BM25 index for faster first search
@@ -127,12 +278,18 @@ function registerEmbeddingsIpc({
             // Exponential backoff with jitter
             const delay = RETRY_DELAY_BASE * Math.pow(2, attempt - 1) + Math.random() * 1000;
             logger.info(`[SEMANTIC] Retrying in ${Math.round(delay)}ms...`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
+            await new Promise((resolve) => {
+              const timeoutId = setTimeout(resolve, delay);
+              // Prevent timer from keeping process alive
+              if (timeoutId && typeof timeoutId.unref === 'function') {
+                timeoutId.unref();
+              }
+            });
           } else {
             logger.error(
               '[SEMANTIC] All initialization attempts failed. ChromaDB features will be unavailable.'
             );
-            initializationPromise = null; // Allow retry on next explicit call
+            initState = INIT_STATES.FAILED;
             // Don't throw - allow the app to continue in degraded mode
             return;
           }
@@ -140,7 +297,7 @@ function registerEmbeddingsIpc({
       }
     })();
 
-    return initializationPromise;
+    return initPromise;
   }
 
   // FIX: Removed arbitrary setTimeout - handlers now trigger initialization on-demand
@@ -160,41 +317,56 @@ function registerEmbeddingsIpc({
     }, 1000); // 1 second delay for pre-warming, handlers use retries if called earlier
   });
 
+  // Helper config for handlers that need ChromaDB initialization
+  const chromaInitConfig = {
+    ensureInit: ensureInitialized,
+    isInitRef: () => initState === INIT_STATES.COMPLETED,
+    logger
+  };
+
+  // Factory to create handlers with both error logging and chroma init
+  const createChromaHandler = (handler) =>
+    withErrorLogging(logger, withChromaInit({ ...chromaInitConfig, handler }));
+
   /**
    * Rebuild folder embeddings from current smart folders
    * SAFE: Only resets the 'folder_embeddings' collection (not the entire DB directory).
    * This is a user-controlled, intentional rebuild that preserves all other data.
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
-    withErrorLogging(logger, async () => {
-      // CRITICAL FIX: Wait for initialization before executing
+    createChromaHandler(async () => {
       try {
-        await ensureInitialized();
-      } catch (initError) {
-        logger.warn('[EMBEDDINGS] ChromaDB not available:', initError.message);
-        return {
-          success: false,
-          error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
-          unavailable: true
-        };
-      }
+        // FIX: Verify embedding model is available before starting
+        const modelCheck = await verifyEmbeddingModelAvailable(logger);
+        if (!modelCheck.available) {
+          return {
+            success: false,
+            error: modelCheck.error,
+            errorCode: 'MODEL_NOT_AVAILABLE',
+            model: modelCheck.model,
+            availableModels: modelCheck.availableModels
+          };
+        }
 
-      // FIX: Check if initialization succeeded
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending. Please try again in a few seconds.',
-          pending: true
-        };
-      }
-
-      try {
         const smartFolders = getCustomFolders().filter((f) => f && f.name);
+
+        if (smartFolders.length === 0) {
+          return {
+            success: true,
+            folders: 0,
+            message: 'No smart folders to embed'
+          };
+        }
+
         // SAFE: resetFolders() only deletes/recreates the collection, not the DB directory
         await chromaDbService.resetFolders();
 
-        // Optimization: Batch process folder embeddings
+        // Track successes and failures
+        const results = { success: 0, failed: 0, errors: [] };
+
+        // Process folder embeddings with error tracking
         const folderPayloads = await Promise.all(
           smartFolders.map(async (folder) => {
             try {
@@ -203,6 +375,7 @@ function registerEmbeddingsIpc({
               const { vector, model } = await folderMatcher.embedText(folderText);
               const folderId = folder.id || folderMatcher.generateFolderId(folder);
 
+              results.success++;
               return {
                 id: folderId,
                 name: folder.name,
@@ -213,6 +386,11 @@ function registerEmbeddingsIpc({
                 updatedAt: new Date().toISOString()
               };
             } catch (error) {
+              results.failed++;
+              results.errors.push({
+                folder: folder.name,
+                error: error.message
+              });
               logger.warn(
                 '[EMBEDDINGS] Failed to generate folder embedding:',
                 folder.name,
@@ -225,13 +403,35 @@ function registerEmbeddingsIpc({
 
         const validPayloads = folderPayloads.filter((p) => p !== null);
 
-        // Optimization: Use batch upsert instead of individual operations
-        const count = await chromaDbService.batchUpsertFolders(validPayloads);
+        // Only upsert if we have valid payloads
+        let upsertedCount = 0;
+        if (validPayloads.length > 0) {
+          upsertedCount = await chromaDbService.batchUpsertFolders(validPayloads);
+        }
 
-        return { success: true, folders: count };
+        // Return detailed status
+        const allFailed = results.success === 0 && results.failed > 0;
+        return {
+          success: !allFailed,
+          folders: upsertedCount,
+          total: smartFolders.length,
+          succeeded: results.success,
+          failed: results.failed,
+          errors: results.errors.slice(0, 5), // Limit error details
+          model: modelCheck.model,
+          message: allFailed
+            ? `All ${results.failed} folder embeddings failed. Check Ollama connection.`
+            : results.failed > 0
+              ? `${results.success} folders embedded, ${results.failed} failed`
+              : `Successfully embedded ${results.success} folders`
+        };
       } catch (e) {
         logger.error('[EMBEDDINGS] Rebuild folders failed:', e);
-        return { success: false, error: e.message };
+        return {
+          success: false,
+          error: e.message,
+          errorCode: e.code || 'REBUILD_FAILED'
+        };
       }
     })
   );
@@ -242,38 +442,31 @@ function registerEmbeddingsIpc({
    * This rebuilds the semantic search index from existing analysis history without
    * re-analyzing files. User-controlled and intentional.
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
-    withErrorLogging(logger, async () => {
-      // CRITICAL FIX: Wait for initialization before executing
+    createChromaHandler(async () => {
       try {
-        await ensureInitialized();
-      } catch (initError) {
-        logger.warn('[EMBEDDINGS] ChromaDB not available:', initError.message);
-        return {
-          success: false,
-          error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
-          unavailable: true
-        };
-      }
+        // FIX: Verify embedding model is available before starting
+        const modelCheck = await verifyEmbeddingModelAvailable(logger);
+        if (!modelCheck.available) {
+          return {
+            success: false,
+            error: modelCheck.error,
+            errorCode: 'MODEL_NOT_AVAILABLE',
+            model: modelCheck.model,
+            availableModels: modelCheck.availableModels
+          };
+        }
 
-      // FIX: Check if initialization succeeded
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending. Please try again in a few seconds.',
-          pending: true
-        };
-      }
-
-      try {
         const serviceIntegration = getServiceIntegration && getServiceIntegration();
         const historyService = serviceIntegration?.analysisHistory;
 
         if (!historyService?.getRecentAnalysis) {
           return {
             success: false,
-            error: 'Analysis history service unavailable'
+            error: 'Analysis history service unavailable',
+            errorCode: 'HISTORY_SERVICE_UNAVAILABLE'
           };
         }
 
@@ -285,7 +478,16 @@ function registerEmbeddingsIpc({
           logger.warn('[EMBEDDINGS] getRecentAnalysis returned non-array:', typeof allEntries);
           return {
             success: false,
-            error: 'Failed to load analysis history - invalid data format'
+            error: 'Failed to load analysis history - invalid data format',
+            errorCode: 'INVALID_HISTORY_FORMAT'
+          };
+        }
+
+        if (allEntries.length === 0) {
+          return {
+            success: true,
+            files: 0,
+            message: 'No analysis history to embed. Analyze some files first.'
           };
         }
 
@@ -293,7 +495,10 @@ function registerEmbeddingsIpc({
           typeof getCustomFolders === 'function' ? getCustomFolders() : []
         ).filter((f) => f && f.name);
 
-        // Optimization: Batch process folder embeddings
+        // Track results for folders
+        const folderResults = { success: 0, failed: 0 };
+
+        // Process folder embeddings (silently continue on failure)
         if (smartFolders.length > 0) {
           const folderPayloads = await Promise.all(
             smartFolders.map(async (folder) => {
@@ -303,6 +508,7 @@ function registerEmbeddingsIpc({
                 const { vector, model } = await folderMatcher.embedText(folderText);
                 const folderId = folder.id || folderMatcher.generateFolderId(folder);
 
+                folderResults.success++;
                 return {
                   id: folderId,
                   name: folder.name,
@@ -313,6 +519,7 @@ function registerEmbeddingsIpc({
                   updatedAt: new Date().toISOString()
                 };
               } catch (error) {
+                folderResults.failed++;
                 logger.warn('[EMBEDDINGS] Failed to generate folder embedding:', folder.name);
                 return null;
               }
@@ -320,14 +527,19 @@ function registerEmbeddingsIpc({
           );
 
           const validFolderPayloads = folderPayloads.filter((p) => p !== null);
-          await chromaDbService.batchUpsertFolders(validFolderPayloads);
+          if (validFolderPayloads.length > 0) {
+            await chromaDbService.batchUpsertFolders(validFolderPayloads);
+          }
         }
 
         // SAFE: resetFiles() only deletes/recreates the collection, not the DB directory
         // This rebuilds the search index from analysis history without re-analyzing files
         await chromaDbService.resetFiles();
 
-        // Optimization: Batch process file embeddings
+        // Track results for files
+        const fileResults = { success: 0, failed: 0, errors: [] };
+
+        // Process file embeddings with proper error tracking
         const filePayloads = [];
         for (const entry of allEntries) {
           try {
@@ -347,8 +559,27 @@ function registerEmbeddingsIpc({
               .filter(Boolean)
               .join('\n');
 
+            // Skip empty summaries
+            if (!summary.trim()) {
+              fileResults.failed++;
+              fileResults.errors.push({
+                file: path.basename(filePath),
+                error: 'No content to embed'
+              });
+              continue;
+            }
+
             // Generate embedding
             const { vector, model } = await folderMatcher.embedText(summary);
+
+            // Use renamed name if available, otherwise fall back to original basename
+            const displayName = entry.organization?.newName || path.basename(filePath);
+
+            // Extract rich metadata for graph visualization
+            const tags = Array.isArray(entry.analysis?.tags) ? entry.analysis.tags : [];
+            const category = entry.analysis?.category || '';
+            const subject = entry.analysis?.subject || '';
+            const summaryText = (entry.analysis?.summary || '').slice(0, 200);
 
             filePayloads.push({
               id: fileId,
@@ -356,18 +587,30 @@ function registerEmbeddingsIpc({
               model,
               meta: {
                 path: filePath,
-                name: path.basename(filePath),
-                type: isImage ? 'image' : 'document'
+                name: displayName,
+                type: isImage ? 'image' : 'document',
+                // Rich metadata for meaningful graph visualization
+                tags: JSON.stringify(tags), // ChromaDB requires string, will parse on read
+                category,
+                subject,
+                summary: summaryText
               },
               updatedAt: new Date().toISOString()
             });
+            fileResults.success++;
           } catch (e) {
+            fileResults.failed++;
+            const fileName = entry.originalPath ? path.basename(entry.originalPath) : 'unknown';
+            fileResults.errors.push({
+              file: fileName,
+              error: e.message
+            });
             logger.warn('[EMBEDDINGS] Failed to prepare file entry:', e.message);
             // continue on individual entry failure
           }
         }
 
-        // Optimization: Batch upsert all files at once (in chunks for large datasets)
+        // Batch upsert all files at once (in chunks for large datasets)
         const BATCH_SIZE = BATCH.SEMANTIC_BATCH_SIZE;
         let rebuilt = 0;
         for (let i = 0; i < filePayloads.length; i += BATCH_SIZE) {
@@ -380,35 +623,41 @@ function registerEmbeddingsIpc({
           }
         }
 
-        return { success: true, files: rebuilt };
+        // Return detailed status
+        const allFailed = fileResults.success === 0 && allEntries.length > 0;
+        return {
+          success: !allFailed,
+          files: rebuilt,
+          total: allEntries.length,
+          succeeded: fileResults.success,
+          failed: fileResults.failed,
+          errors: fileResults.errors.slice(0, 5), // Limit error details
+          folders: {
+            succeeded: folderResults.success,
+            failed: folderResults.failed
+          },
+          model: modelCheck.model,
+          message: allFailed
+            ? `All ${fileResults.failed} file embeddings failed. Check Ollama connection.`
+            : fileResults.failed > 0
+              ? `${fileResults.success} files embedded, ${fileResults.failed} failed`
+              : `Successfully embedded ${fileResults.success} files`
+        };
       } catch (e) {
         logger.error('[EMBEDDINGS] Rebuild files failed:', e);
-        return { success: false, error: e.message };
+        return {
+          success: false,
+          error: e.message,
+          errorCode: e.code || 'REBUILD_FAILED'
+        };
       }
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE,
-    withErrorLogging(logger, async () => {
-      // CRITICAL FIX: Wait for initialization before executing
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
+    createChromaHandler(async () => {
       try {
         await chromaDbService.resetAll();
         return { success: true };
@@ -419,27 +668,10 @@ function registerEmbeddingsIpc({
   );
 
   // New endpoint for getting vector DB statistics
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_STATS,
-    withErrorLogging(logger, async () => {
-      // CRITICAL FIX: Wait for initialization before executing
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
+    createChromaHandler(async () => {
       try {
         const stats = await chromaDbService.getStats();
 
@@ -482,27 +714,10 @@ function registerEmbeddingsIpc({
   );
 
   // New endpoint for finding similar documents
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR,
-    withErrorLogging(logger, async (event, { fileId, topK = 10 }) => {
-      // CRITICAL FIX: Wait for initialization before executing
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
+    createChromaHandler(async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
       // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
       const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
       const MAX_TOP_K = LIMITS.MAX_TOP_K;
@@ -557,121 +772,75 @@ function registerEmbeddingsIpc({
   );
 
   // Global semantic search (query -> ranked files)
-  ipcMain.handle(
+  // Uses SearchService.hybridSearch for combined BM25 + vector search with RRF fusion
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SEARCH,
-    withErrorLogging(logger, async (event, { query, topK = 20 } = {}) => {
-      // CRITICAL FIX: Wait for initialization before executing
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
-      const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
-      const MAX_TOP_K = LIMITS.MAX_TOP_K;
-
-      try {
-        const cleanQuery = typeof query === 'string' ? query.trim() : '';
-        if (!cleanQuery) {
-          return { success: false, error: 'Query is required' };
-        }
-        if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
-          return { success: false, error: 'Query length must be between 2 and 2000 characters' };
-        }
-
-        // Validate topK parameter
-        if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
-          return {
-            success: false,
-            error: `topK must be between 1 and ${MAX_TOP_K}`
-          };
-        }
-
-        // Create timeout promise
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Query timeout exceeded')), QUERY_TIMEOUT);
-        });
+    createChromaHandler(
+      async (event, { query, topK = SEARCH.DEFAULT_TOP_K, mode = 'hybrid', minScore } = {}) => {
+        const MAX_TOP_K = LIMITS.MAX_TOP_K;
 
         try {
-          const results = await Promise.race([
-            (async () => {
-              const embeddingService = getParallelEmbeddingService();
-              const { vector } = await embeddingService.embedText(cleanQuery);
-              return chromaDbService.querySimilarFiles(vector, topK);
-            })(),
-            timeoutPromise
-          ]);
+          const cleanQuery = typeof query === 'string' ? query.trim() : '';
+          if (!cleanQuery) {
+            return { success: false, error: 'Query is required' };
+          }
+          if (cleanQuery.length < 2 || cleanQuery.length > 2000) {
+            return { success: false, error: 'Query length must be between 2 and 2000 characters' };
+          }
 
-          return { success: true, results };
-        } finally {
-          if (timeoutId) clearTimeout(timeoutId);
+          // Validate topK parameter
+          if (!Number.isInteger(topK) || topK < 1 || topK > MAX_TOP_K) {
+            return {
+              success: false,
+              error: `topK must be between 1 and ${MAX_TOP_K}`
+            };
+          }
+
+          // Use SearchService for hybrid BM25 + vector search with quality filtering
+          const service = getSearchService();
+          const searchOptions = {
+            topK,
+            mode, // 'hybrid', 'vector', or 'bm25'
+            ...(typeof minScore === 'number' && { minScore })
+          };
+
+          const result = await service.hybridSearch(cleanQuery, searchOptions);
+
+          if (!result.success) {
+            return {
+              success: false,
+              error: result.error || 'Search failed'
+            };
+          }
+
+          return {
+            success: true,
+            results: result.results,
+            mode: result.mode,
+            meta: result.meta
+          };
+        } catch (e) {
+          logger.error('[EMBEDDINGS] Search failed:', {
+            topK,
+            error: e.message,
+            timeout: e.message.includes('timeout')
+          });
+          return {
+            success: false,
+            error: e.message,
+            timeout: e.message.includes('timeout')
+          };
         }
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Search failed:', {
-          topK,
-          error: e.message,
-          timeout: e.message.includes('timeout')
-        });
-        return {
-          success: false,
-          error: e.message,
-          timeout: e.message.includes('timeout')
-        };
       }
-    })
+    )
   );
 
-  function cosineSimilarity(a, b) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return 0;
-    const len = Math.min(a.length, b.length);
-    let dot = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < len; i += 1) {
-      const av = Number(a[i]) || 0;
-      const bv = Number(b[i]) || 0;
-      dot += av * bv;
-      normA += av * av;
-      normB += bv * bv;
-    }
-    if (normA === 0 || normB === 0) return 0;
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
-
   // Score a subset of file IDs against a query (for "search within graph")
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SCORE_FILES,
-    withErrorLogging(logger, async (event, { query, fileIds } = {}) => {
-      // CRITICAL FIX: Wait for initialization before executing
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
+    createChromaHandler(async (event, { query, fileIds } = {}) => {
       const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
 
       try {
@@ -755,44 +924,15 @@ function registerEmbeddingsIpc({
   // Hybrid Search Handlers
   // ============================================================================
 
-  /**
-   * Perform hybrid search combining BM25 keyword search with vector similarity
-   */
-  ipcMain.handle(
-    IPC_CHANNELS.EMBEDDINGS.HYBRID_SEARCH,
-    withErrorLogging(logger, async (event, { query, options = {} } = {}) => {
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
-      try {
-        const service = getSearchService();
-        const result = await service.hybridSearch(query, options);
-        return result;
-      } catch (e) {
-        logger.error('[EMBEDDINGS] Hybrid search failed:', e);
-        return { success: false, error: e.message };
-      }
-    })
-  );
+  // NOTE: HYBRID_SEARCH handler removed - use SEARCH handler instead
+  // The SEARCH handler now uses SearchService.hybridSearch() internally
+  // with full support for mode: 'hybrid' | 'vector' | 'bm25'
 
   /**
    * Rebuild the BM25 keyword search index
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX,
     withErrorLogging(logger, async () => {
       try {
@@ -809,7 +949,8 @@ function registerEmbeddingsIpc({
   /**
    * Get the current search index status
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS,
     withErrorLogging(logger, async () => {
       try {
@@ -830,26 +971,10 @@ function registerEmbeddingsIpc({
    * Find similar files with multi-hop expansion
    * Explores neighbors of neighbors with decay scoring
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP,
-    withErrorLogging(logger, async (event, { seedIds, options = {} } = {}) => {
-      try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
-
+    createChromaHandler(async (event, { seedIds, options = {} } = {}) => {
       try {
         if (!Array.isArray(seedIds) || seedIds.length === 0) {
           return { success: false, error: 'seedIds must be a non-empty array' };
@@ -873,33 +998,28 @@ function registerEmbeddingsIpc({
   );
 
   // ============================================================================
-  // Clustering Handlers (placeholder for ClusteringService)
+  // Clustering Handlers
   // ============================================================================
 
   /**
    * Compute semantic clusters of files
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS,
-    withErrorLogging(logger, async (event, { k = 'auto', generateLabels = true } = {}) => {
+    createChromaHandler(async (event, { k = 'auto', generateLabels = true } = {}) => {
       try {
-        await ensureInitialized();
-      } catch (initError) {
-        return {
-          success: false,
-          error: 'ChromaDB is not available.',
-          unavailable: true
-        };
-      }
-      if (!isInitialized) {
-        return {
-          success: false,
-          error: 'ChromaDB initialization pending.',
-          pending: true
-        };
-      }
+        // Validate k parameter
+        if (k !== 'auto') {
+          const numK = Number(k);
+          if (!Number.isInteger(numK) || numK < 1 || numK > 100) {
+            return {
+              success: false,
+              error: "k must be 'auto' or an integer between 1 and 100"
+            };
+          }
+        }
 
-      try {
         const service = getClusteringService();
         const result = await service.computeClusters(k);
 
@@ -921,13 +1041,14 @@ function registerEmbeddingsIpc({
   /**
    * Get computed clusters
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_CLUSTERS,
     withErrorLogging(logger, async () => {
       try {
         const service = getClusteringService();
         const clusters = service.getClustersForGraph();
-        const crossClusterEdges = service.findCrossClusterEdges(0.5);
+        const crossClusterEdges = service.findCrossClusterEdges(THRESHOLDS.SIMILARITY_EDGE_DEFAULT);
 
         return {
           success: true,
@@ -945,7 +1066,8 @@ function registerEmbeddingsIpc({
   /**
    * Get members of a specific cluster
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_CLUSTER_MEMBERS,
     withErrorLogging(logger, async (event, { clusterId } = {}) => {
       try {
@@ -972,20 +1094,57 @@ function registerEmbeddingsIpc({
   /**
    * Get similarity edges between files for graph visualization
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.EMBEDDINGS.GET_SIMILARITY_EDGES,
     withErrorLogging(
       logger,
-      async (event, { fileIds, threshold = 0.5, maxEdgesPerNode = 3 } = {}) => {
+      async (
+        event,
+        {
+          fileIds,
+          threshold = THRESHOLDS.SIMILARITY_EDGE_DEFAULT,
+          maxEdgesPerNode = THRESHOLDS.SIMILARITY_EDGE_MAX_PER_NODE
+        } = {}
+      ) => {
         try {
           if (!Array.isArray(fileIds) || fileIds.length < 2) {
             return { success: true, edges: [] };
           }
 
+          // Validate threshold (should be between 0 and 1)
+          const numThreshold = Number(threshold);
+          if (isNaN(numThreshold) || numThreshold < 0 || numThreshold > 1) {
+            return {
+              success: false,
+              error: 'threshold must be a number between 0 and 1',
+              edges: []
+            };
+          }
+
+          // Validate maxEdgesPerNode (should be a positive integer)
+          const numMaxEdges = Number(maxEdgesPerNode);
+          if (!Number.isInteger(numMaxEdges) || numMaxEdges < 1 || numMaxEdges > 20) {
+            return {
+              success: false,
+              error: 'maxEdgesPerNode must be an integer between 1 and 20',
+              edges: []
+            };
+          }
+
+          // Filter and limit fileIds
+          const validIds = fileIds
+            .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
+            .slice(0, 500); // Limit to 500 files for performance
+
+          if (validIds.length < 2) {
+            return { success: true, edges: [] };
+          }
+
           const service = getClusteringService();
-          const edges = await service.findFileSimilarityEdges(fileIds, {
-            threshold,
-            maxEdgesPerNode
+          const edges = await service.findFileSimilarityEdges(validIds, {
+            threshold: numThreshold,
+            maxEdgesPerNode: numMaxEdges
           });
 
           return {
@@ -1000,10 +1159,116 @@ function registerEmbeddingsIpc({
     )
   );
 
+  /**
+   * Get fresh file metadata from ChromaDB
+   * Used to get current file paths after files have been moved/organized
+   */
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA,
+    withErrorLogging(logger, async (event, { fileIds } = {}) => {
+      try {
+        if (!Array.isArray(fileIds) || fileIds.length === 0) {
+          return { success: true, metadata: {} };
+        }
+
+        // Validate and limit file IDs
+        const validIds = fileIds
+          .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
+          .slice(0, 100); // Limit to 100 files per request
+
+        if (validIds.length === 0) {
+          return { success: true, metadata: {} };
+        }
+
+        await chromaDbService.initialize();
+        const fileCollection = chromaDbService.fileCollection;
+
+        if (!fileCollection) {
+          return { success: false, error: 'File collection not available', metadata: {} };
+        }
+
+        const result = await fileCollection.get({
+          ids: validIds,
+          include: ['metadatas']
+        });
+
+        // Build metadata map from results
+        const metadata = {};
+        if (Array.isArray(result?.ids) && Array.isArray(result?.metadatas)) {
+          for (let i = 0; i < result.ids.length; i++) {
+            metadata[result.ids[i]] = result.metadatas[i] || {};
+          }
+        }
+
+        return { success: true, metadata };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Get file metadata failed:', e);
+        return { success: false, error: e.message, metadata: {} };
+      }
+    })
+  );
+
+  /**
+   * Find near-duplicate files across the indexed collection
+   * Groups files with high semantic similarity (>=0.9 by default)
+   */
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES,
+    withErrorLogging(logger, async (event, { threshold = 0.9, maxResults = 50 } = {}) => {
+      try {
+        // Validate threshold (should be between 0.7 and 1.0 for duplicates)
+        const numThreshold = Number(threshold);
+        if (isNaN(numThreshold) || numThreshold < 0.7 || numThreshold > 1) {
+          return {
+            success: false,
+            error: 'threshold must be a number between 0.7 and 1.0',
+            groups: [],
+            totalDuplicates: 0
+          };
+        }
+
+        // Validate maxResults
+        const numMaxResults = Number(maxResults);
+        if (!Number.isInteger(numMaxResults) || numMaxResults < 1 || numMaxResults > 200) {
+          return {
+            success: false,
+            error: 'maxResults must be an integer between 1 and 200',
+            groups: [],
+            totalDuplicates: 0
+          };
+        }
+
+        const service = getClusteringService();
+        const result = await service.findNearDuplicates({
+          threshold: numThreshold,
+          maxResults: numMaxResults
+        });
+
+        return result;
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Find duplicates failed:', e);
+        return {
+          success: false,
+          error: e.message,
+          groups: [],
+          totalDuplicates: 0
+        };
+      }
+    })
+  );
+
   // Cleanup on app quit - FIX #15: Use once() to prevent multiple listener registration
   const { app } = require('electron');
   app.once('before-quit', async () => {
     try {
+      // FIX: Clear module-level service references to prevent memory leaks
+      _searchServiceRef = null;
+      _clusteringServiceRef = null;
+      searchService = null;
+      clusteringService = null;
+
       await chromaDbService.cleanup();
     } catch (error) {
       logger.error('[ChromaDB] Cleanup error:', error);
@@ -1012,3 +1277,5 @@ function registerEmbeddingsIpc({
 }
 
 module.exports = registerEmbeddingsIpc;
+module.exports.getSearchServiceInstance = getSearchServiceInstance;
+module.exports.getClusteringServiceInstance = getClusteringServiceInstance;

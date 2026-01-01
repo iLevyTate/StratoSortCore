@@ -10,11 +10,7 @@ jest.mock('../src/shared/logger', () => ({
   }
 }));
 
-const {
-  createHealthCheckInterval,
-  executeWithTimeout,
-  isServiceAvailable
-} = require('../src/shared/healthCheckUtils');
+const { createHealthCheckInterval } = require('../src/shared/healthCheckUtils');
 
 describe('healthCheckUtils', () => {
   beforeEach(() => {
@@ -183,98 +179,7 @@ describe('healthCheckUtils', () => {
     });
   });
 
-  describe('executeWithTimeout', () => {
-    test('returns true on successful check', async () => {
-      const checkFn = jest.fn().mockResolvedValue(true);
-
-      const result = await executeWithTimeout(checkFn, 100);
-
-      expect(result).toBe(true);
-    });
-
-    test('returns false on check failure', async () => {
-      const checkFn = jest.fn().mockRejectedValue(new Error('fail'));
-
-      const result = await executeWithTimeout(checkFn, 100);
-
-      expect(result).toBe(false);
-    });
-
-    test('returns false on timeout', async () => {
-      const checkFn = jest.fn().mockImplementation(() => {
-        return new Promise((resolve) => setTimeout(resolve, 200));
-      });
-
-      const result = await executeWithTimeout(checkFn, 50);
-
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('isServiceAvailable', () => {
-    test('returns true if service is available', async () => {
-      const checkFn = jest.fn().mockResolvedValue(true);
-
-      const result = await isServiceAvailable({
-        checkFn,
-        maxRetries: 3,
-        initialDelayMs: 10,
-        timeoutMs: 100
-      });
-
-      expect(result).toBe(true);
-      expect(checkFn).toHaveBeenCalledTimes(1);
-    });
-
-    test('retries on failure', async () => {
-      let callCount = 0;
-      const checkFn = jest.fn().mockImplementation(() => {
-        callCount++;
-        if (callCount < 3) {
-          return Promise.reject(new Error('fail'));
-        }
-        return Promise.resolve(true);
-      });
-
-      const result = await isServiceAvailable({
-        checkFn,
-        maxRetries: 3,
-        initialDelayMs: 10,
-        timeoutMs: 100
-      });
-
-      expect(result).toBe(true);
-      expect(checkFn).toHaveBeenCalledTimes(3);
-    });
-
-    test('returns false after max retries', async () => {
-      const checkFn = jest.fn().mockRejectedValue(new Error('fail'));
-
-      const result = await isServiceAvailable({
-        checkFn,
-        maxRetries: 3,
-        initialDelayMs: 10,
-        timeoutMs: 100
-      });
-
-      expect(result).toBe(false);
-      expect(checkFn).toHaveBeenCalledTimes(3);
-    });
-
-    test('uses exponential backoff', async () => {
-      const checkFn = jest.fn().mockRejectedValue(new Error('fail'));
-      const startTime = Date.now();
-
-      await isServiceAvailable({
-        checkFn,
-        maxRetries: 3,
-        initialDelayMs: 20,
-        timeoutMs: 50
-      });
-
-      const elapsed = Date.now() - startTime;
-      // Should have delays: 20ms + 40ms = 60ms minimum
-      expect(elapsed).toBeGreaterThanOrEqual(50);
-    });
-  });
+  // Note: executeWithTimeout and isServiceAvailable tests removed
+  // as these functions were removed from healthCheckUtils.js
+  // (they were unused externally - only createHealthCheckInterval is needed)
 });

@@ -23,6 +23,7 @@ import Button from './ui/Button';
 import IconButton from './ui/IconButton';
 import Collapsible from './ui/Collapsible';
 import { ModalLoadingOverlay } from './LoadingSkeleton';
+import { ConfirmModal } from './Modal';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 import OllamaConfigSection from './settings/OllamaConfigSection';
@@ -32,6 +33,8 @@ import EmbeddingRebuildSection from './settings/EmbeddingRebuildSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
+import SettingsBackupSection from './settings/SettingsBackupSection';
+import ProcessingLimitsSection from './settings/ProcessingLimitsSection';
 
 const AnalysisHistoryModal = lazy(() => import('./AnalysisHistoryModal'));
 
@@ -52,7 +55,16 @@ const isElectronAPIAvailable = () => {
   return typeof window !== 'undefined' && window.electronAPI != null;
 };
 
-const SAFE_EMBED_MODEL = 'mxbai-embed-large';
+// Allowed embedding models - must match settingsValidation.js enum
+// NOTE: Changing embedding models requires re-embedding all files (dimension mismatch)
+const ALLOWED_EMBED_MODELS = [
+  'embeddinggemma', // 768 dims (default, Google's best-in-class)
+  'mxbai-embed-large', // 1024 dims (legacy)
+  'nomic-embed-text', // 768 dims
+  'all-minilm', // 384 dims (compact)
+  'bge-large' // 1024 dims
+];
+const DEFAULT_EMBED_MODEL = 'embeddinggemma';
 
 const SettingsPanel = React.memo(function SettingsPanel() {
   const dispatch = useAppDispatch();
@@ -68,16 +80,20 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     dispatch(toggleSettings());
   }, [dispatch]);
 
+  // Initial state matches defaultSettings.js - will be overwritten on load
   const [settings, setSettings] = useState({
     ollamaHost: SERVICE_URLS.OLLAMA_HOST,
-    textModel: 'llama3.2:latest',
-    visionModel: 'llava:latest',
-    embeddingModel: 'mxbai-embed-large',
+    textModel: 'qwen3:0.6b',
+    visionModel: 'gemma3:latest', // Gemma 3 is multimodal (4B+ support vision)
+    embeddingModel: DEFAULT_EMBED_MODEL,
     maxConcurrentAnalysis: 3,
     autoOrganize: false,
     backgroundMode: false,
     defaultSmartFolderLocation: 'Documents',
-    launchOnStartup: false
+    launchOnStartup: false,
+    theme: 'system',
+    notifications: true,
+    confidenceThreshold: 0.75
   });
   const [ollamaModelLists, setOllamaModelLists] = useState({
     text: [],
@@ -97,6 +113,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const progressUnsubRef = useRef(null);
   const [showAllModels, setShowAllModels] = useState(false);
   const [showAnalysisHistory, setShowAnalysisHistory] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [analysisStats, setAnalysisStats] = useState(null);
   const didAutoHealthCheckRef = useRef(false);
   const skipAutoSaveRef = useRef(false);
@@ -113,13 +130,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const visionModelOptions = useMemo(() => ollamaModelLists.vision, [ollamaModelLists.vision]);
 
   const embeddingModelOptions = useMemo(() => {
-    // Only expose the vetted embedding model to keep vector dimensions stable
-    const allowed = new Set([SAFE_EMBED_MODEL]);
-    if (settings.embeddingModel && settings.embeddingModel === SAFE_EMBED_MODEL) {
-      allowed.add(settings.embeddingModel);
-    }
-    return Array.from(allowed);
-  }, [settings.embeddingModel]);
+    // Only expose vetted embedding models to keep vector dimensions stable
+    // NOTE: Changing embedding models requires re-embedding all files (dimension mismatch)
+    // embeddinggemma: 768 dims, mxbai-embed-large: 1024 dims
+    return ALLOWED_EMBED_MODELS;
+  }, []);
 
   const pullProgressText = useMemo(() => {
     if (!pullProgress) return null;
@@ -163,8 +178,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setOllamaModelLists({
         text: (categories.text || []).slice().sort(),
         vision: (categories.vision || []).slice().sort(),
-        // We intentionally do not expose arbitrary embedding models to keep vector size fixed
-        embedding: [SAFE_EMBED_MODEL],
+        // Only expose vetted embedding models to keep vector dimensions stable
+        embedding: ALLOWED_EMBED_MODELS,
         all: (response?.models || []).slice().sort()
       });
       setModelToDelete((response?.models || [])[0] || '');
@@ -174,8 +189,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         skipAutoSaveRef.current = true;
         setSettings((prev) => {
           const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;
-          const nextEmbeddingModel =
-            desiredEmbed === SAFE_EMBED_MODEL ? desiredEmbed : SAFE_EMBED_MODEL;
+          // Validate embedding model is in the allowed list
+          const nextEmbeddingModel = ALLOWED_EMBED_MODELS.includes(desiredEmbed)
+            ? desiredEmbed
+            : DEFAULT_EMBED_MODEL;
 
           return {
             ...prev,
@@ -192,10 +209,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         stack: error.stack
       });
       setOllamaModelLists({ text: [], vision: [], embedding: [], all: [] });
+      // Notify user about the failure so they know models couldn't be loaded
+      addNotification('Failed to load Ollama models. Check if Ollama is running.', 'warning');
     } finally {
       setIsRefreshingModels(false);
     }
-  }, []);
+  }, [addNotification]);
 
   useEffect(() => {
     // Don't run if API is not available
@@ -279,38 +298,39 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       } else {
         addNotification('Settings saved successfully!', 'success');
       }
+      // Only close panel on successful save
       handleToggleSettings();
     } catch (error) {
       logger.error('Failed to save settings', {
         error: error.message,
         stack: error.stack
       });
-      addNotification('Failed to save settings', 'error');
+      // Keep panel open on error so user can fix issues
+      addNotification(
+        'Failed to save settings. Please check your settings and try again.',
+        'error'
+      );
     } finally {
       setIsSaving(false);
     }
   }, [settings, addNotification, handleToggleSettings]);
 
   // Auto-save settings on change (debounced)
-  const autoSaveSettings = useDebouncedCallback(
-    async () => {
-      try {
-        const normalizedSettings = sanitizeSettings(settings);
-        const res = await window.electronAPI.settings.save(normalizedSettings);
-        if (res?.settings && typeof res.settings === 'object') {
-          skipAutoSaveRef.current = true;
-          setSettings((prev) => ({ ...prev, ...res.settings }));
-        }
-      } catch (error) {
-        logger.error('Auto-save settings failed', {
-          error: error.message,
-          stack: error.stack
-        });
+  const autoSaveSettings = useDebouncedCallback(async () => {
+    try {
+      const normalizedSettings = sanitizeSettings(settings);
+      const res = await window.electronAPI.settings.save(normalizedSettings);
+      if (res?.settings && typeof res.settings === 'object') {
+        skipAutoSaveRef.current = true;
+        setSettings((prev) => ({ ...prev, ...res.settings }));
       }
-    },
-    800,
-    [settings]
-  );
+    } catch (error) {
+      logger.error('Auto-save settings failed', {
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  }, 800);
 
   useEffect(() => {
     if (isApiAvailable && settingsLoaded) {
@@ -328,13 +348,19 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
       setOllamaHealth(res?.ollamaHealth || null);
       if (res?.success) {
-        addNotification(`Ollama connected: ${res.modelCount} models found`, 'success');
+        const modelText = res.modelCount === 1 ? '1 model' : `${res.modelCount} models`;
+        addNotification(`Connected to Ollama (${modelText} available)`, 'success');
         await loadOllamaModels();
       } else {
-        addNotification(`Ollama connection failed: ${res?.error || 'Unknown error'}`, 'error');
+        const errorMsg = res?.error || '';
+        if (errorMsg.includes('ECONNREFUSED')) {
+          addNotification('Cannot reach Ollama. Make sure it is running.', 'error');
+        } else {
+          addNotification('Connection failed. Check Ollama is running.', 'error');
+        }
       }
     } catch (e) {
-      addNotification(`Ollama test failed: ${e.message}`, 'error');
+      addNotification('Connection test failed. Is Ollama running?', 'error');
     }
   }, [settings.ollamaHost, addNotification, loadOllamaModels]);
 
@@ -355,14 +381,21 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const res = await window.electronAPI.ollama.pullModels([newModel.trim()]);
       const result = res?.results?.[0];
       if (result?.success) {
-        addNotification(`Added model ${newModel.trim()}`, 'success');
+        addNotification(`Model "${newModel.trim()}" installed`, 'success');
         setNewModel('');
         await loadOllamaModels();
       } else {
-        addNotification(`Failed to add model: ${result?.error || 'Unknown error'}`, 'error');
+        const errorMsg = result?.error || '';
+        if (errorMsg.includes('not found') || errorMsg.includes('404')) {
+          addNotification('Model not found. Check the model name on ollama.com/library', 'error');
+        } else if (errorMsg.includes('timeout')) {
+          addNotification('Download timed out. Try again or check your connection.', 'error');
+        } else {
+          addNotification('Could not install model. Check the name and try again.', 'error');
+        }
       }
     } catch (e) {
-      addNotification(`Failed to add model: ${e.message}`, 'error');
+      addNotification('Model installation failed. Check your connection.', 'error');
     } finally {
       setIsAddingModel(false);
       const NOTIFICATION_DELAY_MS = 1500;
@@ -382,14 +415,20 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setIsDeletingModel(true);
       const res = await window.electronAPI.ollama.deleteModel(modelToDelete);
       if (res?.success) {
-        addNotification(`Deleted model ${modelToDelete}`, 'success');
+        addNotification(`Model "${modelToDelete}" removed`, 'success');
         setModelToDelete('');
         await loadOllamaModels();
       } else {
-        addNotification(`Failed to delete model: ${res?.error || 'Unknown error'}`, 'error');
+        const errorMsg = res?.error || '';
+        if (errorMsg.includes('not found')) {
+          addNotification('Model already removed or not found.', 'info');
+          await loadOllamaModels();
+        } else {
+          addNotification('Could not remove model. It may be in use.', 'error');
+        }
       }
     } catch (e) {
-      addNotification(`Failed to delete model: ${e.message}`, 'error');
+      addNotification('Could not remove model. Try again.', 'error');
     } finally {
       setIsDeletingModel(false);
     }
@@ -516,7 +555,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 isAddingModel={isAddingModel}
                 isDeletingModel={isDeletingModel}
                 onAddModel={addOllamaModel}
-                onDeleteModel={deleteOllamaModel}
+                onDeleteModel={() => modelToDelete && setShowDeleteConfirm(true)}
               />
               <EmbeddingRebuildSection addNotification={addNotification} />
             </div>
@@ -553,6 +592,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
               </div>
               <AutoOrganizeSection settings={settings} setSettings={setSettings} />
               <BackgroundModeSection settings={settings} setSettings={setSettings} />
+
+              {/* Processing Limits */}
+              <div className="mt-4 pt-4 border-t border-system-gray-200">
+                <ProcessingLimitsSection settings={settings} setSettings={setSettings} />
+              </div>
             </div>
           </Collapsible>
 
@@ -580,6 +624,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             persistKey="settings-app"
           >
             <ApplicationSection settings={settings} setSettings={setSettings} />
+
+            {/* Settings Backup & Restore */}
+            <div className="mt-6 pt-6 border-t border-system-gray-200">
+              <SettingsBackupSection addNotification={addNotification} />
+            </div>
           </Collapsible>
 
           <Collapsible
@@ -649,6 +698,18 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           />
         </Suspense>
       )}
+
+      {/* Delete model confirmation modal */}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={deleteOllamaModel}
+        title="Delete Model?"
+        message={`Are you sure you want to delete "${modelToDelete}"? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </div>
   );
 });

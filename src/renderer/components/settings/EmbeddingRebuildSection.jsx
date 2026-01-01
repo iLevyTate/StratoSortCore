@@ -52,14 +52,27 @@ function EmbeddingRebuildSection({ addNotification }) {
     try {
       setIsRebuildingFolders(true);
       const res = await window.electronAPI.embeddings.rebuildFolders();
-      addNotification(
-        res?.success
-          ? `Rebuilt ${res.folders || 0} folder embeddings`
-          : `Failed: ${res?.error || 'Unknown error'}`,
-        res?.success ? 'success' : 'error'
-      );
+      if (res?.success) {
+        const count = res.folders || 0;
+        addNotification(
+          count > 0
+            ? `Rebuilt ${count} folder embeddings`
+            : 'No folders to rebuild. Add smart folders first.',
+          count > 0 ? 'success' : 'info'
+        );
+      } else {
+        // Provide actionable error message
+        const errorMsg = res?.error || '';
+        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
+          addNotification('Ollama not running. Start Ollama and try again.', 'error');
+        } else if (errorMsg.includes('ChromaDB')) {
+          addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
+        } else {
+          addNotification('Rebuild failed. Check Ollama connection in Settings.', 'error');
+        }
+      }
     } catch (e) {
-      addNotification(`Failed: ${e.message}`, 'error');
+      addNotification('Rebuild failed. Check Ollama is running.', 'error');
     } finally {
       setIsRebuildingFolders(false);
       refreshStats();
@@ -70,14 +83,27 @@ function EmbeddingRebuildSection({ addNotification }) {
     try {
       setIsRebuildingFiles(true);
       const res = await window.electronAPI.embeddings.rebuildFiles();
-      addNotification(
-        res?.success
-          ? `Rebuilt ${res.files || 0} file embeddings`
-          : `Failed: ${res?.error || 'Unknown error'}`,
-        res?.success ? 'success' : 'error'
-      );
+      if (res?.success) {
+        const count = res.files || 0;
+        addNotification(
+          count > 0
+            ? `Indexed ${count} files for semantic search`
+            : 'No analyzed files found. Analyze files in Discover first.',
+          count > 0 ? 'success' : 'info'
+        );
+      } else {
+        // Provide actionable error message
+        const errorMsg = res?.error || '';
+        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
+          addNotification('Ollama not running. Start Ollama and try again.', 'error');
+        } else if (errorMsg.includes('ChromaDB')) {
+          addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
+        } else {
+          addNotification('Indexing failed. Check Ollama connection in Settings.', 'error');
+        }
+      }
     } catch (e) {
-      addNotification(`Failed: ${e.message}`, 'error');
+      addNotification('Indexing failed. Check Ollama is running.', 'error');
     } finally {
       setIsRebuildingFiles(false);
       refreshStats();

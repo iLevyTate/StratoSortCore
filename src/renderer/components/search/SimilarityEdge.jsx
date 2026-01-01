@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useMemo } from 'react';
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
 import PropTypes from 'prop-types';
 
@@ -39,35 +39,49 @@ const SimilarityEdge = memo(
     const sourceData = data?.sourceData || {};
     const targetData = data?.targetData || {};
 
-    // Find common tags/keywords
-    const sourceTags = sourceData.tags || [];
-    const targetTags = targetData.tags || [];
-    const commonTags = sourceTags.filter((tag) => targetTags.includes(tag));
+    // Memoize derived values to prevent unnecessary re-renders and fix useCallback dependencies
+    const sourceTags = useMemo(() => sourceData.tags || [], [sourceData.tags]);
+    const targetTags = useMemo(() => targetData.tags || [], [targetData.tags]);
+    const commonTags = useMemo(
+      () => sourceTags.filter((tag) => targetTags.includes(tag)),
+      [sourceTags, targetTags]
+    );
 
     // Categories
     const sourceCategory = sourceData.category || '';
     const targetCategory = targetData.category || '';
     const sameCategory = sourceCategory && sourceCategory === targetCategory;
 
-    // Build explanation text
-    const buildExplanation = useCallback(() => {
+    // Subjects
+    const sourceSubject = sourceData.subject || '';
+    const targetSubject = targetData.subject || '';
+    const hasSubjects = sourceSubject || targetSubject;
+
+    // Count relationship signals for edge thickness
+    const relationshipStrength =
+      (sameCategory ? 1 : 0) + (commonTags.length > 0 ? 1 : 0) + (hasSubjects ? 0.5 : 0);
+
+    // Build explanation text (useMemo since it computes a value, not a callback)
+    const explanation = useMemo(() => {
       const parts = [];
 
       if (sameCategory) {
-        parts.push(`Both in "${sourceCategory}"`);
+        parts.push(`Both "${sourceCategory}"`);
       }
 
       if (commonTags.length > 0) {
-        const tagList = commonTags.slice(0, 3).join(', ');
-        parts.push(`Share tags: ${tagList}`);
+        const tagList = commonTags.slice(0, 2).join(', ');
+        parts.push(`Tags: ${tagList}`);
       }
 
-      if (similarityPercent >= 80) {
-        parts.push('Very similar content');
-      } else if (similarityPercent >= 60) {
-        parts.push('Related topics');
+      if (similarityPercent >= 85) {
+        parts.push('Nearly identical');
+      } else if (similarityPercent >= 70) {
+        parts.push('Strongly related');
+      } else if (similarityPercent >= 55) {
+        parts.push('Related content');
       } else {
-        parts.push('Some overlap');
+        parts.push('Some similarity');
       }
 
       return parts.join(' • ');
@@ -76,13 +90,14 @@ const SimilarityEdge = memo(
     const handleMouseEnter = useCallback(() => setIsHovered(true), []);
     const handleMouseLeave = useCallback(() => setIsHovered(false), []);
 
-    // Dynamic styling based on hover
+    // Dynamic styling based on hover and relationship strength
+    const baseWidth = 1 + relationshipStrength * 0.5;
     const edgeStyle = {
       ...style,
-      stroke: isHovered ? '#059669' : '#10b981',
-      strokeWidth: isHovered ? 2.5 : 1.5,
-      strokeDasharray: isHovered ? 'none' : '4 2',
-      opacity: isHovered ? 1 : Math.max(0.4, similarity),
+      stroke: isHovered ? '#059669' : relationshipStrength >= 2 ? '#10b981' : '#6ee7b7',
+      strokeWidth: isHovered ? 2.5 : baseWidth,
+      strokeDasharray: relationshipStrength >= 1.5 ? 'none' : '4 2',
+      opacity: isHovered ? 1 : Math.max(0.5, similarity * 0.8 + relationshipStrength * 0.1),
       filter: isHovered ? 'drop-shadow(0 0 4px rgba(16, 185, 129, 0.5))' : 'none',
       transition: 'all 0.2s ease'
     };
@@ -174,9 +189,31 @@ const SimilarityEdge = memo(
                     </div>
                   )}
 
+                  {/* Subjects if available */}
+                  {hasSubjects && (
+                    <div className="space-y-0.5">
+                      {sourceSubject && (
+                        <div className="text-[11px]">
+                          <span className="text-gray-500">A: </span>
+                          <span className="text-amber-400 truncate">
+                            {sourceSubject.slice(0, 40)}
+                          </span>
+                        </div>
+                      )}
+                      {targetSubject && (
+                        <div className="text-[11px]">
+                          <span className="text-gray-500">B: </span>
+                          <span className="text-amber-400 truncate">
+                            {targetSubject.slice(0, 40)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Explanation */}
                   <div className="text-gray-300 italic text-[11px] pt-1 border-t border-gray-700">
-                    {buildExplanation()}
+                    {explanation}
                   </div>
 
                   {/* Arrow pointing up */}
@@ -204,16 +241,20 @@ SimilarityEdge.propTypes = {
   data: PropTypes.shape({
     similarity: PropTypes.number,
     sourceData: PropTypes.shape({
+      label: PropTypes.string,
       tags: PropTypes.arrayOf(PropTypes.string),
-      category: PropTypes.string
+      category: PropTypes.string,
+      subject: PropTypes.string
     }),
     targetData: PropTypes.shape({
+      label: PropTypes.string,
       tags: PropTypes.arrayOf(PropTypes.string),
-      category: PropTypes.string
+      category: PropTypes.string,
+      subject: PropTypes.string
     })
   }),
   style: PropTypes.object,
-  markerEnd: PropTypes.string
+  markerEnd: PropTypes.oneOfType([PropTypes.string, PropTypes.object])
 };
 
 export default SimilarityEdge;

@@ -40,10 +40,11 @@ const chalk = {
 
 // Configuration
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+// Ultra-lightweight models for accessibility (~2.3GB total vs previous ~8GB)
 const ESSENTIAL_MODELS = {
-  text: ['llama3.2:latest', 'llama3.1:latest', 'llama3:latest', 'gemma2:2b', 'phi3:mini'],
-  vision: ['llava:latest', 'bakllava:latest', 'moondream:latest'],
-  embedding: ['mxbai-embed-large:latest', 'nomic-embed-text:latest']
+  text: ['qwen3:0.6b', 'llama3.2:latest', 'gemma2:2b', 'phi3:mini'], // 523MB - Ultra-fast, 40K context
+  vision: ['gemma3:latest', 'moondream:latest', 'llava:latest'], // Gemma 3 is multimodal (4B+ support vision)
+  embedding: ['embeddinggemma:latest', 'mxbai-embed-large:latest', 'nomic-embed-text:latest'] // 308MB - Google's best, 768 dims
 };
 
 function normalizeOllamaModelName(name) {
@@ -500,7 +501,7 @@ async function main() {
 
     if (platform === 'linux') {
       const installCmd = 'curl -fsSL https://ollama.com/install.sh | sh';
-      const success = run('sh', ['-c', installCmd]);
+      const success = await run('sh', ['-c', installCmd]);
       if (!success) {
         console.log(chalk.red('✗ Automatic installation failed'));
         console.log(chalk.yellow('Please install manually and run this script again.'));

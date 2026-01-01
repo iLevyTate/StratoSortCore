@@ -112,6 +112,12 @@ class ChromaDBServiceCore extends EventEmitter {
     this._isInitializing = false;
     this._recoveryAttempted = false;
 
+    // FIX: Track collection dimensions to detect embedding model changes
+    this._collectionDimensions = {
+      files: null,
+      folders: null
+    };
+
     // Query cache
     this.queryCache = new ChromaQueryCache({
       maxSize: MAX_CACHE_SIZE,
@@ -200,6 +206,102 @@ class ChromaDBServiceCore extends EventEmitter {
   }
 
   /**
+   * Get the embedding dimension of an existing collection by peeking at stored embeddings.
+   * FIX: Helps detect dimension mismatches when embedding models change.
+   *
+   * @param {'files' | 'folders'} collectionType - Which collection to check
+   * @returns {Promise<number | null>} Dimension of stored embeddings, or null if collection is empty
+   */
+  async getCollectionDimension(collectionType) {
+    try {
+      const collection = collectionType === 'files' ? this.fileCollection : this.folderCollection;
+      if (!collection) {
+        return null;
+      }
+
+      // Return cached dimension if available
+      if (this._collectionDimensions[collectionType] !== null) {
+        return this._collectionDimensions[collectionType];
+      }
+
+      // Peek at first embedding to get dimension
+      const peek = await collection.peek({ limit: 1 });
+      if (peek.embeddings && peek.embeddings.length > 0 && peek.embeddings[0]) {
+        const dimension = peek.embeddings[0].length;
+        this._collectionDimensions[collectionType] = dimension;
+        return dimension;
+      }
+
+      return null; // Collection is empty
+    } catch (error) {
+      logger.debug('[ChromaDB] Could not get collection dimension:', {
+        collectionType,
+        error: error.message
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Validate that an embedding vector matches the expected collection dimension.
+   * FIX: Provides clear error when embedding model changed and dimensions mismatch.
+   *
+   * @param {Array<number>} vector - Embedding vector to validate
+   * @param {'files' | 'folders'} collectionType - Which collection this is for
+   * @returns {Promise<{ valid: boolean, error?: string, expectedDim?: number, actualDim?: number }>}
+   */
+  async validateEmbeddingDimension(vector, collectionType) {
+    if (!Array.isArray(vector) || vector.length === 0) {
+      return { valid: false, error: 'invalid_vector' };
+    }
+
+    const expectedDim = await this.getCollectionDimension(collectionType);
+
+    // If collection is empty, any dimension is valid (first insert sets the dimension)
+    if (expectedDim === null) {
+      // Cache the dimension for future validations
+      this._collectionDimensions[collectionType] = vector.length;
+      return { valid: true };
+    }
+
+    if (vector.length !== expectedDim) {
+      const error =
+        `Embedding dimension mismatch: collection "${collectionType}" expects ${expectedDim} dimensions but received ${vector.length}. ` +
+        `This typically occurs when changing embedding models. Use "Rebuild Embeddings" to migrate to the new model.`;
+
+      logger.error(`[ChromaDB] ${error}`);
+
+      // Emit event so UI can display warning
+      this.emit('dimension-mismatch', {
+        collectionType,
+        expectedDim,
+        actualDim: vector.length,
+        message: error
+      });
+
+      return {
+        valid: false,
+        error: 'dimension_mismatch',
+        expectedDim,
+        actualDim: vector.length
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Clear cached collection dimensions (call after reset operations)
+   * @private
+   */
+  _clearDimensionCache() {
+    this._collectionDimensions = {
+      files: null,
+      folders: null
+    };
+  }
+
+  /**
    * Force a clean re-initialization of client/collections.
    * @private
    */
@@ -218,18 +320,43 @@ class ChromaDBServiceCore extends EventEmitter {
   /**
    * Execute an operation once; if it fails with a not-found error, attempt a single
    * re-initialize + retry to recover from stale collection IDs.
+   * FIX: Added explicit retry limit to prevent infinite loops in pathological cases
    * @private
+   * @param {string} operation - Operation name for logging
+   * @param {Function} fn - Async function to execute
+   * @param {number} [retryCount=0] - Current retry count (internal use)
    */
-  async _executeWithNotFoundRecovery(operation, fn) {
+  async _executeWithNotFoundRecovery(operation, fn, retryCount = 0) {
+    const MAX_NOT_FOUND_RETRIES = 2; // Maximum reinit attempts for not-found errors
+
     try {
       return await fn();
     } catch (error) {
       if (!this._isChromaNotFoundError(error)) {
         throw error;
       }
+
+      // FIX: Prevent infinite reinit loops
+      if (retryCount >= MAX_NOT_FOUND_RETRIES) {
+        logger.error('[ChromaDB] Max not-found recovery retries exceeded', {
+          operation,
+          retryCount,
+          error: error?.message
+        });
+        throw new Error(
+          `ChromaDB operation "${operation}" failed after ${MAX_NOT_FOUND_RETRIES} recovery attempts: ${error?.message}`
+        );
+      }
+
+      logger.warn('[ChromaDB] Not-found error, attempting recovery', {
+        operation,
+        retryCount: retryCount + 1,
+        maxRetries: MAX_NOT_FOUND_RETRIES
+      });
+
       await this._forceReinitialize('not_found_recovery', { operation, error: error?.message });
-      // Retry once after reinit
-      return await fn();
+      // Retry with incremented count
+      return await this._executeWithNotFoundRecovery(operation, fn, retryCount + 1);
     }
   }
 
@@ -416,6 +543,12 @@ class ChromaDBServiceCore extends EventEmitter {
       }
     }
     this.inflightQueries.set(key, promise);
+
+    // FIX: CRITICAL - Remove entry when promise settles to prevent memory leak
+    // Previously, completed promises remained in the map indefinitely
+    promise.finally(() => {
+      this.inflightQueries.delete(key);
+    });
   }
 
   /**
@@ -607,65 +740,37 @@ class ChromaDBServiceCore extends EventEmitter {
       }
     }
 
+    // FIX: Removed polling loop - use atomic check-and-set pattern instead
+    // The _initPromise is now set BEFORE _isInitializing, eliminating race conditions
     if (this._isInitializing) {
+      // _initPromise should always exist when _isInitializing is true
+      // If not, another call is in the process of setting it up - wait briefly
       if (this._initPromise) {
         return this._initPromise;
       }
-
-      // FIX: Add small delay to allow _initPromise to be set, avoiding race condition
-      // where _isInitializing is true but _initPromise hasn't been assigned yet
+      // Edge case: _isInitializing was set but promise not yet assigned
+      // Wait a microtask for the assignment to complete
       await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_MICRO));
       if (this._initPromise) {
         return this._initPromise;
       }
-
-      return new Promise((resolve, reject) => {
-        const maxWait = 30000;
-        const checkInterval = 100;
-        const startTime = Date.now();
-        let timeoutId = null;
-
-        const cleanup = () => {
-          if (timeoutId !== null) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
-          }
-        };
-
-        const checkStatus = () => {
-          // FIX: Re-check _initPromise on each poll iteration to catch late assignment
-          if (this._initPromise) {
-            cleanup();
-            this._initPromise.then(resolve).catch(reject);
-            return;
-          }
-          if (!this._isInitializing && this.initialized) {
-            cleanup();
-            resolve();
-          } else if (!this._isInitializing && !this.initialized) {
-            cleanup();
-            reject(new Error('Previous initialization attempt failed'));
-          } else if (Date.now() - startTime > maxWait) {
-            this._isInitializing = false;
-            this._initPromise = null;
-            this.initialized = false;
-            cleanup();
-            reject(new Error('Initialization timeout after 30 seconds'));
-          } else {
-            timeoutId = setTimeout(checkStatus, checkInterval);
-            if (timeoutId.unref) {
-              timeoutId.unref();
-            }
-          }
-        };
-
-        checkStatus();
-      });
+      // If still no promise, the previous init likely failed - allow retry
+      this._isInitializing = false;
     }
 
+    // FIX: Atomic pattern - set promise BEFORE setting _isInitializing
+    // This ensures concurrent calls always see the promise
     this._isInitializing = true;
 
-    this._initPromise = (async () => {
+    // Use explicit resolve/reject for proper error propagation
+    let resolveInit, rejectInit;
+    this._initPromise = new Promise((resolve, reject) => {
+      resolveInit = resolve;
+      rejectInit = reject;
+    });
+
+    // Perform actual initialization in a separate async block
+    (async () => {
       try {
         await this.ensureDbDirectory();
         await this.offlineQueue.initialize();
@@ -707,6 +812,9 @@ class ChromaDBServiceCore extends EventEmitter {
         this.initialized = true;
         this.isOnline = true;
 
+        // Start periodic health monitoring now that we're connected
+        this.startHealthCheck();
+
         process.nextTick(() => {
           this._isInitializing = false;
         });
@@ -731,6 +839,9 @@ class ChromaDBServiceCore extends EventEmitter {
           fileCount,
           folderCount
         });
+
+        // FIX: Resolve the promise to signal successful initialization
+        resolveInit();
       } catch (error) {
         this._initPromise = null;
         this._isInitializing = false;
@@ -817,7 +928,8 @@ class ChromaDBServiceCore extends EventEmitter {
           logger.error('[ChromaDB] Error during cleanup:', cleanupError);
         }
 
-        throw new Error(`Failed to initialize ChromaDB: ${errorMsg}`);
+        // FIX: Reject the promise instead of throwing to properly propagate errors
+        rejectInit(new Error(`Failed to initialize ChromaDB: ${errorMsg}`));
       }
     })();
 
@@ -947,17 +1059,20 @@ class ChromaDBServiceCore extends EventEmitter {
 
   async batchQueryFolders(fileIds, topK = 5) {
     await this.initialize();
-    // Wrap batch query with timeout (longer for batch operations)
-    return withTimeout(
-      batchQueryFoldersOp({
-        fileIds,
-        topK,
-        fileCollection: this.fileCollection,
-        folderCollection: this.folderCollection,
-        queryCache: this.queryCache
-      }),
-      CHROMADB_OPERATION_TIMEOUT_MS * 2, // Double timeout for batch operations
-      'ChromaDB batchQueryFolders'
+    // FIX: Wrap with not-found recovery to handle stale collection handles after server restart
+    return this._executeWithNotFoundRecovery('batchQueryFolders', async () =>
+      // Wrap batch query with timeout (longer for batch operations)
+      withTimeout(
+        batchQueryFoldersOp({
+          fileIds,
+          topK,
+          fileCollection: this.fileCollection,
+          folderCollection: this.folderCollection,
+          queryCache: this.queryCache
+        }),
+        CHROMADB_OPERATION_TIMEOUT_MS * 2, // Double timeout for batch operations
+        'ChromaDB batchQueryFolders'
+      )
     );
   }
 
@@ -968,7 +1083,12 @@ class ChromaDBServiceCore extends EventEmitter {
 
   async resetFolders() {
     await this.initialize();
-    this.folderCollection = await resetFoldersOp({ client: this.client });
+    this.folderCollection = await resetFoldersOp({
+      client: this.client,
+      embeddingFunction: explicitEmbeddingsOnlyEmbeddingFunction
+    });
+    // FIX: Clear cached dimension so new embeddings can set it
+    this._collectionDimensions.folders = null;
   }
 
   // ============== File Operations ==============
@@ -1190,7 +1310,12 @@ class ChromaDBServiceCore extends EventEmitter {
 
   async resetFiles() {
     await this.initialize();
-    this.fileCollection = await resetFilesOp({ client: this.client });
+    this.fileCollection = await resetFilesOp({
+      client: this.client,
+      embeddingFunction: explicitEmbeddingsOnlyEmbeddingFunction
+    });
+    // FIX: Clear cached dimension so new embeddings can set it
+    this._collectionDimensions.files = null;
   }
 
   async resetAll() {
@@ -1322,11 +1447,15 @@ class ChromaDBServiceCore extends EventEmitter {
       }
     }
 
+    // FIX: CRITICAL - Remove event listeners before cleanup to prevent memory leaks
+    // Previously, CircuitBreaker and OfflineQueue listeners were never removed
     if (this.circuitBreaker) {
+      this.circuitBreaker.removeAllListeners();
       this.circuitBreaker.cleanup();
     }
 
     if (this.offlineQueue) {
+      this.offlineQueue.removeAllListeners();
       await this.offlineQueue.cleanup();
     }
 
@@ -1365,4 +1494,4 @@ class ChromaDBServiceCore extends EventEmitter {
   }
 }
 
-module.exports = { ChromaDBServiceCore };
+module.exports = { ChromaDBServiceCore, explicitEmbeddingsOnlyEmbeddingFunction };

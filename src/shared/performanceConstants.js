@@ -57,6 +57,7 @@ const TIMEOUTS = {
   DATABASE_INIT: 15000,
   MODEL_LOAD: 60000,
   MODEL_DISCOVERY: 5000, // Model discovery/list timeout
+  EMBEDDING_REQUEST: 30000, // FIX: Per-request timeout for embedding calls to prevent indefinite hangs
   DELAY_MICRO: 50, // Very short delays for race condition prevention
   DELAY_TINY: 5, // Minimal delay for inter-file processing
   DELAY_MINI: 10, // Small delay for inter-batch processing
@@ -64,6 +65,7 @@ const TIMEOUTS = {
   DELAY_MEDIUM: 500,
   DELAY_BATCH: 100, // Short delay for batch operations
   DELAY_LOCK_RETRY: 400, // Delay before retrying lock acquisition
+  MUTEX_ACQUIRE: 30000, // FIX: Maximum wait time for mutex acquisition to prevent deadlock
   DELAY_NOTIFICATION: 1500,
   SIGKILL_VERIFY: 100, // Delay to verify SIGKILL termination
   CLEANUP_DELAY: 60000, // Delay before cleanup operations (e.g., temp file removal)
@@ -80,7 +82,11 @@ const TIMEOUTS = {
   GLOBAL_ANALYSIS: 10 * 60 * 1000, // 10 minutes - max total analysis time
   HEARTBEAT_INTERVAL: 30000, // 30 seconds - progress heartbeat during analysis
   STALE_ACTIVITY: 15 * 60 * 1000, // 15 minutes - activity considered stale
-  METRICS_BROADCAST: 30000 // 30 seconds - system metrics broadcast to renderer
+  METRICS_BROADCAST: 30000, // 30 seconds - system metrics broadcast to renderer
+  // FIX: Centralized UI timing constants (previously hardcoded)
+  WIDGET_AUTO_SHOW: 1500, // Delay before auto-showing floating widgets
+  EMBEDDING_CHECK: 1000, // Delay before checking embeddings status
+  STUCK_ANALYSIS_CHECK: 2 * 60 * 1000 // 2 minutes - analysis considered stuck
 };
 
 const RETRY = {
@@ -187,7 +193,30 @@ const THRESHOLDS = {
   MIN_MATCH_CONFIDENCE: 0.6,
   FOLDER_MATCH_CONFIDENCE: 0.55, // Min score for folder categorization
   QUEUE_HIGH_WATERMARK: 0.75,
-  QUEUE_CRITICAL_WATERMARK: 0.9
+  QUEUE_CRITICAL_WATERMARK: 0.9,
+  // Similarity edge thresholds
+  SIMILARITY_EDGE_DEFAULT: 0.5,
+  SIMILARITY_EDGE_MAX_PER_NODE: 3
+};
+
+/**
+ * Search and Ranking Constants
+ * Parameters for hybrid search, RRF fusion, and scoring
+ */
+const SEARCH = {
+  // Reciprocal Rank Fusion constant (higher = more weight to top results)
+  RRF_K: 60,
+  // RRF score blending weights (for combining normalized RRF with original score)
+  RRF_NORMALIZED_WEIGHT: 0.7,
+  RRF_ORIGINAL_WEIGHT: 0.3,
+  // Hybrid search weights
+  VECTOR_WEIGHT: 0.6,
+  BM25_WEIGHT: 0.4,
+  // Default topK values by context
+  DEFAULT_TOP_K: 20,
+  DEFAULT_TOP_K_SIMILAR: 10,
+  // Minimum epsilon for division safety
+  MIN_EPSILON: 0.001
 };
 
 const LIMITS = {
@@ -249,13 +278,17 @@ const CONCURRENCY = {
 };
 
 const GPU_TUNING = {
+  // Batch sizes by VRAM tier
   NUM_BATCH_CPU_ONLY: 128,
-  NUM_BATCH_LOW_MEMORY: 256,
-  NUM_BATCH_MEDIUM_MEMORY: 384,
-  NUM_BATCH_HIGH_MEMORY: 512,
+  NUM_BATCH_MINIMAL: 192, // 4GB or unknown GPU
+  NUM_BATCH_LOW_MEMORY: 256, // 6GB VRAM
+  NUM_BATCH_MEDIUM_MEMORY: 384, // 8GB VRAM
+  NUM_BATCH_HIGH_MEMORY: 512, // 12GB VRAM
   NUM_BATCH_VERY_HIGH_MEMORY: 1024, // 16GB+ VRAM
-  HIGH_MEMORY_THRESHOLD: 12000,
+  // VRAM thresholds in MB
+  LOW_MEMORY_THRESHOLD: 6000,
   MEDIUM_MEMORY_THRESHOLD: 8000,
+  HIGH_MEMORY_THRESHOLD: 12000,
   VERY_HIGH_MEMORY_THRESHOLD: 16000
 };
 
@@ -352,6 +385,7 @@ module.exports = {
   FILE_SIZE,
   PAGINATION,
   THRESHOLDS,
+  SEARCH,
   LIMITS,
   IMAGE,
   NETWORK,

@@ -5,9 +5,26 @@ const FolderMatchingService = require('./FolderMatchingService');
 const OrganizationSuggestionService = require('./organization');
 const AutoOrganizeService = require('./autoOrganize');
 const EmbeddingCache = require('./EmbeddingCache');
-const { container, ServiceIds } = require('./ServiceContainer');
+const { container, ServiceIds, SHUTDOWN_ORDER } = require('./ServiceContainer');
 const { logger } = require('../../shared/logger');
 logger.setContext('ServiceIntegration');
+
+/**
+ * FIX: Explicit service initialization order with dependencies
+ * This makes the initialization sequence clear and documentable.
+ * Services are grouped by dependency tier:
+ * - Tier 0: No dependencies (can init in parallel)
+ * - Tier 1: Depends on external services (ChromaDB server)
+ * - Tier 2: Depends on Tier 0/1 services
+ */
+const SERVICE_INITIALIZATION_ORDER = {
+  // Tier 0: Independent services (can init in parallel)
+  tier0: ['analysisHistory', 'undoRedo', 'processingState'],
+  // Tier 1: ChromaDB (depends on external server)
+  tier1: ['chromaDb'],
+  // Tier 2: Services that depend on ChromaDB
+  tier2: ['folderMatching']
+};
 
 /**
  * ServiceIntegration - Central service orchestration and lifecycle management
@@ -42,6 +59,11 @@ class ServiceIntegration {
     this.autoOrganizeService = null;
     this.initialized = false;
 
+    // FIX: Add initialization mutex to prevent race conditions
+    // Multiple concurrent initialize() calls would previously both pass the
+    // if (this.initialized) check and run in parallel, causing undefined behavior
+    this._initPromise = null;
+
     // Reference to the container for external access
     this.container = container;
   }
@@ -53,11 +75,34 @@ class ServiceIntegration {
    * their dependencies. It registers services with the container and
    * stores references for backward compatibility.
    *
-   * @returns {Promise<void>}
+   * @returns {Promise<{initialized: string[], errors: Array<{service: string, error: string}>, skipped: string[]}>}
    */
   async initialize() {
-    if (this.initialized) return;
+    // FIX: Return existing initialization promise if one is in progress
+    // This prevents race conditions when multiple calls happen concurrently
+    if (this._initPromise) {
+      return this._initPromise;
+    }
 
+    if (this.initialized) {
+      return { initialized: [], errors: [], skipped: [], alreadyInitialized: true };
+    }
+
+    // FIX: Store the initialization promise so concurrent calls can await it
+    this._initPromise = this._doInitialize();
+    try {
+      return await this._initPromise;
+    } finally {
+      // Clear the promise after initialization completes (success or failure)
+      this._initPromise = null;
+    }
+  }
+
+  /**
+   * Internal initialization implementation
+   * @private
+   */
+  async _doInitialize() {
     logger.info('[ServiceIntegration] Starting initialization...');
 
     // Register core services with the container
@@ -125,45 +170,80 @@ class ServiceIntegration {
       // Continue without ChromaDB - don't block startup
     }
 
-    // Fixed: Initialize all services with graceful degradation
-    // Use Promise.allSettled to continue even if some services fail
-    const results = await Promise.allSettled([
+    // FIX: Tiered initialization with explicit dependency ordering
+    // Tracks initialization status for each service
+    const initStatus = {
+      initialized: [],
+      errors: [],
+      skipped: []
+    };
+
+    // Tier 0: Initialize independent services in parallel
+    const tier0Results = await Promise.allSettled([
       this.analysisHistory.initialize(),
       this.undoRedo.initialize(),
-      this.processingState.initialize(),
-      isChromaReady ? this.chromaDbService.initialize() : Promise.resolve()
+      this.processingState.initialize()
     ]);
 
-    // Log any service initialization failures but continue
-    const serviceNames = ['analysisHistory', 'undoRedo', 'processingState', 'chromaDb'];
-    const failures = results
-      .map((result, index) => ({ result, name: serviceNames[index] }))
-      .filter(({ result }) => result.status === 'rejected');
+    // Process Tier 0 results
+    SERVICE_INITIALIZATION_ORDER.tier0.forEach((name, index) => {
+      const result = tier0Results[index];
+      if (result.status === 'fulfilled') {
+        initStatus.initialized.push(name);
+      } else {
+        initStatus.errors.push({
+          service: name,
+          error: result.reason?.message || String(result.reason)
+        });
+        logger.error(`[ServiceIntegration] ${name} initialization failed:`, result.reason?.message);
+      }
+    });
 
-    if (failures.length > 0) {
-      logger.error('[ServiceIntegration] Some services failed to initialize:');
-      failures.forEach(({ name, result }) => {
-        logger.error(`  - ${name}: ${result.reason?.message || result.reason}`);
-      });
-      // Continue with degraded functionality
+    // Tier 1: Initialize ChromaDB if server is available
+    if (isChromaReady && this.chromaDbService) {
+      try {
+        await this.chromaDbService.initialize();
+        initStatus.initialized.push('chromaDb');
+      } catch (error) {
+        initStatus.errors.push({ service: 'chromaDb', error: error.message });
+        logger.error('[ServiceIntegration] ChromaDB initialization failed:', error.message);
+        isChromaReady = false; // Prevent dependent services from initializing
+      }
+    } else {
+      initStatus.skipped.push('chromaDb');
+      logger.warn('[ServiceIntegration] ChromaDB initialization skipped - server not available');
     }
 
-    // Fixed: Initialize FolderMatchingService after ChromaDB is ready
-    // This starts the embedding cache cleanup interval only after successful initialization
-    // FIX: Await initialization for consistency and proper error handling
-    if (this.folderMatchingService) {
+    // Tier 2: Initialize services that depend on ChromaDB
+    // FolderMatchingService depends on ChromaDB for vector operations
+    if (this.folderMatchingService && isChromaReady) {
       try {
         await this.folderMatchingService.initialize();
+        initStatus.initialized.push('folderMatching');
       } catch (error) {
+        initStatus.errors.push({ service: 'folderMatching', error: error.message });
         logger.warn(
           '[ServiceIntegration] FolderMatchingService initialization failed:',
           error.message
         );
         // Non-fatal - continue with degraded functionality
       }
+    } else if (this.folderMatchingService) {
+      initStatus.skipped.push('folderMatching');
+      logger.warn('[ServiceIntegration] FolderMatchingService skipped - ChromaDB not available');
     }
 
+    // Log initialization summary
+    logger.info('[ServiceIntegration] Initialization complete', {
+      initialized: initStatus.initialized.length,
+      errors: initStatus.errors.length,
+      skipped: initStatus.skipped.length
+    });
+
     this.initialized = true;
+
+    // FIX: Return structured initialization status for callers to inspect
+    return initStatus;
   }
 
   /**
@@ -218,24 +298,43 @@ class ServiceIntegration {
       });
     }
 
+    // FIX: Register ClusteringService as separate DI entry to avoid circular dependency
+    // This allows other services to depend on ClusteringService independently
+    if (!container.has(ServiceIds.CLUSTERING)) {
+      container.registerSingleton(ServiceIds.CLUSTERING, (c) => {
+        const { ClusteringService } = require('./ClusteringService');
+        const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
+
+        // FIX: Use lazy resolution for OllamaService to break potential circular dependency
+        // OllamaService is optional - clustering can work without it in degraded mode
+        let ollamaService = null;
+        try {
+          const { getInstance: getOllamaInstance } = require('./OllamaService');
+          ollamaService = getOllamaInstance();
+        } catch (error) {
+          logger.warn(
+            '[ServiceIntegration] OllamaService not available for clustering:',
+            error.message
+          );
+        }
+
+        return new ClusteringService({
+          chromaDbService,
+          ollamaService
+        });
+      });
+    }
+
     // Register organization suggestion service (depends on ChromaDB, FolderMatching, Settings, Clustering)
     if (!container.has(ServiceIds.ORGANIZATION_SUGGESTION)) {
       container.registerSingleton(ServiceIds.ORGANIZATION_SUGGESTION, (c) => {
-        const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
-        const { ClusteringService } = require('./ClusteringService');
-        const { getInstance: getOllamaInstance } = require('./OllamaService');
-
-        // Create ClusteringService for cluster-based organization suggestions
-        const clusteringService = new ClusteringService({
-          chromaDbService,
-          ollamaService: getOllamaInstance()
-        });
-
         return new OrganizationSuggestionService({
-          chromaDbService,
+          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
           folderMatchingService: c.resolve(ServiceIds.FOLDER_MATCHING),
           settingsService: c.resolve(ServiceIds.SETTINGS),
-          clusteringService
+          // FIX: Use lazy resolution with getter to break potential circular dependency
+          // This allows ClusteringService to be resolved when first needed, not during registration
+          getClusteringService: () => c.resolve(ServiceIds.CLUSTERING)
         });
       });
     }
@@ -276,6 +375,32 @@ class ServiceIntegration {
       registerParallelEmbedding(container, ServiceIds.PARALLEL_EMBEDDING);
     }
 
+    // Register ModelManager
+    if (!container.has(ServiceIds.MODEL_MANAGER)) {
+      const { registerWithContainer: registerModelManager } = require('./ModelManager');
+      registerModelManager(container, ServiceIds.MODEL_MANAGER);
+    }
+
+    // Register AnalysisCacheService
+    if (!container.has(ServiceIds.ANALYSIS_CACHE)) {
+      const { registerWithContainer: registerAnalysisCache } = require('./AnalysisCacheService');
+      registerAnalysisCache(container, ServiceIds.ANALYSIS_CACHE);
+    }
+
+    // Register FileAccessPolicy
+    if (!container.has(ServiceIds.FILE_ACCESS_POLICY)) {
+      const { registerWithContainer: registerFileAccessPolicy } = require('./FileAccessPolicy');
+      registerFileAccessPolicy(container, ServiceIds.FILE_ACCESS_POLICY);
+    }
+
+    // Register DependencyManagerService
+    if (!container.has(ServiceIds.DEPENDENCY_MANAGER)) {
+      const {
+        registerWithContainer: registerDependencyManager
+      } = require('./DependencyManagerService');
+      registerDependencyManager(container, ServiceIds.DEPENDENCY_MANAGER);
+    }
+
     logger.info('[ServiceIntegration] Core services registered with container');
   }
 
@@ -292,10 +417,11 @@ class ServiceIntegration {
     if (!this.initialized) return;
 
     try {
-      logger.info('[ServiceIntegration] Starting shutdown...');
+      logger.info('[ServiceIntegration] Starting coordinated shutdown...');
 
-      // Use the container's shutdown which handles all registered services
-      await container.shutdown();
+      // Use the container's shutdown with explicit shutdown order
+      // This ensures dependent services are stopped before their dependencies
+      await container.shutdown(SHUTDOWN_ORDER);
 
       // Clear all service references
       this.analysisHistory = null;
@@ -340,3 +466,4 @@ class ServiceIntegration {
 module.exports = ServiceIntegration;
 module.exports.container = container;
 module.exports.ServiceIds = ServiceIds;
+module.exports.SERVICE_INITIALIZATION_ORDER = SERVICE_INITIALIZATION_ORDER;

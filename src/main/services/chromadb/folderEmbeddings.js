@@ -15,6 +15,35 @@ const { prepareFolderMetadata } = require('../../../shared/pathSanitization');
 logger.setContext('ChromaDB:FolderOps');
 
 /**
+ * Validate embedding vector for NaN, Infinity, and dimension issues
+ * FIX: Prevents corrupted embeddings from being stored in ChromaDB
+ *
+ * @param {Array<number>} vector - Embedding vector to validate
+ * @param {string} [context] - Optional context for error messages
+ * @returns {{ valid: boolean, error?: string, index?: number }}
+ */
+function validateEmbeddingVector(vector, context = 'unknown') {
+  if (!Array.isArray(vector)) {
+    return { valid: false, error: 'not_array' };
+  }
+  if (vector.length === 0) {
+    return { valid: false, error: 'empty_vector' };
+  }
+  // Check for NaN or Infinity values
+  for (let i = 0; i < vector.length; i++) {
+    if (!Number.isFinite(vector[i])) {
+      logger.warn(`[FolderOps] Invalid vector value at index ${i}`, {
+        context,
+        value: String(vector[i]),
+        vectorLength: vector.length
+      });
+      return { valid: false, error: 'invalid_value', index: i };
+    }
+  }
+  return { valid: true };
+}
+
+/**
  * Direct upsert folder without circuit breaker (used by queue flush)
  *
  * @param {Object} params - Parameters
@@ -24,6 +53,14 @@ logger.setContext('ChromaDB:FolderOps');
  * @returns {Promise<void>}
  */
 async function directUpsertFolder({ folder, folderCollection, queryCache }) {
+  // FIX: Validate vector before upsert to prevent corrupted embeddings
+  const validation = validateEmbeddingVector(folder.vector, folder.id);
+  if (!validation.valid) {
+    throw new Error(
+      `Invalid embedding vector for folder ${folder.id}: ${validation.error}${validation.index !== undefined ? ` at index ${validation.index}` : ''}`
+    );
+  }
+
   const sanitized = prepareFolderMetadata(folder);
 
   try {
@@ -100,6 +137,22 @@ async function directBatchUpsertFolders({ folders, folderCollection, queryCache 
           : !folder.vector
             ? 'missing_vector'
             : 'invalid_vector_type'
+      });
+      continue;
+    }
+
+    // FIX: Validate vector for NaN/Infinity before including in batch
+    const validation = validateEmbeddingVector(folder.vector, folder.id);
+    if (!validation.valid) {
+      logger.warn('[FolderOps] Skipping folder with invalid vector in batch', {
+        id: folder.id,
+        name: folder.name,
+        error: validation.error,
+        index: validation.index
+      });
+      skipped.push({
+        folder: { id: folder.id, name: folder.name },
+        reason: `invalid_vector_value${validation.index !== undefined ? `_at_${validation.index}` : ''}`
       });
       continue;
     }
@@ -532,18 +585,19 @@ async function getAllFolders({ folderCollection }) {
  *
  * @param {Object} params - Parameters
  * @param {Object} params.client - ChromaDB client
+ * @param {Object} [params.embeddingFunction] - Embedding function to prevent DefaultEmbeddingFunction instantiation
  * @returns {Promise<Object>} New folder collection
  */
-async function resetFolders({ client }) {
+async function resetFolders({ client, embeddingFunction }) {
   try {
     await client.deleteCollection({ name: 'folder_embeddings' });
 
     const folderCollection = await client.createCollection({
       name: 'folder_embeddings',
+      embeddingFunction,
       metadata: {
         description: 'Smart folder embeddings for categorization',
-        hnsw_space: 'cosine',
-        'hnsw:space': 'cosine' // Keep legacy key for compatibility
+        'hnsw:space': 'cosine' // Correct ChromaDB API syntax (not hnsw_space)
       }
     });
 

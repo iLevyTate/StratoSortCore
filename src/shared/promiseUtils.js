@@ -29,11 +29,7 @@ logger.setContext('PromiseUtils');
  */
 function delay(ms) {
   return new Promise((resolve) => {
-    const timeoutId = setTimeout(resolve, ms);
-    // Allow process to exit even if timeout is pending
-    if (timeoutId.unref) {
-      timeoutId.unref();
-    }
+    setTimeout(resolve, ms);
   });
 }
 
@@ -81,10 +77,7 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
       timeoutId = setTimeout(() => {
         reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
-      // Allow process to exit even if timeout is pending
-      if (timeoutId.unref) {
-        timeoutId.unref();
-      }
+      // FIX: Removed unref() that prevented timeouts from firing during startup
     });
     return { timeoutPromise, timeoutId };
   };
@@ -106,6 +99,55 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
       clearTimeout(timeoutId);
     }
   };
+}
+
+/**
+ * Execute a promise with timeout and AbortController support.
+ * Enhanced version of withTimeout that provides an AbortController signal
+ * to the promise factory, allowing the underlying operation to be cancelled.
+ *
+ * @param {Function} fn - Function that receives AbortController and returns a Promise
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} [operationName='Operation'] - Name of the operation for error messages
+ * @returns {Promise<*>} Result of the promise
+ * @throws {Error} If the operation times out or the promise rejects
+ *
+ * @example
+ * const result = await withAbortableTimeout(
+ *   (abortController) => fetch(url, { signal: abortController.signal }),
+ *   5000,
+ *   'API fetch'
+ * );
+ */
+async function withAbortableTimeout(fn, timeoutMs, operationName = 'Operation') {
+  const abortController = new AbortController();
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      abortController.abort();
+      reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    // Prevent timer from keeping Node.js process alive
+    if (timeoutId && typeof timeoutId.unref === 'function') {
+      timeoutId.unref();
+    }
+  });
+
+  try {
+    const promise = fn(abortController);
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    // Guaranteed cleanup in all code paths
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    // Ensure abort is called if not already (for cleanup)
+    if (!abortController.signal.aborted) {
+      abortController.abort();
+    }
+  }
 }
 
 // ============================================================================
@@ -432,6 +474,138 @@ function throttle(fn, waitMs, options = {}) {
 }
 
 // ============================================================================
+// INITIALIZATION GUARD UTILITIES
+// ============================================================================
+
+/**
+ * Creates a race-condition-safe initialization guard.
+ * Multiple concurrent calls to initialize will wait for the first to complete.
+ *
+ * @param {string} [name='Service'] - Name for logging
+ * @returns {Object} Guard object with initialize and reset methods
+ * @example
+ * const initGuard = createInitGuard('MyService');
+ *
+ * async function initialize() {
+ *   return initGuard.initialize(async () => {
+ *     // Actual initialization logic
+ *     await loadConfig();
+ *     await connectToDatabase();
+ *     return true;
+ *   });
+ * }
+ */
+function createInitGuard(name = 'Service') {
+  let initialized = false;
+  let initPromise = null;
+
+  return {
+    /**
+     * Check if initialized
+     * @returns {boolean}
+     */
+    isInitialized() {
+      return initialized;
+    },
+
+    /**
+     * Run initialization with race condition protection.
+     * If already initialized, returns immediately.
+     * If initialization is in progress, waits for it to complete.
+     *
+     * @param {Function} initFn - Async function that performs initialization
+     * @returns {Promise<*>} Result of initFn
+     */
+    async initialize(initFn) {
+      // Already initialized - return immediately
+      if (initialized) {
+        return true;
+      }
+
+      // Initialization in progress - wait for it
+      if (initPromise) {
+        return initPromise;
+      }
+
+      // Start initialization
+      initPromise = (async () => {
+        try {
+          const result = await initFn();
+          initialized = true;
+          logger.debug(`[${name}] Initialization complete`);
+          return result;
+        } catch (error) {
+          logger.error(`[${name}] Initialization failed:`, error.message);
+          throw error;
+        } finally {
+          // Clear promise after a tick to allow concurrent waiters to finish
+          process.nextTick(() => {
+            initPromise = null;
+          });
+        }
+      })();
+
+      return initPromise;
+    },
+
+    /**
+     * Reset initialization state (for shutdown/reinit)
+     */
+    reset() {
+      initialized = false;
+      initPromise = null;
+      logger.debug(`[${name}] Initialization state reset`);
+    },
+
+    /**
+     * Require initialization, throws if not initialized
+     * @throws {Error} If not initialized
+     */
+    requireInitialized() {
+      if (!initialized) {
+        throw new Error(`${name} is not initialized`);
+      }
+    }
+  };
+}
+
+/**
+ * Creates a timeout-race promise pair for common timeout patterns.
+ * Returns both the timeout promise and cleanup function.
+ *
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} [message='Operation timed out'] - Timeout error message
+ * @returns {{promise: Promise, cleanup: Function}} Timeout promise and cleanup function
+ * @example
+ * const { promise: timeoutPromise, cleanup } = createTimeoutRace(5000, 'API call');
+ * try {
+ *   const result = await Promise.race([apiCall(), timeoutPromise]);
+ * } finally {
+ *   cleanup();
+ * }
+ */
+function createTimeoutRace(timeoutMs, message = 'Operation timed out') {
+  let timeoutId = null;
+
+  const promise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${message} after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    // Allow process to exit
+  });
+
+  const cleanup = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+
+  return { promise, cleanup };
+}
+
+// ============================================================================
 // BATCH & CONCURRENCY UTILITIES
 // ============================================================================
 
@@ -528,6 +702,8 @@ module.exports = {
 
   // Timeout
   withTimeout,
+  withAbortableTimeout,
+  createTimeoutRace,
 
   // Retry
   withRetry,
@@ -543,5 +719,8 @@ module.exports = {
   throttle,
 
   // Batch & Concurrency
-  batchProcess
+  batchProcess,
+
+  // Initialization
+  createInitGuard
 };

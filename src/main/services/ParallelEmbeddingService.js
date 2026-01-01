@@ -3,7 +3,6 @@ const { buildOllamaOptions } = require('./PerformanceService');
 const { logger } = require('../../shared/logger');
 const os = require('os');
 const { withOllamaRetry, isRetryableError } = require('../utils/ollamaApiRetry');
-const { get: getConfig } = require('../../shared/config/index');
 
 logger.setContext('ParallelEmbeddingService');
 
@@ -57,9 +56,6 @@ class ParallelEmbeddingService {
     this.initialRetryDelayMs = options.initialRetryDelayMs || 1000;
     this.maxRetryDelayMs = options.maxRetryDelayMs || 10000;
 
-    // Cache for embedding model name
-    this._cachedModelName = null;
-
     logger.info('[ParallelEmbeddingService] Initialized', {
       concurrencyLimit: this.concurrencyLimit,
       maxRetries: this.maxRetries
@@ -100,11 +96,18 @@ class ParallelEmbeddingService {
    * @throws {Error} If queue is full or timeout is reached
    */
   async _acquireSlot() {
-    if (this.activeRequests < this.concurrencyLimit) {
-      this.activeRequests++;
+    // FIX: Atomic increment-then-check pattern to prevent race condition
+    // Previous pattern: if (active < limit) { active++ } - two concurrent calls could both pass
+    // New pattern: active++; if (active > limit) { active--; queue } - atomic acquisition
+    this.activeRequests++;
+
+    if (this.activeRequests <= this.concurrencyLimit) {
       this.stats.peakConcurrency = Math.max(this.stats.peakConcurrency, this.activeRequests);
       return Promise.resolve();
     }
+
+    // We've exceeded the limit, decrement and queue
+    this.activeRequests--;
 
     // FIX: Enforce maximum queue size to prevent memory bloat
     if (this.waitQueue.length >= SEMAPHORE_CONFIG.MAX_QUEUE_SIZE) {
@@ -192,7 +195,9 @@ class ParallelEmbeddingService {
    * @returns {Promise<{vector: number[], model: string}>}
    */
   async _embedTextWithRetry(text) {
-    const model = getOllamaEmbeddingModel();
+    // FIX: Add fallback to default embedding model when none configured
+    const { AI_DEFAULTS } = require('../../shared/constants');
+    const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
 
     try {
       const result = await withOllamaRetry(
@@ -228,12 +233,14 @@ class ParallelEmbeddingService {
         retryable: isRetryableError(error)
       });
 
-      // FIX: Use configurable embedding dimension instead of hardcoded 1024
-      const embeddingDimension = getConfig('ANALYSIS.embeddingDimension', 1024);
-      return {
-        vector: new Array(embeddingDimension).fill(0),
-        model: 'fallback'
-      };
+      // FIX: Throw error instead of returning zero vector
+      // Zero vectors are useless for semantic search and pollute the database
+      // Callers should handle the error and skip failed items
+      const embeddingError = new Error(`Embedding failed: ${error.message}`);
+      embeddingError.code = 'EMBEDDING_FAILED';
+      embeddingError.originalError = error;
+      embeddingError.retryable = isRetryableError(error);
+      throw embeddingError;
     }
   }
 
@@ -254,25 +261,55 @@ class ParallelEmbeddingService {
       };
     }
 
+    // FIX: CRITICAL - Capture model at batch start to prevent dimension mismatches
+    // If the model changes during a batch, different items would have different dimensions,
+    // causing vector store corruption
+    const { AI_DEFAULTS } = require('../../shared/constants');
+    const batchModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+
     const startTime = Date.now();
     const results = new Array(items.length);
     const errors = [];
     let completedCount = 0;
+    let modelChangedDuringBatch = false;
 
     logger.info('[ParallelEmbeddingService] Starting batch embedding', {
       itemCount: items.length,
-      concurrencyLimit: this.concurrencyLimit
+      concurrencyLimit: this.concurrencyLimit,
+      model: batchModel
     });
 
     // Process all items with semaphore-controlled concurrency
     const processItem = async (item, index) => {
       try {
+        // FIX: Check if model changed during batch - early exit if detected
+        const currentModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+        if (currentModel !== batchModel && !modelChangedDuringBatch) {
+          modelChangedDuringBatch = true;
+          logger.warn('[ParallelEmbeddingService] Model changed during batch operation', {
+            batchModel,
+            currentModel,
+            itemsProcessed: completedCount,
+            totalItems: items.length
+          });
+        }
+
         const { vector, model } = await this.embedText(item.text);
+
+        // FIX: Validate model consistency - warn if model used differs from batch model
+        if (model !== batchModel && model !== 'fallback') {
+          logger.warn('[ParallelEmbeddingService] Model mismatch in batch', {
+            expected: batchModel,
+            actual: model,
+            itemId: item.id
+          });
+        }
 
         const result = {
           id: item.id,
           vector,
           model,
+          batchModel, // FIX: Include batch model for validation by caller
           meta: item.meta || {},
           success: true
         };
@@ -294,9 +331,16 @@ class ParallelEmbeddingService {
       } catch (error) {
         completedCount++;
 
+        // FIX: Enhanced error information with retryable flag and error type
+        const errorMessage = error.message || String(error);
+        const errorType = this._classifyError(error);
+        const retryable = this._isRetryableError(error);
+
         const errorInfo = {
           id: item.id,
-          error: error.message,
+          error: errorMessage,
+          errorType,
+          retryable,
           index
         };
 
@@ -337,7 +381,8 @@ class ParallelEmbeddingService {
       failed: errors.length,
       duration: `${duration}ms`,
       avgPerItem: `${Math.round(duration / items.length)}ms`,
-      throughput: `${(items.length / (duration / 1000)).toFixed(2)} items/sec`
+      throughput: `${(items.length / (duration / 1000)).toFixed(2)} items/sec`,
+      modelChangedDuringBatch
     });
 
     return {
@@ -349,7 +394,10 @@ class ParallelEmbeddingService {
         failed: errors.length,
         duration,
         avgLatencyMs: Math.round(duration / items.length),
-        throughput: items.length / (duration / 1000)
+        throughput: items.length / (duration / 1000),
+        // FIX: Include model info for caller validation
+        model: batchModel,
+        modelChangedDuringBatch
       }
     };
   }
@@ -472,9 +520,6 @@ class ParallelEmbeddingService {
     this.waitQueue = [];
     this.activeRequests = 0;
 
-    // Reset cached data
-    this._cachedModelName = null;
-
     logger.info('[ParallelEmbeddingService] Shutdown complete');
   }
 
@@ -508,7 +553,13 @@ class ParallelEmbeddingService {
       if (await this.isServiceHealthy()) {
         return true;
       }
-      await new Promise((resolve) => setTimeout(resolve, checkIntervalMs));
+      await new Promise((resolve) => {
+        const timeoutId = setTimeout(resolve, checkIntervalMs);
+        // Prevent timer from keeping Node.js process alive during wait
+        if (timeoutId && typeof timeoutId.unref === 'function') {
+          timeoutId.unref();
+        }
+      });
     }
 
     logger.warn('[ParallelEmbeddingService] Timeout waiting for Ollama service');
@@ -549,6 +600,128 @@ class ParallelEmbeddingService {
         this.concurrencyLimit = newLimit;
       }
     }
+  }
+
+  /**
+   * Classify error type for better error handling
+   * @param {Error} error - The error to classify
+   * @returns {string} Error type classification
+   * @private
+   */
+  _classifyError(error) {
+    const message = (error.message || String(error)).toLowerCase();
+    const code = error.code || '';
+
+    // Network/connection errors
+    if (
+      code === 'ECONNREFUSED' ||
+      code === 'ECONNRESET' ||
+      code === 'ETIMEDOUT' ||
+      code === 'ENOTFOUND' ||
+      message.includes('connection refused') ||
+      message.includes('network') ||
+      message.includes('socket')
+    ) {
+      return 'NETWORK_ERROR';
+    }
+
+    // Service unavailable
+    if (
+      code === 'SERVICE_UNAVAILABLE' ||
+      code === 'SERVICE_SHUTDOWN' ||
+      message.includes('service unavailable') ||
+      message.includes('shutting down') ||
+      message.includes('not running')
+    ) {
+      return 'SERVICE_UNAVAILABLE';
+    }
+
+    // Timeout errors
+    if (
+      code === 'TIMEOUT' ||
+      code === 'QUEUE_TIMEOUT' ||
+      message.includes('timeout') ||
+      message.includes('timed out')
+    ) {
+      return 'TIMEOUT';
+    }
+
+    // Model not found
+    if (
+      message.includes('model') &&
+      (message.includes('not found') ||
+        message.includes('does not exist') ||
+        message.includes('unknown'))
+    ) {
+      return 'MODEL_NOT_FOUND';
+    }
+
+    // Rate limiting
+    if (
+      code === 'RATE_LIMITED' ||
+      message.includes('rate limit') ||
+      message.includes('too many requests') ||
+      message.includes('429')
+    ) {
+      return 'RATE_LIMITED';
+    }
+
+    // Out of memory
+    if (
+      message.includes('out of memory') ||
+      message.includes('oom') ||
+      message.includes('memory')
+    ) {
+      return 'OUT_OF_MEMORY';
+    }
+
+    // Invalid input
+    if (
+      message.includes('invalid') ||
+      message.includes('malformed') ||
+      message.includes('empty') ||
+      message.includes('required')
+    ) {
+      return 'INVALID_INPUT';
+    }
+
+    return 'UNKNOWN';
+  }
+
+  /**
+   * Determine if an error is retryable
+   * @param {Error} error - The error to check
+   * @returns {boolean} True if the error is retryable
+   * @private
+   */
+  _isRetryableError(error) {
+    const errorType = this._classifyError(error);
+
+    // Retryable error types
+    const retryableTypes = ['NETWORK_ERROR', 'SERVICE_UNAVAILABLE', 'TIMEOUT', 'RATE_LIMITED'];
+
+    if (retryableTypes.includes(errorType)) {
+      return true;
+    }
+
+    // Check for specific error codes that are retryable
+    const code = error.code || '';
+    const retryableCodes = [
+      'ECONNREFUSED',
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'ENOTFOUND',
+      'EPIPE',
+      'EAI_AGAIN',
+      'QUEUE_TIMEOUT'
+    ];
+
+    if (retryableCodes.includes(code)) {
+      return true;
+    }
+
+    // Non-retryable: model not found, invalid input, out of memory
+    return false;
   }
 }
 

@@ -109,11 +109,14 @@ Analyze this image:`;
 
     // Use deduplicator to prevent duplicate LLM calls for identical images
     // FIX: Handle case where smartFolders is explicitly passed as undefined
+    // CRITICAL: Include 'type' to prevent cross-file cache contamination with document analysis
     const safeFolders = Array.isArray(smartFolders) ? smartFolders : [];
     const deduplicationKey = globalDeduplicator.generateKey({
+      type: 'image', // Prevent cross-type contamination with document analysis
+      fileName: originalFileName,
+      contentLength: imageBase64.length, // Additional uniqueness
       image: imageBase64.slice(0, TRUNCATION.CACHE_SIGNATURE), // Use first chars as signature
       model: modelToUse,
-      fileName: originalFileName,
       folders: safeFolders.map((f) => f.name).join(',')
     });
 
@@ -132,8 +135,9 @@ Analyze this image:`;
         timeoutId = setTimeout(() => {
           try {
             abortController.abort();
-          } catch {
-            // ignore
+          } catch (abortErr) {
+            // Intentionally ignored: abort may fail if request already completed
+            logger.debug('[IMAGE-ANALYSIS] Abort signal error (non-fatal):', abortErr?.message);
           }
           reject(new Error(`Image analysis timeout after ${timeoutMs}ms`));
         }, timeoutMs);
@@ -144,28 +148,31 @@ Analyze this image:`;
         }
       });
 
-      const generatePromise = globalDeduplicator.deduplicate(deduplicationKey, () =>
-        generateWithRetry(
-          client,
-          {
-            model: modelToUse,
-            prompt,
-            images: [imageBase64],
-            options: {
-              temperature: AppConfig.ai.imageAnalysis.temperature,
-              num_predict: AppConfig.ai.imageAnalysis.maxTokens,
-              ...perfOptions
+      const generatePromise = globalDeduplicator.deduplicate(
+        deduplicationKey,
+        () =>
+          generateWithRetry(
+            client,
+            {
+              model: modelToUse,
+              prompt,
+              images: [imageBase64],
+              options: {
+                temperature: AppConfig.ai.imageAnalysis.temperature,
+                num_predict: AppConfig.ai.imageAnalysis.maxTokens,
+                ...perfOptions
+              },
+              format: 'json',
+              signal: abortController.signal
             },
-            format: 'json',
-            signal: abortController.signal
-          },
-          {
-            operation: `Image analysis for ${originalFileName}`,
-            maxRetries: 3,
-            initialDelay: 1000,
-            maxDelay: 4000
-          }
-        )
+            {
+              operation: `Image analysis for ${originalFileName}`,
+              maxRetries: 3,
+              initialDelay: 1000,
+              maxDelay: 4000
+            }
+          ),
+        { type: 'image', fileName: originalFileName } // Metadata for debugging cache hits
       );
 
       try {

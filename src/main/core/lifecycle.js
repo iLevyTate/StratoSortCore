@@ -127,6 +127,15 @@ async function verifyShutdownCleanup() {
 async function handleBeforeQuit() {
   lifecycleConfig.setIsQuitting?.(true);
 
+  // FIX: CRITICAL - Enable IPC shutdown gate immediately to prevent new handler calls
+  // This must happen before any cleanup to prevent handlers accessing destroyed services
+  try {
+    const { setShuttingDown } = require('./ipcRegistry');
+    setShuttingDown(true);
+  } catch (e) {
+    logger.warn('[SHUTDOWN] Could not set IPC shutdown gate:', e.message);
+  }
+
   // HIGH PRIORITY FIX (HIGH-2): Add hard timeout for all cleanup operations
   // Prevents hanging on shutdown and ensures app quits even if cleanup fails
   const CLEANUP_TIMEOUT = 5000; // 5 seconds max for all cleanup
@@ -354,24 +363,111 @@ function handleActivate(createWindow) {
   }
 }
 
+// FIX: Track unhandled errors for monitoring
+let _unhandledExceptionCount = 0;
+let _unhandledRejectionCount = 0;
+
+/**
+ * Classify error type for better monitoring and debugging
+ * @param {Error|any} error - The error to classify
+ * @returns {string} Error classification
+ * @private
+ */
+function _classifyError(error) {
+  const message = (error?.message || String(error)).toLowerCase();
+  const code = error?.code || '';
+
+  if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
+    return 'NETWORK';
+  }
+  if (message.includes('out of memory') || message.includes('heap')) {
+    return 'MEMORY';
+  }
+  if (message.includes('permission') || message.includes('access denied')) {
+    return 'PERMISSION';
+  }
+  if (code === 'ENOENT' || message.includes('file not found')) {
+    return 'FILE_NOT_FOUND';
+  }
+  if (message.includes('timeout')) {
+    return 'TIMEOUT';
+  }
+  if (message.includes('chromadb') || message.includes('chroma')) {
+    return 'CHROMADB';
+  }
+  if (message.includes('ollama')) {
+    return 'OLLAMA';
+  }
+  return 'UNKNOWN';
+}
+
 /**
  * Handle uncaught exceptions
+ * FIX: Enhanced with error classification and count tracking
  * @param {Error} error - The uncaught error
  */
 function handleUncaughtException(error) {
+  _unhandledExceptionCount++;
+  const errorType = _classifyError(error);
+
   logger.error('UNCAUGHT EXCEPTION:', {
-    message: error.message,
-    stack: error.stack
+    message: error?.message || String(error),
+    stack: error?.stack,
+    code: error?.code,
+    errorType,
+    exceptionCount: _unhandledExceptionCount
   });
+
+  // For fatal errors (memory, etc.), we may want to force exit
+  if (errorType === 'MEMORY') {
+    logger.error('[LIFECYCLE] Critical memory error - application may become unstable');
+  }
 }
 
 /**
  * Handle unhandled promise rejections
+ * FIX: Enhanced with error classification, stack traces, and count tracking
  * @param {any} reason - The rejection reason
  * @param {Promise} promise - The rejected promise
  */
 function handleUnhandledRejection(reason, promise) {
-  logger.error('UNHANDLED REJECTION', { reason, promise: String(promise) });
+  _unhandledRejectionCount++;
+
+  // Extract useful information from the reason
+  const isError = reason instanceof Error;
+  const message = isError ? reason.message : String(reason);
+  const stack = isError ? reason.stack : new Error().stack;
+  const code = reason?.code;
+  const errorType = _classifyError(reason);
+
+  logger.error('UNHANDLED REJECTION:', {
+    message,
+    stack,
+    code,
+    errorType,
+    rejectionCount: _unhandledRejectionCount,
+    promiseInfo: String(promise)
+  });
+
+  // Log warning for common issues
+  if (errorType === 'NETWORK') {
+    logger.warn('[LIFECYCLE] Network-related unhandled rejection - check service connectivity');
+  } else if (errorType === 'CHROMADB') {
+    logger.warn('[LIFECYCLE] ChromaDB-related unhandled rejection - check ChromaDB service status');
+  } else if (errorType === 'OLLAMA') {
+    logger.warn('[LIFECYCLE] Ollama-related unhandled rejection - check Ollama service status');
+  }
+}
+
+/**
+ * Get unhandled error counts for monitoring
+ * @returns {Object} Counts of unhandled exceptions and rejections
+ */
+function getUnhandledErrorCounts() {
+  return {
+    exceptions: _unhandledExceptionCount,
+    rejections: _unhandledRejectionCount
+  };
 }
 
 /**
@@ -418,5 +514,6 @@ module.exports = {
   handleActivate,
   handleUncaughtException,
   handleUnhandledRejection,
+  getUnhandledErrorCounts,
   verifyShutdownCleanup
 };

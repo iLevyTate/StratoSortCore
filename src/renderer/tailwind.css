@@ -150,7 +150,10 @@
     -webkit-app-region: no-drag;
   }
 
-  /* Legacy aliases - use .container-responsive instead */
+  /* @deprecated - Legacy container aliases, will be removed in future release.
+   * Use .container-responsive instead.
+   * These aliases are maintained for backward compatibility only.
+   */
   .content-container,
   .container-enhanced,
   .container-centered,
@@ -218,7 +221,9 @@
     @apply shadow-md border-border-strong/60;
   }
 
-  /* Legacy alias - use .surface-card instead */
+  /* @deprecated - Legacy alias, will be removed in future release.
+   * Use .surface-card instead.
+   */
   .surface-quiet {
     @apply surface-card;
   }
@@ -232,7 +237,9 @@
     @apply rounded-glass;
   }
 
-  /* Legacy aliases - use .glass-panel with custom bg if needed */
+  /* @deprecated - Legacy glass aliases, will be removed in future release.
+   * Use .glass-panel with custom bg if needed.
+   */
   .glass-card,
   .glass-subtle,
   .glass-medium,
@@ -322,7 +329,9 @@
     @apply btn-base bg-stratosort-danger text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
   }
 
-  /* Legacy alias - use .btn-ghost instead */
+  /* @deprecated - Legacy alias, will be removed in future release.
+   * Use .btn-ghost instead.
+   */
   .btn-ghost-minimal {
     @apply btn-ghost;
   }
@@ -367,10 +376,48 @@
     padding: 12px 16px;
   }
 
+  /* Compact toast design - smaller, more aesthetic */
+  .toast-compact {
+    @apply px-3.5 py-2.5 rounded-xl shadow-lg translate-x-full;
+    max-width: 300px;
+    min-width: 180px;
+    transition:
+      transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 150ms ease-out;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .toast-compact.show {
+    @apply translate-x-0;
+  }
+
+  /* Toast severity variants - subtle, modern colors */
+  .toast-success {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.14) 0%, rgba(34, 197, 94, 0.08) 100%);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: #15803d;
+  }
+  .toast-error {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.14) 0%, rgba(239, 68, 68, 0.08) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #dc2626;
+  }
+  .toast-warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(245, 158, 11, 0.08) 100%);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #b45309;
+  }
+  .toast-info {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.14) 0%, rgba(59, 130, 246, 0.08) 100%);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #1d4ed8;
+  }
+
+  /* @deprecated - Legacy toast alias, will be removed in future release.
+   * Use .toast-compact instead.
+   */
   .toast-enhanced {
-    @apply glass-panel px-6 py-4 text-sm shadow-lg translate-x-full transition-all;
-    max-width: 22rem;
-    transition-duration: var(--duration-slow);
+    @apply toast-compact;
   }
   .toast-enhanced.show {
     @apply translate-x-0;
@@ -424,7 +471,9 @@
     @apply bg-stratosort-blue;
   }
 
-  /* Legacy aliases - use .status-chip.success/warning/error/info instead */
+  /* @deprecated - Legacy status aliases, will be removed in future release.
+   * Use .status-chip with .success/.warning/.error/.info modifiers instead.
+   */
   .status-pill {
     @apply status-chip;
   }
@@ -443,6 +492,225 @@
 
   .loading-spinner {
     @apply inline-block h-6 w-6 rounded-full border-2 border-border-soft border-t-stratosort-blue animate-spin;
+  }
+
+  /* Polished Splash Screen Styles */
+  .splash-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family:
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    z-index: 9999;
+    overflow: hidden;
+  }
+
+  .splash-background {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 20%, rgba(79, 139, 255, 0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(108, 127, 251, 0.1) 0%, transparent 50%),
+      linear-gradient(180deg, #f8fafc 0%, #ffffff 50%, #f1f5f9 100%);
+  }
+
+  .splash-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+    z-index: 1;
+  }
+
+  .splash-logo-container {
+    position: relative;
+    margin-bottom: 1.5rem;
+  }
+
+  .splash-logo-glow {
+    position: absolute;
+    inset: -20px;
+    background: radial-gradient(circle, rgba(79, 139, 255, 0.3) 0%, transparent 70%);
+    border-radius: 50%;
+    animation: splash-pulse 2s ease-in-out infinite;
+  }
+
+  .splash-logo {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.8) 100%);
+    border-radius: 20px;
+    box-shadow:
+      0 10px 40px rgba(79, 139, 255, 0.2),
+      0 0 0 1px rgba(79, 139, 255, 0.1);
+    animation: splash-float 3s ease-in-out infinite;
+  }
+
+  .splash-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.02em;
+  }
+
+  .splash-tagline {
+    margin: 0 0 2rem 0;
+    font-size: 0.9375rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .splash-loader-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .splash-loader {
+    width: 200px;
+    height: 4px;
+    background: rgba(79, 139, 255, 0.15);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .splash-loader-bar {
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(90deg, #4f8bff, #6c7ffb);
+    border-radius: 2px;
+    animation: splash-loading 1.5s ease-in-out infinite;
+  }
+
+  .splash-status {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    font-weight: 500;
+  }
+
+  .splash-footer {
+    position: absolute;
+    bottom: 1.5rem;
+    left: 0;
+    right: 0;
+    text-align: center;
+  }
+
+  .splash-version {
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    font-weight: 500;
+  }
+
+  @keyframes splash-pulse {
+    0%,
+    100% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.1);
+    }
+  }
+
+  @keyframes splash-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+
+  @keyframes splash-loading {
+    0% {
+      transform: translateX(-100%);
+    }
+    50% {
+      transform: translateX(150%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+
+  /* Splash screen error state */
+  .splash-error {
+    max-width: 400px;
+    padding: 2rem;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 1rem;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  .splash-error-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .splash-error-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #dc2626;
+  }
+
+  .splash-error-message {
+    margin: 0 0 1rem 0;
+    font-size: 0.875rem;
+    color: #64748b;
+  }
+
+  .splash-error-details {
+    margin-top: 1rem;
+    text-align: left;
+  }
+
+  .splash-error-details summary {
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+    transition: color 0.15s;
+  }
+
+  .splash-error-details summary:hover {
+    color: #64748b;
+  }
+
+  .splash-error-details pre {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    color: #475569;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .skip-link {

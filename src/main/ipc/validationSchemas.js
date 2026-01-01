@@ -11,6 +11,8 @@ const {
   LOGGING_LEVELS,
   NUMERIC_LIMITS
 } = require('../../shared/validationConstants');
+const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
+const { logger } = require('../../shared/logger');
 
 // Try to load zod
 let z;
@@ -19,9 +21,8 @@ try {
   z = require('zod');
 } catch (error) {
   if (process.env.NODE_ENV === 'test') {
-    // Surface why zod could not be loaded during tests
-    // eslint-disable-next-line no-console
-    console.warn('zod import failed in validationSchemas', error);
+    // FIX: Use logger instead of console.warn for consistency
+    logger.warn('zod import failed in validationSchemas', { error: error.message });
   }
   zodLoadError = error;
   z = null;
@@ -106,10 +107,7 @@ if (!z) {
 
     // Collapse duplicate protocols (e.g. "http://http://127.0.0.1:11434")
     // so validation and downstream normalization don't reject common paste mistakes.
-    if (/^(https?:\/\/){2,}/i.test(s)) {
-      const isHttps = /^https:\/\//i.test(s);
-      s = s.replace(/^(https?:\/\/)+/i, isHttps ? 'https://' : 'http://');
-    }
+    s = collapseDuplicateProtocols(s);
     return s;
   };
 

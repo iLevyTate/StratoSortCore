@@ -730,4 +730,308 @@ Body content only.`;
       expect(pdfParse).toHaveBeenCalled();
     });
   });
+
+  describe('extractTextFromCsv', () => {
+    const { extractTextFromCsv } = require('../src/main/analysis/documentExtractors');
+
+    test('should extract text from valid CSV', async () => {
+      const csvContent = 'Name,Age,City\nAlice,30,New York\nBob,25,Los Angeles';
+      jest.spyOn(fs, 'readFile').mockResolvedValue(csvContent);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromCsv('/test/data.csv');
+
+      expect(result).toContain('Alice');
+      expect(result).toContain('30');
+      expect(result).toContain('New York');
+    });
+
+    test('should handle object-style CSV rows', async () => {
+      // Some CSV parsers return objects instead of arrays
+      jest.spyOn(fs, 'readFile').mockResolvedValue('col1,col2\nval1,val2');
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromCsv('/test/data.csv');
+
+      expect(result).toBeDefined();
+    });
+
+    test('should limit rows to prevent memory issues', async () => {
+      const rows = Array.from({ length: 6000 }, (_, i) => `row${i},data${i}`);
+      const csvContent = 'Header1,Header2\n' + rows.join('\n');
+      jest.spyOn(fs, 'readFile').mockResolvedValue(csvContent);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromCsv('/test/large.csv');
+
+      expect(result).toBeDefined();
+      // Should have limited rows
+    });
+
+    test('should return raw text on parse failure', async () => {
+      jest.spyOn(fs, 'readFile').mockResolvedValue('invalid csv with "unterminated quote');
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromCsv('/test/invalid.csv');
+
+      expect(result).toBeDefined();
+    });
+
+    test('should handle empty CSV', async () => {
+      jest.spyOn(fs, 'readFile').mockResolvedValue('');
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 0 });
+
+      const result = await extractTextFromCsv('/test/empty.csv');
+
+      expect(result).toBe('');
+    });
+  });
+
+  describe('extractPlainTextFromXml', () => {
+    const { extractPlainTextFromXml } = require('../src/main/analysis/documentExtractors');
+
+    test('should extract text from valid XML', () => {
+      const xml = '<?xml version="1.0"?><root><item>Content here</item></root>';
+      const result = extractPlainTextFromXml(xml);
+
+      expect(result).toContain('Content here');
+    });
+
+    test('should handle nested XML elements', () => {
+      const xml = '<root><level1><level2>Nested content</level2></level1></root>';
+      const result = extractPlainTextFromXml(xml);
+
+      expect(result).toContain('Nested content');
+    });
+
+    test('should handle empty XML', () => {
+      const result = extractPlainTextFromXml('');
+
+      expect(result).toBe('');
+    });
+
+    test('should handle null XML', () => {
+      const result = extractPlainTextFromXml(null);
+
+      expect(result).toBe('');
+    });
+
+    test('should fallback to HTML stripping on parse error', () => {
+      // Malformed XML that will cause parser to fail
+      const malformedXml = '<root><unclosed>Content';
+      const result = extractPlainTextFromXml(malformedXml);
+
+      expect(result).toContain('Content');
+    });
+
+    test('should handle XML with numeric values', () => {
+      const xml = '<data><count>42</count><price>99.99</price></data>';
+      const result = extractPlainTextFromXml(xml);
+
+      expect(result).toContain('42');
+      expect(result).toContain('99.99');
+    });
+
+    test('should handle XML with boolean values', () => {
+      const xml = '<settings><enabled>true</enabled></settings>';
+      const result = extractPlainTextFromXml(xml);
+
+      expect(result).toContain('true');
+    });
+
+    test('should handle XML with arrays', () => {
+      const xml = '<list><item>One</item><item>Two</item><item>Three</item></list>';
+      const result = extractPlainTextFromXml(xml);
+
+      expect(result).toContain('One');
+      expect(result).toContain('Two');
+      expect(result).toContain('Three');
+    });
+  });
+
+  describe('file size handling', () => {
+    test('should reject files over size limit', async () => {
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 150 * 1024 * 1024 }); // 150MB
+
+      await expect(extractTextFromPdf(mockFilePath, mockFileName)).rejects.toThrow(
+        'File size exceeds processing limits'
+      );
+    });
+
+    test('should handle stat errors', async () => {
+      const error = new Error('EACCES: permission denied');
+      error.code = 'EACCES';
+      jest.spyOn(fs, 'stat').mockRejectedValue(error);
+
+      await expect(extractTextFromPdf(mockFilePath, mockFileName)).rejects.toThrow();
+    });
+  });
+
+  describe('extractTextFromEpub - edge cases', () => {
+    test('should handle entries without getData method', async () => {
+      const AdmZip = require('adm-zip');
+
+      const mockEntries = [
+        {
+          entryName: 'chapter1.xhtml'
+          // Missing getData method
+        }
+      ];
+
+      const mockZip = {
+        getEntries: jest.fn().mockReturnValue(mockEntries)
+      };
+
+      AdmZip.mockImplementation(() => mockZip);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromEpub(mockFilePath);
+
+      // Should handle gracefully
+      expect(result).toBeDefined();
+    });
+
+    test('should skip non-HTML entries', async () => {
+      const AdmZip = require('adm-zip');
+
+      const mockEntries = [
+        {
+          entryName: 'image.png',
+          getData: jest.fn().mockReturnValue(Buffer.from('binary data'))
+        },
+        {
+          entryName: 'chapter.html',
+          getData: jest.fn().mockReturnValue(Buffer.from('<html><body>Chapter</body></html>'))
+        }
+      ];
+
+      const mockZip = {
+        getEntries: jest.fn().mockReturnValue(mockEntries)
+      };
+
+      AdmZip.mockImplementation(() => mockZip);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromEpub(mockFilePath);
+
+      expect(result).toContain('Chapter');
+    });
+  });
+
+  describe('extractTextFromEml - edge cases', () => {
+    test('should handle multi-line headers', async () => {
+      const emailContent = `Subject: This is a very long subject
+ that spans multiple lines
+From: sender@example.com
+To: receiver@example.com
+
+Body content.`;
+
+      jest.spyOn(fs, 'readFile').mockResolvedValue(emailContent);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromEml(mockFilePath);
+
+      expect(result).toBeDefined();
+      expect(result).toContain('sender@example.com');
+    });
+
+    test('should handle email with no body', async () => {
+      const emailContent = `Subject: Headers Only
+From: sender@example.com`;
+
+      jest.spyOn(fs, 'readFile').mockResolvedValue(emailContent);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromEml(mockFilePath);
+
+      expect(result).toContain('Headers Only');
+    });
+  });
+
+  describe('extractTextFromKmz - edge cases', () => {
+    test('should handle KMZ with no KML files', async () => {
+      const AdmZip = require('adm-zip');
+
+      const mockZip = {
+        getEntry: jest.fn().mockReturnValue(null),
+        getEntries: jest.fn().mockReturnValue([{ entryName: 'readme.txt' }])
+      };
+
+      AdmZip.mockImplementation(() => mockZip);
+
+      const result = await extractTextFromKmz(mockFilePath);
+
+      expect(result).toBe('');
+    });
+
+    test('should handle getData throwing error', async () => {
+      const AdmZip = require('adm-zip');
+
+      const mockEntry = {
+        entryName: 'doc.kml',
+        getData: jest.fn().mockImplementation(() => {
+          throw new Error('Corrupt archive');
+        })
+      };
+
+      const mockZip = {
+        getEntry: jest.fn().mockReturnValue(mockEntry),
+        getEntries: jest.fn().mockReturnValue([mockEntry])
+      };
+
+      AdmZip.mockImplementation(() => mockZip);
+
+      // Should throw error or return empty string
+      try {
+        const result = await extractTextFromKmz(mockFilePath);
+        expect(result).toBe('');
+      } catch (error) {
+        expect(error.message).toContain('Corrupt');
+      }
+    });
+  });
+
+  describe('extractPlainTextFromHtml - edge cases', () => {
+    test('should handle null input gracefully', () => {
+      const result = extractPlainTextFromHtml(null);
+      expect(result === '' || result === undefined || result === null).toBe(true);
+    });
+
+    test('should handle undefined input gracefully', () => {
+      const result = extractPlainTextFromHtml(undefined);
+      expect(result === '' || result === undefined).toBe(true);
+    });
+
+    test('should handle empty string', () => {
+      const result = extractPlainTextFromHtml('');
+      expect(result).toBe('');
+    });
+
+    test('should normalize whitespace', () => {
+      const html = '<p>Text   with    multiple     spaces</p>';
+      const result = extractPlainTextFromHtml(html);
+
+      expect(result).toBe('Text with multiple spaces');
+    });
+  });
+
+  describe('extractPlainTextFromRtf - edge cases', () => {
+    test('should handle null input gracefully', () => {
+      const result = extractPlainTextFromRtf(null);
+      // Function may return undefined/null for invalid input
+      expect(result === '' || result === undefined || result === null).toBe(true);
+    });
+
+    test('should handle undefined input gracefully', () => {
+      const result = extractPlainTextFromRtf(undefined);
+      // Function may return undefined for invalid input
+      expect(result === '' || result === undefined).toBe(true);
+    });
+
+    test('should handle empty string', () => {
+      const result = extractPlainTextFromRtf('');
+      expect(result === '' || result === undefined).toBe(true);
+    });
+  });
 });

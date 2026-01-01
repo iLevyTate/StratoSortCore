@@ -18,6 +18,7 @@ const path = require('path');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
 const { atomicWriteFile, loadJsonFile, safeUnlink } = require('../../shared/atomicFile');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 
 logger.setContext('OfflineQueue');
 
@@ -87,6 +88,9 @@ class OfflineQueue extends EventEmitter {
     // Queue storage
     this.queue = [];
     this.operationMap = new Map(); // For deduplication
+
+    // FIX: Add mutex for thread-safe queue operations
+    this._mutex = Promise.resolve();
 
     // State tracking
     this.isFlushing = false;
@@ -270,100 +274,128 @@ class OfflineQueue extends EventEmitter {
    * @returns {Promise<Object>} Flush results
    */
   async flush(processor) {
-    if (this.isFlushing) {
-      logger.warn('[OfflineQueue] Flush already in progress');
-      return { processed: 0, failed: 0, remaining: this.queue.length };
-    }
-
-    if (this.queue.length === 0) {
-      return { processed: 0, failed: 0, remaining: 0 };
-    }
-
-    this.isFlushing = true;
-    this.emit('flushStart', { queueSize: this.queue.length });
-
-    let processed = 0;
-    let failed = 0;
-    const failedOperations = [];
-
-    try {
-      // Optimization: only sort when queue has been modified since last sort
-      if (this._sortRequired) {
-        this.queue.sort((a, b) => a.priority - b.priority);
-        this._sortRequired = false;
+    // FIX: Use mutex to prevent concurrent flush operations
+    return this._withMutex(async () => {
+      if (this.isFlushing) {
+        logger.warn('[OfflineQueue] Flush already in progress');
+        return { processed: 0, failed: 0, remaining: this.queue.length };
       }
 
-      // Process in batches
-      while (this.queue.length > 0) {
-        const batch = this.queue.splice(0, this.config.flushBatchSize);
-        this._rebuildOperationMap();
+      if (this.queue.length === 0) {
+        return { processed: 0, failed: 0, remaining: 0 };
+      }
 
-        for (const operation of batch) {
-          try {
-            await processor(operation);
-            processed++;
-            this.stats.totalProcessed++;
+      // FIX: Move isFlushing and all operations inside try block
+      // to ensure isFlushing is always reset in finally
+      let processed = 0;
+      let failed = 0;
 
-            this.emit('operationProcessed', {
-              operation,
-              remaining: this.queue.length
-            });
-          } catch (error) {
-            operation.retries++;
-            operation.lastError = error.message;
+      try {
+        this.isFlushing = true;
+        this.emit('flushStart', { queueSize: this.queue.length });
 
-            if (operation.retries < operation.maxRetries) {
-              // Re-queue for retry
-              failedOperations.push(operation);
-              logger.warn('[OfflineQueue] Operation failed, will retry', {
-                type: operation.type,
-                key: operation.key,
-                retries: operation.retries,
-                error: error.message
+        // Optimization: only sort when queue has been modified since last sort
+        if (this._sortRequired) {
+          this.queue.sort((a, b) => a.priority - b.priority);
+          this._sortRequired = false;
+        }
+
+        // FIX: Process in batches with crash-safe removal
+        // Previously, splice() removed items BEFORE processing, causing data loss on crash.
+        // Now we use slice() to get items, then remove only AFTER successful processing.
+        // Each flush processes all items once - failed items stay for the next flush.
+        let retriesPending = 0;
+        const initialQueueLength = this.queue.length;
+        let itemsProcessedThisFlush = 0;
+
+        while (itemsProcessedThisFlush < initialQueueLength && this.queue.length > 0) {
+          // FIX: Use slice() instead of splice() - get items without removing
+          const remainingToProcess = initialQueueLength - itemsProcessedThisFlush;
+          const batchSize = Math.min(
+            this.config.flushBatchSize,
+            remainingToProcess,
+            this.queue.length
+          );
+          const batch = this.queue.slice(0, batchSize);
+          const indicesToRemove = [];
+
+          for (let i = 0; i < batch.length; i++) {
+            const operation = batch[i];
+            itemsProcessedThisFlush++;
+
+            try {
+              await processor(operation);
+              processed++;
+              this.stats.totalProcessed++;
+              // FIX: Track processed operations for removal AFTER processing
+              indicesToRemove.push(i);
+
+              this.emit('operationProcessed', {
+                operation,
+                remaining: this.queue.length - indicesToRemove.length
               });
-            } else {
-              // Max retries exceeded, drop operation
-              failed++;
-              this.stats.totalFailed++;
-              logger.error('[OfflineQueue] Operation failed permanently, dropping', {
-                type: operation.type,
-                key: operation.key,
-                error: error.message
-              });
-              this.emit('operationFailed', { operation, error });
+            } catch (error) {
+              operation.retries++;
+              operation.lastError = error.message;
+
+              if (operation.retries < operation.maxRetries) {
+                // Keep in queue for retry (don't add to indicesToRemove)
+                retriesPending++;
+                logger.warn('[OfflineQueue] Operation failed, will retry', {
+                  type: operation.type,
+                  key: operation.key,
+                  retries: operation.retries,
+                  error: error.message
+                });
+              } else {
+                // Max retries exceeded, mark for removal
+                indicesToRemove.push(i);
+                failed++;
+                this.stats.totalFailed++;
+                logger.error('[OfflineQueue] Operation failed permanently, dropping', {
+                  type: operation.type,
+                  key: operation.key,
+                  error: error.message
+                });
+                this.emit('operationFailed', { operation, error });
+              }
             }
+          }
+
+          // FIX: Remove items AFTER processing (in reverse order to preserve indices)
+          // This ensures crash safety - items remain in queue until successfully processed
+          for (let i = indicesToRemove.length - 1; i >= 0; i--) {
+            this.queue.splice(indicesToRemove[i], 1);
+          }
+          this._rebuildOperationMap();
+
+          // Persist after each batch for additional crash safety
+          await this._persistToDisk();
+
+          // Wait between batches to avoid overwhelming the service
+          if (itemsProcessedThisFlush < initialQueueLength && this.queue.length > 0) {
+            await this._delay(this.config.flushDelayMs);
           }
         }
 
-        // Wait between batches to avoid overwhelming the service
-        if (this.queue.length > 0) {
-          await this._delay(this.config.flushDelayMs);
-        }
+        this.lastFlushTime = Date.now();
+        await this._persistToDisk();
+
+        const result = {
+          processed,
+          failed,
+          remaining: this.queue.length,
+          retriesPending
+        };
+
+        logger.info('[OfflineQueue] Flush completed', result);
+        this.emit('flushComplete', result);
+
+        return result;
+      } finally {
+        this.isFlushing = false;
       }
-
-      // Re-add failed operations for retry
-      if (failedOperations.length > 0) {
-        this.queue.push(...failedOperations);
-        this._rebuildOperationMap();
-      }
-
-      this.lastFlushTime = Date.now();
-      await this._persistToDisk();
-    } finally {
-      this.isFlushing = false;
-    }
-
-    const result = {
-      processed,
-      failed,
-      remaining: this.queue.length,
-      retriesPending: failedOperations.length
-    };
-
-    logger.info('[OfflineQueue] Flush completed', result);
-    this.emit('flushComplete', result);
-
-    return result;
+    }); // End of mutex wrapper
   }
 
   /**
@@ -609,7 +641,60 @@ class OfflineQueue extends EventEmitter {
    * @returns {Promise<void>}
    */
   _delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      // FIX: Prevent timer from keeping process alive during shutdown
+      if (timer.unref) {
+        timer.unref();
+      }
+    });
+  }
+
+  /**
+   * FIX: Execute a function with mutex lock to prevent concurrent operations
+   * FIX: Added timeout to prevent deadlock if previous operation hangs
+   * @private
+   * @param {Function} fn - Async function to execute
+   * @param {number} timeoutMs - Maximum time to wait for mutex acquisition
+   * @returns {Promise<*>} Result of the function
+   * @throws {Error} If mutex acquisition times out
+   */
+  async _withMutex(fn, timeoutMs = TIMEOUTS.MUTEX_ACQUIRE) {
+    const previousMutex = this._mutex;
+    let release;
+    this._mutex = new Promise((resolve) => {
+      release = resolve;
+    });
+
+    let timeoutId;
+    try {
+      // FIX: Add timeout to mutex acquisition to prevent deadlock
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`Mutex acquisition timeout after ${timeoutMs}ms - possible deadlock`));
+        }, timeoutMs);
+        // FIX: Prevent timer from keeping process alive during shutdown
+        if (timeoutId.unref) {
+          timeoutId.unref();
+        }
+      });
+
+      await Promise.race([previousMutex, timeoutPromise]);
+      clearTimeout(timeoutId); // FIX: Clear timeout on success
+      return await fn();
+    } catch (error) {
+      clearTimeout(timeoutId); // FIX: Clear timeout on error
+      // If we timed out waiting for the mutex, log the error
+      if (error.message.includes('Mutex acquisition timeout')) {
+        logger.error('[OfflineQueue] Mutex deadlock detected', {
+          error: error.message,
+          timeoutMs
+        });
+      }
+      throw error;
+    } finally {
+      release();
+    }
   }
 
   /**

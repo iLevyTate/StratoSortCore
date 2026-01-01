@@ -39,12 +39,18 @@ class LLMRequestDeduplicator {
   /**
    * Execute a function with deduplication
    * If the same request is already in flight, return the existing promise
+   * @param {string} key - Unique cache key for this request
+   * @param {Function} fn - Async function to execute
+   * @param {Object} metadata - Optional metadata for logging (type, fileName, etc.)
    */
-  async deduplicate(key, fn) {
+  async deduplicate(key, fn, metadata = {}) {
     // If request is already in flight, return the existing promise
     if (this.pendingRequests.has(key)) {
-      logger.debug('[LLM-DEDUP] Request already in flight, reusing', {
-        key: key.slice(0, 8)
+      logger.warn('[LLM-DEDUP] Cache hit - returning in-flight request', {
+        key: key.slice(0, 12),
+        type: metadata.type || 'unknown',
+        fileName: metadata.fileName || 'unknown',
+        pendingCount: this.pendingRequests.size
       });
       return this.pendingRequests.get(key);
     }

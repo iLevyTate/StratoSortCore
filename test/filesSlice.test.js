@@ -30,8 +30,7 @@ describe('filesSlice', () => {
       dateFormat: 'YYYY-MM-DD',
       caseConvention: 'kebab-case',
       separator: '-'
-    },
-    watchPaths: []
+    }
   };
 
   describe('initial state', () => {

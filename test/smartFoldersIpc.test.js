@@ -68,7 +68,10 @@ jest.mock('../src/main/services/SmartFoldersLLMService', () => ({
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  withErrorLogging: jest.fn((logger, handler) => handler)
+  withErrorLogging: jest.fn((logger, handler) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock jsonRepair
@@ -263,7 +266,16 @@ describe('Smart Folders IPC Handlers', () => {
     test('saves valid folders', async () => {
       fs.stat.mockResolvedValue({ isDirectory: () => true });
 
-      const folders = [{ id: '1', name: 'Test', path: '/home/user/Documents/Test' }];
+      // FIX: Include Uncategorized folder since it's now required
+      const folders = [
+        { id: '1', name: 'Test', path: '/home/user/Documents/Test' },
+        {
+          id: 'uncategorized',
+          name: 'Uncategorized',
+          path: '/home/user/Documents/Uncategorized',
+          isDefault: true
+        }
+      ];
       const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.SAVE];
 
       const result = await handler({}, folders);
@@ -282,10 +294,22 @@ describe('Smart Folders IPC Handlers', () => {
     });
 
     test('creates directories that do not exist', async () => {
-      fs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
+      // First folder doesn't exist, second (Uncategorized) exists
+      fs.stat
+        .mockRejectedValueOnce({ code: 'ENOENT' })
+        .mockResolvedValueOnce({ isDirectory: () => true });
       fs.mkdir.mockResolvedValue(undefined);
 
-      const folders = [{ id: '1', name: 'New', path: '/home/user/Documents/New' }];
+      // FIX: Include Uncategorized folder since it's now required
+      const folders = [
+        { id: '1', name: 'New', path: '/home/user/Documents/New' },
+        {
+          id: 'uncategorized',
+          name: 'Uncategorized',
+          path: '/home/user/Documents/Uncategorized',
+          isDefault: true
+        }
+      ];
       const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.SAVE];
 
       const result = await handler({}, folders);
@@ -298,11 +322,23 @@ describe('Smart Folders IPC Handlers', () => {
       fs.stat.mockResolvedValue({ isDirectory: () => true });
       saveCustomFolders.mockRejectedValue(new Error('Save failed'));
 
-      const originalFolders = [{ id: 'original' }];
+      const originalFolders = [
+        { id: 'original' },
+        { id: 'uncategorized', name: 'Uncategorized', isDefault: true }
+      ];
       mockCustomFolders = originalFolders;
 
       const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.SAVE];
-      const result = await handler({}, [{ id: 'new', path: '/home/user/Documents/test' }]);
+      // FIX: Include Uncategorized folder since it's now required
+      const result = await handler({}, [
+        { id: 'new', path: '/home/user/Documents/test' },
+        {
+          id: 'uncategorized',
+          name: 'Uncategorized',
+          path: '/home/user/Documents/Uncategorized',
+          isDefault: true
+        }
+      ]);
 
       expect(result.success).toBe(false);
     });

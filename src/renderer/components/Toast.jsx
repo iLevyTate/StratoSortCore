@@ -13,21 +13,25 @@ const generateSecureId = () => Date.now() + ++toastIdCounter;
 const Toast = ({
   message,
   severity = 'info',
-  duration = 3000, // Reduced from 5000ms to 3000ms for less invasiveness
+  duration = 3000,
   onClose,
   show = true,
-  mergeCount = 0 // FIX: Show count when messages are grouped
+  mergeCount = 0
 }) => {
   const [isVisible, setIsVisible] = useState(show);
-  // CRITICAL FIX: Use ref to track animation timer so cleanup can always access current value
   const animationTimerRef = useRef(null);
+  // FIX: Use ref for onClose to prevent timer reset when parent re-renders with new callback
+  const onCloseRef = useRef(onClose);
 
-  // Sync show prop changes to isVisible state
+  // Keep onClose ref in sync
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     setIsVisible(show);
   }, [show]);
 
-  // FIX: Explicit cleanup on unmount for animation timer from manual close
   useEffect(() => {
     return () => {
       if (animationTimerRef.current) {
@@ -37,17 +41,19 @@ const Toast = ({
     };
   }, []);
 
+  // FIX: Removed onClose from dependency array - use ref instead
   useEffect(() => {
     if (show && duration > 0) {
       const timer = setTimeout(() => {
         setIsVisible(false);
-        // Schedule onClose after animation completes
-        animationTimerRef.current = setTimeout(() => onClose?.(), TIMEOUTS.ANIMATION_MEDIUM);
+        animationTimerRef.current = setTimeout(
+          () => onCloseRef.current?.(),
+          TIMEOUTS.ANIMATION_MEDIUM
+        );
       }, duration);
 
       return () => {
         clearTimeout(timer);
-        // Clean up nested animation timeout using ref (always has current value)
         if (animationTimerRef.current) {
           clearTimeout(animationTimerRef.current);
           animationTimerRef.current = null;
@@ -56,12 +62,12 @@ const Toast = ({
     }
 
     return undefined;
-  }, [show, duration, onClose]);
+  }, [show, duration]); // FIX: Removed onClose - using ref instead
 
   const handleClose = () => {
     setIsVisible(false);
-    // FIX: Store timeout in ref for proper cleanup on unmount
-    animationTimerRef.current = setTimeout(() => onClose?.(), TIMEOUTS.ANIMATION_MEDIUM);
+    // FIX: Use ref for consistency with other timer callbacks
+    animationTimerRef.current = setTimeout(() => onCloseRef.current?.(), TIMEOUTS.ANIMATION_MEDIUM);
   };
 
   const handleKeyDown = (e) => {
@@ -70,22 +76,24 @@ const Toast = ({
     }
   };
 
+  // Compact, modern severity styling
   const getSeverityClasses = () => {
     switch (severity) {
       case 'success':
-        return 'border-stratosort-success/50 bg-stratosort-success/10 text-stratosort-success';
+        return 'toast-success';
       case 'error':
-        return 'border-stratosort-danger/50 bg-stratosort-danger/10 text-stratosort-danger';
+        return 'toast-error';
       case 'warning':
-        return 'border-stratosort-warning/50 bg-stratosort-warning/10 text-stratosort-warning';
+        return 'toast-warning';
       case 'info':
       default:
-        return 'border-stratosort-blue/45 bg-stratosort-blue/10 text-stratosort-blue';
+        return 'toast-info';
     }
   };
 
+  // Smaller icons for compact design
   const getSeverityIcon = () => {
-    const iconClass = 'w-5 h-5';
+    const iconClass = 'w-4 h-4 flex-shrink-0';
     switch (severity) {
       case 'success':
         return <CheckCircle2 className={iconClass} />;
@@ -127,38 +135,30 @@ const Toast = ({
 
   return (
     <div
-      className={`toast-enhanced ${getSeverityClasses()} ${isVisible ? 'show' : ''}`}
+      className={`toast-compact ${getSeverityClasses()} ${isVisible ? 'show' : ''}`}
       style={fallbackStyle}
       role="alert"
       aria-live="polite"
       tabIndex={-1}
       onKeyDown={handleKeyDown}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="flex-shrink-0" aria-hidden="true">
-            {getSeverityIcon()}
-          </span>
-          <div className="flex-1">
-            <div className="text-xs md:text-sm font-normal leading-tight opacity-90">
-              {renderMessageContent()}
-              {/* FIX: Show count indicator when messages are grouped */}
-              {mergeCount > 1 && (
-                <span className="ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-current/20 text-[10px] font-medium">
-                  ×{mergeCount}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden="true">{getSeverityIcon()}</span>
+        <span className="flex-1 text-[13px] font-medium leading-snug">
+          {renderMessageContent()}
+          {mergeCount > 1 && (
+            <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-current/15 text-[10px] font-semibold">
+              {mergeCount}
+            </span>
+          )}
+        </span>
         <button
           type="button"
           onClick={handleClose}
-          className="ml-5 inline-flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-md text-current opacity-80 hover:opacity-100 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/80 transition-colors"
-          aria-label="Close notification"
-          title="Close"
+          className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-current/70 hover:text-current hover:bg-current/10 focus-visible:outline-none transition-colors"
+          aria-label="Dismiss"
         >
-          <X className="w-5 h-5" aria-hidden="true" />
+          <X className="w-3.5 h-3.5" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -174,7 +174,7 @@ Toast.propTypes = {
   mergeCount: PropTypes.number
 };
 
-// Toast Container for managing multiple toasts
+// Toast Container for managing multiple toasts - compact design
 export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
   const [position] = useState(() => {
     try {
@@ -193,17 +193,16 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
 
   const containerStyle = () => {
     const base = { position: 'fixed', zIndex: 1000 };
-    // Account for footer height plus safe spacing (customizable via CSS var)
-    const bottomOffset = 'var(--toast-offset, 80px)';
+    const bottomOffset = 'var(--toast-offset, 72px)';
     switch (position) {
       case 'top-right':
-        return { ...base, top: '21px', right: '21px' };
+        return { ...base, top: '16px', right: '16px' };
       case 'top-left':
-        return { ...base, top: '21px', left: '21px' };
+        return { ...base, top: '16px', left: '16px' };
       case 'bottom-left':
-        return { ...base, bottom: `calc(${bottomOffset})`, left: '21px' };
+        return { ...base, bottom: `calc(${bottomOffset})`, left: '16px' };
       default:
-        return { ...base, bottom: `calc(${bottomOffset})`, right: '21px' };
+        return { ...base, bottom: `calc(${bottomOffset})`, right: '16px' };
     }
   };
 
@@ -212,7 +211,6 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
       try {
         localStorage.setItem('toastCollapsed', String(!prev));
       } catch (error) {
-        // Fixed: Log localStorage errors instead of silently swallowing
         logger.warn('Failed to save toast collapsed state to localStorage', {
           error: error.message
         });
@@ -221,7 +219,7 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
     });
   };
 
-  const MAX_VISIBLE_TOASTS = 3;
+  const MAX_VISIBLE_TOASTS = 4;
   const visibleToasts = toasts.slice(-MAX_VISIBLE_TOASTS);
   const hiddenCount = Math.max(0, toasts.length - visibleToasts.length);
 
@@ -232,34 +230,33 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
       className="z-toast pointer-events-none"
       style={containerStyle()}
     >
-      {/* Toggle Icon */}
-      <div className="pointer-events-auto mb-4 flex items-center justify-end">
+      {/* Compact toggle button */}
+      <div className="pointer-events-auto mb-2 flex items-center justify-end">
         <button
           onClick={toggleCollapsed}
-          className="relative inline-flex h-10 w-10 md:h-11 md:w-11 items-center justify-center rounded-full bg-white/90 border border-system-gray-200 text-system-gray-700 hover:bg-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/80"
-          aria-label={collapsed ? 'Open notifications' : 'Close notifications'}
+          className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 border border-system-gray-200/80 text-system-gray-600 hover:bg-white hover:text-system-gray-800 shadow-sm backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/60 transition-all"
+          aria-label={collapsed ? 'Show notifications' : 'Hide notifications'}
           aria-expanded={!collapsed}
           aria-controls="toast-panel"
-          title={collapsed ? 'Open notifications' : 'Close notifications'}
         >
           {collapsed ? (
-            <Bell className="w-5 h-5" aria-hidden="true" />
+            <Bell className="w-4 h-4" aria-hidden="true" />
           ) : (
-            <X className="w-5 h-5" aria-hidden="true" />
+            <X className="w-4 h-4" aria-hidden="true" />
           )}
-          {toasts.length > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-5 px-1 rounded-full bg-stratosort-blue text-white text-[10px] leading-5 text-center">
+          {toasts.length > 0 && collapsed && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-stratosort-blue text-white text-[9px] font-medium leading-4 text-center">
               {toasts.length}
             </span>
           )}
         </button>
       </div>
 
-      {/* Toasts */}
-      <div id="toast-panel" aria-hidden={collapsed}>
+      {/* Toast stack */}
+      <div id="toast-panel" aria-hidden={collapsed} className="flex flex-col gap-2">
         {!collapsed &&
           visibleToasts.map((toast) => (
-            <div key={toast.id} className="pointer-events-auto mb-5">
+            <div key={toast.id} className="pointer-events-auto">
               <Toast
                 message={toast.message}
                 severity={toast.severity || toast.type}
@@ -271,8 +268,8 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
             </div>
           ))}
         {!collapsed && hiddenCount > 0 && (
-          <div className="pointer-events-none text-xs text-system-gray-500 text-right pr-1">
-            +{hiddenCount} more notifications
+          <div className="pointer-events-none text-[11px] text-system-gray-400 text-right">
+            +{hiddenCount} more
           </div>
         )}
       </div>

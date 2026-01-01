@@ -319,6 +319,37 @@ function SetupPhase() {
     }
   };
 
+  const handleResetToDefaults = async () => {
+    const confirmReset = await showConfirm({
+      title: 'Reset to Default Folders',
+      message:
+        'This will replace all smart folders with the default set (Documents, Images, Videos, Music, etc.). Your existing folder configurations will be lost. Continue?',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+      variant: 'warning'
+    });
+    if (!confirmReset) return;
+
+    try {
+      setIsLoading(true);
+      const result = await window.electronAPI.smartFolders.resetToDefaults();
+      if (result?.success) {
+        showSuccess(result.message || 'Smart folders reset to defaults');
+        await loadSmartFolders();
+      } else {
+        showError(`Failed to reset: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      logger.error('Failed to reset smart folders', {
+        error: error.message,
+        stack: error.stack
+      });
+      showError('Failed to reset smart folders');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const createSingleFolder = async (folderPath) => {
     try {
       await window.electronAPI.files.createFolder(folderPath);
@@ -414,38 +445,61 @@ function SetupPhase() {
 
             <div className="flex items-center gap-2">
               {smartFolders.length > 0 && (
-                <Button
-                  onClick={async () => {
-                    try {
-                      const res = await window.electronAPI.embeddings.rebuildFolders();
-                      if (res?.success) {
-                        showSuccess(`Rebuilt ${res.folders || 0} folder embeddings`);
-                      } else {
-                        showError(`Failed to rebuild: ${res?.error || 'Unknown error'}`);
-                      }
-                    } catch (e) {
-                      showError(`Failed: ${e.message}`);
-                    }
-                  }}
-                  variant="secondary"
-                  className="text-sm"
-                  title="Rebuild all folder embeddings"
-                >
-                  <svg
-                    className="w-4 h-4 mr-1.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+                <>
+                  <Button
+                    onClick={handleResetToDefaults}
+                    variant="ghost"
+                    className="text-sm"
+                    title="Reset to default smart folders"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                  Rebuild
-                </Button>
+                    <svg
+                      className="w-4 h-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                    Reset
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const res = await window.electronAPI.embeddings.rebuildFolders();
+                        if (res?.success) {
+                          showSuccess(`Rebuilt ${res.folders || 0} folder embeddings`);
+                        } else {
+                          showError(`Failed to rebuild: ${res?.error || 'Unknown error'}`);
+                        }
+                      } catch (e) {
+                        showError(`Failed: ${e.message}`);
+                      }
+                    }}
+                    variant="secondary"
+                    className="text-sm"
+                    title="Rebuild all folder embeddings"
+                  >
+                    <svg
+                      className="w-4 h-4 mr-1.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                      />
+                    </svg>
+                    Rebuild
+                  </Button>
+                </>
               )}
               <Button onClick={() => setIsAddModalOpen(true)} variant="primary" className="text-sm">
                 <svg
@@ -508,22 +562,40 @@ function SetupPhase() {
                     Add at least one destination folder so StratoSort knows where to organize your
                     files.
                   </p>
-                  <Button onClick={() => setIsAddModalOpen(true)} variant="primary">
-                    <svg
-                      className="w-4 h-4 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 4v16m8-8H4"
-                      />
-                    </svg>
-                    Add your first folder
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button onClick={handleResetToDefaults} variant="secondary">
+                      <svg
+                        className="w-4 h-4 mr-1.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                      Load Defaults
+                    </Button>
+                    <Button onClick={() => setIsAddModalOpen(true)} variant="primary">
+                      <svg
+                        className="w-4 h-4 mr-1.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      Add Custom Folder
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">

@@ -9,23 +9,30 @@
 
 const lunr = require('lunr');
 const { logger } = require('../../shared/logger');
+const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
 
 logger.setContext('SearchService');
 
 /**
- * Reciprocal Rank Fusion constant
- * Higher values give more weight to top results
+ * Minimum score threshold for results (filters low-quality matches)
+ * Uses MIN_SIMILARITY_SCORE from performanceConstants
  */
-const RRF_K = 60;
+const MIN_RESULT_SCORE = THRESHOLDS.MIN_SIMILARITY_SCORE;
 
 /**
- * Default search options
+ * Vector search timeout before falling back to BM25
+ */
+const VECTOR_SEARCH_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
+
+/**
+ * Default search options (from performanceConstants.SEARCH)
  */
 const DEFAULT_OPTIONS = {
-  topK: 20,
+  topK: SEARCH.DEFAULT_TOP_K,
   mode: 'hybrid', // 'vector', 'bm25', 'hybrid'
-  vectorWeight: 0.6,
-  bm25Weight: 0.4
+  vectorWeight: SEARCH.VECTOR_WEIGHT,
+  bm25Weight: SEARCH.BM25_WEIGHT,
+  minScore: MIN_RESULT_SCORE // Minimum score threshold
 };
 
 class SearchService {
@@ -37,7 +44,18 @@ class SearchService {
    * @param {Object} dependencies.analysisHistoryService - Analysis history for document data
    * @param {Object} dependencies.parallelEmbeddingService - Embedding service for query vectors
    */
-  constructor({ chromaDbService, analysisHistoryService, parallelEmbeddingService }) {
+  constructor({ chromaDbService, analysisHistoryService, parallelEmbeddingService } = {}) {
+    // Validate required dependencies
+    if (!chromaDbService) {
+      throw new Error('SearchService requires chromaDbService dependency');
+    }
+    if (!analysisHistoryService) {
+      throw new Error('SearchService requires analysisHistoryService dependency');
+    }
+    if (!parallelEmbeddingService) {
+      throw new Error('SearchService requires parallelEmbeddingService dependency');
+    }
+
     this.chromaDb = chromaDbService;
     this.history = analysisHistoryService;
     this.embedding = parallelEmbeddingService;
@@ -53,6 +71,12 @@ class SearchService {
     // Cached serialized index for faster rebuilds
     this._serializedIndex = null;
     this._serializedDocMap = null;
+
+    // Lock to prevent concurrent index builds (race condition fix)
+    this._indexBuildPromise = null;
+
+    // Maximum cache size in bytes (50MB) to prevent unbounded growth
+    this._maxCacheSize = 50 * 1024 * 1024;
   }
 
   /**
@@ -69,10 +93,30 @@ class SearchService {
 
   /**
    * Build or rebuild the BM25 index from analysis history
+   * Uses a lock to prevent concurrent builds (race condition safe)
    *
    * @returns {Promise<{success: boolean, indexed: number, error?: string}>}
    */
   async buildBM25Index() {
+    // Prevent concurrent index builds - return existing promise if building
+    if (this._indexBuildPromise) {
+      logger.debug('[SearchService] Index build already in progress, waiting...');
+      return this._indexBuildPromise;
+    }
+
+    this._indexBuildPromise = this._doBuildBM25Index();
+    try {
+      return await this._indexBuildPromise;
+    } finally {
+      this._indexBuildPromise = null;
+    }
+  }
+
+  /**
+   * Internal method to actually build the BM25 index
+   * @private
+   */
+  async _doBuildBM25Index() {
     try {
       logger.info('[SearchService] Building BM25 index...');
 
@@ -134,14 +178,31 @@ class SearchService {
       this.indexBuiltAt = Date.now();
       this.indexVersion++;
 
-      // Cache serialized index for faster subsequent loads
+      // Cache serialized index for faster subsequent loads (with size limit)
       // Lunr indexes support JSON serialization
       try {
-        this._serializedIndex = JSON.stringify(this.bm25Index);
-        this._serializedDocMap = JSON.stringify(Array.from(this.documentMap.entries()));
-        logger.debug('[SearchService] Index serialized for caching');
+        const serializedIndex = JSON.stringify(this.bm25Index);
+        const serializedDocMap = JSON.stringify(Array.from(this.documentMap.entries()));
+        const totalSize = serializedIndex.length + serializedDocMap.length;
+
+        if (totalSize < this._maxCacheSize) {
+          this._serializedIndex = serializedIndex;
+          this._serializedDocMap = serializedDocMap;
+          logger.debug(
+            `[SearchService] Index serialized for caching (${Math.round(totalSize / 1024)}KB)`
+          );
+        } else {
+          // Clear cache if too large to prevent memory issues
+          this._serializedIndex = null;
+          this._serializedDocMap = null;
+          logger.warn(
+            `[SearchService] Index too large to cache (${Math.round(totalSize / 1024 / 1024)}MB > ${this._maxCacheSize / 1024 / 1024}MB limit)`
+          );
+        }
       } catch (serializeErr) {
         logger.warn('[SearchService] Failed to serialize index:', serializeErr.message);
+        this._serializedIndex = null;
+        this._serializedDocMap = null;
       }
 
       logger.info(`[SearchService] BM25 index built with ${documents.length} documents`);
@@ -211,15 +272,34 @@ class SearchService {
 
       return results.slice(0, topK).map((result) => {
         const meta = this.documentMap.get(result.ref) || {};
+
+        // Extract matched terms and fields from Lunr matchData for match explanations
+        const matchedTerms = [];
+        const matchedFields = new Set();
+
+        if (result.matchData && result.matchData.metadata) {
+          Object.entries(result.matchData.metadata).forEach(([term, fields]) => {
+            matchedTerms.push(term);
+            Object.keys(fields).forEach((field) => matchedFields.add(field));
+          });
+        }
+
         return {
           id: result.ref,
           score: result.score,
           metadata: {
             path: meta.path,
             name: meta.name,
-            type: meta.type
+            type: meta.type,
+            tags: meta.tags || [],
+            category: meta.category || '',
+            subject: meta.subject || ''
           },
-          source: 'bm25'
+          source: 'bm25',
+          matchDetails: {
+            matchedTerms: matchedTerms.slice(0, 5), // Limit to top 5 terms
+            matchedFields: Array.from(matchedFields)
+          }
         };
       });
     } catch (error) {
@@ -264,12 +344,40 @@ class SearchService {
         return [];
       }
 
-      return chromaResults.map((result) => ({
-        id: result.id,
-        score: result.score || 1 - (result.distance || 0),
-        metadata: result.metadata || {},
-        source: 'vector'
-      }));
+      // Extract query words for tag/category matching
+      const queryWords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
+      return chromaResults.map((result) => {
+        const semanticScore = result.score || 1 - (result.distance || 0);
+        const metadata = result.metadata || {};
+
+        // Find query terms that appear in tags
+        const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+        const queryTermsInTags = tags.filter((tag) =>
+          queryWords.some((word) => tag.toLowerCase().includes(word))
+        );
+
+        // Check if query terms appear in category
+        const category = metadata.category || '';
+        const queryTermsInCategory = queryWords.some((word) =>
+          category.toLowerCase().includes(word)
+        );
+
+        return {
+          id: result.id,
+          score: semanticScore,
+          metadata,
+          source: 'vector',
+          matchDetails: {
+            semanticScore,
+            queryTermsInTags: queryTermsInTags.slice(0, 3),
+            queryTermsInCategory
+          }
+        };
+      });
     } catch (error) {
       logger.error('[SearchService] Vector search failed:', error);
       return [];
@@ -277,26 +385,86 @@ class SearchService {
   }
 
   /**
-   * Combine results using Reciprocal Rank Fusion
+   * Normalize scores to [0, 1] range using min-max scaling
+   *
+   * @param {Array} results - Array of results with scores
+   * @returns {Array} Results with normalized scores
+   */
+  _normalizeScores(results) {
+    if (!results || results.length === 0) return results;
+
+    const scores = results.map((r) => r.score || 0);
+    const minScore = Math.min(...scores);
+    const maxScore = Math.max(...scores);
+    const range = maxScore - minScore;
+
+    // If all scores are the same, return with score 1.0
+    if (range === 0) {
+      return results.map((r) => ({ ...r, score: 1.0, originalScore: r.score }));
+    }
+
+    return results.map((r) => ({
+      ...r,
+      score: (r.score - minScore) / range,
+      originalScore: r.score
+    }));
+  }
+
+  /**
+   * Combine results using Reciprocal Rank Fusion with score normalization
    *
    * RRF formula: score(d) = sum(1 / (k + rank_i(d)))
+   * Enhanced with optional weighted score blending for better ranking
    *
    * @param {Array<Array>} resultSets - Arrays of ranked results
    * @param {number} k - RRF constant (default: 60)
+   * @param {Object} options - Fusion options
+   * @param {boolean} options.normalizeScores - Whether to normalize source scores (default: true)
+   * @param {boolean} options.useScoreBlending - Blend original scores with RRF (default: true)
    * @returns {Array} Fused and re-ranked results
    */
-  reciprocalRankFusion(resultSets, k = RRF_K) {
-    const rrfScores = new Map();
-    const resultData = new Map();
+  reciprocalRankFusion(resultSets, k = SEARCH.RRF_K, options = {}) {
+    const { normalizeScores = true, useScoreBlending = true } = options;
 
-    for (const results of resultSets) {
+    const rrfScores = new Map();
+    const originalScores = new Map(); // Track original scores for blending
+    const resultData = new Map();
+    const matchDetailsMap = new Map(); // Track and merge match details from all sources
+
+    // Normalize scores within each result set for fair comparison
+    const normalizedSets = normalizeScores
+      ? resultSets.map((set) => this._normalizeScores(set))
+      : resultSets;
+
+    for (const results of normalizedSets) {
       for (let rank = 0; rank < results.length; rank++) {
         const result = results[rank];
-        const id = result.id;
+        const id = result?.id;
+
+        // Skip results with missing ID to prevent corruption
+        if (!id) {
+          logger.warn('[SearchService] Skipping result with missing id in RRF fusion');
+          continue;
+        }
 
         // RRF score contribution
         const rrfContribution = 1 / (k + rank + 1);
         rrfScores.set(id, (rrfScores.get(id) || 0) + rrfContribution);
+
+        // Track normalized scores for blending
+        if (useScoreBlending) {
+          const currentMax = originalScores.get(id) || 0;
+          originalScores.set(id, Math.max(currentMax, result.score || 0));
+        }
+
+        // Merge match details from all sources
+        const existingDetails = matchDetailsMap.get(id) || { sources: [] };
+        const newDetails = result.matchDetails || {};
+        matchDetailsMap.set(id, {
+          ...existingDetails,
+          ...newDetails,
+          sources: [...existingDetails.sources, result.source].filter(Boolean)
+        });
 
         // Prefer vector search metadata (has current file names) over BM25 (may have old names)
         // Vector search uses ChromaDB which is updated when files are organized
@@ -307,16 +475,32 @@ class SearchService {
       }
     }
 
+    // Normalize RRF scores to [0, 1]
+    const rrfValues = Array.from(rrfScores.values());
+    const maxRrf = Math.max(...rrfValues, SEARCH.MIN_EPSILON);
+
     // Sort by RRF score
     const fusedResults = Array.from(rrfScores.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([id, rrfScore]) => {
         const original = resultData.get(id) || {};
+        const normalizedRrf = rrfScore / maxRrf;
+
+        // Blend RRF with original score for better ranking
+        let finalScore = normalizedRrf;
+        if (useScoreBlending && originalScores.has(id)) {
+          const origScore = originalScores.get(id);
+          finalScore =
+            SEARCH.RRF_NORMALIZED_WEIGHT * normalizedRrf + SEARCH.RRF_ORIGINAL_WEIGHT * origScore;
+        }
+
         return {
           id,
-          score: rrfScore,
+          score: finalScore,
+          rrfScore: normalizedRrf,
           metadata: original.metadata || {},
-          sources: original.source ? [original.source] : ['fused']
+          sources: original.source ? [original.source] : ['fused'],
+          matchDetails: matchDetailsMap.get(id) || {}
         };
       });
 
@@ -324,14 +508,77 @@ class SearchService {
   }
 
   /**
+   * Execute vector search with timeout, falling back to empty results on timeout
+   * Properly clears timeout to prevent timer leaks
+   *
+   * @param {string} query - Search query
+   * @param {number} topK - Number of results
+   * @param {number} timeout - Timeout in milliseconds
+   * @returns {Promise<{results: Array, timedOut: boolean}>}
+   */
+  async _vectorSearchWithTimeout(query, topK, timeout = VECTOR_SEARCH_TIMEOUT) {
+    let timeoutId = null;
+
+    try {
+      const result = await Promise.race([
+        this.vectorSearch(query, topK).then((results) => {
+          // Clear timeout immediately when search completes to prevent leak
+          if (timeoutId) clearTimeout(timeoutId);
+          return { results, timedOut: false };
+        }),
+        new Promise((resolve) => {
+          timeoutId = setTimeout(() => resolve({ results: [], timedOut: true }), timeout);
+        })
+      ]);
+
+      // Ensure timeout is cleared in case of timeout winning the race
+      if (timeoutId && result.timedOut) {
+        // Timeout already fired, but clear for safety
+        clearTimeout(timeoutId);
+      }
+
+      return result;
+    } catch (error) {
+      // Clear timeout on error to prevent leak
+      if (timeoutId) clearTimeout(timeoutId);
+      logger.warn('[SearchService] Vector search error, falling back:', error.message);
+      return { results: [], timedOut: false, error: error.message };
+    }
+  }
+
+  /**
+   * Filter results by minimum score threshold
+   *
+   * @param {Array} results - Search results
+   * @param {number} minScore - Minimum score threshold
+   * @returns {Array} Filtered results
+   */
+  _filterByScore(results, minScore) {
+    if (!minScore || minScore <= 0) return results;
+    return results.filter((r) => (r.score || 0) >= minScore);
+  }
+
+  /**
    * Perform hybrid search combining BM25 and vector search
+   *
+   * Features:
+   * - Score normalization before RRF fusion
+   * - Timeout fallback to BM25-only on vector search timeout
+   * - Minimum score filtering for quality control
    *
    * @param {string} query - Search query
    * @param {Object} options - Search options
+   * @param {number} options.topK - Number of results (default: 20)
+   * @param {string} options.mode - Search mode: 'hybrid', 'vector', 'bm25' (default: 'hybrid')
+   * @param {number} options.minScore - Minimum score threshold (default: 0.5)
    * @returns {Promise<{success: boolean, results: Array, mode: string}>}
    */
   async hybridSearch(query, options = {}) {
-    const { topK = DEFAULT_OPTIONS.topK, mode = DEFAULT_OPTIONS.mode } = options;
+    const {
+      topK = DEFAULT_OPTIONS.topK,
+      mode = DEFAULT_OPTIONS.mode,
+      minScore = DEFAULT_OPTIONS.minScore
+    } = options;
 
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
       return { success: false, results: [], error: 'Query too short' };
@@ -346,19 +593,37 @@ class SearchService {
       // Handle different search modes
       if (mode === 'bm25') {
         const results = this.bm25Search(query, topK);
-        return { success: true, results, mode: 'bm25' };
+        const filtered = this._filterByScore(results, minScore);
+        return { success: true, results: filtered, mode: 'bm25' };
       }
 
       if (mode === 'vector') {
         const results = await this.vectorSearch(query, topK);
-        return { success: true, results, mode: 'vector' };
+        const filtered = this._filterByScore(results, minScore);
+        return { success: true, results: filtered, mode: 'vector' };
       }
 
-      // Hybrid mode: combine both search types
-      const [vectorResults, bm25Results] = await Promise.all([
-        this.vectorSearch(query, topK * 2),
-        Promise.resolve(this.bm25Search(query, topK * 2))
-      ]);
+      // Hybrid mode: combine both search types with timeout protection
+      const bm25Results = this.bm25Search(query, topK * 2);
+      const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
+        query,
+        topK * 2
+      );
+
+      // If vector search timed out, use BM25-only with degraded mode indicator
+      if (timedOut) {
+        logger.warn('[SearchService] Vector search timed out, using BM25-only fallback');
+        const filtered = this._filterByScore(bm25Results.slice(0, topK), minScore);
+        return {
+          success: true,
+          results: filtered,
+          mode: 'bm25-fallback',
+          meta: {
+            vectorTimedOut: true,
+            bm25Count: bm25Results.length
+          }
+        };
+      }
 
       // Log search results for debugging
       logger.debug('[SearchService] Hybrid search results:', {
@@ -366,21 +631,44 @@ class SearchService {
         bm25Count: bm25Results.length
       });
 
-      // Fuse results using RRF
+      // Fuse results using enhanced RRF with score normalization
       const fusedResults = this.reciprocalRankFusion([vectorResults, bm25Results]);
+
+      // Apply minimum score filter to fused results
+      const filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
 
       return {
         success: true,
-        results: fusedResults.slice(0, topK),
+        results: filteredResults,
         mode: 'hybrid',
         meta: {
           vectorCount: vectorResults.length,
           bm25Count: bm25Results.length,
-          fusedCount: fusedResults.length
+          fusedCount: fusedResults.length,
+          filteredCount: filteredResults.length,
+          minScoreApplied: minScore
         }
       };
     } catch (error) {
       logger.error('[SearchService] Hybrid search failed:', error);
+
+      // Last resort: try BM25-only on complete failure
+      try {
+        const bm25Results = this.bm25Search(query, topK);
+        if (bm25Results.length > 0) {
+          logger.info('[SearchService] Falling back to BM25-only after hybrid failure');
+          const filtered = this._filterByScore(bm25Results, minScore);
+          return {
+            success: true,
+            results: filtered,
+            mode: 'bm25-fallback',
+            meta: { hybridError: error.message }
+          };
+        }
+      } catch (bm25Error) {
+        logger.error('[SearchService] BM25 fallback also failed:', bm25Error);
+      }
+
       return {
         success: false,
         results: [],
@@ -421,6 +709,29 @@ class SearchService {
     this.documentMap.clear();
     this.indexBuiltAt = null;
     logger.info('[SearchService] BM25 index cleared');
+  }
+
+  /**
+   * Invalidate the BM25 index to force rebuild on next search
+   * Call this after file moves/deletes to ensure fresh results
+   *
+   * @param {Object} options - Invalidation options
+   * @param {string} [options.reason] - Reason for invalidation (for logging)
+   * @param {string} [options.oldPath] - Old file path (for move operations)
+   * @param {string} [options.newPath] - New file path (for move operations)
+   */
+  invalidateIndex(options = {}) {
+    const { reason = 'manual', oldPath, newPath } = options;
+
+    // Mark index as stale by setting indexBuiltAt to past
+    if (this.indexBuiltAt) {
+      this.indexBuiltAt = 0;
+      logger.info('[SearchService] BM25 index invalidated', { reason, oldPath, newPath });
+    }
+
+    // Clear serialized cache to force full rebuild
+    this._serializedIndex = null;
+    this._serializedDocMap = null;
   }
 
   /**
@@ -484,6 +795,31 @@ class SearchService {
       cachedIndexSize: this._serializedIndex?.length || 0,
       documentCount: this.documentMap.size
     };
+  }
+
+  /**
+   * Cleanup resources on shutdown
+   * Clears all cached data and pending operations
+   */
+  cleanup() {
+    logger.info('[SearchService] Cleaning up...');
+
+    // Clear index and cache
+    this.bm25Index = null;
+    this.documentMap.clear();
+    this._serializedIndex = null;
+    this._serializedDocMap = null;
+    this.indexBuiltAt = null;
+    this._indexBuildPromise = null;
+
+    logger.info('[SearchService] Cleanup complete');
+  }
+
+  /**
+   * Alias for cleanup (for consistency with other services)
+   */
+  shutdown() {
+    this.cleanup();
   }
 }
 

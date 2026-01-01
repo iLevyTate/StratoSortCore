@@ -1,8 +1,18 @@
 /**
- * Atomic File Operations
+ * Atomic File Operations (Lightweight)
  *
  * Provides safe file operations that prevent data corruption on crash.
  * Uses the temp-file + rename pattern for atomic writes.
+ *
+ * USE THIS MODULE FOR:
+ * - Simple JSON persistence (settings, config files, state)
+ * - Single-file write operations
+ * - Cases where you don't need transaction rollback
+ *
+ * USE atomicFileOperations.js INSTEAD FOR:
+ * - Multi-file operations that must succeed or fail together
+ * - File moves/copies that need rollback on failure
+ * - Complex transactions with state journaling
  *
  * @module shared/atomicFile
  */

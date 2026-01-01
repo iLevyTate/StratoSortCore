@@ -21,6 +21,7 @@ const { logger } = require('../../shared/logger');
 logger.setContext('OllamaApiRetry');
 const { withRetry } = require('../../shared/errorHandlingUtils');
 const { SERVICE_URLS } = require('../../shared/configDefaults');
+const { isRetryable, isNetworkError } = require('../../shared/errorClassifier');
 
 /**
  * Default jitter factor (0.3 = +/- 30% of delay)
@@ -35,20 +36,12 @@ const DEFAULT_JITTER_FACTOR = 0.3;
 function isRetryableError(error) {
   if (!error) return false;
 
-  const message = error.message?.toLowerCase() || '';
-  const code = error.code || '';
-
-  // Network errors (retryable)
-  if (
-    code === 'ECONNREFUSED' ||
-    code === 'ECONNRESET' ||
-    code === 'ETIMEDOUT' ||
-    code === 'ENOTFOUND' ||
-    code === 'EHOSTUNREACH' ||
-    code === 'ENETUNREACH'
-  ) {
+  // Use shared classifier for standard system/network errors
+  if (isRetryable(error) || isNetworkError(error)) {
     return true;
   }
+
+  const message = error.message?.toLowerCase() || '';
 
   // Fetch errors (retryable)
   if (

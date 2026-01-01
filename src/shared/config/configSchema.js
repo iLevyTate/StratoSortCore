@@ -119,9 +119,9 @@ const CONFIG_SCHEMA = {
     /** Embedding model */
     embeddingModel: {
       type: 'string',
-      default: 'mxbai-embed-large',
+      default: DEFAULT_AI_MODELS.EMBEDDING,
       envVar: 'OLLAMA_EMBEDDING_MODEL',
-      description: 'Ollama model for generating embeddings',
+      description: 'Ollama model for generating embeddings (768 dims)',
       pattern: /^[a-zA-Z0-9][a-zA-Z0-9\-_.:/]*$/
     },
     /** Fallback models list */
@@ -224,6 +224,14 @@ const CONFIG_SCHEMA = {
       min: 10000,
       max: 600000,
       description: 'Image analysis timeout (ms)'
+    },
+    /** Embedding vector dimension (model-dependent: 768 for embeddinggemma, 1024 for mxbai-embed-large) */
+    embeddingDimension: {
+      type: 'number',
+      default: AI_DEFAULTS?.EMBEDDING?.DIMENSIONS ?? 768,
+      min: 128,
+      max: 4096,
+      description: 'Embedding vector dimension for current model'
     }
   },
 

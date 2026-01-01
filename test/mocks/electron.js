@@ -1,148 +1,107 @@
-// Create a more realistic mock of the electronAPI exposed by the preload script.
-const electronAPI = {
-  files: {
-    select: jest.fn().mockResolvedValue({ canceled: false, filePaths: ['/test/file.txt'] }),
-    selectDirectory: jest.fn().mockResolvedValue({ canceled: false, filePaths: ['/test/dir'] }),
-    getDocumentsPath: jest.fn().mockResolvedValue('/test/documents'),
-    createFolder: jest.fn().mockResolvedValue({ success: true }),
-    normalizePath: jest.fn((p) => p),
-    getStats: jest.fn().mockResolvedValue({ size: 1024, mtimeMs: Date.now() }),
-    getDirectoryContents: jest.fn().mockResolvedValue(['file1.txt', 'file2.txt']),
-    organize: jest.fn().mockResolvedValue({ success: true, results: [] }),
-    performOperation: jest.fn().mockResolvedValue({ success: true, results: [] }),
-    delete: jest.fn().mockResolvedValue({ success: true }),
-    open: jest.fn().mockResolvedValue({ success: true }),
-    reveal: jest.fn().mockResolvedValue({ success: true }),
-    copy: jest.fn().mockResolvedValue({ success: true }),
-    openFolder: jest.fn().mockResolvedValue({ success: true }),
-    analyze: jest.fn().mockResolvedValue({
-      suggestedName: 'analyzed-file.txt',
-      category: 'test'
-    })
-  },
-  smartFolders: {
-    get: jest.fn().mockResolvedValue([]),
-    save: jest.fn().mockResolvedValue({ success: true }),
-    updateCustom: jest.fn().mockResolvedValue({ success: true }),
-    getCustom: jest.fn().mockResolvedValue([]),
-    scanStructure: jest.fn().mockResolvedValue({ success: true, folders: [] }),
-    add: jest.fn().mockResolvedValue({ success: true }),
-    edit: jest.fn().mockResolvedValue({ success: true }),
-    delete: jest.fn().mockResolvedValue({ success: true }),
-    match: jest.fn().mockResolvedValue({ success: true, match: null })
-  },
-  analysis: {
-    document: jest.fn().mockResolvedValue({ suggestedName: 'document.txt', category: 'docs' }),
-    image: jest.fn().mockResolvedValue({ suggestedName: 'image.png', category: 'images' }),
-    extractText: jest.fn().mockResolvedValue({ success: true, text: 'extracted text' })
-  },
-  analysisHistory: {
-    get: jest.fn().mockResolvedValue([]),
-    search: jest.fn().mockResolvedValue([]),
-    getStatistics: jest.fn().mockResolvedValue({ total: 0 }),
-    getFileHistory: jest.fn().mockResolvedValue([]),
-    clear: jest.fn().mockResolvedValue({ success: true }),
-    export: jest.fn().mockResolvedValue({ success: true })
-  },
-  embeddings: {
-    rebuildFolders: jest.fn().mockResolvedValue({ success: true }),
-    rebuildFiles: jest.fn().mockResolvedValue({ success: true }),
-    clearStore: jest.fn().mockResolvedValue({ success: true })
-  },
-  suggestions: {
-    getFileSuggestions: jest.fn().mockResolvedValue([]),
-    getBatchSuggestions: jest.fn().mockResolvedValue([]),
-    recordFeedback: jest.fn().mockResolvedValue({ success: true }),
-    getStrategies: jest.fn().mockResolvedValue([]),
-    applyStrategy: jest.fn().mockResolvedValue({ success: true }),
-    getUserPatterns: jest.fn().mockResolvedValue([]),
-    clearPatterns: jest.fn().mockResolvedValue({ success: true }),
-    analyzeFolderStructure: jest.fn().mockResolvedValue({ success: true }),
-    suggestNewFolder: jest.fn().mockResolvedValue({ success: true })
-  },
-  organize: {
-    auto: jest.fn().mockResolvedValue({ success: true }),
-    batch: jest.fn().mockResolvedValue({ success: true }),
-    processNew: jest.fn().mockResolvedValue({ success: true }),
-    getStats: jest.fn().mockResolvedValue({ total: 0 }),
-    updateThresholds: jest.fn().mockResolvedValue({ success: true })
-  },
-  undoRedo: {
-    undo: jest.fn().mockResolvedValue({ success: true }),
-    redo: jest.fn().mockResolvedValue({ success: true }),
-    getHistory: jest.fn().mockResolvedValue([]),
-    clear: jest.fn().mockResolvedValue({ success: true }),
-    canUndo: jest.fn().mockResolvedValue(false),
-    canRedo: jest.fn().mockResolvedValue(false)
-  },
-  system: {
-    getMetrics: jest.fn().mockResolvedValue({ cpu: 0, mem: 0 }),
-    getApplicationStatistics: jest.fn().mockResolvedValue({ files: 0 }),
-    applyUpdate: jest.fn().mockResolvedValue(undefined)
-  },
-  window: {
-    minimize: jest.fn(),
-    maximize: jest.fn(),
-    unmaximize: jest.fn(),
-    toggleMaximize: jest.fn(),
-    isMaximized: jest.fn().mockResolvedValue(false),
-    close: jest.fn()
-  },
-  ollama: {
-    getModels: jest.fn().mockResolvedValue([]),
-    testConnection: jest.fn().mockResolvedValue({ success: true }),
-    pullModels: jest.fn().mockResolvedValue({ success: true }),
-    deleteModel: jest.fn().mockResolvedValue({ success: true })
-  },
-  events: {
-    onOperationProgress: jest.fn(() => () => {}),
-    onAppError: jest.fn(() => () => {}),
-    onAppUpdate: jest.fn(() => () => {})
-  },
-  settings: {
-    get: jest.fn().mockResolvedValue({}),
-    save: jest.fn().mockResolvedValue({ success: true })
+/**
+ * Centralized Electron Mock
+ *
+ * Provides standardized mocks for Electron modules.
+ * Import this in test files instead of defining mocks inline.
+ *
+ * @example
+ * jest.mock('electron', () => require('./mocks/electron'));
+ */
+
+const _ipcHandlers = new Map();
+
+const mockIpcMain = {
+  _handlers: _ipcHandlers,
+  handle: jest.fn((channel, handler) => {
+    _ipcHandlers.set(channel, handler);
+  }),
+  on: jest.fn(),
+  removeHandler: jest.fn((channel) => {
+    _ipcHandlers.delete(channel);
+  }),
+  removeAllListeners: jest.fn()
+};
+
+const mockIpcRenderer = {
+  invoke: jest.fn(),
+  on: jest.fn(),
+  send: jest.fn(),
+  removeListener: jest.fn(),
+  removeAllListeners: jest.fn()
+};
+
+const mockApp = {
+  getPath: jest.fn((name) => {
+    const paths = {
+      userData: '/mock/userData',
+      appData: '/mock/appData',
+      temp: '/mock/temp',
+      home: '/mock/home',
+      documents: '/mock/documents',
+      downloads: '/mock/downloads'
+    };
+    return paths[name] || `/mock/${name}`;
+  }),
+  getName: jest.fn(() => 'ElStratoSort'),
+  getVersion: jest.fn(() => '1.0.0'),
+  isPackaged: false,
+  quit: jest.fn(),
+  exit: jest.fn(),
+  on: jest.fn(),
+  once: jest.fn(),
+  whenReady: jest.fn(() => Promise.resolve())
+};
+
+const mockDialog = {
+  showOpenDialog: jest.fn(() => Promise.resolve({ canceled: false, filePaths: [] })),
+  showSaveDialog: jest.fn(() => Promise.resolve({ canceled: false, filePath: '' })),
+  showMessageBox: jest.fn(() => Promise.resolve({ response: 0 })),
+  showErrorBox: jest.fn()
+};
+
+const mockShell = {
+  openPath: jest.fn(() => Promise.resolve('')),
+  openExternal: jest.fn(() => Promise.resolve()),
+  showItemInFolder: jest.fn(),
+  trashItem: jest.fn(() => Promise.resolve())
+};
+
+const mockBrowserWindow = jest.fn().mockImplementation(() => ({
+  loadURL: jest.fn(),
+  loadFile: jest.fn(),
+  on: jest.fn(),
+  once: jest.fn(),
+  show: jest.fn(),
+  hide: jest.fn(),
+  close: jest.fn(),
+  destroy: jest.fn(),
+  isDestroyed: jest.fn(() => false),
+  webContents: {
+    send: jest.fn(),
+    on: jest.fn(),
+    openDevTools: jest.fn(),
+    closeDevTools: jest.fn()
   }
+}));
+
+mockBrowserWindow.getAllWindows = jest.fn(() => []);
+mockBrowserWindow.getFocusedWindow = jest.fn(() => null);
+
+const mockNativeTheme = {
+  themeSource: 'system',
+  shouldUseDarkColors: false,
+  shouldUseHighContrastColors: false,
+  shouldUseInvertedColorScheme: false,
+  on: jest.fn(),
+  off: jest.fn()
 };
 
 module.exports = {
-  contextBridge: {
-    exposeInMainWorld: jest.fn((apiKey, api) => {
-      if (apiKey === 'electronAPI') {
-        global.window.electronAPI = api;
-      }
-    })
-  },
-  ipcRenderer: {
-    invoke: jest.fn(),
-    on: jest.fn(),
-    send: jest.fn(),
-    removeListener: jest.fn()
-  },
-  ipcMain: {
-    _handlers: new Map(),
-    handle: jest.fn(function (channel, handler) {
-      module.exports.ipcMain._handlers.set(channel, handler);
-    })
-  },
-  dialog: {
-    showOpenDialog: jest.fn().mockResolvedValue({ canceled: true, filePaths: [] })
-  },
-  shell: {
-    openPath: jest.fn().mockResolvedValue(null),
-    showItemInFolder: jest.fn()
-  },
-  app: {
-    getPath: jest.fn(() => '/test/path'),
-    on: jest.fn(),
-    once: jest.fn(),
-    quit: jest.fn()
-  },
-  // Expose the mock API for tests to use
-  electronAPI: electronAPI
+  ipcMain: mockIpcMain,
+  ipcRenderer: mockIpcRenderer,
+  app: mockApp,
+  dialog: mockDialog,
+  shell: mockShell,
+  BrowserWindow: mockBrowserWindow,
+  nativeTheme: mockNativeTheme
 };
-
-// Also attach the mock to the global window object for tests that access it directly
-if (typeof global.window !== 'undefined') {
-  global.window.electronAPI = electronAPI;
-}

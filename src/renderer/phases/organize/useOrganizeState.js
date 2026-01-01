@@ -156,6 +156,12 @@ export function useLoadInitialData(refs, addNotification) {
   const dispatch = dispatchRef?.current;
   const documentsPath = useAppSelector((state) => state.system.documentsPath);
 
+  // Keep notification function stable via ref to avoid effect churn
+  const addNotificationRef = useRef(addNotification);
+  useEffect(() => {
+    addNotificationRef.current = addNotification;
+  }, [addNotification]);
+
   // Load smart folders if missing
   const loadSmartFoldersIfMissing = useCallback(async () => {
     try {
@@ -164,7 +170,7 @@ export function useLoadInitialData(refs, addNotification) {
         const folders = await window.electronAPI.smartFolders.get();
         if (Array.isArray(folders) && folders.length > 0) {
           dispatchRef.current(setSmartFoldersAction(folders));
-          addNotification(
+          addNotificationRef.current?.(
             `Loaded ${folders.length} smart folder${folders.length > 1 ? 's' : ''}`,
             'info'
           );
@@ -176,7 +182,7 @@ export function useLoadInitialData(refs, addNotification) {
         stack: error.stack
       });
     }
-  }, [addNotification, smartFoldersRef, dispatchRef]);
+  }, [smartFoldersRef, dispatchRef]);
 
   useEffect(() => {
     loadSmartFoldersIfMissing();

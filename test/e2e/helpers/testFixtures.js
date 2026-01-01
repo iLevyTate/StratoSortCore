@@ -11,6 +11,7 @@ const os = require('os');
 
 // Test data directory (using existing test files)
 const TEST_FILES_DIR = path.resolve(__dirname, '../../test-files');
+const STRATO_TEST_FILES_DIR = path.resolve(__dirname, '../../StratoSortOfTestFiles');
 const APP_ROOT = path.resolve(__dirname, '../../..');
 
 /**
@@ -50,6 +51,114 @@ const TEST_FILES = {
 };
 
 /**
+ * StratoSort test files - comprehensive set from test/StratoSortOfTestFiles
+ */
+const STRATO_TEST_FILES = {
+  // Documents
+  sampleTxt: {
+    name: 'sample_document.txt',
+    path: path.join(STRATO_TEST_FILES_DIR, 'sample_document.txt'),
+    type: 'text',
+    expectedCategory: 'Document'
+  },
+  projectReadme: {
+    name: 'project_readme.md',
+    path: path.join(STRATO_TEST_FILES_DIR, 'project_readme.md'),
+    type: 'markdown',
+    expectedCategory: 'Document'
+  },
+  annualReport: {
+    name: 'Annual_Financial_Statement_2024.pdf',
+    path: path.join(STRATO_TEST_FILES_DIR, 'Annual_Financial_Statement_2024.pdf'),
+    type: 'pdf',
+    expectedCategory: 'Finance'
+  },
+  quarterlyReport: {
+    name: 'quarterly_report.docx',
+    path: path.join(STRATO_TEST_FILES_DIR, 'quarterly_report.docx'),
+    type: 'docx',
+    expectedCategory: 'Report'
+  },
+  // Spreadsheets
+  budgetSpreadsheet: {
+    name: 'budget_spreadsheet.xlsx',
+    path: path.join(STRATO_TEST_FILES_DIR, 'budget_spreadsheet.xlsx'),
+    type: 'xlsx',
+    expectedCategory: 'Finance'
+  },
+  salesData: {
+    name: 'sales_data.csv',
+    path: path.join(STRATO_TEST_FILES_DIR, 'sales_data.csv'),
+    type: 'csv',
+    expectedCategory: 'Data'
+  },
+  // Presentations
+  salesPresentation: {
+    name: 'sales_presentation.pptx',
+    path: path.join(STRATO_TEST_FILES_DIR, 'sales_presentation.pptx'),
+    type: 'pptx',
+    expectedCategory: 'Presentation'
+  },
+  // Images
+  samplePhoto: {
+    name: 'sample_photo.jpg',
+    path: path.join(STRATO_TEST_FILES_DIR, 'sample_photo.jpg'),
+    type: 'image',
+    expectedCategory: 'Image'
+  },
+  webGraphic: {
+    name: 'web_graphic.webp',
+    path: path.join(STRATO_TEST_FILES_DIR, 'web_graphic.webp'),
+    type: 'image',
+    expectedCategory: 'Image'
+  },
+  animatedIcon: {
+    name: 'animated_icon.gif',
+    path: path.join(STRATO_TEST_FILES_DIR, 'animated_icon.gif'),
+    type: 'image',
+    expectedCategory: 'Image'
+  },
+  pngImage: {
+    name: 't2v7h5.png',
+    path: path.join(STRATO_TEST_FILES_DIR, 't2v7h5.png'),
+    type: 'image',
+    expectedCategory: 'Image'
+  },
+  // Code files
+  jsModule: {
+    name: 'utility_module.js',
+    path: path.join(STRATO_TEST_FILES_DIR, 'utility_module.js'),
+    type: 'code',
+    expectedCategory: 'Code'
+  },
+  pythonScript: {
+    name: 'data_processor.py',
+    path: path.join(STRATO_TEST_FILES_DIR, 'data_processor.py'),
+    type: 'code',
+    expectedCategory: 'Code'
+  },
+  sqlQueries: {
+    name: 'database_queries.sql',
+    path: path.join(STRATO_TEST_FILES_DIR, 'database_queries.sql'),
+    type: 'code',
+    expectedCategory: 'Code'
+  },
+  // Config files
+  configJson: {
+    name: 'config_data.json',
+    path: path.join(STRATO_TEST_FILES_DIR, 'config_data.json'),
+    type: 'config',
+    expectedCategory: 'Config'
+  },
+  configYaml: {
+    name: 'app_config.yaml',
+    path: path.join(STRATO_TEST_FILES_DIR, 'app_config.yaml'),
+    type: 'config',
+    expectedCategory: 'Config'
+  }
+};
+
+/**
  * Phase identifiers matching PHASES from shared/constants
  */
 const PHASES = {
@@ -62,37 +171,42 @@ const PHASES = {
 
 /**
  * Navigation button labels for each phase
+ * These match the navLabel text shown in buttons (from PHASE_METADATA.navLabel)
+ * aria-label uses full titles, but button text uses these short labels
  */
 const PHASE_NAV_LABELS = {
   [PHASES.WELCOME]: 'Welcome',
   [PHASES.SETUP]: 'Smart Folders',
-  [PHASES.DISCOVER]: 'Discover Files',
-  [PHASES.ORGANIZE]: 'Review Organize',
+  [PHASES.DISCOVER]: 'Discover',
+  [PHASES.ORGANIZE]: 'Organize',
   [PHASES.COMPLETE]: 'Complete'
 };
 
 /**
  * Common UI selectors used across tests
+ * These selectors are based on the actual UI component implementations
  */
 const SELECTORS = {
   // Navigation
   navBar: 'nav[aria-label="Phase navigation"]',
   phaseButton: (label) => `button[aria-label*="${label}"]`,
   settingsButton: 'button[aria-label="Open Settings"]',
-  connectionStatus: '.text-stratosort-success',
+  connectionStatus: '.bg-stratosort-success, [aria-label="Connected"]',
 
   // Welcome Phase
   welcomeGetStarted: 'button:has-text("Get Started")',
   welcomeQuickStart: 'button:has-text("Quick Start")',
 
   // Setup Phase
-  addFolderButton: 'button:has-text("Add Folder")',
-  folderList: '[data-testid="folder-list"]',
-  folderItem: '[data-testid="folder-item"]',
+  addFolderButton: 'button:has-text("Add"), button:has-text("Add Folder")',
+  folderList: '[data-testid="folder-list"], .smart-folder-list',
+  folderItem: '[data-testid="folder-item"], .smart-folder-item',
   continueToDiscover: 'button:has-text("Continue")',
 
-  // Discover Phase
-  dragDropZone: '[data-testid="drag-drop-zone"]',
+  // Discover Phase - updated to match actual UI
+  dragDropZone: '[class*="border-dashed"], [data-testid="drag-drop-zone"]',
+  selectFilesButton: 'button:has-text("Select Files")',
+  scanFolderButton: 'button:has-text("Scan Folder")',
   fileList: '[data-testid="file-list"]',
   fileItem: '[data-testid="file-item"]',
   analyzeButton: 'button:has-text("Analyze")',
@@ -107,16 +221,18 @@ const SELECTORS = {
   completionSummary: '[data-testid="completion-summary"]',
   startOverButton: 'button:has-text("Start Over")',
 
-  // Settings Panel
-  settingsPanel: '[data-testid="settings-panel"]',
-  closeSettings: 'button[aria-label="Close Settings"]',
+  // Settings Panel - uses role="presentation" for backdrop, not role="dialog"
+  settingsPanel: '[role="presentation"], [data-testid="settings-panel"]',
+  closeSettings: 'button[aria-label="Close settings"], button[aria-label="Close"]',
+  settingsHeading: 'h2:has-text("Settings")',
 
   // Generic
   loadingSpinner: '.animate-spin',
   errorMessage: '[role="alert"]',
   toast: '[data-testid="toast"]',
   modal: '[role="dialog"]',
-  modalClose: '[aria-label="Close"]'
+  modalClose: '[aria-label="Close"]',
+  appSurface: '.app-surface'
 };
 
 /**
@@ -261,7 +377,9 @@ const TIMEOUTS = {
 
 module.exports = {
   TEST_FILES,
+  STRATO_TEST_FILES,
   TEST_FILES_DIR,
+  STRATO_TEST_FILES_DIR,
   APP_ROOT,
   PHASES,
   PHASE_NAV_LABELS,

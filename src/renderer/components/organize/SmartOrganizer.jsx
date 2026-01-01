@@ -9,7 +9,11 @@ import {
   Zap,
   Lightbulb,
   BarChart3,
-  Folder
+  Folder,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
+  X
 } from 'lucide-react';
 import { logger } from '../../../shared/logger';
 import { useNotification } from '../../contexts/NotificationContext';
@@ -44,6 +48,9 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
   const [acceptedSuggestions, setAcceptedSuggestions] = useState({});
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [mode, setMode] = useState('quick'); // 'quick' or 'detailed'
+  const [showImprovements, setShowImprovements] = useState(false);
+  const [customizingGroup, setCustomizingGroup] = useState(null); // { index, group }
+  const [customGroupFolder, setCustomGroupFolder] = useState('');
 
   // FIX: Track mounted state to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -157,7 +164,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         filePath: file.path
       });
       // Still update UI but notify user of the failure
-      addNotification('Feedback recording failed, but suggestion accepted locally', 'warning');
+      addNotification('Suggestion saved locally (sync failed)', 'warning');
       setAcceptedSuggestions((prev) => ({
         ...prev,
         [file.path]: suggestion
@@ -187,7 +194,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         filePath: file.path
       });
       // Notify user of failure
-      addNotification('Failed to record rejection feedback', 'warning');
+      addNotification('Rejection saved locally (sync failed)', 'warning');
     } finally {
       isRecordingFeedbackRef.current = false;
     }
@@ -197,6 +204,36 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     if (onOrganize) {
       onOrganize(acceptedSuggestions);
     }
+  };
+
+  // Handle group customization
+  const handleCustomizeGroup = (groupIndex, group) => {
+    setCustomizingGroup({ index: groupIndex, group });
+    setCustomGroupFolder(group.folder || '');
+  };
+
+  const handleApplyGroupCustomization = () => {
+    if (!customizingGroup || !customGroupFolder.trim()) return;
+
+    // Update batch suggestions with new folder
+    setBatchSuggestions((prev) => {
+      if (!prev || !prev.groups) return prev;
+      const newGroups = [...prev.groups];
+      newGroups[customizingGroup.index] = {
+        ...newGroups[customizingGroup.index],
+        folder: customGroupFolder.trim()
+      };
+      return { ...prev, groups: newGroups };
+    });
+
+    addNotification(`Group updated to "${customGroupFolder.trim()}"`, 'success');
+    setCustomizingGroup(null);
+    setCustomGroupFolder('');
+  };
+
+  const handleCancelGroupCustomization = () => {
+    setCustomizingGroup(null);
+    setCustomGroupFolder('');
   };
 
   // FIX: Memoize step indicator to prevent recreation on every render
@@ -350,23 +387,90 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
               <div className="flex items-start gap-3">
                 <Lightbulb className="w-6 h-6 text-stratosort-warning flex-shrink-0" />
                 <div className="flex-1">
-                  <h4 className="font-medium text-system-gray-900">
-                    Folder Structure Improvements Available
-                  </h4>
-                  <p className="text-sm text-system-gray-600 mt-1">
-                    We found {folderImprovements.length} way
-                    {folderImprovements.length !== 1 ? 's' : ''} to improve your organization
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="mt-2"
-                    onClick={() => {
-                      addNotification('Detailed improvements view coming soon', 'info');
-                    }}
-                  >
-                    View Improvements
-                  </Button>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-system-gray-900">
+                        Folder Structure Improvements Available
+                      </h4>
+                      <p className="text-sm text-system-gray-600 mt-1">
+                        We found {folderImprovements.length} way
+                        {folderImprovements.length !== 1 ? 's' : ''} to improve your organization
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setShowImprovements(!showImprovements)}
+                      className="flex items-center gap-1"
+                    >
+                      {showImprovements ? (
+                        <>
+                          <ChevronUp className="w-4 h-4" /> Hide
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-4 h-4" /> View
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Improvements List */}
+                  {showImprovements && (
+                    <div className="mt-4 space-y-3">
+                      {folderImprovements.map((improvement, index) => (
+                        <div
+                          key={index}
+                          className="p-3 bg-white rounded-lg border border-system-gray-200 shadow-sm"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1">
+                              <h5 className="font-medium text-sm text-system-gray-900">
+                                {improvement.title ||
+                                  improvement.type ||
+                                  `Improvement ${index + 1}`}
+                              </h5>
+                              <p className="text-xs text-system-gray-600 mt-1">
+                                {improvement.description ||
+                                  improvement.reason ||
+                                  'Suggested folder structure improvement'}
+                              </p>
+                              {improvement.from && improvement.to && (
+                                <div className="flex items-center gap-2 mt-2 text-xs text-system-gray-500">
+                                  <span className="font-mono bg-system-gray-100 px-1.5 py-0.5 rounded">
+                                    {improvement.from}
+                                  </span>
+                                  <ArrowRight className="w-3 h-3" />
+                                  <span className="font-mono bg-stratosort-blue/10 text-stratosort-blue px-1.5 py-0.5 rounded">
+                                    {improvement.to}
+                                  </span>
+                                </div>
+                              )}
+                              {improvement.affectedFiles && (
+                                <p className="text-xs text-system-gray-500 mt-1">
+                                  Affects {improvement.affectedFiles} file
+                                  {improvement.affectedFiles !== 1 ? 's' : ''}
+                                </p>
+                              )}
+                            </div>
+                            {improvement.priority && (
+                              <span
+                                className={`text-xs px-2 py-0.5 rounded-full ${
+                                  improvement.priority === 'high'
+                                    ? 'bg-red-100 text-red-700'
+                                    : improvement.priority === 'medium'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-blue-100 text-blue-700'
+                                }`}
+                              >
+                                {improvement.priority}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>
@@ -392,9 +496,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                   // Apply strategy to all files
                   setCurrentStep('preview');
                 }}
-                onCustomizeGroup={() => {
-                  addNotification('Group customization coming soon', 'info');
-                }}
+                onCustomizeGroup={handleCustomizeGroup}
                 onRejectAll={onCancel}
               />
             </GlobalErrorBoundary>
@@ -460,6 +562,83 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
             </span>
           </div>
           <div className="text-xs">The system learns from your choices</div>
+        </div>
+      )}
+
+      {/* Group Customization Modal */}
+      {customizingGroup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md p-6 m-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-system-gray-900">Customize Group</h3>
+              <button
+                onClick={handleCancelGroupCustomization}
+                className="p-1 hover:bg-system-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-system-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-system-gray-600 mb-2">
+                  {customizingGroup.group.files?.length || 0} file
+                  {(customizingGroup.group.files?.length || 0) !== 1 ? 's' : ''} in this group
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-system-gray-700 mb-2">
+                  Destination Folder
+                </label>
+                <input
+                  type="text"
+                  value={customGroupFolder}
+                  onChange={(e) => setCustomGroupFolder(e.target.value)}
+                  className="w-full px-3 py-2 border border-system-gray-300 rounded-lg focus:ring-2 focus:ring-stratosort-blue focus:border-transparent"
+                  placeholder="Enter folder name..."
+                />
+              </div>
+
+              {/* Alternative folders from smart folders */}
+              {smartFolders.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
+                    Or choose from Smart Folders:
+                  </label>
+                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                    {smartFolders.slice(0, 10).map((folder) => (
+                      <button
+                        key={folder.id || folder.name}
+                        onClick={() => setCustomGroupFolder(folder.name)}
+                        className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                          customGroupFolder === folder.name
+                            ? 'bg-stratosort-blue text-white border-stratosort-blue'
+                            : 'bg-white border-system-gray-300 hover:border-stratosort-blue'
+                        }`}
+                      >
+                        {folder.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+              <Button variant="secondary" onClick={handleCancelGroupCustomization}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleApplyGroupCustomization}
+                disabled={!customGroupFolder.trim()}
+                className="bg-stratosort-blue hover:bg-stratosort-blue/90"
+              >
+                Apply Changes
+              </Button>
+            </div>
+          </Card>
         </div>
       )}
     </div>

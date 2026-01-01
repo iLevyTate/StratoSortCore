@@ -43,8 +43,7 @@ const initialState = {
     dateFormat: 'YYYY-MM-DD',
     caseConvention: 'kebab-case',
     separator: '-'
-  },
-  watchPaths: [] // Paths being watched (e.g. Downloads)
+  }
 };
 
 const filesSlice = createSlice({

@@ -47,26 +47,6 @@ function cosineSimilarity(a, b) {
 }
 
 /**
- * Calculate Euclidean distance between two vectors
- *
- * @param {number[]} a - First vector
- * @param {number[]} b - Second vector
- * @returns {number} Euclidean distance, or Infinity if vectors are invalid
- */
-function euclideanDistance(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-    return Infinity;
-  }
-
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) {
-    const diff = a[i] - b[i];
-    sum += diff * diff;
-  }
-  return Math.sqrt(sum);
-}
-
-/**
  * Calculate squared Euclidean distance between two vectors
  * More efficient for comparisons (avoids sqrt)
  * Uses loop unrolling (4x) for better CPU cache performance
@@ -104,55 +84,7 @@ function squaredEuclideanDistance(a, b) {
   return sum;
 }
 
-/**
- * Normalize a vector to unit length
- *
- * @param {number[]} v - Vector to normalize
- * @returns {number[]} Normalized vector, or original if zero-length
- */
-function normalizeVector(v) {
-  if (!Array.isArray(v) || v.length === 0) return v;
-
-  let norm = 0;
-  for (let i = 0; i < v.length; i++) {
-    norm += v[i] * v[i];
-  }
-
-  if (norm === 0) return v;
-
-  norm = Math.sqrt(norm);
-  return v.map((x) => x / norm);
-}
-
-/**
- * Calculate the centroid (mean) of multiple vectors
- *
- * @param {number[][]} vectors - Array of vectors
- * @returns {number[]} Centroid vector, or empty array if no vectors
- */
-function calculateCentroid(vectors) {
-  if (!Array.isArray(vectors) || vectors.length === 0) return [];
-
-  const dim = vectors[0].length;
-  const centroid = new Array(dim).fill(0);
-
-  for (const v of vectors) {
-    for (let i = 0; i < dim; i++) {
-      centroid[i] += v[i];
-    }
-  }
-
-  for (let i = 0; i < dim; i++) {
-    centroid[i] /= vectors.length;
-  }
-
-  return centroid;
-}
-
 module.exports = {
   cosineSimilarity,
-  euclideanDistance,
-  squaredEuclideanDistance,
-  normalizeVector,
-  calculateCentroid
+  squaredEuclideanDistance
 };

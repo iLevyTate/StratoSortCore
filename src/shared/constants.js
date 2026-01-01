@@ -89,7 +89,8 @@ const IPC_CHANNELS = {
     ADD: 'add-smart-folder',
     EDIT: 'edit-smart-folder',
     DELETE: 'delete-smart-folder',
-    MATCH: 'match-smart-folder'
+    MATCH: 'match-smart-folder',
+    RESET_TO_DEFAULTS: 'reset-smart-folders-to-defaults'
   },
 
   // Analysis
@@ -148,8 +149,7 @@ const IPC_CHANNELS = {
     FIND_SIMILAR: 'embeddings-find-similar',
     SEARCH: 'embeddings-search',
     SCORE_FILES: 'embeddings-score-files',
-    // Hybrid search
-    HYBRID_SEARCH: 'embeddings-hybrid-search',
+    // Hybrid search (SEARCH handler now supports mode: 'hybrid' | 'vector' | 'bm25')
     REBUILD_BM25_INDEX: 'embeddings-rebuild-bm25-index',
     GET_SEARCH_STATUS: 'embeddings-get-search-status',
     // Multi-hop expansion
@@ -158,7 +158,9 @@ const IPC_CHANNELS = {
     COMPUTE_CLUSTERS: 'embeddings-compute-clusters',
     GET_CLUSTERS: 'embeddings-get-clusters',
     GET_CLUSTER_MEMBERS: 'embeddings-get-cluster-members',
-    GET_SIMILARITY_EDGES: 'embeddings-get-similarity-edges'
+    GET_SIMILARITY_EDGES: 'embeddings-get-similarity-edges',
+    GET_FILE_METADATA: 'embeddings-get-file-metadata',
+    FIND_DUPLICATES: 'embeddings-find-duplicates'
   },
 
   // Ollama
@@ -361,16 +363,11 @@ const THEMES = {
   AUTO: 'auto' // Alias for 'system' - follow system theme
 };
 
-// Keyboard shortcuts
+// Keyboard shortcuts (only define shortcuts that are actually used in the app)
 const SHORTCUTS = {
   UNDO: 'Ctrl+Z',
   REDO: 'Ctrl+Y',
-  SELECT_ALL: 'Ctrl+A',
-  DELETE: 'Delete',
-  ESCAPE: 'Escape',
-  ENTER: 'Enter',
-  TAB: 'Tab',
-  SPACE: 'Space'
+  SELECT_ALL: 'Ctrl+A'
 };
 
 // File size limits
@@ -462,27 +459,43 @@ const ALL_SUPPORTED_EXTENSIONS = [
   ...SUPPORTED_ARCHIVE_EXTENSIONS
 ];
 
-// AI Model configurations - Optimized for speed with smallest available models
+// AI Model configurations - Ultra-lightweight models for accessibility
+// Total download: ~2.3GB (vs previous ~8GB = 71% reduction)
 const DEFAULT_AI_MODELS = {
-  TEXT_ANALYSIS: 'llama3.2:latest', // 2.0GB - Fastest text model
-  IMAGE_ANALYSIS: 'llava:latest', // 4.7GB - Vision capable model
-  FALLBACK_MODELS: ['llama3.2:latest', 'gemma3:4b', 'llama3', 'mistral', 'phi3']
+  TEXT_ANALYSIS: 'qwen3:0.6b', // 523MB - Ultra-fast, 40K context, 119 languages
+  IMAGE_ANALYSIS: 'gemma3:latest', // Gemma 3 - Google's multimodal vision-language model
+  EMBEDDING: 'embeddinggemma', // 308MB - Google's best-in-class, 768 dims, <15ms
+  FALLBACK_MODELS: ['qwen3:0.6b', 'llama3.2:latest', 'gemma2:2b', 'phi3', 'mistral']
 };
 
 // AI defaults centralized for analyzers
 const AI_DEFAULTS = {
   TEXT: {
-    MODEL: 'llama3.2:latest',
+    MODEL: 'qwen3:0.6b',
     HOST: SERVICE_URLS.OLLAMA_HOST,
     MAX_CONTENT_LENGTH: 12000,
     TEMPERATURE: 0.1,
     MAX_TOKENS: 800
   },
   IMAGE: {
-    MODEL: 'llava:latest',
+    MODEL: 'gemma3:latest', // Gemma 3 is multimodal (4B+ variants support vision)
     HOST: SERVICE_URLS.OLLAMA_HOST,
     TEMPERATURE: 0.2,
     MAX_TOKENS: 1000
+  },
+  EMBEDDING: {
+    MODEL: 'embeddinggemma',
+    DIMENSIONS: 768, // Different from previous mxbai-embed-large (1024)
+    // FIX: Fallback chain for embedding models (in order of preference)
+    // Used when primary model is not available on the Ollama server
+    FALLBACK_MODELS: [
+      'embeddinggemma', // 768 dims - Google's default
+      'mxbai-embed-large', // 1024 dims - High quality
+      'nomic-embed-text', // 768 dims - Good general purpose
+      'all-minilm', // 384 dims - Fast, smaller
+      'bge-large', // 1024 dims - Chinese & English
+      'snowflake-arctic-embed' // 1024 dims - High quality
+    ]
   }
 };
 

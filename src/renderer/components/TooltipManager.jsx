@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react';
 
 /**
+ * Tooltip layout constants
+ */
+const TOOLTIP_CONFIG = {
+  ARROW_SIZE: 8, // Arrow width/height in pixels
+  TARGET_MARGIN: 10, // Distance from target element
+  VIEWPORT_PADDING: 8, // Minimum distance from viewport edges
+  DEBOUNCE_DELAY: 300 // Delay before showing tooltip (ms)
+};
+
+/**
  * TooltipManager
  * - Replaces native title tooltips with a unified, GPU-accelerated style
  * - Uses event delegation for performance
@@ -27,8 +37,8 @@ export default function TooltipManager() {
     const arrow = document.createElement('div');
     arrow.className = 'tooltip-arrow';
     arrow.style.position = 'absolute';
-    arrow.style.width = '8px';
-    arrow.style.height = '8px';
+    arrow.style.width = `${TOOLTIP_CONFIG.ARROW_SIZE}px`;
+    arrow.style.height = `${TOOLTIP_CONFIG.ARROW_SIZE}px`;
     tooltip.appendChild(arrow);
 
     document.body.appendChild(tooltip);
@@ -123,28 +133,29 @@ export default function TooltipManager() {
 
         const { width: tw, height: th } = tooltip.getBoundingClientRect();
 
-        const margin = 10; // distance from target
+        const margin = TOOLTIP_CONFIG.TARGET_MARGIN;
         let top = rect.top - th - margin;
         let left = rect.left + rect.width / 2 - tw / 2;
         let placement = 'top';
 
         // Flip to bottom if not enough space on top
-        if (top < 8) {
+        if (top < TOOLTIP_CONFIG.VIEWPORT_PADDING) {
           top = rect.bottom + margin;
           placement = 'bottom';
         }
 
         // Constrain horizontally within viewport
         const vw = window.innerWidth;
-        if (left < 8) left = 8;
-        if (left + tw > vw - 8) left = vw - 8 - tw;
+        if (left < TOOLTIP_CONFIG.VIEWPORT_PADDING) left = TOOLTIP_CONFIG.VIEWPORT_PADDING;
+        if (left + tw > vw - TOOLTIP_CONFIG.VIEWPORT_PADDING)
+          left = vw - TOOLTIP_CONFIG.VIEWPORT_PADDING - tw;
 
         tooltip.style.left = `${Math.round(left)}px`;
         tooltip.style.top = `${Math.round(top)}px`;
         tooltip.style.transform = 'translate3d(0, 0, 0)';
 
         // Arrow positioning
-        const arrowSize = 8;
+        const arrowSize = TOOLTIP_CONFIG.ARROW_SIZE;
         const arrowOffset = rect.left + rect.width / 2 - left - arrowSize / 2;
         arrow.style.left = `${Math.max(arrowSize, Math.min(tw - arrowSize * 2, arrowOffset))}px`;
         if (placement === 'top') {
@@ -169,7 +180,7 @@ export default function TooltipManager() {
       debounceTimerRef.current = setTimeout(() => {
         currentTargetRef.current = target;
         showTooltip(target);
-      }, 300);
+      }, TOOLTIP_CONFIG.DEBOUNCE_DELAY);
     };
 
     const delegatedMouseOut = (e) => {

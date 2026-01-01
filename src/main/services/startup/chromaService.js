@@ -15,46 +15,18 @@ const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
 const { container, ServiceIds } = require('../ServiceContainer');
 const { app } = require('electron');
 const path = require('path');
+const { getChromaUrl, parseChromaConfig } = require('../../../shared/config/chromaDefaults');
 
 logger.setContext('StartupManager:ChromaDB');
 
 // Construct a minimal, side-effect-free ChromaDB server config when the service
 // container is not yet populated during startup.
 function buildDefaultChromaConfig() {
-  const DEFAULT_PROTOCOL = 'http';
-  const DEFAULT_HOST = '127.0.0.1';
-  const DEFAULT_PORT = 8000;
-
-  let protocol = DEFAULT_PROTOCOL;
-  let host = DEFAULT_HOST;
-  let port = DEFAULT_PORT;
-
-  const url = process.env.CHROMA_SERVER_URL;
-  if (url) {
-    try {
-      const parsed = new URL(url);
-      protocol = parsed.protocol?.replace(':', '') || DEFAULT_PROTOCOL;
-      host = parsed.hostname || DEFAULT_HOST;
-      port = Number(parsed.port) || (protocol === 'https' ? 443 : 80) || DEFAULT_PORT;
-    } catch (err) {
-      logger.warn('[STARTUP] Invalid CHROMA_SERVER_URL, using defaults', {
-        url,
-        message: err?.message
-      });
-    }
-  } else {
-    protocol = process.env.CHROMA_SERVER_PROTOCOL || DEFAULT_PROTOCOL;
-    host = process.env.CHROMA_SERVER_HOST || DEFAULT_HOST;
-    port = Number(process.env.CHROMA_SERVER_PORT) || DEFAULT_PORT;
-  }
-
+  const config = parseChromaConfig();
   const dbPath = path.join(app.getPath('userData'), 'chromadb');
 
   return {
-    host,
-    port,
-    protocol,
-    url: `${protocol}://${host}:${port}`,
+    ...config,
     dbPath
   };
 }
@@ -65,9 +37,7 @@ function buildDefaultChromaConfig() {
  */
 async function checkChromaDBHealth() {
   try {
-    const baseUrl =
-      process.env.CHROMA_SERVER_URL ||
-      `${process.env.CHROMA_SERVER_PROTOCOL || 'http'}://${process.env.CHROMA_SERVER_HOST || '127.0.0.1'}:${process.env.CHROMA_SERVER_PORT || 8000}`;
+    const baseUrl = getChromaUrl();
 
     const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
 
@@ -96,9 +66,7 @@ async function checkChromaDBHealth() {
  */
 async function isChromaDBRunning() {
   try {
-    const baseUrl =
-      process.env.CHROMA_SERVER_URL ||
-      `${process.env.CHROMA_SERVER_PROTOCOL || 'http'}://${process.env.CHROMA_SERVER_HOST || '127.0.0.1'}:${process.env.CHROMA_SERVER_PORT || 8000}`;
+    const baseUrl = getChromaUrl();
 
     const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
 

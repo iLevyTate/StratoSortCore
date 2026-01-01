@@ -15,6 +15,35 @@ const { OperationType } = require('../../utils/OfflineQueue');
 logger.setContext('ChromaDB:FileOps');
 
 /**
+ * Validate embedding vector for NaN, Infinity, and dimension issues
+ * FIX: Prevents corrupted embeddings from being stored in ChromaDB
+ *
+ * @param {Array<number>} vector - Embedding vector to validate
+ * @param {string} [context] - Optional context for error messages
+ * @returns {{ valid: boolean, error?: string, index?: number }}
+ */
+function validateEmbeddingVector(vector, context = 'unknown') {
+  if (!Array.isArray(vector)) {
+    return { valid: false, error: 'not_array' };
+  }
+  if (vector.length === 0) {
+    return { valid: false, error: 'empty_vector' };
+  }
+  // Check for NaN or Infinity values
+  for (let i = 0; i < vector.length; i++) {
+    if (!Number.isFinite(vector[i])) {
+      logger.warn(`[FileOps] Invalid vector value at index ${i}`, {
+        context,
+        value: String(vector[i]),
+        vectorLength: vector.length
+      });
+      return { valid: false, error: 'invalid_value', index: i };
+    }
+  }
+  return { valid: true };
+}
+
+/**
  * Direct upsert file without circuit breaker (used by queue flush)
  *
  * @param {Object} params - Parameters
@@ -27,6 +56,14 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
   return withRetry(
     async () => {
       try {
+        // FIX: Validate vector before upsert to prevent corrupted embeddings
+        const validation = validateEmbeddingVector(file.vector, file.id);
+        if (!validation.valid) {
+          throw new Error(
+            `Invalid embedding vector for file ${file.id}: ${validation.error}${validation.index !== undefined ? ` at index ${validation.index}` : ''}`
+          );
+        }
+
         // Use shared helper to prepare and sanitize metadata
         const sanitized = prepareFileMetadata(file);
 
@@ -86,6 +123,17 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
           if (!file.id || !file.vector || !Array.isArray(file.vector)) {
             logger.warn('[FileOps] Skipping invalid file in batch', {
               id: file.id
+            });
+            continue;
+          }
+
+          // FIX: Validate vector for NaN/Infinity before including in batch
+          const validation = validateEmbeddingVector(file.vector, file.id);
+          if (!validation.valid) {
+            logger.warn('[FileOps] Skipping file with invalid vector in batch', {
+              id: file.id,
+              error: validation.error,
+              index: validation.index
             });
             continue;
           }
@@ -398,18 +446,19 @@ async function querySimilarFiles({ queryEmbedding, topK = 10, fileCollection }) 
  *
  * @param {Object} params - Parameters
  * @param {Object} params.client - ChromaDB client
+ * @param {Object} [params.embeddingFunction] - Embedding function to prevent DefaultEmbeddingFunction instantiation
  * @returns {Promise<Object>} New file collection
  */
-async function resetFiles({ client }) {
+async function resetFiles({ client, embeddingFunction }) {
   try {
     await client.deleteCollection({ name: 'file_embeddings' });
 
     const fileCollection = await client.createCollection({
       name: 'file_embeddings',
+      embeddingFunction,
       metadata: {
         description: 'Document and image file embeddings for semantic search',
-        hnsw_space: 'cosine',
-        'hnsw:space': 'cosine' // Keep for backward compatibility with existing collections
+        'hnsw:space': 'cosine' // Correct ChromaDB API syntax (not hnsw_space)
       }
     });
 

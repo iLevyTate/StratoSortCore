@@ -16,7 +16,10 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
-  createHandler: jest.fn(({ handler }) => handler)
+  createHandler: jest.fn(({ handler }) => handler),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 describe('Window IPC Handlers', () => {

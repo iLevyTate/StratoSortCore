@@ -8,8 +8,11 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const { withErrorLogging } = require('../ipcWrappers');
+const os = require('os');
+const { app } = require('electron');
+const { withErrorLogging, safeHandle } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 const {
   isNotFoundError,
   isPermissionError,
@@ -29,7 +32,8 @@ logger.setContext('IPC:Files:Folders');
  */
 function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
   // Create folder directly
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.CREATE_FOLDER_DIRECT,
     withErrorLogging(logger, async (event, fullPath) => {
       try {
@@ -42,6 +46,32 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
         }
 
         const normalizedPath = path.resolve(fullPath);
+
+        // Validate path is within allowed directories to prevent path traversal
+        const allowedPaths = [
+          os.homedir(),
+          app.getPath('documents'),
+          app.getPath('downloads'),
+          app.getPath('desktop')
+        ];
+
+        const validation = await validateFileOperationPath(normalizedPath, {
+          allowedBasePaths: allowedPaths,
+          checkSymlinks: true
+        });
+
+        if (!validation.valid) {
+          logger.warn('[FILE-OPS] Folder creation blocked - path traversal attempt', {
+            path: fullPath,
+            normalized: normalizedPath,
+            error: validation.error
+          });
+          return {
+            success: false,
+            error: validation.error || 'Path is outside allowed directories',
+            errorCode: 'PATH_NOT_ALLOWED'
+          };
+        }
 
         // Check if folder already exists
         try {
@@ -106,7 +136,8 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
   );
 
   // Open folder in file explorer
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.OPEN_FOLDER,
     withErrorLogging(logger, async (event, folderPath) => {
       try {
@@ -159,7 +190,8 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
   );
 
   // Delete empty folder
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.DELETE_FOLDER,
     withErrorLogging(logger, async (event, fullPath) => {
       // FIX: Add null check for fullPath parameter

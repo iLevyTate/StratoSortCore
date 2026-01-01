@@ -1,5 +1,5 @@
 const { performance } = require('perf_hooks');
-const { withErrorLogging, withValidation } = require('./ipcWrappers');
+const { withErrorLogging, withValidation, safeHandle } = require('./ipcWrappers');
 const { safeFilePath } = require('../utils/safeAccess');
 const { mapFoldersToCategories, getFolderNamesString } = require('../../shared/folderUtils');
 const { logger: moduleLogger } = require('../../shared/logger');
@@ -98,7 +98,7 @@ function registerAnalysisIpc({
       ? withValidation(logger, stringSchema, (event, filePath) => performDocumentAnalysis(filePath))
       : withErrorLogging(logger, (event, filePath) => performDocumentAnalysis(filePath));
 
-  ipcMain.handle(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, analyzeDocumentHandler);
+  safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, analyzeDocumentHandler);
 
   const IMAGE_LOG_PREFIX = '[IPC-IMAGE-ANALYSIS]';
 
@@ -163,7 +163,7 @@ function registerAnalysisIpc({
       ? withValidation(logger, stringSchema, (event, filePath) => performImageAnalysis(filePath))
       : withErrorLogging(logger, (event, filePath) => performImageAnalysis(filePath));
 
-  ipcMain.handle(IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, analyzeImageHandler);
+  safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, analyzeImageHandler);
 
   const extractImageTextHandler =
     z && stringSchema
@@ -201,7 +201,7 @@ function registerAnalysisIpc({
             return { success: false, error: error.message };
           }
         });
-  ipcMain.handle(IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT, extractImageTextHandler);
+  safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.EXTRACT_IMAGE_TEXT, extractImageTextHandler);
 }
 
 module.exports = registerAnalysisIpc;

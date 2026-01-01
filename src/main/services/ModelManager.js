@@ -7,6 +7,11 @@ const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { SERVICE_URLS } = require('../../shared/configDefaults');
 const { getOllama, getOllamaHost } = require('../ollamaUtils');
+const { createSingletonHelpers } = require('../../shared/singletonFactory');
+const {
+  MODEL_CATEGORY_PREFIXES,
+  FALLBACK_MODEL_PREFERENCES
+} = require('../../shared/modelCategorization');
 
 // Lazy load SettingsService
 let settingsService = null;
@@ -28,76 +33,15 @@ class ModelManager {
     this.modelCapabilities = new Map();
     this.lastHealthCheck = null;
 
-    // Add initialization guards to prevent race conditions
+    // Initialization state (promise reuse pattern prevents race conditions)
     this.initialized = false;
     this._initPromise = null;
-    this._isInitializing = false;
 
-    // Model categories and their capabilities
-    // These patterns are used for capability detection and model matching
-    this.modelCategories = {
-      text: [
-        'llama',
-        'mistral',
-        'phi',
-        'gemma',
-        'qwen',
-        'codellama',
-        'neural-chat',
-        'orca',
-        'vicuna',
-        'alpaca',
-        'dolphin',
-        'nous-hermes',
-        'openhermes',
-        'zephyr',
-        'starling',
-        'yi',
-        'deepseek'
-      ],
-      vision: [
-        'llava',
-        'bakllava',
-        'moondream',
-        'minicpm-v',
-        'cogvlm',
-        'internvl',
-        'yi-vl',
-        'deepseek-vl',
-        'qwen-vl',
-        'qwen2-vl'
-      ],
-      embedding: [
-        'mxbai-embed',
-        'nomic-embed',
-        'all-minilm',
-        'bge',
-        'e5',
-        'gte',
-        'stella',
-        'snowflake-arctic-embed'
-      ],
-      code: ['codellama', 'codegemma', 'starcoder', 'deepseek-coder', 'codestral', 'qwen2.5-coder'],
-      chat: ['llama', 'mistral', 'phi', 'gemma', 'neural-chat', 'orca', 'vicuna', 'dolphin']
-    };
+    // Use shared model categories from modelCategorization.js
+    this.modelCategories = MODEL_CATEGORY_PREFIXES;
 
-    // Fallback model preferences (in order of preference)
-    this.fallbackPreferences = [
-      'gemma3:4b',
-      'llama3.2',
-      'llama3.1',
-      'llama3',
-      'llama2',
-      'mistral',
-      'phi3',
-      'phi',
-      'gemma2',
-      'gemma',
-      'qwen2',
-      'qwen',
-      'neural-chat',
-      'orca-mini'
-    ];
+    // Use shared fallback preferences from modelCategorization.js
+    this.fallbackPreferences = FALLBACK_MODEL_PREFERENCES;
   }
 
   get ollamaClient() {
@@ -110,6 +54,7 @@ class ModelManager {
 
   /**
    * Initialize the model manager with race condition protection
+   * FIX: Simplified to use promise reuse pattern instead of complex polling
    */
   async initialize() {
     // If already initialized, return success
@@ -117,122 +62,57 @@ class ModelManager {
       return true;
     }
 
-    // If initialization is in progress, wait for it
+    // If initialization is in progress, wait for it (prevents race conditions)
+    // This single promise check eliminates the need for complex polling logic
     if (this._initPromise) {
       return this._initPromise;
     }
 
-    // Prevent concurrent initialization
-    if (this._isInitializing) {
-      // Wait for the ongoing initialization
-      return new Promise((resolve) => {
-        // HIGH PRIORITY FIX (HIGH-12): Comprehensive timer cleanup
-        let checkInterval = null;
-        let timeoutId = null;
+    // Create and store initialization promise immediately to prevent concurrent starts
+    this._initPromise = this._doInitialize();
+    return this._initPromise;
+  }
 
-        const cleanup = () => {
-          if (checkInterval !== null) {
-            clearInterval(checkInterval);
-            checkInterval = null;
-          }
-          if (timeoutId !== null) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
-          }
-        };
+  /**
+   * Internal initialization logic
+   * @private
+   */
+  async _doInitialize() {
+    try {
+      logger.info('[ModelManager] Initializing');
 
-        try {
-          checkInterval = setInterval(() => {
-            if (!this._isInitializing) {
-              cleanup();
-              resolve(this.initialized);
-            }
-          }, 100);
+      // Load saved configuration
+      await this.loadConfig();
 
-          // Add timeout to prevent infinite waiting
-          timeoutId = setTimeout(() => {
-            cleanup();
-            resolve(false);
-          }, 10000); // 10 second timeout
-
-          // Ensure timers don't keep process alive
-          if (checkInterval && checkInterval.unref) {
-            checkInterval.unref();
-          }
-          if (timeoutId && timeoutId.unref) {
-            timeoutId.unref();
-          }
-        } catch (error) {
-          // Cleanup on error
-          cleanup();
-          logger.error('[ModelManager] Error setting up initialization wait:', error);
-          resolve(false);
-        }
-      });
-    }
-
-    // Set initialization flag
-    this._isInitializing = true;
-
-    // Create initialization promise
-    this._initPromise = (async () => {
+      // Discover available models with timeout using withTimeout utility
+      const { withTimeout } = require('../../shared/promiseUtils');
       try {
-        logger.info('[ModelManager] Initializing');
-
-        // Load saved configuration
-        await this.loadConfig();
-
-        // Discover available models with timeout
-        const discoverPromise = this.discoverModels();
-        let timeoutId;
-        const timeoutPromise = new Promise((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error('Model discovery timeout')),
-            TIMEOUTS.MODEL_DISCOVERY
-          );
-          // Ensure timeout doesn't keep process alive
-          if (timeoutId && timeoutId.unref) {
-            timeoutId.unref();
-          }
-        });
-
-        try {
-          await Promise.race([discoverPromise, timeoutPromise]);
-        } catch (error) {
-          logger.warn('[ModelManager] Model discovery failed or timed out', {
-            error: error.message
-          });
-        } finally {
-          // Clean up timeout
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-        }
-
-        // Ensure we have a working model
-        await this.ensureWorkingModel();
-
-        // Mark as initialized
-        this.initialized = true;
-        this._isInitializing = false;
-
-        logger.info(`[ModelManager] Initialized with model: ${this.selectedModel}`);
-        return true;
+        await withTimeout(this.discoverModels(), TIMEOUTS.MODEL_DISCOVERY, 'Model discovery');
       } catch (error) {
-        logger.error('[ModelManager] Initialization failed', {
+        logger.warn('[ModelManager] Model discovery failed or timed out', {
           error: error.message
         });
-
-        // Clear initialization state on failure
-        this.initialized = false;
-        this._isInitializing = false;
-        this._initPromise = null;
-
-        return false;
       }
-    })();
 
-    return this._initPromise;
+      // Ensure we have a working model
+      await this.ensureWorkingModel();
+
+      // Mark as initialized
+      this.initialized = true;
+
+      logger.info(`[ModelManager] Initialized with model: ${this.selectedModel}`);
+      return true;
+    } catch (error) {
+      logger.error('[ModelManager] Initialization failed', {
+        error: error.message
+      });
+
+      // Clear initialization state on failure to allow retry
+      this.initialized = false;
+      this._initPromise = null;
+
+      return false;
+    }
   }
 
   /**
@@ -280,10 +160,13 @@ class ModelManager {
       );
     }
 
-    // Special cases
+    // Special cases for vision models
+    // Note: gemma3 (4B+) IS a multimodal vision model as of March 2025
     if (
       modelName.includes('llava') ||
       modelName.includes('vision') ||
+      modelName.includes('smolvlm') ||
+      modelName.includes('moondream') ||
       modelName.includes('gemma3')
     ) {
       capabilities.vision = true;
@@ -626,15 +509,14 @@ class ModelManager {
   }
 
   /**
-   * HIGH PRIORITY FIX (HIGH-12): Cleanup method to prevent memory leaks
-   * Clears all timers, resources, and pending operations
+   * Cleanup method to prevent memory leaks
+   * Clears all resources and resets state
    */
   async cleanup() {
     logger.info('[ModelManager] Starting cleanup...');
 
     try {
-      // Reset initialization state to prevent race conditions
-      this._isInitializing = false;
+      // Reset initialization state
       this.initialized = false;
       this._initPromise = null;
 
@@ -644,10 +526,6 @@ class ModelManager {
       this.selectedModel = null;
       this.lastHealthCheck = null;
 
-      // Note: Individual timers in initialize() and testModel() are already
-      // cleaned up in their respective finally blocks with proper unref() calls
-      // This cleanup method ensures the instance state is reset
-
       logger.info('[ModelManager] Cleanup completed successfully');
     } catch (error) {
       logger.error('[ModelManager] Error during cleanup:', error);
@@ -655,4 +533,20 @@ class ModelManager {
   }
 }
 
-module.exports = ModelManager;
+// Create singleton helpers using shared factory
+const { getInstance, createInstance, registerWithContainer, resetInstance } =
+  createSingletonHelpers({
+    ServiceClass: ModelManager,
+    serviceId: 'MODEL_MANAGER',
+    serviceName: 'ModelManager',
+    containerPath: './ServiceContainer',
+    shutdownMethod: 'cleanup' // ModelManager uses cleanup() for shutdown
+  });
+
+module.exports = {
+  ModelManager,
+  getInstance,
+  createInstance,
+  registerWithContainer,
+  resetInstance
+};

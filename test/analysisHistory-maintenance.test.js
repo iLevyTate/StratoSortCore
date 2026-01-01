@@ -345,13 +345,14 @@ describe('maintenance', () => {
   });
 
   describe('migrateHistory', () => {
-    test('logs debug message for unimplemented migration', async () => {
+    test('logs debug message when history is at current schema version', async () => {
       const { logger } = require('../src/shared/logger');
 
-      await maintenance.migrateHistory({});
+      // History at current version should log "already at current schema version"
+      await maintenance.migrateHistory({ schemaVersion: maintenance.CURRENT_SCHEMA_VERSION });
 
       expect(logger.debug).toHaveBeenCalledWith(
-        expect.stringContaining('migration not yet implemented')
+        expect.stringContaining('already at current schema version')
       );
     });
   });

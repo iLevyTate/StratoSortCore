@@ -4,7 +4,7 @@
  * Handles retrieval and management of file analysis history.
  * Demonstrates the service check pattern with various fallback responses.
  */
-const { createHandler, createErrorResponse } = require('./ipcWrappers');
+const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
 const { schemas } = require('./validationSchemas');
 
 function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegration }) {
@@ -14,7 +14,8 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
   const getHistoryService = () => getServiceIntegration()?.analysisHistory;
 
   // Get analysis statistics
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ANALYSIS_HISTORY.GET_STATISTICS,
     createHandler({
       logger,
@@ -34,7 +35,8 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
   );
 
   // Get analysis history with pagination
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ANALYSIS_HISTORY.GET,
     createHandler({
       logger,
@@ -77,7 +79,8 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
   );
 
   // Search analysis history
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ANALYSIS_HISTORY.SEARCH,
     createHandler({
       logger,
@@ -97,7 +100,8 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
   );
 
   // Get analysis history for specific file
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ANALYSIS_HISTORY.GET_FILE_HISTORY,
     createHandler({
       logger,
@@ -118,7 +122,8 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
   );
 
   // Clear analysis history
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ANALYSIS_HISTORY.CLEAR,
     createHandler({
       logger,
@@ -139,7 +144,8 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
   );
 
   // Export analysis history
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ANALYSIS_HISTORY.EXPORT,
     createHandler({
       logger,

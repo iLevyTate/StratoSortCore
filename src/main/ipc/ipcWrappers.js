@@ -102,6 +102,84 @@ function createSuccessResponse(data = {}) {
 }
 
 /**
+ * Create a simple success response with optional warnings
+ * This is the preferred format for settings-style handlers
+ * @param {Object} data - Response data to include
+ * @param {string[]} [warnings] - Optional warnings array
+ * @returns {Object} Success response
+ */
+function successResponse(data = {}, warnings = []) {
+  const response = { success: true, ...data };
+  if (warnings && warnings.length > 0) {
+    response.warnings = warnings;
+  }
+  return response;
+}
+
+/**
+ * Create a simple error response
+ * This is the preferred format for settings-style handlers
+ * @param {string} error - Error message
+ * @param {Object} [extras] - Additional fields (e.g., validationErrors)
+ * @returns {Object} Error response
+ */
+function errorResponse(error, extras = {}) {
+  return { success: false, error, ...extras };
+}
+
+/**
+ * Create a canceled response (for dialog cancellation)
+ * @returns {Object} Canceled response
+ */
+function canceledResponse() {
+  return { success: false, canceled: true };
+}
+
+/**
+ * Create middleware that ensures ChromaDB is initialized before handler executes.
+ * Use this to wrap handlers that require ChromaDB to be ready.
+ *
+ * @param {Object} options - Configuration options
+ * @param {Function} options.ensureInit - Async function to trigger initialization
+ * @param {Function} options.isInitRef - Function that returns current isInitialized state
+ * @param {Function} options.handler - The handler function to wrap
+ * @param {Object} [options.logger] - Optional logger for debug output
+ * @returns {Function} Wrapped handler that checks init state first
+ *
+ * @example
+ * const handler = withChromaInit({
+ *   ensureInit: ensureInitialized,
+ *   isInitRef: () => isInitialized,
+ *   handler: async (event, params) => {
+ *     // Handler logic here - ChromaDB is guaranteed ready
+ *   }
+ * });
+ */
+function withChromaInit({ ensureInit, isInitRef, handler }) {
+  return async (...args) => {
+    try {
+      await ensureInit();
+    } catch (initError) {
+      return {
+        success: false,
+        error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
+        unavailable: true
+      };
+    }
+
+    if (!isInitRef()) {
+      return {
+        success: false,
+        error: 'ChromaDB initialization pending. Please try again in a few seconds.',
+        pending: true
+      };
+    }
+
+    return handler(...args);
+  };
+}
+
+/**
  * Wrap an IPC handler with try/catch and error logging
  * @param {Object} logger - Logger instance
  * @param {Function} fn - Handler function to wrap
@@ -417,20 +495,56 @@ function registerHandlers({ ipcMain, logger, handlers, context = 'IPC' }) {
   }
 }
 
+/**
+ * Safe wrapper for ipcMain.handle that registers with the IPC registry.
+ * Use this instead of ipcMain.handle() directly to ensure proper cleanup.
+ *
+ * @param {Object} ipcMain - Electron ipcMain instance
+ * @param {string} channel - IPC channel name
+ * @param {Function} handler - Handler function
+ */
+function safeHandle(ipcMain, channel, handler) {
+  const { registerHandler } = require('../core/ipcRegistry');
+  registerHandler(ipcMain, channel, handler);
+}
+
+/**
+ * Safe wrapper for ipcMain.on that registers with the IPC registry.
+ * Use this instead of ipcMain.on() directly to ensure proper cleanup.
+ *
+ * @param {Object} ipcMain - Electron ipcMain instance
+ * @param {string} channel - IPC channel name
+ * @param {Function} listener - Listener function
+ */
+function safeOn(ipcMain, channel, listener) {
+  const { registerListener } = require('../core/ipcRegistry');
+  registerListener(ipcMain, channel, listener);
+}
+
 // Export Zod instance for convenience (if available)
 module.exports = {
   // Primary exports
   createHandler,
   registerHandlers,
 
+  // Safe IPC registration (uses registry for cleanup)
+  safeHandle,
+  safeOn,
+
   // Individual wrappers for backwards compatibility
   withErrorLogging,
   withValidation,
   withServiceCheck,
+  withChromaInit,
 
-  // Response helpers
+  // Response helpers (structured format)
   createErrorResponse,
   createSuccessResponse,
+
+  // Response helpers (simple format - preferred for settings-style handlers)
+  successResponse,
+  errorResponse,
+  canceledResponse,
 
   // Re-export error codes for convenience
   ERROR_CODES,

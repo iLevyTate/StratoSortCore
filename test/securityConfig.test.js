@@ -145,6 +145,7 @@ describe('securityConfig', () => {
       expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('light');
       expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('dark');
       expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('system');
+      expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('auto');
     });
 
     test('enums has valid loggingLevel values', () => {

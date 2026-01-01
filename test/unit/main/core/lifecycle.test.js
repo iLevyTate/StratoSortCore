@@ -163,31 +163,82 @@ describe('lifecycle module', () => {
   });
 
   describe('handleUncaughtException', () => {
-    it('should log error details', () => {
+    it('should log error details with classification', () => {
       const { logger } = require('../../../../src/shared/logger');
       const error = new Error('Test error');
 
       lifecycle.handleUncaughtException(error);
 
+      // FIX: Updated test to match enhanced error handler
       expect(logger.error).toHaveBeenCalledWith('UNCAUGHT EXCEPTION:', {
         message: 'Test error',
-        stack: expect.any(String)
+        stack: expect.any(String),
+        code: undefined,
+        errorType: 'UNKNOWN',
+        exceptionCount: expect.any(Number)
       });
+    });
+
+    it('should classify network errors correctly', () => {
+      const { logger } = require('../../../../src/shared/logger');
+      const error = new Error('Connection refused');
+      error.code = 'ECONNREFUSED';
+
+      lifecycle.handleUncaughtException(error);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'UNCAUGHT EXCEPTION:',
+        expect.objectContaining({
+          errorType: 'NETWORK',
+          code: 'ECONNREFUSED'
+        })
+      );
     });
   });
 
   describe('handleUnhandledRejection', () => {
-    it('should log rejection details', () => {
+    it('should log rejection details with classification', () => {
       const { logger } = require('../../../../src/shared/logger');
       const reason = 'Test rejection reason';
       const promise = Promise.reject(reason).catch(() => {}); // Catch to prevent unhandled rejection
 
       lifecycle.handleUnhandledRejection(reason, promise);
 
-      expect(logger.error).toHaveBeenCalledWith('UNHANDLED REJECTION', {
-        reason: 'Test rejection reason',
-        promise: expect.any(String)
+      // FIX: Updated test to match enhanced error handler
+      expect(logger.error).toHaveBeenCalledWith('UNHANDLED REJECTION:', {
+        message: 'Test rejection reason',
+        stack: expect.any(String),
+        code: undefined,
+        errorType: 'UNKNOWN',
+        rejectionCount: expect.any(Number),
+        promiseInfo: expect.any(String)
       });
+    });
+
+    it('should classify Ollama errors correctly', () => {
+      const { logger } = require('../../../../src/shared/logger');
+      const reason = new Error('Ollama connection failed');
+      const promise = Promise.reject(reason).catch(() => {});
+
+      lifecycle.handleUnhandledRejection(reason, promise);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'UNHANDLED REJECTION:',
+        expect.objectContaining({
+          errorType: 'OLLAMA'
+        })
+      );
+    });
+  });
+
+  describe('getUnhandledErrorCounts', () => {
+    it('should return error counts', () => {
+      const counts = lifecycle.getUnhandledErrorCounts();
+
+      expect(counts).toHaveProperty('exceptions');
+      expect(counts).toHaveProperty('rejections');
+      expect(typeof counts.exceptions).toBe('number');
+      expect(typeof counts.rejections).toBe('number');
     });
   });
 

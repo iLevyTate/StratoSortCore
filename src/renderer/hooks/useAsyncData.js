@@ -3,13 +3,25 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 /**
  * Hook for fetching data asynchronously with built-in state management and leak prevention
  *
- * @param {Function} fetcher - Async function to execute
- * @param {Array} dependencies - Dependency array for useEffect
+ * @param {Function} fetcher - Async function to execute.
+ *   **IMPORTANT**: The fetcher function MUST be memoized (wrapped in useCallback) if it
+ *   references props or state that could change. If an unstable fetcher reference is passed
+ *   (e.g., an inline arrow function), the execute callback will be recreated on every render,
+ *   causing the auto-execute effect to re-run repeatedly and potentially causing infinite loops.
+ *
+ *   Example (WRONG - causes infinite re-execution):
+ *     useAsyncData(() => fetchData(someId), [someId])
+ *
+ *   Example (CORRECT - fetcher is memoized):
+ *     const fetcher = useCallback(() => fetchData(someId), [someId]);
+ *     useAsyncData(fetcher, [])
+ *
+ * @param {Array} dependencies - Dependency array for useEffect (in addition to fetcher)
  * @param {Object} options - Configuration options
  * @param {*} options.initialData - Initial data value (default: null)
  * @param {boolean} options.skip - If true, fetcher won't run automatically (default: false)
- * @param {Function} options.onSuccess - Callback on successful fetch
- * @param {Function} options.onError - Callback on error
+ * @param {Function} options.onSuccess - Callback on successful fetch (should also be memoized)
+ * @param {Function} options.onError - Callback on error (should also be memoized)
  *
  * @returns {Object} { data, loading, error, execute, setData }
  */

@@ -6,6 +6,7 @@ const EmbeddingCache = require('./EmbeddingCache');
 const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
 const { get: getConfig } = require('../../shared/config/index');
 const { buildOllamaOptions } = require('./PerformanceService');
+const { getInstance: getOllamaInstance } = require('./OllamaService');
 
 /**
  * Embedding dimension constants for different models
@@ -13,11 +14,14 @@ const { buildOllamaOptions } = require('./PerformanceService');
  * These are the default dimensions for common embedding models
  */
 const EMBEDDING_DIMENSIONS = {
+  embeddinggemma: 768, // New default - Google's best-in-class
   'nomic-embed-text': 768,
   'mxbai-embed-large': 1024,
   'all-minilm': 384,
   'bge-large': 1024,
-  default: 1024 // Fallback for unknown models
+  'snowflake-arctic-embed': 1024, // FIX: Added Snowflake Arctic Embed
+  gte: 768, // FIX: Added Alibaba GTE models (default to 768)
+  default: 768 // Updated fallback for new default model
 };
 
 /**
@@ -107,6 +111,77 @@ class FolderMatchingService {
     // Store limits for reference/debugging
     this._concurrencyLimit = concurrencyLimit;
     this._maxRetries = maxRetries;
+
+    // FIX: Subscribe to embedding model changes to invalidate cache
+    // This prevents stale embeddings with wrong dimensions after model switch
+    this._modelChangeUnsubscribe = null;
+    this._subscribeToModelChanges();
+  }
+
+  /**
+   * Subscribe to OllamaService model change events
+   * Invalidates embedding cache when embedding model changes
+   * @private
+   */
+  _subscribeToModelChanges() {
+    try {
+      const ollamaService = getOllamaInstance();
+      if (ollamaService && typeof ollamaService.onModelChange === 'function') {
+        this._modelChangeUnsubscribe = ollamaService.onModelChange(
+          async ({ type, previousModel, newModel }) => {
+            if (type === 'embedding') {
+              // FIX: Invalidate in-memory embedding cache
+              if (this.embeddingCache) {
+                const wasInvalidated = this.embeddingCache.invalidateOnModelChange(
+                  newModel,
+                  previousModel
+                );
+                if (wasInvalidated) {
+                  logger.info(
+                    '[FolderMatchingService] Embedding cache invalidated due to model change',
+                    {
+                      from: previousModel,
+                      to: newModel
+                    }
+                  );
+                }
+              }
+
+              // FIX: CRITICAL - Also clear ChromaDB collections when embedding model changes
+              // Previously, only the in-memory cache was cleared, but ChromaDB still contained
+              // vectors with the old dimension. This caused query failures or incorrect similarity
+              // calculations when new embeddings (with different dimensions) were added.
+              if (this.chromaDbService) {
+                try {
+                  logger.warn(
+                    '[FolderMatchingService] Clearing ChromaDB collections due to embedding model change',
+                    {
+                      from: previousModel,
+                      to: newModel
+                    }
+                  );
+                  // Reset both file and folder collections to clear old-dimension vectors
+                  await this.chromaDbService.resetAll();
+                  logger.info(
+                    '[FolderMatchingService] ChromaDB collections reset after model change'
+                  );
+                } catch (chromaError) {
+                  logger.error(
+                    '[FolderMatchingService] Failed to reset ChromaDB collections:',
+                    chromaError.message
+                  );
+                  // Continue - the cache is still cleared, and users can manually rebuild
+                }
+              }
+            }
+          }
+        );
+        logger.debug('[FolderMatchingService] Subscribed to embedding model changes');
+      }
+    } catch (error) {
+      // Non-fatal - service may not be available yet
+      logger.debug('[FolderMatchingService] Could not subscribe to model changes:', error.message);
+    }
   }
 
   /**
@@ -126,22 +201,45 @@ class FolderMatchingService {
       return Promise.resolve();
     }
 
-    // Fixed: Initialize the embedding cache after construction to prevent orphaned intervals
-    if (this.embeddingCache && !this.embeddingCache.initialized) {
-      this._initPromise = Promise.resolve().then(() => {
-        try {
-          this.embeddingCache.initialize();
-          logger.info('[FolderMatchingService] Initialized successfully');
-        } finally {
-          // Keep the promise but mark initialization complete
-          this._initializing = false;
-        }
-      });
-      this._initializing = true;
-      return this._initPromise;
+    // Nothing to initialize
+    if (!this.embeddingCache) {
+      return Promise.resolve();
     }
 
-    return Promise.resolve();
+    // FIX: Atomic check-and-set pattern to prevent race conditions
+    // Create promise IMMEDIATELY and SYNCHRONOUSLY before any async work
+    // This ensures concurrent calls see the promise before we start initialization
+    this._initializing = true;
+
+    // Use explicit resolve/reject handlers for proper error propagation
+    let resolveInit, rejectInit;
+    this._initPromise = new Promise((resolve, reject) => {
+      resolveInit = resolve;
+      rejectInit = reject;
+    });
+
+    // Schedule the actual initialization work asynchronously
+    // The promise is already stored, so concurrent calls will await it
+    Promise.resolve()
+      .then(() => {
+        // Double-check in case of race condition edge case
+        if (!this.embeddingCache.initialized) {
+          this.embeddingCache.initialize();
+        }
+        logger.info('[FolderMatchingService] Initialized successfully');
+        resolveInit();
+      })
+      .catch((error) => {
+        logger.error('[FolderMatchingService] Initialization failed:', error.message);
+        rejectInit(error);
+      })
+      .finally(() => {
+        this._initializing = false;
+        // Keep _initPromise as resolved promise for future callers
+        // Don't clear it - concurrent callers need to await the same promise
+      });
+
+    return this._initPromise;
   }
 
   async embedText(text) {
@@ -149,7 +247,9 @@ class FolderMatchingService {
 
     try {
       const ollama = getOllama();
-      const model = getOllamaEmbeddingModel();
+      // FIX: Add fallback to default embedding model when none configured
+      const { AI_DEFAULTS } = require('../../shared/constants');
+      const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
       const perfOptions = await buildOllamaOptions('embeddings');
 
       // Check cache first
@@ -174,9 +274,21 @@ class FolderMatchingService {
           ? response.embeddings[0]
           : [];
       const expectedDim = getEmbeddingDimension(model);
-      if (vector.length < expectedDim) {
-        vector = vector.concat(new Array(expectedDim - vector.length).fill(0));
-      } else if (vector.length > expectedDim) {
+      const actualDim = vector.length;
+
+      // Warn on dimension mismatch - this indicates model config may be wrong
+      if (actualDim !== expectedDim && actualDim > 0) {
+        logger.warn('[FolderMatchingService] Embedding dimension mismatch detected', {
+          model,
+          expected: expectedDim,
+          actual: actualDim,
+          action: actualDim < expectedDim ? 'padding' : 'truncating'
+        });
+      }
+
+      if (actualDim < expectedDim) {
+        vector = vector.concat(new Array(expectedDim - actualDim).fill(0));
+      } else if (actualDim > expectedDim) {
         vector = vector.slice(0, expectedDim);
       }
 
@@ -191,15 +303,14 @@ class FolderMatchingService {
       return result;
     } catch (error) {
       logger.error('[FolderMatchingService] Failed to generate embedding:', error);
-      // FIX: Return a zero vector with dimension based on current model
-      // instead of hardcoded 1024 which may mismatch the actual model
-      const currentModel = getOllamaEmbeddingModel();
-      const dimension = getEmbeddingDimension(currentModel);
-      logger.debug('[FolderMatchingService] Using fallback embedding with dimension:', {
-        model: currentModel,
-        dimension
-      });
-      return { vector: new Array(dimension).fill(0), model: 'fallback' };
+      // FIX: Throw error instead of returning zero vector
+      // Zero vectors are useless for semantic search and pollute the database
+      // Callers should handle the error and skip this item rather than storing garbage
+      const errorMessage = error.message || 'Unknown embedding error';
+      const embeddingError = new Error(`Embedding generation failed: ${errorMessage}`);
+      embeddingError.code = 'EMBEDDING_FAILED';
+      embeddingError.originalError = error;
+      throw embeddingError;
     }
   }
 
@@ -325,7 +436,9 @@ class FolderMatchingService {
 
       for (const folder of folders) {
         const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
-        const model = getOllamaEmbeddingModel();
+        // FIX: Add fallback to default embedding model when none configured
+        const { AI_DEFAULTS } = require('../../shared/constants');
+        const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
         const folderId = folder.id || this.generateFolderId(folder);
 
         if (this._upsertedFolderIds.has(folderId)) {
@@ -383,11 +496,21 @@ class FolderMatchingService {
           }
         );
 
-        // Process results
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
+        // FIX: Process results by matching on ID instead of index
+        // This prevents misalignment when some embeddings fail and results array has gaps
+        const folderById = new Map(
+          uncachedFolders.map((f) => [f.id || this.generateFolderId(f), f])
+        );
+
+        for (const result of results) {
           if (result && result.success) {
-            const folder = uncachedFolders[i];
+            const folder = folderById.get(result.id);
+            if (!folder) {
+              logger.warn('[FolderMatchingService] Result ID not found in folder map', {
+                resultId: result.id
+              });
+              continue;
+            }
 
             // Cache the embedding for future use
             const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
@@ -529,7 +652,9 @@ class FolderMatchingService {
       await this.chromaDbService.initialize();
 
       const { onProgress = null } = options;
-      const model = getOllamaEmbeddingModel();
+      // FIX: Add fallback to default embedding model when none configured
+      const { AI_DEFAULTS } = require('../../shared/constants');
+      const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
 
       // FIX: Check cache first and separate cached vs uncached files
       const uncachedFiles = [];
@@ -936,6 +1061,13 @@ class FolderMatchingService {
    * @returns {Promise<void>}
    */
   async shutdown() {
+    // FIX: Unsubscribe from model change events
+    if (this._modelChangeUnsubscribe) {
+      this._modelChangeUnsubscribe();
+      this._modelChangeUnsubscribe = null;
+      logger.debug('[FolderMatchingService] Unsubscribed from model changes');
+    }
+
     if (this.embeddingCache) {
       logger.info('[FolderMatchingService] Shutting down embedding cache');
       await this.embeddingCache.shutdown();
@@ -1031,5 +1163,20 @@ function createWithDefaults(options = {}) {
   return new FolderMatchingService(getChromaDB(), options);
 }
 
+// Singleton factory pattern for DI container support
+const { createSingletonHelpers } = require('../../shared/singletonFactory');
+
+const { getInstance, registerWithContainer, resetInstance } = createSingletonHelpers({
+  ServiceClass: FolderMatchingService,
+  serviceId: 'FOLDER_MATCHING',
+  serviceName: 'FolderMatchingService',
+  containerPath: './ServiceContainer',
+  shutdownMethod: 'shutdown',
+  createFactory: (options = {}) => createWithDefaults(options)
+});
+
 module.exports = FolderMatchingService;
 module.exports.createWithDefaults = createWithDefaults;
+module.exports.getInstance = getInstance;
+module.exports.registerWithContainer = registerWithContainer;
+module.exports.resetInstance = resetInstance;

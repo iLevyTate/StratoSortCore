@@ -27,6 +27,7 @@ const {
 } = require('../utils/ollamaDetection');
 const { checkPythonInstallation } = require('../services/startup/preflightChecks');
 const { isChromaDBRunning } = require('../services/startup/chromaService');
+const { getChromaUrl } = require('../../shared/config/chromaDefaults');
 
 logger.setContext('DependencyManager');
 
@@ -74,8 +75,9 @@ async function downloadToFile(url, destPath, { onProgress } = {}) {
       if (fileStream) {
         try {
           fileStream.destroy();
-        } catch {
-          // ignore cleanup errors
+        } catch (cleanupErr) {
+          // Intentionally ignored: stream destroy can fail if already closed
+          logger.debug('[DependencyManager] Stream cleanup:', cleanupErr?.message);
         }
       }
       if (error) {
@@ -159,8 +161,9 @@ async function detectOllamaExePath() {
     if (result.status === 0) {
       return 'ollama';
     }
-  } catch {
-    // ignore
+  } catch (detectErr) {
+    // Intentionally ignored: ollama not in PATH is expected on some systems
+    logger.debug('[DependencyManager] ollama PATH check failed:', detectErr?.message);
   }
 
   if (!isWindows) return null;
@@ -214,8 +217,9 @@ class DependencyManagerService {
     for (const callback of this._progressCallbacks) {
       try {
         callback(payload);
-      } catch {
-        // ignore individual callback errors
+      } catch (cbErr) {
+        // Intentionally ignored: individual callback failures shouldn't break progress reporting
+        logger.debug('[DependencyManager] Progress callback error:', cbErr?.message);
       }
     }
   }
@@ -227,7 +231,10 @@ class DependencyManagerService {
       release = resolve;
     });
     try {
-      await prev.catch(() => {});
+      // Wait for previous lock to release (ignore its outcome - we just need sequencing)
+      await prev.catch((lockErr) => {
+        logger.debug('[DependencyManager] Previous lock error (ignored):', lockErr?.message);
+      });
       return await fn();
     } finally {
       release();
@@ -255,9 +262,7 @@ class DependencyManagerService {
         pythonModuleInstalled: Boolean(chromaModuleInstalled),
         running: Boolean(chromaRunning),
         external: Boolean(process.env.CHROMA_SERVER_URL),
-        serverUrl:
-          process.env.CHROMA_SERVER_URL ||
-          `${process.env.CHROMA_SERVER_PROTOCOL || 'http'}://${process.env.CHROMA_SERVER_HOST || '127.0.0.1'}:${process.env.CHROMA_SERVER_PORT || 8000}`
+        serverUrl: getChromaUrl()
       },
       ollama: {
         installed: Boolean(ollama?.installed),
@@ -389,7 +394,10 @@ class DependencyManagerService {
         pythonLauncher.command,
         [...pythonLauncher.args, '-m', 'pip', 'install', '--upgrade', 'pip'],
         { timeout: 5 * 60 * 1000, windowsHide: true, shell: shouldUseShell() }
-      ).catch(() => {});
+      ).catch((pipErr) => {
+        // Intentionally ignored: pip upgrade failure is non-fatal, chromadb install may still work
+        logger.debug('[DependencyManager] pip upgrade failed (non-fatal):', pipErr?.message);
+      });
 
       const pkgArgs = [
         ...pythonLauncher.args,

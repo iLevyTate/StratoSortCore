@@ -122,6 +122,9 @@ async function checkHealthViaClient(client) {
 /**
  * Check if ChromaDB server is available with retry logic
  *
+ * FIX: Creates disposable client once outside the retry loop to prevent
+ * connection leaks from creating multiple ChromaClient instances
+ *
  * @param {Object} options - Options
  * @param {string} options.serverUrl - Server URL
  * @param {ChromaClient} options.client - Existing client (optional)
@@ -132,53 +135,74 @@ async function checkHealthViaClient(client) {
 async function isServerAvailable({ serverUrl, client = null, timeoutMs = 3000, maxRetries = 3 }) {
   let lastError = null;
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  // FIX: Create disposable client once outside the loop to prevent connection leaks
+  // Each ChromaClient creates HTTP agent connections that accumulate in TIME_WAIT state
+  let checkClient = client;
+  let isDisposableClient = false;
+
+  if (!checkClient) {
     try {
-      // Reuse existing client if available to avoid creating
-      // disposable ChromaClient instances that create TIME_WAIT connections
-      const checkClient = client || new ChromaClient(parseServerUrl(serverUrl));
-
-      // Use shared timeout utility for heartbeat check
-      const hb = await withTimeout(checkClient.heartbeat(), timeoutMs, 'ChromaDB heartbeat');
-
-      logger.debug('[HealthChecker] Server heartbeat successful:', {
-        hb,
-        serverUrl,
-        attempt: attempt + 1
-      });
-      return true;
+      checkClient = new ChromaClient(parseServerUrl(serverUrl));
+      isDisposableClient = true;
     } catch (error) {
-      lastError = error;
-
-      const shouldRetry = (isRetryable(error) || isNetworkError(error)) && attempt < maxRetries - 1;
-
-      if (shouldRetry) {
-        // Exponential backoff: 500ms, 1000ms, 2000ms
-        const delay = 500 * Math.pow(2, attempt);
-        logger.debug('[HealthChecker] Heartbeat failed, retrying...:', {
-          attempt: attempt + 1,
-          maxRetries,
-          delayMs: delay,
-          error: error.message,
-          serverUrl
-        });
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      } else {
-        logger.debug('[HealthChecker] Heartbeat failed:', {
-          message: error.message,
-          code: error.code,
-          serverUrl,
-          attempt: attempt + 1
-        });
-      }
+      logger.warn('[HealthChecker] Failed to create check client:', error.message);
+      return false;
     }
   }
 
-  logger.warn('[HealthChecker] Availability check failed after all retries:', {
-    maxRetries,
-    lastError: lastError?.message
-  });
-  return false;
+  try {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Use shared timeout utility for heartbeat check
+        const hb = await withTimeout(checkClient.heartbeat(), timeoutMs, 'ChromaDB heartbeat');
+
+        logger.debug('[HealthChecker] Server heartbeat successful:', {
+          hb,
+          serverUrl,
+          attempt: attempt + 1
+        });
+        return true;
+      } catch (error) {
+        lastError = error;
+
+        const shouldRetry =
+          (isRetryable(error) || isNetworkError(error)) && attempt < maxRetries - 1;
+
+        if (shouldRetry) {
+          // Exponential backoff: 500ms, 1000ms, 2000ms
+          const delay = 500 * Math.pow(2, attempt);
+          logger.debug('[HealthChecker] Heartbeat failed, retrying...:', {
+            attempt: attempt + 1,
+            maxRetries,
+            delayMs: delay,
+            error: error.message,
+            serverUrl
+          });
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          logger.debug('[HealthChecker] Heartbeat failed:', {
+            message: error.message,
+            code: error.code,
+            serverUrl,
+            attempt: attempt + 1
+          });
+        }
+      }
+    }
+
+    logger.warn('[HealthChecker] Availability check failed after all retries:', {
+      maxRetries,
+      lastError: lastError?.message
+    });
+    return false;
+  } finally {
+    // FIX: Clean up disposable client reference to allow garbage collection
+    // Note: ChromaClient doesn't have an explicit close() method, but nulling
+    // the reference helps GC and signals we're done with it
+    if (isDisposableClient) {
+      checkClient = null;
+    }
+  }
 }
 
 /**

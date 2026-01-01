@@ -23,6 +23,31 @@ const registry = {
 };
 
 /**
+ * FIX: CRITICAL - Global shutdown flag to prevent IPC handlers from running during shutdown
+ * Previously, IPC handlers could fire during shutdown and access destroyed services
+ */
+let _isShuttingDown = false;
+
+/**
+ * Set shutdown state - called by lifecycle during app shutdown
+ * @param {boolean} shutting - True if app is shutting down
+ */
+function setShuttingDown(shutting) {
+  _isShuttingDown = shutting;
+  if (shutting) {
+    logger.info('[REGISTRY] Shutdown mode enabled - IPC handlers will reject new requests');
+  }
+}
+
+/**
+ * Check if app is in shutdown state
+ * @returns {boolean} True if app is shutting down
+ */
+function isShuttingDown() {
+  return _isShuttingDown;
+}
+
+/**
  * Wrap ipcMain.handle to track registered channels
  *
  * @param {Object} ipcMain - Electron ipcMain
@@ -48,7 +73,22 @@ function registerHandler(ipcMain, channel, handler) {
     }
   }
 
-  ipcMain.handle(channel, handler);
+  // FIX: CRITICAL - Wrap handler with shutdown gate to prevent access to destroyed services
+  const wrappedHandler = async (event, ...args) => {
+    if (_isShuttingDown) {
+      logger.debug(`[REGISTRY] Rejecting IPC call during shutdown: ${channel}`);
+      return {
+        success: false,
+        error: {
+          code: 'APP_SHUTTING_DOWN',
+          message: 'Application is shutting down'
+        }
+      };
+    }
+    return handler(event, ...args);
+  };
+
+  ipcMain.handle(channel, wrappedHandler);
   registry.handlers.add(channel);
   logger.debug(`[REGISTRY] Handler registered: ${channel}`);
 }
@@ -221,5 +261,8 @@ module.exports = {
   removeAllRegistered,
   getStats,
   hasHandler,
-  hasListeners
+  hasListeners,
+  // FIX: Shutdown gate control
+  setShuttingDown,
+  isShuttingDown
 };

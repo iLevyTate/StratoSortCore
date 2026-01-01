@@ -4,7 +4,7 @@
  * Handles AI-powered file organization suggestions, feedback recording,
  * and organization strategies.
  */
-const { createHandler, createErrorResponse } = require('./ipcWrappers');
+const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
 const { schemas } = require('./validationSchemas');
 const OrganizationSuggestionService = require('../services/organization');
 const { logger } = require('../../shared/logger');
@@ -39,7 +39,8 @@ function registerSuggestionsIpc({
   const getSuggestionService = () => suggestionService;
 
   // Get suggestions for a single file
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS,
     createHandler({
       logger,
@@ -78,7 +79,8 @@ function registerSuggestionsIpc({
   );
 
   // Get batch suggestions for multiple files
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS,
     createHandler({
       logger,
@@ -117,7 +119,8 @@ function registerSuggestionsIpc({
   );
 
   // Record user feedback on suggestions
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.RECORD_FEEDBACK,
     createHandler({
       logger,
@@ -149,7 +152,8 @@ function registerSuggestionsIpc({
   );
 
   // Get organization strategies
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.GET_STRATEGIES,
     createHandler({
       logger,
@@ -183,7 +187,8 @@ function registerSuggestionsIpc({
   );
 
   // Apply a specific strategy to files
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.APPLY_STRATEGY,
     createHandler({
       logger,
@@ -233,7 +238,8 @@ function registerSuggestionsIpc({
   );
 
   // Get user patterns (for debugging/UI display)
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.GET_USER_PATTERNS,
     createHandler({
       logger,
@@ -269,7 +275,8 @@ function registerSuggestionsIpc({
   );
 
   // Clear user patterns (for testing/reset)
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.CLEAR_PATTERNS,
     createHandler({
       logger,
@@ -297,7 +304,8 @@ function registerSuggestionsIpc({
   );
 
   // Analyze folder structure for improvements
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.ANALYZE_FOLDER_STRUCTURE,
     createHandler({
       logger,
@@ -337,7 +345,8 @@ function registerSuggestionsIpc({
   );
 
   // Suggest new smart folder
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SUGGESTIONS.SUGGEST_NEW_FOLDER,
     createHandler({
       logger,

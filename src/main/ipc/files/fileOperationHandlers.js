@@ -9,7 +9,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { ACTION_TYPES } = require('../../../shared/constants');
-const { withErrorLogging, withValidation } = require('../ipcWrappers');
+const { withErrorLogging, withValidation, safeHandle } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
 const { z, schemas } = require('../validationSchemas');
@@ -86,17 +86,38 @@ async function validateOperationPaths(source, destination, log) {
 async function updateDatabasePath(source, destination, log) {
   let dbSyncWarning = null;
   try {
+    // Re-validate paths before database update to prevent path traversal
+    const sourceValidation = await validateFileOperationPath(source, { checkSymlinks: false });
+    const destValidation = await validateFileOperationPath(destination, { checkSymlinks: false });
+
+    if (!sourceValidation.valid) {
+      log.warn('[FILE-OPS] Invalid source path for DB update', {
+        source,
+        error: sourceValidation.error
+      });
+      return `Database sync skipped: Invalid source path`;
+    }
+    if (!destValidation.valid) {
+      log.warn('[FILE-OPS] Invalid destination path for DB update', {
+        destination,
+        error: destValidation.error
+      });
+      return `Database sync skipped: Invalid destination path`;
+    }
+
     const { getInstance: getChromaDB } = require('../../services/chromadb');
     const chromaDbService = getChromaDB();
     if (chromaDbService) {
+      const safeSource = sourceValidation.normalizedPath;
+      const safeDest = destValidation.normalizedPath;
       const newMeta = {
-        path: destination,
-        name: path.basename(destination)
+        path: safeDest,
+        name: path.basename(safeDest)
       };
       // Update both file: and image: prefixes to handle all file types
       await chromaDbService.updateFilePaths([
-        { oldId: `file:${source}`, newId: `file:${destination}`, newMeta },
-        { oldId: `image:${source}`, newId: `image:${destination}`, newMeta }
+        { oldId: `file:${safeSource}`, newId: `file:${safeDest}`, newMeta },
+        { oldId: `image:${safeSource}`, newId: `image:${safeDest}`, newMeta }
       ]);
     }
   } catch (dbError) {
@@ -210,6 +231,52 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             log
           );
 
+          // Notify renderer of file operation for search index invalidation
+          try {
+            const mainWindow = getMainWindow();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('file-operation-complete', {
+                operation: 'move',
+                oldPath: moveValidation.source,
+                newPath: moveValidation.destination
+              });
+            }
+          } catch (notifyErr) {
+            log.warn('[FILE-OPS] Failed to notify renderer of file move', {
+              error: notifyErr.message
+            });
+          }
+
+          // Invalidate search index after file move
+          try {
+            const { getSearchServiceInstance } = require('../semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService) {
+              searchService.invalidateIndex({
+                reason: 'file-move',
+                oldPath: moveValidation.source,
+                newPath: moveValidation.destination
+              });
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate search index', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Invalidate clustering cache after file move
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+              error: invalidateErr.message
+            });
+          }
+
           return {
             success: true,
             message: `Moved ${moveValidation.source} to ${moveValidation.destination}`,
@@ -252,6 +319,50 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
 
           await fs.unlink(deleteValidation.source);
           const dbDeleteWarning = await deleteFromDatabase(deleteValidation.source, log);
+
+          // Notify renderer of file operation for search index invalidation
+          try {
+            const mainWindow = getMainWindow();
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('file-operation-complete', {
+                operation: 'delete',
+                oldPath: deleteValidation.source
+              });
+            }
+          } catch (notifyErr) {
+            log.warn('[FILE-OPS] Failed to notify renderer of file delete', {
+              error: notifyErr.message
+            });
+          }
+
+          // Invalidate search index after file delete
+          try {
+            const { getSearchServiceInstance } = require('../semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService) {
+              searchService.invalidateIndex({
+                reason: 'file-delete',
+                oldPath: deleteValidation.source
+              });
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate search index', {
+              error: invalidateErr.message
+            });
+          }
+
+          // Invalidate clustering cache after file delete
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache', {
+              error: invalidateErr.message
+            });
+          }
 
           return {
             success: true,
@@ -306,10 +417,11 @@ function registerFileOperationHandlers({
       ? withValidation(log, operationSchema, baseHandler)
       : withErrorLogging(log, baseHandler);
 
-  ipcMain.handle(IPC_CHANNELS.FILES.PERFORM_OPERATION, performOperationHandler);
+  safeHandle(ipcMain, IPC_CHANNELS.FILES.PERFORM_OPERATION, performOperationHandler);
 
   // Delete file handler
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.DELETE_FILE,
     withErrorLogging(log, async (event, filePath) => {
       try {
@@ -407,7 +519,8 @@ function registerFileOperationHandlers({
   );
 
   // Copy file handler
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.FILES.COPY_FILE,
     withErrorLogging(log, async (event, sourcePath, destinationPath) => {
       try {

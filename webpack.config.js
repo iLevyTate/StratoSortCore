@@ -9,6 +9,8 @@ const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
 module.exports = (env, argv) => {
   const isProduction = argv.mode === 'production';
   const isAnalyze = process.env.ANALYZE === 'true';
+  // FIX: Use USE_DEV_SERVER to match package.json scripts
+  const isDevServer = process.env.USE_DEV_SERVER === 'true';
 
   return {
     mode: argv.mode || 'development',
@@ -18,7 +20,8 @@ module.exports = (env, argv) => {
       filename: 'renderer.js',
       chunkFilename: '[id].renderer.js',
       clean: false,
-      publicPath: '',
+      // FIX: Use './' for Electron file:// protocol compatibility
+      publicPath: './',
       globalObject: 'globalThis'
     },
     target: 'electron-renderer',
@@ -41,7 +44,8 @@ module.exports = (env, argv) => {
               ],
               plugins: [
                 '@babel/plugin-transform-react-jsx',
-                ...(process.env.WEBPACK_DEV_SERVER === 'true' ? ['react-refresh/babel'] : [])
+                // FIX: Use isDevServer variable for consistency
+                ...(isDevServer ? ['react-refresh/babel'] : [])
               ]
             }
           }
@@ -49,10 +53,30 @@ module.exports = (env, argv) => {
         {
           test: /\.css$/,
           use: [
-            MiniCssExtractPlugin.loader, // Always extract CSS to separate file
+            // FIX: Use style-loader in dev for HMR, MiniCssExtractPlugin in prod
+            isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
             'css-loader',
             'postcss-loader'
           ]
+        },
+        // FIX: Add asset loader rules for SVG, images, and fonts
+        {
+          test: /\.svg$/,
+          use: ['@svgr/webpack', 'url-loader']
+        },
+        {
+          test: /\.(png|jpg|jpeg|gif|webp)$/i,
+          type: 'asset/resource',
+          generator: {
+            filename: 'images/[name][ext]'
+          }
+        },
+        {
+          test: /\.(woff|woff2|eot|ttf|otf)$/i,
+          type: 'asset/resource',
+          generator: {
+            filename: 'fonts/[name][ext]'
+          }
         }
       ]
     },
@@ -95,15 +119,16 @@ module.exports = (env, argv) => {
         process: require.resolve('process/browser'),
         Buffer: ['buffer', 'Buffer']
       }),
-      // Always extract CSS to separate file for consistent loading
-      new MiniCssExtractPlugin({ filename: 'styles.css' }),
+      // FIX: Only extract CSS in production mode (dev uses style-loader for HMR)
+      ...(isProduction ? [new MiniCssExtractPlugin({ filename: 'styles.css' })] : []),
       ...(isProduction
         ? [
             new webpack.IgnorePlugin({
               resourceRegExp: /moment\/locale/
             })
           ]
-        : process.env.WEBPACK_DEV_SERVER === 'true'
+        : // FIX: Use isDevServer variable for consistency
+          isDevServer
           ? [new ReactRefreshWebpackPlugin({ overlay: false })]
           : []),
       ...(isAnalyze ? [new BundleAnalyzerPlugin({ analyzerMode: 'static' })] : [])
@@ -140,8 +165,9 @@ module.exports = (env, argv) => {
     // Optimization
     optimization: {
       minimize: isProduction,
-      // FIX: Disable module concatenation for Redux Toolkit to avoid ESM resolution issues
-      concatenateModules: !isProduction,
+      // Disable module concatenation in dev mode to avoid cross-chunk dependency issues
+      // Enable in production for better tree-shaking
+      concatenateModules: isProduction,
 
       moduleIds: 'deterministic',
       chunkIds: 'deterministic',

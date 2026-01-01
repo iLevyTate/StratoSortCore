@@ -261,7 +261,12 @@ class SecureIPCManager {
         // Only remove null bytes and dangerous characters, but preserve path structure
         return this.stripControlChars(obj).replace(/[<>"|?*]/g, '');
       }
-      // Basic HTML sanitization for non-file-path strings
+      // URLs should NOT be HTML sanitized - encoding slashes breaks URL validation
+      if (this.looksLikeUrl(obj)) {
+        // Only remove null bytes and dangerous characters, preserve URL structure
+        return this.stripControlChars(obj).replace(/[<>"|*]/g, '');
+      }
+      // Basic HTML sanitization for non-file-path, non-URL strings
       return this.basicSanitizeHtml(obj);
     }
 
@@ -352,6 +357,33 @@ class SecureIPCManager {
         return true;
       }
     }
+
+    return false;
+  }
+
+  /**
+   * Check if a string looks like a URL
+   * Used to skip HTML sanitization which would break URL structure
+   */
+  looksLikeUrl(str) {
+    if (typeof str !== 'string' || str.length === 0) return false;
+
+    // Check for HTML tags first - if it contains < or >, it's likely HTML, not a URL
+    if (str.includes('<') || str.includes('>')) {
+      return false;
+    }
+
+    // HTTP/HTTPS URLs
+    if (/^https?:\/\//i.test(str)) return true;
+
+    // Common localhost patterns (with port)
+    if (/^localhost(:\d+)?/i.test(str)) return true;
+
+    // IP address with optional port
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?/.test(str)) return true;
+
+    // IPv6 URLs
+    if (/^\[[\da-fA-F:]+\](:\d+)?/.test(str)) return true;
 
     return false;
   }
@@ -618,7 +650,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.MATCH, {
         text,
         smartFolders: folders
-      })
+      }),
+    resetToDefaults: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS)
   },
 
   // Analysis
@@ -647,11 +680,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFiles: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
-    search: (query, topK = 20) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
+    // Enhanced search with hybrid BM25 + vector fusion
+    // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore }
+    search: (query, options = {}) => {
+      const { topK = 20, mode = 'hybrid', minScore } = options;
+      return secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
         query,
-        topK
-      }),
+        topK,
+        mode,
+        ...(typeof minScore === 'number' && { minScore })
+      });
+    },
     scoreFiles: (query, fileIds) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES, {
         query,
@@ -662,12 +701,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         fileId,
         topK
       }),
-    // Hybrid search (BM25 + vector with RRF)
-    hybridSearch: (query, options = {}) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.HYBRID_SEARCH, {
-        query,
-        options
-      }),
+    // NOTE: hybridSearch removed - use search() with mode: 'hybrid' instead
     rebuildBM25Index: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX),
     getSearchStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS),
     // Multi-hop expansion
@@ -687,7 +721,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         fileIds,
         threshold: options.threshold,
         maxEdgesPerNode: options.maxEdgesPerNode
-      })
+      }),
+    // Get fresh file metadata from ChromaDB (for current paths after moves)
+    getFileMetadata: (fileIds) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA, { fileIds }),
+    // Find near-duplicate files based on embedding similarity
+    findDuplicates: (options) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES, options || {})
   },
 
   // Organization Suggestions
@@ -832,6 +872,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onOperationError: (callback) => secureIPC.safeOn('operation-error', callback),
     onOperationComplete: (callback) => secureIPC.safeOn('operation-complete', callback),
     onOperationFailed: (callback) => secureIPC.safeOn('operation-failed', callback),
+    // File operation events (move/delete) for search index invalidation
+    onFileOperationComplete: (callback) => secureIPC.safeOn('file-operation-complete', callback),
     // Send error report to main process (uses send, not invoke)
     sendError: (errorData) => {
       try {
@@ -927,5 +969,3 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // Legacy compatibility layer removed - use window.electronAPI instead
 
 log.info('Secure context bridge exposed with structured API');
-
-module.exports = { SecureIPCManager };

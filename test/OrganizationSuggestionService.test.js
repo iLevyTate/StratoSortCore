@@ -382,8 +382,8 @@ describe('OrganizationSuggestionService', () => {
           confidence: 0.8
         };
 
-        // Record positive feedback
-        service.recordFeedback(file, suggestion, true);
+        // Record positive feedback (now async)
+        await service.recordFeedback(file, suggestion, true);
 
         // Check pattern was created/updated
         const pattern = 'pdf:documents:invoices';
@@ -394,8 +394,8 @@ describe('OrganizationSuggestionService', () => {
         expect(patternData.count).toBe(1);
         expect(patternData.confidence).toBeGreaterThanOrEqual(0.5);
 
-        // Record more positive feedback
-        service.recordFeedback(file, suggestion, true);
+        // Record more positive feedback (now async)
+        await service.recordFeedback(file, suggestion, true);
 
         const updatedData = service.userPatterns.get(pattern);
         expect(updatedData.count).toBe(2);
@@ -626,13 +626,13 @@ describe('OrganizationSuggestionService', () => {
       expect(result1.primary.folder).not.toBe(result2.primary.folder);
     });
 
-    test('should limit feedback history size', () => {
+    test('should limit feedback history size', async () => {
       const file = createTestFile();
       const suggestion = { folder: 'Test', path: '/test' };
 
-      // Add many feedback entries
+      // Add many feedback entries (now async)
       for (let i = 0; i < 1100; i++) {
-        service.recordFeedback(file, suggestion, true);
+        await service.recordFeedback(file, suggestion, true);
       }
 
       // Should trim to approximately 500 entries (the service keeps last 500 when over 1000)
@@ -753,7 +753,7 @@ describe('OrganizationSuggestionService', () => {
       expect(similarity).toBeGreaterThan(0);
     });
 
-    test('should track folder usage statistics', () => {
+    test('should track folder usage statistics', async () => {
       const file = createTestFile();
       const suggestion = {
         folder: 'TestFolder',
@@ -761,9 +761,9 @@ describe('OrganizationSuggestionService', () => {
         confidence: 0.8
       };
 
-      // Record multiple uses
+      // Record multiple uses (now async)
       for (let i = 0; i < 5; i++) {
-        service.recordFeedback(file, suggestion, true);
+        await service.recordFeedback(file, suggestion, true);
       }
 
       // Usage should be tracked in userPatterns

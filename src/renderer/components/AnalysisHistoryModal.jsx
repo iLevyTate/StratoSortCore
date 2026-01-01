@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
+import Modal, { ConfirmModal } from './Modal';
 import Button from './ui/Button';
 import Input from './ui/Input';
 
@@ -18,6 +19,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   // FIX: Track mounted state to prevent state updates after unmount
   const isMountedRef = React.useRef(true);
   const [isClearing, setIsClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // FIX: Cleanup on unmount
   useEffect(() => {
@@ -107,6 +110,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   };
 
   const exportHistory = async (format) => {
+    if (isExporting) return;
+    setIsExporting(true);
     try {
       const exportResponse = await window.electronAPI.analysisHistory.export(format);
       if (!exportResponse || exportResponse.success === false)
@@ -132,15 +137,15 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       addNotification(`Analysis history exported as ${format.toUpperCase()}`, 'success');
     } catch (error) {
       addNotification('Export failed', 'error');
+    } finally {
+      if (isMountedRef.current) {
+        setIsExporting(false);
+      }
     }
   };
 
-  const clearHistory = useCallback(async () => {
+  const doClearHistory = useCallback(async () => {
     if (isClearing) return;
-    const confirmed = window.confirm(
-      'This will permanently clear all analysis history and statistics. Continue?'
-    );
-    if (!confirmed) return;
     setIsClearing(true);
     try {
       const result = await window.electronAPI.analysisHistory.clear();
@@ -157,6 +162,10 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       }
     }
   }, [isClearing, loadAnalysisData, addNotification]);
+
+  const handleClearClick = useCallback(() => {
+    setShowClearConfirm(true);
+  }, []);
 
   const getDestinationLabel = (entry) => {
     try {
@@ -180,36 +189,26 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal">
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden">
-        <div className="p-[var(--panel-padding)] border-b border-system-gray-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-system-gray-900">
-              📊 Analysis History & Statistics
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-system-gray-500 hover:text-system-gray-700 p-2"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="flex mt-3 border-b border-system-gray-200">
-            <button
-              onClick={() => setSelectedTab('statistics')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${selectedTab === 'statistics' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
-            >
-              📈 Statistics
-            </button>
-            <button
-              onClick={() => setSelectedTab('history')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 ${selectedTab === 'history' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
-            >
-              📋 History
-            </button>
-          </div>
+    <>
+      <Modal isOpen={true} onClose={onClose} title="📊 Analysis History & Statistics" size="large">
+        {/* Tabs */}
+        <div className="flex mb-4 border-b border-system-gray-200 -mt-2">
+          <button
+            onClick={() => setSelectedTab('statistics')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${selectedTab === 'statistics' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
+          >
+            📈 Statistics
+          </button>
+          <button
+            onClick={() => setSelectedTab('history')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${selectedTab === 'history' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
+          >
+            📋 History
+          </button>
         </div>
-        <div className="p-[var(--panel-padding)] overflow-y-auto max-h-[68vh] modern-scrollbar">
+
+        {/* Content */}
+        <div className="min-h-[300px]">
           {isLoading ? (
             <div className="text-center py-12">
               <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-4"></div>
@@ -252,18 +251,22 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                         onClick={() => exportHistory('json')}
                         variant="outline"
                         className="text-sm"
+                        disabled={isExporting}
+                        isLoading={isExporting}
                       >
-                        Export JSON
+                        {isExporting ? 'Exporting...' : 'Export JSON'}
                       </Button>
                       <Button
                         onClick={() => exportHistory('csv')}
                         variant="outline"
                         className="text-sm"
+                        disabled={isExporting}
+                        isLoading={isExporting}
                       >
-                        Export CSV
+                        {isExporting ? 'Exporting...' : 'Export CSV'}
                       </Button>
                       <Button
-                        onClick={clearHistory}
+                        onClick={handleClearClick}
                         variant="danger"
                         className="text-sm ml-auto"
                         disabled={isClearing}
@@ -326,10 +329,10 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                             </div>
                             {entry.keywords && entry.keywords.length > 0 && (
                               <div className="flex flex-wrap gap-2 mt-2">
-                                {/* FIX: Use keyword value as key instead of array index for stable rendering */}
-                                {entry.keywords.slice(0, 5).map((keyword) => (
+                                {/* FIX: Include index to handle duplicate keywords in same entry */}
+                                {entry.keywords.slice(0, 5).map((keyword, idx) => (
                                   <span
-                                    key={`${entry.id || entry.filePath || entry.timestamp}-kw-${keyword}`}
+                                    key={`${entry.id || entry.filePath || entry.timestamp}-kw-${idx}-${keyword}`}
                                     className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
                                   >
                                     {keyword}
@@ -341,10 +344,10 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                               entry?.analysis?.tags &&
                               entry.analysis.tags.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mt-2">
-                                  {/* FIX: Use tag value as key instead of array index for stable rendering */}
-                                  {entry.analysis.tags.slice(0, 5).map((tag) => (
+                                  {/* FIX: Include index to handle duplicate tags in same entry */}
+                                  {entry.analysis.tags.slice(0, 5).map((tag, idx) => (
                                     <span
-                                      key={`${entry.id || entry.filePath || entry.timestamp}-tag-${tag}`}
+                                      key={`${entry.id || entry.filePath || entry.timestamp}-tag-${idx}-${tag}`}
                                       className="text-xs bg-stratosort-blue/10 text-stratosort-blue px-2 py-1 rounded-full"
                                     >
                                       {tag}
@@ -380,8 +383,20 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
             </>
           )}
         </div>
-      </div>
-    </div>
+      </Modal>
+
+      {/* Clear history confirmation modal */}
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={doClearHistory}
+        title="Clear All History?"
+        message="This will permanently delete all analysis history and statistics. This action cannot be undone."
+        confirmText="Clear All"
+        cancelText="Cancel"
+        variant="danger"
+      />
+    </>
   );
 }
 

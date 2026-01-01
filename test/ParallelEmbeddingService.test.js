@@ -190,17 +190,15 @@ describe('ParallelEmbeddingService', () => {
       expect(service.stats.failedRequests).toBe(0);
     });
 
-    test('returns fallback on error', async () => {
+    test('throws error on embedding failure', async () => {
       const { withOllamaRetry } = require('../src/main/utils/ollamaApiRetry');
       withOllamaRetry.mockRejectedValueOnce(new Error('Ollama error'));
 
       const service = new ParallelEmbeddingService();
 
-      const result = await service.embedText('test');
-
-      expect(result.model).toBe('fallback');
-      expect(result.vector).toHaveLength(1024);
-      expect(result.vector.every((v) => v === 0)).toBe(true);
+      // FIX: Now throws error instead of returning fallback zero vector
+      // Zero vectors are useless for semantic search and pollute the database
+      await expect(service.embedText('test')).rejects.toThrow('Embedding failed: Ollama error');
     });
 
     test('releases slot after completion', async () => {
@@ -270,9 +268,15 @@ describe('ParallelEmbeddingService', () => {
 
       const { results, errors } = await service.batchEmbedTexts(items);
 
-      // First succeeds, second fails but returns fallback
-      expect(errors.length).toBe(0); // Fallback doesn't throw
-      expect(results).toHaveLength(2);
+      // FIX: Now errors are collected instead of returning fallback zero vectors
+      // First succeeds, second fails and error is collected
+      expect(errors.length).toBe(1);
+      expect(errors[0].id).toBe('2');
+      expect(errors[0].error).toContain('Failed');
+      // Results array contains successful items (filtered from null/undefined)
+      // The first item succeeded
+      const successfulResults = results.filter((r) => r && r.success);
+      expect(successfulResults).toHaveLength(1);
     });
 
     test('respects stopOnError option', async () => {
@@ -286,13 +290,14 @@ describe('ParallelEmbeddingService', () => {
         { id: '2', text: 'world' }
       ];
 
-      // stopOnError would cause early termination, but since fallback catches errors,
-      // we need to simulate a throw in embedText
-      // This tests the error collection path
-      await service.batchEmbedTexts(items, { stopOnError: false });
+      // With stopOnError: false, all items are attempted even if some fail
+      // FIX: Now errors are tracked instead of returning fallback vectors
+      const { errors, stats } = await service.batchEmbedTexts(items, { stopOnError: false });
 
-      // All items processed with fallback
+      // All items processed, errors collected
       expect(service.stats.totalRequests).toBe(2);
+      expect(errors.length).toBe(2); // Both items failed
+      expect(stats.failed).toBe(2);
     });
 
     test('includes metadata in results', async () => {
@@ -499,6 +504,130 @@ describe('ParallelEmbeddingService', () => {
       service._adjustConcurrency();
 
       expect(service.concurrencyLimit).toBe(5);
+    });
+  });
+
+  describe('_classifyError', () => {
+    test('classifies network errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ code: 'ECONNREFUSED' })).toBe('NETWORK_ERROR');
+      expect(service._classifyError({ code: 'ECONNRESET' })).toBe('NETWORK_ERROR');
+      expect(service._classifyError({ code: 'ETIMEDOUT' })).toBe('NETWORK_ERROR');
+      expect(service._classifyError({ message: 'connection refused' })).toBe('NETWORK_ERROR');
+      expect(service._classifyError({ message: 'network error' })).toBe('NETWORK_ERROR');
+    });
+
+    test('classifies service unavailable errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ code: 'SERVICE_UNAVAILABLE' })).toBe('SERVICE_UNAVAILABLE');
+      expect(service._classifyError({ code: 'SERVICE_SHUTDOWN' })).toBe('SERVICE_UNAVAILABLE');
+      expect(service._classifyError({ message: 'service unavailable' })).toBe(
+        'SERVICE_UNAVAILABLE'
+      );
+      expect(service._classifyError({ message: 'shutting down' })).toBe('SERVICE_UNAVAILABLE');
+    });
+
+    test('classifies timeout errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ code: 'TIMEOUT' })).toBe('TIMEOUT');
+      expect(service._classifyError({ code: 'QUEUE_TIMEOUT' })).toBe('TIMEOUT');
+      expect(service._classifyError({ message: 'request timed out' })).toBe('TIMEOUT');
+    });
+
+    test('classifies model not found errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ message: 'model not found' })).toBe('MODEL_NOT_FOUND');
+      expect(service._classifyError({ message: 'model does not exist' })).toBe('MODEL_NOT_FOUND');
+      expect(service._classifyError({ message: 'unknown model' })).toBe('MODEL_NOT_FOUND');
+    });
+
+    test('classifies rate limiting errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ code: 'RATE_LIMITED' })).toBe('RATE_LIMITED');
+      expect(service._classifyError({ message: 'rate limit exceeded' })).toBe('RATE_LIMITED');
+      expect(service._classifyError({ message: 'too many requests' })).toBe('RATE_LIMITED');
+    });
+
+    test('classifies out of memory errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ message: 'out of memory' })).toBe('OUT_OF_MEMORY');
+      expect(service._classifyError({ message: 'OOM killed' })).toBe('OUT_OF_MEMORY');
+    });
+
+    test('classifies invalid input errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ message: 'invalid input' })).toBe('INVALID_INPUT');
+      expect(service._classifyError({ message: 'empty text' })).toBe('INVALID_INPUT');
+      expect(service._classifyError({ message: 'malformed request' })).toBe('INVALID_INPUT');
+    });
+
+    test('returns UNKNOWN for unclassified errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._classifyError({ message: 'something went wrong' })).toBe('UNKNOWN');
+      expect(service._classifyError({})).toBe('UNKNOWN');
+    });
+  });
+
+  describe('_isRetryableError', () => {
+    test('returns true for network errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ code: 'ECONNREFUSED' })).toBe(true);
+      expect(service._isRetryableError({ code: 'ECONNRESET' })).toBe(true);
+      expect(service._isRetryableError({ code: 'ETIMEDOUT' })).toBe(true);
+    });
+
+    test('returns true for service unavailable errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ code: 'SERVICE_UNAVAILABLE' })).toBe(true);
+      expect(service._isRetryableError({ message: 'service unavailable' })).toBe(true);
+    });
+
+    test('returns true for timeout errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ code: 'QUEUE_TIMEOUT' })).toBe(true);
+      expect(service._isRetryableError({ message: 'request timed out' })).toBe(true);
+    });
+
+    test('returns true for rate limiting errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ code: 'RATE_LIMITED' })).toBe(true);
+      expect(service._isRetryableError({ message: 'rate limit exceeded' })).toBe(true);
+    });
+
+    test('returns false for model not found errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ message: 'model not found' })).toBe(false);
+    });
+
+    test('returns false for out of memory errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ message: 'out of memory' })).toBe(false);
+    });
+
+    test('returns false for invalid input errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ message: 'invalid input' })).toBe(false);
+    });
+
+    test('returns false for unknown errors', () => {
+      const service = new ParallelEmbeddingService();
+
+      expect(service._isRetryableError({ message: 'something went wrong' })).toBe(false);
     });
   });
 

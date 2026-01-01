@@ -263,4 +263,51 @@ describe('ServiceIntegration', () => {
       expect(result).toBe(true);
     });
   });
+
+  describe('SERVICE_INITIALIZATION_ORDER', () => {
+    test('exports initialization order constant', () => {
+      const module = require('../src/main/services/ServiceIntegration');
+
+      expect(module.SERVICE_INITIALIZATION_ORDER).toBeDefined();
+      expect(typeof module.SERVICE_INITIALIZATION_ORDER).toBe('object');
+    });
+
+    test('initialization order includes all tiers', () => {
+      const module = require('../src/main/services/ServiceIntegration');
+      const order = module.SERVICE_INITIALIZATION_ORDER;
+
+      // Should have tier0, tier1, tier2 properties
+      expect(order).toHaveProperty('tier0');
+      expect(order).toHaveProperty('tier1');
+      expect(order).toHaveProperty('tier2');
+      expect(Array.isArray(order.tier0)).toBe(true);
+      expect(Array.isArray(order.tier1)).toBe(true);
+      expect(Array.isArray(order.tier2)).toBe(true);
+    });
+
+    test('tier0 contains independent services', () => {
+      const module = require('../src/main/services/ServiceIntegration');
+      const order = module.SERVICE_INITIALIZATION_ORDER;
+
+      // Tier 0 should have services that can initialize in parallel
+      expect(order.tier0.length).toBeGreaterThan(0);
+      expect(order.tier0).toContain('analysisHistory');
+    });
+
+    test('tier1 contains ChromaDB', () => {
+      const module = require('../src/main/services/ServiceIntegration');
+      const order = module.SERVICE_INITIALIZATION_ORDER;
+
+      // Tier 1 should contain chromaDb
+      expect(order.tier1).toContain('chromaDb');
+    });
+
+    test('tier2 contains services dependent on ChromaDB', () => {
+      const module = require('../src/main/services/ServiceIntegration');
+      const order = module.SERVICE_INITIALIZATION_ORDER;
+
+      // Tier 2 services depend on ChromaDB
+      expect(order.tier2.length).toBeGreaterThan(0);
+    });
+  });
 });

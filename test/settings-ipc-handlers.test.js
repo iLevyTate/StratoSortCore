@@ -123,7 +123,19 @@ jest.mock('../src/shared/validationConstants', () => ({
 // Mock IPC wrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: (logger, handler) => handler,
-  withValidation: (logger, schema, handler) => handler
+  withValidation: (logger, schema, handler) => handler,
+  successResponse: (data = {}, warnings = []) => {
+    const response = { success: true, ...data };
+    if (warnings && warnings.length > 0) {
+      response.warnings = warnings;
+    }
+    return response;
+  },
+  errorResponse: (error, extras = {}) => ({ success: false, error, ...extras }),
+  canceledResponse: () => ({ success: false, canceled: true }),
+  safeHandle: (ipcMain, channel, handler) => {
+    ipcMain.handle(channel, handler);
+  }
 }));
 
 // Mock zod - return null to use the fallback path without validation
@@ -542,6 +554,407 @@ describe('Settings IPC Handlers', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('unsafe');
+    });
+
+    test('rejects URLs with credentials', async () => {
+      const importPath = '/tmp/cred-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          ollamaHost: 'http://user:pass@localhost:11434'
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      // The URL regex may fail before the credentials check (depending on regex pattern)
+      // Either way, it should fail validation
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid ollamaHost');
+    });
+
+    test('rejects invalid model names', async () => {
+      const importPath = '/tmp/bad-model-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          textModel: 'model with spaces!'
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('alphanumeric');
+    });
+
+    test('rejects model names that are too long', async () => {
+      const importPath = '/tmp/long-model-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          visionModel: 'a'.repeat(101)
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('too long');
+    });
+
+    test('rejects non-boolean for boolean settings', async () => {
+      const importPath = '/tmp/bad-bool-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          launchOnStartup: 'yes'
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be boolean');
+    });
+
+    test('rejects invalid theme values', async () => {
+      const importPath = '/tmp/bad-theme-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          theme: 'rainbow'
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be one of');
+    });
+
+    test('rejects invalid language codes', async () => {
+      const importPath = '/tmp/bad-lang-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          language: 'this-is-way-too-long-for-a-language-code'
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('language code');
+    });
+
+    test('rejects invalid logging levels', async () => {
+      const importPath = '/tmp/bad-log-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          loggingLevel: 'verbose'
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be one of');
+    });
+
+    test('rejects invalid cacheSize values', async () => {
+      const importPath = '/tmp/bad-cache-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          cacheSize: -100
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be integer');
+    });
+
+    test('rejects invalid maxBatchSize values', async () => {
+      const importPath = '/tmp/bad-batch-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          maxBatchSize: 0
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be integer');
+    });
+
+    test('ignores unknown setting keys', async () => {
+      const importPath = '/tmp/unknown-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: {
+          theme: 'dark',
+          unknownKey: 'some value',
+          anotherUnknown: 123
+        }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      // Should succeed but ignore unknown keys
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects non-object settings', async () => {
+      const importPath = '/tmp/non-object-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: 'not an object'
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('invalid settings object');
+    });
+  });
+
+  describe('GET handler', () => {
+    test('returns settings from service', async () => {
+      const handler = handlers[IPC_CHANNELS.SETTINGS.GET];
+      const result = await handler({});
+
+      expect(result).toEqual({ theme: 'dark', ollamaHost: 'http://localhost:11434' });
+      expect(mockSettingsService.load).toHaveBeenCalled();
+    });
+
+    test('returns empty object on error', async () => {
+      mockSettingsService.load.mockRejectedValueOnce(new Error('Load failed'));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.GET];
+      const result = await handler({});
+
+      expect(result).toEqual({});
+    });
+  });
+
+  describe('GET_CONFIGURABLE_LIMITS handler', () => {
+    test('returns configurable limits', async () => {
+      const handler = handlers[IPC_CHANNELS.SETTINGS.GET_CONFIGURABLE_LIMITS];
+      const result = await handler({});
+
+      expect(result).toEqual({ maxBatchSize: 1000 });
+    });
+
+    test('returns default limits on error', async () => {
+      mockSettingsService.load.mockRejectedValueOnce(new Error('Load failed'));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.GET_CONFIGURABLE_LIMITS];
+      const result = await handler({});
+
+      expect(result).toEqual({ maxBatchSize: 1000 });
+    });
+  });
+
+  describe('SAVE handler', () => {
+    test('saves settings successfully', async () => {
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      const result = await handler({}, { theme: 'light' });
+
+      expect(result.success).toBe(true);
+      expect(mockSettingsService.save).toHaveBeenCalled();
+    });
+
+    test('applies settings to services', async () => {
+      mockSettingsService.save.mockResolvedValueOnce({
+        settings: {
+          ollamaHost: 'http://newhost:11434',
+          textModel: 'newmodel',
+          visionModel: 'newvision',
+          embeddingModel: 'newembedding'
+        },
+        validationWarnings: []
+      });
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      await handler(
+        {},
+        {
+          ollamaHost: 'http://newhost:11434',
+          textModel: 'newmodel',
+          visionModel: 'newvision',
+          embeddingModel: 'newembedding'
+        }
+      );
+
+      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://newhost:11434');
+      expect(mockSetOllamaModel).toHaveBeenCalledWith('newmodel');
+      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('newvision');
+      expect(mockSetOllamaEmbeddingModel).toHaveBeenCalledWith('newembedding');
+    });
+
+    test('notifies settings changed', async () => {
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      await handler({}, { theme: 'light' });
+
+      expect(mockOnSettingsChanged).toHaveBeenCalled();
+    });
+
+    test('handles save failure', async () => {
+      const error = new Error('Save failed');
+      error.validationErrors = ['error1'];
+      error.validationWarnings = ['warning1'];
+      mockSettingsService.save.mockRejectedValueOnce(error);
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      const result = await handler({}, { theme: 'invalid' });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Save failed');
+      expect(result.validationErrors).toEqual(['error1']);
+      expect(result.validationWarnings).toEqual(['warning1']);
+    });
+
+    test('handles null settings input', async () => {
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      const result = await handler({}, null);
+
+      expect(result.success).toBe(true);
+      expect(mockSettingsService.save).toHaveBeenCalled();
+    });
+
+    test('handles non-function onSettingsChanged', async () => {
+      // Re-register with non-function onSettingsChanged
+      handlers = {};
+      ipcMain.handle.mockImplementation((channel, handler) => {
+        handlers[channel] = handler;
+      });
+
+      registerSettingsIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        settingsService: mockSettingsService,
+        setOllamaHost: mockSetOllamaHost,
+        setOllamaModel: mockSetOllamaModel,
+        setOllamaVisionModel: mockSetOllamaVisionModel,
+        setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
+        onSettingsChanged: 'not a function'
+      });
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      const result = await handler({}, { theme: 'light' });
+
+      expect(result.success).toBe(true);
+      // Should warn about non-function but not fail
+    });
+
+    test('handles onSettingsChanged error', async () => {
+      // Re-register with failing onSettingsChanged
+      handlers = {};
+      ipcMain.handle.mockImplementation((channel, handler) => {
+        handlers[channel] = handler;
+      });
+
+      registerSettingsIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        settingsService: mockSettingsService,
+        setOllamaHost: mockSetOllamaHost,
+        setOllamaModel: mockSetOllamaModel,
+        setOllamaVisionModel: mockSetOllamaVisionModel,
+        setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
+        onSettingsChanged: jest.fn().mockRejectedValue(new Error('Notification failed'))
+      });
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      const result = await handler({}, { theme: 'light' });
+
+      expect(result.success).toBe(true);
+      expect(result.propagationSuccess).toBe(false);
+    });
+  });
+
+  describe('Export error handling', () => {
+    test('handles write failure during export', async () => {
+      mockFs.writeFile.mockRejectedValueOnce(new Error('Disk full'));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.EXPORT];
+      const result = await handler({}, '/tmp/export.json');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Disk full');
+    });
+  });
+
+  describe('Backup exception handling', () => {
+    test('handles createBackup exception', async () => {
+      mockSettingsService.createBackup.mockRejectedValueOnce(new Error('IO Error'));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.CREATE_BACKUP];
+      const result = await handler({});
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('IO Error');
+    });
+
+    test('handles restoreFromBackup exception', async () => {
+      mockSettingsService.restoreFromBackup.mockRejectedValueOnce(new Error('Restore IO Error'));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.RESTORE_BACKUP];
+      const result = await handler({}, '/some/path');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Restore IO Error');
+    });
+
+    test('handles deleteBackup exception', async () => {
+      mockSettingsService.deleteBackup.mockRejectedValueOnce(new Error('Delete IO Error'));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.DELETE_BACKUP];
+      const result = await handler({}, '/some/path');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Delete IO Error');
     });
   });
 });

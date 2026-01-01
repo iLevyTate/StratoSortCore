@@ -4,9 +4,10 @@
  * Handles file organization operations including auto-organize,
  * batch organize, and organization statistics.
  */
-const { createHandler, createErrorResponse } = require('./ipcWrappers');
+const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
 const { schemas } = require('./validationSchemas');
 const { logger } = require('../../shared/logger');
+const { isNotFoundError } = require('../../shared/errorClassifier');
 const fs = require('fs').promises;
 
 logger.setContext('IPC:Organize');
@@ -25,7 +26,7 @@ async function validateSourceFile(sourcePath) {
     }
     return true;
   } catch (error) {
-    if (error.code === 'ENOENT') {
+    if (isNotFoundError(error)) {
       throw new Error(`Source file does not exist: ${sourcePath}`);
     }
     throw error;
@@ -34,33 +35,35 @@ async function validateSourceFile(sourcePath) {
 
 /**
  * Validate all files in an array before processing
+ * Uses parallel validation for performance (avoids N+1 sequential fs.stat calls)
  * @param {Array<{path: string}>} files - Files to validate
  * @returns {Promise<{valid: Array, invalid: Array}>} Validated results
  */
 async function validateSourceFiles(files) {
-  const valid = [];
-  const invalid = [];
+  const results = await Promise.all(
+    files.map(async (file) => {
+      const sourcePath = file.path || file.source;
+      if (!sourcePath) {
+        return { file, valid: false, error: 'Missing file path' };
+      }
 
-  for (const file of files) {
-    const sourcePath = file.path || file.source;
-    if (!sourcePath) {
-      invalid.push({ file, error: 'Missing file path' });
-      continue;
-    }
+      try {
+        await validateSourceFile(sourcePath);
+        return { file, valid: true };
+      } catch (error) {
+        logger.warn('[ORGANIZE] File validation failed', {
+          path: sourcePath,
+          error: error.message
+        });
+        return { file, valid: false, error: error.message };
+      }
+    })
+  );
 
-    try {
-      await validateSourceFile(sourcePath);
-      valid.push(file);
-    } catch (error) {
-      logger.warn('[ORGANIZE] File validation failed', {
-        path: sourcePath,
-        error: error.message
-      });
-      invalid.push({ file, error: error.message });
-    }
-  }
-
-  return { valid, invalid };
+  return {
+    valid: results.filter((r) => r.valid).map((r) => r.file),
+    invalid: results.filter((r) => !r.valid).map((r) => ({ file: r.file, error: r.error }))
+  };
 }
 
 function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, getCustomFolders }) {
@@ -70,7 +73,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   const getOrganizeService = () => getServiceIntegration()?.autoOrganizeService;
 
   // Auto-organize files with AI suggestions
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.AUTO,
     createHandler({
       logger,
@@ -148,7 +152,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   );
 
   // Batch organize with auto-approval
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.BATCH,
     createHandler({
       logger,
@@ -224,7 +229,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   );
 
   // Process new file (for auto-organize on download)
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.PROCESS_NEW,
     createHandler({
       logger,
@@ -258,7 +264,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   );
 
   // Get organization statistics
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.GET_STATS,
     createHandler({
       logger,
@@ -289,7 +296,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   );
 
   // Update confidence thresholds
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.UPDATE_THRESHOLDS,
     createHandler({
       logger,
@@ -322,7 +330,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   // ============================================================================
 
   // Cluster batch organize - organize files grouped by semantic clusters
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH,
     createHandler({
       logger,
@@ -401,7 +410,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   );
 
   // Identify outliers - find files that don't fit well into any cluster
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.IDENTIFY_OUTLIERS,
     createHandler({
       logger,
@@ -473,7 +483,8 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
   );
 
   // Get cluster-based suggestions for a single file
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.ORGANIZE.GET_CLUSTER_SUGGESTIONS,
     createHandler({
       logger,

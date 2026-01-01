@@ -136,65 +136,6 @@ function createHealthCheckInterval(options) {
   };
 }
 
-/**
- * Execute a health check with timeout
- *
- * @param {Function} checkFn - Async function that performs the check
- * @param {number} timeoutMs - Timeout in milliseconds
- * @returns {Promise<boolean>} True if healthy, false if failed/timeout
- */
-async function executeWithTimeout(checkFn, timeoutMs) {
-  let timeoutId = null;
-  try {
-    const checkPromise = checkFn();
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error(`Health check timeout after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    await Promise.race([checkPromise, timeoutPromise]);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
-
-/**
- * Check if a service is available with retry logic
- *
- * @param {Object} options - Options
- * @param {Function} options.checkFn - Async function that returns true if available
- * @param {number} options.maxRetries - Maximum retry attempts (default: 3)
- * @param {number} options.initialDelayMs - Initial retry delay (default: 500)
- * @param {number} options.timeoutMs - Timeout per check (default: 3000)
- * @returns {Promise<boolean>} True if available
- */
-async function isServiceAvailable(options) {
-  const { checkFn, maxRetries = 3, initialDelayMs = 500, timeoutMs = 3000 } = options;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const available = await executeWithTimeout(checkFn, timeoutMs);
-      if (available) return true;
-    } catch {
-      // Continue to retry
-    }
-
-    if (attempt < maxRetries - 1) {
-      // Exponential backoff
-      const delay = initialDelayMs * Math.pow(2, attempt);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  return false;
-}
-
 module.exports = {
-  createHealthCheckInterval,
-  executeWithTimeout,
-  isServiceAvailable
+  createHealthCheckInterval
 };

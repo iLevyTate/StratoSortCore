@@ -30,6 +30,8 @@ module.exports = {
   maxWorkers: 1,
 
   moduleNameMapper: {
+    // CSS and style mocks
+    '\\.(css|less|scss|sass)$': '<rootDir>/mocks/styleMock.js',
     '^electron$': '<rootDir>/mocks/electron.js',
     '^ollama$': '<rootDir>/mocks/ollama.js',
     '^officeparser$': '<rootDir>/mocks/officeparser.js',

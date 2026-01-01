@@ -77,8 +77,7 @@ const loadState = () => {
                 dateFormat: 'YYYY-MM-DD',
                 caseConvention: 'kebab-case',
                 separator: '-'
-              },
-              watchPaths: []
+              }
             },
             analysis: {
               results: serializeLoadedFiles(parsedLegacy.phaseData?.analysisResults || []),
@@ -135,8 +134,7 @@ const loadState = () => {
           dateFormat: 'YYYY-MM-DD',
           caseConvention: 'kebab-case',
           separator: '-'
-        },
-        watchPaths: parsed.files?.watchPaths || []
+        }
       },
       analysis: {
         isAnalyzing: false, // Reset analysis state on reload

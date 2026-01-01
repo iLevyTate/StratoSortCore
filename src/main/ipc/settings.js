@@ -1,49 +1,14 @@
-const { withErrorLogging, withValidation } = require('./ipcWrappers');
+const {
+  withErrorLogging,
+  withValidation,
+  successResponse,
+  errorResponse,
+  canceledResponse,
+  safeHandle
+} = require('./ipcWrappers');
 const { app, dialog } = require('electron');
-const { getConfigurableLimits } = require('../../shared/settingsValidation');
+const { getConfigurableLimits, sanitizeSettings } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
-const { sanitizeSettings } = require('../../shared/settingsValidation');
-
-/**
- * Standardized IPC response format
- * @typedef {Object} IpcResponse
- * @property {boolean} success - Whether the operation succeeded
- * @property {string} [error] - Error message if failed
- * @property {boolean} [canceled] - True if user canceled a dialog
- * @property {string[]} [warnings] - Validation or other warnings
- */
-
-/**
- * Create a standardized success response
- * @param {Object} data - Response data to include
- * @param {string[]} [warnings] - Optional warnings
- * @returns {IpcResponse}
- */
-function successResponse(data = {}, warnings = []) {
-  const response = { success: true, ...data };
-  if (warnings && warnings.length > 0) {
-    response.warnings = warnings;
-  }
-  return response;
-}
-
-/**
- * Create a standardized error response
- * @param {string} error - Error message
- * @param {Object} [extras] - Additional fields (e.g., validationErrors)
- * @returns {IpcResponse}
- */
-function errorResponse(error, extras = {}) {
-  return { success: false, error, ...extras };
-}
-
-/**
- * Create a standardized canceled response
- * @returns {IpcResponse}
- */
-function canceledResponse() {
-  return { success: false, canceled: true };
-}
 
 // Import centralized security configuration
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
@@ -133,16 +98,33 @@ function validateImportedSettings(settings, logger) {
 
     // Validate value based on key type
     switch (key) {
-      case 'ollamaHost':
+      case 'ollamaHost': {
         if (typeof value !== 'string' || !URL_REGEX.test(value)) {
           throw new Error(`Invalid ${key}: must be a valid URL`);
         }
-        // Block potentially dangerous localhost redirects
-        if (value.includes('0.0.0.0') || value.includes('[::]') || value.includes('[::1]')) {
+        // Block bind-all addresses (0.0.0.0, [::]) which are not valid connection targets
+        // Note: localhost/127.0.0.1 are allowed since Ollama legitimately runs there
+        const lowerValue = value.toLowerCase();
+        if (lowerValue.includes('0.0.0.0') || lowerValue.includes('[::]')) {
           logger.warn(`[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${value}`);
           throw new Error(`Invalid ${key}: potentially unsafe URL pattern detected`);
         }
+        // Block URL credential attacks (e.g., http://attacker@127.0.0.1)
+        try {
+          const parsed = new URL(value);
+          if (parsed.username || parsed.password) {
+            logger.warn(`[SETTINGS-IMPORT] Blocking URL with credentials: ${value}`);
+            throw new Error(`Invalid ${key}: URLs with credentials are not allowed`);
+          }
+        } catch (urlError) {
+          if (urlError.message.includes('credentials')) {
+            throw urlError;
+          }
+          // URL parsing failed but regex passed - allow with warning
+          logger.warn(`[SETTINGS-IMPORT] URL parsing failed but pattern valid: ${value}`);
+        }
         break;
+      }
 
       case 'textModel':
       case 'visionModel':
@@ -216,6 +198,79 @@ function validateImportedSettings(settings, logger) {
   return sanitized;
 }
 
+/**
+ * Internal helper to handle settings save logic
+ * Extracted to avoid duplication between Zod and non-Zod code paths
+ * @param {Object} settings - Settings to save
+ * @param {Object} deps - Dependencies
+ * @returns {Promise<Object>} IPC response
+ */
+async function handleSettingsSaveCore(settings, deps) {
+  const {
+    settingsService,
+    setOllamaHost,
+    setOllamaModel,
+    setOllamaVisionModel,
+    setOllamaEmbeddingModel,
+    onSettingsChanged,
+    logger
+  } = deps;
+
+  try {
+    const normalizedInput =
+      settings && typeof settings === 'object' ? sanitizeSettings(settings) : {};
+    const saveResult = await settingsService.save(normalizedInput);
+    const merged = saveResult.settings || saveResult; // Backward compatibility
+    const validationWarnings = saveResult.validationWarnings || [];
+
+    await applySettingsToServices(merged, {
+      setOllamaHost,
+      setOllamaModel,
+      setOllamaVisionModel,
+      setOllamaEmbeddingModel,
+      logger
+    });
+    logger.info('[SETTINGS] Saved settings');
+
+    // Enhanced settings propagation with error logging
+    let propagationSuccess = true;
+    try {
+      if (typeof onSettingsChanged === 'function') {
+        await onSettingsChanged(merged);
+        logger.info('[SETTINGS] Settings change notification sent successfully');
+      } else if (onSettingsChanged !== undefined && onSettingsChanged !== null) {
+        logger.warn('[SETTINGS] onSettingsChanged is not a function:', typeof onSettingsChanged);
+      }
+    } catch (error) {
+      propagationSuccess = false;
+      logger.error('[SETTINGS] Settings change notification failed:', error);
+    }
+
+    return {
+      success: true,
+      settings: merged,
+      propagationSuccess,
+      validationWarnings
+    };
+  } catch (error) {
+    logger.error('Failed to save settings:', error);
+
+    const response = {
+      success: false,
+      error: error.message
+    };
+
+    if (error.validationErrors) {
+      response.validationErrors = error.validationErrors;
+    }
+    if (error.validationWarnings) {
+      response.validationWarnings = error.validationWarnings;
+    }
+
+    return response;
+  }
+}
+
 function registerSettingsIpc({
   ipcMain,
   IPC_CHANNELS,
@@ -227,7 +282,8 @@ function registerSettingsIpc({
   setOllamaEmbeddingModel,
   onSettingsChanged
 }) {
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.GET,
     withErrorLogging(logger, async () => {
       try {
@@ -241,7 +297,8 @@ function registerSettingsIpc({
   );
 
   // Fixed: Add endpoint to get configurable limits
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.GET_CONFIGURABLE_LIMITS,
     withErrorLogging(logger, async () => {
       try {
@@ -276,142 +333,51 @@ function registerSettingsIpc({
           theme: z.string().nullish(),
           language: z.string().nullish(),
           loggingLevel: z.string().nullish(),
-          cacheSize: z.number().int().min(0).max(100000).nullish(),
-          maxBatchSize: z.number().int().min(1).max(100000).nullish(),
+          cacheSize: z
+            .number()
+            .int()
+            .min(NUMERIC_LIMITS.cacheSize.min)
+            .max(NUMERIC_LIMITS.cacheSize.max)
+            .nullish(),
+          maxBatchSize: z
+            .number()
+            .int()
+            .min(NUMERIC_LIMITS.maxBatchSize.min)
+            .max(NUMERIC_LIMITS.maxBatchSize.max)
+            .nullish(),
           autoUpdateCheck: z.boolean().nullish(),
           telemetryEnabled: z.boolean().nullish()
         })
         .partial()
     : null;
-  ipcMain.handle(
+  // Dependencies for save handler (captured in closure)
+  const saveDeps = {
+    settingsService,
+    setOllamaHost,
+    setOllamaModel,
+    setOllamaVisionModel,
+    setOllamaEmbeddingModel,
+    onSettingsChanged,
+    logger
+  };
+
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.SAVE,
     z && settingsSchema
       ? withValidation(logger, settingsSchema, async (event, settings) => {
           void event;
-          try {
-            const normalizedInput =
-              settings && typeof settings === 'object' ? sanitizeSettings(settings) : {};
-            // Fixed: Handle validation results from SettingsService
-            const saveResult = await settingsService.save(normalizedInput);
-            const merged = saveResult.settings || saveResult; // Backward compatibility
-            const validationWarnings = saveResult.validationWarnings || [];
-
-            await applySettingsToServices(merged, {
-              setOllamaHost,
-              setOllamaModel,
-              setOllamaVisionModel,
-              setOllamaEmbeddingModel,
-              logger
-            });
-            logger.info('[SETTINGS] Saved settings');
-
-            // Fixed: Enhanced settings propagation with error logging
-            let propagationSuccess = true;
-            try {
-              if (typeof onSettingsChanged === 'function') {
-                await onSettingsChanged(merged);
-                logger.info('[SETTINGS] Settings change notification sent successfully');
-              } else if (onSettingsChanged !== undefined && onSettingsChanged !== null) {
-                logger.warn(
-                  '[SETTINGS] onSettingsChanged is not a function:',
-                  typeof onSettingsChanged
-                );
-              }
-            } catch (error) {
-              propagationSuccess = false;
-              logger.error('[SETTINGS] Settings change notification failed:', error);
-            }
-
-            return {
-              success: true,
-              settings: merged,
-              propagationSuccess,
-              validationWarnings
-            };
-          } catch (error) {
-            logger.error('Failed to save settings:', error);
-
-            // Include validation errors if available
-            const response = {
-              success: false,
-              error: error.message
-            };
-
-            if (error.validationErrors) {
-              response.validationErrors = error.validationErrors;
-            }
-            if (error.validationWarnings) {
-              response.validationWarnings = error.validationWarnings;
-            }
-
-            return response;
-          }
+          return handleSettingsSaveCore(settings, saveDeps);
         })
       : withErrorLogging(logger, async (event, settings) => {
           void event;
-          try {
-            const normalizedInput =
-              settings && typeof settings === 'object' ? sanitizeSettings(settings) : {};
-            // Fixed: Handle validation results from SettingsService
-            const saveResult = await settingsService.save(normalizedInput);
-            const merged = saveResult.settings || saveResult; // Backward compatibility
-            const validationWarnings = saveResult.validationWarnings || [];
-
-            await applySettingsToServices(merged, {
-              setOllamaHost,
-              setOllamaModel,
-              setOllamaVisionModel,
-              setOllamaEmbeddingModel,
-              logger
-            });
-            logger.info('[SETTINGS] Saved settings');
-
-            // Fixed: Enhanced settings propagation with error logging
-            let propagationSuccess = true;
-            try {
-              if (typeof onSettingsChanged === 'function') {
-                await onSettingsChanged(merged);
-                logger.info('[SETTINGS] Settings change notification sent successfully');
-              } else if (onSettingsChanged !== undefined && onSettingsChanged !== null) {
-                logger.warn(
-                  '[SETTINGS] onSettingsChanged is not a function:',
-                  typeof onSettingsChanged
-                );
-              }
-            } catch (error) {
-              propagationSuccess = false;
-              logger.error('[SETTINGS] Settings change notification failed:', error);
-            }
-
-            return {
-              success: true,
-              settings: merged,
-              propagationSuccess,
-              validationWarnings
-            };
-          } catch (error) {
-            logger.error('Failed to save settings:', error);
-
-            // Include validation errors if available
-            const response = {
-              success: false,
-              error: error.message
-            };
-
-            if (error.validationErrors) {
-              response.validationErrors = error.validationErrors;
-            }
-            if (error.validationWarnings) {
-              response.validationWarnings = error.validationWarnings;
-            }
-
-            return response;
-          }
+          return handleSettingsSaveCore(settings, saveDeps);
         })
   );
 
   // Fixed: Add config export handler
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.EXPORT,
     withErrorLogging(logger, async (event, exportPath) => {
       void event;
@@ -472,7 +438,8 @@ function registerSettingsIpc({
   );
 
   // Fixed: Add config import handler
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.IMPORT,
     withErrorLogging(logger, async (event, importPath) => {
       void event;
@@ -565,7 +532,8 @@ function registerSettingsIpc({
   );
 
   // Fixed: Add backup management handlers
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.CREATE_BACKUP,
     withErrorLogging(logger, async () => {
       try {
@@ -582,7 +550,8 @@ function registerSettingsIpc({
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.LIST_BACKUPS,
     withErrorLogging(logger, async () => {
       try {
@@ -595,7 +564,8 @@ function registerSettingsIpc({
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.RESTORE_BACKUP,
     withErrorLogging(logger, async (event, backupPath) => {
       void event;
@@ -636,7 +606,8 @@ function registerSettingsIpc({
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.SETTINGS.DELETE_BACKUP,
     withErrorLogging(logger, async (event, backupPath) => {
       void event;

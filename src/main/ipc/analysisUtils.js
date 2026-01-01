@@ -103,20 +103,68 @@ function buildErrorContext({ operation, filePath, error }) {
 
 /**
  * Create a standardized fallback response for failed analysis.
+ * FIX: Enhanced with error context for better debugging and retry logic
  *
  * @param {string} filePath - File path
  * @param {string} category - Default category ('documents' or 'images')
  * @param {string} errorMessage - Error message
- * @returns {Object} Fallback analysis result
+ * @param {Object} errorContext - Additional error context (optional)
+ * @param {string} errorContext.errorType - Type of error (e.g., 'NETWORK', 'TIMEOUT', 'MODEL_NOT_FOUND')
+ * @param {boolean} errorContext.isRetryable - Whether the error is retryable
+ * @param {string} errorContext.code - Error code if available
+ * @returns {Object} Fallback analysis result with error context
  */
-function createAnalysisFallback(filePath, category, errorMessage) {
+function createAnalysisFallback(filePath, category, errorMessage, errorContext = {}) {
+  // FIX: Classify error type based on message if not provided
+  const errorType = errorContext.errorType || _classifyAnalysisError(errorMessage);
+  const isRetryable = errorContext.isRetryable ?? _isRetryableAnalysisError(errorType);
+
   return {
     error: errorMessage,
+    errorType,
+    isRetryable,
+    errorCode: errorContext.code,
     suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
     category,
     keywords: [],
     confidence: 0
   };
+}
+
+/**
+ * Classify analysis error type
+ * @param {string} message - Error message
+ * @returns {string} Error type classification
+ * @private
+ */
+function _classifyAnalysisError(message) {
+  if (!message) return 'UNKNOWN';
+  const msg = message.toLowerCase();
+
+  if (msg.includes('timeout') || msg.includes('timed out')) return 'TIMEOUT';
+  if (msg.includes('network') || msg.includes('connection') || msg.includes('econnrefused'))
+    return 'NETWORK';
+  if (msg.includes('not found') || msg.includes('enoent')) return 'FILE_NOT_FOUND';
+  if (msg.includes('model') && (msg.includes('not found') || msg.includes('unknown')))
+    return 'MODEL_NOT_FOUND';
+  if (msg.includes('ollama')) return 'OLLAMA_ERROR';
+  if (msg.includes('memory') || msg.includes('oom')) return 'OUT_OF_MEMORY';
+  if (msg.includes('too large') || msg.includes('size limit')) return 'FILE_TOO_LARGE';
+  if (msg.includes('permission') || msg.includes('access denied')) return 'PERMISSION_DENIED';
+  if (msg.includes('unsupported') || msg.includes('invalid format')) return 'UNSUPPORTED_FORMAT';
+
+  return 'UNKNOWN';
+}
+
+/**
+ * Determine if an analysis error is retryable
+ * @param {string} errorType - Error type from _classifyAnalysisError
+ * @returns {boolean} True if error is retryable
+ * @private
+ */
+function _isRetryableAnalysisError(errorType) {
+  const retryableTypes = ['TIMEOUT', 'NETWORK', 'OLLAMA_ERROR'];
+  return retryableTypes.includes(errorType);
 }
 
 /**

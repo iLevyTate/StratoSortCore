@@ -10,7 +10,7 @@
  */
 
 const { getInstance: getChromaDB } = require('../services/chromadb');
-const { withErrorLogging } = require('./ipcWrappers');
+const { withErrorLogging, safeHandle } = require('./ipcWrappers');
 const { CircuitState } = require('../utils/CircuitBreaker');
 
 /**
@@ -31,7 +31,8 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
    * Get current ChromaDB service status
    * Returns: { isOnline, circuitState, queueSize, isInitialized }
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.CHROMADB.GET_STATUS,
     withErrorLogging(logger, async () => {
       return {
@@ -48,7 +49,8 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
   /**
    * Get circuit breaker statistics
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.CHROMADB.GET_CIRCUIT_STATS,
     withErrorLogging(logger, async () => {
       return chromaDbService.getCircuitStats();
@@ -58,7 +60,8 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
   /**
    * Get offline queue statistics
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.CHROMADB.GET_QUEUE_STATS,
     withErrorLogging(logger, async () => {
       return chromaDbService.getQueueStats();
@@ -69,7 +72,8 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
    * Force recovery attempt
    * Resets circuit breaker and triggers health check
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.CHROMADB.FORCE_RECOVERY,
     withErrorLogging(logger, async () => {
       logger.info('[CHROMADB-IPC] Force recovery requested');
@@ -89,7 +93,8 @@ function registerChromaDBIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
   /**
    * Perform manual health check
    */
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.CHROMADB.HEALTH_CHECK,
     withErrorLogging(logger, async () => {
       const isHealthy = await chromaDbService.checkHealth();

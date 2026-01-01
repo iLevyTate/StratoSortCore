@@ -6,6 +6,7 @@ assets/
 tmpUserData/
 release/build/
 Documents/
+test-results/
 
 **/*.min.js
 **/*.bundle.js

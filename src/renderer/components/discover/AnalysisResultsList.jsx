@@ -1,8 +1,57 @@
-import React, { memo, useMemo, useCallback, useState, useEffect } from 'react';
+import React, { memo, useMemo, useCallback, useState, useEffect, Component } from 'react';
 import PropTypes from 'prop-types';
 import { List } from 'react-window';
-import { FileText, Compass } from 'lucide-react';
+import { FileText, Compass, AlertTriangle } from 'lucide-react';
 import { Button, StatusBadge } from '../ui';
+import { logger } from '../../../shared/logger';
+
+// FIX: Add error boundary to prevent single bad file from crashing entire list
+class AnalysisResultsErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    logger.error('AnalysisResultsList error boundary caught error', {
+      error: error?.message || String(error),
+      componentStack: errorInfo?.componentStack
+    });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center gap-2 text-red-700">
+            <AlertTriangle className="w-5 h-5" />
+            <span className="font-medium">Failed to render analysis results</span>
+          </div>
+          <p className="mt-2 text-sm text-red-600">
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-3"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Try Again
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+AnalysisResultsErrorBoundary.propTypes = {
+  children: PropTypes.node.isRequired
+};
 
 // FIX: Implement virtualization for large file lists to prevent UI lag
 // Each item is approximately 176px in height (fits 2-line titles without overlap)
@@ -138,12 +187,29 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   const items = useMemo(() => (Array.isArray(results) ? results : []), [results]);
   const handleAction = useCallback((action, path) => onFileAction(action, path), [onFileAction]);
 
-  // Fix: Use ref to measure actual container dimensions like VirtualizedFileGrid
-  const containerRef = React.useRef(null);
+  // FIX: Use callback ref pattern to properly observe container when it becomes available
+  const [containerNode, setContainerNode] = useState(null);
+  const containerRef = useCallback((node) => {
+    setContainerNode(node);
+  }, []);
   const [dimensions, setDimensions] = useState({ width: 0, height: 600 });
 
+  // FIX: Re-observe when containerNode changes (properly handles initial null case)
+  // FIX: Add ResizeObserver feature detection for safety
   useEffect(() => {
-    if (!containerRef.current) return undefined;
+    if (!containerNode) return undefined;
+
+    // Feature detection for environments without ResizeObserver
+    if (typeof ResizeObserver === 'undefined') {
+      // Fallback: use window dimensions
+      setDimensions({
+        width: containerNode.offsetWidth || 0,
+        height:
+          containerNode.offsetHeight ||
+          (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
+      });
+      return undefined;
+    }
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
@@ -156,9 +222,9 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
       }
     });
 
-    observer.observe(containerRef.current);
+    observer.observe(containerNode);
     return () => observer.disconnect();
-  }, []);
+  }, [containerNode]);
 
   // react-window v2 expects rowProps (not itemData).
   // Keep a stable object so the list can memoize rows efficiently.
@@ -320,4 +386,17 @@ AnalysisResultsList.propTypes = {
   getFileStateDisplay: PropTypes.func.isRequired
 };
 
-export default memo(AnalysisResultsList);
+// FIX: Wrap with error boundary to prevent crashes from malformed file data
+const MemoizedAnalysisResultsList = memo(AnalysisResultsList);
+
+function AnalysisResultsListWithErrorBoundary(props) {
+  return (
+    <AnalysisResultsErrorBoundary>
+      <MemoizedAnalysisResultsList {...props} />
+    </AnalysisResultsErrorBoundary>
+  );
+}
+
+AnalysisResultsListWithErrorBoundary.propTypes = AnalysisResultsList.propTypes;
+
+export default AnalysisResultsListWithErrorBoundary;

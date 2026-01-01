@@ -62,6 +62,14 @@ jest.mock('../src/shared/atomicFileOperations', () => ({
   crossDeviceMove: jest.fn().mockResolvedValue(undefined)
 }));
 
+// Mock pathSanitization to allow test paths
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPath: jest.fn().mockImplementation((filePath) => ({
+    valid: true,
+    normalizedPath: filePath
+  }))
+}));
+
 // Mock chromadb
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({

@@ -3,7 +3,7 @@
  *
  * Handles window minimize, maximize, close operations for custom title bar.
  */
-const { createHandler } = require('./ipcWrappers');
+const { createHandler, safeHandle } = require('./ipcWrappers');
 
 function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
   const context = 'Window';
@@ -14,7 +14,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     return win && !win.isDestroyed() ? win : null;
   };
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.WINDOW.MINIMIZE,
     createHandler({
       logger,
@@ -27,7 +28,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.WINDOW.MAXIMIZE,
     createHandler({
       logger,
@@ -40,7 +42,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.WINDOW.UNMAXIMIZE,
     createHandler({
       logger,
@@ -53,7 +56,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.WINDOW.TOGGLE_MAXIMIZE,
     createHandler({
       logger,
@@ -73,7 +77,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.WINDOW.IS_MAXIMIZED,
     createHandler({
       logger,
@@ -85,7 +90,8 @@ function registerWindowIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
     })
   );
 
-  ipcMain.handle(
+  safeHandle(
+    ipcMain,
     IPC_CHANNELS.WINDOW.CLOSE,
     createHandler({
       logger,

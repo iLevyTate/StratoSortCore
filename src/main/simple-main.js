@@ -1,3 +1,6 @@
+// FIX: Load environment variables from .env file before anything else
+require('dotenv').config();
+
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -33,6 +36,9 @@ const { getStartupManager } = require('./services/startup');
 
 // Import shared constants
 const { IPC_CHANNELS } = require('../shared/constants');
+
+// Import path sanitization for security checks
+const { isPathDangerous } = require('../shared/pathSanitization');
 
 // Import services
 const { analyzeDocumentFile } = require('./analysis/ollamaDocumentAnalysis');
@@ -113,12 +119,22 @@ const createMainWindow = require('./core/createWindow');
 // Application menu is now handled by ./core/applicationMenu
 // createApplicationMenu is imported and called with getMainWindow callback
 
+// FIX: Mutex to prevent concurrent window creation (race condition fix)
+let _windowCreationPromise = null;
+
 function createWindow() {
+  // FIX: If window creation is already in progress, return the existing promise
+  if (_windowCreationPromise) {
+    logger.debug('[WINDOW] createWindow() already in progress, waiting...');
+    return _windowCreationPromise;
+  }
+
   logger.debug('[WINDOW] createWindow() called');
 
   // HIGH-2 FIX: Use event-driven window state manager instead of nested setTimeout
   const { restoreWindow, ensureWindowOnScreen } = require('./core/windowState');
 
+  // FIX: Check for existing window BEFORE setting mutex to avoid holding lock unnecessarily
   if (mainWindow && !mainWindow.isDestroyed()) {
     logger.debug('[WINDOW] Window already exists, restoring state...');
 
@@ -130,9 +146,57 @@ function createWindow() {
     // Ensure window is on screen (handle multi-monitor issues)
     ensureWindowOnScreen(mainWindow);
 
-    return;
+    return Promise.resolve();
   }
 
+  // FIX: Set mutex for window creation - will be cleared once window is ready or on error
+  _windowCreationPromise = new Promise((resolve) => {
+    try {
+      // Double-check after acquiring mutex (another call might have created window)
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        logger.debug('[WINDOW] Window created by concurrent call, using existing');
+        _windowCreationPromise = null;
+        resolve();
+        return;
+      }
+
+      _createWindowInternal();
+
+      // Wait for window to be ready before releasing mutex
+      if (mainWindow) {
+        mainWindow.once('ready-to-show', () => {
+          logger.debug('[WINDOW] Window ready, releasing creation mutex');
+          _windowCreationPromise = null;
+          resolve();
+        });
+
+        // Also handle error case - release mutex after timeout
+        setTimeout(() => {
+          if (_windowCreationPromise) {
+            logger.warn('[WINDOW] Window creation timeout, releasing mutex');
+            _windowCreationPromise = null;
+            resolve();
+          }
+        }, 10000);
+      } else {
+        _windowCreationPromise = null;
+        resolve();
+      }
+    } catch (error) {
+      logger.error('[WINDOW] Error creating window:', error);
+      _windowCreationPromise = null;
+      resolve();
+    }
+  });
+
+  return _windowCreationPromise;
+}
+
+/**
+ * Internal window creation logic (extracted for mutex wrapper)
+ * @private
+ */
+function _createWindowInternal() {
   // No existing window, create a new one
   mainWindow = createMainWindow();
 
@@ -264,8 +328,10 @@ const { registerAllIpc } = require('./ipc');
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
+console.log('[DEBUG] Single instance lock:', gotTheLock);
 
 if (!gotTheLock) {
+  console.log('[DEBUG] Failed to get lock, quitting');
   app.quit();
 } else {
   const secondInstanceHandler = (_event, argv) => {
@@ -320,6 +386,10 @@ if (!gotTheLock) {
 
 // Initialize services after app is ready
 app.whenReady().then(async () => {
+  // FIX: Create a referenced interval to keep the event loop alive during startup
+  // This prevents premature exit when async operations use unreferenced timeouts
+  const startupKeepalive = setInterval(() => {}, 1000);
+
   try {
     // Initialize error handler and logging
     await errorHandler.initialize();
@@ -425,6 +495,11 @@ app.whenReady().then(async () => {
             logger.warn('[STARTUP] Skipping folder without valid path:', folder);
             return false;
           }
+          // Security: skip folders with dangerous system paths
+          if (isPathDangerous(folder.path)) {
+            logger.warn('[STARTUP] Skipping folder with dangerous path:', folder.path);
+            return false;
+          }
           return true;
         });
 
@@ -521,9 +596,9 @@ app.whenReady().then(async () => {
 
     // Verify AI models on startup (only if Ollama is running)
     if (startupResult?.services?.ollama?.success) {
-      // Use ModelManager which is now the single source of truth for model verification
-      const ModelManager = require('./services/ModelManager');
-      const modelManager = new ModelManager();
+      // Use ModelManager singleton which is now the single source of truth for model verification
+      const { getInstance: getModelManager } = require('./services/ModelManager');
+      const modelManager = getModelManager();
       // Ensure we have a working model selected
       try {
         await modelManager.ensureWorkingModel();
@@ -621,6 +696,8 @@ app.whenReady().then(async () => {
     }
 
     createWindow();
+    // FIX: Clear keepalive now that window is created and keeping event loop alive
+    clearInterval(startupKeepalive);
     handleSettingsChanged(initialSettings);
 
     // Run first-time setup in background (non-blocking)
@@ -783,6 +860,8 @@ app.whenReady().then(async () => {
     // Still create window even if startup fails - allow degraded mode
     logger.warn('[STARTUP] Creating window in degraded mode due to startup errors');
     createWindow();
+    // FIX: Clear keepalive now that window is created and keeping event loop alive
+    clearInterval(startupKeepalive);
   }
 });
 

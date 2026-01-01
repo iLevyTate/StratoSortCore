@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { LRUCache } = require('../../shared/LRUCache');
 const { logger } = require('../../shared/logger');
 const { CACHE } = require('../../shared/performanceConstants');
+const { get: getConfig } = require('../../shared/config/index');
 logger.setContext('EmbeddingCache');
 
 /**
@@ -147,9 +148,10 @@ class EmbeddingCache {
   getStats() {
     const baseStats = this._cache.getStats();
 
-    // Estimate memory usage
-    // Rough estimate: 1024 floats * 8 bytes per float + metadata overhead
-    const bytesPerEntry = 1024 * 8 + 200; // vector + metadata
+    // Estimate memory usage dynamically based on configured embedding dimension
+    // FIX: Use 4 bytes per float (float32) instead of 8 (embeddings use single precision)
+    const embeddingDim = getConfig('ANALYSIS.embeddingDimension', 768);
+    const bytesPerEntry = embeddingDim * 4 + 200; // vector float32s + metadata overhead
     const estimatedBytes = this._cache.size * bytesPerEntry;
     const estimatedMB = estimatedBytes / (1024 * 1024);
 
@@ -189,6 +191,28 @@ class EmbeddingCache {
     logger.info('[EmbeddingCache] Cache cleared', {
       previousSize
     });
+  }
+
+  /**
+   * Invalidate cache when embedding model changes
+   * Different models produce different vector dimensions, making old cache entries invalid
+   * @param {string} newModel - New model name
+   * @param {string} previousModel - Previous model name
+   * @returns {boolean} True if cache was invalidated
+   */
+  invalidateOnModelChange(newModel, previousModel) {
+    if (!previousModel || newModel === previousModel) {
+      return false;
+    }
+
+    logger.info('[EmbeddingCache] Model changed, invalidating cache', {
+      from: previousModel,
+      to: newModel,
+      cachedEntries: this._cache.size
+    });
+
+    this.clear();
+    return true;
   }
 
   /**

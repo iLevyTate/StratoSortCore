@@ -171,9 +171,19 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Helper to update splash screen status
+function updateSplashStatus(message) {
+  const statusEl = document.getElementById('splash-status');
+  if (statusEl) {
+    statusEl.textContent = message;
+  }
+}
+
 // Wait for DOM to be ready before initializing React
 function initializeApp() {
   try {
+    updateSplashStatus('Loading dependencies...');
+
     // Debug logging in development mode
     if (process.env.NODE_ENV === 'development') {
       logger.debug('Initializing React application');
@@ -187,6 +197,8 @@ function initializeApp() {
       );
     }
 
+    updateSplashStatus('Preparing interface...');
+
     // Debug logging in development mode
     if (process.env.NODE_ENV === 'development') {
       logger.debug('Root container found, creating React root');
@@ -194,6 +206,8 @@ function initializeApp() {
 
     // Create React root
     const root = createRoot(container);
+
+    updateSplashStatus('Starting application...');
 
     // Render the React app with global error boundary
     root.render(
@@ -206,10 +220,17 @@ function initializeApp() {
       </React.StrictMode>
     );
 
-    // Remove initial loading after first paint
+    // Remove initial loading after first paint with a smooth fade
     requestAnimationFrame(() => {
       const initialLoading = document.getElementById('initial-loading');
-      if (initialLoading) initialLoading.remove();
+      if (initialLoading) {
+        // Add fade-out animation
+        initialLoading.style.transition = 'opacity 0.3s ease-out';
+        initialLoading.style.opacity = '0';
+        setTimeout(() => {
+          initialLoading.remove();
+        }, 300);
+      }
     });
 
     // Debug logging in development mode
@@ -222,50 +243,53 @@ function initializeApp() {
       stack: error.stack
     });
 
-    // Show error message in the initial loading screen
+    // Show error message in the initial loading screen with polished styling
     // Security: Use textContent for error message to prevent XSS
     const initialLoading = document.getElementById('initial-loading');
     if (initialLoading) {
-      const section = document.createElement('section');
-      section.className = 'mx-auto max-w-md text-center text-stratosort-danger';
+      const errorSection = document.createElement('section');
+      errorSection.className = 'splash-error';
 
       const icon = document.createElement('div');
-      icon.className = 'text-4xl mb-4';
+      icon.className = 'splash-error-icon';
       icon.textContent = '⚠️';
+      icon.setAttribute('aria-hidden', 'true');
 
       const heading = document.createElement('h1');
-      heading.className = 'm-0 text-2xl font-semibold text-stratosort-danger';
+      heading.className = 'splash-error-title';
       heading.textContent = 'Failed to Load';
 
       const description = document.createElement('p');
-      description.className = 'mt-2 text-sm text-system-gray-500';
-      description.textContent = 'React application failed to initialize';
+      description.className = 'splash-error-message';
+      description.textContent =
+        'The application encountered an error during startup. Please try reloading.';
 
       const details = document.createElement('details');
-      details.className = 'mt-4 text-left';
+      details.className = 'splash-error-details';
 
       const summary = document.createElement('summary');
-      summary.className =
-        'cursor-pointer text-system-gray-500 hover:text-system-gray-700 transition-colors';
-      summary.textContent = 'Error Details';
+      summary.textContent = 'View error details';
 
       const pre = document.createElement('pre');
-      pre.className =
-        'mt-2 overflow-auto rounded-lg border border-border-soft bg-surface-muted p-3 text-xs text-system-gray-800 font-mono';
       pre.textContent = error.message; // Safe: textContent escapes HTML
 
       details.appendChild(summary);
       details.appendChild(pre);
-      section.appendChild(icon);
-      section.appendChild(heading);
-      section.appendChild(description);
-      section.appendChild(details);
+      errorSection.appendChild(icon);
+      errorSection.appendChild(heading);
+      errorSection.appendChild(description);
+      errorSection.appendChild(details);
 
-      // FIX: Use safer DOM manipulation instead of innerHTML
+      // Clear existing content and show error
       while (initialLoading.firstChild) {
         initialLoading.removeChild(initialLoading.firstChild);
       }
-      initialLoading.appendChild(section);
+
+      // Keep the background
+      const bg = document.createElement('div');
+      bg.className = 'splash-background';
+      initialLoading.appendChild(bg);
+      initialLoading.appendChild(errorSection);
     }
   }
 }

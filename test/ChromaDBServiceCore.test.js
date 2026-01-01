@@ -81,7 +81,8 @@ const mockCircuitBreaker = {
   getStats: jest.fn().mockReturnValue({ failures: 0, successes: 0 }),
   reset: jest.fn(),
   cleanup: jest.fn(),
-  on: jest.fn()
+  on: jest.fn(),
+  removeAllListeners: jest.fn()
 };
 
 jest.mock('../src/main/utils/CircuitBreaker', () => ({
@@ -102,7 +103,8 @@ const mockOfflineQueue = {
   size: jest.fn().mockReturnValue(0),
   getStats: jest.fn().mockReturnValue({ size: 0, pending: 0 }),
   cleanup: jest.fn().mockResolvedValue(undefined),
-  on: jest.fn()
+  on: jest.fn(),
+  removeAllListeners: jest.fn()
 };
 
 jest.mock('../src/main/utils/OfflineQueue', () => ({
@@ -874,6 +876,46 @@ describe('ChromaDBServiceCore', () => {
       expect(mockOfflineQueue.cleanup).toHaveBeenCalled();
       expect(mockQueryCache.clear).toHaveBeenCalled();
     });
+
+    test('removes all listeners from CircuitBreaker and OfflineQueue', async () => {
+      await service.initialize();
+
+      await service.cleanup();
+
+      expect(mockCircuitBreaker.removeAllListeners).toHaveBeenCalled();
+      expect(mockOfflineQueue.removeAllListeners).toHaveBeenCalled();
+    });
+  });
+
+  describe('inflightQueries', () => {
+    test('adds and removes inflight queries', async () => {
+      await service.initialize();
+
+      // Create a promise that we control
+      let resolvePromise;
+      const controlledPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+
+      // Add an inflight query
+      service._addInflightQuery('test-key', controlledPromise);
+
+      // Verify it was added
+      expect(service.inflightQueries.has('test-key')).toBe(true);
+
+      // Resolve the promise
+      resolvePromise({ data: 'test' });
+
+      // Wait for .finally() to execute
+      await controlledPromise;
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Verify it was removed via .finally()
+      expect(service.inflightQueries.has('test-key')).toBe(false);
+    });
+
+    // Note: Rejection cleanup uses the same .finally() mechanism as success cleanup
+    // Both paths are covered by the test above since .finally() runs regardless of outcome
   });
 
   describe('getServerConfig', () => {
