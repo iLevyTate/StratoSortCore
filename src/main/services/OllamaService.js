@@ -23,6 +23,17 @@ const { getInstance: getOllamaClient } = require('./OllamaClient');
 const { buildOllamaOptions } = require('./PerformanceService');
 const { categorizeModels } = require('../../shared/modelCategorization');
 
+// FIX: Module-level constant for allowed embedding models (used by all updateConfig methods)
+const ALLOWED_EMBED_MODELS = [
+  'embeddinggemma', // Google's embedding model (768 dim)
+  'mxbai-embed-large', // Mixed Bread AI (1024 dim)
+  'nomic-embed-text', // Nomic AI (768 dim)
+  'all-minilm', // Sentence Transformers (384 dim)
+  'bge-large', // BAAI (1024 dim)
+  'snowflake-arctic-embed', // Snowflake (1024 dim)
+  'gte' // Alibaba GTE models (various dims)
+];
+
 /**
  * Centralized service for Ollama operations
  * Reduces code duplication and provides consistent error handling
@@ -81,14 +92,16 @@ class OllamaService {
       })
     );
 
-    // Log any failures for debugging
+    // FIX: Return failures info so callers can handle appropriately
     const failures = results.filter((r) => r.status === 'rejected');
     if (failures.length > 0) {
       logger.warn('[OllamaService] Some model change callbacks failed', {
         total: results.length,
-        failed: failures.length
+        failed: failures.length,
+        errors: failures.map((f) => f.reason?.message || 'Unknown error')
       });
     }
+    return { total: results.length, failed: failures.length, failures };
   }
 
   async initialize() {
@@ -199,6 +212,9 @@ class OllamaService {
       const previousVisionModel = getOllamaVisionModel();
       const previousEmbeddingModel = getOllamaEmbeddingModel();
 
+      // FIX: Track model downgrade at method scope so it can be returned
+      let modelWasDowngraded = false;
+
       if (config.host) await setOllamaHost(config.host);
 
       if (config.textModel) {
@@ -213,20 +229,8 @@ class OllamaService {
         await this._notifyModelChange('vision', previousVisionModel, config.visionModel);
       }
 
-      // FIX: Expanded allowlist to include all known embedding models
-      // This allows users to use any model they have installed from popular options
-      const ALLOWED_EMBED_MODELS = [
-        'embeddinggemma', // Google's embedding model (768 dim)
-        'mxbai-embed-large', // Mixed Bread AI (1024 dim)
-        'nomic-embed-text', // Nomic AI (768 dim)
-        'all-minilm', // Sentence Transformers (384 dim)
-        'bge-large', // BAAI (1024 dim)
-        'snowflake-arctic-embed', // Snowflake (1024 dim)
-        'gte' // Alibaba GTE models (various dims)
-      ];
-
       if (config.embeddingModel) {
-        // Check if model is in allowlist or matches a known prefix
+        // Uses module-level ALLOWED_EMBED_MODELS constant
         const normalizedModel = config.embeddingModel.toLowerCase();
         const isAllowed =
           ALLOWED_EMBED_MODELS.includes(config.embeddingModel) ||
@@ -234,7 +238,9 @@ class OllamaService {
 
         const embedModel = isAllowed ? config.embeddingModel : 'embeddinggemma';
 
+        // FIX: Track model downgrade for UI notification
         if (!isAllowed) {
+          modelWasDowngraded = true;
           logger.warn('[OllamaService] Rejected invalid embedding model', {
             requested: config.embeddingModel,
             allowed: ALLOWED_EMBED_MODELS,
@@ -249,10 +255,146 @@ class OllamaService {
       }
 
       logger.info('[OllamaService] Configuration updated');
-      return { success: true };
+      // FIX: Return actual downgrade status instead of hardcoded false
+      return { success: true, callbackFailures: 0, modelDowngraded: modelWasDowngraded };
     } catch (error) {
       logger.error('[OllamaService] Failed to update config:', error);
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Update config with explicit notification of model downgrade
+   * FIX: Returns modelDowngraded flag so UI can notify user
+   */
+  async updateConfigWithDowngradeInfo(config) {
+    await this.initialize();
+    let modelDowngraded = false;
+    let originalRequestedModel = null;
+    let actualEmbeddingModel = null;
+
+    try {
+      const previousTextModel = getOllamaModel();
+      const previousVisionModel = getOllamaVisionModel();
+      const previousEmbeddingModel = getOllamaEmbeddingModel();
+
+      if (config.host) await setOllamaHost(config.host);
+
+      if (config.textModel) {
+        await setOllamaModel(config.textModel);
+        await this._notifyModelChange('text', previousTextModel, config.textModel);
+      }
+
+      if (config.visionModel) {
+        await setOllamaVisionModel(config.visionModel);
+        await this._notifyModelChange('vision', previousVisionModel, config.visionModel);
+      }
+
+      if (config.embeddingModel) {
+        // FIX: Use module-level ALLOWED_EMBED_MODELS constant (defined above updateConfig)
+        const normalizedModel = config.embeddingModel.toLowerCase();
+        const isAllowed =
+          ALLOWED_EMBED_MODELS.includes(config.embeddingModel) ||
+          ALLOWED_EMBED_MODELS.some((allowed) => normalizedModel.includes(allowed.toLowerCase()));
+
+        actualEmbeddingModel = isAllowed ? config.embeddingModel : 'embeddinggemma';
+        originalRequestedModel = config.embeddingModel;
+        modelDowngraded = !isAllowed;
+
+        if (modelDowngraded) {
+          logger.warn('[OllamaService] Model downgraded - user should be notified', {
+            requested: originalRequestedModel,
+            actual: actualEmbeddingModel
+          });
+        }
+
+        await setOllamaEmbeddingModel(actualEmbeddingModel);
+        await this._notifyModelChange('embedding', previousEmbeddingModel, actualEmbeddingModel);
+      }
+
+      return {
+        success: true,
+        modelDowngraded,
+        originalRequestedModel,
+        actualEmbeddingModel,
+        message: modelDowngraded
+          ? `Unsupported embedding model "${originalRequestedModel}" was replaced with "${actualEmbeddingModel}"`
+          : null
+      };
+    } catch (error) {
+      logger.error('[OllamaService] Failed to update config:', error);
+      return { success: false, error: error.message, modelDowngraded };
+    }
+  }
+
+  /**
+   * Update config and report callback failures
+   * FIX: Propagates callback failures to caller for proper error handling
+   */
+  async updateConfigWithCallbackStatus(config) {
+    await this.initialize();
+    let callbackResults = { total: 0, failed: 0, failures: [] };
+
+    try {
+      const previousTextModel = getOllamaModel();
+      const previousVisionModel = getOllamaVisionModel();
+      const previousEmbeddingModel = getOllamaEmbeddingModel();
+
+      if (config.host) await setOllamaHost(config.host);
+
+      if (config.textModel) {
+        await setOllamaModel(config.textModel);
+        const result = await this._notifyModelChange('text', previousTextModel, config.textModel);
+        if (result) {
+          callbackResults.total += result.total;
+          callbackResults.failed += result.failed;
+          callbackResults.failures.push(...(result.failures || []));
+        }
+      }
+
+      if (config.visionModel) {
+        await setOllamaVisionModel(config.visionModel);
+        const result = await this._notifyModelChange(
+          'vision',
+          previousVisionModel,
+          config.visionModel
+        );
+        if (result) {
+          callbackResults.total += result.total;
+          callbackResults.failed += result.failed;
+          callbackResults.failures.push(...(result.failures || []));
+        }
+      }
+
+      if (config.embeddingModel) {
+        // FIX: Use module-level ALLOWED_EMBED_MODELS constant (defined above updateConfig)
+        const normalizedModel = config.embeddingModel.toLowerCase();
+        const isAllowed =
+          ALLOWED_EMBED_MODELS.includes(config.embeddingModel) ||
+          ALLOWED_EMBED_MODELS.some((allowed) => normalizedModel.includes(allowed.toLowerCase()));
+
+        const embedModel = isAllowed ? config.embeddingModel : 'embeddinggemma';
+        await setOllamaEmbeddingModel(embedModel);
+        const result = await this._notifyModelChange(
+          'embedding',
+          previousEmbeddingModel,
+          embedModel
+        );
+        if (result) {
+          callbackResults.total += result.total;
+          callbackResults.failed += result.failed;
+          callbackResults.failures.push(...(result.failures || []));
+        }
+      }
+
+      return {
+        success: true,
+        callbackResults,
+        hasCallbackFailures: callbackResults.failed > 0
+      };
+    } catch (error) {
+      logger.error('[OllamaService] Failed to update config:', error);
+      return { success: false, error: error.message, callbackResults };
     }
   }
 

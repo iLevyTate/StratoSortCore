@@ -415,21 +415,20 @@ class SecureIPCManager {
     // This regex matches from < to the next > or to the end of string
     cleaned = cleaned.replace(/<[^>]*>?/g, '');
 
-    // If there are still < characters, remove everything from them to the end
+    // FIX: More efficient handling of remaining < characters
+    // Replace while loop with a single indexOf + substring operation
     // This handles malformed tags that don't close properly
-    while (cleaned.includes('<')) {
-      const index = cleaned.indexOf('<');
-      cleaned = cleaned.substring(0, index);
+    const openTagIndex = cleaned.indexOf('<');
+    if (openTagIndex !== -1) {
+      cleaned = cleaned.substring(0, openTagIndex);
     }
 
-    // Escape remaining dangerous characters to prevent XSS
-    cleaned = cleaned
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;')
-      .replace(/\//g, '&#x2F;');
+    // FIX: Removed excessive HTML entity encoding that caused &#x27; to appear
+    // React already escapes content automatically when rendering, so double-encoding
+    // characters like apostrophes, quotes, and slashes causes them to display as
+    // literal HTML entities (e.g., "don&#x27;t" instead of "don't")
+    // Only escape < and > which could be used for tag injection
+    cleaned = cleaned.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     return cleaned;
   }
@@ -651,7 +650,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         text,
         smartFolders: folders
       }),
-    resetToDefaults: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS)
+    resetToDefaults: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS),
+    generateDescription: (folderName) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION, folderName)
   },
 
   // Analysis
@@ -792,7 +793,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getHistory: (limit) => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.GET_HISTORY, limit),
     clear: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CLEAR_HISTORY),
     canUndo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CAN_UNDO),
-    canRedo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CAN_REDO)
+    canRedo: () => secureIPC.safeInvoke(IPC_CHANNELS.UNDO_REDO.CAN_REDO),
+    // FIX H-3: Listen for state changes after undo/redo operations
+    onStateChanged: (callback) => {
+      if (typeof callback !== 'function') return () => {};
+      const listener = (event, data) => callback(data);
+      ipcRenderer.on(IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, listener);
+    }
   },
 
   // System Monitoring

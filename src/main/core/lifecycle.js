@@ -229,6 +229,15 @@ async function handleBeforeQuit() {
     // Clean up tray
     destroyTray();
 
+    // FIX: Clean up Ollama HTTP agent to prevent socket leaks
+    try {
+      const { cleanupOllamaAgent } = require('../ollamaUtils');
+      cleanupOllamaAgent();
+      logger.info('[CLEANUP] Ollama HTTP agent cleaned up');
+    } catch (error) {
+      logger.error('[CLEANUP] Failed to clean up Ollama agent:', error);
+    }
+
     // Use StartupManager for graceful shutdown
     try {
       const startupManager = getStartupManager();

@@ -8,7 +8,7 @@
  */
 
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawnSync } = require('child_process');
 const { logger } = require('../../../shared/logger');
 logger.setContext('StartupManager:Shutdown');
 
@@ -94,10 +94,16 @@ async function shutdownProcess(serviceName, process) {
           try {
             const isWindows = os.platform() === 'win32';
             if (isWindows && process.pid) {
-              spawn('taskkill', ['/pid', process.pid.toString(), '/f', '/t'], {
+              // FIX: Use spawnSync to ensure taskkill completes before continuing
+              // Previously used spawn which returned immediately without waiting
+              const result = spawnSync('taskkill', ['/pid', process.pid.toString(), '/f', '/t'], {
                 windowsHide: true,
-                stdio: 'ignore'
+                stdio: 'ignore',
+                timeout: 5000 // 5 second timeout for taskkill
               });
+              if (result.error) {
+                logger.debug(`[STARTUP] taskkill error for ${serviceName}:`, result.error.message);
+              }
             } else if (process.pid && typeof process.kill === 'function') {
               process.kill('SIGKILL');
             }

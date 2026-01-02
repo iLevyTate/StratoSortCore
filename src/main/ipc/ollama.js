@@ -219,6 +219,8 @@ function registerOllamaIpc({
   safeHandle(ipcMain, IPC_CHANNELS.OLLAMA.TEST_CONNECTION, testConnectionHandler);
 
   // Pull models (best-effort, returns status per model)
+  // FIX: Added per-model timeout to prevent indefinite blocking
+  const MODEL_PULL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes max per model
   safeHandle(
     ipcMain,
     IPC_CHANNELS.OLLAMA.PULL_MODELS,
@@ -230,9 +232,13 @@ function registerOllamaIpc({
           try {
             // Send progress events if supported by client
             const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
-            await ollama.pull({
+            let lastProgressTime = Date.now();
+
+            // FIX: Wrap pull with timeout to prevent indefinite blocking
+            const pullPromise = ollama.pull({
               model,
               stream: (progress) => {
+                lastProgressTime = Date.now(); // Update activity timestamp
                 try {
                   if (win && !win.isDestroyed()) {
                     win.webContents.send('operation-progress', {
@@ -246,7 +252,35 @@ function registerOllamaIpc({
                 }
               }
             });
-            results.push({ model, success: true });
+
+            // Race against timeout
+            // FIX: Store interval reference outside Promise to ensure cleanup on success
+            let checkProgress;
+            const timeoutPromise = new Promise((_, reject) => {
+              checkProgress = setInterval(() => {
+                const timeSinceProgress = Date.now() - lastProgressTime;
+                // If no progress for 5 minutes, consider it stalled
+                if (timeSinceProgress > 5 * 60 * 1000) {
+                  clearInterval(checkProgress);
+                  reject(new Error(`Model pull stalled (no progress for 5 minutes)`));
+                }
+              }, 30000); // Check every 30 seconds
+
+              setTimeout(() => {
+                clearInterval(checkProgress);
+                reject(
+                  new Error(`Model pull timeout after ${MODEL_PULL_TIMEOUT_MS / 60000} minutes`)
+                );
+              }, MODEL_PULL_TIMEOUT_MS);
+            });
+
+            try {
+              await Promise.race([pullPromise, timeoutPromise]);
+              results.push({ model, success: true });
+            } finally {
+              // FIX: Always clear interval to prevent timer leak on success
+              clearInterval(checkProgress);
+            }
           } catch (e) {
             results.push({ model, success: false, error: e.message });
           }

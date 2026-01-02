@@ -60,11 +60,48 @@ function createMainWindow() {
     defaultHeight: 900
   });
 
+  // FIX: Check if saved bounds are near-maximized and reset to defaults (Issue 3.2)
+  // This prevents the maximize button from only changing size by ~1px
+  // Improved threshold from 50px to 100px for better detection on HiDPI displays
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // Use a larger threshold (100px) and also check if the window size is very close to work area
+  // This handles cases where the saved state is 1-2px smaller than maximized
+  const widthDiff = screenWidth - mainWindowState.width;
+  const heightDiff = screenHeight - mainWindowState.height;
+  const isNearMaximized =
+    widthDiff >= 0 && widthDiff <= 100 && heightDiff >= 0 && heightDiff <= 100;
+
+  // Also check if the window is positioned at origin (0,0) or near it, which suggests maximized state
+  const isAtOrigin =
+    mainWindowState.x !== undefined &&
+    mainWindowState.x <= 10 &&
+    mainWindowState.y !== undefined &&
+    mainWindowState.y <= 10;
+  const shouldResetToDefault =
+    isNearMaximized || (isAtOrigin && widthDiff <= 150 && heightDiff <= 150);
+
+  const windowWidth = shouldResetToDefault ? 1400 : mainWindowState.width;
+  const windowHeight = shouldResetToDefault ? 900 : mainWindowState.height;
+  const windowX = shouldResetToDefault ? undefined : mainWindowState.x;
+  const windowY = shouldResetToDefault ? undefined : mainWindowState.y;
+
+  if (shouldResetToDefault) {
+    logger.debug('Window state near-maximized, resetting to defaults', {
+      savedWidth: mainWindowState.width,
+      savedHeight: mainWindowState.height,
+      screenWidth,
+      screenHeight
+    });
+  }
+
   const win = new BrowserWindow({
-    x: mainWindowState.x,
-    y: mainWindowState.y,
-    width: mainWindowState.width,
-    height: mainWindowState.height,
+    x: windowX,
+    y: windowY,
+    width: windowWidth,
+    height: windowHeight,
     minWidth: 800,
     minHeight: 600,
     // Frameless chrome with platform-sensitive styling
@@ -187,7 +224,7 @@ function createMainWindow() {
         // Disable sensitive features by default
         'Permissions-Policy': [
           [
-            'accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()'
+            'accelerometer=(), autoplay=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()'
           ].join('')
         ]
       }

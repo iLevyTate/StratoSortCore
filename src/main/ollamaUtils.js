@@ -244,6 +244,17 @@ async function loadOllamaConfig(applySideEffects = true) {
   }
 }
 
+/**
+ * Cleanup HTTP agent on app shutdown to prevent socket leaks
+ * FIX: Export this function for use during app lifecycle cleanup
+ */
+function cleanupOllamaAgent() {
+  destroyCurrentAgent();
+  ollamaInstance = null;
+  ollamaInstanceHost = null;
+  logger.info('[OLLAMA] HTTP agent and instance cleaned up');
+}
+
 module.exports = {
   getOllama,
   getOllamaModel,
@@ -255,5 +266,7 @@ module.exports = {
   getOllamaHost,
   setOllamaHost,
   loadOllamaConfig,
-  normalizeOllamaUrl
+  normalizeOllamaUrl,
+  // FIX: Export cleanup function for app shutdown
+  cleanupOllamaAgent
 };

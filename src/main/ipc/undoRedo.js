@@ -24,12 +24,18 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
       fallbackResponse: { success: false, message: 'Undo service unavailable' },
       handler: async (event, service) => {
         try {
-          return (
-            (await service.undo()) || {
-              success: false,
-              message: 'Nothing to undo'
-            }
-          );
+          const result = (await service.undo()) || {
+            success: false,
+            message: 'Nothing to undo'
+          };
+          // FIX H-3: Notify renderer to refresh file state after successful undo
+          if (result?.success && event?.sender) {
+            event.sender.send(IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, {
+              action: 'undo',
+              result
+            });
+          }
+          return result;
         } catch (error) {
           logger.error('Failed to execute undo:', error);
           return { success: false, message: error.message };
@@ -50,12 +56,18 @@ function registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegrat
       fallbackResponse: { success: false, message: 'Redo service unavailable' },
       handler: async (event, service) => {
         try {
-          return (
-            (await service.redo()) || {
-              success: false,
-              message: 'Nothing to redo'
-            }
-          );
+          const result = (await service.redo()) || {
+            success: false,
+            message: 'Nothing to redo'
+          };
+          // FIX H-3: Notify renderer to refresh file state after successful redo
+          if (result?.success && event?.sender) {
+            event.sender.send(IPC_CHANNELS.UNDO_REDO.STATE_CHANGED, {
+              action: 'redo',
+              result
+            });
+          }
+          return result;
         } catch (error) {
           logger.error('Failed to execute redo:', error);
           return { success: false, message: error.message };
