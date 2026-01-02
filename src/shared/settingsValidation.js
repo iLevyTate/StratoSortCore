@@ -295,8 +295,9 @@ function validateSettings(settings) {
   }
 
   // Explicitly detect prototype-pollution keys even if they are not enumerable
-  // Always warn when caller-supplied object exposes prototype-pollution keys
-  const hasUnsafeProto = '__proto__' in settings;
+  // FIX M-2: Use hasOwnProperty instead of 'in' operator to avoid false positives
+  // The 'in' operator returns true for '__proto__' on ANY object since it's inherited
+  const hasUnsafeProto = Object.prototype.hasOwnProperty.call(settings, '__proto__');
   const hasUnsafeCtor =
     Object.prototype.hasOwnProperty.call(settings, 'constructor') &&
     settings.constructor !== Object;

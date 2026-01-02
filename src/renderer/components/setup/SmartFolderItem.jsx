@@ -40,7 +40,6 @@ const SmartFolderItem = memo(function SmartFolderItem({
   const shouldAnimateEntrance = !hasMounted;
   const cardAnimationClass = shouldAnimateEntrance ? 'animate-slide-in-right' : '';
   const cardAnimationDelay = shouldAnimateEntrance ? `${index * 0.05}s` : undefined;
-  const [isRebuilding, setIsRebuilding] = useState(false);
 
   // Compact view - just name, path snippet, and expand button
   if (compact && !isExpanded && !isEditing) {
@@ -191,19 +190,53 @@ const SmartFolderItem = memo(function SmartFolderItem({
               }}
             />
           </div>
-          <Textarea
-            value={editingFolder.description || ''}
-            onChange={(e) =>
-              setEditingFolder({
-                ...editingFolder,
-                description: e.target.value
-              })
-            }
-            className="w-full"
-            placeholder="Describe what types of files should go in this folder (helps AI match files)"
-            rows={2}
-            aria-label="Folder description"
-          />
+          {/* Description with AI generate button */}
+          <div className="relative">
+            <Textarea
+              value={editingFolder.description || ''}
+              onChange={(e) =>
+                setEditingFolder({
+                  ...editingFolder,
+                  description: e.target.value
+                })
+              }
+              className="w-full pr-10"
+              placeholder="Describe what types of files should go in this folder (helps AI match files)"
+              rows={2}
+              aria-label="Folder description"
+            />
+            {/* FIX: AI Generate Description button (Issue 2.5) */}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const result = await window.electronAPI?.smartFolders?.generateDescription?.(
+                    editingFolder.name
+                  );
+                  if (result?.success && result.description) {
+                    setEditingFolder({ ...editingFolder, description: result.description });
+                    addNotification?.('Description generated', 'success');
+                  } else {
+                    addNotification?.(result?.error || 'Failed to generate description', 'error');
+                  }
+                } catch (err) {
+                  addNotification?.('Failed to generate description', 'error');
+                }
+              }}
+              className="absolute right-2 top-2 p-1.5 text-system-gray-400 hover:text-stratosort-blue hover:bg-stratosort-blue/10 rounded-lg transition-colors"
+              title="Generate description with AI"
+              aria-label="Generate description with AI"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                />
+              </svg>
+            </button>
+          </div>
           <div
             className="flex justify-end"
             style={{ gap: 'var(--spacing-cozy)', paddingTop: 'var(--spacing-compact)' }}
@@ -415,42 +448,8 @@ const SmartFolderItem = memo(function SmartFolderItem({
                 />
               </svg>
             </button>
-            <button
-              onClick={async () => {
-                try {
-                  setIsRebuilding(true);
-                  const res = await window.electronAPI.embeddings.rebuildFolders();
-                  addNotification?.(
-                    res?.success
-                      ? 'Rebuilt folder embeddings'
-                      : `Failed: ${res?.error || 'Unknown error'}`,
-                    res?.success ? 'success' : 'error'
-                  );
-                } catch (e) {
-                  addNotification?.(`Failed: ${e.message}`, 'error');
-                } finally {
-                  setIsRebuilding(false);
-                }
-              }}
-              disabled={isRebuilding}
-              className={`p-2 rounded-xl transition-colors ${
-                isRebuilding ? 'text-system-gray-400' : 'text-purple-600 hover:bg-purple-100'
-              }`}
-              title="Rebuild embeddings"
-            >
-              {isRebuilding ? (
-                <span className="inline-block w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-              )}
-            </button>
+            {/* FIX Issue 3.1-C, 3.1-D: Removed per-folder rebuild button.
+                Rebuild embeddings is available in Settings > Embeddings for advanced users. */}
           </div>
 
           <button

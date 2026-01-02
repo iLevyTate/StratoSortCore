@@ -485,14 +485,27 @@ function registerSmartFoldersIpc({
             // CRITICAL SECURITY FIX: Sanitize path before any operations
             const normalizedPath = sanitizeFolderPath(updatedFolder.path);
             const parentDir = path.dirname(normalizedPath);
-            const parentStats = await fs.stat(parentDir);
-            if (!parentStats.isDirectory()) {
-              return {
-                success: false,
-                error: `Parent directory "${parentDir}" is not a directory`,
-                errorCode: ERROR_CODES.PARENT_NOT_DIRECTORY
-              };
+
+            // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
+            try {
+              const parentStats = await fs.stat(parentDir);
+              if (!parentStats.isDirectory()) {
+                return {
+                  success: false,
+                  error: `Parent directory "${parentDir}" is not a directory`,
+                  errorCode: ERROR_CODES.PARENT_NOT_DIRECTORY
+                };
+              }
+            } catch (parentError) {
+              if (parentError.code === 'ENOENT') {
+                // Parent doesn't exist - create it recursively
+                await fs.mkdir(parentDir, { recursive: true });
+                logger.info('[SMART-FOLDERS] Created parent directory for edit:', parentDir);
+              } else {
+                throw parentError;
+              }
             }
+
             updatedFolder.path = normalizedPath;
           } catch (pathError) {
             return {
@@ -637,6 +650,66 @@ function registerSmartFoldersIpc({
     })
   );
 
+  // FIX: Generate description for smart folder using AI (Issue 2.5)
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION,
+    withErrorLogging(logger, async (event, folderName) => {
+      try {
+        if (!folderName || typeof folderName !== 'string') {
+          return {
+            success: false,
+            error: 'Folder name is required'
+          };
+        }
+
+        // Generate description using LLM
+        const prompt = `You are helping organize files on a computer. Generate a brief, helpful description (1-2 sentences) for a folder called "${folderName}". The description should explain what types of files belong in this folder to help an AI system match files to folders. Be specific and practical.
+
+Example for "Work Documents": "Contains professional documents, reports, and work-related files such as meeting notes, project plans, and business correspondence."
+
+Now generate a description for "${folderName}":`;
+
+        try {
+          const model = getOllamaModel();
+          if (!model) {
+            return {
+              success: false,
+              error: 'Ollama model not configured'
+            };
+          }
+
+          const OllamaService = require('../services/OllamaService');
+          const result = await OllamaService.analyzeText(prompt, { model });
+
+          if (result.success && result.response && result.response.trim()) {
+            return {
+              success: true,
+              description: result.response.trim()
+            };
+          } else {
+            return {
+              success: false,
+              error: result.error || 'No response from AI'
+            };
+          }
+        } catch (llmError) {
+          logger.error('[SMART-FOLDERS] LLM description generation failed:', llmError.message);
+          return {
+            success: false,
+            error: 'AI service unavailable'
+          };
+        }
+      } catch (error) {
+        logger.error('[ERROR] Failed to generate description:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    })
+  );
+
   // Create/add new smart folder with LLM enhancement
   safeHandle(
     ipcMain,
@@ -700,31 +773,49 @@ function registerSmartFoldersIpc({
             error: `A smart folder with name "${existingFolder.name}" or path "${existingFolder.path}" already exists`,
             errorCode: ERROR_CODES.FOLDER_ALREADY_EXISTS
           };
+        // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
         const parentDir = path.dirname(normalizedPath);
         try {
           const parentStats = await fs.stat(parentDir);
-          if (!parentStats.isDirectory())
+          if (!parentStats.isDirectory()) {
             return {
               success: false,
               error: `Parent directory "${parentDir}" is not a directory`,
               errorCode: ERROR_CODES.PARENT_NOT_DIRECTORY
             };
-          const tempFile = path.join(parentDir, `.stratotest_${Date.now()}`);
-          try {
-            await fs.writeFile(tempFile, 'test');
-            await fs.unlink(tempFile);
-          } catch {
+          }
+        } catch (parentError) {
+          // Parent doesn't exist - create it recursively
+          if (parentError.code === 'ENOENT') {
+            try {
+              await fs.mkdir(parentDir, { recursive: true });
+              logger.info('[SMART-FOLDERS] Created parent directory:', parentDir);
+            } catch (mkdirError) {
+              return {
+                success: false,
+                error: `Failed to create parent directory "${parentDir}": ${mkdirError.message}`,
+                errorCode: ERROR_CODES.PARENT_NOT_ACCESSIBLE
+              };
+            }
+          } else {
             return {
               success: false,
-              error: `No write permission in parent directory "${parentDir}"`,
-              errorCode: ERROR_CODES.PARENT_NOT_WRITABLE
+              error: `Cannot access parent directory "${parentDir}": ${parentError.message}`,
+              errorCode: ERROR_CODES.PARENT_NOT_ACCESSIBLE
             };
           }
+        }
+
+        // Test write permission in parent directory
+        const tempFile = path.join(parentDir, `.stratotest_${Date.now()}`);
+        try {
+          await fs.writeFile(tempFile, 'test');
+          await fs.unlink(tempFile);
         } catch {
           return {
             success: false,
-            error: `Parent directory "${parentDir}" does not exist or is not accessible`,
-            errorCode: ERROR_CODES.PARENT_NOT_ACCESSIBLE
+            error: `No write permission in parent directory "${parentDir}"`,
+            errorCode: ERROR_CODES.PARENT_NOT_WRITABLE
           };
         }
 

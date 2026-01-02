@@ -290,19 +290,31 @@ function _createWindowInternal() {
 function updateDownloadWatcher(settings) {
   const enabled = settings?.autoOrganize;
   if (enabled) {
+    // FIX C-2: Ensure services are fully initialized before starting watcher
+    // This prevents race condition where watcher starts with null service references
+    if (!serviceIntegration?.initialized) {
+      logger.warn('[AUTO-ORGANIZE] Cannot start watcher - services not yet initialized');
+      return;
+    }
+    if (!serviceIntegration?.autoOrganizeService) {
+      logger.warn('[AUTO-ORGANIZE] Cannot start watcher - autoOrganizeService not available');
+      return;
+    }
     if (!downloadWatcher) {
       downloadWatcher = new DownloadWatcher({
         analyzeDocumentFile,
         analyzeImageFile,
         getCustomFolders: () => customFolders,
-        autoOrganizeService: serviceIntegration?.autoOrganizeService,
+        autoOrganizeService: serviceIntegration.autoOrganizeService,
         settingsService: settingsService
       });
       downloadWatcher.start();
+      logger.info('[AUTO-ORGANIZE] Download watcher started successfully');
     }
   } else if (downloadWatcher) {
     downloadWatcher.stop();
     downloadWatcher = null;
+    logger.info('[AUTO-ORGANIZE] Download watcher stopped');
   }
 }
 
@@ -431,8 +443,9 @@ app.whenReady().then(async () => {
         const servicesResult = await startupManager.startup();
 
         // Phase 2: Initialize DI container and internal services
+        // FIX: Pass startup result to skip redundant ChromaDB availability check (saves 2-4s)
         logger.info('[STARTUP] Phase 2: Initializing service integration...');
-        await serviceIntegration.initialize();
+        await serviceIntegration.initialize({ startupResult: servicesResult });
 
         return servicesResult;
       };

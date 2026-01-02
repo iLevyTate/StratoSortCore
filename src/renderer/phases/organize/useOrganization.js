@@ -25,6 +25,8 @@ export function useProgressTracking() {
   });
   const [organizePreview, setOrganizePreview] = useState([]);
   const [isOrganizing, setIsOrganizing] = useState(false);
+  // FIX M-4: Track destination conflicts
+  const [organizeConflicts, setOrganizeConflicts] = useState([]);
 
   // Ref for cleanup
   const progressUnsubscribeRef = useRef(null);
@@ -111,7 +113,10 @@ export function useProgressTracking() {
     organizePreview,
     setOrganizePreview,
     isOrganizing,
-    setIsOrganizing
+    setIsOrganizing,
+    // FIX M-4: Expose conflict tracking
+    organizeConflicts,
+    setOrganizeConflicts
   };
 }
 
@@ -248,7 +253,7 @@ function buildOperations({
 /**
  * Build preview list for progress UI
  * @param {Object} params - Parameters
- * @returns {Array} Preview array
+ * @returns {Object} Object with preview array and conflicts array
  */
 function buildPreview({
   filesToProcess,
@@ -260,7 +265,7 @@ function buildPreview({
 }) {
   const fileIndexMap = buildFileIndexMap(filesToProcess, unprocessedFiles);
 
-  return filesToProcess.map((file) => {
+  const preview = filesToProcess.map((file) => {
     const { newName, normalized } = processFileForOrganization({
       file,
       fileIndexMap,
@@ -269,8 +274,33 @@ function buildPreview({
       findSmartFolderForCategory,
       defaultLocation
     });
-    return { fileName: newName, destination: normalized };
+    return { fileName: newName, destination: normalized, sourcePath: file.path };
   });
+
+  // FIX M-4: Detect destination conflicts (multiple files going to same destination)
+  const destinationMap = new Map();
+  preview.forEach((item) => {
+    const normalizedDest = normalizeForComparison(item.destination);
+    if (!destinationMap.has(normalizedDest)) {
+      destinationMap.set(normalizedDest, []);
+    }
+    destinationMap.get(normalizedDest).push(item);
+  });
+
+  const conflicts = [];
+  for (const items of destinationMap.values()) {
+    if (items.length > 1) {
+      conflicts.push({
+        destination: items[0].destination, // Use original casing
+        files: items.map((i) => ({
+          fileName: i.fileName,
+          sourcePath: i.sourcePath
+        }))
+      });
+    }
+  }
+
+  return { preview, conflicts };
 }
 
 /**
@@ -300,7 +330,10 @@ export function useOrganization({
     organizePreview,
     setOrganizePreview,
     isOrganizing,
-    setIsOrganizing
+    setIsOrganizing,
+    // FIX M-4: Get conflict tracking from progress hook
+    organizeConflicts,
+    setOrganizeConflicts
   } = useProgressTracking();
 
   // FIX: Use ref to track latest organizedFiles to avoid stale closure in async callbacks
@@ -320,6 +353,8 @@ export function useOrganization({
       try {
         setIsOrganizing(true);
         setOrganizingState(true);
+        // FIX M-4: Clear previous conflicts at start of organize attempt
+        setOrganizeConflicts([]);
 
         const filesToProcess = actualFilesToOrganize || unprocessedFiles.filter((f) => f.analysis);
 
@@ -398,9 +433,9 @@ export function useOrganization({
           return;
         }
 
-        // Build preview
+        // Build preview and detect conflicts
         try {
-          const preview = buildPreview({
+          const { preview, conflicts } = buildPreview({
             filesToProcess,
             unprocessedFiles,
             editingFiles,
@@ -409,6 +444,23 @@ export function useOrganization({
             defaultLocation
           });
           setOrganizePreview(preview);
+          setOrganizeConflicts(conflicts);
+
+          // FIX M-4: Block organization if conflicts exist
+          if (conflicts.length > 0) {
+            const conflictCount = conflicts.reduce((sum, c) => sum + c.files.length, 0);
+            addNotification(
+              `Cannot organize: ${conflictCount} files have destination conflicts. Rename files to resolve.`,
+              'error',
+              6000,
+              'organize-conflicts'
+            );
+            logger.warn('[ORGANIZE] Destination conflicts detected:', conflicts);
+            setIsOrganizing(false);
+            setOrganizingState(false);
+            setBatchProgress({ current: 0, total: 0, currentFile: '' });
+            return;
+          }
         } catch (previewError) {
           logger.warn('[ORGANIZE] Preview generation failed (non-fatal):', previewError.message);
         }
@@ -623,7 +675,8 @@ export function useOrganization({
       setOrganizingState,
       setBatchProgress,
       setIsOrganizing,
-      setOrganizePreview
+      setOrganizePreview,
+      setOrganizeConflicts
     ]
   );
 
@@ -632,7 +685,9 @@ export function useOrganization({
     batchProgress,
     organizePreview,
     handleOrganizeFiles,
-    setBatchProgress
+    setBatchProgress,
+    // FIX M-4: Expose conflicts for UI warning
+    organizeConflicts
   };
 }
 

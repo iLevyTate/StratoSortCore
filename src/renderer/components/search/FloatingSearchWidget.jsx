@@ -106,7 +106,7 @@ const FloatingSearchWidget = ({ isOpen, onClose, onOpenSearch, onOpenGraph }) =>
   return (
     <div
       ref={widgetRef}
-      className="fixed z-[9999] pointer-events-auto"
+      className="fixed z-[500] pointer-events-auto"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,

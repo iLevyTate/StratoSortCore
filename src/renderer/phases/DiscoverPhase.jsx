@@ -228,7 +228,7 @@ function DiscoverPhase() {
   );
 
   // Analysis hook
-  const { analyzeFiles, cancelAnalysis, clearAnalysisQueue } = useAnalysis({
+  const { analyzeFiles, cancelAnalysis, clearAnalysisQueue, retryFailedFiles } = useAnalysis({
     selectedFiles,
     fileStates,
     analysisResults,
@@ -493,14 +493,27 @@ function DiscoverPhase() {
                       )}
                   </>
                 ) : (
-                  <Button
-                    onClick={clearAnalysisQueue}
-                    variant="ghost"
-                    size="sm"
-                    className="text-system-gray-500 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
-                  >
-                    Clear Queue
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {/* FIX M-3: Retry Failed Files button */}
+                    {visibleFailedCount > 0 && (
+                      <Button
+                        onClick={retryFailedFiles}
+                        variant="ghost"
+                        size="sm"
+                        className="text-stratosort-warning hover:text-stratosort-warning hover:bg-stratosort-warning/10"
+                      >
+                        Retry {visibleFailedCount} Failed
+                      </Button>
+                    )}
+                    <Button
+                      onClick={clearAnalysisQueue}
+                      variant="ghost"
+                      size="sm"
+                      className="text-system-gray-500 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
+                    >
+                      Clear Queue
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
@@ -514,9 +527,8 @@ function DiscoverPhase() {
                   Analysis Results
                 </h3>
                 <div className="text-xs text-system-gray-500">
-                  {isAnalyzing && visibleAnalysisResults.length === 0
-                    ? 'Analyzing files...'
-                    : `${visibleReadyCount} successful, ${visibleFailedCount} failed`}
+                  {/* FIX L-1: Remove duplicate "Analyzing files..." since progress bar already shows status */}
+                  {`${visibleReadyCount} successful, ${visibleFailedCount} failed`}
                 </div>
               </div>
               <div className="flex-1 min-h-0 p-0 bg-white/10 overflow-y-auto modern-scrollbar pb-default">

@@ -90,7 +90,8 @@ const IPC_CHANNELS = {
     EDIT: 'edit-smart-folder',
     DELETE: 'delete-smart-folder',
     MATCH: 'match-smart-folder',
-    RESET_TO_DEFAULTS: 'reset-smart-folders-to-defaults'
+    RESET_TO_DEFAULTS: 'reset-smart-folders-to-defaults',
+    GENERATE_DESCRIPTION: 'generate-smart-folder-description'
   },
 
   // Analysis
@@ -178,7 +179,9 @@ const IPC_CHANNELS = {
     UNDO: 'undo-action',
     REDO: 'redo-action',
     GET_HISTORY: 'get-action-history',
-    CLEAR_HISTORY: 'clear-action-history'
+    CLEAR_HISTORY: 'clear-action-history',
+    // FIX H-3: New channel for notifying renderer of state changes after undo/redo
+    STATE_CHANGED: 'undo-redo:state-changed'
   },
 
   // Analysis History

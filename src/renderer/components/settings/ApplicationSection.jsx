@@ -7,6 +7,7 @@ import PropTypes from 'prop-types';
 function ApplicationSection({ settings, setSettings }) {
   return (
     <div className="space-y-6">
+      {/* Launch on Startup */}
       <label className="flex items-center gap-3">
         <input
           type="checkbox"

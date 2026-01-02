@@ -35,6 +35,13 @@ jest.mock('electron', () => ({
   },
   app: {
     setAppUserModelId: jest.fn()
+  },
+  screen: {
+    getPrimaryDisplay: jest.fn(() => ({
+      workAreaSize: { width: 1920, height: 1080 },
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      scaleFactor: 1
+    }))
   }
 }));
 

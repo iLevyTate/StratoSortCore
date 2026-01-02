@@ -199,12 +199,34 @@ const persistenceMiddleware = (store) => (next) => (action) => {
         };
 
         // Persist fileStates separately or limited
-        // Deep copy or just careful selection
+        // FIX: Prioritize in-progress and error states over completed ones
+        // This prevents losing important state information on restart
         const fileStatesEntries = Object.entries(state.files.fileStates);
         if (fileStatesEntries.length > 0) {
-          // Keep last 100
-          const recentStates = Object.fromEntries(fileStatesEntries.slice(-100));
-          stateToSave.files.fileStates = recentStates;
+          const MAX_STATES = 100;
+          if (fileStatesEntries.length <= MAX_STATES) {
+            stateToSave.files.fileStates = Object.fromEntries(fileStatesEntries);
+          } else {
+            // Separate by priority: in-progress/error states are more important
+            const priorityStates = [];
+            const completedStates = [];
+
+            for (const [path, stateInfo] of fileStatesEntries) {
+              const stateType = stateInfo?.state || '';
+              if (stateType === 'analyzing' || stateType === 'error' || stateType === 'pending') {
+                priorityStates.push([path, stateInfo]);
+              } else {
+                completedStates.push([path, stateInfo]);
+              }
+            }
+
+            // Take all priority states, then fill remaining slots with recent completed
+            const remainingSlots = MAX_STATES - priorityStates.length;
+            const recentCompleted = completedStates.slice(-Math.max(0, remainingSlots));
+            const combinedStates = [...priorityStates, ...recentCompleted].slice(-MAX_STATES);
+
+            stateToSave.files.fileStates = Object.fromEntries(combinedStates);
+          }
         }
 
         // FIX #1: Use graceful quota handling instead of silent data loss

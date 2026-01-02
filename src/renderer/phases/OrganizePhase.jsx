@@ -18,7 +18,8 @@ import {
   CheckCircle2Icon,
   InboxIcon,
   FileStackIcon,
-  SparklesIcon
+  SparklesIcon,
+  AlertTriangleIcon
 } from '../components/icons';
 import {
   StatusOverview,
@@ -119,23 +120,25 @@ function OrganizePhase() {
   const findSmartFolderForCategory = useSmartFolderMatcher(smartFolders);
 
   // Organization logic
-  const { isOrganizing, batchProgress, organizePreview, handleOrganizeFiles } = useOrganization({
-    unprocessedFiles,
-    editingFiles,
-    getFileWithEdits,
-    findSmartFolderForCategory,
-    defaultLocation,
-    smartFolders,
-    analysisResults,
-    markFilesAsProcessed,
-    unmarkFilesAsProcessed,
-    actions,
-    phaseData,
-    addNotification,
-    executeAction,
-    setOrganizedFiles,
-    setOrganizingState
-  });
+  // FIX M-4: Destructure organizeConflicts for conflict warning UI
+  const { isOrganizing, batchProgress, organizePreview, handleOrganizeFiles, organizeConflicts } =
+    useOrganization({
+      unprocessedFiles,
+      editingFiles,
+      getFileWithEdits,
+      findSmartFolderForCategory,
+      defaultLocation,
+      smartFolders,
+      analysisResults,
+      markFilesAsProcessed,
+      unmarkFilesAsProcessed,
+      actions,
+      phaseData,
+      addNotification,
+      executeAction,
+      setOrganizedFiles,
+      setOrganizingState
+    });
 
   // Load persisted data once on mount
   const hasLoadedPersistedDataRef = useRef(false);
@@ -395,6 +398,42 @@ function OrganizePhase() {
           {/* Action Area - Sticky at bottom */}
           {unprocessedFiles.length > 0 && (
             <div className="surface-panel p-[var(--panel-padding)] flex-shrink-0">
+              {/* FIX M-4: Conflict Warning Banner */}
+              {organizeConflicts && organizeConflicts.length > 0 && (
+                <div className="mb-3 p-3 bg-stratosort-warning/10 border border-stratosort-warning/30 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangleIcon className="w-5 h-5 text-stratosort-warning flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-stratosort-warning">
+                        Destination Conflicts Detected
+                      </p>
+                      <p className="text-xs text-system-gray-600 mt-1">
+                        {organizeConflicts.reduce((sum, c) => sum + c.files.length, 0)} files would
+                        be moved to the same destination. Rename the files below to resolve:
+                      </p>
+                      <ul className="mt-2 space-y-1 text-xs text-system-gray-700">
+                        {organizeConflicts.slice(0, 3).map((conflict, idx) => (
+                          <li key={idx} className="flex items-start gap-1">
+                            <span className="text-stratosort-warning">•</span>
+                            <span className="truncate">
+                              <strong>{conflict.files.map((f) => f.fileName).join(', ')}</strong>
+                              {' → '}
+                              <span className="text-system-gray-500">
+                                {conflict.destination.split(/[\\/]/).pop()}
+                              </span>
+                            </span>
+                          </li>
+                        ))}
+                        {organizeConflicts.length > 3 && (
+                          <li className="text-system-gray-500">
+                            ...and {organizeConflicts.length - 3} more conflicts
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-system-gray-700 font-medium">

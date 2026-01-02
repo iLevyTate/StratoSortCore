@@ -75,9 +75,11 @@ class ServiceIntegration {
    * their dependencies. It registers services with the container and
    * stores references for backward compatibility.
    *
+   * @param {Object} [options={}] - Initialization options
+   * @param {Object} [options.startupResult] - Result from StartupManager.startup() to skip redundant checks
    * @returns {Promise<{initialized: string[], errors: Array<{service: string, error: string}>, skipped: string[]}>}
    */
-  async initialize() {
+  async initialize(options = {}) {
     // FIX: Return existing initialization promise if one is in progress
     // This prevents race conditions when multiple calls happen concurrently
     if (this._initPromise) {
@@ -89,7 +91,7 @@ class ServiceIntegration {
     }
 
     // FIX: Store the initialization promise so concurrent calls can await it
-    this._initPromise = this._doInitialize();
+    this._initPromise = this._doInitialize(options);
     try {
       return await this._initPromise;
     } finally {
@@ -100,9 +102,11 @@ class ServiceIntegration {
 
   /**
    * Internal initialization implementation
+   * @param {Object} [options={}] - Initialization options
+   * @param {Object} [options.startupResult] - Result from StartupManager.startup()
    * @private
    */
-  async _doInitialize() {
+  async _doInitialize(options = {}) {
     logger.info('[ServiceIntegration] Starting initialization...');
 
     // Register core services with the container
@@ -134,15 +138,22 @@ class ServiceIntegration {
     // Initialize auto-organize service
     this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
 
-    // Check ChromaDB availability before initializing with timeout
+    // FIX: Use startup result to skip redundant ChromaDB availability check (saves 2-4s)
+    // StartupManager already verified ChromaDB is running, so we don't need to recheck
     let isChromaReady = false;
-    try {
-      // FIX: Add null check for chromaDbService before accessing
-      if (!this.chromaDbService) {
-        logger.warn('[ServiceIntegration] ChromaDB service is null');
-        isChromaReady = false;
-      } else {
-        // FIX: Store timeout ID to clear it after race resolves
+    const startupResult = options.startupResult;
+
+    if (startupResult?.services?.chromadb?.success) {
+      // Trust the startup result - ChromaDB was already verified running
+      logger.info('[ServiceIntegration] Using startup result: ChromaDB is available');
+      isChromaReady = true;
+    } else if (!this.chromaDbService) {
+      logger.warn('[ServiceIntegration] ChromaDB service is null');
+      isChromaReady = false;
+    } else if (!startupResult) {
+      // No startup result provided - fall back to availability check (legacy path)
+      logger.debug('[ServiceIntegration] No startup result, checking ChromaDB availability...');
+      try {
         let timeoutId;
         const timeoutPromise = new Promise((resolve) => {
           timeoutId = setTimeout(() => resolve(false), 2000);
@@ -154,12 +165,15 @@ class ServiceIntegration {
             timeoutPromise
           ]);
         } finally {
-          // FIX: Always clear timeout to prevent memory leak
           if (timeoutId) clearTimeout(timeoutId);
         }
+      } catch (error) {
+        logger.warn('[ServiceIntegration] ChromaDB availability check failed:', error.message);
+        isChromaReady = false;
       }
-    } catch (error) {
-      logger.warn('[ServiceIntegration] ChromaDB availability check failed:', error.message);
+    } else {
+      // Startup result provided but ChromaDB wasn't successful
+      logger.warn('[ServiceIntegration] ChromaDB startup was not successful');
       isChromaReady = false;
     }
 

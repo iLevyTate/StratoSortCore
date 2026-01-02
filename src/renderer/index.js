@@ -179,8 +179,55 @@ function updateSplashStatus(message) {
   }
 }
 
+// FIX: Guard against multiple initializations (prevents double splash screen)
+// These flags prevent race conditions during HMR, StrictMode double-render, and rapid reloads
+let isAppInitialized = false;
+let splashRemovalInProgress = false;
+let reactRoot = null;
+
+/**
+ * Safely remove the splash screen with proper guards against double removal
+ * FIX: Prevents the "double splash" visual bug by ensuring removal only happens once
+ */
+function removeSplashScreen() {
+  // Guard: Don't start removal if already in progress or completed
+  if (splashRemovalInProgress) {
+    logger.debug('[Splash] Removal already in progress, skipping duplicate call');
+    return;
+  }
+
+  const initialLoading = document.getElementById('initial-loading');
+  if (!initialLoading) {
+    // Already removed or never existed
+    return;
+  }
+
+  splashRemovalInProgress = true;
+
+  // Add fade-out animation
+  initialLoading.style.transition = 'opacity 0.3s ease-out';
+  initialLoading.style.opacity = '0';
+
+  // Remove after animation completes
+  setTimeout(() => {
+    // Double-check element still exists before removing
+    const element = document.getElementById('initial-loading');
+    if (element) {
+      element.remove();
+      logger.debug('[Splash] Splash screen removed successfully');
+    }
+  }, 300);
+}
+
 // Wait for DOM to be ready before initializing React
 function initializeApp() {
+  // FIX: Prevent multiple initializations which can cause double splash screens
+  if (isAppInitialized) {
+    logger.debug('[initializeApp] Already initialized, skipping duplicate call');
+    return;
+  }
+  isAppInitialized = true;
+
   try {
     updateSplashStatus('Loading dependencies...');
 
@@ -204,13 +251,15 @@ function initializeApp() {
       logger.debug('Root container found, creating React root');
     }
 
-    // Create React root
-    const root = createRoot(container);
+    // FIX: Reuse existing root during HMR to prevent duplicate renders
+    if (!reactRoot) {
+      reactRoot = createRoot(container);
+    }
 
     updateSplashStatus('Starting application...');
 
     // Render the React app with global error boundary
-    root.render(
+    reactRoot.render(
       <React.StrictMode>
         <GlobalErrorBoundary>
           <Provider store={store}>
@@ -220,17 +269,13 @@ function initializeApp() {
       </React.StrictMode>
     );
 
-    // Remove initial loading after first paint with a smooth fade
+    // FIX: Remove initial loading after first paint with proper guards
+    // Using requestAnimationFrame ensures we wait for the first paint
+    // FIX: Increased delay from 50ms to 150ms to prevent double splash screen effect (Issue 3.1)
     requestAnimationFrame(() => {
-      const initialLoading = document.getElementById('initial-loading');
-      if (initialLoading) {
-        // Add fade-out animation
-        initialLoading.style.transition = 'opacity 0.3s ease-out';
-        initialLoading.style.opacity = '0';
-        setTimeout(() => {
-          initialLoading.remove();
-        }, 300);
-      }
+      // Add delay to ensure React has fully rendered
+      // This prevents flash-of-content issues on slower machines
+      setTimeout(removeSplashScreen, 150);
     });
 
     // Debug logging in development mode

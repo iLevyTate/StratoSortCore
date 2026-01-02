@@ -52,7 +52,8 @@ class StartupManager {
       startupTimeout: options.startupTimeout || 60000,
       healthCheckInterval: options.healthCheckInterval || 120000,
       maxRetries: options.maxRetries || 3,
-      baseRetryDelay: options.baseRetryDelay || 1000,
+      // FIX: Reduced from 1000ms to 500ms to speed up retry cycles (saves 1-3s per retry)
+      baseRetryDelay: options.baseRetryDelay || 500,
       axiosTimeout: options.axiosTimeout || 5000,
       circuitBreakerThreshold: options.circuitBreakerThreshold || 5,
       circuitBreakerConsecutiveFailures: options.circuitBreakerConsecutiveFailures || 3
@@ -181,7 +182,8 @@ class StartupManager {
           }
         }
 
-        const verifyTimeout = config.verifyTimeout || 10000;
+        // FIX: Reduced default timeout from 10s to 8s and improved polling strategy
+        const verifyTimeout = config.verifyTimeout || 8000;
         const startTime = Date.now();
         let isRunning = false;
         let pollInterval = 50;
@@ -197,13 +199,14 @@ class StartupManager {
             return { success: true, alreadyRunning: false };
           }
 
+          // FIX: Keep faster polling (100ms) for longer to catch quick startups
           checksPerformed++;
-          if (checksPerformed <= 5) {
-            pollInterval = 200;
-          } else if (checksPerformed <= 10) {
-            pollInterval = 500;
+          if (checksPerformed <= 10) {
+            pollInterval = 100;
+          } else if (checksPerformed <= 20) {
+            pollInterval = 250;
           } else {
-            pollInterval = 1000;
+            pollInterval = 500;
           }
 
           await delay(pollInterval);
@@ -293,7 +296,8 @@ class StartupManager {
       isChromaDBRunning,
       {
         required: false,
-        verifyTimeout: 12000
+        // FIX: Reduced from 12s to 10s - quick check already handles "already running" case
+        verifyTimeout: 10000
       }
     );
   }
@@ -303,7 +307,8 @@ class StartupManager {
       'ollama',
       async () => startOllama({ serviceStatus: this.serviceStatus }),
       isOllamaRunning,
-      { required: false, verifyTimeout: 8000 }
+      // FIX: Reduced from 8s to 6s with faster polling
+      { required: false, verifyTimeout: 6000 }
     );
   }
 

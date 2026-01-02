@@ -13,7 +13,9 @@ const {
 
 describe('settingsValidation security', () => {
   test('rejects prototype-pollution keys via warnings', () => {
-    const input = { __proto__: 'oops', theme: 'dark' };
+    // Using JSON.parse to create an object with __proto__ as an actual own property
+    // (object literal syntax triggers the __proto__ setter and doesn't create an own property)
+    const input = JSON.parse('{"__proto__": "oops", "theme": "dark"}');
     const result = validateSettings(input);
 
     expect(result.valid).toBe(true);
@@ -21,6 +23,16 @@ describe('settingsValidation security', () => {
       expect.arrayContaining([expect.stringContaining('unsafe key')])
     );
     expect(result.errors).toHaveLength(0);
+  });
+
+  test('does not false-positive on inherited __proto__', () => {
+    // Object literal syntax doesn't create __proto__ as an own property
+    const input = { theme: 'dark' };
+    const result = validateSettings(input);
+
+    expect(result.valid).toBe(true);
+    // Should NOT have any __proto__ warnings since it's not an own property
+    expect(result.warnings.filter((w) => w.includes('__proto__'))).toHaveLength(0);
   });
 
   test('sanitizeSettings drops prototype-pollution keys', () => {

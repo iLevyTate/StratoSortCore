@@ -169,11 +169,21 @@ function isPathWithinAllowed(targetPath, allowedBasePaths) {
     return false;
   }
 
-  const normalizedTarget = path.normalize(targetPath).toLowerCase();
+  // FIX: Platform-aware case sensitivity handling
+  // Windows and macOS (HFS+) are case-insensitive, Linux is case-sensitive
+  const isWindows = process.platform === 'win32';
+  const isMacOS = process.platform === 'darwin';
+  const isCaseInsensitive = isWindows || isMacOS;
+
+  const normalizedTarget = isCaseInsensitive
+    ? path.normalize(targetPath).toLowerCase()
+    : path.normalize(targetPath);
 
   for (const basePath of allowedBasePaths) {
     if (!basePath) continue;
-    const normalizedBase = path.normalize(basePath).toLowerCase();
+    const normalizedBase = isCaseInsensitive
+      ? path.normalize(basePath).toLowerCase()
+      : path.normalize(basePath);
 
     // Check if target starts with base path
     if (normalizedTarget.startsWith(normalizedBase)) {

@@ -140,4 +140,17 @@ export function useKeyboardShortcuts() {
     });
     return cleanup;
   }, [actions]);
+
+  // FIX H-3: Listen for undo/redo state changes and notify components
+  useEffect(() => {
+    const cleanup = window.electronAPI?.undoRedo?.onStateChanged?.((data) => {
+      logger.debug('Undo/redo state changed:', data);
+      // Dispatch custom event for phases to refresh their file state
+      window.dispatchEvent(new CustomEvent('app:undo-redo-state-changed', { detail: data }));
+      // Show notification to user
+      const action = data?.action === 'undo' ? 'Undone' : 'Redone';
+      addNotification(`${action}: ${data?.result?.message || 'File operation'}`, 'info', 3000);
+    });
+    return cleanup;
+  }, [addNotification]);
 }

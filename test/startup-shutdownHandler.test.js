@@ -23,7 +23,8 @@ jest.mock('os', () => ({
 
 // Mock child_process
 jest.mock('child_process', () => ({
-  spawn: jest.fn().mockReturnValue({ on: jest.fn() })
+  spawn: jest.fn().mockReturnValue({ on: jest.fn() }),
+  spawnSync: jest.fn().mockReturnValue({ status: 0 })
 }));
 
 describe('Shutdown Handler', () => {
@@ -155,8 +156,6 @@ describe('Shutdown Handler', () => {
       const os = require('os');
       os.platform.mockReturnValue('win32');
 
-      const { spawn } = require('child_process');
-
       const module = require('../src/main/services/startup/shutdownHandler');
 
       const mockProcess = new EventEmitter();
@@ -172,7 +171,8 @@ describe('Shutdown Handler', () => {
 
       await promise;
 
-      expect(spawn).toHaveBeenCalledWith(
+      const { spawnSync } = require('child_process');
+      expect(spawnSync).toHaveBeenCalledWith(
         'taskkill',
         ['/pid', '123', '/f', '/t'],
         expect.objectContaining({ windowsHide: true })

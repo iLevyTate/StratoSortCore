@@ -35,13 +35,16 @@ describe('IPC registration', () => {
       scanDirectory: async () => []
     });
 
+    // Channels that are events (main -> renderer via send), not handlers
+    const eventOnlyChannels = [IPC_CHANNELS.UNDO_REDO.STATE_CHANGED];
+
     const expectedChannels = [
       // Files (all implemented)
       ...Object.values(IPC_CHANNELS.FILES),
       // Smart folders
       ...Object.values(IPC_CHANNELS.SMART_FOLDERS),
-      // Undo/redo
-      ...Object.values(IPC_CHANNELS.UNDO_REDO),
+      // Undo/redo (excluding event-only channels)
+      ...Object.values(IPC_CHANNELS.UNDO_REDO).filter((ch) => !eventOnlyChannels.includes(ch)),
       // Analysis
       ...Object.values(IPC_CHANNELS.ANALYSIS),
       // Settings

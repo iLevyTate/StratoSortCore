@@ -195,17 +195,23 @@ const Modal = ({
 
   if (!isOpen || !portalTarget) return null;
 
+  // FIX: Split backdrop into two layers to avoid blur/animation conflict (Issue 2.6)
   const modalContent = (
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center p-[var(--panel-padding)] bg-black/55 backdrop-blur-md animate-modal-backdrop"
+      className="fixed inset-0 z-modal flex items-center justify-center p-[var(--panel-padding)]"
       onClick={handleOverlayClick}
     >
+      {/* Background overlay with animation */}
+      <div className="absolute inset-0 bg-black/55 animate-modal-backdrop" aria-hidden="true" />
+      {/* Blur layer without animation */}
+      <div className="absolute inset-0 backdrop-blur-md" aria-hidden="true" />
+
       {/* Modal */}
       <div
         ref={modalRef}
         className={`
           relative surface-panel w-full ${getSizeClasses()}
-          max-h-[90vh] overflow-hidden animate-modal-enter ${className}
+          max-h-[90vh] overflow-hidden animate-modal-enter will-change-transform ${className}
         `}
         role="dialog"
         aria-modal="true"

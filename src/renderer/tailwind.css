@@ -3,7 +3,8 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+:root,
+.theme-light {
   --app-nav-height: 72px;
   --surface-primary: #ffffff;
   --surface-muted: #f8fafc;
@@ -23,6 +24,11 @@
   --radius-chip: 999px;
   --panel-chrome-offset: 140px;
   --toast-offset: 80px;
+
+  /* Light theme text colors */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
 
   /* Layout guardrails */
   --page-max-width: 1200px;
@@ -92,6 +98,70 @@
   header .hidden.sm\:block {
     display: none !important;
   }
+}
+
+/* Dark theme variables */
+.theme-dark {
+  --surface-primary: #0f172a;
+  --surface-muted: #1e293b;
+  --surface-contrast: #f8fafc;
+  --surface-overlay: #1e293bee;
+  --glass-layer: rgba(30, 41, 59, 0.85);
+  --glass-border: rgba(51, 65, 85, 0.6);
+  --border-soft: #334155;
+  --border-strong: #475569;
+  --border-subtle: #1e293b;
+  --shadow-soft: 0 30px 45px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 25px 55px rgba(59, 130, 246, 0.25);
+  --shadow-ambient: 0 18px 48px rgba(0, 0, 0, 0.35);
+
+  /* Dark theme text colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+}
+
+/* Dark theme overrides for specific elements */
+.theme-dark .page-shell {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(30, 58, 138, 0.15) 0, transparent 28%),
+    radial-gradient(circle at 80% 0%, rgba(59, 130, 246, 0.1) 0, transparent 24%),
+    linear-gradient(180deg, #0f172a 0%, #1e293b 60%, #0f172a 100%);
+}
+
+.theme-dark .app-surface {
+  @apply bg-[#1e293b] text-slate-200;
+}
+
+.theme-dark .surface-panel,
+.theme-dark .surface-card,
+.theme-dark .glass-panel {
+  @apply bg-slate-800/90 border-slate-700;
+}
+
+.theme-dark .btn-secondary {
+  @apply bg-slate-800/90 border-slate-600 text-slate-200;
+}
+
+.theme-dark .form-input-enhanced {
+  @apply bg-slate-800/90 border-slate-600 text-slate-200 placeholder-slate-400;
+}
+
+.theme-dark .list-row {
+  @apply bg-slate-800/85 border-slate-700;
+}
+
+.theme-dark .toolbar {
+  @apply bg-slate-800/80 border-slate-700;
+}
+
+.theme-dark .empty-state {
+  @apply bg-slate-800/80 border-slate-700;
+}
+
+.theme-dark .tooltip-enhanced {
+  background: rgba(30, 41, 59, 0.98);
+  @apply text-slate-200;
 }
 
 @layer base {
@@ -935,6 +1005,15 @@
   }
   .modern-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #64748b;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

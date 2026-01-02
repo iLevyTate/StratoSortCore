@@ -61,7 +61,34 @@ async function checkChromaDBHealth() {
 }
 
 /**
- * Check if ChromaDB is running
+ * Quick check if ChromaDB is running (no retries, for fast initial detection)
+ * FIX: Added for faster startup - saves 2-6 seconds by avoiding retry delays
+ * @returns {Promise<boolean>}
+ */
+async function isChromaDBRunningQuick() {
+  try {
+    const baseUrl = getChromaUrl();
+    const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await axios.get(`${baseUrl}${endpoint}`, { timeout: 1000 });
+        if (response.status === 200) {
+          logger.debug(`[STARTUP] ChromaDB quick check successful on ${baseUrl}${endpoint}`);
+          return true;
+        }
+      } catch {
+        // Try next endpoint
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if ChromaDB is running (with retries for reliability)
  * @returns {Promise<boolean>}
  */
 async function isChromaDBRunning() {
@@ -162,9 +189,10 @@ async function startChromaDB({
     return { success: false, external: true, reason: 'unreachable' };
   }
 
+  // FIX: Use quick check (no retries) for initial detection - saves 2-6 seconds
   // If a ChromaDB server is already reachable, don't try to spawn a second instance.
   // This avoids noisy failures when a previous run (or another service) already started ChromaDB.
-  if (await isChromaDBRunning()) {
+  if (await isChromaDBRunningQuick()) {
     serviceStatus.chromadb.status = 'running';
     serviceStatus.chromadb.health = 'healthy';
     serviceStatus.chromadb.external = false;
@@ -227,13 +255,13 @@ async function startChromaDB({
       };
     }
 
-    // Only cache if it's the system chroma executable
-    if (plan.command === 'chroma' || plan.source === 'local-cli') {
-      setCachedSpawnPlan(plan);
-      logger.info('[STARTUP] Cached ChromaDB spawn plan for future restarts');
-    } else {
-      logger.warn('[STARTUP] Not caching spawn plan - using fallback method');
-    }
+    // FIX: Cache ALL successful spawn plans to save 3-6 seconds on restarts
+    // Previously only cached system chroma, but python -m chromadb is equally cacheable
+    setCachedSpawnPlan(plan);
+    logger.info('[STARTUP] Cached ChromaDB spawn plan for future restarts', {
+      command: plan.command,
+      source: plan.source
+    });
   } else {
     logger.info('[STARTUP] Using cached ChromaDB spawn plan for restart');
   }
@@ -279,5 +307,6 @@ async function startChromaDB({
 module.exports = {
   checkChromaDBHealth,
   isChromaDBRunning,
+  isChromaDBRunningQuick,
   startChromaDB
 };

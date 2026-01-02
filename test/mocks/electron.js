@@ -96,6 +96,21 @@ const mockNativeTheme = {
   off: jest.fn()
 };
 
+const mockScreen = {
+  getPrimaryDisplay: jest.fn(() => ({
+    workAreaSize: { width: 1920, height: 1080 },
+    bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    scaleFactor: 1
+  })),
+  getAllDisplays: jest.fn(() => [
+    {
+      workAreaSize: { width: 1920, height: 1080 },
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      scaleFactor: 1
+    }
+  ])
+};
+
 module.exports = {
   ipcMain: mockIpcMain,
   ipcRenderer: mockIpcRenderer,
@@ -103,5 +118,6 @@ module.exports = {
   dialog: mockDialog,
   shell: mockShell,
   BrowserWindow: mockBrowserWindow,
-  nativeTheme: mockNativeTheme
+  nativeTheme: mockNativeTheme,
+  screen: mockScreen
 };

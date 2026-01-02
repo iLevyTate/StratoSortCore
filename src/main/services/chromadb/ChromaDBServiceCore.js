@@ -1048,13 +1048,11 @@ class ChromaDBServiceCore extends EventEmitter {
     // Use bounded helper to prevent memory exhaustion
     this._addInflightQuery(cacheKey, queryPromise);
 
-    try {
-      const results = await queryPromise;
-      this.queryCache.set(cacheKey, results);
-      return results;
-    } finally {
-      this.inflightQueries.delete(cacheKey);
-    }
+    // FIX: Removed redundant finally block - _addInflightQuery already handles cleanup
+    // via promise.finally(). The double-delete was harmless but confusing.
+    const results = await queryPromise;
+    this.queryCache.set(cacheKey, results);
+    return results;
   }
 
   async batchQueryFolders(fileIds, topK = 5) {

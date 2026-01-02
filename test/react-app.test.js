@@ -136,7 +136,7 @@ describe('StratoSort React App', () => {
 
       // Modern React entry should use createRoot and render <App />
       expect(indexContent).toContain('createRoot');
-      expect(indexContent).toMatch(/root\.(render|hydrate)\(/);
+      expect(indexContent).toMatch(/(reactRoot|root)\.(render|hydrate)\(/);
       expect(indexContent).toContain('<App />');
     });
   });

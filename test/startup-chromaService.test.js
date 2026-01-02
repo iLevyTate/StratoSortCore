@@ -348,7 +348,7 @@ describe('chromaService', () => {
       expect(setCachedSpawnPlan).toHaveBeenCalled();
     });
 
-    test('does not cache non-local-cli spawn plan', async () => {
+    test('caches all successful spawn plans including fallback', async () => {
       buildChromaSpawnPlan.mockResolvedValue({
         command: 'python',
         args: ['-m', 'chromadb'],
@@ -366,7 +366,11 @@ describe('chromaService', () => {
         setCachedSpawnPlan
       });
 
-      expect(setCachedSpawnPlan).not.toHaveBeenCalled();
+      // FIX: Now caches ALL successful spawn plans including fallback ones
+      // This saves 3-6 seconds on subsequent restarts
+      expect(setCachedSpawnPlan).toHaveBeenCalledWith(
+        expect.objectContaining({ source: 'fallback' })
+      );
     });
 
     test('disables ChromaDB features when no spawn plan found', async () => {

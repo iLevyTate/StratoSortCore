@@ -111,6 +111,22 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [isDeletingModel, setIsDeletingModel] = useState(false);
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
+
+  // FIX: Cleanup progress listener on unmount to prevent memory leak
+  // This handles the case where user closes settings panel mid-model-download
+  useEffect(() => {
+    return () => {
+      if (progressUnsubRef.current) {
+        try {
+          progressUnsubRef.current();
+        } catch {
+          // Non-fatal if cleanup fails
+        }
+        progressUnsubRef.current = null;
+      }
+    };
+  }, []);
+
   const [showAllModels, setShowAllModels] = useState(false);
   const [showAnalysisHistory, setShowAnalysisHistory] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -342,6 +358,16 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       autoSaveSettings();
     }
   }, [isApiAvailable, settings, settingsLoaded, autoSaveSettings]);
+
+  // FIX H-2: Flush pending settings saves on unmount to prevent data loss
+  // when user closes settings panel before debounce completes
+  useEffect(() => {
+    return () => {
+      if (autoSaveSettings?.flush) {
+        autoSaveSettings.flush();
+      }
+    };
+  }, [autoSaveSettings]);
 
   const testOllamaConnection = useCallback(async () => {
     try {
