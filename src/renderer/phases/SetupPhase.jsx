@@ -43,6 +43,7 @@ function SetupPhase() {
   const [smartFolders, setSmartFolders] = useState([]);
   const [editingFolder, setEditingFolder] = useState(null);
   const [defaultLocation, setDefaultLocation] = useState('Documents');
+  const [isDefaultLocationLoaded, setIsDefaultLocationLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showSkeletonLayer, setShowSkeletonLayer] = useState(true);
   const [contentVisible, setContentVisible] = useState(false);
@@ -74,6 +75,7 @@ function SetupPhase() {
   useEffect(() => {
     if (documentsPathFromStore && defaultLocation === 'Documents') {
       setDefaultLocation(normalizePathValue(documentsPathFromStore, defaultLocation));
+      setIsDefaultLocationLoaded(true);
     }
   }, [documentsPathFromStore, defaultLocation]);
 
@@ -94,6 +96,7 @@ function SetupPhase() {
         logger.warn('electronAPI.settings not available, using fallback location');
         if (documentsPathFromStore) {
           setDefaultLocation(normalizePathValue(documentsPathFromStore, defaultLocation));
+          setIsDefaultLocationLoaded(true);
         }
         return;
       }
@@ -103,15 +106,20 @@ function SetupPhase() {
         setDefaultLocation(
           normalizePathValue(settings.defaultSmartFolderLocation, defaultLocation)
         );
+        setIsDefaultLocationLoaded(true);
       } else if (documentsPathFromStore) {
         setDefaultLocation(normalizePathValue(documentsPathFromStore, defaultLocation));
+        setIsDefaultLocationLoaded(true);
       } else {
         dispatch(fetchDocumentsPath());
+        // Will be set to true when documentsPathFromStore is updated via effect
       }
     } catch (error) {
       logger.error('Failed to load default location', {
         error: error.message
       });
+      // Still mark as loaded so modal can open (user can browse manually)
+      setIsDefaultLocationLoaded(true);
     }
   }, [defaultLocation, documentsPathFromStore, dispatch]);
 
@@ -188,22 +196,10 @@ function SetupPhase() {
 
   const handleAddFolder = async (newFolder) => {
     try {
-      // Validate parent path
-      const parentPath = newFolder.path.substring(
-        0,
-        newFolder.path.lastIndexOf('/') || newFolder.path.lastIndexOf('\\')
-      );
-      try {
-        if (parentPath) {
-          const parentStats = await window.electronAPI.files.getStats(parentPath);
-          if (!parentStats || !parentStats.isDirectory) {
-            showError(`Parent directory "${parentPath}" does not exist or is not accessible`);
-            return false;
-          }
-        }
-      } catch {
-        showWarning('Cannot verify parent directory permissions. Folder creation may fail.');
-      }
+      // FIX Issue 3.1-A, 3.1-B: Removed frontend parent path validation
+      // The backend (smartFolders.js) handles directory creation automatically,
+      // including creating parent directories recursively if needed.
+      // This allows users to specify paths that don't exist yet.
 
       const result = await window.electronAPI.smartFolders.add(newFolder);
       if (result.success) {
@@ -443,64 +439,9 @@ function SetupPhase() {
               )}
             </div>
 
+            {/* FIX: Simplified toolbar - removed Reset/Rebuild buttons (Issue 3.1-C, 3.1-D)
+                These options are available in Settings > Embeddings for advanced users */}
             <div className="flex items-center gap-2">
-              {smartFolders.length > 0 && (
-                <>
-                  <Button
-                    onClick={handleResetToDefaults}
-                    variant="ghost"
-                    className="text-sm"
-                    title="Reset to default smart folders"
-                  >
-                    <svg
-                      className="w-4 h-4 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
-                    Reset
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      try {
-                        const res = await window.electronAPI.embeddings.rebuildFolders();
-                        if (res?.success) {
-                          showSuccess(`Rebuilt ${res.folders || 0} folder embeddings`);
-                        } else {
-                          showError(`Failed to rebuild: ${res?.error || 'Unknown error'}`);
-                        }
-                      } catch (e) {
-                        showError(`Failed: ${e.message}`);
-                      }
-                    }}
-                    variant="secondary"
-                    className="text-sm"
-                    title="Rebuild all folder embeddings"
-                  >
-                    <svg
-                      className="w-4 h-4 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
-                      />
-                    </svg>
-                    Rebuild
-                  </Button>
-                </>
-              )}
               <Button onClick={() => setIsAddModalOpen(true)} variant="primary" className="text-sm">
                 <svg
                   className="w-4 h-4 mr-1.5"
@@ -697,6 +638,7 @@ function SetupPhase() {
           onClose={() => setIsAddModalOpen(false)}
           onAdd={handleAddFolder}
           defaultLocation={defaultLocation}
+          isDefaultLocationLoaded={isDefaultLocationLoaded}
           existingFolders={smartFolders}
           showNotification={addNotification}
         />

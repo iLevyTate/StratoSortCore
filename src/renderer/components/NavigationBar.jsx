@@ -168,8 +168,8 @@ const NavTab = memo(function NavTab({
       onMouseLeave={() => onHover(null)}
       disabled={!canNavigate}
       className={`
-        relative flex items-center gap-2 rounded-full
-        px-3 py-1.5 text-sm font-medium whitespace-nowrap
+        relative flex items-center gap-1 sm:gap-2 rounded-full
+        px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0
         transition-all duration-200 ease-out
         focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
         ${
@@ -191,17 +191,18 @@ const NavTab = memo(function NavTab({
       style={{ WebkitAppRegion: 'no-drag' }}
     >
       {showSpinner ? (
-        <SpinnerIcon className="h-4 w-4 text-stratosort-blue" />
+        <SpinnerIcon className="h-4 w-4 text-stratosort-blue flex-shrink-0" />
       ) : (
         IconComponent && (
           <IconComponent
-            className={`h-4 w-4 transition-colors duration-200
+            className={`h-4 w-4 flex-shrink-0 transition-colors duration-200
               ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}
             `}
           />
         )
       )}
-      <span>{label}</span>
+      {/* FIX: Hide label on small screens for responsive navbar - show on md and up */}
+      <span className="hidden md:inline">{label}</span>
 
       {/* Active indicator */}
       {isActive && !showSpinner && (
@@ -496,9 +497,9 @@ function NavigationBar() {
           <Brand isConnected={true} />
         </div>
 
-        {/* Center: Phase Navigation */}
+        {/* Center: Phase Navigation - FIX: Improved responsive overflow handling */}
         <nav
-          className="flex items-center gap-1"
+          className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto max-w-[40vw] sm:max-w-[50vw] md:max-w-[60vw] lg:max-w-none scrollbar-none flex-shrink min-w-0"
           style={{ WebkitAppRegion: 'no-drag' }}
           aria-label="Phase navigation"
         >

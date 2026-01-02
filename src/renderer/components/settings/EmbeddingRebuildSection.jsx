@@ -44,7 +44,14 @@ function EmbeddingRebuildSection({ addNotification }) {
   }, [refreshStats]);
 
   const statsLabel = useMemo(() => {
-    if (!stats) return 'Embeddings status unavailable';
+    if (!stats) return 'Embeddings status unavailable - check Ollama connection';
+    // FIX M-5: Show helpful context when embeddings are 0 but files have been analyzed
+    if (stats.needsFileEmbeddingRebuild) {
+      return `${stats.folders} folder embeddings • ${stats.files} file embeddings (${stats.analysisHistory?.totalFiles || 0} files analyzed - click Rebuild to index)`;
+    }
+    if (stats.files === 0 && stats.folders === 0) {
+      return 'No embeddings yet - analyze files and add smart folders first';
+    }
     return `${stats.folders} folder embeddings • ${stats.files} file embeddings`;
   }, [stats]);
 

@@ -152,6 +152,23 @@ class UndoStack {
     return this.stack.slice(0, this.pointer + 1);
   }
 
+  // FIX L-2: Get the full stack and current pointer for jump-to-point feature
+  getFullStack() {
+    return this.stack.slice();
+  }
+
+  getCurrentIndex() {
+    return this.pointer;
+  }
+
+  // FIX L-2: Set pointer directly (for use with jumpToPoint which handles execution externally)
+  setPointer(newPointer) {
+    if (newPointer >= -1 && newPointer < this.stack.length) {
+      this.pointer = newPointer;
+      this.notifyListeners();
+    }
+  }
+
   clear() {
     this.stack = [];
     this.pointer = -1;
@@ -395,6 +412,63 @@ export function UndoRedoProvider({ children }) {
     showInfo('Undo/redo history cleared');
   };
 
+  // FIX L-2: Jump to a specific point in history by performing sequential undos/redos
+  const jumpToPoint = async (targetIndex) => {
+    if (actionMutexRef.current) {
+      showInfo('Please wait for the current action to complete');
+      return;
+    }
+
+    const currentIndex = undoStack.getCurrentIndex();
+    if (targetIndex === currentIndex) {
+      return; // Already at this point
+    }
+
+    const fullStack = undoStack.getFullStack();
+    if (targetIndex < -1 || targetIndex >= fullStack.length) {
+      showError('Invalid history point');
+      return;
+    }
+
+    actionMutexRef.current = true;
+    setIsExecuting(true);
+
+    try {
+      if (targetIndex < currentIndex) {
+        // Need to undo: go backwards from current to target
+        const stepsToUndo = currentIndex - targetIndex;
+        showInfo(`Jumping back ${stepsToUndo} step${stepsToUndo > 1 ? 's' : ''}...`);
+
+        for (let i = 0; i < stepsToUndo; i++) {
+          const action = undoStack.undo();
+          if (action) {
+            await action.undo();
+          }
+        }
+        showSuccess(`Jumped back to step ${targetIndex + 1}`);
+      } else {
+        // Need to redo: go forwards from current to target
+        const stepsToRedo = targetIndex - currentIndex;
+        showInfo(`Jumping forward ${stepsToRedo} step${stepsToRedo > 1 ? 's' : ''}...`);
+
+        for (let i = 0; i < stepsToRedo; i++) {
+          const action = undoStack.redo();
+          if (action) {
+            await action.redo();
+          }
+        }
+        showSuccess(`Jumped forward to step ${targetIndex + 1}`);
+      }
+    } catch (error) {
+      showError(`Jump failed: ${error?.message || String(error)}`);
+      // Note: The stack pointer may be in an intermediate state here.
+      // A full refresh or manual undo/redo may be needed to recover.
+    } finally {
+      actionMutexRef.current = false;
+      if (isMountedRef.current) setIsExecuting(false);
+    }
+  };
+
   const contextValue = {
     executeAction,
     undo,
@@ -403,6 +477,10 @@ export function UndoRedoProvider({ children }) {
     canRedo,
     isExecuting, // FIX: Expose execution state to prevent UI race conditions
     getHistory: () => undoStack.getHistory(),
+    // FIX L-2: Expose full stack and current index for jump-to-point UI
+    getFullStack: () => undoStack.getFullStack(),
+    getCurrentIndex: () => undoStack.getCurrentIndex(),
+    jumpToPoint,
     peek: () => undoStack.peek(),
     peekRedo: () => undoStack.peekRedo(),
     getActionDescription,
@@ -448,10 +526,23 @@ export function useUndoRedo() {
 }
 
 // History Modal Component
+// FIX L-2: Enhanced with jump-to-point functionality
 function HistoryModal() {
-  const { getHistory, setIsHistoryVisible, clearHistory } = useUndoRedo();
+  const {
+    getFullStack,
+    getCurrentIndex,
+    jumpToPoint,
+    setIsHistoryVisible,
+    clearHistory,
+    isExecuting
+  } = useUndoRedo();
 
-  const history = getHistory();
+  const fullStack = getFullStack();
+  const currentIndex = getCurrentIndex();
+
+  const handleJumpToPoint = async (targetIndex) => {
+    await jumpToPoint(targetIndex);
+  };
 
   return (
     <div
@@ -467,11 +558,17 @@ function HistoryModal() {
     >
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-system-gray-900">Action History</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-system-gray-900">Action History</h2>
+            <p className="text-sm text-system-gray-500 mt-1">
+              Click any action to jump to that point
+            </p>
+          </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={clearHistory}
               className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+              disabled={isExecuting}
             >
               Clear History
             </button>
@@ -492,7 +589,7 @@ function HistoryModal() {
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[60vh]">
-          {history.length === 0 ? (
+          {fullStack.length === 0 ? (
             <div className="text-center py-8 text-system-gray-500">
               <svg
                 className="w-12 h-12 mx-auto mb-4 text-system-gray-300"
@@ -511,26 +608,66 @@ function HistoryModal() {
             </div>
           ) : (
             <div className="space-y-2">
-              {history
+              {fullStack
                 .slice()
                 .reverse()
-                .map((action, index) => (
-                  <div
-                    key={action.id}
-                    className="flex items-center justify-between p-3 bg-system-gray-50 rounded-lg"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <span className="text-lg">{ACTION_METADATA[action.type]?.icon || '📄'}</span>
-                      <div>
-                        <div className="font-medium text-system-gray-900">{action.description}</div>
-                        <div className="text-sm text-system-gray-500">
-                          {new Date(action.timestamp).toLocaleString()}
+                .map((action, reversedIndex) => {
+                  const actualIndex = fullStack.length - 1 - reversedIndex;
+                  const isCurrent = actualIndex === currentIndex;
+                  const isPast = actualIndex <= currentIndex;
+                  const isFuture = actualIndex > currentIndex;
+
+                  return (
+                    <button
+                      key={action.id}
+                      onClick={() => handleJumpToPoint(actualIndex)}
+                      disabled={isExecuting || isCurrent}
+                      className={`
+                        w-full flex items-center justify-between p-3 rounded-lg transition-all text-left
+                        ${isCurrent ? 'bg-stratosort-blue/10 border-2 border-stratosort-blue ring-2 ring-stratosort-blue/20' : ''}
+                        ${isPast && !isCurrent ? 'bg-system-gray-50 hover:bg-system-gray-100 border border-transparent hover:border-system-gray-200 cursor-pointer' : ''}
+                        ${isFuture ? 'bg-system-gray-50/50 hover:bg-system-gray-100 border border-dashed border-system-gray-200 opacity-60 hover:opacity-100 cursor-pointer' : ''}
+                        ${isExecuting ? 'cursor-wait opacity-50' : ''}
+                      `}
+                      title={
+                        isCurrent
+                          ? 'Current position'
+                          : isFuture
+                            ? `Click to redo to this point (${actualIndex - currentIndex} step${actualIndex - currentIndex > 1 ? 's' : ''} forward)`
+                            : `Click to undo to this point (${currentIndex - actualIndex} step${currentIndex - actualIndex > 1 ? 's' : ''} back)`
+                      }
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span className="text-lg">
+                          {ACTION_METADATA[action.type]?.icon || '📄'}
+                        </span>
+                        <div>
+                          <div
+                            className={`font-medium ${isCurrent ? 'text-stratosort-blue' : isFuture ? 'text-system-gray-500' : 'text-system-gray-900'}`}
+                          >
+                            {action.description}
+                          </div>
+                          <div className="text-sm text-system-gray-500">
+                            {new Date(action.timestamp).toLocaleString()}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="text-sm text-system-gray-400">#{history.length - index}</div>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-2">
+                        {isCurrent && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-stratosort-blue text-white rounded-full">
+                            Current
+                          </span>
+                        )}
+                        {isFuture && (
+                          <span className="px-2 py-0.5 text-xs font-medium bg-system-gray-200 text-system-gray-600 rounded-full">
+                            Undone
+                          </span>
+                        )}
+                        <span className="text-sm text-system-gray-400">#{actualIndex + 1}</span>
+                      </div>
+                    </button>
+                  );
+                })}
             </div>
           )}
         </div>

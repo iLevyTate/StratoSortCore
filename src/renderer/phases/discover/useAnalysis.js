@@ -689,7 +689,19 @@ export function useAnalysis(options) {
             .fill(null)
             .map(() => worker());
 
-          await Promise.all(workers);
+          // FIX: Use Promise.allSettled instead of Promise.all to handle partial failures
+          // This ensures all workers complete even if some throw unexpectedly
+          const workerResults = await Promise.allSettled(workers);
+
+          // Log any worker failures for debugging
+          const failedWorkers = workerResults.filter((r) => r.status === 'rejected');
+          if (failedWorkers.length > 0) {
+            logger.warn('Some analysis workers failed unexpectedly', {
+              failed: failedWorkers.length,
+              total: workers.length,
+              errors: failedWorkers.map((r) => r.reason?.message || 'Unknown error')
+            });
+          }
 
           if (abortSignal.aborted) {
             addNotification('Analysis cancelled by user', 'info', 2000);
@@ -846,6 +858,39 @@ export function useAnalysis(options) {
     addNotification
   ]);
 
+  /**
+   * FIX M-3: Retry failed files - re-analyze files that previously failed
+   */
+  const retryFailedFiles = useCallback(() => {
+    // Find files with error or failed state
+    const failedFiles = analysisResults.filter((f) => {
+      const state = fileStates[f.path]?.state;
+      return state === 'error' || state === 'failed';
+    });
+
+    if (failedFiles.length === 0) {
+      addNotification('No failed files to retry', 'info', 2000);
+      return;
+    }
+
+    // Reset states for failed files to pending
+    setFileStates((prev) => {
+      const updated = { ...prev };
+      failedFiles.forEach((file) => {
+        if (updated[file.path]) {
+          updated[file.path] = { ...updated[file.path], state: 'pending', error: null };
+        }
+      });
+      return updated;
+    });
+
+    // Re-analyze the failed files
+    addNotification(`Retrying ${failedFiles.length} failed file(s)...`, 'info', 2000);
+    if (analyzeFilesRef.current) {
+      analyzeFilesRef.current(failedFiles);
+    }
+  }, [analysisResults, fileStates, setFileStates, addNotification]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -904,6 +949,7 @@ export function useAnalysis(options) {
     analyzeFilesRef,
     cancelAnalysis,
     clearAnalysisQueue,
+    retryFailedFiles,
     resetAnalysisState,
     generatePreviewName
   };

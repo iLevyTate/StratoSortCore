@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { Button, Input, Textarea } from '../ui';
 import { logger } from '../../../shared/logger';
+import { Sparkles } from 'lucide-react';
 
 logger.setContext('AddSmartFolderModal');
 
@@ -13,6 +14,7 @@ function AddSmartFolderModal({
   onClose,
   onAdd,
   defaultLocation,
+  isDefaultLocationLoaded = false,
   existingFolders = [],
   showNotification
 }) {
@@ -20,12 +22,39 @@ function AddSmartFolderModal({
   const [folderPath, setFolderPath] = useState('');
   const [description, setDescription] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
 
   const resetForm = useCallback(() => {
     setFolderName('');
     setFolderPath('');
     setDescription('');
+    setIsGeneratingDescription(false);
   }, []);
+
+  // FIX: AI generate description feature (Issue 2.5)
+  const handleGenerateDescription = async () => {
+    if (!folderName.trim()) {
+      showNotification?.('Please enter a folder name first', 'warning');
+      return;
+    }
+    setIsGeneratingDescription(true);
+    try {
+      const result = await window.electronAPI?.smartFolders?.generateDescription?.(
+        folderName.trim()
+      );
+      if (result?.success && result.description) {
+        setDescription(result.description);
+        showNotification?.('Description generated', 'success');
+      } else {
+        showNotification?.(result?.error || 'Failed to generate description', 'error');
+      }
+    } catch (err) {
+      logger.error('Failed to generate description', { error: err.message });
+      showNotification?.('Failed to generate description', 'error');
+    } finally {
+      setIsGeneratingDescription(false);
+    }
+  };
 
   const handleClose = useCallback(() => {
     resetForm();
@@ -63,12 +92,14 @@ function AddSmartFolderModal({
       return;
     }
 
-    // Check if defaultLocation is a valid absolute path
+    // Check if defaultLocation is loaded and valid
     const isDefaultLocationAbsolute =
       /^[A-Za-z]:[\\/]/.test(defaultLocation) || defaultLocation.startsWith('/');
-    if (!isDefaultLocationAbsolute && !folderPath.trim()) {
+    // FIX H-1: Use isDefaultLocationLoaded prop instead of checking path format
+    // This prevents race condition where modal opens before path is loaded
+    if (!isDefaultLocationLoaded && !folderPath.trim()) {
       showNotification?.(
-        'System is still loading. Please wait a moment or browse to select a folder.',
+        'System is still loading the default location. Please wait a moment or browse to select a folder.',
         'warning'
       );
       return;
@@ -133,12 +164,16 @@ function AddSmartFolderModal({
       aria-modal="true"
       aria-labelledby="add-folder-title"
     >
-      {/* Backdrop */}
+      {/* FIX: Split backdrop into two layers to avoid blur/animation conflict (Issue 2.6)
+          Matches the pattern from Modal.jsx for consistent styling */}
+      {/* Background overlay with animation */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50 animate-modal-backdrop"
         onClick={handleClose}
         aria-hidden="true"
       />
+      {/* Blur layer without animation - prevents flicker/glitch */}
+      <div className="absolute inset-0 backdrop-blur-md pointer-events-none" aria-hidden="true" />
 
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-modal-enter">
@@ -226,13 +261,37 @@ function AddSmartFolderModal({
 
           {/* Description */}
           <div>
-            <label
-              htmlFor="folder-description"
-              className="block text-sm font-medium text-system-gray-700 mb-1.5"
-            >
-              Description
-              <span className="text-stratosort-blue font-medium ml-1">(AI uses this)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="folder-description"
+                className="block text-sm font-medium text-system-gray-700"
+              >
+                Description
+                <span className="text-stratosort-blue font-medium ml-1">(AI uses this)</span>
+              </label>
+              {/* FIX: AI Generate Description button (Issue 2.5) */}
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={isGeneratingDescription || !folderName.trim()}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={
+                  folderName.trim() ? 'Generate description with AI' : 'Enter a folder name first'
+                }
+              >
+                {isGeneratingDescription ? (
+                  <>
+                    <span className="inline-block w-3 h-3 border-2 border-stratosort-blue border-t-transparent rounded-full animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3 h-3" />
+                    Generate with AI
+                  </>
+                )}
+              </button>
+            </div>
             <Textarea
               id="folder-description"
               value={description}
@@ -284,6 +343,7 @@ AddSmartFolderModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   onAdd: PropTypes.func.isRequired,
   defaultLocation: PropTypes.string.isRequired,
+  isDefaultLocationLoaded: PropTypes.bool,
   existingFolders: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
