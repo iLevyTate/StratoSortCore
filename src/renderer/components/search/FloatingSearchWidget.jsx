@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { Search as SearchIcon, Network, X, GripVertical } from 'lucide-react';
+import { Search as SearchIcon, X, GripVertical } from 'lucide-react';
 import { Button } from '../ui';
 import { isMac } from '../../utils/platform';
 
@@ -8,7 +8,7 @@ import { isMac } from '../../utils/platform';
  * FloatingSearchWidget - A draggable floating widget for quick access to semantic search
  * Similar to notification system but draggable and always accessible
  */
-const FloatingSearchWidget = ({ isOpen, onClose, onOpenSearch, onOpenGraph }) => {
+const FloatingSearchWidget = ({ isOpen, onClose, onOpenSearch }) => {
   const [position, setPosition] = useState({ x: 20, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   // FIX: Use ref instead of state for dragOffset to prevent useEffect re-runs during drag
@@ -143,9 +143,6 @@ const FloatingSearchWidget = ({ isOpen, onClose, onOpenSearch, onOpenGraph }) =>
               <Button variant="primary" size="sm" onClick={onOpenSearch} className="text-xs">
                 <SearchIcon className="w-3.5 h-3.5" /> Try Semantic Search
               </Button>
-              <Button variant="secondary" size="sm" onClick={onOpenGraph} className="text-xs">
-                <Network className="w-3.5 h-3.5" /> Explore Graph
-              </Button>
             </div>
             <div className="mt-2 text-[10px] text-system-gray-400">
               Tip: Press{' '}
@@ -164,8 +161,7 @@ const FloatingSearchWidget = ({ isOpen, onClose, onOpenSearch, onOpenGraph }) =>
 FloatingSearchWidget.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onOpenSearch: PropTypes.func.isRequired,
-  onOpenGraph: PropTypes.func.isRequired
+  onOpenSearch: PropTypes.func.isRequired
 };
 
 export default FloatingSearchWidget;

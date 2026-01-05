@@ -131,7 +131,6 @@ export function FloatingSearchProvider({ children }) {
         isOpen={isWidgetOpen}
         onClose={closeWidget}
         onOpenSearch={() => openSearchModal('search')}
-        onOpenGraph={() => openSearchModal('graph')}
       />
       <UnifiedSearchModal
         isOpen={isModalOpen}
