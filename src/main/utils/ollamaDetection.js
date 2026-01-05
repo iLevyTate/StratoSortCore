@@ -1,6 +1,6 @@
-const { asyncSpawn } = require('./asyncSpawnUtils');
 const http = require('http');
 const https = require('https');
+const { asyncSpawn } = require('./asyncSpawnUtils');
 
 /**
  * Check if Ollama is installed and available in PATH

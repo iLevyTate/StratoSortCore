@@ -95,7 +95,7 @@ function SetupPhase() {
       if (!window.electronAPI?.settings?.get) {
         logger.warn('electronAPI.settings not available, using fallback location');
         if (documentsPathFromStore) {
-          setDefaultLocation(normalizePathValue(documentsPathFromStore, defaultLocation));
+          setDefaultLocation(normalizePathValue(documentsPathFromStore, 'Documents'));
           setIsDefaultLocationLoaded(true);
         }
         return;
@@ -103,12 +103,10 @@ function SetupPhase() {
 
       const settings = await window.electronAPI.settings.get();
       if (settings?.defaultSmartFolderLocation) {
-        setDefaultLocation(
-          normalizePathValue(settings.defaultSmartFolderLocation, defaultLocation)
-        );
+        setDefaultLocation(normalizePathValue(settings.defaultSmartFolderLocation, 'Documents'));
         setIsDefaultLocationLoaded(true);
       } else if (documentsPathFromStore) {
-        setDefaultLocation(normalizePathValue(documentsPathFromStore, defaultLocation));
+        setDefaultLocation(normalizePathValue(documentsPathFromStore, 'Documents'));
         setIsDefaultLocationLoaded(true);
       } else {
         dispatch(fetchDocumentsPath());
@@ -121,7 +119,16 @@ function SetupPhase() {
       // Still mark as loaded so modal can open (user can browse manually)
       setIsDefaultLocationLoaded(true);
     }
-  }, [defaultLocation, documentsPathFromStore, dispatch]);
+    // Note: Do NOT include defaultLocation in deps - it would cause infinite loop
+    // since this callback calls setDefaultLocation
+  }, [documentsPathFromStore, dispatch]);
+
+  // FIX NEW-6: Handler to refresh default location and open add modal
+  // This ensures the modal always shows the latest default location from settings
+  const handleOpenAddModal = useCallback(async () => {
+    await loadDefaultLocation();
+    setIsAddModalOpen(true);
+  }, [loadDefaultLocation]);
 
   const loadSmartFolders = useCallback(async () => {
     try {
@@ -215,10 +222,9 @@ function SetupPhase() {
         }
         await loadSmartFolders();
         return true;
-      } else {
-        showError(`Failed to add folder: ${result.error}`);
-        return false;
       }
+      showError(`Failed to add folder: ${result.error}`);
+      return false;
     } catch (error) {
       logger.error('Failed to add smart folder', {
         error: error.message,
@@ -442,7 +448,7 @@ function SetupPhase() {
             {/* FIX: Simplified toolbar - removed Reset/Rebuild buttons (Issue 3.1-C, 3.1-D)
                 These options are available in Settings > Embeddings for advanced users */}
             <div className="flex items-center gap-2">
-              <Button onClick={() => setIsAddModalOpen(true)} variant="primary" className="text-sm">
+              <Button onClick={handleOpenAddModal} variant="primary" className="text-sm">
                 <svg
                   className="w-4 h-4 mr-1.5"
                   fill="none"
@@ -520,7 +526,7 @@ function SetupPhase() {
                       </svg>
                       Load Defaults
                     </Button>
-                    <Button onClick={() => setIsAddModalOpen(true)} variant="primary">
+                    <Button onClick={handleOpenAddModal} variant="primary">
                       <svg
                         className="w-4 h-4 mr-1.5"
                         fill="none"

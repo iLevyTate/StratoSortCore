@@ -170,7 +170,7 @@ async function setOllamaHost(host) {
       // Track the host used to create the instance to avoid redundant recreation
       ollamaInstanceHost = ollamaHost;
 
-      await getSettings().save({ ollamaHost: ollamaHost });
+      await getSettings().save({ ollamaHost });
       logger.info(`[OLLAMA] Host set to: ${ollamaHost}`);
     }
   } catch (error) {

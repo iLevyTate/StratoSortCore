@@ -25,19 +25,22 @@ module.exports = (env, argv) => {
     module: {
       rules: [
         {
-          test: /\.js$/,
+          test: /\.(js|ts)$/,
           exclude: /node_modules/,
           use: {
             loader: 'babel-loader',
             options: {
-              presets: [['@babel/preset-env', { targets: { node: 'current' } }]]
+              presets: [
+                ['@babel/preset-env', { targets: { node: 'current' } }],
+                '@babel/preset-typescript'
+              ]
             }
           }
         }
       ]
     },
     resolve: {
-      extensions: ['.js', '.json']
+      extensions: ['.js', '.ts', '.json']
     },
     externals: {
       electron: 'commonjs electron',

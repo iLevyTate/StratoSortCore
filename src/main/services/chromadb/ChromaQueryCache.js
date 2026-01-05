@@ -9,6 +9,7 @@
 
 const { LRUCache } = require('../../../shared/LRUCache');
 const { logger } = require('../../../shared/logger');
+
 logger.setContext('ChromaDB:QueryCache');
 
 /**
@@ -110,7 +111,7 @@ class ChromaQueryCache {
    * Clear all cache entries
    */
   clear() {
-    const size = this._cache.size;
+    const { size } = this._cache;
     this._cache.clear();
     logger.info('[QueryCache] Cache cleared', { entriesCleared: size });
   }

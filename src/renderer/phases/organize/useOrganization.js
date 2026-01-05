@@ -486,13 +486,16 @@ export function useOrganization({
                   };
                 });
               if (uiResults.length > 0) {
-                setOrganizedFiles((prev) => [...prev, ...uiResults]);
+                // FIX H-3: Use functional update and sync ref immediately
+                setOrganizedFiles((prev) => {
+                  const updated = [...prev, ...uiResults];
+                  // Sync ref immediately for undo/redo consistency
+                  organizedFilesRef.current = updated;
+                  return updated;
+                });
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
-                // FIX: Use ref to get latest organizedFiles (avoids stale closure)
-                actions.setPhaseData('organizedFiles', [
-                  ...organizedFilesRef.current,
-                  ...uiResults
-                ]);
+                // Update phaseData for persistence
+                actions.setPhaseData('organizedFiles', organizedFilesRef.current);
                 addNotification(`Organized ${uiResults.length} files`, 'success');
                 setBatchProgress({
                   current: filesToProcess.length,
@@ -508,25 +511,43 @@ export function useOrganization({
           },
           onUndo: (result) => {
             try {
+              logger.info('[ORGANIZE] onUndo called', {
+                hasResult: !!result,
+                hasResults: !!result?.results,
+                resultsCount: result?.results?.length,
+                organizedFilesRefCountBefore: organizedFilesRef.current?.length
+              });
+
               // Use actual results from main process if available
               const successfulUndos = result?.results
                 ? result.results.filter((r) => r.success).map((r) => r.originalPath || r.newPath)
                 : Array.from(sourcePathsSet);
 
+              logger.info('[ORGANIZE] onUndo: unmarking files', {
+                successfulUndos,
+                successfulUndosCount: successfulUndos.length
+              });
+
               const undoPathsSet = new Set(successfulUndos.map(normalizeForComparison));
 
-              setOrganizedFiles((prev) =>
-                prev.filter((of) => !undoPathsSet.has(normalizeForComparison(of.originalPath)))
-              );
+              // FIX H-3: Use functional update and sync ref immediately to prevent stale data in onRedo
+              setOrganizedFiles((prev) => {
+                const filtered = prev.filter(
+                  (of) => !undoPathsSet.has(normalizeForComparison(of.originalPath))
+                );
+                // Sync ref immediately so onRedo sees correct data
+                organizedFilesRef.current = filtered;
+                logger.info('[ORGANIZE] onUndo: ref synced', {
+                  prevCount: prev.length,
+                  filteredCount: filtered.length,
+                  refCount: organizedFilesRef.current.length
+                });
+                return filtered;
+              });
               unmarkFilesAsProcessed(successfulUndos);
 
-              // FIX: Use ref to get latest organizedFiles (avoids stale closure)
-              actions.setPhaseData(
-                'organizedFiles',
-                organizedFilesRef.current.filter(
-                  (of) => !undoPathsSet.has(normalizeForComparison(of.originalPath))
-                )
-              );
+              // Also update phaseData for persistence
+              actions.setPhaseData('organizedFiles', organizedFilesRef.current);
 
               const successCount = result?.successCount ?? successfulUndos.length;
               const failCount = result?.failCount ?? 0;
@@ -548,6 +569,14 @@ export function useOrganization({
           },
           onRedo: (result) => {
             try {
+              logger.info('[ORGANIZE] onRedo called', {
+                hasResult: !!result,
+                hasResults: !!result?.results,
+                resultsCount: result?.results?.length,
+                successCount: result?.successCount,
+                organizedFilesRefCount: organizedFilesRef.current?.length
+              });
+
               // Use actual results from main process to only update successfully redone files
               const successfulResults = result?.results
                 ? result.results.filter((r) => r.success)
@@ -574,7 +603,7 @@ export function useOrganization({
                     }));
 
               if (uiResults.length > 0) {
-                // FIX: Filter out duplicates before adding to state
+                // FIX H-3: Filter out duplicates, but use latest ref data (synced in onUndo)
                 const existingPaths = new Set(
                   organizedFilesRef.current.map((f) => normalizeForComparison(f.originalPath))
                 );
@@ -582,14 +611,37 @@ export function useOrganization({
                   (r) => !existingPaths.has(normalizeForComparison(r.originalPath))
                 );
 
+                logger.debug('[ORGANIZE] onRedo: processing results', {
+                  uiResultsCount: uiResults.length,
+                  uniqueResultsCount: uniqueResults.length,
+                  existingPathsCount: existingPaths.size
+                });
+
                 if (uniqueResults.length > 0) {
-                  setOrganizedFiles((prev) => [...prev, ...uniqueResults]);
-                  markFilesAsProcessed(uniqueResults.map((r) => r.originalPath));
-                  // FIX: Use ref to get latest organizedFiles (avoids stale closure)
-                  actions.setPhaseData('organizedFiles', [
-                    ...organizedFilesRef.current,
-                    ...uniqueResults
-                  ]);
+                  const pathsToMark = uniqueResults.map((r) => r.originalPath);
+                  logger.info('[ORGANIZE] onRedo: marking files as processed', {
+                    pathsToMark,
+                    uniqueResultsCount: uniqueResults.length
+                  });
+
+                  // FIX H-3: Use functional update and sync ref immediately
+                  setOrganizedFiles((prev) => {
+                    const updated = [...prev, ...uniqueResults];
+                    // Sync ref immediately for consistency
+                    organizedFilesRef.current = updated;
+                    return updated;
+                  });
+                  markFilesAsProcessed(pathsToMark);
+                  // Update phaseData for persistence
+                  actions.setPhaseData('organizedFiles', organizedFilesRef.current);
+                } else {
+                  logger.warn('[ORGANIZE] onRedo: No unique results to process', {
+                    existingPathsCount: existingPaths.size,
+                    existingPaths: Array.from(existingPaths).slice(0, 5),
+                    uiResultPaths: uiResults
+                      .map((r) => normalizeForComparison(r.originalPath))
+                      .slice(0, 5)
+                  });
                 }
               }
 

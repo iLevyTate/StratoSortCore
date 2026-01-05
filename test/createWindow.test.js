@@ -381,6 +381,39 @@ describe('createWindow', () => {
       isDevelopment.mockReturnValue(true);
       getEnvBool.mockImplementation((key) => key === 'USE_DEV_SERVER' || key === 'FORCE_DEV_TOOLS');
 
+      // Store ready-to-show callback so we can trigger it
+      let readyToShowCallback = null;
+      const { BrowserWindow: MockBrowserWindow } = require('electron');
+      MockBrowserWindow.mockImplementation(() => ({
+        loadURL: jest.fn().mockResolvedValue(),
+        loadFile: jest.fn().mockResolvedValue(),
+        once: jest.fn((event, cb) => {
+          if (event === 'ready-to-show') {
+            readyToShowCallback = cb;
+          }
+        }),
+        on: jest.fn(),
+        show: jest.fn(),
+        focus: jest.fn(),
+        isDestroyed: jest.fn().mockReturnValue(false),
+        isVisible: jest.fn().mockReturnValue(true),
+        isFocused: jest.fn().mockReturnValue(true),
+        isMinimized: jest.fn().mockReturnValue(false),
+        webContents: {
+          isLoading: jest.fn().mockReturnValue(false),
+          once: jest.fn(),
+          on: jest.fn(),
+          openDevTools: jest.fn(),
+          setWindowOpenHandler: jest.fn(),
+          session: {
+            webRequest: {
+              onHeadersReceived: jest.fn()
+            },
+            setPermissionRequestHandler: jest.fn()
+          }
+        }
+      }));
+
       // Now require createMainWindow with the updated mocks
       const freshCreateMainWindow = require('../src/main/core/createWindow');
 
@@ -388,6 +421,15 @@ describe('createWindow', () => {
 
       const win = freshCreateMainWindow();
 
+      // Advance timers to trigger loadContent
+      jest.advanceTimersByTime(100);
+
+      // Trigger the ready-to-show event
+      if (readyToShowCallback) {
+        readyToShowCallback();
+      }
+
+      // Advance timers past the nested setTimeout delays (100ms + 50ms)
       jest.advanceTimersByTime(200);
 
       expect(win.webContents.openDevTools).toHaveBeenCalled();

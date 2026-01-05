@@ -98,8 +98,8 @@ function registerAllIpc(servicesOrParams) {
     buildOllamaOptions
   } = container.ollama || {};
   const { settingsService, onSettingsChanged } = container.settings || {};
-  const systemAnalytics = container.systemAnalytics;
-  const getServiceIntegration = container.getServiceIntegration;
+  const { systemAnalytics } = container;
+  const { getServiceIntegration } = container;
 
   // Register individual IPC handlers
   registerFilesIpc({
@@ -111,6 +111,16 @@ function registerAllIpc(servicesOrParams) {
     getMainWindow,
     getServiceIntegration
   });
+  // FIX: Pass a getter function for SmartFolderWatcher instead of capturing instance at registration time
+  // This resolves the race condition where IPC handlers are registered before the watcher is configured
+  const getSmartFolderWatcher = () => {
+    if (getServiceIntegration) {
+      const serviceIntegration = getServiceIntegration();
+      return serviceIntegration?.smartFolderWatcher || null;
+    }
+    return null;
+  };
+
   registerSmartFoldersIpc({
     ipcMain,
     IPC_CHANNELS,
@@ -121,7 +131,8 @@ function registerAllIpc(servicesOrParams) {
     buildOllamaOptions,
     getOllamaModel,
     getOllamaEmbeddingModel,
-    scanDirectory
+    scanDirectory,
+    getSmartFolderWatcher // Pass getter instead of instance
   });
   registerUndoRedoIpc({ ipcMain, IPC_CHANNELS, logger, getServiceIntegration });
   registerAnalysisHistoryIpc({

@@ -89,7 +89,24 @@ jest.mock('../src/shared/securityConfig', () => ({
       'language',
       'loggingLevel',
       'cacheSize',
-      'maxBatchSize'
+      'maxBatchSize',
+      // Added keys for comprehensive validation testing
+      'notificationMode',
+      'notifications',
+      'notifyOnAutoAnalysis',
+      'notifyOnLowConfidence',
+      'namingConvention',
+      'caseConvention',
+      'separator',
+      'dateFormat',
+      'confidenceThreshold',
+      'maxConcurrentAnalysis',
+      'defaultSmartFolderLocation',
+      'lastBrowsedPath',
+      'smartFolderWatchEnabled',
+      'autoUpdateOllama',
+      'autoUpdateChromaDb',
+      'dependencyWizardShown'
     ]),
     patterns: {
       url: /^https?:\/\/[a-zA-Z0-9][-a-zA-Z0-9._:]*(?:\/[^\s]*)?$/,
@@ -123,7 +140,21 @@ jest.mock('../src/shared/validationConstants', () => ({
 // Mock IPC wrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: (logger, handler) => handler,
-  withValidation: (logger, schema, handler) => handler,
+  withValidation: (logger, schema, handler) => async (event, data) => {
+    // simulate validation behavior if schema is present
+    if (schema && schema.safeParse) {
+      const result = schema.safeParse(data);
+      if (!result.success) {
+        return {
+          success: false,
+          error: 'Validation failed',
+          validationErrors: result.error.errors.map((e) => e.message)
+        };
+      }
+      return handler(event, result.data);
+    }
+    return handler(event, data);
+  },
   successResponse: (data = {}, warnings = []) => {
     const response = { success: true, ...data };
     if (warnings && warnings.length > 0) {
@@ -137,9 +168,6 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
     ipcMain.handle(channel, handler);
   }
 }));
-
-// Mock zod - return null to use the fallback path without validation
-jest.mock('zod', () => null);
 
 const { ipcMain } = require('electron');
 const { logger } = require('../src/shared/logger');
@@ -720,6 +748,118 @@ describe('Settings IPC Handlers', () => {
       expect(result.error).toContain('must be integer');
     });
 
+    test('rejects invalid notificationMode', async () => {
+      const importPath = '/tmp/bad-notif-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { notificationMode: 'invalid' }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('must be one of');
+    });
+
+    test('rejects invalid namingConvention', async () => {
+      const importPath = '/tmp/bad-naming-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { namingConvention: 'invalid' }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('valid naming convention');
+    });
+
+    test('rejects invalid caseConvention', async () => {
+      const importPath = '/tmp/bad-case-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { caseConvention: 'invalid' }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('valid case convention');
+    });
+
+    test('rejects invalid separator', async () => {
+      const importPath = '/tmp/bad-sep-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { separator: '/' } // Unsafe char
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('safe separator');
+    });
+
+    test('rejects invalid confidenceThreshold', async () => {
+      const importPath = '/tmp/bad-conf-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { confidenceThreshold: 1.5 }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('between 0 and 1');
+    });
+
+    test('rejects invalid maxConcurrentAnalysis', async () => {
+      const importPath = '/tmp/bad-concurrent-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { maxConcurrentAnalysis: 100 }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('integer between 1 and 10');
+    });
+
+    test('rejects invalid path settings', async () => {
+      const importPath = '/tmp/bad-path-settings.json';
+      const importData = {
+        version: '1.0.0',
+        settings: { defaultSmartFolderLocation: 'a'.repeat(1001) }
+      };
+      mockFs.stat.mockResolvedValueOnce({ size: 500 });
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
+      const result = await handler({}, importPath);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('max 1000 chars');
+    });
+
     test('ignores unknown setting keys', async () => {
       const importPath = '/tmp/unknown-settings.json';
       const importData = {
@@ -838,6 +978,23 @@ describe('Settings IPC Handlers', () => {
       expect(mockOnSettingsChanged).toHaveBeenCalled();
     });
 
+    test('preserves new settings fields through validation', async () => {
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      const newSettings = {
+        theme: 'dark',
+        notifications: true,
+        smartFolderWatchEnabled: true,
+        namingConvention: 'date-subject',
+        notificationMode: 'tray',
+        maxFileSize: 1024 * 1024 * 50
+      };
+
+      const result = await handler({}, newSettings);
+
+      expect(result.success).toBe(true);
+      expect(mockSettingsService.save).toHaveBeenCalledWith(expect.objectContaining(newSettings));
+    });
+
     test('handles save failure', async () => {
       const error = new Error('Save failed');
       error.validationErrors = ['error1'];
@@ -911,6 +1068,47 @@ describe('Settings IPC Handlers', () => {
 
       expect(result.success).toBe(true);
       expect(result.propagationSuccess).toBe(false);
+    });
+
+    test('handles login item settings error gracefully', async () => {
+      // Re-register with mock app throwing error
+      handlers = {};
+      ipcMain.handle.mockImplementation((channel, handler) => {
+        handlers[channel] = handler;
+      });
+
+      require('electron').app.setLoginItemSettings.mockImplementationOnce(() => {
+        throw new Error('Login item error');
+      });
+
+      registerSettingsIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        settingsService: {
+          ...mockSettingsService,
+          // Ensure save returns the setting we are testing
+          save: jest.fn().mockResolvedValue({
+            settings: { launchOnStartup: true },
+            validationWarnings: []
+          })
+        },
+        setOllamaHost: mockSetOllamaHost,
+        setOllamaModel: mockSetOllamaModel,
+        setOllamaVisionModel: mockSetOllamaVisionModel,
+        setOllamaEmbeddingModel: mockSetOllamaEmbeddingModel,
+        onSettingsChanged: mockOnSettingsChanged
+      });
+
+      const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
+      // Passing launchOnStartup: true triggers app.setLoginItemSettings
+      const result = await handler({}, { launchOnStartup: true });
+
+      expect(result.success).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to set login item settings'),
+        expect.any(String)
+      );
     });
   });
 

@@ -159,9 +159,7 @@ class SecureIPCManager {
             // Wait before retrying (exponential backoff)
             // Base delay: 100ms, doubles with each attempt
             const RETRY_BASE_DELAY_MS = 100;
-            await new Promise((resolve) =>
-              setTimeout(resolve, RETRY_BASE_DELAY_MS * Math.pow(2, attempt))
-            );
+            await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * 2 ** attempt));
             continue;
           }
           // For other errors, throw immediately
@@ -621,10 +619,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
         if (imageExts.includes(ext)) {
           return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, filePath);
-        } else {
-          // Audio analysis removed - all non-image files go to document analysis
-          return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, filePath);
         }
+        // Audio analysis removed - all non-image files go to document analysis
+        return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, filePath);
       } catch (error) {
         log.error('File analysis security check failed:', error);
         return Promise.reject(error);
@@ -652,7 +649,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }),
     resetToDefaults: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS),
     generateDescription: (folderName) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION, folderName)
+      secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION, folderName),
+    // Smart Folder Watcher - auto-analyze files in smart folders
+    watcherStart: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_START),
+    watcherStop: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_STOP),
+    watcherStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_STATUS),
+    watcherScan: () => secureIPC.safeInvoke(IPC_CHANNELS.SMART_FOLDERS.WATCHER_SCAN)
   },
 
   // Analysis
@@ -882,6 +884,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onOperationFailed: (callback) => secureIPC.safeOn('operation-failed', callback),
     // File operation events (move/delete) for search index invalidation
     onFileOperationComplete: (callback) => secureIPC.safeOn('file-operation-complete', callback),
+    // Notification events from watchers (SmartFolderWatcher, DownloadWatcher)
+    onNotification: (callback) => secureIPC.safeOn('notification', callback),
     // Send error report to main process (uses send, not invoke)
     sendError: (errorData) => {
       try {

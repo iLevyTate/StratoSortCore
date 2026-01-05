@@ -168,7 +168,7 @@ async function withAbortableTimeout(fn, timeoutMs, operationName = 'Operation') 
  */
 function calculateRetryDelay(attempt, initialDelay, maxDelay, backoffFactor, jitterFactor = 0) {
   // Exponential backoff
-  const exponentialDelay = initialDelay * Math.pow(backoffFactor, attempt);
+  const exponentialDelay = initialDelay * backoffFactor ** attempt;
   const baseDelay = Math.min(exponentialDelay, maxDelay);
 
   // Add jitter if specified (jitter is +/- jitterFactor of the delay)

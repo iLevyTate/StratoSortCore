@@ -46,7 +46,8 @@ jest.mock('lucide-react', () => ({
   X: () => <span data-testid="icon-x">X</span>,
   AlertCircle: () => <span data-testid="icon-alert">AlertCircle</span>,
   Loader2: () => <span data-testid="icon-loader">Loader2</span>,
-  ChevronDown: () => <span data-testid="icon-chevron">ChevronDown</span>,
+  ChevronDown: () => <span data-testid="icon-chevron-down">ChevronDown</span>,
+  ChevronUp: () => <span data-testid="icon-chevron-up">ChevronUp</span>,
   Plus: () => <span data-testid="icon-plus">Plus</span>,
   Minus: () => <span data-testid="icon-minus">Minus</span>,
   ZoomIn: () => <span data-testid="icon-zoom-in">ZoomIn</span>,
@@ -264,19 +265,11 @@ describe('UnifiedSearchModal', () => {
       expect(searchInput || screen.getByTestId('modal')).toBeInTheDocument();
     });
 
-    test('should switch to graph tab when clicked', async () => {
+    test('does not render graph tab when feature is disabled', async () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
-      // Find and click the Explore Graph tab
-      const graphTab = screen.queryByText(/Explore Graph/i);
-      if (graphTab) {
-        fireEvent.click(graphTab);
-
-        await waitFor(() => {
-          // Graph tab should now be active (has the blue class)
-          expect(graphTab).toHaveClass('bg-stratosort-blue');
-        });
-      }
+      // Graph feature is hidden for now
+      expect(screen.queryByText(/Explore Graph/i)).not.toBeInTheDocument();
     });
 
     test('should switch back to search tab', async () => {
@@ -294,12 +287,12 @@ describe('UnifiedSearchModal', () => {
       }
     });
 
-    test('should respect initialTab prop', () => {
+    test('falls back to search tab when initialTab is graph but graph feature is disabled', () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
-      // Graph tab should be initially selected (has the blue class)
-      const graphTab = screen.getByText(/Explore Graph/i);
-      expect(graphTab).toHaveClass('bg-stratosort-blue');
+      // Graph tab is hidden, so we should still render the search UI.
+      expect(screen.queryByText(/Explore Graph/i)).not.toBeInTheDocument();
+      expect(screen.getByTestId('search-autocomplete')).toBeInTheDocument();
     });
   });
 
@@ -541,18 +534,12 @@ describe('UnifiedSearchModal', () => {
   });
 
   describe('Graph View', () => {
-    test('should render graph tab when selected', () => {
+    test('does not render graph UI while feature is disabled', () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
-      // Graph tab should be active
-      const graphTab = screen.getByText(/Explore Graph/i);
-      expect(graphTab).toHaveClass('bg-stratosort-blue');
-    });
-
-    test('should show graph panel with sidebar', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
-
-      // Should show the graph search/add input area
+      // Graph controls are not shown until future release
+      expect(screen.queryByText(/Explore Graph/i)).not.toBeInTheDocument();
+      // Search tab content is still available (fallback)
       expect(screen.getByTestId('search-autocomplete')).toBeInTheDocument();
     });
   });

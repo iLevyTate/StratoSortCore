@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Smart Folder Watcher**: Automatically analyzes new and modified files in configured smart
+  folders (F-1)
+- **Undo History Navigation**: Jump to specific points in undo history (L-2)
+- **Retry Mechanism**: "Retry Failed Files" button in Discover phase (M-3)
+- **Conflict Detection**: Warning banner when multiple files target the same destination path (M-4)
+- **AI Description Generation**: "Generate with AI" button for smart folders (C-1)
 - Comprehensive test coverage for IPC handlers (settings.js, suggestions.js)
 - SECURITY.md with vulnerability disclosure policy
 - This CHANGELOG.md file
@@ -21,6 +27,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Critical**: Smart Folder Watcher race condition where watcher was null during IPC registration
+  (NEW-1)
+- **Critical**: DownloadWatcher starting before services initialized (C-2)
+- **High**: Confidence slider resetting to 75% due to state race conditions (NEW-5/12)
+- **High**: Undo/Redo UI not updating despite filesystem changes (H-3)
+- **High**: Smart folder path loading race condition showing "Documents" string (H-1)
+- **Medium**: Embeddings showing "0" count due to missing auto-refresh (NEW-2/9)
+- **Medium**: "File in use" errors during auto-organize (NEW-4)
+- **Medium**: Settings debounce flushing on close (H-2)
+- **Medium**: Modal backdrop blur/z-index conflicts (F-3, M-1)
+- **Medium**: Image files missing keywords in analysis history (NEW-10)
+- **Medium**: Watcher reporting high confidence for unrelated files (NEW-11)
 - **Critical**: LLM cache contamination causing wrong filename suggestions across file types
   - Added type discriminators (`type: 'document'` / `type: 'image'`) to cache keys
   - Added filename and content length to cache keys for uniqueness
@@ -48,6 +66,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Improved
 
+- **UI**: Replaced emojis with professional Lucide icons (UI-2)
+- **UI**: Removed technical "File size limit" settings from UI (UI-1)
+- **UI**: Temporarily removed confidence slider to prevent race conditions (NEW-12)
 - Accessibility: Added `aria-live="polite"` to AnalysisProgress for screen readers
 - Replaced hardcoded timeout values with centralized constants
 

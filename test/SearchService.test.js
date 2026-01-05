@@ -809,9 +809,9 @@ describe('SearchService', () => {
     });
 
     test('falls back to BM25 on complete hybrid failure', async () => {
-      // Make RRF fail
-      service.reciprocalRankFusion = jest.fn().mockImplementation(() => {
-        throw new Error('RRF failed');
+      // Force a failure in the hybrid path (hybridSearch no longer calls reciprocalRankFusion)
+      const normalizeSpy = jest.spyOn(service, '_normalizeScores').mockImplementation(() => {
+        throw new Error('Normalize failed');
       });
 
       const result = await service.hybridSearch('quarterly');
@@ -819,6 +819,7 @@ describe('SearchService', () => {
       expect(result.success).toBe(true);
       expect(result.mode).toBe('bm25-fallback');
       expect(result.meta.hybridError).toBeDefined();
+      normalizeSpy.mockRestore();
     });
 
     test('returns failure when all search methods fail', async () => {

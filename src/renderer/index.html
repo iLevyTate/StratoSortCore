@@ -5,6 +5,127 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>StratoSort - AI-Powered File Organization</title>
     <!-- CSP is set by the main process. Keeping meta minimal to avoid conflicts. -->
+    <!-- Critical inline styles for splash screen to prevent FOUC (Flash of Unstyled Content) -->
+    <style>
+      /* Splash screen must be styled immediately before CSS bundle loads */
+      .splash-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        background: #f8fafc;
+      }
+      .splash-background {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(79, 139, 255, 0.03) 0%, rgba(108, 127, 251, 0.05) 50%, rgba(79, 139, 255, 0.03) 100%);
+        pointer-events: none;
+      }
+      .splash-content {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 2rem;
+      }
+      .splash-logo-container {
+        position: relative;
+        margin-bottom: 1.5rem;
+      }
+      .splash-logo-glow {
+        position: absolute;
+        inset: -20px;
+        background: radial-gradient(circle, rgba(79, 139, 255, 0.3) 0%, transparent 70%);
+        border-radius: 50%;
+        animation: splash-pulse 2s ease-in-out infinite;
+      }
+      .splash-logo {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(79, 139, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.05);
+        animation: splash-float 3s ease-in-out infinite;
+      }
+      .splash-title {
+        margin: 0 0 0.5rem 0;
+        font-size: 2rem;
+        font-weight: 700;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .splash-tagline {
+        margin: 0 0 2rem 0;
+        font-size: 0.9375rem;
+        color: #64748b;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 500;
+      }
+      .splash-loader-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .splash-loader {
+        width: 200px;
+        height: 4px;
+        background: rgba(79, 139, 255, 0.15);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .splash-loader-bar {
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(90deg, #4f8bff, #6c7ffb);
+        border-radius: 2px;
+        animation: splash-loading 1.5s ease-in-out infinite;
+      }
+      .splash-status {
+        margin: 0;
+        font-size: 0.8125rem;
+        color: #94a3b8;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 500;
+      }
+      .splash-footer {
+        position: absolute;
+        bottom: 1.5rem;
+        left: 0;
+        right: 0;
+        text-align: center;
+      }
+      .splash-version {
+        font-size: 0.75rem;
+        color: #cbd5e1;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 500;
+      }
+      @keyframes splash-pulse {
+        0%, 100% { opacity: 0.5; transform: scale(1); }
+        50% { opacity: 0.8; transform: scale(1.05); }
+      }
+      @keyframes splash-float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
+      @keyframes splash-loading {
+        0% { transform: translateX(-100%); }
+        50% { transform: translateX(150%); }
+        100% { transform: translateX(150%); }
+      }
+    </style>
   </head>
   <body data-theme="stratosort">
     <!-- Initial loading screen with polished design -->
@@ -63,7 +184,7 @@
     <!-- React root container (must be empty for React to work) -->
     <div id="root"></div>
 
-    <!-- All animations/styles are defined in Tailwind CSS -->
+    <!-- Additional styles are defined in Tailwind CSS, splash screen uses inline styles above -->
 
     <!-- Webpack will inject the script tags automatically -->
   </body>

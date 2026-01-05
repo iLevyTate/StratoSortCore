@@ -18,7 +18,8 @@ const { withTimeout } = require('../../../shared/promiseUtils');
 
 logger.setContext('StartupManager:Preflight');
 
-const DEFAULT_AXIOS_TIMEOUT = 5000;
+// FIX: Reduced from 5000ms to 2000ms for faster port availability checks
+const DEFAULT_AXIOS_TIMEOUT = 2000;
 
 /**
  * Check if Python is installed
@@ -51,9 +52,8 @@ async function checkPythonInstallation() {
         const version = (result.stdout + result.stderr).toString().trim();
         logger.debug(`[PREFLIGHT] Python found: ${cmd} - ${version}`);
         return { installed: true, version };
-      } else {
-        logger.debug(`[PREFLIGHT] ${cmd} returned status ${result.status}`);
       }
+      logger.debug(`[PREFLIGHT] ${cmd} returned status ${result.status}`);
     } catch (error) {
       logger.debug(`[PREFLIGHT] ${cmd} failed: ${error.message}`);
     }
@@ -81,10 +81,9 @@ async function checkOllamaInstallation() {
       const version = (result.stdout + result.stderr).toString().trim();
       logger.debug(`[PREFLIGHT] Ollama found: ${version}`);
       return { installed: true, version };
-    } else {
-      logger.debug(`[PREFLIGHT] Ollama returned status ${result.status}`);
-      return { installed: false, version: null };
     }
+    logger.debug(`[PREFLIGHT] Ollama returned status ${result.status}`);
+    return { installed: false, version: null };
   } catch (error) {
     logger.debug(`[PREFLIGHT] Ollama check failed: ${error.message}`);
     return { installed: false, version: null };

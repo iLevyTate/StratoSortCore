@@ -12,6 +12,7 @@
  */
 
 const { logger } = require('../../shared/logger');
+
 logger.setContext('JSONRepair');
 
 /**
@@ -118,11 +119,11 @@ function repairJSON(json) {
       // We might be in an unclosed string, try to close it
       repaired = `${repaired}"`;
     }
-    repaired = repaired + ']'.repeat(openBrackets - closeBrackets);
+    repaired += ']'.repeat(openBrackets - closeBrackets);
   }
 
   if (openBraces > closeBraces) {
-    repaired = repaired + '}'.repeat(openBraces - closeBraces);
+    repaired += '}'.repeat(openBraces - closeBraces);
   }
 
   // Remove any text after the final closing brace/bracket

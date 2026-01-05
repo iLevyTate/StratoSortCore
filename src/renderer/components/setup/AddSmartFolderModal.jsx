@@ -1,10 +1,14 @@
 import React, { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
+import { Sparkles } from 'lucide-react';
 import { Button, Input, Textarea } from '../ui';
 import { logger } from '../../../shared/logger';
-import { Sparkles } from 'lucide-react';
 
 logger.setContext('AddSmartFolderModal');
+
+// Helper to get the correct path separator based on the path format
+const getPathSeparator = (path) => (path && path.includes('\\') ? '\\' : '/');
 
 /**
  * Modal for adding a new smart folder
@@ -14,7 +18,6 @@ function AddSmartFolderModal({
   onClose,
   onAdd,
   defaultLocation,
-  isDefaultLocationLoaded = false,
   existingFolders = [],
   showNotification
 }) {
@@ -92,38 +95,50 @@ function AddSmartFolderModal({
       return;
     }
 
-    // Check if defaultLocation is loaded and valid
-    const isDefaultLocationAbsolute =
-      /^[A-Za-z]:[\\/]/.test(defaultLocation) || defaultLocation.startsWith('/');
-    // FIX H-1: Use isDefaultLocationLoaded prop instead of checking path format
-    // This prevents race condition where modal opens before path is loaded
-    if (!isDefaultLocationLoaded && !folderPath.trim()) {
-      showNotification?.(
-        'System is still loading the default location. Please wait a moment or browse to select a folder.',
-        'warning'
-      );
-      return;
-    }
+    // Helper to check if path is absolute
+    const isAbsolutePath = (p) => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('/');
 
     // Build target path - use browsed path if provided, otherwise construct from defaultLocation
     let targetPath = folderPath.trim();
     if (!targetPath) {
-      // Use path.join equivalent with forward slash, will be normalized by backend
-      targetPath = `${defaultLocation}/${folderName.trim()}`;
-    }
+      // If defaultLocation is not absolute, try to get the actual documents path
+      let resolvedDefaultLocation = defaultLocation;
+      if (!isAbsolutePath(defaultLocation)) {
+        try {
+          const documentsPath = await window.electronAPI?.files?.getDocumentsPath?.();
+          if (documentsPath) {
+            // Normalize the result (might be string or {path: string})
+            resolvedDefaultLocation =
+              typeof documentsPath === 'string'
+                ? documentsPath
+                : documentsPath.path || documentsPath;
+          }
+        } catch (err) {
+          logger.warn('Failed to fetch documents path', { error: err.message });
+        }
+      }
 
-    // Ensure path is absolute
-    if (!/^[A-Za-z]:[\\/]/.test(targetPath) && !targetPath.startsWith('/')) {
-      // If still relative after construction, prefix with defaultLocation
-      if (isDefaultLocationAbsolute) {
-        targetPath = `${defaultLocation}/${targetPath}`;
-      } else {
+      // If still not absolute, show error
+      if (!isAbsolutePath(resolvedDefaultLocation)) {
         showNotification?.(
           'Unable to determine folder location. Please browse to select a folder.',
           'error'
         );
         return;
       }
+
+      // Use path.join equivalent with correct separator for the platform
+      const sep = getPathSeparator(resolvedDefaultLocation);
+      targetPath = `${resolvedDefaultLocation}${sep}${folderName.trim()}`;
+    }
+
+    // Ensure path is absolute
+    if (!isAbsolutePath(targetPath)) {
+      showNotification?.(
+        'Unable to determine folder location. Please browse to select a folder.',
+        'error'
+      );
+      return;
     }
 
     // Check for duplicates
@@ -155,25 +170,24 @@ function AddSmartFolderModal({
     }
   };
 
-  if (!isOpen) return null;
+  // Use portal to render to body, preventing backdrop-blur visual glitches
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
 
-  return (
+  if (!isOpen || !portalTarget) return null;
+
+  const modalContent = (
     <div
       className="fixed inset-0 z-modal flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="add-folder-title"
     >
-      {/* FIX: Split backdrop into two layers to avoid blur/animation conflict (Issue 2.6)
-          Matches the pattern from Modal.jsx for consistent styling */}
-      {/* Background overlay with animation */}
+      {/* Unified backdrop: blur + overlay in single layer to prevent stacking artifacts */}
       <div
-        className="absolute inset-0 bg-black/50 animate-modal-backdrop"
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-modal-backdrop"
         onClick={handleClose}
         aria-hidden="true"
       />
-      {/* Blur layer without animation - prevents flicker/glitch */}
-      <div className="absolute inset-0 backdrop-blur-md pointer-events-none" aria-hidden="true" />
 
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-modal-enter">
@@ -237,7 +251,7 @@ function AddSmartFolderModal({
                 type="text"
                 value={folderPath}
                 onChange={(e) => setFolderPath(e.target.value)}
-                placeholder={`${defaultLocation}/${folderName || 'FolderName'}`}
+                placeholder={`${defaultLocation}${getPathSeparator(defaultLocation)}${folderName || 'FolderName'}`}
                 className="flex-1"
               />
               <Button
@@ -336,6 +350,8 @@ function AddSmartFolderModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, portalTarget);
 }
 
 AddSmartFolderModal.propTypes = {
@@ -343,7 +359,6 @@ AddSmartFolderModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   onAdd: PropTypes.func.isRequired,
   defaultLocation: PropTypes.string.isRequired,
-  isDefaultLocationLoaded: PropTypes.bool,
   existingFolders: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),

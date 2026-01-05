@@ -1,4 +1,26 @@
-<!-- 2851616e-6520-478e-a56d-ba77f130b83c 0cb63584-ab2f-4ded-bfc6-41862be76080 -->
+---
+name: UI Fixes and Database Optimization Plan
+overview: ""
+todos:
+  - id: 51431c0e-b1d8-4a19-8410-5103c46d0015
+    content: Fix SmartFolderSkeleton to match SmartFolderItem vertical list structure
+    status: completed
+  - id: a271bdcc-8af9-49df-b9a3-2673e8292817
+    content: Fix ReadyFileItem destination path clipping with proper text wrapping
+    status: completed
+  - id: f6e0e083-1f87-4cad-8505-ca96c234ba94
+    content: Implement batch file embedding upserts during analysis instead of individual calls
+    status: completed
+  - id: 26f81a6d-4ed1-48ec-9e51-a4d9438b64a4
+    content: Add database path updates after file organization completes
+    status: completed
+  - id: 25bc564f-eb7c-424a-ab8d-8ec756506600
+    content: Remove unnecessary individual database calls and implement batching queue
+    status: completed
+  - id: aa77828f-dd12-4c67-a72c-48b33daf9af4
+    content: Review all skeleton components and file displays for similar issues
+    status: completed
+---
 
 # UI Fixes and Database Optimization Plan
 
@@ -117,12 +139,3 @@ await chromaDbService.updateFilePaths(pathUpdates);
 - Test batch upsert with 100+ files
 - Verify database updates after organization
 - Check performance improvement metrics
-
-### To-dos
-
-- [x] Fix SmartFolderSkeleton to match SmartFolderItem vertical list structure
-- [x] Fix ReadyFileItem destination path clipping with proper text wrapping
-- [x] Implement batch file embedding upserts during analysis instead of individual calls
-- [x] Add database path updates after file organization completes
-- [x] Remove unnecessary individual database calls and implement batching queue
-- [x] Review all skeleton components and file displays for similar issues

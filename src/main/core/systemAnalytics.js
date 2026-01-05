@@ -1,4 +1,5 @@
 const { logger } = require('../../shared/logger');
+
 logger.setContext('SystemAnalytics');
 
 const systemAnalytics = {

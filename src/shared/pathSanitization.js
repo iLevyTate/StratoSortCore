@@ -32,7 +32,7 @@ function sanitizePath(filePath) {
 
   // 1. Remove null bytes (security critical)
   // Instead of throwing, we sanitize by removing them
-  let sanitized = filePath.replace(/\0/g, '');
+  const sanitized = filePath.replace(/\0/g, '');
 
   // 2. Unicode normalization (NFD to NFC for consistency)
   // This helps prevent homograph attacks and ensures consistent encoding

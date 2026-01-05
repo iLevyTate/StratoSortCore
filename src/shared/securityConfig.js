@@ -157,8 +157,19 @@ const SETTINGS_VALIDATION = {
     'telemetryEnabled',
     // UI settings
     'notifications',
+    'notificationMode',
+    'notifyOnAutoAnalysis',
+    'notifyOnLowConfidence',
     'defaultSmartFolderLocation',
+    'lastBrowsedPath',
     'confidenceThreshold',
+    // Smart folder watching
+    'smartFolderWatchEnabled',
+    // Naming convention settings
+    'namingConvention',
+    'dateFormat',
+    'caseConvention',
+    'separator',
     // Processing limits
     'maxConcurrentAnalysis',
     'maxFileSize',
@@ -238,7 +249,8 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'operation-failed',
   'file-operation-complete', // File move/delete notifications for search invalidation
   'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
-  'dependencies-service-status-changed' // Service status change notifications
+  'dependencies-service-changed', // Service status change notifications
+  'notification' // Toast notifications from main process
 ];
 
 /**

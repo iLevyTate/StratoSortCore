@@ -4,6 +4,7 @@ const { createReadStream } = require('fs');
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
 const { LIMITS } = require('../../shared/constants');
+
 let XMLParser;
 try {
   // Prefer the full parser when available
@@ -13,6 +14,7 @@ try {
   ({ XMLParser } = require('./xmlParserFallback'));
 }
 const { parse: parseCsv } = require('csv-parse/sync');
+
 logger.setContext('DocumentExtractors');
 
 // Streaming thresholds for large file handling
@@ -652,7 +654,7 @@ async function extractTextFromPptx(filePath) {
     const result = await officeParser.parseOfficeAsync(filePath);
 
     // CRITICAL FIX: Validate result structure
-    if (!result) {
+    if (result === null || result === undefined) {
       throw new Error('officeParser returned null or undefined');
     }
 

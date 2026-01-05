@@ -192,12 +192,14 @@ describe('Specialized File Types - Extension-based Processing', () => {
       expect(category).toBe('3D Models');
     });
 
-    test('falls back to extension category when no folder match', () => {
-      // Filenames with no matching keywords
+    test('matches 3D folder via semantic extension mapping even without filename keywords', () => {
+      // Filenames with no matching keywords in the name itself
       const randomFileName = 'x9m2k7.stl';
       const category = getIntelligentCategory(randomFileName, '.stl', smartFolders);
-      // Should fall back to Documents (default for unknown extensions)
-      expect(category).toBe('Documents');
+      // With semantic extension mapping, .stl files match "3D Models" folder
+      // because the folder name contains "3d" and "model" which are semantic
+      // concepts associated with .stl files
+      expect(category).toBe('3D Models');
     });
   });
 

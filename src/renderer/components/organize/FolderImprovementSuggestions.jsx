@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
+import { AlertTriangle, Lightbulb, Info, Pin, CheckCircle, Folder } from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 
@@ -39,13 +40,13 @@ function FolderImprovementSuggestions({
   const getPriorityIcon = (priority) => {
     switch (priority) {
       case 'high':
-        return '⚠️';
+        return <AlertTriangle className="w-4 h-4" />;
       case 'medium':
-        return '💡';
+        return <Lightbulb className="w-4 h-4" />;
       case 'low':
-        return 'ℹ️';
+        return <Info className="w-4 h-4" />;
       default:
-        return '📌';
+        return <Pin className="w-4 h-4" />;
     }
   };
 
@@ -53,7 +54,7 @@ function FolderImprovementSuggestions({
     return (
       <Card className="p-4 bg-green-50 border-green-200">
         <div className="flex items-center gap-2">
-          <span className="text-green-600">✅</span>
+          <CheckCircle className="w-5 h-5 text-green-600" />
           <span className="text-green-700 font-medium">
             Your folder structure is well-organized!
           </span>
@@ -128,7 +129,9 @@ function FolderImprovementSuggestions({
                       className="flex items-center justify-between p-3 bg-white rounded border"
                     >
                       <div>
-                        <div className="font-medium">📁 {category.name}</div>
+                        <div className="font-medium flex items-center gap-1">
+                          <Folder className="w-4 h-4" /> {category.name}
+                        </div>
                         <div className="text-sm text-system-gray-600 mt-1">{category.reason}</div>
                       </div>
                       <Button
@@ -182,7 +185,9 @@ function FolderImprovementSuggestions({
                     <div key={folder.name || folder.id} className="p-3 bg-white rounded border">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-sm">📁 {folder.name}</div>
+                          <div className="font-medium text-sm flex items-center gap-1">
+                            <Folder className="w-4 h-4" /> {folder.name}
+                          </div>
                           <div className="text-xs text-system-gray-600 mt-1">
                             Used {folder.usageCount} time
                             {folder.usageCount !== 1 ? 's' : ''}

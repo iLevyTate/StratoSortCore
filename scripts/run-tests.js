@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-'use strict';
 
 const path = require('path');
 const { spawn } = require('child_process');
+
 try {
   // eslint-disable-next-line global-require
   require('dotenv').config({ path: path.join(__dirname, '../.env') });

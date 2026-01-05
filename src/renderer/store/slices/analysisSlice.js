@@ -63,7 +63,7 @@ const analysisSlice = createSlice({
       const result = {
         ...file,
         analysis: null,
-        error: error,
+        error,
         status: FILE_STATES.ERROR,
         analyzedAt: new Date().toISOString()
       };

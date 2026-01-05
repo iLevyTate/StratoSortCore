@@ -1,7 +1,16 @@
 // no path usage here
 
+// Use shared semantic extension mapping
+const {
+  getSemanticExtensionScore,
+  getSemanticConceptsForExtension
+} = require('./semanticExtensionMap');
+
 function getIntelligentCategory(fileName, extension, smartFolders = []) {
   const lowerFileName = fileName.toLowerCase();
+  const lowerExtension = extension ? extension.toLowerCase() : '';
+  // Extension without dot for matching (e.g., 'stl' from '.stl')
+  const extNoDot = lowerExtension.replace(/^\./, '');
 
   if (smartFolders && smartFolders.length > 0) {
     const validFolders = smartFolders.filter(
@@ -15,20 +24,59 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
       if (lowerFileName.includes(folderNameLower)) score += 10;
       const folderWords = folderNameLower.split(/[\s_-]+/).filter((w) => w.length > 2);
       for (const word of folderWords) if (lowerFileName.includes(word)) score += 8;
+
+      // SEMANTIC EXTENSION MATCHING: Understand that "3D printing" folder means .stl files belong there
+      // This checks folder NAME for semantic concepts (e.g., "3D Prints" folder → .stl files)
+      if (extNoDot) {
+        const nameSemanticScore = getSemanticExtensionScore(folderNameLower, extNoDot);
+        if (nameSemanticScore > 0) {
+          score += nameSemanticScore; // Up to +20 for semantic match in folder name
+        }
+      }
+
       if (folder.description) {
-        const descWords = folder.description
-          .toLowerCase()
-          .split(/[\s,.-]+/)
-          .filter((w) => w.length > 3);
+        const descLower = folder.description.toLowerCase();
+        const descWords = descLower.split(/[\s,.-]+/).filter((w) => w.length > 3);
         for (const word of descWords) if (lowerFileName.includes(word)) score += 6;
+
+        // SEMANTIC EXTENSION MATCHING: Understand that "models for my Ender 3" means .stl files
+        // This checks folder DESCRIPTION for semantic concepts
+        if (extNoDot) {
+          const descSemanticScore = getSemanticExtensionScore(descLower, extNoDot);
+          if (descSemanticScore > 0) {
+            score += descSemanticScore; // Up to +20 for semantic match in description
+          }
+        }
+
+        // EXPLICIT EXTENSION MATCHING: Check if folder description explicitly lists this extension
+        // This allows folder descriptions like "3D printing files: .stl, .obj, .3mf" to match
+        if (extNoDot && extNoDot.length >= 2) {
+          // Match extension with or without dot (e.g., ".stl" or "stl")
+          if (descLower.includes(lowerExtension) || descLower.includes(extNoDot)) {
+            score += 15; // High score for explicit extension match in description
+          }
+        }
       }
       if (Array.isArray(folder.semanticTags)) {
-        for (const tag of folder.semanticTags)
-          if (lowerFileName.includes(String(tag).toLowerCase())) score += 5;
+        for (const tag of folder.semanticTags) {
+          const tagLower = String(tag).toLowerCase();
+          if (lowerFileName.includes(tagLower)) score += 5;
+          // Extension match in semantic tags (e.g., semanticTags: ["stl", "3d-model"])
+          if (extNoDot && (tagLower === lowerExtension || tagLower === extNoDot)) {
+            score += 10; // High score for explicit extension in semantic tags
+          }
+        }
       }
+      // Check keywords for extension match as well as filename match
       if (Array.isArray(folder.keywords)) {
-        for (const kw of folder.keywords)
-          if (lowerFileName.includes(String(kw).toLowerCase())) score += 4;
+        for (const kw of folder.keywords) {
+          const kwLower = String(kw).toLowerCase();
+          if (lowerFileName.includes(kwLower)) score += 4;
+          // Extension match in keywords (e.g., keywords: [".stl", "3mf", "gcode"])
+          if (extNoDot && (kwLower === lowerExtension || kwLower === extNoDot)) {
+            score += 12; // High score for explicit extension in keywords
+          }
+        }
       }
       // FIXED Bug #25: Validate split() result before access to prevent crashes
       if (folder.path && typeof folder.path === 'string') {
@@ -338,7 +386,20 @@ function getIntelligentKeywords(fileName, extension) {
   if (lowerFileName.includes('proposal')) keywords.push('proposal');
   if (lowerFileName.includes('presentation')) keywords.push('presentation');
   if (extension) keywords.push(extension.replace('.', ''));
-  return keywords.slice(0, 7);
+
+  // Add semantic keywords from extension mapping
+  // This ensures that .stl files include keywords like "3d", "printing", "model"
+  const semanticConcepts = getSemanticConceptsForExtension(extension);
+  if (semanticConcepts.length > 0) {
+    // Add top 3 most relevant semantic concepts
+    for (const concept of semanticConcepts.slice(0, 3)) {
+      if (!keywords.includes(concept)) {
+        keywords.push(concept);
+      }
+    }
+  }
+
+  return keywords.slice(0, 10); // Increased from 7 to 10 to include semantic keywords
 }
 
 function safeSuggestedName(fileName, extension) {

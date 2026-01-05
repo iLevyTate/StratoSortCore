@@ -72,9 +72,16 @@ async function analyzeTextWithOllama(
       overlap: 400,
       maxTotalLength: AppConfig.ai.textAnalysis.maxContentLength
     });
-    const truncated =
+    const maxLen = AppConfig.ai.textAnalysis.maxContentLength;
+    const truncatedRaw =
       combinedChunks ||
       normalizeTextForModel(normalized, AppConfig.ai.textAnalysis.maxContentLength);
+    // Hard cap the final text to maxLen. chunkTextForAnalysis tries to respect maxTotalLength,
+    // but may add small separators/metadata during concatenation; we enforce the contract here.
+    const truncated =
+      typeof maxLen === 'number' && maxLen > 0 && truncatedRaw.length > maxLen
+        ? truncatedRaw.slice(0, maxLen)
+        : truncatedRaw;
     const chunkCount = Array.isArray(chunks) && chunks.length > 0 ? chunks.length : 1;
 
     // Fast-path: return cached result if available
@@ -106,10 +113,12 @@ async function analyzeTextWithOllama(
 
     const fileDateContext = fileDate ? `\nDocument File Date: ${fileDate}` : '';
 
-    const prompt = `You are an expert document analyzer. Analyze the ACTUAL TEXT CONTENT below (not just the filename) and extract structured information based on what the document actually contains.
+    const prompt = `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
 ${fileDateContext}
 
-IMPORTANT: Base your analysis on the CONTENT, not the filename "${originalFileName}". Read through the text carefully to understand the document's true purpose, topics, and themes.
+FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a HINT for the document's purpose, but verify against the actual content.
+- If filename suggests financial content (budget, invoice, receipt, tax), look for financial terms in the text
+- If filename suggests a specific category, your analysis should align with it unless the content clearly indicates otherwise
 
 Your response MUST be a valid JSON object with ALL these fields:
 {
@@ -124,16 +133,20 @@ Your response MUST be a valid JSON object with ALL these fields:
 
 IMPORTANT FOR suggestedName:
 - Keep it SHORT: maximum 40 characters (excluding extension)
-- Use 2-5 key descriptive words only
-- Do NOT include dates, ticket IDs, project codes, or reference numbers
-- Do NOT just copy the original filename
-- Example: "heart-family-practice-edi-project" instead of the full original name
+- PRESERVE semantic meaning from the original filename "${originalFileName}"
+- If filename contains key terms like "budget", "invoice", "report", include them in your suggested name
+- If the content matches the filename theme, your suggested name should reflect both
+- Do NOT suggest completely unrelated names that contradict the filename
+- Examples based on context:
+  - "financial-budget-report.pdf" → "budget_report_summary" (preserves key terms)
+  - "meeting-notes-jan.docx" → "january_meeting_notes" (preserves context)
+  - "project-proposal-v2.pdf" → "project_proposal" (preserves purpose)
 
 CRITICAL REQUIREMENTS:
 1. The keywords array MUST contain 3-7 keywords extracted from the document content
-2. Keywords should be specific terms, concepts, or topics mentioned in the text
+2. Keywords should include relevant terms from BOTH the content AND the filename
 3. Do NOT return an empty keywords array
-4. Base ALL fields on the actual document content, not the filename
+4. If filename hints at a category and content doesn't contradict it, use that category
 
 Document content (${truncated.length} characters, ${chunkCount} chunk(s)):
 ${truncated}`;

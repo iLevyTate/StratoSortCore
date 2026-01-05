@@ -233,9 +233,17 @@ describe('documentLlm', () => {
       await analyzeTextWithOllama(longText, 'long.txt', []);
 
       const call = mockOllamaClient.generate.mock.calls[0][0];
-      expect(call.prompt.length).toBeLessThanOrEqual(
-        AppConfig.ai.textAnalysis.maxContentLength + 2000 // Allow for prompt template
-      );
+      // Verify the *embedded document content* was truncated, without relying on
+      // a brittle hardcoded prompt-template overhead.
+      const match = call.prompt.match(/Document content \((\d+) characters, \d+ chunk\(s\)\):\n/);
+      expect(match).toBeTruthy();
+
+      const reportedLength = Number(match[1]);
+      expect(Number.isFinite(reportedLength)).toBe(true);
+      expect(reportedLength).toBeLessThanOrEqual(AppConfig.ai.textAnalysis.maxContentLength);
+
+      const content = call.prompt.split(match[0])[1] || '';
+      expect(content.length).toBe(reportedLength);
     });
 
     test('should handle empty text', async () => {

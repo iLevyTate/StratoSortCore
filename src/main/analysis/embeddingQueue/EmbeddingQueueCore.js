@@ -411,7 +411,7 @@ class EmbeddingQueue {
 
         this.retryCount++;
         const backoffDelay = Math.min(
-          RETRY.BACKOFF_BASE_MS * Math.pow(2, this.retryCount - 1),
+          RETRY.BACKOFF_BASE_MS * 2 ** (this.retryCount - 1),
           RETRY.BACKOFF_MAX_MS
         );
         logger.info(`[EmbeddingQueue] Will retry in ${backoffDelay / 1000}s`);
@@ -459,7 +459,7 @@ class EmbeddingQueue {
     );
 
     const backoffDelay = Math.min(
-      RETRY.BACKOFF_BASE_MS * Math.pow(2, this.retryCount - 1),
+      RETRY.BACKOFF_BASE_MS * 2 ** (this.retryCount - 1),
       RETRY.BACKOFF_MAX_MS
     );
     logger.info(`[EmbeddingQueue] Retry in ${backoffDelay / 1000}s`);

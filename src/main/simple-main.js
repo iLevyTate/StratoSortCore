@@ -2,10 +2,15 @@
 require('dotenv').config();
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+
 const isDev = process.env.NODE_ENV === 'development';
 
 // Logging utility
+const tesseract = require('node-tesseract-ocr');
+const fs = require('fs').promises;
+const path = require('path');
 const { logger } = require('../shared/logger');
+
 logger.setContext('Main');
 
 // Import error handling system
@@ -45,9 +50,6 @@ const { analyzeDocumentFile } = require('./analysis/ollamaDocumentAnalysis');
 const { analyzeImageFile } = require('./analysis/ollamaImageAnalysis');
 
 // Import OCR library
-const tesseract = require('node-tesseract-ocr');
-const fs = require('fs').promises;
-const path = require('path');
 // platformUtils imported in core/jumpList.js for Windows detection
 
 // Extracted core modules
@@ -301,12 +303,19 @@ function updateDownloadWatcher(settings) {
       return;
     }
     if (!downloadWatcher) {
+      // Get notification service from container for user feedback
+      const { container, ServiceIds } = require('./services/ServiceContainer');
+      const notificationService = container.tryResolve(ServiceIds.NOTIFICATION_SERVICE);
+      const analysisHistoryService = container.tryResolve(ServiceIds.ANALYSIS_HISTORY);
+
       downloadWatcher = new DownloadWatcher({
         analyzeDocumentFile,
         analyzeImageFile,
         getCustomFolders: () => customFolders,
         autoOrganizeService: serviceIntegration.autoOrganizeService,
-        settingsService: settingsService
+        settingsService,
+        notificationService,
+        analysisHistoryService
       });
       downloadWatcher.start();
       logger.info('[AUTO-ORGANIZE] Download watcher started successfully');
@@ -315,6 +324,56 @@ function updateDownloadWatcher(settings) {
     downloadWatcher.stop();
     downloadWatcher = null;
     logger.info('[AUTO-ORGANIZE] Download watcher stopped');
+  }
+}
+
+/**
+ * Update smart folder watcher based on settings.smartFolderWatchEnabled
+ * This is the single source of truth for starting/stopping the watcher.
+ * @param {Object} settings - Current settings object
+ */
+function updateSmartFolderWatcher(settings) {
+  const enabled = settings?.smartFolderWatchEnabled;
+
+  // FIX: Ensure services are initialized before controlling watcher
+  if (!serviceIntegration?.initialized) {
+    logger.debug('[SMART-FOLDER-WATCHER] Services not initialized yet - skipping');
+    return;
+  }
+
+  const watcher = serviceIntegration?.smartFolderWatcher;
+  if (!watcher) {
+    if (enabled) {
+      logger.warn('[SMART-FOLDER-WATCHER] Watcher not available - cannot start');
+    }
+    return;
+  }
+
+  if (enabled) {
+    // Start if not already running
+    if (!watcher.isRunning && !watcher.isStarting) {
+      logger.info('[SMART-FOLDER-WATCHER] Starting watcher via settings change...');
+      // Start async, don't block
+      watcher
+        .start()
+        .then((started) => {
+          if (started) {
+            logger.info('[SMART-FOLDER-WATCHER] Watcher started successfully');
+          } else {
+            const status = watcher.getStatus();
+            logger.warn('[SMART-FOLDER-WATCHER] Failed to start:', status.lastStartError);
+          }
+        })
+        .catch((err) => {
+          logger.error('[SMART-FOLDER-WATCHER] Error starting watcher:', err);
+        });
+    }
+  } else {
+    // Stop if running
+    if (watcher.isRunning || watcher.isStarting) {
+      logger.info('[SMART-FOLDER-WATCHER] Stopping watcher via settings change...');
+      watcher.stop();
+    }
   }
 }
 
@@ -328,6 +387,13 @@ function handleSettingsChanged(settings) {
 
   currentSettings = settings;
   updateDownloadWatcher(settings);
+  updateSmartFolderWatcher(settings);
+  // Propagate confidence threshold to auto-organize service (so it doesn't stick to defaults)
+  try {
+    serviceIntegration?.autoOrganizeService?.applySettings?.(settings);
+  } catch (error) {
+    logger.warn('[SETTINGS] Failed to apply settings to auto-organize service:', error?.message);
+  }
   try {
     updateTrayMenu();
   } catch (error) {
@@ -660,6 +726,16 @@ app.whenReady().then(async () => {
       onSettingsChanged: handleSettingsChanged
     });
 
+    // Configure SmartFolderWatcher with required dependencies
+    // This watcher auto-analyzes files added or modified in smart folders
+    if (serviceIntegration) {
+      serviceIntegration.configureSmartFolderWatcher({
+        getSmartFolders: getCustomFolders,
+        analyzeDocumentFile,
+        analyzeImageFile
+      });
+    }
+
     // Create application menu with theme
     createApplicationMenu(() => mainWindow);
 
@@ -868,7 +944,7 @@ app.whenReady().then(async () => {
     logger.error('[STARTUP] Failed to initialize:', {
       message: error?.message || 'Unknown error',
       stack: error?.stack,
-      error: error
+      error
     });
     // Still create window even if startup fails - allow degraded mode
     logger.warn('[STARTUP] Creating window in degraded mode due to startup errors');

@@ -1,9 +1,23 @@
 // Undo/Redo System - Implementing Shneiderman's Golden Rule #6: Action Reversal Infrastructure
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import {
+  FileText,
+  Trash2,
+  Edit2,
+  FolderPlus,
+  FolderMinus,
+  FileEdit,
+  Settings,
+  Search,
+  Package
+} from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { ConfirmModal } from './Modal';
 import { useNotification } from '../contexts/NotificationContext';
+
+// Use shared action type constants so renderer/main/tests are aligned
+import { ACTION_TYPES as SHARED_ACTION_TYPES } from '../../shared/constants';
 
 // Set logger context for this component
 logger.setContext('UndoRedoSystem');
@@ -17,56 +31,54 @@ const generateSecureId = () => {
 
 // Undo/Redo Context
 const UndoRedoContext = createContext();
-
-// Use shared action type constants so renderer/main/tests are aligned
-import { ACTION_TYPES as SHARED_ACTION_TYPES } from '../../shared/constants';
 const ACTION_TYPES = SHARED_ACTION_TYPES;
 
 // Action metadata for user-friendly descriptions
+// UI-2 FIX: Replace emojis with Lucide icons for professional appearance
 const ACTION_METADATA = {
   [ACTION_TYPES.FILE_MOVE]: {
     description: 'Move file',
-    icon: '📁',
+    icon: FileText,
     category: 'File Operations'
   },
   [ACTION_TYPES.FILE_DELETE]: {
     description: 'Delete file',
-    icon: '🗑️',
+    icon: Trash2,
     category: 'File Operations'
   },
   [ACTION_TYPES.FILE_RENAME]: {
     description: 'Rename file',
-    icon: '✏️',
+    icon: Edit2,
     category: 'File Operations'
   },
   [ACTION_TYPES.FOLDER_CREATE]: {
     description: 'Create folder',
-    icon: '📂',
+    icon: FolderPlus,
     category: 'Folder Operations'
   },
   [ACTION_TYPES.FOLDER_DELETE]: {
     description: 'Delete folder',
-    icon: '🗂️',
+    icon: FolderMinus,
     category: 'Folder Operations'
   },
   [ACTION_TYPES.FOLDER_RENAME]: {
     description: 'Rename folder',
-    icon: '📝',
+    icon: FileEdit,
     category: 'Folder Operations'
   },
   [ACTION_TYPES.SETTINGS_CHANGE]: {
     description: 'Change settings',
-    icon: '⚙️',
+    icon: Settings,
     category: 'Configuration'
   },
   [ACTION_TYPES.ANALYSIS_RESULT]: {
     description: 'File analysis',
-    icon: '🔍',
+    icon: Search,
     category: 'Analysis'
   },
   [ACTION_TYPES.BATCH_OPERATION]: {
     description: 'Batch operation',
-    icon: '📦',
+    icon: Package,
     category: 'Batch Operations'
   }
 };
@@ -194,6 +206,9 @@ export function UndoRedoProvider({ children }) {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [isHistoryVisible, setIsHistoryVisible] = useState(false);
+  // FIX: Track full stack and current index as state so HistoryModal re-renders when stack changes
+  const [fullStackState, setFullStackState] = useState([]);
+  const [currentIndexState, setCurrentIndexState] = useState(-1);
   const { showSuccess, showError, showInfo } = useNotification();
 
   // FIX: Track mounted state to prevent listener updates after unmount
@@ -257,6 +272,9 @@ export function UndoRedoProvider({ children }) {
     if (!isMountedRef.current) return;
     setCanUndo(undoStack.canUndo());
     setCanRedo(undoStack.canRedo());
+    // FIX: Update full stack and current index state for HistoryModal reactivity
+    setFullStackState(undoStack.getFullStack());
+    setCurrentIndexState(undoStack.getCurrentIndex());
   }, [undoStack]);
 
   useEffect(() => {
@@ -397,11 +415,11 @@ export function UndoRedoProvider({ children }) {
     }
   };
 
-  // Get action description for UI
+  // Get action description for UI (text only - icons are rendered separately)
   const getActionDescription = (action) => {
     const metadata = ACTION_METADATA[action.type];
     if (metadata) {
-      return `${metadata.icon} ${action.description || metadata.description}`;
+      return action.description || metadata.description;
     }
     return action.description || 'Unknown action';
   };
@@ -480,6 +498,9 @@ export function UndoRedoProvider({ children }) {
     // FIX L-2: Expose full stack and current index for jump-to-point UI
     getFullStack: () => undoStack.getFullStack(),
     getCurrentIndex: () => undoStack.getCurrentIndex(),
+    // FIX: Expose reactive state for full stack and current index so HistoryModal re-renders
+    fullStack: fullStackState,
+    currentIndex: currentIndexState,
     jumpToPoint,
     peek: () => undoStack.peek(),
     peekRedo: () => undoStack.peekRedo(),
@@ -529,16 +550,14 @@ export function useUndoRedo() {
 // FIX L-2: Enhanced with jump-to-point functionality
 function HistoryModal() {
   const {
-    getFullStack,
-    getCurrentIndex,
+    // FIX: Use reactive state values instead of getter functions so component re-renders when stack changes
+    fullStack,
+    currentIndex,
     jumpToPoint,
     setIsHistoryVisible,
     clearHistory,
     isExecuting
   } = useUndoRedo();
-
-  const fullStack = getFullStack();
-  const currentIndex = getCurrentIndex();
 
   const handleJumpToPoint = async (targetIndex) => {
     await jumpToPoint(targetIndex);
@@ -638,8 +657,11 @@ function HistoryModal() {
                       }
                     >
                       <div className="flex items-center space-x-3">
-                        <span className="text-lg">
-                          {ACTION_METADATA[action.type]?.icon || '📄'}
+                        <span className="text-lg flex items-center">
+                          {(() => {
+                            const IconComponent = ACTION_METADATA[action.type]?.icon || FileText;
+                            return <IconComponent className="w-5 h-5" />;
+                          })()}
                         </span>
                         <div>
                           <div
@@ -715,7 +737,7 @@ export function UndoRedoToolbar({ className = '' }) {
         `}
         title={
           lastAction
-            ? `⚠️ Undo: ${getActionDescription(lastAction)}${isImportantOperation ? ' (Will ask for confirmation)' : ''}`
+            ? `Undo: ${getActionDescription(lastAction)}${isImportantOperation ? ' (Will ask for confirmation)' : ''}`
             : 'Nothing to undo'
         }
       >

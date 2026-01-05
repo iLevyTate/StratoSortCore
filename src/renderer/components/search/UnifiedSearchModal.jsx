@@ -8,6 +8,8 @@ import {
   FolderInput,
   RefreshCw,
   Search as SearchIcon,
+  ChevronDown,
+  ChevronUp,
   Sparkles,
   Copy,
   Network,
@@ -45,6 +47,9 @@ import SearchAutocomplete from './SearchAutocomplete';
 import ClusterLegend from './ClusterLegend';
 
 logger.setContext('UnifiedSearchModal');
+
+// Temporary feature flag: hide graph view
+const SHOW_GRAPH = false;
 
 // Maximum nodes allowed in graph to prevent memory exhaustion
 const MAX_GRAPH_NODES = 300;
@@ -242,6 +247,14 @@ function ResultRow({
   const path = result?.metadata?.path || '';
   const name = result?.metadata?.name || safeBasename(path) || result?.id || 'Unknown';
   const type = result?.metadata?.type || '';
+  const summaryText =
+    result?.metadata?.summary || (typeof result?.document === 'string' ? result.document : '');
+  const trimmedSummary = summaryText ? summaryText.slice(0, 200) : '';
+  const hasMoreSummary = Boolean(summaryText && summaryText.length > 200);
+  const sources = Array.isArray(result?.matchDetails?.sources) ? result.matchDetails.sources : [];
+  const tags = Array.isArray(result?.metadata?.tags) ? result.metadata.tags.slice(0, 3) : [];
+  const relevancePercent =
+    typeof result?.score === 'number' ? Math.round(clamp01(result.score) * 100) : null;
 
   return (
     <div
@@ -288,9 +301,48 @@ function ResultRow({
           </div>
           <div className="mt-1 text-xs text-system-gray-500 break-all">{path}</div>
 
+          {(sources.length > 0 || result?.metadata?.category || tags.length > 0) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {sources.map((source) => (
+                <span
+                  key={source}
+                  className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue text-[11px] font-medium"
+                >
+                  {source}
+                </span>
+              ))}
+              {result?.metadata?.category ? (
+                <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
+                  {result.metadata.category}
+                </span>
+              ) : null}
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="px-2 py-1 rounded-full bg-system-gray-100 text-system-gray-600 text-[11px] font-medium"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {trimmedSummary ? (
+            <div className="mt-2 bg-white border border-system-gray-200 rounded-lg p-2 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
+              <div className="flex items-center gap-2 text-[11px] font-semibold text-system-gray-700">
+                <MessageSquare className="w-3.5 h-3.5 text-stratosort-indigo" />
+                Quick summary
+              </div>
+              <div className="text-xs text-system-gray-600 leading-relaxed mt-1">
+                {trimmedSummary}
+                {hasMoreSummary ? '…' : ''}
+              </div>
+            </div>
+          ) : null}
+
           {/* Match details - shows why this result matched */}
           {result?.matchDetails && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {/* Matched keywords from BM25 */}
               {result.matchDetails.matchedTerms?.slice(0, 3).map((term) => (
                 <span
@@ -336,6 +388,21 @@ function ResultRow({
           {formatScore(result?.score)}
         </div>
       </div>
+
+      {relevancePercent !== null && (
+        <div className="mt-2">
+          <div className="flex items-center justify-between text-[11px] text-system-gray-500">
+            <span>Relevance blend</span>
+            <span className="font-semibold text-system-gray-700">{formatScore(result?.score)}</span>
+          </div>
+          <div className="h-1.5 w-full bg-system-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-stratosort-blue to-stratosort-indigo"
+              style={{ width: `${relevancePercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {isSelected ? (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -491,6 +558,193 @@ TabButton.propTypes = {
 };
 TabButton.displayName = 'TabButton';
 
+function SearchProcessCard({ icon: Icon, title, description, badge, footnote }) {
+  return (
+    <div className="glass-panel border border-system-gray-200 bg-gradient-to-br from-white to-stratosort-blue/5 p-3 rounded-xl shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-white/70 border border-system-gray-200 shadow-sm shrink-0">
+          <Icon className="w-4 h-4 text-stratosort-blue" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-system-gray-900">{title}</div>
+            {badge ? (
+              <span className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue text-[11px] font-medium">
+                {badge}
+              </span>
+            ) : null}
+          </div>
+          <div className="text-xs text-system-gray-600 leading-relaxed mt-1">{description}</div>
+          {footnote ? (
+            <div className="text-[11px] text-system-gray-400 mt-1">{footnote}</div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+SearchProcessCard.propTypes = {
+  icon: PropTypes.elementType.isRequired,
+  title: PropTypes.string.isRequired,
+  description: PropTypes.string.isRequired,
+  badge: PropTypes.string,
+  footnote: PropTypes.string
+};
+SearchProcessCard.displayName = 'SearchProcessCard';
+
+function SearchExplainer({ stats, searchStatusLabel, query, defaultTopK, isSearching }) {
+  const queryTip =
+    !query || query.length < 2
+      ? 'Type at least 2 characters to search'
+      : `Searching for “${query}”`;
+  const indexedSummary =
+    stats && typeof stats.files === 'number'
+      ? `${stats.files} file${stats.files === 1 ? '' : 's'} • ${stats.folders || 0} folder${
+          stats.folders === 1 ? '' : 's'
+        } indexed`
+      : 'Index status pending';
+  const [showUnderstanding, setShowUnderstanding] = useState(true);
+  const [showDirections, setShowDirections] = useState(true);
+
+  return (
+    <div className="surface-panel p-4 border border-system-gray-200 rounded-xl space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="space-y-0.5">
+          <div className="text-sm font-semibold text-system-gray-900">Semantic search guidance</div>
+          <div className="text-xs text-system-gray-500">
+            Show or hide the “how it works” explainer and quick directions whenever you need a
+            refresher.
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div
+            className={`px-3 py-1 rounded-full text-[11px] font-semibold border ${
+              isSearching
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            }`}
+          >
+            {searchStatusLabel}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowUnderstanding((v) => !v)}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-system-gray-700 bg-white border border-system-gray-200 rounded-lg hover:border-stratosort-blue focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+            aria-expanded={showUnderstanding}
+            aria-controls="semantic-understanding"
+          >
+            {showUnderstanding ? (
+              <ChevronUp className="w-3.5 h-3.5 text-system-gray-500" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-system-gray-500" />
+            )}
+            {showUnderstanding ? 'Hide understanding' : 'Show understanding'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowDirections((v) => !v)}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-system-gray-700 bg-white border border-system-gray-200 rounded-lg hover:border-stratosort-blue focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+            aria-expanded={showDirections}
+            aria-controls="semantic-directions"
+          >
+            {showDirections ? (
+              <ChevronUp className="w-3.5 h-3.5 text-system-gray-500" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-system-gray-500" />
+            )}
+            {showDirections ? 'Hide directions' : 'Show directions'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-[11px] text-system-gray-600">
+        <span className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue font-medium">
+          Hybrid: semantic + keyword
+        </span>
+        <span className="px-2 py-1 rounded-full bg-system-gray-100 text-system-gray-700 font-medium">
+          Showing top {defaultTopK}
+        </span>
+        <span className="px-2 py-1 rounded-full bg-system-gray-100 text-system-gray-700 font-medium">
+          {indexedSummary}
+        </span>
+        <span className="px-2 py-1 rounded-full bg-system-gray-50 text-system-gray-500 font-medium">
+          {queryTip}
+        </span>
+      </div>
+
+      {showUnderstanding ? (
+        <div id="semantic-understanding" className="grid sm:grid-cols-3 gap-3">
+          <SearchProcessCard
+            icon={Sparkles}
+            title="Understand intent"
+            description="Your query is embedded to capture meaning, synonyms, and topics so we can match files even when wording differs."
+            badge="Semantic"
+          />
+          <SearchProcessCard
+            icon={Layers}
+            title="Hybrid ranker"
+            description="We blend semantic similarity with BM25 keywords, balance the weights, and rerank the combined list."
+            badge="Hybrid"
+            footnote={`Top ${defaultTopK} shown`}
+          />
+          <SearchProcessCard
+            icon={List}
+            title="Explain results"
+            description="We keep scores visible, highlight matched terms/categories, and show a quick summary for context."
+            badge="Transparent"
+            footnote={indexedSummary}
+          />
+        </div>
+      ) : null}
+
+      {showDirections ? (
+        <div id="semantic-directions" className="grid gap-3 sm:grid-cols-[1.4fr,1fr] items-start">
+          <div className="glass-panel border border-system-gray-200 bg-white p-3 rounded-xl shadow-sm space-y-2">
+            <div className="text-sm font-semibold text-system-gray-900">Quick directions</div>
+            <ol className="list-decimal list-inside text-xs text-system-gray-600 space-y-1.5">
+              <li>
+                Describe what you need in plain language — topics, people, or outcomes work well.
+              </li>
+              <li>
+                Refine with specifics like dates, file types, or folder names to tighten matches.
+              </li>
+              <li>Open a result to view, or use “Reveal in folder” to jump to its location.</li>
+            </ol>
+            <div className="text-[11px] text-system-gray-500">
+              Tip: Press <kbd className="px-1 py-0.5 bg-system-gray-100 rounded">Ctrl/Cmd + K</kbd>{' '}
+              anytime to open search.
+            </div>
+          </div>
+          <div className="glass-panel border border-system-gray-200 bg-white p-3 rounded-xl shadow-sm space-y-2">
+            <div className="text-sm font-semibold text-system-gray-900">Example prompts</div>
+            <div className="space-y-1 text-xs text-system-gray-600">
+              <div className="italic">tax documents from 2024</div>
+              <div className="italic">photos of family vacation</div>
+              <div className="italic">project proposal for client</div>
+              <div className="italic">invoice for the 3D printer order</div>
+            </div>
+            {stats?.files === 0 && (
+              <div className="mt-1 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                No files indexed yet. Build embeddings first.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+SearchExplainer.propTypes = {
+  stats: PropTypes.object,
+  searchStatusLabel: PropTypes.string.isRequired,
+  query: PropTypes.string,
+  defaultTopK: PropTypes.number.isRequired,
+  isSearching: PropTypes.bool.isRequired
+};
+SearchExplainer.displayName = 'SearchExplainer';
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -502,7 +756,10 @@ export default function UnifiedSearchModal({
   initialTab = 'search'
 }) {
   // Tab state
-  const [activeTab, setActiveTab] = useState(initialTab);
+  // Graph is currently feature-flagged off. If callers pass initialTab="graph",
+  // ensure we still render the Search tab content instead of a blank body.
+  const effectiveInitialTab = SHOW_GRAPH ? initialTab : 'search';
+  const [activeTab, setActiveTab] = useState(effectiveInitialTab);
 
   // Shared state
   const [query, setQuery] = useState('');
@@ -573,7 +830,7 @@ export default function UnifiedSearchModal({
       hasAutoLoadedClusters.current = false;
       return () => {};
     }
-    setActiveTab(initialTab);
+    setActiveTab(effectiveInitialTab);
     setQuery('');
     setDebouncedQuery('');
     setError('');
@@ -605,7 +862,7 @@ export default function UnifiedSearchModal({
 
     // Cleanup pending layouts on unmount
     return () => cancelPendingLayout();
-  }, [isOpen, initialTab]);
+  }, [isOpen, effectiveInitialTab]);
 
   // ============================================================================
   // Keyboard Shortcuts
@@ -2115,12 +2372,14 @@ export default function UnifiedSearchModal({
               icon={List}
               label="Search Results"
             />
-            <TabButton
-              active={activeTab === 'graph'}
-              onClick={() => setActiveTab('graph')}
-              icon={Network}
-              label="Explore Graph"
-            />
+            {SHOW_GRAPH && (
+              <TabButton
+                active={activeTab === 'graph'}
+                onClick={() => setActiveTab('graph')}
+                icon={Network}
+                label="Explore Graph"
+              />
+            )}
           </div>
           <StatsDisplay stats={stats} isLoadingStats={isLoadingStats} onRefresh={refreshStats} />
         </div>
@@ -2145,6 +2404,13 @@ export default function UnifiedSearchModal({
         {/* Search Tab Content */}
         {activeTab === 'search' && (
           <div className="flex flex-col gap-4 flex-1">
+            <SearchExplainer
+              stats={stats}
+              searchStatusLabel={searchStatusLabel}
+              query={debouncedQuery}
+              defaultTopK={defaultTopK}
+              isSearching={isSearching}
+            />
             {/* Search input with autocomplete */}
             <div className="flex items-center gap-3">
               <SearchAutocomplete
@@ -2246,13 +2512,90 @@ export default function UnifiedSearchModal({
               <div className="surface-panel p-4 min-h-[12rem]">
                 <h3 className="text-sm font-semibold text-system-gray-900 mb-2">Preview</h3>
                 {selectedSearchResult ? (
-                  <div className="text-sm text-system-gray-700 flex flex-col gap-2">
-                    <div className="text-xs text-system-gray-500">
-                      Score: {formatScore(selectedSearchResult.score)}
+                  <div className="text-sm text-system-gray-700 flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <div className="font-medium break-all">
+                        {selectedSearchResult?.metadata?.path || selectedSearchResult.id}
+                      </div>
+                      <div className="text-xs text-system-gray-500">
+                        Combined score: {formatScore(selectedSearchResult.score)}
+                      </div>
+                      {(() => {
+                        const hybrid = selectedSearchResult?.matchDetails?.hybrid || {};
+                        const semanticScore = hybrid.semanticScore ?? hybrid.vectorScore;
+                        const keywordScore = hybrid.keywordScore ?? hybrid.bm25Score;
+                        const combinedScore = hybrid.combinedScore ?? selectedSearchResult.score;
+                        const weights =
+                          hybrid.semanticWeight || hybrid.keywordWeight
+                            ? ` (w_sem=${hybrid.semanticWeight ?? '—'}, w_kw=${hybrid.keywordWeight ?? '—'})`
+                            : '';
+                        return (
+                          <div className="text-xs text-system-gray-500 space-y-0.5">
+                            <div>Semantic score: {formatScore(semanticScore)}</div>
+                            <div>Keyword score: {formatScore(keywordScore)}</div>
+                            <div>
+                              Hybrid score: {formatScore(combinedScore)}
+                              {weights}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
-                    <div className="font-medium break-all">
-                      {selectedSearchResult?.metadata?.path || selectedSearchResult.id}
+
+                    <div className="surface-panel bg-system-gray-50 border border-system-gray-200 rounded-lg p-3 space-y-2">
+                      <div className="text-xs font-semibold text-system-gray-600 uppercase">
+                        Why this matched
+                      </div>
+                      <ul className="text-xs text-system-gray-600 space-y-1 list-disc list-inside">
+                        {selectedSearchResult?.matchDetails?.matchedTerms?.length ? (
+                          <li>
+                            Keyword terms:{' '}
+                            {selectedSearchResult.matchDetails.matchedTerms.join(', ')}
+                          </li>
+                        ) : null}
+                        {selectedSearchResult?.matchDetails?.sources?.length ? (
+                          <li>Sources: {selectedSearchResult.matchDetails.sources.join(', ')}</li>
+                        ) : null}
+                        {selectedSearchResult?.metadata?.category ? (
+                          <li>Category: {selectedSearchResult.metadata.category}</li>
+                        ) : null}
+                        {Array.isArray(selectedSearchResult?.metadata?.tags) &&
+                        selectedSearchResult.metadata.tags.length ? (
+                          <li>
+                            Tags: {selectedSearchResult.metadata.tags.slice(0, 5).join(', ')}
+                            {selectedSearchResult.metadata.tags.length > 5 ? '…' : ''}
+                          </li>
+                        ) : null}
+                        {Array.isArray(selectedSearchResult?.metadata?.keywords) &&
+                        selectedSearchResult.metadata.keywords.length ? (
+                          <li>
+                            Semantic topics:{' '}
+                            {selectedSearchResult.metadata.keywords.slice(0, 5).join(', ')}
+                            {selectedSearchResult.metadata.keywords.length > 5 ? '…' : ''}
+                          </li>
+                        ) : null}
+                        {selectedSearchResult?.metadata?.subject ? (
+                          <li>Subject: {selectedSearchResult.metadata.subject}</li>
+                        ) : null}
+                        {(() => {
+                          const hybrid = selectedSearchResult?.matchDetails?.hybrid || {};
+                          if (hybrid.bm25RawScore || hybrid.vectorRawScore) {
+                            return (
+                              <li>
+                                Raw scores — semantic: {formatScore(hybrid.vectorRawScore)};
+                                keyword: {formatScore(hybrid.bm25RawScore)}
+                              </li>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {!selectedSearchResult?.matchDetails?.matchedTerms &&
+                        !(selectedSearchResult?.metadata?.tags || []).length ? (
+                          <li>Semantic similarity matched the overall topic.</li>
+                        ) : null}
+                      </ul>
                     </div>
+
                     {selectedSearchResult?.document ? (
                       <div className="text-xs text-system-gray-600 whitespace-pre-wrap">
                         {String(selectedSearchResult.document).slice(0, 800)}
@@ -2295,7 +2638,7 @@ export default function UnifiedSearchModal({
         )}
 
         {/* Graph Tab Content */}
-        {activeTab === 'graph' && (
+        {SHOW_GRAPH && activeTab === 'graph' && (
           <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-3 flex-1 min-h-[60vh]">
             {/* Left: Controls */}
             <div className="surface-panel p-4 flex flex-col gap-4">

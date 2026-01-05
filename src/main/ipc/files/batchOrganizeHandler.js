@@ -26,7 +26,7 @@ const isMockFn = (fn) => !!fn && typeof fn === 'function' && fn._isMockFunction;
 // Resource limits from centralized constants (prevents config drift)
 const MAX_BATCH_SIZE = PROCESSING_LIMITS.MAX_BATCH_OPERATION_SIZE;
 const MAX_TOTAL_BATCH_TIME = PROCESSING_LIMITS.MAX_BATCH_OPERATION_TIME;
-const MAX_NUMERIC_RETRIES = LIMITS.MAX_NUMERIC_RETRIES;
+const { MAX_NUMERIC_RETRIES } = LIMITS;
 
 /**
  * Compute SHA-256 checksum of a file using streaming

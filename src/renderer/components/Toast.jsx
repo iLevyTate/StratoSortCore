@@ -10,14 +10,14 @@ logger.setContext('Toast');
 let toastIdCounter = 0;
 const generateSecureId = () => Date.now() + ++toastIdCounter;
 
-const Toast = ({
+function Toast({
   message,
   severity = 'info',
   duration = 3000,
   onClose,
   show = true,
   mergeCount = 0
-}) => {
+}) {
   const [isVisible, setIsVisible] = useState(show);
   const animationTimerRef = useRef(null);
   // FIX: Use ref for onClose to prevent timer reset when parent re-renders with new callback
@@ -163,7 +163,7 @@ const Toast = ({
       </div>
     </div>
   );
-};
+}
 
 Toast.propTypes = {
   message: PropTypes.oneOfType([PropTypes.string, PropTypes.node, PropTypes.object]),
@@ -175,7 +175,7 @@ Toast.propTypes = {
 };
 
 // Toast Container for managing multiple toasts - compact design
-export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
+export function ToastContainer({ toasts = [], onRemoveToast }) {
   const [position] = useState(() => {
     try {
       return localStorage.getItem('toastPosition') || 'bottom-right';
@@ -275,7 +275,7 @@ export const ToastContainer = ({ toasts = [], onRemoveToast }) => {
       </div>
     </div>
   );
-};
+}
 
 ToastContainer.propTypes = {
   toasts: PropTypes.arrayOf(PropTypes.object),

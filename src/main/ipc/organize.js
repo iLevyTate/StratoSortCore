@@ -377,7 +377,7 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
           const folders = smartFolders || getCustomFolders();
 
           // Get cluster-based batch suggestions from the suggestion service
-          const suggestionService = service.suggestionService;
+          const { suggestionService } = service;
           if (!suggestionService) {
             return {
               success: false,
@@ -453,7 +453,7 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
             fileCount: filesWithExtension.length
           });
 
-          const suggestionService = service.suggestionService;
+          const { suggestionService } = service;
           if (!suggestionService) {
             return {
               success: false,
@@ -519,7 +519,7 @@ function registerOrganizeIpc({ ipcMain, IPC_CHANNELS, getServiceIntegration, get
 
           const folders = smartFolders || getCustomFolders();
 
-          const suggestionService = service.suggestionService;
+          const { suggestionService } = service;
           if (!suggestionService) {
             return {
               success: false,

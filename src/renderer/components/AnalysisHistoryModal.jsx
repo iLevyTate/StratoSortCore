@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { BarChart2, TrendingUp, ClipboardList, Download, Folder } from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
 import Modal, { ConfirmModal } from './Modal';
@@ -190,20 +191,29 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
 
   return (
     <>
-      <Modal isOpen={true} onClose={onClose} title="📊 Analysis History & Statistics" size="large">
+      <Modal
+        isOpen
+        onClose={onClose}
+        title={
+          <span className="flex items-center gap-2">
+            <BarChart2 className="w-5 h-5" /> Analysis History &amp; Statistics
+          </span>
+        }
+        size="large"
+      >
         {/* Tabs */}
         <div className="flex mb-4 border-b border-system-gray-200 -mt-2">
           <button
             onClick={() => setSelectedTab('statistics')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${selectedTab === 'statistics' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${selectedTab === 'statistics' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
           >
-            📈 Statistics
+            <TrendingUp className="w-4 h-4" /> Statistics
           </button>
           <button
             onClick={() => setSelectedTab('history')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${selectedTab === 'history' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${selectedTab === 'history' ? 'border-stratosort-blue text-stratosort-blue' : 'border-transparent text-system-gray-500 hover:text-system-gray-700'}`}
           >
-            📋 History
+            <ClipboardList className="w-4 h-4" /> History
           </button>
         </div>
 
@@ -211,7 +221,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
         <div className="min-h-[300px]">
           {isLoading ? (
             <div className="text-center py-12">
-              <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-4"></div>
+              <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-4" />
               <p>Loading analysis data...</p>
             </div>
           ) : (
@@ -245,7 +255,9 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                     </div>
                   </div>
                   <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)]">
-                    <h3 className="font-semibold mb-3">📤 Export Options</h3>
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                      <Download className="w-4 h-4" /> Export Options
+                    </h3>
                     <div className="flex gap-4">
                       <Button
                         onClick={() => exportHistory('json')}
@@ -366,7 +378,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                     ))}
                     {(Array.isArray(historyData) ? historyData : []).length === 0 && (
                       <div className="empty-state">
-                        <div className="text-3xl">🗂️</div>
+                        <Folder className="w-10 h-10 text-system-gray-400 mx-auto" />
                         <div className="space-y-1">
                           <p className="text-system-gray-800 font-semibold">
                             No analysis history yet

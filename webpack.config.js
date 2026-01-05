@@ -28,7 +28,7 @@ module.exports = (env, argv) => {
     module: {
       rules: [
         {
-          test: /\.(js|jsx)$/,
+          test: /\.(js|jsx|ts|tsx)$/,
           exclude: /node_modules/,
           use: {
             loader: 'babel-loader',
@@ -40,7 +40,8 @@ module.exports = (env, argv) => {
                     targets: { electron: '39.0' }
                   }
                 ],
-                '@babel/preset-react'
+                '@babel/preset-react',
+                '@babel/preset-typescript'
               ],
               plugins: [
                 '@babel/plugin-transform-react-jsx',
@@ -81,7 +82,7 @@ module.exports = (env, argv) => {
       ]
     },
     resolve: {
-      extensions: ['.js', '.jsx'],
+      extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       // FIX: Use consistent fallbacks for both dev and prod to avoid module resolution issues
       // Redux Toolkit and other modern libraries require process polyfill
       fallback: {
@@ -121,16 +122,20 @@ module.exports = (env, argv) => {
       }),
       // FIX: Only extract CSS in production mode (dev uses style-loader for HMR)
       ...(isProduction ? [new MiniCssExtractPlugin({ filename: 'styles.css' })] : []),
-      ...(isProduction
-        ? [
+      ...(function getProductionPlugins() {
+        if (isProduction) {
+          return [
             new webpack.IgnorePlugin({
               resourceRegExp: /moment\/locale/
             })
-          ]
-        : // FIX: Use isDevServer variable for consistency
-          isDevServer
-          ? [new ReactRefreshWebpackPlugin({ overlay: false })]
-          : []),
+          ];
+        }
+        // FIX: Use isDevServer variable for consistency
+        if (isDevServer) {
+          return [new ReactRefreshWebpackPlugin({ overlay: false })];
+        }
+        return [];
+      })(),
       ...(isAnalyze ? [new BundleAnalyzerPlugin({ analyzerMode: 'static' })] : [])
     ],
     // Use secure devtool options

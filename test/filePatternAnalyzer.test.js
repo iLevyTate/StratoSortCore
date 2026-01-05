@@ -309,7 +309,11 @@ describe('File Pattern Analyzer', () => {
       const summary = generateFileSummary(file);
 
       // Should not have extra spaces from filtered values
-      expect(summary).toBe('test.pdf pdf');
+      // Now includes semantic keywords for the file extension
+      expect(summary).toContain('test.pdf');
+      expect(summary).toContain('pdf');
+      // Semantic keywords are appended after a pipe separator
+      expect(summary).toMatch(/test\.pdf.*pdf/);
     });
   });
 });

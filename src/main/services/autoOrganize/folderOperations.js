@@ -261,7 +261,7 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
   const currentExt = path.extname(fileName);
   if (originalExt && !currentExt) {
     // suggestedName is missing the extension, add it back
-    fileName = fileName + originalExt;
+    fileName += originalExt;
   }
 
   return path.join(folderPath, fileName);

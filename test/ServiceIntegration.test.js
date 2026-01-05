@@ -79,6 +79,16 @@ jest.mock('../src/main/services/SettingsService', () => ({
   getService: jest.fn().mockReturnValue({})
 }));
 
+jest.mock('../src/main/services/SmartFolderWatcher', () => {
+  return jest.fn().mockImplementation(() => ({
+    configure: jest.fn(),
+    start: jest.fn().mockResolvedValue(true),
+    stop: jest.fn(),
+    getStatus: jest.fn().mockReturnValue({ isRunning: false }),
+    isRunning: false
+  }));
+});
+
 // Store mockServices outside so we can reset it
 let mockServices = new Map();
 

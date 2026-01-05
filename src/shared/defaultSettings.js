@@ -11,6 +11,13 @@ const DEFAULT_SETTINGS = {
   // UI
   theme: 'system',
   notifications: true,
+  // Notification display options - where to show notifications
+  // 'both' = UI toast + system tray, 'ui' = UI only, 'tray' = tray only, 'none' = disabled
+  notificationMode: 'both',
+  // Notify when files are analyzed by watchers (smart folder/download)
+  notifyOnAutoAnalysis: true,
+  // Notify when files don't meet confidence threshold for auto-organization
+  notifyOnLowConfidence: true,
   // Behavior
   defaultSmartFolderLocation: 'Documents',
   // Last browsed path - remembers the last folder opened in file dialogs
@@ -19,8 +26,15 @@ const DEFAULT_SETTINGS = {
   autoOrganize: false,
   backgroundMode: false,
   launchOnStartup: false,
+  // Smart Folder Watching - auto-analyze files added/modified in smart folders
+  smartFolderWatchEnabled: false,
   // Organization Confidence Threshold (files must meet this confidence to be auto-organized)
   confidenceThreshold: 0.75,
+  // Naming convention defaults (used by auto-organize / download watcher)
+  namingConvention: 'subject-date',
+  dateFormat: 'YYYY-MM-DD',
+  caseConvention: 'kebab-case',
+  separator: '-',
   // AI - model defaults imported from constants.js for single source of truth
   ollamaHost: SERVICE_URLS.OLLAMA_HOST,
   textModel: DEFAULT_AI_MODELS.TEXT_ANALYSIS,

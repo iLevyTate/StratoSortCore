@@ -86,7 +86,8 @@ function registerSmartFoldersIpc({
   buildOllamaOptions,
   getOllamaModel,
   getOllamaEmbeddingModel,
-  scanDirectory
+  scanDirectory,
+  getSmartFolderWatcher // FIX: Changed from instance to getter function to resolve race condition
 }) {
   safeHandle(
     ipcMain,
@@ -606,34 +607,15 @@ function registerSmartFoldersIpc({
           setCustomFolders(updated);
           await saveCustomFolders(updated);
           logger.info('[SMART-FOLDERS] Deleted Smart Folder:', folderId);
-          let directoryRemoved = false;
-          let removalError = null;
-          try {
-            if (deletedFolder.path) {
-              const stats = await fs.stat(deletedFolder.path);
-              if (stats.isDirectory()) {
-                const contents = await fs.readdir(deletedFolder.path);
-                if (contents.length === 0) {
-                  await fs.rmdir(deletedFolder.path);
-                  directoryRemoved = true;
-                }
-              }
-            }
-          } catch (dirErr) {
-            if (dirErr.code !== 'ENOENT') {
-              logger.warn('[SMART-FOLDERS] Directory removal failed:', dirErr.message);
-              removalError = dirErr.message;
-            }
-          }
+          // Note: We intentionally do NOT delete the physical directory.
+          // The UI promises "This will not delete the physical directory or its files."
+          // Users can manually delete the folder if desired.
           return {
             success: true,
             folders: updated,
             deletedFolder,
-            directoryRemoved,
-            removalError,
-            message: `Smart folder "${deletedFolder.name}" deleted successfully${
-              directoryRemoved ? ' and its empty directory was removed.' : ''
-            }`
+            directoryRemoved: false,
+            message: `Smart folder "${deletedFolder.name}" removed from StratoSort`
           };
         } catch (saveError) {
           setCustomFolders(originalFolders);
@@ -687,12 +669,11 @@ Now generate a description for "${folderName}":`;
               success: true,
               description: result.response.trim()
             };
-          } else {
-            return {
-              success: false,
-              error: result.error || 'No response from AI'
-            };
           }
+          return {
+            success: false,
+            error: result.error || 'No response from AI'
+          };
         } catch (llmError) {
           logger.error('[SMART-FOLDERS] LLM description generation failed:', llmError.message);
           return {
@@ -1011,6 +992,162 @@ Now generate a description for "${folderName}":`;
           success: false,
           error: error.message,
           errorCode: ERROR_CODES.RESET_FAILED
+        };
+      }
+    })
+  );
+
+  // ============== Smart Folder Watcher IPC Handlers ==============
+
+  // Start the smart folder watcher
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SMART_FOLDERS.WATCHER_START,
+    withErrorLogging(logger, async () => {
+      try {
+        // FIX: Call getter function to get current watcher instance (resolves race condition)
+        const smartFolderWatcher = getSmartFolderWatcher?.();
+        if (!smartFolderWatcher) {
+          return {
+            success: false,
+            error: 'Smart folder watcher not available'
+          };
+        }
+
+        // FIX: Skip settings check because this IPC handler is only called when the user
+        // explicitly enables the watcher via the UI toggle. The setting may not be
+        // persisted to disk yet due to debounced saves, causing the watcher's internal
+        // settings check to fail. Since the user action is explicit, we can trust it.
+        const started = await smartFolderWatcher.start({ skipSettingsCheck: true });
+        const status = smartFolderWatcher.getStatus();
+
+        // FIX: Provide detailed error message when start fails
+        let errorMessage = null;
+        if (!started) {
+          errorMessage = status.lastStartError || 'Failed to start watcher (unknown reason)';
+          logger.warn('[SMART-FOLDER-WATCHER] Start returned false:', errorMessage);
+        }
+
+        return {
+          success: started,
+          message: started ? 'Smart folder watcher started' : errorMessage,
+          error: errorMessage,
+          status
+        };
+      } catch (error) {
+        logger.error('[SMART-FOLDER-WATCHER] Failed to start:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    })
+  );
+
+  // Stop the smart folder watcher
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SMART_FOLDERS.WATCHER_STOP,
+    withErrorLogging(logger, async () => {
+      try {
+        // FIX: Call getter function to get current watcher instance
+        const smartFolderWatcher = getSmartFolderWatcher?.();
+        if (!smartFolderWatcher) {
+          return {
+            success: false,
+            error: 'Smart folder watcher not available'
+          };
+        }
+
+        smartFolderWatcher.stop();
+        return {
+          success: true,
+          message: 'Smart folder watcher stopped',
+          status: smartFolderWatcher.getStatus()
+        };
+      } catch (error) {
+        logger.error('[SMART-FOLDER-WATCHER] Failed to stop:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    })
+  );
+
+  // Get watcher status
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SMART_FOLDERS.WATCHER_STATUS,
+    withErrorLogging(logger, async () => {
+      try {
+        // FIX: Call getter function to get current watcher instance
+        const smartFolderWatcher = getSmartFolderWatcher?.();
+        if (!smartFolderWatcher) {
+          return {
+            success: true,
+            status: {
+              isRunning: false,
+              isStarting: false,
+              watchedFolders: [],
+              watchedCount: 0,
+              queueLength: 0,
+              processingCount: 0,
+              available: false
+            }
+          };
+        }
+
+        return {
+          success: true,
+          status: {
+            ...smartFolderWatcher.getStatus(),
+            available: true
+          }
+        };
+      } catch (error) {
+        logger.error('[SMART-FOLDER-WATCHER] Failed to get status:', error);
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    })
+  );
+
+  // Manually trigger a scan for unanalyzed files
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SMART_FOLDERS.WATCHER_SCAN,
+    withErrorLogging(logger, async () => {
+      try {
+        // FIX: Call getter function to get current watcher instance
+        const smartFolderWatcher = getSmartFolderWatcher?.();
+        if (!smartFolderWatcher) {
+          return {
+            success: false,
+            error: 'Smart folder watcher not available'
+          };
+        }
+
+        if (!smartFolderWatcher.isRunning) {
+          return {
+            success: false,
+            error: 'Watcher is not running. Enable smart folder watching first.'
+          };
+        }
+
+        const result = await smartFolderWatcher.scanForUnanalyzedFiles();
+        return {
+          success: true,
+          ...result,
+          message: `Scanned ${result.scanned} files, queued ${result.queued} for analysis`
+        };
+      } catch (error) {
+        logger.error('[SMART-FOLDER-WATCHER] Failed to scan:', error);
+        return {
+          success: false,
+          error: error.message
         };
       }
     })

@@ -7,6 +7,8 @@ describe('errorHandlingUtils', () => {
   let ERROR_CODES;
   let createSuccessResponse;
   let withRetry;
+  let logFallback;
+  let getErrorMessage;
 
   beforeEach(() => {
     // jest.resetModules(); // Removed - breaks module imports
@@ -14,6 +16,8 @@ describe('errorHandlingUtils', () => {
     ERROR_CODES = module.ERROR_CODES;
     createSuccessResponse = module.createSuccessResponse;
     withRetry = module.withRetry;
+    logFallback = module.logFallback;
+    getErrorMessage = module.getErrorMessage;
   });
 
   describe('ERROR_CODES', () => {
@@ -170,6 +174,82 @@ describe('errorHandlingUtils', () => {
       expect(onRetry).toHaveBeenCalledTimes(1);
       // onRetry is called with 0-indexed retry count
       expect(onRetry).toHaveBeenCalledWith(expect.any(Error), 0);
+    });
+  });
+
+  describe('logFallback', () => {
+    test('returns fallback value', () => {
+      const mockLogger = { debug: jest.fn() };
+      const fallback = { ok: true };
+      const result = logFallback(mockLogger, 'Test', 'op', new Error('boom'), fallback);
+      expect(result).toBe(fallback);
+    });
+
+    test('logs at requested level when available', () => {
+      const mockLogger = { warn: jest.fn(), debug: jest.fn() };
+      const fallback = [];
+      const err = new Error('nope');
+      err.code = 'E_TEST';
+
+      logFallback(mockLogger, 'Ctx', 'read', err, fallback, { level: 'warn' });
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        '[Ctx] read failed, using fallback',
+        expect.objectContaining({
+          error: 'nope',
+          fallback: '[array(0)]',
+          errorCode: 'E_TEST'
+        })
+      );
+      expect(mockLogger.debug).not.toHaveBeenCalled();
+    });
+
+    test('falls back to debug when requested level is missing', () => {
+      const mockLogger = { debug: jest.fn() };
+      logFallback(mockLogger, 'Ctx', 'op', 'err', 'fallback', { level: 'warn' });
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        '[Ctx] op failed, using fallback',
+        expect.objectContaining({ error: 'err', fallback: 'fallback' })
+      );
+    });
+  });
+
+  describe('getErrorMessage', () => {
+    test('handles null/undefined', () => {
+      expect(getErrorMessage(null)).toBe('Unknown error');
+      expect(getErrorMessage(undefined, 'fallback')).toBe('fallback');
+    });
+
+    test('handles string errors', () => {
+      expect(getErrorMessage('Connection refused')).toBe('Connection refused');
+      expect(getErrorMessage('', 'fallback')).toBe('fallback');
+    });
+
+    test('handles Error objects', () => {
+      expect(getErrorMessage(new Error('Boom'))).toBe('Boom');
+      const e = new Error('');
+      expect(getErrorMessage(e, 'fallback')).toBe('fallback');
+    });
+
+    test('handles objects with message/error/msg', () => {
+      expect(getErrorMessage({ message: 'm' })).toBe('m');
+      expect(getErrorMessage({ error: 'e' })).toBe('e');
+      expect(getErrorMessage({ msg: 'x' })).toBe('x');
+    });
+
+    test('stringifies unknown objects when possible', () => {
+      expect(getErrorMessage({ foo: 'bar' })).toBe(JSON.stringify({ foo: 'bar' }));
+    });
+
+    test('handles circular objects safely', () => {
+      const obj = {};
+      obj.self = obj;
+      expect(getErrorMessage(obj, 'fallback')).toBe('fallback');
+    });
+
+    test('handles numbers/booleans', () => {
+      expect(getErrorMessage(404)).toBe('404');
+      expect(getErrorMessage(false)).toBe('false');
     });
   });
 });

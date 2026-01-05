@@ -91,7 +91,12 @@ const IPC_CHANNELS = {
     DELETE: 'delete-smart-folder',
     MATCH: 'match-smart-folder',
     RESET_TO_DEFAULTS: 'reset-smart-folders-to-defaults',
-    GENERATE_DESCRIPTION: 'generate-smart-folder-description'
+    GENERATE_DESCRIPTION: 'generate-smart-folder-description',
+    // Smart Folder Watcher - auto-analyze files in smart folders
+    WATCHER_START: 'smart-folder-watcher-start',
+    WATCHER_STOP: 'smart-folder-watcher-stop',
+    WATCHER_STATUS: 'smart-folder-watcher-status',
+    WATCHER_SCAN: 'smart-folder-watcher-scan'
   },
 
   // Analysis
@@ -483,7 +488,7 @@ const AI_DEFAULTS = {
   IMAGE: {
     MODEL: 'gemma3:latest', // Gemma 3 is multimodal (4B+ variants support vision)
     HOST: SERVICE_URLS.OLLAMA_HOST,
-    TEMPERATURE: 0.2,
+    TEMPERATURE: 0.1, // ANTI-HALLUCINATION: Low temperature for factual image analysis
     MAX_TOKENS: 1000
   },
   EMBEDDING: {

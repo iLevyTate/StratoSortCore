@@ -167,15 +167,32 @@ function registerAnalysisHistoryIpc({ ipcMain, IPC_CHANNELS, logger, getServiceI
           }
 
           if (format === 'csv') {
-            const headers = ['fileName', 'originalPath', 'category', 'confidence', 'timestamp'];
+            // FIX NEW-10: Include keywords and subject in CSV export
+            const headers = [
+              'fileName',
+              'originalPath',
+              'category',
+              'confidence',
+              'keywords',
+              'subject',
+              'timestamp'
+            ];
             const lines = [headers.join(',')];
 
             for (const entry of history) {
+              // Extract keywords from analysis result (could be array or comma-separated string)
+              const keywords = entry.analysis?.keywords || entry.analysis?.tags || [];
+              const keywordStr = Array.isArray(keywords)
+                ? keywords.join('; ')
+                : String(keywords || '');
+
               const row = [
                 JSON.stringify(entry.fileName || ''),
                 JSON.stringify(entry.originalPath || ''),
                 JSON.stringify(entry.analysis?.category || entry.category || ''),
                 JSON.stringify(String(entry.analysis?.confidence ?? entry.confidence ?? '')),
+                JSON.stringify(keywordStr),
+                JSON.stringify(entry.analysis?.subject || ''),
                 JSON.stringify(entry.timestamp ? new Date(entry.timestamp).toISOString() : '')
               ];
               lines.push(row.join(','));

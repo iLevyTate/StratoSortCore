@@ -48,7 +48,7 @@ async function handleCircuitBreakerRecovery(serviceName, serviceStatus, startSer
 
   const attemptCount = status.recoveryAttempts;
   const maxAttempts = 5;
-  const backoffMultiplier = Math.pow(2, attemptCount);
+  const backoffMultiplier = 2 ** attemptCount;
   const adjustedRecoveryWindow = CIRCUIT_BREAKER_RECOVERY_WINDOW * backoffMultiplier;
 
   if (now - trippedTime < adjustedRecoveryWindow) {

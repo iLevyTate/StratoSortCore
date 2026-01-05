@@ -72,7 +72,10 @@ describe('Organize IPC Handlers', () => {
       BATCH: 'organize:batch',
       PROCESS_NEW: 'organize:process-new',
       GET_STATS: 'organize:get-stats',
-      UPDATE_THRESHOLDS: 'organize:update-thresholds'
+      UPDATE_THRESHOLDS: 'organize:update-thresholds',
+      CLUSTER_BATCH: 'organize:cluster-batch',
+      IDENTIFY_OUTLIERS: 'organize:identify-outliers',
+      GET_CLUSTER_SUGGESTIONS: 'organize:get-cluster-suggestions'
     }
   };
 
@@ -106,7 +109,24 @@ describe('Organize IPC Handlers', () => {
         folderUsageStats: [],
         thresholds: { autoApprove: 0.9 }
       }),
-      updateThresholds: jest.fn()
+      updateThresholds: jest.fn(),
+      suggestionService: {
+        getClusterBatchSuggestions: jest.fn().mockResolvedValue({
+          success: true,
+          groups: [{ folder: 'Documents', files: 2 }],
+          outliers: []
+        }),
+        identifyOutliers: jest.fn().mockResolvedValue({
+          success: true,
+          outliers: [{ path: '/weird.bin' }],
+          wellClustered: [{ path: '/ok.pdf' }],
+          outlierCount: 1,
+          clusteredCount: 1
+        }),
+        getClusterBasedSuggestions: jest
+          .fn()
+          .mockResolvedValue([{ folderId: '1', clusterLabel: 'Docs', clusterSize: 10, score: 0.9 }])
+      }
     };
 
     mockIpcMain = {
@@ -151,6 +171,79 @@ describe('Organize IPC Handlers', () => {
         IPC_CHANNELS.ORGANIZE.UPDATE_THRESHOLDS,
         expect.any(Function)
       );
+      expect(mockIpcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH,
+        expect.any(Function)
+      );
+      expect(mockIpcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.ORGANIZE.IDENTIFY_OUTLIERS,
+        expect.any(Function)
+      );
+      expect(mockIpcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.ORGANIZE.GET_CLUSTER_SUGGESTIONS,
+        expect.any(Function)
+      );
+    });
+  });
+
+  describe('Cluster-based handlers', () => {
+    beforeEach(() => {
+      registerOrganizeIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        getServiceIntegration: () => ({ autoOrganizeService: mockOrganizeService }),
+        getCustomFolders: () => mockCustomFolders
+      });
+    });
+
+    test('CLUSTER_BATCH returns error when suggestionService missing', async () => {
+      mockOrganizeService.suggestionService = null;
+      const handler = handlers[IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH];
+      const res = await handler(
+        {},
+        { files: [{ path: '/a.pdf' }], smartFolders: mockCustomFolders }
+      );
+      expect(res.success).toBe(false);
+      expect(String(res.error)).toContain('Suggestion service');
+    });
+
+    test('CLUSTER_BATCH returns failed when all files invalid', async () => {
+      fs.stat.mockRejectedValue({ code: 'ENOENT' });
+      const handler = handlers[IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH];
+      const res = await handler(
+        {},
+        { files: [{ path: '/missing.pdf' }], smartFolders: mockCustomFolders }
+      );
+      expect(res.success).toBe(false);
+      expect(res.groups).toEqual([]);
+    });
+
+    test('CLUSTER_BATCH uses suggestionService.getClusterBatchSuggestions', async () => {
+      const handler = handlers[IPC_CHANNELS.ORGANIZE.CLUSTER_BATCH];
+      const res = await handler(
+        {},
+        { files: [{ path: '/a.pdf' }], smartFolders: mockCustomFolders }
+      );
+      expect(res.success).toBe(true);
+      expect(mockOrganizeService.suggestionService.getClusterBatchSuggestions).toHaveBeenCalled();
+    });
+
+    test('IDENTIFY_OUTLIERS uses suggestionService.identifyOutliers', async () => {
+      const handler = handlers[IPC_CHANNELS.ORGANIZE.IDENTIFY_OUTLIERS];
+      const res = await handler({}, { files: [{ path: '/a.pdf' }] });
+      expect(res.success).toBe(true);
+      expect(mockOrganizeService.suggestionService.identifyOutliers).toHaveBeenCalled();
+    });
+
+    test('GET_CLUSTER_SUGGESTIONS validates input and calls suggestionService', async () => {
+      const handler = handlers[IPC_CHANNELS.ORGANIZE.GET_CLUSTER_SUGGESTIONS];
+
+      const missing = await handler({}, { file: null });
+      expect(missing.success).toBe(false);
+
+      const ok = await handler({}, { file: { path: '/a.pdf' }, smartFolders: mockCustomFolders });
+      expect(ok.success).toBe(true);
+      expect(ok.clusterInfo).toMatchObject({ clusterLabel: 'Docs', clusterSize: 10 });
     });
   });
 

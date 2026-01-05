@@ -1,12 +1,14 @@
-const { getOllama, getOllamaEmbeddingModel } = require('../ollamaUtils');
 const crypto = require('crypto');
+const { getOllama, getOllamaEmbeddingModel } = require('../ollamaUtils');
 const { logger } = require('../../shared/logger');
+
 logger.setContext('FolderMatchingService');
 const EmbeddingCache = require('./EmbeddingCache');
 const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
 const { get: getConfig } = require('../../shared/config/index');
 const { buildOllamaOptions } = require('./PerformanceService');
 const { getInstance: getOllamaInstance } = require('./OllamaService');
+const { enrichFolderTextForEmbedding } = require('../analysis/semanticExtensionMap');
 
 /**
  * Embedding dimension constants for different models
@@ -212,7 +214,8 @@ class FolderMatchingService {
     this._initializing = true;
 
     // Use explicit resolve/reject handlers for proper error propagation
-    let resolveInit, rejectInit;
+    let resolveInit;
+    let rejectInit;
     this._initPromise = new Promise((resolve, reject) => {
       resolveInit = resolve;
       rejectInit = reject;
@@ -332,7 +335,9 @@ class FolderMatchingService {
 
       await this.chromaDbService.initialize();
 
-      const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
+      // Enrich folder text with semantic context for better file type matching
+      // e.g., "3D Prints - Models for my Ender 3" becomes enriched with "stl obj 3mf gcode"
+      const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
 
       const { vector, model } = await this.embedText(folderText);
       const folderId = folder.id || this.generateFolderId(folder);
@@ -435,7 +440,8 @@ class FolderMatchingService {
       const cachedPayloads = [];
 
       for (const folder of folders) {
-        const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
+        // Enrich folder text with semantic context for better file type matching
+        const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
         // FIX: Add fallback to default embedding model when none configured
         const { AI_DEFAULTS } = require('../../shared/constants');
         const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
@@ -968,7 +974,7 @@ class FolderMatchingService {
               // Calculate decayed score
               // DOI formula: parentScore * neighborScore * decay^hop
               const neighborScore = neighbor.score || 1 - (neighbor.distance || 0);
-              const decayedScore = node.score * neighborScore * Math.pow(clampedDecay, hop);
+              const decayedScore = node.score * neighborScore * clampedDecay ** hop;
 
               // Store result
               const result = {

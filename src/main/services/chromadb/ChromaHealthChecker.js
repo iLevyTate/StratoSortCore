@@ -170,7 +170,7 @@ async function isServerAvailable({ serverUrl, client = null, timeoutMs = 3000, m
 
         if (shouldRetry) {
           // Exponential backoff: 500ms, 1000ms, 2000ms
-          const delay = 500 * Math.pow(2, attempt);
+          const delay = 500 * 2 ** attempt;
           logger.debug('[HealthChecker] Heartbeat failed, retrying...:', {
             attempt: attempt + 1,
             maxRetries,

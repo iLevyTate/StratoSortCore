@@ -152,7 +152,7 @@ class StartupManager {
         );
 
         if (attempt > 0) {
-          const delayMs = Math.min(this.config.baseRetryDelay * Math.pow(2, attempt), 10000);
+          const delayMs = Math.min(this.config.baseRetryDelay * 2 ** attempt, 10000);
           logger.info(`[STARTUP] Waiting ${delayMs}ms before retry...`);
           await delay(delayMs);
         }
@@ -190,6 +190,27 @@ class StartupManager {
         let checksPerformed = 0;
 
         while (Date.now() - startTime < verifyTimeout) {
+          // FIX: Check if spawn failed early (address-in-use, process error, etc.)
+          // This prevents wasting 8-10 seconds polling when spawn already failed
+          if (startResult?.isSpawnFailed?.()) {
+            const failReason = startResult.getSpawnFailureReason?.() || 'unknown';
+            logger.warn(
+              `[STARTUP] ${serviceName} spawn failed (${failReason}), checking for existing instance`
+            );
+
+            // Give existing instance one more chance to respond
+            await delay(500);
+            isRunning = await checkFunc();
+            if (isRunning) {
+              logger.info(`[STARTUP] ${serviceName} spawn failed but existing instance found`);
+              this.serviceStatus[serviceName].status = 'running';
+              this.serviceStatus[serviceName].health = 'healthy';
+              return { success: true, alreadyRunning: true, spawnFailed: true };
+            }
+
+            throw new Error(`${serviceName} spawn failed: ${failReason}`);
+          }
+
           isRunning = await checkFunc();
           if (isRunning) {
             const elapsedTime = Date.now() - startTime;

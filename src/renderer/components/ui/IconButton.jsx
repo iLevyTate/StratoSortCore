@@ -10,7 +10,7 @@ import PropTypes from 'prop-types';
  * @param {string} variant - The button variant (default, primary, secondary, ghost)
  * @param {string} className - Additional CSS classes
  */
-const IconButton = ({ icon, size = 'md', variant = 'default', className = '', ...props }) => {
+function IconButton({ icon, size = 'md', variant = 'default', className = '', ...props }) {
   const sizeClasses = {
     sm: 'h-8 w-8 text-sm',
     md: 'h-10 w-10 text-base',
@@ -42,7 +42,7 @@ const IconButton = ({ icon, size = 'md', variant = 'default', className = '', ..
       {icon}
     </button>
   );
-};
+}
 
 IconButton.propTypes = {
   icon: PropTypes.node.isRequired,

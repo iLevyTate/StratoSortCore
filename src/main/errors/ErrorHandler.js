@@ -14,6 +14,7 @@ const {
   isPermissionError,
   isNetworkError
 } = require('../../shared/errorClassifier');
+
 logger.setContext('ErrorHandler');
 
 /**

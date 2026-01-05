@@ -58,10 +58,10 @@
     "setup:chromadb": "node scripts/setup-chromadb.js --auto",
     "setup:chromadb:check": "node scripts/setup-chromadb.js --check",
     "setup:deps": "node scripts/setup-ollama.js --auto && node scripts/setup-chromadb.js --auto",
-    "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx",
-    "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx --fix",
-    "format": "prettier --write \"src/**/*.{js,jsx}\" \"test/**/*.js\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
-    "format:check": "prettier --check \"src/**/*.{js,jsx}\" \"test/**/*.js\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
+    "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\" \"test/**/*.{js,ts}\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\" \"test/**/*.{js,ts}\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
     "prepare": "husky install",
     "package": "rimraf dist && npm run build && electron-builder build --publish never",
     "start": "npm run build:dev && cross-env NODE_ENV=development electron . --enable-logging",
@@ -186,7 +186,7 @@
     "electron-builder": "^26.0.12",
     "electron-debug": "^4.1.0",
     "electron-devtools-installer": "^4.0.0",
-    "eslint": "^9.39.2",
+    "eslint": "^8.57.1",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-config-erb": "^4.1.0-0",
     "eslint-import-resolver-typescript": "^4.4.4",
@@ -242,13 +242,43 @@
     "zod": "^4.3.4"
   },
   "lint-staged": {
-    "*.{js,jsx}": [
+    "*.{js,jsx,ts,tsx}": [
       "eslint --cache --fix",
       "prettier --write"
     ],
     "*.{json,md,yml,yaml,css,scss}": [
       "prettier --write"
     ]
+  },
+  "eslintConfig": {
+    "extends": "erb",
+    "parserOptions": {
+      "ecmaVersion": 2020,
+      "sourceType": "module",
+      "project": "./tsconfig.json",
+      "tsconfigRootDir": "./",
+      "createDefaultProgram": true
+    },
+    "settings": {
+      "import/resolver": {
+        "node": {},
+        "webpack": {
+          "config": "./webpack.config.js"
+        },
+        "typescript": {}
+      },
+      "import/parsers": {
+        "@typescript-eslint/parser": [
+          ".ts",
+          ".tsx"
+        ]
+      }
+    },
+    "rules": {
+      "import/no-extraneous-dependencies": "off",
+      "import/no-unresolved": "error",
+      "react/react-in-jsx-scope": "off"
+    }
   },
   "collective": {
     "url": "https://opencollective.com/electron-react-boilerplate-594"

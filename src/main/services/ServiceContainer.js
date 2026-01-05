@@ -25,6 +25,7 @@
  */
 
 const { logger } = require('../../shared/logger');
+
 logger.setContext('ServiceContainer');
 
 /**
@@ -411,7 +412,7 @@ class ServiceContainer {
       if (registration.lifetime !== ServiceLifetime.SINGLETON) return;
       if (registration.instance === null) return;
 
-      const instance = registration.instance;
+      const { instance } = registration;
       shutdownComplete.add(name);
 
       try {
@@ -518,7 +519,13 @@ const ServiceIds = {
 
   // New cached services
   ANALYSIS_CACHE: 'analysisCache',
-  FILE_ACCESS_POLICY: 'fileAccessPolicy'
+  FILE_ACCESS_POLICY: 'fileAccessPolicy',
+
+  // Watcher services
+  SMART_FOLDER_WATCHER: 'smartFolderWatcher',
+
+  // Notification service
+  NOTIFICATION_SERVICE: 'notificationService'
 };
 
 /**
@@ -529,7 +536,9 @@ const ServiceIds = {
  * @type {string[]}
  */
 const SHUTDOWN_ORDER = [
-  // First: High-level services that use other services
+  // First: Watcher services (must stop before other services)
+  ServiceIds.SMART_FOLDER_WATCHER,
+  // High-level services that use other services
   ServiceIds.AUTO_ORGANIZE,
   ServiceIds.ORGANIZATION_SUGGESTION,
   ServiceIds.CLUSTERING, // FIX: HIGH - Added to shutdown order (was missing, causing improper cleanup)

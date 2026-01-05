@@ -10,7 +10,7 @@ import PropTypes from 'prop-types';
  * @param {boolean} animated - Whether to show pulse animation
  * @param {string} className - Additional CSS classes
  */
-const StatusBadge = ({ variant = 'info', children, animated = false, className = '' }) => {
+function StatusBadge({ variant = 'info', children, animated = false, className = '' }) {
   const variantClasses = {
     success: 'bg-stratosort-success/10 text-stratosort-success border-stratosort-success/50',
     warning: 'bg-stratosort-warning/10 text-stratosort-warning border-stratosort-warning/50',
@@ -31,7 +31,7 @@ const StatusBadge = ({ variant = 'info', children, animated = false, className =
       {children}
     </div>
   );
-};
+}
 
 StatusBadge.propTypes = {
   variant: PropTypes.oneOf(['success', 'warning', 'error', 'info']),

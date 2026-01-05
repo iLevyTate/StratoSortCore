@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-'use strict';
 
 const path = require('path');
 const fs = require('fs');
-const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 const chalk = require('chalk');
+const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 
 try {
   // eslint-disable-next-line global-require

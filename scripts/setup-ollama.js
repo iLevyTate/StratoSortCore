@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-'use strict';
 
 const { spawn } = require('child_process');
-const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const {
   isOllamaInstalled,
   isOllamaRunning,
   getInstalledModels
 } = require('../src/main/utils/ollamaDetection');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 
 // Simple color output without external dependencies
 const colors = {
@@ -174,7 +173,7 @@ async function pullModel(modelName) {
     });
 
     pullProcess.on('close', (code) => {
-      process.stdout.write('\r' + ' '.repeat(80) + '\r'); // Clear line
+      process.stdout.write(`\r${' '.repeat(80)}\r`); // Clear line
       if (code === 0) {
         console.log(chalk.green(`✓ Successfully pulled ${modelName}`));
         resolve(true);
@@ -372,7 +371,8 @@ ${chalk.cyan('Windows Installation:')}
   Or use winget:
   ${chalk.gray('winget install ollama')}
 `;
-  } else if (platform === 'darwin') {
+  }
+  if (platform === 'darwin') {
     return `
 ${chalk.cyan('macOS Installation:')}
   
@@ -385,8 +385,8 @@ ${chalk.cyan('macOS Installation:')}
   Or use Homebrew:
   ${chalk.gray('brew install ollama')}
 `;
-  } else {
-    return `
+  }
+  return `
 ${chalk.cyan('Linux Installation:')}
   
   Run this command:
@@ -394,7 +394,6 @@ ${chalk.cyan('Linux Installation:')}
   
   Or download from: ${chalk.blue('https://ollama.com/download/linux')}
 `;
-  }
 }
 
 // Main setup flow

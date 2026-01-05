@@ -152,24 +152,31 @@ class IpcServiceContext {
   get core() {
     return this._core;
   }
+
   get electron() {
     return this._electron;
   }
+
   get folders() {
     return this._folders;
   }
+
   get analysis() {
     return this._analysis;
   }
+
   get ollama() {
     return this._ollama;
   }
+
   get settings() {
     return this._settings;
   }
+
   get systemAnalytics() {
     return this._systemAnalytics;
   }
+
   get getServiceIntegration() {
     return this._serviceIntegration;
   }

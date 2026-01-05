@@ -172,13 +172,13 @@ function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow 
           }
           // Return startup error info so UI can display appropriate message
           return startupError ? { ...result, startupError } : result;
-        } else {
-          sendProgress({
-            message: `ChromaDB install failed: ${result.error}`,
-            dependency: 'chromadb',
-            stage: 'error'
-          });
         }
+        sendProgress({
+          message: `ChromaDB install failed: ${result.error}`,
+          dependency: 'chromadb',
+          stage: 'error'
+        });
+
         return result;
       }
     })

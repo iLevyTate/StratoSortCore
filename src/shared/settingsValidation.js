@@ -75,6 +75,34 @@ const VALIDATION_RULES = {
     max: 1,
     required: false
   },
+  namingConvention: {
+    type: 'string',
+    enum: [
+      'subject-date',
+      'date-subject',
+      'project-subject-date',
+      'category-subject',
+      'keep-original'
+    ],
+    required: false
+  },
+  dateFormat: {
+    type: 'string',
+    maxLength: 20,
+    required: false
+  },
+  caseConvention: {
+    type: 'string',
+    enum: ['kebab-case', 'snake_case', 'camelCase', 'PascalCase', 'lowercase', 'UPPERCASE'],
+    required: false
+  },
+  separator: {
+    type: 'string',
+    maxLength: 5,
+    required: false,
+    // Reject unsafe path characters
+    pattern: /^[^/\\:*?"<>|]+$/
+  },
   ollamaHost: {
     type: 'string',
     // Uses shared URL_PATTERN - allows URLs with or without protocol
@@ -224,6 +252,26 @@ const VALIDATION_RULES = {
     required: false
   },
   telemetryEnabled: {
+    type: 'boolean',
+    required: false
+  },
+  // FIX Issue-1: Add smartFolderWatchEnabled validation rule
+  // This was missing, causing the setting to be treated as "unknown"
+  smartFolderWatchEnabled: {
+    type: 'boolean',
+    required: false
+  },
+  // Notification settings
+  notificationMode: {
+    type: 'string',
+    enum: ['both', 'ui', 'tray', 'none'],
+    required: false
+  },
+  notifyOnAutoAnalysis: {
+    type: 'boolean',
+    required: false
+  },
+  notifyOnLowConfidence: {
     type: 'boolean',
     required: false
   }
@@ -390,6 +438,16 @@ function sanitizeSettings(settings) {
       s = extractBaseUrl(s);
 
       normalizedValue = s;
+    }
+
+    // Normalize confidence threshold to a finite number in [0, 1]
+    if (key === 'confidenceThreshold') {
+      const num = Number(normalizedValue);
+      if (Number.isFinite(num)) {
+        normalizedValue = Math.min(1, Math.max(0, num));
+      } else {
+        normalizedValue = DEFAULT_SETTINGS.confidenceThreshold;
+      }
     }
 
     // Validate and sanitize

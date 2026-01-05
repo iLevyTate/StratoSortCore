@@ -7,7 +7,15 @@
  * @module analysisHistory/queries
  */
 
+const path = require('path');
 const { maintainCacheSize } = require('./cacheManager');
+
+// Normalize a file path for lookups (normalize separators, lower-case on Windows)
+function normalizePathForLookup(filePath) {
+  if (!filePath) return filePath;
+  const normalized = path.normalize(filePath);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
 
 /**
  * Sort entries by various fields
@@ -49,8 +57,41 @@ function sortEntries(entries, sortBy, sortOrder) {
  * @returns {Object|null} Analysis entry or null
  */
 function getAnalysisByPath(analysisHistory, analysisIndex, filePath) {
-  const entryId = analysisIndex.pathLookup[filePath];
-  return entryId ? analysisHistory.entries[entryId] : null;
+  if (!filePath) return null;
+
+  const normalized = normalizePathForLookup(filePath);
+
+  // Fast paths: exact key, then normalized key (for new indexes)
+  let entryId =
+    analysisIndex.pathLookup[filePath] ??
+    (normalized ? analysisIndex.pathLookup[normalized] : undefined);
+
+  // Backfill for legacy indexes that only stored the original-cased path on Windows
+  if (!entryId && normalized && process.platform === 'win32') {
+    for (const [storedPath, id] of Object.entries(analysisIndex.pathLookup)) {
+      if (normalizePathForLookup(storedPath) === normalized) {
+        entryId = id;
+        // Cache the normalized key to avoid future scans
+        analysisIndex.pathLookup[normalized] = id;
+        break;
+      }
+    }
+  }
+
+  return entryId ? analysisHistory.entries[entryId] || null : null;
+}
+
+/**
+ * Get analysis by file hash (size + mtime + path), used as a fallback when paths change
+ * @param {Object} analysisHistory - Analysis history data
+ * @param {Object} analysisIndex - Analysis index
+ * @param {string} fileHash - Hash key
+ * @returns {Object|null} Analysis entry or null
+ */
+function getAnalysisByHash(analysisHistory, analysisIndex, fileHash) {
+  if (!fileHash) return null;
+  const entryId = analysisIndex.fileHashes[fileHash];
+  return entryId ? analysisHistory.entries[entryId] || null : null;
 }
 
 /**
@@ -288,6 +329,7 @@ function getTags(analysisIndex) {
 module.exports = {
   sortEntries,
   getAnalysisByPath,
+  getAnalysisByHash,
   getAnalysisByCategory,
   getAnalysisByTag,
   getRecentAnalysis,

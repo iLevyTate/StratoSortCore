@@ -2,6 +2,7 @@ const { BrowserWindow, shell, app } = require('electron');
 const path = require('path');
 const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+
 logger.setContext('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
 const { isDevelopment, getEnvBool, SERVICE_URLS } = require('../../shared/configDefaults');
@@ -60,28 +61,33 @@ function createMainWindow() {
     defaultHeight: 900
   });
 
+  logger.debug('Window state loaded', {
+    width: mainWindowState.width,
+    height: mainWindowState.height,
+    x: mainWindowState.x,
+    y: mainWindowState.y,
+    isMaximized: mainWindowState.isMaximized,
+    isFullScreen: mainWindowState.isFullScreen
+  });
+
   // FIX: Check if saved bounds are near-maximized and reset to defaults (Issue 3.2)
   // This prevents the maximize button from only changing size by ~1px
-  // Improved threshold from 50px to 100px for better detection on HiDPI displays
+  // Improved threshold: Only reset if VERY close to maximized (within 20px) to avoid
+  // resetting users who intentionally want large windows.
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
-  // Use a larger threshold (100px) and also check if the window size is very close to work area
-  // This handles cases where the saved state is 1-2px smaller than maximized
+  const savedIsMaximized = Boolean(mainWindowState.isMaximized);
+  const savedIsFullScreen = Boolean(mainWindowState.isFullScreen);
+
+  // Use a tight threshold (20px) to avoid false positives
   const widthDiff = screenWidth - mainWindowState.width;
   const heightDiff = screenHeight - mainWindowState.height;
-  const isNearMaximized =
-    widthDiff >= 0 && widthDiff <= 100 && heightDiff >= 0 && heightDiff <= 100;
+  const isNearMaximized = widthDiff >= 0 && widthDiff <= 20 && heightDiff >= 0 && heightDiff <= 20;
 
-  // Also check if the window is positioned at origin (0,0) or near it, which suggests maximized state
-  const isAtOrigin =
-    mainWindowState.x !== undefined &&
-    mainWindowState.x <= 10 &&
-    mainWindowState.y !== undefined &&
-    mainWindowState.y <= 10;
-  const shouldResetToDefault =
-    isNearMaximized || (isAtOrigin && widthDiff <= 150 && heightDiff <= 150);
+  // Only reset if we are essentially maximized but the state says we aren't
+  const shouldResetToDefault = !savedIsMaximized && !savedIsFullScreen && isNearMaximized;
 
   const windowWidth = shouldResetToDefault ? 1400 : mainWindowState.width;
   const windowHeight = shouldResetToDefault ? 900 : mainWindowState.height;
@@ -89,12 +95,15 @@ function createMainWindow() {
   const windowY = shouldResetToDefault ? undefined : mainWindowState.y;
 
   if (shouldResetToDefault) {
-    logger.debug('Window state near-maximized, resetting to defaults', {
-      savedWidth: mainWindowState.width,
-      savedHeight: mainWindowState.height,
-      screenWidth,
-      screenHeight
-    });
+    logger.debug(
+      'Window state near-maximized but not maximized, resetting to defaults to fix maximize behavior',
+      {
+        savedWidth: mainWindowState.width,
+        savedHeight: mainWindowState.height,
+        screenWidth,
+        screenHeight
+      }
+    );
   }
 
   const win = new BrowserWindow({
@@ -105,7 +114,7 @@ function createMainWindow() {
     minWidth: 800,
     minHeight: 600,
     // Frameless chrome with platform-sensitive styling
-    frame: isMac ? true : false,
+    frame: !!isMac,
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     ...(isMac ? { trafficLightPosition: { x: 16, y: 16 } } : {}),
     backgroundColor: '#f8fafc', // Align with glass morphism surface-muted tone
@@ -141,6 +150,13 @@ function createMainWindow() {
   // Manage window state with cleanup tracking
   mainWindowState.manage(win);
 
+  // Restore saved window states so user sizing persists between runs
+  if (savedIsFullScreen) {
+    win.setFullScreen(true);
+  } else if (savedIsMaximized) {
+    win.maximize();
+  }
+
   // Add cleanup for window state keeper on window close
   win.once('closed', () => {
     try {
@@ -164,8 +180,6 @@ function createMainWindow() {
           win.loadFile(path.join(getAppRootPath(), 'src', 'renderer', 'index.html'));
         });
       });
-      // Auto-open DevTools in a detached window during development
-      win.webContents.openDevTools({ mode: 'detach' });
     } else {
       const distPath = getRendererIndexPath();
       win.loadFile(distPath).catch((error) => {
@@ -247,6 +261,12 @@ function createMainWindow() {
               isFocused: win.isFocused(),
               isMinimized: win.isMinimized()
             });
+
+            // Auto-open DevTools in development mode or when forced via env var
+            // Opened after window is ready to ensure detached window displays properly
+            if (isDev || getEnvBool('FORCE_DEV_TOOLS')) {
+              win.webContents.openDevTools({ mode: 'detach' });
+            }
           }
         }, 50);
       }

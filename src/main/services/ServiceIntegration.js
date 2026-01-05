@@ -5,8 +5,11 @@ const FolderMatchingService = require('./FolderMatchingService');
 const OrganizationSuggestionService = require('./organization');
 const AutoOrganizeService = require('./autoOrganize');
 const EmbeddingCache = require('./EmbeddingCache');
+const SmartFolderWatcher = require('./SmartFolderWatcher');
+const NotificationService = require('./NotificationService');
 const { container, ServiceIds, SHUTDOWN_ORDER } = require('./ServiceContainer');
 const { logger } = require('../../shared/logger');
+
 logger.setContext('ServiceIntegration');
 
 /**
@@ -57,6 +60,7 @@ class ServiceIntegration {
     this.folderMatchingService = null;
     this.suggestionService = null;
     this.autoOrganizeService = null;
+    this.smartFolderWatcher = null;
     this.initialized = false;
 
     // FIX: Add initialization mutex to prevent race conditions
@@ -141,7 +145,7 @@ class ServiceIntegration {
     // FIX: Use startup result to skip redundant ChromaDB availability check (saves 2-4s)
     // StartupManager already verified ChromaDB is running, so we don't need to recheck
     let isChromaReady = false;
-    const startupResult = options.startupResult;
+    const { startupResult } = options;
 
     if (startupResult?.services?.chromadb?.success) {
       // Trust the startup result - ChromaDB was already verified running
@@ -407,6 +411,41 @@ class ServiceIntegration {
       registerFileAccessPolicy(container, ServiceIds.FILE_ACCESS_POLICY);
     }
 
+    // Register NotificationService (used by watchers for user feedback)
+    if (!container.has(ServiceIds.NOTIFICATION_SERVICE)) {
+      container.registerSingleton(ServiceIds.NOTIFICATION_SERVICE, (c) => {
+        const settingsService = c.resolve(ServiceIds.SETTINGS);
+        return new NotificationService({ settingsService });
+      });
+    }
+
+    // Register SmartFolderWatcher (depends on multiple services)
+    // This watcher auto-analyzes files when they are added to or modified in smart folders
+    if (!container.has(ServiceIds.SMART_FOLDER_WATCHER)) {
+      container.registerSingleton(ServiceIds.SMART_FOLDER_WATCHER, (c) => {
+        // Get required dependencies
+        const analysisHistoryService = c.resolve(ServiceIds.ANALYSIS_HISTORY);
+        const settingsService = c.resolve(ServiceIds.SETTINGS);
+        const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
+        // FIX: Add folderMatcher for auto-embedding analyzed files into ChromaDB
+        const folderMatcher = c.resolve(ServiceIds.FOLDER_MATCHING);
+        const notificationService = c.resolve(ServiceIds.NOTIFICATION_SERVICE);
+
+        // Get analysis functions - these are passed in during setup
+        // They will be set via setAnalysisFunctions after service creation
+        return new SmartFolderWatcher({
+          getSmartFolders: () => [], // Will be set during app init
+          analysisHistoryService,
+          analyzeDocumentFile: null, // Will be set during app init
+          analyzeImageFile: null, // Will be set during app init
+          settingsService,
+          chromaDbService,
+          folderMatcher, // FIX: Pass folderMatcher for immediate auto-embedding
+          notificationService // For user feedback on file analysis
+        });
+      });
+    }
+
     // Register DependencyManagerService
     if (!container.has(ServiceIds.DEPENDENCY_MANAGER)) {
       const {
@@ -473,6 +512,56 @@ class ServiceIntegration {
    */
   hasService(serviceId) {
     return container.has(serviceId);
+  }
+
+  /**
+   * Configure the SmartFolderWatcher with required dependencies
+   * This must be called after the main process has set up analysis functions
+   *
+   * @param {Object} config - Configuration object
+   * @param {Function} config.getSmartFolders - Function to get current smart folders
+   * @param {Function} config.analyzeDocumentFile - Function to analyze documents
+   * @param {Function} config.analyzeImageFile - Function to analyze images
+   */
+  configureSmartFolderWatcher({ getSmartFolders, analyzeDocumentFile, analyzeImageFile }) {
+    try {
+      this.smartFolderWatcher = container.resolve(ServiceIds.SMART_FOLDER_WATCHER);
+
+      if (this.smartFolderWatcher) {
+        // Update the watcher's dependencies
+        this.smartFolderWatcher.getSmartFolders = getSmartFolders;
+        this.smartFolderWatcher.analyzeDocumentFile = analyzeDocumentFile;
+        this.smartFolderWatcher.analyzeImageFile = analyzeImageFile;
+
+        logger.info('[ServiceIntegration] SmartFolderWatcher configured');
+
+        // Auto-start if enabled in settings (async, don't block)
+        this._autoStartSmartFolderWatcher();
+      }
+    } catch (error) {
+      logger.warn('[ServiceIntegration] Failed to configure SmartFolderWatcher:', error.message);
+    }
+  }
+
+  /**
+   * Auto-start the SmartFolderWatcher if enabled in settings
+   * @private
+   */
+  async _autoStartSmartFolderWatcher() {
+    if (!this.smartFolderWatcher) return;
+
+    try {
+      const settings = container.resolve(ServiceIds.SETTINGS);
+      if (settings) {
+        const config = await settings.load();
+        if (config.smartFolderWatchEnabled) {
+          logger.info('[ServiceIntegration] Auto-starting SmartFolderWatcher...');
+          await this.smartFolderWatcher.start();
+        }
+      }
+    } catch (error) {
+      logger.warn('[ServiceIntegration] Error auto-starting SmartFolderWatcher:', error.message);
+    }
   }
 }
 

@@ -133,7 +133,7 @@ function createFailedItemHandler(config) {
 
     for (const [id, data] of failedItems) {
       // Exponential backoff per item: 10s, 20s, 40s
-      const backoffMs = RETRY.BACKOFF_BASE_MS * 2 * Math.pow(2, data.retryCount - 1);
+      const backoffMs = RETRY.BACKOFF_BASE_MS * 2 * 2 ** (data.retryCount - 1);
 
       if (now - data.lastAttempt >= backoffMs) {
         itemsToRetry.push(data.item);

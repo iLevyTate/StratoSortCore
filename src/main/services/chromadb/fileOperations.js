@@ -118,6 +118,12 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
       const metadatas = [];
       const documents = [];
 
+      // FIX: Track seen IDs to prevent duplicate ID error from ChromaDB
+      // This can happen when SmartFolderWatcher detects the same file multiple times
+      // or when rebuild processes include duplicates
+      const seenIds = new Set();
+      let duplicateCount = 0;
+
       try {
         for (const file of files) {
           if (!file.id || !file.vector || !Array.isArray(file.vector)) {
@@ -126,6 +132,16 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
             });
             continue;
           }
+
+          // FIX: Skip duplicate IDs - ChromaDB requires unique IDs in batch
+          if (seenIds.has(file.id)) {
+            duplicateCount++;
+            logger.debug('[FileOps] Skipping duplicate file ID in batch', {
+              id: file.id
+            });
+            continue;
+          }
+          seenIds.add(file.id);
 
           // FIX: Validate vector for NaN/Infinity before including in batch
           const validation = validateEmbeddingVector(file.vector, file.id);
@@ -154,6 +170,15 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
           embeddings.push(file.vector);
           metadatas.push(sanitized);
           documents.push(sanitized.path || file.id);
+        }
+
+        // Log if duplicates were found
+        if (duplicateCount > 0) {
+          logger.info('[FileOps] Deduplicated batch before upsert', {
+            originalCount: files.length,
+            uniqueCount: ids.length,
+            duplicatesRemoved: duplicateCount
+          });
         }
 
         if (ids.length > 0) {

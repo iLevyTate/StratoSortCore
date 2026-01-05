@@ -22,8 +22,8 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
       onClose={onClose}
       title="Naming Strategy"
       size="large"
-      closeOnOverlayClick={true}
-      showCloseButton={true}
+      closeOnOverlayClick
+      showCloseButton
     >
       <div className="flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
         <p className="text-sm text-system-gray-600">

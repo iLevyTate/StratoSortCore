@@ -251,7 +251,7 @@ async function handleBeforeQuit() {
     // Uses async killProcess from platformBehavior to avoid blocking main thread
     const chromaDbProcess = lifecycleConfig.getChromaDbProcess?.();
     if (chromaDbProcess) {
-      const pid = chromaDbProcess.pid;
+      const { pid } = chromaDbProcess;
       logger.info(`[ChromaDB] Stopping ChromaDB server process (PID: ${pid})`);
 
       try {

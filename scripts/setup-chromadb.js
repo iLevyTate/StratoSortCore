@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-'use strict';
 
 /**
  * Developer helper: ensure ChromaDB (Python module) is installed.
@@ -13,9 +12,9 @@
  * - node scripts/setup-chromadb.js --check
  */
 
-const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 const http = require('http');
 const https = require('https');
+const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 
 // Simple color output without external dependencies
 const colors = {

@@ -63,6 +63,41 @@ export function NotificationProvider({ children }) {
     return typeof cleanup === 'function' ? cleanup : () => {};
   }, [showError, showWarning, showInfo]);
 
+  // Listen for notifications from watchers (SmartFolderWatcher, DownloadWatcher)
+  useEffect(() => {
+    const api = window?.electronAPI?.events;
+    if (!api || typeof api.onNotification !== 'function') return () => {};
+
+    const cleanup = api.onNotification((notification) => {
+      try {
+        const { message, variant, duration = 4000 } = notification || {};
+        if (!message) return;
+
+        // Map variant to toast function
+        switch (variant) {
+          case 'success':
+            if (typeof showSuccess === 'function') showSuccess(message, duration);
+            break;
+          case 'error':
+            if (typeof showError === 'function') showError(message, duration);
+            break;
+          case 'warning':
+            if (typeof showWarning === 'function') showWarning(message, duration);
+            break;
+          default:
+            if (typeof showInfo === 'function') showInfo(message, duration);
+        }
+      } catch (e) {
+        logger.error('Failed to display notification', {
+          error: e.message,
+          stack: e.stack
+        });
+      }
+    });
+
+    return typeof cleanup === 'function' ? cleanup : () => {};
+  }, [showSuccess, showError, showWarning, showInfo]);
+
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo(
     () => ({

@@ -66,6 +66,16 @@ jest.mock('../src/main/services/SmartFoldersLLMService', () => ({
   })
 }));
 
+// Mock customFolders reset (used by RESET_TO_DEFAULTS handler)
+jest.mock('../src/main/core/customFolders', () => ({
+  resetToDefaultFolders: jest.fn()
+}));
+
+// Mock OllamaService (used by GENERATE_DESCRIPTION handler)
+jest.mock('../src/main/services/OllamaService', () => ({
+  analyzeText: jest.fn()
+}));
+
 // Mock ipcWrappers
 jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: jest.fn((logger, handler) => handler),
@@ -101,8 +111,14 @@ describe('Smart Folders IPC Handlers', () => {
       UPDATE_CUSTOM: 'smart-folders:update-custom',
       EDIT: 'smart-folders:edit',
       DELETE: 'smart-folders:delete',
+      GENERATE_DESCRIPTION: 'smart-folders:generate-description',
       ADD: 'smart-folders:add',
-      SCAN_STRUCTURE: 'smart-folders:scan-structure'
+      SCAN_STRUCTURE: 'smart-folders:scan-structure',
+      RESET_TO_DEFAULTS: 'smart-folders:reset-to-defaults',
+      WATCHER_START: 'smart-folders:watcher-start',
+      WATCHER_STOP: 'smart-folders:watcher-stop',
+      WATCHER_STATUS: 'smart-folders:watcher-status',
+      WATCHER_SCAN: 'smart-folders:watcher-scan'
     }
   };
 
@@ -141,7 +157,8 @@ describe('Smart Folders IPC Handlers', () => {
         buildOllamaOptions: jest.fn().mockResolvedValue({}),
         getOllamaModel: jest.fn(() => 'llama3.2'),
         getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large'),
-        scanDirectory: jest.fn().mockResolvedValue([])
+        scanDirectory: jest.fn().mockResolvedValue([]),
+        getSmartFolderWatcher: jest.fn(() => null)
       });
 
       expect(mockIpcMain.handle).toHaveBeenCalledWith(
@@ -172,6 +189,248 @@ describe('Smart Folders IPC Handlers', () => {
         IPC_CHANNELS.SMART_FOLDERS.ADD,
         expect.any(Function)
       );
+      expect(mockIpcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION,
+        expect.any(Function)
+      );
+      expect(mockIpcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS,
+        expect.any(Function)
+      );
+      expect(mockIpcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.SMART_FOLDERS.WATCHER_STATUS,
+        expect.any(Function)
+      );
+    });
+  });
+
+  describe('SMART_FOLDERS.GENERATE_DESCRIPTION handler', () => {
+    test('rejects missing folder name', async () => {
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(() => 'llama3'),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION];
+      const res = await handler({}, null);
+      expect(res.success).toBe(false);
+    });
+
+    test('returns error when model not configured', async () => {
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(() => null),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION];
+      const res = await handler({}, 'Finance');
+      expect(res.success).toBe(false);
+      expect(String(res.error)).toContain('not configured');
+    });
+
+    test('returns description from OllamaService on success', async () => {
+      const OllamaService = require('../src/main/services/OllamaService');
+      OllamaService.analyzeText.mockResolvedValueOnce({
+        success: true,
+        response: 'A folder for invoices.'
+      });
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(() => 'llama3'),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.GENERATE_DESCRIPTION];
+      const res = await handler({}, 'Finance');
+      expect(res).toMatchObject({ success: true, description: 'A folder for invoices.' });
+    });
+  });
+
+  describe('SMART_FOLDERS.RESET_TO_DEFAULTS handler', () => {
+    test('sets default folders from customFolders.resetToDefaultFolders', async () => {
+      const customFolders = require('../src/main/core/customFolders');
+      customFolders.resetToDefaultFolders.mockResolvedValueOnce([
+        { id: 'd1', name: 'Documents', path: '/home/user/Documents' }
+      ]);
+
+      const setCustomFolders = jest.fn((folders) => {
+        mockCustomFolders = folders;
+      });
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders,
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.RESET_TO_DEFAULTS];
+      const res = await handler();
+      expect(res.success).toBe(true);
+      expect(setCustomFolders).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ id: 'd1' })])
+      );
+    });
+  });
+
+  describe('Smart folder watcher handlers', () => {
+    test('WATCHER_STATUS returns available=false when watcher missing', async () => {
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_STATUS];
+      const res = await handler();
+      expect(res.success).toBe(true);
+      expect(res.status.available).toBe(false);
+    });
+
+    test('WATCHER_START/STOP/SCAN return errors when watcher missing', async () => {
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      expect((await handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_START]()).success).toBe(false);
+      expect((await handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_STOP]()).success).toBe(false);
+      expect((await handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_SCAN]()).success).toBe(false);
+    });
+
+    test('WATCHER_START includes start failure message and status', async () => {
+      const mockWatcher = {
+        start: jest.fn(async () => false),
+        stop: jest.fn(),
+        scanForUnanalyzedFiles: jest.fn(),
+        getStatus: jest.fn(() => ({ isRunning: false, lastStartError: 'No folders configured' }))
+      };
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => mockWatcher)
+      });
+
+      const res = await handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_START]();
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('No folders configured');
+      expect(res.status).toBeDefined();
+    });
+
+    test('WATCHER_SCAN requires watcher to be running', async () => {
+      const mockWatcher = {
+        isRunning: false,
+        start: jest.fn(),
+        stop: jest.fn(),
+        getStatus: jest.fn(() => ({ isRunning: false })),
+        scanForUnanalyzedFiles: jest.fn()
+      };
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => mockWatcher)
+      });
+
+      const res = await handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_SCAN]();
+      expect(res.success).toBe(false);
+      expect(String(res.error)).toContain('not running');
+    });
+
+    test('WATCHER_SCAN returns scan summary when running', async () => {
+      const mockWatcher = {
+        isRunning: true,
+        start: jest.fn(),
+        stop: jest.fn(),
+        getStatus: jest.fn(() => ({ isRunning: true })),
+        scanForUnanalyzedFiles: jest.fn(async () => ({ scanned: 10, queued: 3 }))
+      };
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => mockWatcher)
+      });
+
+      const res = await handlers[IPC_CHANNELS.SMART_FOLDERS.WATCHER_SCAN]();
+      expect(res.success).toBe(true);
+      expect(res.message).toContain('Scanned 10');
     });
   });
 
@@ -597,18 +856,19 @@ describe('Smart Folders IPC Handlers', () => {
       expect(result.directoryRemoved).toBe(false); // Non-empty
     });
 
-    test('removes empty directory on delete', async () => {
+    test('does not remove physical directory on delete (preserves files)', async () => {
+      // UI promises: "This will not delete the physical directory or its files."
+      // So we should NOT call rmdir even for empty directories
       fs.stat.mockResolvedValue({ isDirectory: () => true });
       fs.readdir.mockResolvedValue([]); // Empty directory
-      fs.rmdir.mockResolvedValue(undefined);
 
       const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.DELETE];
 
       const result = await handler({}, '1');
 
       expect(result.success).toBe(true);
-      expect(result.directoryRemoved).toBe(true);
-      expect(fs.rmdir).toHaveBeenCalled();
+      expect(result.directoryRemoved).toBe(false);
+      expect(fs.rmdir).not.toHaveBeenCalled();
     });
   });
 
@@ -711,6 +971,339 @@ describe('Smart Folders IPC Handlers', () => {
 
       expect(result.success).toBe(true);
       expect(result.files).toHaveLength(2);
+    });
+  });
+
+  describe('SMART_FOLDERS.UPDATE_CUSTOM handler', () => {
+    test('rejects empty array and missing Uncategorized', async () => {
+      let folders = [{ id: '1', name: 'Work', path: '/home/user/Documents/Work' }];
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => folders,
+        setCustomFolders: jest.fn((next) => {
+          folders = next;
+        }),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.UPDATE_CUSTOM];
+
+      const emptyRes = await handler({}, []);
+      expect(emptyRes.success).toBe(false);
+
+      const noUncat = await handler({}, folders);
+      expect(noUncat.success).toBe(false);
+      expect(String(noUncat.error)).toContain('Uncategorized');
+    });
+
+    test('creates missing directory on ENOENT and saves', async () => {
+      const saveCustomFolders = jest.fn().mockResolvedValue(undefined);
+      const setCustomFolders = jest.fn((next) => {
+        mockCustomFolders = next;
+      });
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders,
+        saveCustomFolders,
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.UPDATE_CUSTOM];
+
+      fs.stat
+        .mockRejectedValueOnce({ code: 'ENOENT' }) // folder path missing
+        .mockResolvedValue({ isDirectory: () => true }); // later calls ok
+
+      const updated = [
+        {
+          id: 'u',
+          name: 'Uncategorized',
+          isDefault: true,
+          path: '/home/user/Documents/Uncategorized'
+        },
+        { id: 'w', name: 'Work', path: '/home/user/Documents/Work' }
+      ];
+
+      const res = await handler({}, updated);
+      expect(res.success).toBe(true);
+      expect(fs.mkdir).toHaveBeenCalledWith('/home/user/Documents/Uncategorized', {
+        recursive: true
+      });
+      expect(saveCustomFolders).toHaveBeenCalled();
+    });
+  });
+
+  describe('SMART_FOLDERS.EDIT handler (path + rename)', () => {
+    test('creates missing parent directory and renames directory when path changes', async () => {
+      mockCustomFolders = [
+        { id: '1', name: 'Work', path: '/home/user/Documents/OldWork' },
+        {
+          id: 'u',
+          name: 'Uncategorized',
+          isDefault: true,
+          path: '/home/user/Documents/Uncategorized'
+        }
+      ];
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders: jest.fn((next) => {
+          mockCustomFolders = next;
+        }),
+        saveCustomFolders: jest.fn().mockResolvedValue(undefined),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      // Parent dir missing -> mkdir
+      fs.stat
+        .mockRejectedValueOnce({ code: 'ENOENT' }) // parentDir stat
+        .mockResolvedValueOnce({ isDirectory: () => true }); // oldPath is directory
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.EDIT];
+      const res = await handler({}, '1', { path: '/home/user/Documents/NewWork' });
+
+      expect(res.success).toBe(true);
+      // Path normalization differs by OS; ensure we created the parent directory for the new path.
+      expect(fs.mkdir).toHaveBeenCalledWith(expect.stringContaining('Documents'), {
+        recursive: true
+      });
+      expect(fs.rename).toHaveBeenCalledWith(
+        '/home/user/Documents/OldWork',
+        expect.stringContaining('NewWork')
+      );
+    });
+
+    test('returns RENAME_FAILED when directory rename fails', async () => {
+      mockCustomFolders = [{ id: '1', name: 'Work', path: '/home/user/Documents/OldWork' }];
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      fs.stat.mockResolvedValueOnce({ isDirectory: () => true });
+      fs.rename.mockRejectedValueOnce(new Error('rename failed'));
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.EDIT];
+      const res = await handler({}, '1', { path: '/home/user/Documents/NewWork' });
+      expect(res.success).toBe(false);
+      expect(res.errorCode).toBe('RENAME_FAILED');
+    });
+  });
+
+  describe('SMART_FOLDERS.DELETE handler (Uncategorized protection)', () => {
+    test('rejects deleting the Uncategorized default folder', async () => {
+      mockCustomFolders = [{ id: 'u', name: 'Uncategorized', isDefault: true, path: '' }];
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.DELETE];
+      const res = await handler({}, 'u');
+      expect(res.success).toBe(false);
+      expect(res.errorCode).toBe('INVALID_INPUT');
+    });
+  });
+
+  describe('SMART_FOLDERS.MATCH handler (LLM + fallback)', () => {
+    test('falls back to LLM when embeddings fail, then to keyword fallback on invalid LLM index', async () => {
+      const ollamaUtils = require('../src/main/ollamaUtils');
+      // Force embeddings path to fail, then LLM returns invalid index => keyword fallback
+      ollamaUtils.getOllama.mockImplementation(() => ({
+        embed: jest.fn().mockRejectedValue(new Error('embed failed')),
+        generate: jest
+          .fn()
+          .mockResolvedValue({ response: JSON.stringify({ index: 'abc', reason: 'x' }) })
+      }));
+
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => [],
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn().mockResolvedValue({}),
+        getOllamaModel: jest.fn(() => 'llama3'),
+        getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large'),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.MATCH];
+      const res = await handler(
+        {},
+        {
+          text: 'invoice',
+          smartFolders: [
+            { name: 'Finance', description: 'Invoices and receipts' },
+            { name: 'Projects', description: 'Work projects' }
+          ]
+        }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.method).toBe('fallback');
+    });
+  });
+
+  describe('Additional edge cases for smartFolders IPC', () => {
+    test('GET returns [] when getCustomFolders returns non-array', async () => {
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => 'not-an-array',
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.GET];
+      const res = await handler();
+      expect(res).toEqual([]);
+    });
+
+    test('UPDATE_CUSTOM returns INVALID_PATH when path exists but is not a directory', async () => {
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      fs.stat.mockResolvedValueOnce({ isDirectory: () => false });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.UPDATE_CUSTOM];
+      const res = await handler({}, [
+        {
+          id: 'u',
+          name: 'Uncategorized',
+          isDefault: true,
+          path: '/home/user/Documents/Uncategorized'
+        }
+      ]);
+      expect(res.success).toBe(false);
+      expect(res.errorCode).toBe('INVALID_PATH');
+    });
+
+    test('EDIT returns ORIGINAL_NOT_DIRECTORY when original path is not a directory', async () => {
+      mockCustomFolders = [{ id: '1', name: 'Work', path: '/home/user/Documents/OldWork' }];
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders: jest.fn(),
+        saveCustomFolders: jest.fn(),
+        buildOllamaOptions: jest.fn(),
+        getOllamaModel: jest.fn(),
+        getOllamaEmbeddingModel: jest.fn(),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      // parent ok
+      fs.stat.mockResolvedValueOnce({ isDirectory: () => true });
+      // oldPath is not a directory
+      fs.stat.mockResolvedValueOnce({ isDirectory: () => false });
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.EDIT];
+      const res = await handler({}, '1', { path: '/home/user/Documents/NewWork' });
+      expect(res.success).toBe(false);
+      expect(res.errorCode).toBe('ORIGINAL_NOT_DIRECTORY');
+    });
+
+    test('ADD uses SmartFoldersLLMService enhancement and still succeeds if enhancement fails', async () => {
+      const { enhanceSmartFolderWithLLM } = require('../src/main/services/SmartFoldersLLMService');
+      enhanceSmartFolderWithLLM.mockRejectedValueOnce(new Error('LLM down'));
+
+      mockCustomFolders = [
+        {
+          id: 'u',
+          name: 'Uncategorized',
+          isDefault: true,
+          path: '/home/user/Documents/Uncategorized'
+        }
+      ];
+
+      const saveCustomFolders = jest.fn().mockResolvedValue(undefined);
+      registerSmartFoldersIpc({
+        ipcMain: mockIpcMain,
+        IPC_CHANNELS,
+        logger: require('../src/shared/logger').logger,
+        getCustomFolders: () => mockCustomFolders,
+        setCustomFolders: jest.fn((next) => {
+          mockCustomFolders = next;
+        }),
+        saveCustomFolders,
+        buildOllamaOptions: jest.fn().mockResolvedValue({}),
+        getOllamaModel: jest.fn(() => 'llama3'),
+        getOllamaEmbeddingModel: jest.fn(() => 'mxbai-embed-large'),
+        scanDirectory: jest.fn(),
+        getSmartFolderWatcher: jest.fn(() => null)
+      });
+
+      fs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
+      fs.mkdir.mockResolvedValueOnce(undefined);
+
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.ADD];
+      const res = await handler({}, { name: 'Finance', path: '/home/user/Documents/Finance' });
+      expect(res.success).toBe(true);
+      expect(saveCustomFolders).toHaveBeenCalled();
     });
   });
 });

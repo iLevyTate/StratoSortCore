@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 const {
   SUPPORTED_TEXT_EXTENSIONS,
   SUPPORTED_DOCUMENT_EXTENSIONS,
@@ -43,7 +44,6 @@ const {
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
-const crypto = require('crypto');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 // Cache configuration constants
 const CACHE_CONFIG = {
@@ -259,13 +259,13 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
     if (!fileStats) return today;
 
     // Prefer Date-valued mtime when available
-    const mtime = fileStats.mtime;
+    const { mtime } = fileStats;
     if (mtime && typeof mtime.toISOString === 'function') {
       return mtime.toISOString().split('T')[0];
     }
 
     // Fall back to numeric mtimeMs when present
-    const mtimeMs = fileStats.mtimeMs;
+    const { mtimeMs } = fileStats;
     if (typeof mtimeMs === 'number' && Number.isFinite(mtimeMs) && mtimeMs > 0) {
       return new Date(mtimeMs).toISOString().split('T')[0];
     }

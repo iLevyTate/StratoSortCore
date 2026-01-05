@@ -189,6 +189,71 @@ describe('Settings Validation', () => {
       });
     });
 
+    describe('naming convention validation', () => {
+      test('accepts valid naming conventions', () => {
+        const validConventions = [
+          'subject-date',
+          'date-subject',
+          'project-subject-date',
+          'category-subject',
+          'keep-original'
+        ];
+        validConventions.forEach((convention) => {
+          expect(
+            validateSetting('namingConvention', convention, VALIDATION_RULES.namingConvention)
+          ).toEqual([]);
+        });
+      });
+
+      test('rejects invalid naming conventions', () => {
+        const errors = validateSetting(
+          'namingConvention',
+          'invalid-convention',
+          VALIDATION_RULES.namingConvention
+        );
+        expect(errors.length).toBeGreaterThan(0);
+      });
+
+      test('accepts valid case conventions', () => {
+        const validCases = [
+          'kebab-case',
+          'snake_case',
+          'camelCase',
+          'PascalCase',
+          'lowercase',
+          'UPPERCASE'
+        ];
+        validCases.forEach((c) => {
+          expect(validateSetting('caseConvention', c, VALIDATION_RULES.caseConvention)).toEqual([]);
+        });
+      });
+
+      test('rejects unsafe separators', () => {
+        const errors = validateSetting('separator', '/', VALIDATION_RULES.separator);
+        expect(errors.length).toBeGreaterThan(0);
+      });
+    });
+
+    describe('notification mode validation', () => {
+      test('accepts valid notification modes', () => {
+        const validModes = ['both', 'ui', 'tray', 'none'];
+        validModes.forEach((mode) => {
+          expect(
+            validateSetting('notificationMode', mode, VALIDATION_RULES.notificationMode)
+          ).toEqual([]);
+        });
+      });
+
+      test('rejects invalid notification mode', () => {
+        const errors = validateSetting(
+          'notificationMode',
+          'telepathy',
+          VALIDATION_RULES.notificationMode
+        );
+        expect(errors.length).toBeGreaterThan(0);
+      });
+    });
+
     describe('file size validation', () => {
       test('accepts valid file sizes', () => {
         expect(validateSetting('maxFileSize', 1024 * 1024, VALIDATION_RULES.maxFileSize)).toEqual(
@@ -414,6 +479,14 @@ describe('Settings Validation', () => {
       expect(result.theme).toBeUndefined();
       expect(result.maxConcurrentAnalysis).toBeUndefined();
       expect(result.ollamaHost).toBe('http://localhost:11434');
+    });
+
+    test('normalizes string confidence threshold', () => {
+      const settings = {
+        confidenceThreshold: '0.8'
+      };
+      const result = sanitizeSettings(settings);
+      expect(result.confidenceThreshold).toBe(0.8);
     });
 
     test('preserves all valid settings', () => {

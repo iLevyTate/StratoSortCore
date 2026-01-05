@@ -35,6 +35,9 @@ describe('AutoOrganizeService', () => {
           reviewThreshold: 0.5
         };
         return settings[key];
+      }),
+      load: jest.fn().mockResolvedValue({
+        confidenceThreshold: 0.75
       })
     };
 
@@ -374,6 +377,32 @@ describe('AutoOrganizeService', () => {
           confidenceThreshold: 0.8
         });
         expect(result2.needsReview).toHaveLength(1);
+      });
+
+      test('applies saved settings threshold when options omit confidence', async () => {
+        const files = [
+          {
+            name: 'file.pdf',
+            path: '/downloads/file.pdf',
+            analysis: { category: 'document' }
+          }
+        ];
+
+        mockSuggestionService.getSuggestionsForFile.mockResolvedValue({
+          success: true,
+          primary: { folder: 'Documents', path: '/base/Documents' },
+          confidence: 0.8
+        });
+
+        // Raise threshold via settings so the same confidence should go to needsReview
+        service.applySettings({ confidenceThreshold: 0.85 });
+        const needsReview = await service.organizeFiles(files, mockSmartFolders);
+        expect(needsReview.needsReview).toHaveLength(1);
+
+        // Lower threshold via settings to allow auto-organize without passing options
+        service.applySettings({ confidenceThreshold: 0.5 });
+        const organized = await service.organizeFiles(files, mockSmartFolders);
+        expect(organized.organized).toHaveLength(1);
       });
 
       test('uses custom default location', async () => {

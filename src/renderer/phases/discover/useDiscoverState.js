@@ -43,12 +43,14 @@ export function useDiscoverState() {
   const fileStates = useAppSelector((state) => state.files.fileStates);
   const namingConventionState = useAppSelector((state) => state.files.namingConvention);
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
+  // FIX H-3: Get organizedFiles to filter out already-organized files from Discover phase
+  const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
 
   // Destructure naming convention
   const namingConvention = namingConventionState.convention;
-  const dateFormat = namingConventionState.dateFormat;
-  const caseConvention = namingConventionState.caseConvention;
-  const separator = namingConventionState.separator;
+  const { dateFormat } = namingConventionState;
+  const { caseConvention } = namingConventionState;
+  const { separator } = namingConventionState;
 
   // Refs to keep track of latest state for stable callbacks
   // PERF FIX: Update refs synchronously during render instead of using 5 separate useEffect hooks.
@@ -248,6 +250,7 @@ export function useDiscoverState() {
     separator,
     namingSettings,
     currentPhase,
+    organizedFiles, // FIX H-3: Expose for filtering in Discover phase
 
     // Setters
     setSelectedFiles,

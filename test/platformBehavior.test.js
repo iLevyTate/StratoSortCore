@@ -22,6 +22,9 @@ jest.mock('../src/shared/performanceConstants', () => ({
   PROCESS: {
     KILL_COMMAND_TIMEOUT_MS: 100,
     GRACEFUL_SHUTDOWN_WAIT_MS: 100
+  },
+  TIMEOUTS: {
+    SIGKILL_VERIFY: 10
   }
 }));
 
@@ -216,6 +219,66 @@ describe('platformBehavior', () => {
 
       expect(result.success).toBe(false);
       expect(result.error.message).toBe('Command failed');
+    });
+
+    test('uses Unix signals on non-Windows (graceful SIGTERM succeeds)', async () => {
+      mockIsWindows = false;
+      jest.resetModules();
+      platformBehavior = require('../src/main/core/platformBehavior');
+
+      // Simulate process terminating during graceful wait
+      process.kill = jest.fn((pid, signal) => {
+        if (signal === 0) {
+          const err = new Error('not found');
+          err.code = 'ESRCH';
+          throw err;
+        }
+        return true;
+      });
+
+      const p = platformBehavior.killProcess(1234);
+      await jest.advanceTimersByTimeAsync(200);
+      const result = await p;
+      expect(result.success).toBe(true);
+      expect(process.kill).toHaveBeenCalledWith(1234, 'SIGTERM');
+    });
+
+    test('falls back to SIGKILL when process remains alive after SIGTERM', async () => {
+      mockIsWindows = false;
+      jest.resetModules();
+      platformBehavior = require('../src/main/core/platformBehavior');
+
+      let checkCount = 0;
+      process.kill = jest.fn((pid, signal) => {
+        if (signal === 0) {
+          checkCount += 1;
+          if (checkCount === 1) return true; // still alive after SIGTERM
+          const err = new Error('not found');
+          err.code = 'ESRCH';
+          throw err; // gone after SIGKILL
+        }
+        return true;
+      });
+
+      const p = platformBehavior.killProcess(1234);
+      await jest.advanceTimersByTimeAsync(500);
+      const result = await p;
+      expect(result.success).toBe(true);
+      expect(process.kill).toHaveBeenCalledWith(1234, 'SIGKILL');
+    });
+
+    test('returns error if process survives SIGKILL', async () => {
+      mockIsWindows = false;
+      jest.resetModules();
+      platformBehavior = require('../src/main/core/platformBehavior');
+
+      process.kill = jest.fn(() => true); // never throws ESRCH, always "alive"
+
+      const p = platformBehavior.killProcess(1234);
+      await jest.advanceTimersByTimeAsync(500);
+      const result = await p;
+      expect(result.success).toBe(false);
+      expect(result.error.message).toContain('SIGKILL');
     });
   });
 

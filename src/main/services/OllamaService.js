@@ -1,5 +1,6 @@
 const { logger } = require('../../shared/logger');
 const { createOllamaRateLimiter } = require('../../shared/RateLimiter');
+
 logger.setContext('OllamaService');
 const { Ollama } = require('ollama'); // MEDIUM PRIORITY FIX (MED-10): Import Ollama for temporary instances
 
@@ -333,7 +334,7 @@ class OllamaService {
    */
   async updateConfigWithCallbackStatus(config) {
     await this.initialize();
-    let callbackResults = { total: 0, failed: 0, failures: [] };
+    const callbackResults = { total: 0, failed: 0, failures: [] };
 
     try {
       const previousTextModel = getOllamaModel();

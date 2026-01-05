@@ -209,6 +209,48 @@ describe('SettingsService', () => {
       expect(result.settings.theme).toBe('dark');
       expect(result.backupCreated).toBe(true);
     });
+
+    test('logs validation warnings when present', async () => {
+      const { validateSettings } = require('../src/shared/settingsValidation');
+      const { logger } = require('../src/shared/logger');
+
+      validateSettings.mockReturnValueOnce({ valid: true, errors: [], warnings: ['warn-1'] });
+      await service.save({ theme: 'dark' });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[SettingsService] Validation warnings',
+        expect.objectContaining({ warnings: ['warn-1'] })
+      );
+    });
+
+    test('retries backup when createBackup returns unsuccessful result', async () => {
+      // Avoid touching SettingsBackupService internals: stub at SettingsService boundary
+      const createBackupSpy = jest
+        .spyOn(service, 'createBackup')
+        .mockResolvedValueOnce({ success: false, error: 'IO' })
+        .mockResolvedValueOnce({ success: true, path: '/tmp/backup.json' });
+
+      const result = await service.save({ theme: 'dark' });
+      expect(result.backupCreated).toBe(true);
+      expect(createBackupSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('retries save on file lock errors (EBUSY) using exponential backoff', async () => {
+      jest.useFakeTimers();
+      const { backupAndReplace } = require('../src/shared/atomicFileOperations');
+
+      backupAndReplace
+        .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'EBUSY' }))
+        .mockResolvedValueOnce({ success: true });
+
+      const savePromise = service.save({ theme: 'dark' });
+
+      // First attempt schedules a retry after 100ms
+      await jest.advanceTimersByTimeAsync(110);
+      await expect(savePromise).resolves.toMatchObject({ backupCreated: true });
+
+      jest.useRealTimers();
+    });
   });
 
   describe('invalidateCache', () => {
@@ -233,6 +275,49 @@ describe('SettingsService', () => {
       await service.reload();
 
       expect(invalidateSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('external file change + watcher helpers', () => {
+    test('_handleExternalFileChange handles deleted settings file and notifies renderer', async () => {
+      // Simulate deletion
+      mockFs.access.mockRejectedValueOnce({ code: 'ENOENT' });
+      const notifySpy = jest.spyOn(service, '_notifySettingsChanged').mockResolvedValue(undefined);
+
+      await service._handleExternalFileChange('change', 'settings.json');
+
+      expect(notifySpy).toHaveBeenCalled();
+    });
+
+    test('_notifySettingsChanged sends to windows and swallows send errors', async () => {
+      const electron = require('electron');
+      const { logger } = require('../src/shared/logger');
+
+      const badWin = {
+        isDestroyed: () => false,
+        webContents: {
+          send: jest.fn(() => {
+            throw new Error('send failed');
+          })
+        }
+      };
+
+      electron.BrowserWindow.getAllWindows.mockReturnValueOnce([badWin]);
+
+      await service._notifySettingsChanged({ theme: 'dark' });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to send settings-changed event:')
+      );
+    });
+
+    test('_restartFileWatcher stops watcher when restart limit exceeded', () => {
+      const stopSpy = jest.spyOn(service, '_stopFileWatcher');
+      // Force limit exceeded
+      service._watcherRestartCount = service._maxWatcherRestarts;
+      service._watcherRestartWindowStart = Date.now();
+
+      service._restartFileWatcher();
+      expect(stopSpy).toHaveBeenCalled();
     });
   });
 

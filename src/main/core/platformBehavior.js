@@ -61,9 +61,8 @@ async function killProcess(pid, options = {}) {
   try {
     if (isWindows) {
       return await killProcessWindows(pid);
-    } else {
-      return await killProcessUnix(pid, forceKill);
     }
+    return await killProcessUnix(pid, forceKill);
   } catch (error) {
     logger.error(`[PLATFORM] Failed to kill process ${pid}:`, error);
     return { success: false, error };
@@ -86,18 +85,18 @@ async function killProcessWindows(pid) {
   if (result.status === 0) {
     logger.info(`[PLATFORM] Process ${pid} terminated (taskkill)`);
     return { success: true };
-  } else if (result.error) {
-    return { success: false, error: result.error };
-  } else {
-    logger.warn(`[PLATFORM] Taskkill exited with code ${result.status}`);
-    if (result.stderr) {
-      logger.warn(`[PLATFORM] Taskkill stderr: ${result.stderr.trim()}`);
-    }
-    return {
-      success: false,
-      error: new Error(`taskkill exited with ${result.status}`)
-    };
   }
+  if (result.error) {
+    return { success: false, error: result.error };
+  }
+  logger.warn(`[PLATFORM] Taskkill exited with code ${result.status}`);
+  if (result.stderr) {
+    logger.warn(`[PLATFORM] Taskkill stderr: ${result.stderr.trim()}`);
+  }
+  return {
+    success: false,
+    error: new Error(`taskkill exited with ${result.status}`)
+  };
 }
 
 /**

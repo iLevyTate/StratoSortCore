@@ -154,7 +154,7 @@ async function verifyIpcHandlersRegistered() {
     }
 
     // Calculate delay with exponential backoff
-    const delay = Math.min(initialDelay * Math.pow(2, attempt), maxDelay);
+    const delay = Math.min(initialDelay * 2 ** attempt, maxDelay);
 
     // Wait before retry
     await new Promise((resolve) => setTimeout(resolve, delay));

@@ -536,7 +536,7 @@ export function useFileHandlers({
           return;
         }
 
-        let extension = file.extension;
+        let { extension } = file;
         if (!extension) {
           extension = extractExtension(fileName);
         }

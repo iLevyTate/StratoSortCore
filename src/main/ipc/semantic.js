@@ -1,3 +1,4 @@
+const path = require('path');
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const { getInstance: getFolderMatcher } = require('../services/FolderMatchingService');
 const {
@@ -5,7 +6,6 @@ const {
 } = require('../services/ParallelEmbeddingService');
 const { SearchService } = require('../services/SearchService');
 const { ClusteringService } = require('../services/ClusteringService');
-const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS, AI_DEFAULTS } = require('../../shared/constants');
 const {
   BATCH,
@@ -276,7 +276,7 @@ function registerEmbeddingsIpc({
 
           if (attempt < MAX_RETRIES) {
             // Exponential backoff with jitter
-            const delay = RETRY_DELAY_BASE * Math.pow(2, attempt - 1) + Math.random() * 1000;
+            const delay = RETRY_DELAY_BASE * 2 ** (attempt - 1) + Math.random() * 1000;
             logger.info(`[SEMANTIC] Retrying in ${Math.round(delay)}ms...`);
             await new Promise((resolve) => {
               const timeoutId = setTimeout(resolve, delay);
@@ -720,7 +720,7 @@ function registerEmbeddingsIpc({
     createChromaHandler(async (event, { fileId, topK = SEARCH.DEFAULT_TOP_K_SIMILAR }) => {
       // HIGH PRIORITY FIX: Add timeout and validation (addresses HIGH-11)
       const QUERY_TIMEOUT = TIMEOUTS.SEMANTIC_QUERY;
-      const MAX_TOP_K = LIMITS.MAX_TOP_K;
+      const { MAX_TOP_K } = LIMITS;
 
       try {
         if (!fileId) {
@@ -778,7 +778,7 @@ function registerEmbeddingsIpc({
     IPC_CHANNELS.EMBEDDINGS.SEARCH,
     createChromaHandler(
       async (event, { query, topK = SEARCH.DEFAULT_TOP_K, mode = 'hybrid', minScore } = {}) => {
-        const MAX_TOP_K = LIMITS.MAX_TOP_K;
+        const { MAX_TOP_K } = LIMITS;
 
         try {
           const cleanQuery = typeof query === 'string' ? query.trim() : '';
@@ -1182,7 +1182,7 @@ function registerEmbeddingsIpc({
         }
 
         await chromaDbService.initialize();
-        const fileCollection = chromaDbService.fileCollection;
+        const { fileCollection } = chromaDbService;
 
         if (!fileCollection) {
           return { success: false, error: 'File collection not available', metadata: {} };

@@ -5,6 +5,7 @@ import { useAppSelector } from '../store/hooks';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
 import { LazyLoadingSpinner, ModalLoadingOverlay } from './LoadingSkeleton';
 import { logger } from '../../shared/logger';
+import { PHASES } from '../../shared/constants';
 
 const WelcomePhase = lazy(() => import('../phases/WelcomePhase'));
 const SetupPhase = lazy(() => import('../phases/SetupPhase'));
@@ -12,7 +13,6 @@ const DiscoverPhase = lazy(() => import('../phases/DiscoverPhase'));
 const OrganizePhase = lazy(() => import('../phases/OrganizePhase'));
 const CompletePhase = lazy(() => import('../phases/CompletePhase'));
 const SettingsPanel = lazy(() => import('./SettingsPanel'));
-import { PHASES } from '../../shared/constants';
 
 // Optimized page transitions with GPU acceleration
 // Using simpler opacity-only transitions for smoother performance

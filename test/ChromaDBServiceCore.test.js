@@ -60,6 +60,7 @@ const mockCollection = {
   delete: jest.fn().mockResolvedValue(undefined),
   query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
   get: jest.fn().mockResolvedValue({ ids: [], metadatas: [] }),
+  peek: jest.fn().mockResolvedValue({ embeddings: [] }),
   count: jest.fn().mockResolvedValue(0)
 };
 
@@ -212,6 +213,127 @@ describe('ChromaDBServiceCore', () => {
     });
   });
 
+  describe('explicitEmbeddingsOnlyEmbeddingFunction', () => {
+    test('throws if SDK tries to auto-embed', async () => {
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      await expect(module.explicitEmbeddingsOnlyEmbeddingFunction.generate()).rejects.toThrow(
+        'embeddingFunction was invoked unexpectedly'
+      );
+      await expect(
+        module.explicitEmbeddingsOnlyEmbeddingFunction.generateForQueries()
+      ).rejects.toThrow('embeddingFunction was invoked unexpectedly');
+    });
+  });
+
+  describe('_isChromaNotFoundError', () => {
+    test('detects not-found style errors', () => {
+      expect(service._isChromaNotFoundError({ name: 'ChromaNotFoundError', message: 'x' })).toBe(
+        true
+      );
+      expect(
+        service._isChromaNotFoundError({ message: 'Requested resource could not be found' })
+      ).toBe(true);
+      expect(service._isChromaNotFoundError({ message: 'not found' })).toBe(true);
+      expect(service._isChromaNotFoundError({ message: 'other' })).toBe(false);
+    });
+  });
+
+  describe('validateEmbeddingDimension', () => {
+    test('accepts first insert into empty collection and caches dimension', async () => {
+      service.fileCollection = { peek: jest.fn().mockResolvedValue({ embeddings: [] }) };
+      const res = await service.validateEmbeddingDimension([1, 2, 3], 'files');
+      expect(res.valid).toBe(true);
+      // cached dimension
+      expect(service._collectionDimensions.files).toBe(3);
+    });
+
+    test('rejects dimension mismatch and emits event', async () => {
+      // Collection has stored embeddings of dimension 2
+      service.fileCollection = { peek: jest.fn().mockResolvedValue({ embeddings: [[0.1, 0.2]] }) };
+      const emitSpy = jest.spyOn(service, 'emit');
+      const res = await service.validateEmbeddingDimension([1, 2, 3], 'files');
+      expect(res.valid).toBe(false);
+      expect(res.error).toBe('dimension_mismatch');
+      expect(emitSpy).toHaveBeenCalledWith(
+        'dimension-mismatch',
+        expect.objectContaining({ collectionType: 'files', expectedDim: 2, actualDim: 3 })
+      );
+    });
+  });
+
+  describe('_executeWithNotFoundRecovery', () => {
+    test('reinitializes once and retries on not-found error', async () => {
+      const forceSpy = jest.spyOn(service, '_forceReinitialize').mockResolvedValue(undefined);
+      const fn = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('not found'))
+        .mockResolvedValueOnce('ok');
+
+      const res = await service._executeWithNotFoundRecovery('op', fn);
+      expect(res).toBe('ok');
+      expect(forceSpy).toHaveBeenCalled();
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    test('throws after max not-found retries', async () => {
+      jest.spyOn(service, '_forceReinitialize').mockResolvedValue(undefined);
+      const fn = jest.fn().mockRejectedValue(new Error('not found'));
+      await expect(service._executeWithNotFoundRecovery('op', fn)).rejects.toThrow('failed after');
+    });
+  });
+
+  describe('_addInflightQuery', () => {
+    test('evicts oldest inflight query when at capacity and cleans up on settle', async () => {
+      service.MAX_INFLIGHT_QUERIES = 1;
+
+      let resolveP2;
+      const p1 = new Promise(() => {}); // never settles
+      const p2 = new Promise((resolve) => {
+        resolveP2 = resolve;
+      });
+
+      service._addInflightQuery('k1', p1);
+      expect(service.inflightQueries.size).toBe(1);
+
+      // Adding second should evict k1
+      service._addInflightQuery('k2', p2);
+      expect(service.inflightQueries.has('k1')).toBe(false);
+      expect(service.inflightQueries.has('k2')).toBe(true);
+
+      resolveP2('done');
+      await p2;
+      // allow finally handler to run
+      await Promise.resolve();
+
+      expect(service.inflightQueries.has('k2')).toBe(false);
+    });
+  });
+
+  describe('_onCircuitStateChange', () => {
+    test('emits circuitStateChange and flushes offline queue on CLOSED', async () => {
+      const flushSpy = jest.spyOn(service, '_flushOfflineQueue').mockResolvedValue({
+        processed: 0,
+        failed: 0,
+        remaining: 0
+      });
+      const emitSpy = jest.spyOn(service, 'emit');
+
+      service._onCircuitStateChange({
+        previousState: 'OPEN',
+        currentState: 'CLOSED',
+        timestamp: Date.now()
+      });
+
+      // flush is async and called without await
+      await Promise.resolve();
+      expect(emitSpy).toHaveBeenCalledWith(
+        'circuitStateChange',
+        expect.objectContaining({ currentState: 'CLOSED' })
+      );
+      expect(flushSpy).toHaveBeenCalled();
+    });
+  });
+
   describe('server configuration', () => {
     test('parses CHROMA_SERVER_URL environment variable', () => {
       process.env.CHROMA_SERVER_URL = 'http://localhost:9000';
@@ -233,6 +355,31 @@ describe('ChromaDBServiceCore', () => {
 
       expect(newService.serverHost).toBe('127.0.0.1');
       expect(newService.serverPort).toBe(8000);
+    });
+
+    test('warns and emits security-warning for insecure HTTP remote host', () => {
+      delete process.env.CHROMA_SERVER_URL;
+      process.env.CHROMA_SERVER_PROTOCOL = 'http';
+      process.env.CHROMA_SERVER_HOST = 'example.com';
+      process.env.CHROMA_SERVER_PORT = '8000';
+
+      jest.resetModules();
+      // Re-require logger after resetModules so we assert against the active mock instance.
+      const { logger } = require('../src/shared/logger');
+      const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
+      const emitSpy = jest.spyOn(module.ChromaDBServiceCore.prototype, 'emit');
+      // Construct after spying so we catch constructor-time emit
+      // eslint-disable-next-line no-new
+      new module.ChromaDBServiceCore();
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('SECURITY WARNING'),
+        expect.any(Object)
+      );
+      expect(emitSpy).toHaveBeenCalledWith(
+        'security-warning',
+        expect.objectContaining({ type: 'insecure_connection', host: 'example.com' })
+      );
     });
   });
 

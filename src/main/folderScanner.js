@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../shared/logger');
 const { isPermissionError } = require('../shared/errorClassifier');
+
 logger.setContext('FolderScanner');
 
 const DEFAULT_IGNORE_PATTERNS = [

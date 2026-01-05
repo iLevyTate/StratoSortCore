@@ -277,7 +277,8 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
     if (files.length === 1) {
       const suggestion = suggestions[files[0]?.path];
       return suggestion ? normalizeConfidencePercent(suggestion.confidence) : 0;
-    } else if (batchSuggestions?.groups?.length > 0) {
+    }
+    if (batchSuggestions?.groups?.length > 0) {
       const avg =
         batchSuggestions.groups.reduce((sum, group) => sum + (group.confidence || 0), 0) /
         batchSuggestions.groups.length;
@@ -332,7 +333,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         <Card className="p-6">
           {isAnalyzing ? (
             <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-stratosort-blue mx-auto mb-4"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-stratosort-blue mx-auto mb-4" />
               <p className="text-system-gray-600">Analyzing your files...</p>
               <p className="text-sm text-system-gray-500 mt-2">
                 Finding the best organization strategy
@@ -567,7 +568,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
 
       {/* Group Customization Modal */}
       {customizingGroup && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <Card className="w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-system-gray-900">Customize Group</h3>

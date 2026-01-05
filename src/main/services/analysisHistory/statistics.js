@@ -116,7 +116,7 @@ function getStatistics(analysisHistory, analysisIndex, cache, state, statsCacheT
   const categories = Object.keys(analysisIndex.categoryIndex);
   const tags = Object.keys(analysisIndex.tagIndex);
 
-  const entryCount = cache.incrementalStats.entryCount;
+  const { entryCount } = cache.incrementalStats;
   const hasEntries = entryCount > 0;
 
   // Use incremental stats for averages

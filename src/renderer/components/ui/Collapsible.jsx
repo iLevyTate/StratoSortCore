@@ -124,7 +124,7 @@ const Collapsible = memo(function Collapsible({
           id={contentId}
           role="region"
           aria-hidden="true"
-          className={`mt-3 px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.5)] text-sm text-system-gray-500`}
+          className="mt-3 px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.5)] text-sm text-system-gray-500"
         >
           {collapsedPreview || (
             <div className="flex items-center gap-2 py-2 border-t border-border-soft/50">

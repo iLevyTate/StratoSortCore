@@ -5,6 +5,7 @@ const { app } = require('electron');
 const { logger } = require('../../shared/logger');
 const { RETRY } = require('../../shared/performanceConstants');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
+
 logger.setContext('UndoRedoService');
 
 const normalizePath = (filePath) => {

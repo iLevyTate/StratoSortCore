@@ -1,3 +1,4 @@
+const { app, dialog } = require('electron');
 const {
   withErrorLogging,
   withValidation,
@@ -6,9 +7,9 @@ const {
   canceledResponse,
   safeHandle
 } = require('./ipcWrappers');
-const { app, dialog } = require('electron');
 const { getConfigurableLimits, sanitizeSettings } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
+const { settingsSchema, z } = require('./validationSchemas');
 
 // Import centralized security configuration
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
@@ -20,13 +21,6 @@ const {
   isValidLoggingLevel,
   isValidNumericSetting
 } = require('../../shared/validationConstants');
-
-let z;
-try {
-  z = require('zod');
-} catch {
-  z = null;
-}
 
 /**
  * Apply settings to Ollama services and system configuration
@@ -144,6 +138,13 @@ function validateImportedSettings(settings, logger) {
       case 'backgroundMode':
       case 'autoUpdateCheck':
       case 'telemetryEnabled':
+      case 'smartFolderWatchEnabled':
+      case 'notifications':
+      case 'notifyOnAutoAnalysis':
+      case 'notifyOnLowConfidence':
+      case 'autoUpdateOllama':
+      case 'autoUpdateChromaDb':
+      case 'dependencyWizardShown':
         if (typeof value !== 'boolean') {
           throw new Error(`Invalid ${key}: must be boolean`);
         }
@@ -152,6 +153,76 @@ function validateImportedSettings(settings, logger) {
       case 'theme':
         if (!isValidTheme(value)) {
           throw new Error(`Invalid ${key}: must be one of ${THEME_VALUES.join(', ')}`);
+        }
+        break;
+
+      case 'notificationMode':
+        if (typeof value !== 'string' || !['both', 'ui', 'tray', 'none'].includes(value)) {
+          throw new Error(`Invalid ${key}: must be one of both, ui, tray, none`);
+        }
+        break;
+
+      case 'namingConvention':
+        if (
+          typeof value !== 'string' ||
+          ![
+            'subject-date',
+            'date-subject',
+            'project-subject-date',
+            'category-subject',
+            'keep-original'
+          ].includes(value)
+        ) {
+          throw new Error(`Invalid ${key}: must be a valid naming convention`);
+        }
+        break;
+
+      case 'caseConvention':
+        if (
+          typeof value !== 'string' ||
+          ![
+            'kebab-case',
+            'snake_case',
+            'camelCase',
+            'PascalCase',
+            'lowercase',
+            'UPPERCASE'
+          ].includes(value)
+        ) {
+          throw new Error(`Invalid ${key}: must be a valid case convention`);
+        }
+        break;
+
+      case 'dateFormat':
+        if (typeof value !== 'string' || value.length > 20) {
+          throw new Error(`Invalid ${key}: must be a string with max 20 characters`);
+        }
+        break;
+
+      case 'separator':
+        if (typeof value !== 'string' || value.length > 5 || /[/\\:*?"<>|]/.test(value)) {
+          throw new Error(
+            `Invalid ${key}: must be a safe separator character (max 5 chars, no path chars)`
+          );
+        }
+        break;
+
+      case 'confidenceThreshold':
+        if (typeof value !== 'number' || value < 0 || value > 1) {
+          throw new Error(`Invalid ${key}: must be a number between 0 and 1`);
+        }
+        break;
+
+      case 'maxConcurrentAnalysis':
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 10) {
+          throw new Error(`Invalid ${key}: must be an integer between 1 and 10`);
+        }
+        break;
+
+      case 'defaultSmartFolderLocation':
+      case 'lastBrowsedPath':
+        if (value !== null && (typeof value !== 'string' || value.length > 1000)) {
+          throw new Error(`Invalid ${key}: must be a string path (max 1000 chars) or null`);
         }
         break;
 
@@ -311,45 +382,6 @@ function registerSettingsIpc({
     })
   );
 
-  const settingsSchema = z
-    ? z
-        .object({
-          // IMPORTANT:
-          // Don't hard-fail saves on a single invalid field (e.g. ollamaHost while typing/pasting).
-          // We sanitize/normalize on the main-process side before persisting so other settings still save.
-          // Validation for "test connection" remains strict elsewhere.
-          ollamaHost: z.any().optional().nullable(),
-          textModel: z.string().nullish(),
-          visionModel: z.string().nullish(),
-          embeddingModel: z.string().nullish(),
-          autoUpdateOllama: z.boolean().nullish(),
-          autoUpdateChromaDb: z.boolean().nullish(),
-          dependencyWizardShown: z.boolean().nullish(),
-          dependencyWizardLastPromptAt: z.string().nullable().optional(),
-          dependencyWizardPromptIntervalDays: z.number().int().min(1).max(365).nullish(),
-          launchOnStartup: z.boolean().nullish(),
-          autoOrganize: z.boolean().nullish(),
-          backgroundMode: z.boolean().nullish(),
-          theme: z.string().nullish(),
-          language: z.string().nullish(),
-          loggingLevel: z.string().nullish(),
-          cacheSize: z
-            .number()
-            .int()
-            .min(NUMERIC_LIMITS.cacheSize.min)
-            .max(NUMERIC_LIMITS.cacheSize.max)
-            .nullish(),
-          maxBatchSize: z
-            .number()
-            .int()
-            .min(NUMERIC_LIMITS.maxBatchSize.min)
-            .max(NUMERIC_LIMITS.maxBatchSize.max)
-            .nullish(),
-          autoUpdateCheck: z.boolean().nullish(),
-          telemetryEnabled: z.boolean().nullish()
-        })
-        .partial()
-    : null;
   // Dependencies for save handler (captured in closure)
   const saveDeps = {
     settingsService,

@@ -457,9 +457,9 @@ export function GlobalErrorBoundary({ children, onReset, fallback }) {
   return (
     <ErrorBoundaryCore
       variant="global"
-      enableAutoReset={true}
+      enableAutoReset
       autoResetDelay={30000}
-      enableChunkRecovery={true}
+      enableChunkRecovery
       onReset={onReset}
       fallback={fallback}
     >

@@ -38,8 +38,8 @@ function PhaseErrorBoundary({ children, phaseName }) {
     <ErrorBoundaryCore
       variant="phase"
       contextName={phaseName}
-      showNavigateHome={true}
-      enableChunkRecovery={true}
+      showNavigateHome
+      enableChunkRecovery
       onNavigateHome={handleNavigateHome}
       onError={handleError}
     >

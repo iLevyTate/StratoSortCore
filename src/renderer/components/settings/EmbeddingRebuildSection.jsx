@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
-import { RefreshCw } from 'lucide-react';
 import { logger } from '../../../shared/logger';
 
 /**
@@ -21,14 +21,25 @@ function EmbeddingRebuildSection({ addNotification }) {
     setIsLoadingStats(true);
     try {
       const res = await window.electronAPI.embeddings.getStats();
+      // FIX: Better logging to diagnose embedding count issues
+      logger.debug('[EmbeddingRebuildSection] getStats response', {
+        success: res?.success,
+        files: res?.files,
+        folders: res?.folders,
+        error: res?.error
+      });
       if (res && res.success) {
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
           initialized: Boolean(res.initialized),
-          serverUrl: res.serverUrl || ''
+          serverUrl: res.serverUrl || '',
+          // FIX: Pass through needsFileEmbeddingRebuild and analysisHistory for proper display
+          needsFileEmbeddingRebuild: res.needsFileEmbeddingRebuild,
+          analysisHistory: res.analysisHistory
         });
       } else {
+        logger.warn('[EmbeddingRebuildSection] getStats returned failure', { error: res?.error });
         setStats(null);
       }
     } catch (e) {
@@ -41,6 +52,14 @@ function EmbeddingRebuildSection({ addNotification }) {
 
   useEffect(() => {
     refreshStats();
+
+    // FIX: Auto-refresh stats periodically while component is mounted
+    // This ensures the count updates after embeddings are added
+    const intervalId = setInterval(() => {
+      refreshStats();
+    }, 5000); // Refresh every 5 seconds
+
+    return () => clearInterval(intervalId);
   }, [refreshStats]);
 
   const statsLabel = useMemo(() => {

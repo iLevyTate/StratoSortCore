@@ -631,8 +631,94 @@ class SearchService {
         bm25Count: bm25Results.length
       });
 
-      // Fuse results using enhanced RRF with score normalization
-      const fusedResults = this.reciprocalRankFusion([vectorResults, bm25Results]);
+      // Normalize scores within each source so weights are comparable
+      const normalizedBm25 = this._normalizeScores(bm25Results).map((r) => ({
+        ...r,
+        bm25Score: r.score,
+        bm25RawScore: r.originalScore ?? r.score
+      }));
+      const normalizedVector = this._normalizeScores(vectorResults).map((r) => ({
+        ...r,
+        vectorScore: r.score,
+        vectorRawScore: r.originalScore ?? r.score
+      }));
+
+      // Weighted hybrid fusion (simple weighted sum of normalized scores)
+      const alpha = SEARCH.VECTOR_WEIGHT;
+      const beta = SEARCH.BM25_WEIGHT;
+      const combined = new Map();
+
+      const upsert = (entry, source) => {
+        if (!entry?.id) return;
+        const existing = combined.get(entry.id) || {
+          id: entry.id,
+          metadata: entry.metadata || {},
+          matchDetails: { sources: [] }
+        };
+
+        // Prefer vector metadata when available
+        const metadata =
+          source === 'vector'
+            ? entry.metadata || existing.metadata
+            : existing.metadata || entry.metadata || {};
+
+        // Merge matchDetails and sources
+        const mergedMatchDetails = {
+          ...existing.matchDetails,
+          ...entry.matchDetails,
+          sources: [...(existing.matchDetails.sources || []), source].filter(Boolean)
+        };
+
+        combined.set(entry.id, {
+          ...existing,
+          metadata,
+          matchDetails: mergedMatchDetails,
+          bm25Score:
+            source === 'bm25' ? (entry.bm25Score ?? existing.bm25Score) : existing.bm25Score,
+          bm25RawScore:
+            source === 'bm25'
+              ? (entry.bm25RawScore ?? existing.bm25RawScore)
+              : existing.bm25RawScore,
+          vectorScore:
+            source === 'vector'
+              ? (entry.vectorScore ?? existing.vectorScore)
+              : existing.vectorScore,
+          vectorRawScore:
+            source === 'vector'
+              ? (entry.vectorRawScore ?? existing.vectorRawScore)
+              : existing.vectorRawScore
+        });
+      };
+
+      normalizedBm25.forEach((r) => upsert(r, 'bm25'));
+      normalizedVector.forEach((r) => upsert(r, 'vector'));
+
+      const fusedResults = Array.from(combined.values())
+        .map((item) => {
+          const semantic = item.vectorScore ?? 0;
+          const keyword = item.bm25Score ?? 0;
+          const combinedScore = alpha * semantic + beta * keyword;
+
+          return {
+            id: item.id,
+            score: combinedScore,
+            metadata: item.metadata || {},
+            sources: item.matchDetails?.sources || ['hybrid'],
+            matchDetails: {
+              ...item.matchDetails,
+              hybrid: {
+                semanticScore: semantic,
+                keywordScore: keyword,
+                combinedScore,
+                semanticWeight: alpha,
+                keywordWeight: beta,
+                bm25RawScore: item.bm25RawScore,
+                vectorRawScore: item.vectorRawScore
+              }
+            }
+          };
+        })
+        .sort((a, b) => (b.score || 0) - (a.score || 0));
 
       // Apply minimum score filter to fused results
       const filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
@@ -646,7 +732,8 @@ class SearchService {
           bm25Count: bm25Results.length,
           fusedCount: fusedResults.length,
           filteredCount: filteredResults.length,
-          minScoreApplied: minScore
+          minScoreApplied: minScore,
+          weights: { vector: alpha, bm25: beta }
         }
       };
     } catch (error) {

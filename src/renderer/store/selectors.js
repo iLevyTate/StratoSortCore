@@ -116,7 +116,7 @@ export const selectFilesWithAnalysis = createSelector(
       hasChanges = true;
 
       // Ensure extension is always set
-      let extension = file.extension;
+      let { extension } = file;
       if (!extension && file.path) {
         const fileName = file.name || file.path.split(/[\\/]/).pop() || '';
         extension = fileName.includes('.') ? `.${fileName.split('.').pop().toLowerCase()}` : '';

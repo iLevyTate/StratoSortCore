@@ -1,7 +1,7 @@
+const os = require('os');
 const { getOllama, getOllamaEmbeddingModel } = require('../ollamaUtils');
 const { buildOllamaOptions } = require('./PerformanceService');
 const { logger } = require('../../shared/logger');
-const os = require('os');
 const { withOllamaRetry, isRetryableError } = require('../utils/ollamaApiRetry');
 
 logger.setContext('ParallelEmbeddingService');

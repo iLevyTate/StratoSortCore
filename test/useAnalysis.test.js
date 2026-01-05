@@ -439,5 +439,39 @@ describe('useAnalysis', () => {
       // Should reset since all files are complete
       expect(mockSetIsAnalyzing).toHaveBeenCalledWith(false);
     });
+
+    test('does NOT show "Resuming" notification for fresh analysis started by analyzeFiles', async () => {
+      // This tests the fix for the UX bug where selecting a file would show:
+      // 1. "Starting AI analysis..." (correct)
+      // 2. "Resuming analysis..." (incorrect - should NOT appear for fresh analysis)
+      const options = createMockOptions({
+        isAnalyzing: false, // Start with analysis not running
+        selectedFiles: [],
+        fileStates: {}
+      });
+
+      const { result } = renderHook(() => useAnalysis(options));
+
+      // Clear any previous notifications
+      mockAddNotification.mockClear();
+
+      // Start a fresh analysis (simulating user selecting a file)
+      await act(async () => {
+        result.current.analyzeFiles([{ path: '/fresh.pdf', name: 'fresh.pdf' }]);
+        jest.advanceTimersByTime(100);
+      });
+
+      // Should show "Starting" notification but NOT "Resuming" notification
+      const notificationCalls = mockAddNotification.mock.calls;
+      const startingNotifications = notificationCalls.filter((call) =>
+        call[0].includes('Starting AI analysis')
+      );
+      const resumingNotifications = notificationCalls.filter((call) =>
+        call[0].includes('Resuming')
+      );
+
+      expect(startingNotifications.length).toBeGreaterThan(0);
+      expect(resumingNotifications.length).toBe(0);
+    });
   });
 });

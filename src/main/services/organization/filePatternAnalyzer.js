@@ -7,6 +7,8 @@
  * @module services/organization/filePatternAnalyzer
  */
 
+const { getSemanticKeywordsForFile } = require('../../analysis/semanticExtensionMap');
+
 /**
  * Analyze patterns in a batch of files
  * @param {Array} files - Files to analyze
@@ -155,8 +157,12 @@ function generateBatchRecommendations(groups, patterns) {
 
 /**
  * Generate a summary of a file for embedding
+ * Includes semantic keywords for unsupported file types to enable intelligent folder matching.
+ * For example, a .stl file will include "3d printing model mesh" keywords to match
+ * folders with descriptions about 3D printing.
+ *
  * @param {Object} file - File object
- * @returns {string} Summary text
+ * @returns {string} Summary text enriched with semantic context
  */
 function generateFileSummary(file) {
   const parts = [
@@ -168,7 +174,18 @@ function generateFileSummary(file) {
     (file.analysis?.keywords || []).join(' ')
   ].filter(Boolean);
 
-  return parts.join(' ');
+  const baseSummary = parts.join(' ');
+
+  // Add semantic keywords for the file extension
+  // This enables intelligent matching for unsupported file types like .stl, .obj, .3mf, etc.
+  // A file like "benchy.stl" will include "3d printing model mesh" to match "3D Prints" folders
+  const semanticKeywords = getSemanticKeywordsForFile(file.extension);
+
+  if (semanticKeywords) {
+    return `${baseSummary} | ${semanticKeywords}`;
+  }
+
+  return baseSummary;
 }
 
 module.exports = {

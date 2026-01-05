@@ -57,7 +57,7 @@ async function analyzeWithRetry(filePath, attempt = 1) {
       error.message?.includes('ECONNREFUSED');
 
     if (attempt < RETRY.MAX_ATTEMPTS_MEDIUM && isTransient) {
-      const delay = RETRY.INITIAL_DELAY * Math.pow(2, attempt - 1);
+      const delay = RETRY.INITIAL_DELAY * 2 ** (attempt - 1);
       await new Promise((r) => setTimeout(r, delay));
       return analyzeWithRetry(filePath, attempt + 1);
     }
@@ -416,6 +416,13 @@ export function useAnalysis(options) {
   const analyzeFiles = useCallback(
     async (files) => {
       if (!files || files.length === 0) return;
+
+      // FIX Issue-4: Mark as "resumed" IMMEDIATELY at function entry
+      // This prevents the resume useEffect from showing "Resuming..." notification
+      // for a brand new analysis. The resume logic should only trigger when isAnalyzing
+      // was already true on component mount (e.g., from persisted state after page refresh).
+      // Moving this before the lock check ensures it's set before any async operations.
+      hasResumedRef.current = true;
 
       // Atomic lock acquisition (use refs to avoid stale closures)
       const lockAcquired = (() => {

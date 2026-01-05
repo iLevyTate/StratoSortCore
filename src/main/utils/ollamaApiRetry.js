@@ -18,6 +18,7 @@
 
 const axios = require('axios');
 const { logger } = require('../../shared/logger');
+
 logger.setContext('OllamaApiRetry');
 const { withRetry } = require('../../shared/errorHandlingUtils');
 const { SERVICE_URLS } = require('../../shared/configDefaults');
@@ -112,7 +113,7 @@ function calculateDelayWithJitter(
   jitterFactor = DEFAULT_JITTER_FACTOR
 ) {
   // Exponential backoff
-  const exponentialDelay = initialDelay * Math.pow(2, attempt);
+  const exponentialDelay = initialDelay * 2 ** attempt;
   const baseDelay = Math.min(exponentialDelay, maxDelay);
 
   // Add jitter to prevent thundering herd

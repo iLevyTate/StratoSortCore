@@ -3,6 +3,7 @@ const { LRUCache } = require('../../shared/LRUCache');
 const { logger } = require('../../shared/logger');
 const { CACHE } = require('../../shared/performanceConstants');
 const { get: getConfig } = require('../../shared/config/index');
+
 logger.setContext('EmbeddingCache');
 
 /**

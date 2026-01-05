@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import Button from '../ui/Button';
 // FIX: Import useSafeState to prevent state updates on unmounted components
 import { useSafeState } from '../../utils/reactEdgeCaseUtils';
+import { DEFAULT_AI_MODELS } from '../../../shared/constants';
 
 export default function FirstRunWizard({ onComplete }) {
   const [step, setStep] = useState(0);
@@ -12,20 +14,21 @@ export default function FirstRunWizard({ onComplete }) {
   const [pulling, setPulling] = useState(false);
   const [results, setResults] = useState([]);
 
+  // Use centralized model defaults to ensure consistency
   const models = [
     {
-      id: 'qwen3:0.6b',
-      label: 'Text model (qwen3:0.6b)',
+      id: DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+      label: `Text model (${DEFAULT_AI_MODELS.TEXT_ANALYSIS})`,
       defaultChecked: true
     },
     {
-      id: 'gemma3:latest',
-      label: 'Vision model (gemma3:latest)',
+      id: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+      label: `Vision model (${DEFAULT_AI_MODELS.IMAGE_ANALYSIS})`,
       defaultChecked: true
     },
     {
-      id: 'embeddinggemma',
-      label: 'Embeddings (embeddinggemma)',
+      id: DEFAULT_AI_MODELS.EMBEDDING,
+      label: `Embeddings (${DEFAULT_AI_MODELS.EMBEDDING})`,
       defaultChecked: true
     }
   ];
@@ -144,8 +147,16 @@ export default function FirstRunWizard({ onComplete }) {
             <div className="space-y-5">
               {results.map((r) => (
                 <div key={r.model} className="text-sm">
-                  {r.status === 'ready' ? '✅' : r.status.startsWith('failed') ? '⚠️' : '⏳'}{' '}
-                  {r.model} {r.status === 'ready' ? 'ready' : r.status}
+                  <span className="inline-flex items-center gap-1">
+                    {r.status === 'ready' ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : r.status.startsWith('failed') ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-blue-600" />
+                    )}
+                    {r.model} {r.status === 'ready' ? 'ready' : r.status}
+                  </span>
                 </div>
               ))}
             </div>

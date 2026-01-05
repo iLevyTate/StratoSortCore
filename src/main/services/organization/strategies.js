@@ -125,7 +125,7 @@ function matchesStrategyPattern(filename, pattern) {
  */
 function mapFileToStrategy(file, strategy, smartFolders) {
   const analysis = file.analysis || {};
-  const pattern = strategy.pattern;
+  const { pattern } = strategy;
 
   // Replace pattern variables with actual values
   const folderPath = pattern

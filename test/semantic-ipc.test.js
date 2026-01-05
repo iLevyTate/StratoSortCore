@@ -771,4 +771,403 @@ describe('Embeddings/Semantic IPC', () => {
       expect(fsOperations.filter((op) => op.op === 'rename')).toHaveLength(0);
     }, 10000);
   });
+
+  describe('SEARCH handler', () => {
+    test('validates query and topK', async () => {
+      jest.resetModules();
+      const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      // Minimal mocks to allow semantic IPC registration
+      jest.doMock('../src/main/services/FolderMatchingService', () => ({
+        getInstance: () => ({ initialize: jest.fn(async () => {}) })
+      }));
+      jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+        getInstance: () => ({ embedText: jest.fn(async () => ({ vector: [1, 0] })) })
+      }));
+      jest.doMock('../src/main/services/chromadb', () => ({
+        getInstance: () => ({
+          initialize: jest.fn(async () => {}),
+          isServerAvailable: jest.fn(async () => true),
+          migrateFromJsonl: jest.fn(async () => 0),
+          // Event emitter methods used by other handlers
+          on: jest.fn(),
+          off: jest.fn(),
+          emit: jest.fn()
+        })
+      }));
+
+      const hybridSearch = jest.fn().mockResolvedValue({
+        success: true,
+        results: [{ id: 'doc1', score: 0.9, metadata: { name: 'doc1' } }],
+        mode: 'hybrid',
+        meta: { vectorCount: 1, bm25Count: 1 }
+      });
+      jest.doMock('../src/main/services/SearchService', () => ({
+        SearchService: jest.fn().mockImplementation(() => ({ hybridSearch }))
+      }));
+
+      const { registerAllIpc } = require('../src/main/ipc');
+      const { IPC_CHANNELS } = require('../src/shared/constants');
+
+      registerAllIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+        getServiceIntegration: () => ({
+          analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+        }),
+        getCustomFolders: () => []
+      });
+
+      const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.SEARCH);
+
+      // Missing query
+      expect(await handler({}, {})).toMatchObject({ success: false });
+
+      // Invalid topK
+      const badTopK = await handler({}, { query: 'ok', topK: 999999 });
+      expect(badTopK.success).toBe(false);
+      expect(String(badTopK.error)).toContain('topK');
+
+      // Valid request calls SearchService.hybridSearch
+      const ok = await handler({}, { query: 'quarterly', topK: 5, mode: 'hybrid', minScore: 0.5 });
+      expect(ok.success).toBe(true);
+      expect(ok.mode).toBe('hybrid');
+      expect(hybridSearch).toHaveBeenCalledWith('quarterly', expect.objectContaining({ topK: 5 }));
+    });
+  });
+
+  describe('SCORE_FILES handler', () => {
+    test('returns validation errors for bad inputs', async () => {
+      jest.resetModules();
+      const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      const mockEmbedding = { embedText: jest.fn(async () => ({ vector: [1, 0] })) };
+      const mockChroma = {
+        initialize: jest.fn(async () => {}),
+        isServerAvailable: jest.fn(async () => true),
+        migrateFromJsonl: jest.fn(async () => 0),
+        fileCollection: { get: jest.fn(async () => ({ ids: [], embeddings: [] })) },
+        on: jest.fn(),
+        off: jest.fn(),
+        emit: jest.fn()
+      };
+
+      jest.doMock('../src/main/services/FolderMatchingService', () => ({
+        getInstance: () => ({ initialize: jest.fn(async () => {}) })
+      }));
+      jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+        getInstance: () => mockEmbedding
+      }));
+      jest.doMock('../src/main/services/chromadb', () => ({
+        getInstance: () => mockChroma
+      }));
+
+      const { registerAllIpc } = require('../src/main/ipc');
+      const { IPC_CHANNELS } = require('../src/shared/constants');
+
+      registerAllIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+        getServiceIntegration: () => ({
+          analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+        }),
+        getCustomFolders: () => []
+      });
+
+      const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES);
+
+      expect((await handler({}, {})).success).toBe(false);
+      expect((await handler({}, { query: 'a', fileIds: ['x'] })).success).toBe(false);
+      expect((await handler({}, { query: 'ok', fileIds: [] })).success).toBe(false);
+    });
+
+    test('scores ids using cosine similarity and sorts descending', async () => {
+      jest.resetModules();
+      const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      const mockEmbedding = { embedText: jest.fn(async () => ({ vector: [1, 0] })) };
+      const mockChroma = {
+        initialize: jest.fn(async () => {}),
+        isServerAvailable: jest.fn(async () => true),
+        migrateFromJsonl: jest.fn(async () => 0),
+        fileCollection: {
+          get: jest.fn(async () => ({
+            ids: ['a', 'b'],
+            embeddings: [
+              [1, 0],
+              [0, 1]
+            ]
+          }))
+        },
+        on: jest.fn(),
+        off: jest.fn(),
+        emit: jest.fn()
+      };
+
+      jest.doMock('../src/main/services/FolderMatchingService', () => ({
+        getInstance: () => ({ initialize: jest.fn(async () => {}) })
+      }));
+      jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+        getInstance: () => mockEmbedding
+      }));
+      jest.doMock('../src/main/services/chromadb', () => ({
+        getInstance: () => mockChroma
+      }));
+
+      const { registerAllIpc } = require('../src/main/ipc');
+      const { IPC_CHANNELS } = require('../src/shared/constants');
+
+      registerAllIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+        getServiceIntegration: () => ({
+          analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+        }),
+        getCustomFolders: () => []
+      });
+
+      const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES);
+      const res = await handler({}, { query: 'ok', fileIds: ['a', 'b'] });
+
+      expect(res.success).toBe(true);
+      expect(res.scores).toHaveLength(2);
+      expect(res.scores[0].id).toBe('a');
+      expect(res.scores[0].score).toBeGreaterThan(res.scores[1].score);
+    });
+  });
+
+  describe('FIND_SIMILAR handler', () => {
+    test('returns error on invalid topK and succeeds on valid request', async () => {
+      jest.resetModules();
+      const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      const mockFolderMatcher = {
+        initialize: jest.fn(async () => {}),
+        findSimilarFiles: jest.fn(async () => [{ id: 'doc2', score: 0.9 }])
+      };
+      jest.doMock('../src/main/services/FolderMatchingService', () => ({
+        getInstance: () => mockFolderMatcher
+      }));
+      jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+        getInstance: () => ({ embedText: jest.fn(async () => ({ vector: [1, 0] })) })
+      }));
+      jest.doMock('../src/main/services/chromadb', () => ({
+        getInstance: () => ({
+          initialize: jest.fn(async () => {}),
+          isServerAvailable: jest.fn(async () => true),
+          migrateFromJsonl: jest.fn(async () => 0),
+          on: jest.fn(),
+          off: jest.fn(),
+          emit: jest.fn()
+        })
+      }));
+
+      const { registerAllIpc } = require('../src/main/ipc');
+      const { IPC_CHANNELS } = require('../src/shared/constants');
+
+      registerAllIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+        getServiceIntegration: () => ({
+          analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+        }),
+        getCustomFolders: () => []
+      });
+
+      const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.FIND_SIMILAR);
+
+      const bad = await handler({}, { fileId: 'file:1', topK: 0 });
+      expect(bad.success).toBe(false);
+
+      const ok = await handler({}, { fileId: 'file:1', topK: 5 });
+      expect(ok.success).toBe(true);
+      expect(mockFolderMatcher.findSimilarFiles).toHaveBeenCalledWith('file:1', 5);
+    });
+  });
+
+  describe('Additional semantic IPC handlers', () => {
+    test('REBUILD_BM25_INDEX and GET_SEARCH_STATUS delegate to SearchService', async () => {
+      jest.resetModules();
+      const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      // Minimal service mocks for initialization
+      jest.doMock('../src/main/services/FolderMatchingService', () => ({
+        getInstance: () => ({ initialize: jest.fn(async () => {}) })
+      }));
+      jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+        getInstance: () => ({ embedText: jest.fn(async () => ({ vector: [1, 0] })) })
+      }));
+      jest.doMock('../src/main/services/chromadb', () => ({
+        getInstance: () => ({
+          initialize: jest.fn(async () => {}),
+          isServerAvailable: jest.fn(async () => true),
+          migrateFromJsonl: jest.fn(async () => 0),
+          cleanup: jest.fn(async () => {}),
+          on: jest.fn(),
+          off: jest.fn(),
+          emit: jest.fn(),
+          isOnline: true,
+          fileCollection: { get: jest.fn() }
+        })
+      }));
+
+      const rebuildIndex = jest.fn(async () => ({ success: true, indexed: 1 }));
+      const getIndexStatus = jest.fn(() => ({ hasIndex: true, documentCount: 1, isStale: false }));
+      jest.doMock('../src/main/services/SearchService', () => ({
+        SearchService: jest.fn().mockImplementation(() => ({ rebuildIndex, getIndexStatus }))
+      }));
+
+      const { registerAllIpc } = require('../src/main/ipc');
+      const { IPC_CHANNELS } = require('../src/shared/constants');
+      const electron = require('./mocks/electron');
+      electron.app.getPath.mockReturnValue(require('os').tmpdir());
+
+      registerAllIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+        getServiceIntegration: () => ({
+          analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+        }),
+        getCustomFolders: () => []
+      });
+
+      const rebuildHandler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX);
+      const statusHandler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS);
+
+      const rebuildRes = await rebuildHandler();
+      expect(rebuildRes.success).toBe(true);
+      expect(rebuildIndex).toHaveBeenCalled();
+
+      const statusRes = await statusHandler();
+      expect(statusRes.success).toBe(true);
+      expect(getIndexStatus).toHaveBeenCalled();
+    });
+
+    test('multi-hop, clustering, metadata, and duplicates handlers validate inputs and call services', async () => {
+      jest.resetModules();
+      const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+      const folderMatcher = {
+        initialize: jest.fn(async () => {}),
+        findMultiHopNeighbors: jest.fn(async () => [{ id: 'docA', score: 0.9 }])
+      };
+      jest.doMock('../src/main/services/FolderMatchingService', () => ({
+        getInstance: () => folderMatcher
+      }));
+
+      jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+        getInstance: () => ({ embedText: jest.fn(async () => ({ vector: [1, 0] })) })
+      }));
+
+      const fileCollectionGet = jest.fn(async () => ({
+        ids: ['file:1', 'file:2'],
+        metadatas: [{ path: '/a' }, { path: '/b' }]
+      }));
+      const chromaDb = {
+        initialize: jest.fn(async () => {}),
+        isServerAvailable: jest.fn(async () => true),
+        migrateFromJsonl: jest.fn(async () => 0),
+        cleanup: jest.fn(async () => {}),
+        on: jest.fn(),
+        off: jest.fn(),
+        emit: jest.fn(),
+        isOnline: true,
+        fileCollection: { get: fileCollectionGet }
+      };
+      jest.doMock('../src/main/services/chromadb', () => ({
+        getInstance: () => chromaDb
+      }));
+
+      const clustering = {
+        computeClusters: jest.fn(async () => ({ success: true, clusters: [{ id: 1 }] })),
+        generateClusterLabels: jest.fn(async () => {}),
+        getClustersForGraph: jest.fn(() => [{ id: 1, label: 'Cluster' }]),
+        findCrossClusterEdges: jest.fn(() => [{ from: 1, to: 2 }]),
+        isClustersStale: jest.fn(() => false),
+        getClusterMembers: jest.fn(async () => [{ id: 'file:1' }]),
+        findFileSimilarityEdges: jest.fn(async () => [
+          { from: 'file:1', to: 'file:2', score: 0.9 }
+        ]),
+        findNearDuplicates: jest.fn(async () => ({ success: true, groups: [], totalDuplicates: 0 }))
+      };
+      jest.doMock('../src/main/services/ClusteringService', () => ({
+        ClusteringService: jest.fn().mockImplementation(() => clustering)
+      }));
+
+      const { registerAllIpc } = require('../src/main/ipc');
+      const { IPC_CHANNELS } = require('../src/shared/constants');
+      const electron = require('./mocks/electron');
+      electron.app.getPath.mockReturnValue(require('os').tmpdir());
+
+      registerAllIpc({
+        ipcMain,
+        IPC_CHANNELS,
+        logger,
+        systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+        getServiceIntegration: () => ({
+          analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+        }),
+        getCustomFolders: () => []
+      });
+
+      const multiHop = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP);
+      const computeClusters = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.COMPUTE_CLUSTERS);
+      const getClusters = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.GET_CLUSTERS);
+      const getMembers = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.GET_CLUSTER_MEMBERS);
+      const getEdges = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.GET_SIMILARITY_EDGES);
+      const getMeta = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA);
+      const findDupes = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES);
+
+      expect((await multiHop({}, { seedIds: [] })).success).toBe(false);
+      const mhOk = await multiHop({}, { seedIds: ['file:1'], options: { hops: 2 } });
+      expect(mhOk.success).toBe(true);
+      expect(folderMatcher.findMultiHopNeighbors).toHaveBeenCalled();
+
+      const badK = await computeClusters({}, { k: 0 });
+      expect(badK.success).toBe(false);
+      const clOk = await computeClusters({}, { k: 'auto', generateLabels: true });
+      expect(clOk.success).toBe(true);
+      expect(clustering.generateClusterLabels).toHaveBeenCalled();
+
+      const clGet = await getClusters();
+      expect(clGet.success).toBe(true);
+      expect(clustering.getClustersForGraph).toHaveBeenCalled();
+
+      const memBad = await getMembers({}, { clusterId: 'x' });
+      expect(memBad.success).toBe(false);
+      const memOk = await getMembers({}, { clusterId: 1 });
+      expect(memOk.success).toBe(true);
+
+      const edgesBad = await getEdges(
+        {},
+        { fileIds: ['a', 'b'], threshold: 2, maxEdgesPerNode: 3 }
+      );
+      expect(edgesBad.success).toBe(false);
+      const edgesEmpty = await getEdges({}, { fileIds: ['a'], threshold: 0.8, maxEdgesPerNode: 3 });
+      expect(edgesEmpty.success).toBe(true);
+      expect(edgesEmpty.edges).toEqual([]);
+
+      const metaEmpty = await getMeta({}, { fileIds: [] });
+      expect(metaEmpty.success).toBe(true);
+      const metaOk = await getMeta({}, { fileIds: ['file:1', 'file:2'] });
+      expect(metaOk.success).toBe(true);
+      expect(metaOk.metadata['file:1']).toEqual({ path: '/a' });
+
+      const dupBad = await findDupes({}, { threshold: 0.5 });
+      expect(dupBad.success).toBe(false);
+      const dupOk = await findDupes({}, { threshold: 0.9, maxResults: 10 });
+      expect(dupOk.success).toBe(true);
+      expect(clustering.findNearDuplicates).toHaveBeenCalled();
+    });
+  });
 });

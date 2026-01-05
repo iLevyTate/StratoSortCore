@@ -25,8 +25,8 @@ const {
   getOllamaVersion,
   isOllamaRunning
 } = require('../utils/ollamaDetection');
-const { checkPythonInstallation } = require('../services/startup/preflightChecks');
-const { isChromaDBRunning } = require('../services/startup/chromaService');
+const { checkPythonInstallation } = require('./startup/preflightChecks');
+const { isChromaDBRunning } = require('./startup/chromaService');
 const { getChromaUrl } = require('../../shared/config/chromaDefaults');
 
 logger.setContext('DependencyManager');

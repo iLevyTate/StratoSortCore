@@ -83,7 +83,7 @@ class PatternMatcher {
           path: data.path,
           score: similarity * data.confidence,
           confidence: similarity * data.confidence,
-          pattern: pattern,
+          pattern,
           method: 'user_pattern',
           usageCount: data.count
         });

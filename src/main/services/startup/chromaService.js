@@ -9,12 +9,12 @@
 
 const { spawn } = require('child_process');
 const axios = require('axios');
+const { app } = require('electron');
+const path = require('path');
 const { logger } = require('../../../shared/logger');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
 const { container, ServiceIds } = require('../ServiceContainer');
-const { app } = require('electron');
-const path = require('path');
 const { getChromaUrl, parseChromaConfig } = require('../../../shared/config/chromaDefaults');
 
 logger.setContext('StartupManager:ChromaDB');
@@ -266,23 +266,80 @@ async function startChromaDB({
     logger.info('[STARTUP] Using cached ChromaDB spawn plan for restart');
   }
 
+  // FIX: Check if port is available before attempting spawn
+  // This prevents wasted time when an existing ChromaDB is occupying the port
+  const serverConfig = buildDefaultChromaConfig();
+  const { isPortAvailable } = require('./preflightChecks');
+  const portAvailable = await isPortAvailable(serverConfig.host, serverConfig.port);
+
+  if (!portAvailable) {
+    logger.info('[STARTUP] Port 8000 is occupied, checking if ChromaDB is responding...');
+
+    // Wait a moment for any starting ChromaDB to become responsive
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Check with retries if an existing ChromaDB is running
+    const existingRunning = await isChromaDBRunning();
+    if (existingRunning) {
+      serviceStatus.chromadb.status = 'running';
+      serviceStatus.chromadb.health = 'healthy';
+      logger.info('[STARTUP] Existing ChromaDB instance detected on port 8000, using it');
+      return { success: true, alreadyRunning: true, portInUse: true };
+    }
+
+    // Port is occupied by something else
+    logger.warn('[STARTUP] Port 8000 occupied by non-ChromaDB process');
+    errors.push({
+      service: 'chromadb',
+      error: `Port ${serverConfig.port} is in use by another process (not ChromaDB)`,
+      critical: false
+    });
+    return { success: false, reason: 'port_in_use' };
+  }
+
   logger.info(`[STARTUP] ChromaDB spawn plan: ${plan.command} ${plan.args.join(' ')}`);
   const chromaProcess = spawn(plan.command, plan.args, plan.options);
+
+  // FIX: Track spawn failure from stderr to enable early exit from polling
+  let spawnFailed = false;
+  let spawnFailureReason = null;
 
   chromaProcess.stdout?.on('data', (data) => {
     logger.debug(`[ChromaDB] ${data.toString().trim()}`);
   });
 
   chromaProcess.stderr?.on('data', (data) => {
-    logger.debug(`[ChromaDB stderr] ${data.toString().trim()}`);
+    const msg = data.toString().trim();
+    logger.debug(`[ChromaDB stderr] ${msg}`);
+
+    // Detect address-in-use failures immediately
+    if (
+      /address.*not available/i.test(msg) ||
+      /EADDRINUSE/i.test(msg) ||
+      /bind.*failed/i.test(msg)
+    ) {
+      spawnFailed = true;
+      spawnFailureReason = 'address_in_use';
+      logger.warn('[STARTUP] ChromaDB spawn failed: port already in use');
+    }
   });
 
   chromaProcess.on('error', (error) => {
     logger.error('[ChromaDB] Process error:', error);
+    spawnFailed = true;
+    spawnFailureReason = error.message;
   });
 
   chromaProcess.on('exit', (code, signal) => {
     logger.warn(`[ChromaDB] Process exited with code ${code}, signal ${signal}`);
+
+    // If process exits immediately with code 0 but we saw address-in-use error, mark as failed
+    if (code === 0 && spawnFailed) {
+      logger.warn(
+        '[STARTUP] ChromaDB exited cleanly but failed to bind - checking for existing instance'
+      );
+    }
+
     serviceStatus.chromadb.status = 'stopped';
     // FIX: Also update health status to reflect service is not running
     serviceStatus.chromadb.health = 'unhealthy';
@@ -301,7 +358,12 @@ async function startChromaDB({
     }
   });
 
-  return { process: chromaProcess };
+  return {
+    process: chromaProcess,
+    // Expose spawn failure state for early exit from polling
+    isSpawnFailed: () => spawnFailed,
+    getSpawnFailureReason: () => spawnFailureReason
+  };
 }
 
 module.exports = {

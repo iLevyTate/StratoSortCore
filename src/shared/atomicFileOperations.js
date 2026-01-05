@@ -39,7 +39,10 @@ const normalizePath = (filePath) => {
 };
 
 // Import FileSystemError - handle case where it might not exist yet in shared context
-let FileSystemError, AtomicOperationError, IntegrityError, FILE_SYSTEM_ERROR_CODES;
+let FileSystemError;
+let AtomicOperationError;
+let IntegrityError;
+let FILE_SYSTEM_ERROR_CODES;
 try {
   const fsErrors = require('../main/errors/FileSystemError');
   FileSystemError = fsErrors.FileSystemError;
@@ -55,9 +58,11 @@ try {
       this.metadata = metadata;
       this.isFileSystemError = true;
     }
+
     getUserFriendlyMessage() {
       return this.message;
     }
+
     static fromNodeError(error, context = {}) {
       const err = new FileSystemError(error.code || 'UNKNOWN', {
         ...context,

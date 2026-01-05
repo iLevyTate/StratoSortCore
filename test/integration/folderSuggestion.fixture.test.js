@@ -144,10 +144,11 @@ describe('Folder Suggestion - Fixture Integration', () => {
       expect(category).toBe('Documents');
     });
 
-    test('random STL filename falls back to Documents', () => {
+    test('random STL filename matches 3D Models via semantic extension mapping', () => {
       const category = getIntelligentCategory('x9m2k7.stl', '.stl', smartFolders);
-      // No keyword match, falls back to Documents
-      expect(category).toBe('Documents');
+      // With semantic extension mapping, .stl files match "3D Models" folder
+      // because semantic keywords like "3d" and "model" are added from the extension
+      expect(category).toBe('3D Models');
     });
   });
 

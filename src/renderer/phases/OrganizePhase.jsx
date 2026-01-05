@@ -92,8 +92,25 @@ function OrganizePhase() {
   const { editingFiles, setEditingFiles, handleEditFile, getFileWithEdits } = useFileEditing();
 
   // Processed files tracking
-  const { setProcessedFileIds, markFilesAsProcessed, unmarkFilesAsProcessed, getFilteredFiles } =
-    useProcessedFiles(organizedFiles);
+  const {
+    setProcessedFileIds,
+    markFilesAsProcessed,
+    unmarkFilesAsProcessed,
+    getFilteredFiles,
+    normalizePath
+  } = useProcessedFiles(organizedFiles);
+
+  // FIX Issue-5/6: Sync processedFileIds when organizedFiles changes (handles undo/redo)
+  // This ensures the UI updates correctly when files are undone/redone
+  useEffect(() => {
+    if (!organizedFiles || organizedFiles.length === 0) {
+      setProcessedFileIds(new Set());
+    } else {
+      setProcessedFileIds(
+        new Set(organizedFiles.map((f) => normalizePath(f?.originalPath || f?.path)))
+      );
+    }
+  }, [organizedFiles, setProcessedFileIds, normalizePath]);
 
   // Compute filtered files
   const { unprocessedFiles, processedFiles } = useMemo(
@@ -216,6 +233,17 @@ function OrganizePhase() {
     handleOrganizeFiles(filesToProcess);
     setSelectedFiles(new Set());
   }, [selectedFiles, unprocessedFiles, addNotification, handleOrganizeFiles, setSelectedFiles]);
+
+  // FIX: Wrapper that respects file selection - organize selected files if any, otherwise all
+  const handleOrganizeClick = useCallback(() => {
+    if (selectedFiles.size > 0) {
+      // Organize only selected files
+      approveSelectedFiles();
+    } else {
+      // No selection - organize all ready files
+      handleOrganizeFiles();
+    }
+  }, [selectedFiles.size, approveSelectedFiles, handleOrganizeFiles]);
 
   return (
     <div
@@ -454,20 +482,25 @@ function OrganizePhase() {
                   </div>
                 ) : (
                   <Button
-                    onClick={handleOrganizeFiles}
+                    onClick={handleOrganizeClick}
                     variant="success"
                     className="text-base"
                     style={{
                       padding: 'var(--spacing-cozy) var(--spacing-relaxed)'
                     }}
-                    disabled={readyFilesCount === 0 || isOrganizing}
+                    disabled={
+                      (selectedFiles.size === 0 ? readyFilesCount === 0 : false) || isOrganizing
+                    }
                     isLoading={isOrganizing}
                   >
                     {isOrganizing ? (
                       'Organizing...'
                     ) : (
                       <>
-                        <SparklesIcon className="w-4 h-4 mr-1.5 inline" /> Organize Files Now
+                        <SparklesIcon className="w-4 h-4 mr-1.5 inline" />
+                        {selectedFiles.size > 0
+                          ? `Organize ${selectedFiles.size} Selected`
+                          : 'Organize All Files'}
                       </>
                     )}
                   </Button>
@@ -545,7 +578,7 @@ function OrganizePhase() {
       <Modal
         isOpen={showFoldersModal}
         onClose={() => setShowFoldersModal(false)}
-        title="📁 Target Smart Folders"
+        title="Target Smart Folders"
         size="large"
       >
         <div className="flex flex-col gap-[var(--spacing-default)]">

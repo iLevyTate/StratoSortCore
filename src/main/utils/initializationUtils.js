@@ -82,7 +82,7 @@ function createInitializer(options) {
 
           if (attempt < maxRetries) {
             // Exponential backoff with jitter
-            const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 1000;
+            const delay = baseDelay * 2 ** (attempt - 1) + Math.random() * 1000;
             customLogger.info(`${serviceName} Retrying in ${Math.round(delay)}ms...`);
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {

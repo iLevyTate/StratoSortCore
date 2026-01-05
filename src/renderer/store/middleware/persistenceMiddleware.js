@@ -131,7 +131,7 @@ const persistenceMiddleware = (store) => (next) => (action) => {
   // Only save if not in welcome phase and not loading
   if (state.ui.currentPhase !== PHASES.WELCOME && action.type.indexOf('setLoading') === -1) {
     // Performance: Skip save if key state hasn't changed
-    const currentPhase = state.ui.currentPhase;
+    const { currentPhase } = state.ui;
     const currentFilesCount = state.files.selectedFiles.length;
     const currentResultsCount = state.analysis.results.length;
     // FIX: Track fileStates changes
@@ -197,6 +197,26 @@ const persistenceMiddleware = (store) => (next) => (action) => {
           },
           timestamp: Date.now()
         };
+
+        // Sync naming settings to main process so DownloadWatcher uses the chosen convention
+        try {
+          if (typeof window !== 'undefined' && window.electronAPI?.settings?.save) {
+            const nc = state.files.namingConvention;
+            const namingPayload = {
+              namingConvention: nc?.convention,
+              dateFormat: nc?.dateFormat,
+              caseConvention: nc?.caseConvention,
+              separator: nc?.separator
+            };
+            // Debug: observe what we send to main
+            // eslint-disable-next-line no-console
+            console.debug('[NamingSync] Saving naming settings to main', namingPayload);
+            // Fire-and-forget; main settings merge partials
+            window.electronAPI.settings.save(namingPayload);
+          }
+        } catch {
+          // Ignore sync errors; local persistence still occurs
+        }
 
         // Persist fileStates separately or limited
         // FIX: Prioritize in-progress and error states over completed ones

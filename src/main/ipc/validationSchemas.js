@@ -142,28 +142,96 @@ if (!z) {
    */
   const settingsSchema = z
     .object({
+      // AI Models & Config
       ollamaHost: optionalUrlSchema,
       textModel: modelNameSchema,
       visionModel: modelNameSchema,
       embeddingModel: modelNameSchema,
-      launchOnStartup: z.boolean().optional(),
-      autoOrganize: z.boolean().optional(),
-      backgroundMode: z.boolean().optional(),
-      theme: z.enum(THEME_VALUES).optional(),
-      language: z.string().max(10).optional(),
-      loggingLevel: z.enum(LOGGING_LEVELS).optional(),
+      autoUpdateOllama: z.boolean().nullish(),
+      autoUpdateChromaDb: z.boolean().nullish(),
+
+      // Onboarding / Wizards
+      dependencyWizardShown: z.boolean().nullish(),
+      dependencyWizardLastPromptAt: z.string().nullable().optional(),
+      dependencyWizardPromptIntervalDays: z.number().int().min(1).max(365).nullish(),
+
+      // Application Behavior
+      launchOnStartup: z.boolean().nullish(),
+      autoOrganize: z.boolean().nullish(),
+      backgroundMode: z.boolean().nullish(),
+      autoUpdateCheck: z.boolean().nullish(),
+      telemetryEnabled: z.boolean().nullish(),
+
+      // UI Preferences
+      theme: z.enum(THEME_VALUES).nullish(),
+      language: z.string().max(20).nullish(),
+      loggingLevel: z.enum(LOGGING_LEVELS).nullish(),
+
+      // Performance
       cacheSize: z
         .number()
         .int()
         .min(NUMERIC_LIMITS.cacheSize.min)
         .max(NUMERIC_LIMITS.cacheSize.max)
-        .optional(),
+        .nullish(),
       maxBatchSize: z
         .number()
         .int()
         .min(NUMERIC_LIMITS.maxBatchSize.min)
         .max(NUMERIC_LIMITS.maxBatchSize.max)
-        .optional()
+        .nullish(),
+
+      // Smart Folder Watching
+      smartFolderWatchEnabled: z.boolean().nullish(),
+
+      // Notification settings
+      notifications: z.boolean().nullish(),
+      notificationMode: z.enum(['both', 'ui', 'tray', 'none']).nullish(),
+      notifyOnAutoAnalysis: z.boolean().nullish(),
+      notifyOnLowConfidence: z.boolean().nullish(),
+
+      // Organization settings
+      confidenceThreshold: z.number().min(0).max(1).nullish(),
+      defaultSmartFolderLocation: z.string().nullish(),
+      maxConcurrentAnalysis: z.number().int().min(1).max(10).nullish(),
+      lastBrowsedPath: z.string().nullish(),
+
+      // Naming convention settings
+      namingConvention: z.string().nullish(),
+      dateFormat: z.string().nullish(),
+      caseConvention: z.string().nullish(),
+      separator: z.string().nullish(),
+
+      // File size limits
+      maxFileSize: z
+        .number()
+        .int()
+        .min(1024 * 1024)
+        .nullish(),
+      maxImageFileSize: z
+        .number()
+        .int()
+        .min(1024 * 1024)
+        .nullish(),
+      maxDocumentFileSize: z
+        .number()
+        .int()
+        .min(1024 * 1024)
+        .nullish(),
+      maxTextFileSize: z
+        .number()
+        .int()
+        .min(1024 * 1024)
+        .nullish(),
+
+      // Processing limits
+      analysisTimeout: z.number().int().min(10000).nullish(),
+      fileOperationTimeout: z.number().int().min(1000).nullish(),
+      retryAttempts: z.number().int().min(0).nullish(),
+
+      // UI limits
+      workflowRestoreMaxAge: z.number().int().min(60000).nullish(),
+      saveDebounceMs: z.number().int().min(100).nullish()
     })
     .partial();
 

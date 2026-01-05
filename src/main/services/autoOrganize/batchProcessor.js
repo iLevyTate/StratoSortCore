@@ -39,7 +39,7 @@ async function processBatchResults(batchSuggestions, files, options, results, su
     for (const fileWithSuggestion of group.files) {
       const lookupKey = fileWithSuggestion.path || fileWithSuggestion.name;
       const file = fileMap.get(lookupKey) || fileWithSuggestion;
-      const suggestion = fileWithSuggestion.suggestion;
+      const { suggestion } = fileWithSuggestion;
       const confidence = group.confidence || 0;
 
       // Ensure we have a valid source path
@@ -143,7 +143,8 @@ async function batchOrganize(
   thresholds = {},
   buildDestFn = buildDestinationPath
 ) {
-  const { confidenceThreshold = thresholds.confidence || 0.75 } = options;
+  // FIX: Use ?? instead of || to properly handle falsy values like 0
+  const { confidenceThreshold = thresholds.confidence ?? 0.75 } = options;
 
   logger.info('[AutoOrganize] Starting batch organization', {
     fileCount: files.length

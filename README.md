@@ -14,8 +14,10 @@ retaining the same logo and identity while targeting this branch’s priorities.
 
 - Local AI analysis powered by Ollama and fully offline
 - Smart organization suggestions for files and folders
+- **Smart Folder Monitoring**: Automatically detects, analyzes, and organizes files added to watched
+  folders
 - Image understanding beyond filenames
-- Safe operations with full undo/redo
+- Safe operations with full undo/redo with history navigation
 - Privacy-first by design—no tracking or data exfiltration
 - Batch processing for large sets of files
 - Smart folders that adapt to user choices
@@ -98,9 +100,9 @@ retaining the same logo and identity while targeting this branch’s priorities.
 ### Auto-Organization
 
 1. Go to Settings → Auto-Organize.
-2. Enable "Watch Downloads Folder".
-3. Set confidence thresholds.
-4. New downloads organize automatically.
+2. Enable "Watch Downloads Folder" or "Watch Smart Folders".
+3. Set confidence thresholds (optional).
+4. New files are analyzed and organized automatically.
 
 ### Batch Operations
 
@@ -269,6 +271,9 @@ npm run ci                   # Full CI pipeline: format, lint, test, build
 - [Reference & Glossary](docs/REFERENCE_AND_GLOSSARY.md) — Terminology and concepts
 - [Code Examples](docs/CODE_EXAMPLES.md) — Common patterns and examples
 - [Testing Strategy](docs/TESTING_STRATEGY.md) — Test organization and coverage
+- [Manual Test Plan](docs/MANUAL_TEST_PLAN.md) — Comprehensive manual testing procedures
+- [Fix Verification Checklist](docs/FIX_VERIFICATION_CHECKLIST.md) — Targeted verification for
+  specific fixes
 - [Code Quality Standards](docs/CODE_QUALITY_STANDARDS.md) — Style guide and best practices
 
 ## Troubleshooting

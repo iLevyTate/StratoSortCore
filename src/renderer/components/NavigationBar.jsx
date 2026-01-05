@@ -494,7 +494,7 @@ function NavigationBar() {
       <div className="relative flex h-14 items-center justify-between px-4 lg:px-6">
         {/* Left: Brand */}
         <div style={{ WebkitAppRegion: 'no-drag' }}>
-          <Brand isConnected={true} />
+          <Brand isConnected />
         </div>
 
         {/* Center: Phase Navigation - FIX: Improved responsive overflow handling */}

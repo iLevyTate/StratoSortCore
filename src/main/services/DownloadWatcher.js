@@ -2,48 +2,21 @@ const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const chokidar = require('chokidar');
-const { Notification } = require('electron');
 const { logger } = require('../../shared/logger');
 const {
   isNotFoundError,
   isCrossDeviceError,
-  isExistsError
+  isExistsError,
+  getErrorCategory,
+  ErrorCategory
 } = require('../../shared/errorClassifier');
 const { FileSystemError, WatcherError } = require('../errors/FileSystemError');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
+const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtils');
+const { recordAnalysisResult } = require('../ipc/analysisUtils');
+const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
+
 logger.setContext('DownloadWatcher');
-
-/**
- * Show a system notification for organized files
- * @param {string} fileName - Original file name
- * @param {string} destination - Destination folder name
- * @param {number} confidence - Confidence percentage
- * @param {boolean} notificationsEnabled - Whether notifications are enabled in settings
- */
-function showOrganizedNotification(fileName, destination, confidence, notificationsEnabled = true) {
-  try {
-    if (!notificationsEnabled) {
-      logger.debug('[DOWNLOAD-WATCHER] Notifications disabled in settings');
-      return;
-    }
-
-    if (!Notification.isSupported()) {
-      logger.debug('[DOWNLOAD-WATCHER] Notifications not supported on this platform');
-      return;
-    }
-
-    const notification = new Notification({
-      title: 'File Organized',
-      body: `${fileName} moved to ${destination} (${confidence}% confidence)`,
-      silent: true // Don't play sound for each file
-    });
-
-    notification.show();
-  } catch (error) {
-    // Don't let notification errors break the watcher
-    logger.debug('[DOWNLOAD-WATCHER] Failed to show notification:', error.message);
-  }
-}
 
 // Simple utility to determine if a path is an image based on extension
 const IMAGE_EXTENSIONS = new Set([
@@ -101,13 +74,17 @@ class DownloadWatcher {
     analyzeImageFile,
     getCustomFolders,
     autoOrganizeService,
-    settingsService
+    settingsService,
+    notificationService,
+    analysisHistoryService
   }) {
     this.analyzeDocumentFile = analyzeDocumentFile;
     this.analyzeImageFile = analyzeImageFile;
     this.getCustomFolders = getCustomFolders;
     this.autoOrganizeService = autoOrganizeService;
     this.settingsService = settingsService;
+    this.notificationService = notificationService;
+    this.analysisHistoryService = analysisHistoryService;
     this.watcher = null;
     this.isStarting = false;
     this.restartAttempts = 0;
@@ -547,14 +524,21 @@ class DownloadWatcher {
       // Use the new auto-organize service with suggestions
       const result = await this.autoOrganizeService.processNewFile(filePath, folders, {
         autoOrganizeEnabled: settings.autoOrganize,
-        confidenceThreshold: settings.confidenceThreshold || 0.75,
+        confidenceThreshold: settings.confidenceThreshold ?? 0.75,
         defaultLocation: settings.defaultSmartFolderLocation || 'Documents',
         namingSettings: {
-          convention: settings.namingConvention,
-          separator: settings.separator,
-          dateFormat: settings.dateFormat,
-          caseConvention: settings.caseConvention
+          // Default to subject-date so files are actually renamed when settings are missing
+          convention: settings.namingConvention || 'subject-date',
+          separator: settings.separator || '-',
+          dateFormat: settings.dateFormat || 'YYYY-MM-DD',
+          caseConvention: settings.caseConvention || 'kebab-case'
         }
+      });
+      logger.debug('[DOWNLOAD-WATCHER] Naming settings used for auto-organize', {
+        namingConvention: settings.namingConvention,
+        separator: settings.separator,
+        dateFormat: settings.dateFormat,
+        caseConvention: settings.caseConvention
       });
 
       if (result && result.destination) {
@@ -572,7 +556,7 @@ class DownloadWatcher {
           throw moveError;
         }
 
-        const confidencePercent = Math.round(result.confidence * 100);
+        const confidencePercent = deriveWatcherConfidencePercent(result);
         const fileName = path.basename(filePath);
         const destFolder = path.basename(path.dirname(result.destination));
 
@@ -584,14 +568,66 @@ class DownloadWatcher {
           result.destination
         );
 
-        // Show system notification (respects user's notification preference)
-        const notificationsEnabled = settings.notifications !== false;
-        showOrganizedNotification(fileName, destFolder, confidencePercent, notificationsEnabled);
-        return { handled: true, shouldFallback: false };
-      } else {
-        logger.info('[DOWNLOAD-WATCHER] File not auto-organized (low confidence or disabled)');
+        // Send notification via NotificationService
+        if (this.notificationService) {
+          await this.notificationService.notifyFileOrganized(
+            fileName,
+            destFolder,
+            confidencePercent
+          );
+        }
+
+        // Record to analysis history (post-move, use destination path)
+        if (this.analysisHistoryService) {
+          try {
+            const analysisForHistory = {
+              suggestedName: path.basename(result.destination),
+              category: result.category || result.folder || destFolder || 'organized',
+              // FIX NEW-10: Include keywords from analysis for history display
+              keywords: result.keywords || result.analysis?.keywords || [],
+              // UI expects percentage, not fraction
+              confidence: confidencePercent,
+              smartFolder: result.smartFolder || null,
+              summary: result.summary || result.analysis?.summary || '',
+              model: 'auto-organize',
+              suggestedPath: result.destination,
+              actualPath: result.destination,
+              renamed: true,
+              newName: path.basename(result.destination)
+            };
+
+            await recordAnalysisResult({
+              filePath: result.destination,
+              result: analysisForHistory,
+              processingTime: result.processingTime || 0,
+              modelType: 'auto-organize',
+              analysisHistory: this.analysisHistoryService,
+              logger
+            });
+          } catch (historyErr) {
+            logger.debug('[DOWNLOAD-WATCHER] Failed to record history entry:', historyErr.message);
+          }
+        }
         return { handled: true, shouldFallback: false };
       }
+      // File not auto-organized - notify user if it's due to low confidence
+      const fileName = path.basename(filePath);
+      logger.info('[DOWNLOAD-WATCHER] File not auto-organized (low confidence or disabled)');
+
+      // Check if we have analysis result to show low-confidence notification
+      if (this.notificationService && result) {
+        const confidencePercent = deriveWatcherConfidencePercent(result);
+        const thresholdPercent = Math.round((settings.confidenceThreshold || 0.75) * 100);
+        if (confidencePercent < thresholdPercent) {
+          await this.notificationService.notifyLowConfidence(
+            fileName,
+            confidencePercent,
+            thresholdPercent,
+            result.suggestedFolder || null
+          );
+        }
+      }
+      return { handled: true, shouldFallback: false };
     } catch (e) {
       // Log with appropriate detail based on error type
       logger.warn(
@@ -679,12 +715,51 @@ class DownloadWatcher {
 
       const baseName = path.basename(filePath);
       const extname = path.extname(baseName);
-      // Only add extension if suggestedName doesn't already have it
+
+      // Apply naming convention in fallback path
       let newName = baseName;
-      if (result.suggestedName) {
-        const suggestedExt = path.extname(result.suggestedName);
-        newName = suggestedExt ? result.suggestedName : `${result.suggestedName}${extname}`;
+      try {
+        const settings = await this.settingsService?.load?.();
+        if (settings) {
+          const namingSettings = {
+            // Align fallback naming defaults with auto-organize path
+            convention: settings.namingConvention || 'subject-date',
+            separator: settings.separator || '-',
+            dateFormat: settings.dateFormat || 'YYYY-MM-DD',
+            caseConvention: settings.caseConvention || 'kebab-case'
+          };
+          logger.debug('[DOWNLOAD-WATCHER] Naming settings used for fallback', namingSettings);
+
+          const fileStats = await fs.stat(filePath);
+          const fileTimestamps = {
+            created: fileStats.birthtime,
+            modified: fileStats.mtime
+          };
+
+          const suggestedName = generateSuggestedNameFromAnalysis({
+            originalFileName: baseName,
+            analysis: result,
+            settings: namingSettings,
+            fileTimestamps
+          });
+
+          if (suggestedName) {
+            newName = suggestedName;
+            logger.debug('[DOWNLOAD-WATCHER] Applied naming convention (fallback):', {
+              original: baseName,
+              suggested: newName
+            });
+          }
+        }
+      } catch (namingError) {
+        // Fall back to original suggested name or base name
+        if (result.suggestedName) {
+          const suggestedExt = path.extname(result.suggestedName);
+          newName = suggestedExt ? result.suggestedName : `${result.suggestedName}${extname}`;
+        }
+        logger.debug('[DOWNLOAD-WATCHER] Could not apply naming convention:', namingError.message);
       }
+
       const destPath = path.join(destFolder.path, newName);
 
       // Move file with cross-device and conflict handling
@@ -692,16 +767,15 @@ class DownloadWatcher {
 
       logger.info('[DOWNLOAD-WATCHER] Moved (fallback)', filePath, '=>', destPath);
 
-      // Show system notification for fallback organization (respects user's notification preference)
-      const confidencePercent = result.confidence ? Math.round(result.confidence * 100) : 70;
-      let notificationsEnabled = true;
-      try {
-        const settings = await this.settingsService?.load?.();
-        notificationsEnabled = settings?.notifications !== false;
-      } catch {
-        // Default to enabled if settings can't be loaded
+      // Send notification via NotificationService
+      const confidencePercent = deriveWatcherConfidencePercent(result);
+      if (this.notificationService) {
+        await this.notificationService.notifyFileOrganized(
+          baseName,
+          destFolder.name,
+          confidencePercent
+        );
       }
-      showOrganizedNotification(baseName, destFolder.name, confidencePercent, notificationsEnabled);
     } catch (e) {
       // FIX: Handle TOCTOU race gracefully - file may have been deleted between check and move
       if (isNotFoundError(e)) {
@@ -717,12 +791,16 @@ class DownloadWatcher {
   }
 
   /**
-   * Move a file to destination, handling cross-device moves.
+   * Move a file to destination, handling cross-device moves and FILE_IN_USE retries.
    * @param {string} source - Source file path
    * @param {string} destination - Destination file path
-   * @throws {FileSystemError} On move failure
+   * @param {number} [retryCount=0] - Current retry attempt (internal use)
+   * @throws {FileSystemError} On move failure after retries
    */
-  async _moveFile(source, destination) {
+  async _moveFile(source, destination, retryCount = 0) {
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 2000; // 2 seconds between retries
+
     try {
       await fs.rename(source, destination);
     } catch (renameError) {
@@ -745,13 +823,56 @@ class DownloadWatcher {
           throw fsError;
         }
       } else {
+        // FIX: Retry FILE_IN_USE errors - file may be released after a short delay
+        const errorCategory = getErrorCategory(renameError);
+        const isFileInUse = errorCategory === ErrorCategory.FILE_IN_USE;
+
+        if (isFileInUse && retryCount < MAX_RETRIES) {
+          const nextRetry = retryCount + 1;
+          logger.info('[DOWNLOAD-WATCHER] File in use, scheduling retry', {
+            source,
+            attempt: nextRetry,
+            maxRetries: MAX_RETRIES,
+            delayMs: RETRY_DELAY_MS
+          });
+
+          // Wait before retrying
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+
+          // Check if file still exists before retry
+          try {
+            await fs.access(source);
+          } catch (accessError) {
+            if (isNotFoundError(accessError)) {
+              logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping retry:', source);
+              return; // File was moved/deleted by user
+            }
+            throw accessError;
+          }
+
+          // Recursive retry
+          return this._moveFile(source, destination, nextRetry);
+        }
+
         const fsError = FileSystemError.forOperation('move', renameError, source);
-        logger.error('[DOWNLOAD-WATCHER] Failed to move file:', {
-          source,
-          destination,
-          error: fsError.getUserFriendlyMessage(),
-          code: fsError.code
-        });
+
+        // Enhanced logging for FILE_IN_USE to help debugging
+        if (isFileInUse) {
+          logger.error('[DOWNLOAD-WATCHER] Failed to move file after retries:', {
+            source,
+            destination,
+            error: fsError.getUserFriendlyMessage(),
+            code: fsError.code,
+            retriesAttempted: retryCount
+          });
+        } else {
+          logger.error('[DOWNLOAD-WATCHER] Failed to move file:', {
+            source,
+            destination,
+            error: fsError.getUserFriendlyMessage(),
+            code: fsError.code
+          });
+        }
         throw fsError;
       }
     }
@@ -798,7 +919,6 @@ class DownloadWatcher {
           '=>',
           uniquePath
         );
-        return;
       } else {
         throw renameError;
       }

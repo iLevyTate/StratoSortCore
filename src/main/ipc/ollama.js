@@ -6,6 +6,7 @@ const { normalizeOllamaUrl } = require('../ollamaUtils');
 const { LENIENT_URL_PATTERN } = require('../../shared/validationConstants');
 const { categorizeModels } = require('../../shared/modelCategorization');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+
 let z;
 
 /**
@@ -254,19 +255,22 @@ function registerOllamaIpc({
             });
 
             // Race against timeout
-            // FIX: Store interval reference outside Promise to ensure cleanup on success
+            // FIX: Store timer references outside Promise to ensure cleanup on success
             let checkProgress;
+            let pullTimeout;
             const timeoutPromise = new Promise((_, reject) => {
               checkProgress = setInterval(() => {
                 const timeSinceProgress = Date.now() - lastProgressTime;
                 // If no progress for 5 minutes, consider it stalled
                 if (timeSinceProgress > 5 * 60 * 1000) {
                   clearInterval(checkProgress);
+                  clearTimeout(pullTimeout);
                   reject(new Error(`Model pull stalled (no progress for 5 minutes)`));
                 }
               }, 30000); // Check every 30 seconds
 
-              setTimeout(() => {
+              // FIX: Store timeout reference to clear on success
+              pullTimeout = setTimeout(() => {
                 clearInterval(checkProgress);
                 reject(
                   new Error(`Model pull timeout after ${MODEL_PULL_TIMEOUT_MS / 60000} minutes`)
@@ -278,8 +282,9 @@ function registerOllamaIpc({
               await Promise.race([pullPromise, timeoutPromise]);
               results.push({ model, success: true });
             } finally {
-              // FIX: Always clear interval to prevent timer leak on success
+              // FIX: Always clear both timers to prevent resource leaks
               clearInterval(checkProgress);
+              clearTimeout(pullTimeout);
             }
           } catch (e) {
             results.push({ model, success: false, error: e.message });

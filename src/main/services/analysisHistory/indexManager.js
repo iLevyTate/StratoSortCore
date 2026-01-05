@@ -8,6 +8,14 @@
  */
 
 const crypto = require('crypto');
+const path = require('path');
+
+// Normalize a path for index keys (normalize separators, lower-case on Windows)
+function normalizePathForIndex(filePath) {
+  if (!filePath) return filePath;
+  const normalized = path.normalize(filePath);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
 
 /**
  * Create empty index structure
@@ -68,8 +76,12 @@ function updateIndexes(index, entry) {
   // File hash index
   index.fileHashes[entry.fileHash] = entry.id;
 
-  // Path lookup index
+  // Path lookup index (store both original and normalized for case-insensitive FS)
   index.pathLookup[entry.originalPath] = entry.id;
+  const normalizedPath = normalizePathForIndex(entry.originalPath);
+  if (normalizedPath && normalizedPath !== entry.originalPath) {
+    index.pathLookup[normalizedPath] = entry.id;
+  }
 
   // Tag index
   if (entry.analysis.tags) {
@@ -112,7 +124,11 @@ function updateIndexes(index, entry) {
 function removeFromIndexes(index, entry) {
   // Remove from various indexes
   delete index.fileHashes[entry.fileHash];
+  const normalizedPath = normalizePathForIndex(entry.originalPath);
   delete index.pathLookup[entry.originalPath];
+  if (normalizedPath && normalizedPath !== entry.originalPath) {
+    delete index.pathLookup[normalizedPath];
+  }
 
   // Remove from tag index
   if (entry.analysis.tags) {

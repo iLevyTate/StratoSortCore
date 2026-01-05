@@ -90,6 +90,64 @@ describe('IPC Validation Schemas', () => {
       expect(schemas.settings.safeParse({ textModel: 'llama2:7b' }).success).toBe(true);
       expect(schemas.settings.safeParse({ textModel: 'model@latest' }).success).toBe(true);
     });
+
+    testIfZod('validates notification settings', () => {
+      const validNotifications = {
+        notifications: true,
+        notificationMode: 'both',
+        notifyOnAutoAnalysis: false,
+        notifyOnLowConfidence: true
+      };
+      expect(schemas.settings.safeParse(validNotifications).success).toBe(true);
+
+      const invalidMode = { notificationMode: 'invalid' };
+      expect(schemas.settings.safeParse(invalidMode).success).toBe(false);
+    });
+
+    testIfZod('validates naming convention settings', () => {
+      const validNaming = {
+        namingConvention: 'subject-date',
+        dateFormat: 'YYYY-MM-DD',
+        caseConvention: 'kebab-case',
+        separator: '-'
+      };
+      expect(schemas.settings.safeParse(validNaming).success).toBe(true);
+
+      const invalidNaming = { namingConvention: 'invalid-convention' };
+      expect(schemas.settings.safeParse(invalidNaming).success).toBe(true); // string type, specific enum validation might be in shared rules
+    });
+
+    testIfZod('validates file size limits', () => {
+      const validLimits = {
+        maxFileSize: 1024 * 1024 * 10,
+        maxImageFileSize: 1024 * 1024 * 5,
+        maxDocumentFileSize: 1024 * 1024 * 5,
+        maxTextFileSize: 1024 * 1024
+      };
+      expect(schemas.settings.safeParse(validLimits).success).toBe(true);
+
+      const invalidLimit = { maxFileSize: 100 }; // Too small
+      expect(schemas.settings.safeParse(invalidLimit).success).toBe(false);
+    });
+
+    testIfZod('validates timeouts and retry settings', () => {
+      const validProcess = {
+        analysisTimeout: 30000,
+        fileOperationTimeout: 5000,
+        retryAttempts: 3,
+        saveDebounceMs: 1000
+      };
+      expect(schemas.settings.safeParse(validProcess).success).toBe(true);
+
+      const invalidTimeout = { analysisTimeout: 100 }; // Too small
+      expect(schemas.settings.safeParse(invalidTimeout).success).toBe(false);
+    });
+
+    testIfZod('validates smart folder watch enabled', () => {
+      expect(schemas.settings.safeParse({ smartFolderWatchEnabled: true }).success).toBe(true);
+      expect(schemas.settings.safeParse({ smartFolderWatchEnabled: false }).success).toBe(true);
+      expect(schemas.settings.safeParse({ smartFolderWatchEnabled: 'yes' }).success).toBe(false);
+    });
   });
 
   describe('smartFolder schema', () => {

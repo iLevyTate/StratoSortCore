@@ -21,6 +21,15 @@ const {
   processNewFile: processNewFileHelper
 } = require('./fileProcessor');
 
+// Normalize a confidence value into [0, 1], falling back when invalid
+const coerceConfidence = (val, fallback = DEFAULT_SETTINGS.confidenceThreshold) => {
+  const num = Number(val);
+  if (Number.isFinite(num)) {
+    return Math.min(1, Math.max(0, num));
+  }
+  return fallback;
+};
+
 logger.setContext('AutoOrganizeService');
 
 // Batch size from centralized configuration
@@ -52,6 +61,40 @@ class AutoOrganizeServiceCore {
     this.thresholds = {
       confidence: DEFAULT_SETTINGS.confidenceThreshold // 0.75 - files must meet this to be auto-organized
     };
+
+    // Keep thresholds in sync with persisted settings without blocking construction
+    this._syncThresholdFromSettingsService();
+  }
+
+  /**
+   * Apply settings updates (called when renderer saves settings)
+   * @param {Object} settings
+   */
+  applySettings(settings) {
+    this.thresholds.confidence = coerceConfidence(settings?.confidenceThreshold);
+  }
+
+  /**
+   * Load thresholds from SettingsService (best effort, non-blocking)
+   * Ensures background services honor the persisted confidence threshold
+   * even before an explicit onSettingsChanged notification arrives.
+   * @private
+   */
+  async _syncThresholdFromSettingsService() {
+    try {
+      if (!this.settings || typeof this.settings.load !== 'function') return;
+      const loaded = await this.settings.load();
+      this.thresholds.confidence = coerceConfidence(
+        loaded?.confidenceThreshold,
+        DEFAULT_SETTINGS.confidenceThreshold
+      );
+    } catch (error) {
+      logger.warn(
+        '[AutoOrganize] Failed to sync confidence threshold from settings:',
+        error.message
+      );
+      this.thresholds.confidence = DEFAULT_SETTINGS.confidenceThreshold;
+    }
   }
 
   /**
@@ -67,16 +110,18 @@ class AutoOrganizeServiceCore {
    */
   async organizeFiles(files, smartFolders, options = {}) {
     const {
-      confidenceThreshold = this.thresholds.confidence,
+      confidenceThreshold,
       defaultLocation = 'Documents',
       preserveNames = false,
       batchSize = DEFAULT_BATCH_SIZE
     } = options;
 
+    const effectiveThreshold = coerceConfidence(confidenceThreshold, this.thresholds.confidence);
+
     logger.info('[AutoOrganize] Starting automatic organization', {
       fileCount: files.length,
       smartFolderCount: smartFolders.length,
-      confidenceThreshold,
+      confidenceThreshold: effectiveThreshold,
       batchSize
     });
 
@@ -156,7 +201,7 @@ class AutoOrganizeServiceCore {
             await processFilesIndividually(
               batch,
               smartFolders,
-              { confidenceThreshold, defaultLocation, preserveNames },
+              { confidenceThreshold: effectiveThreshold, defaultLocation, preserveNames },
               results,
               this.suggestionService
             );
@@ -167,7 +212,7 @@ class AutoOrganizeServiceCore {
           await processBatchResults(
             batchSuggestions,
             batch,
-            { confidenceThreshold, defaultLocation, preserveNames },
+            { confidenceThreshold: effectiveThreshold, defaultLocation, preserveNames },
             results,
             this.suggestionService
           );
@@ -190,7 +235,7 @@ class AutoOrganizeServiceCore {
             await processFilesIndividually(
               unprocessedFiles,
               smartFolders,
-              { confidenceThreshold, defaultLocation, preserveNames },
+              { confidenceThreshold: effectiveThreshold, defaultLocation, preserveNames },
               results,
               this.suggestionService
             );
@@ -205,7 +250,7 @@ class AutoOrganizeServiceCore {
           await processFilesIndividually(
             batch,
             smartFolders,
-            { confidenceThreshold, defaultLocation, preserveNames },
+            { confidenceThreshold: effectiveThreshold, defaultLocation, preserveNames },
             results,
             this.suggestionService
           );
@@ -262,10 +307,18 @@ class AutoOrganizeServiceCore {
    * Monitor and auto-organize new files (for Downloads folder watching)
    */
   async processNewFile(filePath, smartFolders, options = {}) {
+    const optionsWithThreshold = {
+      ...options,
+      confidenceThreshold: coerceConfidence(
+        options?.confidenceThreshold,
+        this.thresholds.confidence
+      )
+    };
+
     return processNewFileHelper(
       filePath,
       smartFolders,
-      options,
+      optionsWithThreshold,
       this.suggestionService,
       this.undoRedo
     );

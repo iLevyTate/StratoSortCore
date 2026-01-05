@@ -102,6 +102,7 @@ class FileAccessPolicy {
 
 // Export singleton
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
+
 const { getInstance, createInstance, registerWithContainer } = createSingletonHelpers({
   ServiceClass: FileAccessPolicy,
   serviceId: 'FILE_ACCESS_POLICY',

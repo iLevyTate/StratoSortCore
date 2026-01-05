@@ -11,60 +11,70 @@ import PropTypes from 'prop-types';
 import { debounce } from '../../utils/performance';
 
 // Inline SVG Icons (keep UI visuals)
-const CheckCircleIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-);
+function CheckCircleIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
 
-const RefreshCwIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-    />
-  </svg>
-);
+function RefreshCwIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+      />
+    </svg>
+  );
+}
 
-const XCircleIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-);
+function XCircleIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
 
-const FolderOpenIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
-    />
-  </svg>
-);
+function FolderOpenIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"
+      />
+    </svg>
+  );
+}
 
-const ClockIcon = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-);
+function ClockIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
 
 const iconPropTypes = {
   className: PropTypes.string
@@ -310,38 +320,44 @@ export function useBulkOperations({
 export function useProcessedFiles(organizedFiles) {
   const [processedFileIds, setProcessedFileIds] = useState(new Set());
 
+  // FIX Issue-5/6: Normalize paths consistently for Windows/Unix compatibility
+  // This ensures undo/redo operations work correctly regardless of path separators or case
+  const normalizePath = useCallback((p) => (p || '').replace(/[\\/]+/g, '/').toLowerCase(), []);
+
   const markFilesAsProcessed = useCallback(
     (filePaths) =>
       setProcessedFileIds((prev) => {
         const next = new Set(prev);
-        filePaths.forEach((path) => next.add(path));
+        filePaths.forEach((path) => next.add(normalizePath(path)));
         return next;
       }),
-    []
+    [normalizePath]
   );
 
   const unmarkFilesAsProcessed = useCallback(
     (filePaths) =>
       setProcessedFileIds((prev) => {
         const next = new Set(prev);
-        filePaths.forEach((path) => next.delete(path));
+        filePaths.forEach((path) => next.delete(normalizePath(path)));
         return next;
       }),
-    []
+    [normalizePath]
   );
 
   // Compute unprocessed and processed files
   const getFilteredFiles = useCallback(
     (filesWithAnalysis) => {
       const unprocessedFiles = filesWithAnalysis.filter(
-        (file) => !processedFileIds.has(file.path) && file && file.analysis
+        (file) => !processedFileIds.has(normalizePath(file.path)) && file && file.analysis
       );
       const processedFiles = Array.isArray(organizedFiles)
-        ? organizedFiles.filter((file) => processedFileIds.has(file?.originalPath || file?.path))
+        ? organizedFiles.filter((file) =>
+            processedFileIds.has(normalizePath(file?.originalPath || file?.path))
+          )
         : [];
       return { unprocessedFiles, processedFiles };
     },
-    [processedFileIds, organizedFiles]
+    [processedFileIds, organizedFiles, normalizePath]
   );
 
   return {
@@ -349,7 +365,8 @@ export function useProcessedFiles(organizedFiles) {
     setProcessedFileIds,
     markFilesAsProcessed,
     unmarkFilesAsProcessed,
-    getFilteredFiles
+    getFilteredFiles,
+    normalizePath
   };
 }
 

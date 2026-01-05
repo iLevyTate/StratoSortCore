@@ -22,6 +22,7 @@ const { container, ServiceIds } = require('../services/ServiceContainer');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const { logger } = require('../../shared/logger');
+
 logger.setContext('OllamaImageAnalysis');
 let chromaDbSingleton = null;
 let folderMatcherSingleton = null;
@@ -54,7 +55,12 @@ const AppConfig = {
   }
 };
 
-async function analyzeImageWithOllama(imageBase64, originalFileName, smartFolders = []) {
+async function analyzeImageWithOllama(
+  imageBase64,
+  originalFileName,
+  smartFolders = [],
+  extractedText = null
+) {
   try {
     logger.info(`Analyzing image content with Ollama`, {
       model: AppConfig.ai.imageAnalysis.defaultModel
@@ -75,31 +81,49 @@ async function analyzeImageWithOllama(imageBase64, originalFileName, smartFolder
           .map((f, i) => `${i + 1}. "${f.name}" — ${f.description || 'no description provided'}`)
           .join('\n');
 
-        folderCategoriesStr = `\n\nAVAILABLE SMART FOLDERS (name — description):\n${folderListDetailed}\n\nSELECTION RULES (CRITICAL):\n- Choose the category by comparing the IMAGE CONTENT to the folder DESCRIPTIONS above.\n- Output the category EXACTLY as one of the folder names above (verbatim).\n- Do NOT invent new categories. If unsure, choose the closest match by description or use the first folder as a fallback.`;
+        folderCategoriesStr = `\n\nAVAILABLE SMART FOLDERS (name — description):\n${folderListDetailed}\n\nSELECTION RULES (CRITICAL):\n- Choose the category by comparing BOTH the image content AND the filename to folder DESCRIPTIONS.\n- Output the category EXACTLY as one of the folder names above (verbatim).\n- Do NOT invent new categories.\n- If the filename suggests a category (e.g., "financial-report" → Finance folder), PRIORITIZE that match.`;
       }
     }
 
+    // Build OCR grounding context if text was extracted
+    const ocrGroundingStr =
+      extractedText && extractedText.length > 20
+        ? `\n\nEXTRACTED TEXT FROM IMAGE (GROUND TRUTH - your analysis MUST be consistent with this):\n${extractedText.slice(0, 1500)}\n\nIMPORTANT: The text above was extracted from the image via OCR. Your analysis MUST reflect this text content. If the text mentions financial terms, budgets, invoices, or reports, your analysis MUST identify these themes.`
+        : '';
+
     const prompt = `You are an expert image analyzer for an automated file organization system. Analyze this image named "${originalFileName}" and extract structured information.
+
+CRITICAL FILENAME VALIDATION:
+The original filename is "${originalFileName}". Your analysis MUST be consistent with this filename.
+- If the filename contains "financial", "budget", "invoice", "receipt", "tax" → your analysis MUST identify financial/business content
+- If the filename contains "report", "document", "form" → treat this as a document image, NOT a landscape or scenic photo
+- If the filename contains "screenshot", "screen" → this is likely an interface/application capture
+- If your visual analysis contradicts the filename, TRUST THE FILENAME and re-examine the image for text or document content
+${ocrGroundingStr}
 
 Your response should be a JSON object with the following fields:
 - date (if there's a visible date in the image, in YYYY-MM-DD format)
-- project (a short, 2-5 word project name or main subject based on image content)
-- purpose (a concise, 5-10 word description of what this image shows or represents)
-- category (most appropriate category for organizing this file; must be one of the folder names above)${folderCategoriesStr}
-- keywords (an array of 3-7 relevant keywords describing the image content)
-- confidence (a number from 60-100 indicating analysis confidence)
-- content_type (e.g., 'people', 'landscape', 'text_document', 'interface', 'object', 'animal', 'food', 'vehicle', 'architecture')
-- has_text (boolean indicating if there's readable text in the image)
-- colors (array of 2-4 dominant colors in the image)
-- suggestedName (SHORT descriptive name, MAX 40 chars, 2-5 key words only)
+- project (a short, 2-5 word project name based on BOTH filename and image content)
+- purpose (a concise, 5-10 word description - for documents/reports, describe the document type)
+- category (must match one of the folder names above, prioritize filename hints)${folderCategoriesStr}
+- keywords (an array of 3-7 keywords - MUST include relevant terms from the filename)
+- confidence (60-100; use 50 or lower if visual content seems to contradict the filename)
+- content_type (IMPORTANT: if filename suggests document/report/form, use 'text_document' or 'business_document', NOT 'landscape')
+- has_text (boolean - if image contains ANY readable text, this should be true)
+- colors (array of 2-4 dominant colors)
+- suggestedName (SHORT name, MAX 40 chars - should PRESERVE key terms from original filename)
 
 IMPORTANT FOR suggestedName:
 - Keep it SHORT: maximum 40 characters (excluding extension)
-- Use 2-5 key descriptive words only
-- Do NOT include dates, IDs, or reference numbers
-- Example: "sunset_beach_landscape" or "team_meeting_whiteboard"
+- PRESERVE semantic meaning from the original filename "${originalFileName}"
+- If filename says "financial-budget-report", suggested name should include "budget" or "financial"
+- Do NOT suggest unrelated names like landscapes for document files
+- Examples based on filename context:
+  - For "quarterly-sales-report.png" → "quarterly_sales_report" (NOT "colorful_chart_graphic")
+  - For "vacation-beach-photo.jpg" → "beach_vacation_photo" (landscape appropriate here)
+  - For "invoice-2024-acme.png" → "acme_invoice" (NOT "white_paper_document")
 
-If you cannot determine a field, omit it from the JSON. Do not make up information. The output MUST be a valid JSON object.
+If you cannot determine a field with confidence, omit it from the JSON. Do NOT hallucinate or guess content that contradicts the filename. The output MUST be a valid JSON object.
 
 Analyze this image:`;
 
@@ -288,6 +312,190 @@ Analyze this image:`;
       confidence: 60
     };
   }
+}
+
+// ============================================================================
+// Hallucination Detection and Validation
+// ============================================================================
+
+/**
+ * Validate analysis result against filename to detect hallucinations
+ * Penalizes confidence when Ollama output contradicts filename context
+ * @param {Object} analysis - Ollama analysis result
+ * @param {string} fileName - Original file name
+ * @param {string} extractedText - OCR-extracted text (optional)
+ * @returns {Object} Analysis with validation applied and warnings added
+ */
+function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
+  if (!analysis || typeof analysis !== 'object') return analysis;
+
+  const warnings = [];
+  const fileNameLower = fileName.toLowerCase();
+  const suggestedLower = (analysis.suggestedName || '').toLowerCase();
+  const keywordsStr = (analysis.keywords || []).join(' ').toLowerCase();
+
+  // Define filename context indicators
+  const financialTerms = [
+    'financial',
+    'budget',
+    'invoice',
+    'receipt',
+    'tax',
+    'expense',
+    'payment',
+    'billing',
+    'accounting'
+  ];
+  const documentTerms = ['report', 'document', 'form', 'statement', 'summary', 'analysis'];
+  const landscapeTerms = [
+    'sunset',
+    'beach',
+    'landscape',
+    'nature',
+    'mountain',
+    'ocean',
+    'forest',
+    'sky',
+    'scenic'
+  ];
+
+  // Check if filename indicates financial content
+  const filenameIsFinancial = financialTerms.some((term) => fileNameLower.includes(term));
+  const filenameIsDocument = documentTerms.some((term) => fileNameLower.includes(term));
+
+  // Check if suggested name indicates landscape/scenic content
+  const suggestedIsLandscape = landscapeTerms.some((term) => suggestedLower.includes(term));
+  // const keywordsAreLandscape = landscapeTerms.some((term) => keywordsStr.includes(term)); // Unused
+
+  // CRITICAL: Detect financial document → landscape hallucination
+  if (filenameIsFinancial && suggestedIsLandscape) {
+    warnings.push('HALLUCINATION DETECTED: Suggested landscape name for financial document');
+    analysis.confidence = Math.min(analysis.confidence || 75, 25);
+    analysis.hallucination_detected = true;
+
+    // Override with filename-based suggestion
+    // const fallbackName = getIntelligentImageCategory(fileName, '')
+    //   .toLowerCase()
+    //   .replace(/\s+/g, '_');
+    analysis.suggestedName = safeSuggestedName(fileName, '');
+    logger.warn('[HALLUCINATION] Landscape suggested for financial file, overriding', {
+      original: suggestedLower,
+      corrected: analysis.suggestedName
+    });
+  }
+
+  // Check if document filename got landscape analysis
+  if (filenameIsDocument && suggestedIsLandscape) {
+    warnings.push('HALLUCINATION DETECTED: Suggested landscape name for document file');
+    analysis.confidence = Math.min(analysis.confidence || 75, 30);
+    analysis.hallucination_detected = true;
+    analysis.suggestedName = safeSuggestedName(fileName, '');
+  }
+
+  // Check if keywords contradict filename
+  if (
+    filenameIsFinancial &&
+    !keywordsStr.includes('financ') &&
+    !keywordsStr.includes('budget') &&
+    !keywordsStr.includes('invoice') &&
+    !keywordsStr.includes('money') &&
+    !keywordsStr.includes('business')
+  ) {
+    warnings.push('Keywords do not reflect financial context from filename');
+    analysis.confidence = Math.max(40, (analysis.confidence || 75) - 20);
+
+    // Inject financial keywords from filename
+    const fileKeywords = financialTerms.filter((term) => fileNameLower.includes(term));
+    if (fileKeywords.length > 0 && Array.isArray(analysis.keywords)) {
+      analysis.keywords = [...fileKeywords, ...analysis.keywords].slice(0, 7);
+    }
+  }
+
+  // Validate against OCR-extracted text
+  if (extractedText && extractedText.length > 30) {
+    const textLower = extractedText.toLowerCase();
+    const textIsFinancial =
+      financialTerms.some((term) => textLower.includes(term)) ||
+      textLower.includes('$') ||
+      textLower.includes('total') ||
+      textLower.includes('amount');
+
+    if (textIsFinancial && suggestedIsLandscape) {
+      warnings.push('OCR text contains financial content but analysis suggests landscape');
+      analysis.confidence = Math.min(analysis.confidence || 75, 20);
+      analysis.hallucination_detected = true;
+      analysis.suggestedName = safeSuggestedName(fileName, '');
+    }
+  }
+
+  // Check content_type consistency
+  if (
+    (filenameIsFinancial || filenameIsDocument) &&
+    analysis.content_type &&
+    ['landscape', 'nature', 'scenic', 'beach', 'sunset'].includes(
+      analysis.content_type.toLowerCase()
+    )
+  ) {
+    warnings.push('Content type contradicts document/financial filename');
+    analysis.content_type = 'text_document';
+    analysis.confidence = Math.max(35, (analysis.confidence || 75) - 25);
+  }
+
+  // CROSS-VALIDATION: Use fallbackUtils intelligent category as ground truth
+  // If Ollama's category doesn't match filename-based category, prefer filename-based
+  const fileExtension = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '';
+  const intelligentCategory = getIntelligentImageCategory(fileName, fileExtension);
+
+  if (analysis.category && intelligentCategory) {
+    const ollamaCategoryLower = analysis.category.toLowerCase();
+    const intelligentCategoryLower = intelligentCategory.toLowerCase();
+
+    // Check if Ollama category is generic but intelligent category is specific
+    const genericCategories = ['documents', 'images', 'files', 'work', 'general', 'other', 'misc'];
+    const ollamaIsGeneric = genericCategories.some((g) => ollamaCategoryLower.includes(g));
+    const intelligentIsSpecific = !genericCategories.some((g) =>
+      intelligentCategoryLower.includes(g)
+    );
+
+    if (ollamaIsGeneric && intelligentIsSpecific) {
+      warnings.push(
+        `Category override: "${analysis.category}" → "${intelligentCategory}" (filename-based)`
+      );
+      analysis.original_category = analysis.category;
+      analysis.category = intelligentCategory;
+      analysis.category_source = 'filename_fallback';
+    }
+
+    // If Ollama gave a completely wrong category for financial files
+    if (
+      filenameIsFinancial &&
+      !ollamaCategoryLower.includes('financ') &&
+      !ollamaCategoryLower.includes('budget')
+    ) {
+      if (intelligentCategoryLower.includes('financ') || intelligentCategoryLower === 'financial') {
+        warnings.push(
+          `Financial category override: "${analysis.category}" → "${intelligentCategory}"`
+        );
+        analysis.original_category = analysis.category;
+        analysis.category = intelligentCategory;
+        analysis.category_source = 'filename_financial_override';
+      }
+    }
+  }
+
+  // Log warnings if any detected
+  if (warnings.length > 0) {
+    analysis.validation_warnings = warnings;
+    logger.warn('[IMAGE-VALIDATION] Analysis inconsistencies detected', {
+      fileName,
+      warnings,
+      adjustedConfidence: analysis.confidence,
+      hallucinationDetected: analysis.hallucination_detected || false,
+      categorySource: analysis.category_source || 'ollama'
+    });
+  }
+
+  return analysis;
 }
 
 // ============================================================================
@@ -652,10 +860,44 @@ async function analyzeImageFile(filePath, smartFolders = []) {
 
     logger.debug(`Base64 length`, { chars: imageBase64.length });
 
-    // Analyze with Ollama
+    // ANTI-HALLUCINATION: Extract text from image FIRST to ground the vision analysis
+    // This provides OCR-based ground truth that can validate/override visual interpretation
+    let extractedText = null;
+    try {
+      // Only attempt OCR for images that might contain text (documents, screenshots, etc.)
+      const fileNameLower = fileName.toLowerCase();
+      const mightContainText =
+        fileNameLower.includes('report') ||
+        fileNameLower.includes('document') ||
+        fileNameLower.includes('invoice') ||
+        fileNameLower.includes('receipt') ||
+        fileNameLower.includes('form') ||
+        fileNameLower.includes('screenshot') ||
+        fileNameLower.includes('screen') ||
+        fileNameLower.includes('budget') ||
+        fileNameLower.includes('financial') ||
+        fileNameLower.includes('statement') ||
+        fileNameLower.includes('tax');
+
+      if (mightContainText) {
+        logger.debug('[IMAGE] Filename suggests document content, attempting OCR pre-extraction');
+        extractedText = await extractTextFromImage(filePath);
+        if (extractedText && extractedText.length > 20) {
+          logger.info('[IMAGE] OCR pre-extraction successful', {
+            textLength: extractedText.length,
+            preview: extractedText.slice(0, 100)
+          });
+        }
+      }
+    } catch (ocrError) {
+      // Non-fatal: OCR failure doesn't block analysis, just means no grounding
+      logger.debug('[IMAGE] OCR pre-extraction failed (non-fatal):', ocrError.message);
+    }
+
+    // Analyze with Ollama, passing extracted text for grounding
     let analysis;
     try {
-      analysis = await analyzeImageWithOllama(imageBase64, fileName, smartFolders);
+      analysis = await analyzeImageWithOllama(imageBase64, fileName, smartFolders, extractedText);
 
       // Merge EXIF date if available and Ollama didn't return a valid date (or override it?)
       // The plan says "populate the date field without asking LLM".
@@ -663,6 +905,11 @@ async function analyzeImageFile(filePath, smartFolders = []) {
       if (exifDate) {
         if (!analysis) analysis = {};
         analysis.date = exifDate;
+      }
+
+      // ANTI-HALLUCINATION: Validate analysis against filename and OCR text
+      if (analysis && !analysis.error) {
+        analysis = validateAnalysisConsistency(analysis, fileName, extractedText);
       }
     } catch (error) {
       logger.error('[IMAGE] Error calling analyzeImageWithOllama', {
@@ -705,7 +952,7 @@ async function analyzeImageFile(filePath, smartFolders = []) {
       if (finalSuggestedName && fileExtension) {
         const suggestedExt = path.extname(finalSuggestedName);
         if (!suggestedExt) {
-          finalSuggestedName = finalSuggestedName + fileExtension;
+          finalSuggestedName += fileExtension;
         }
       }
       const normalized = normalizeAnalysisResult(

@@ -239,11 +239,13 @@ async function checkChromaExecutableAsync() {
     if (result.status === 0) {
       logger.info('[ChromaDB] Found system chroma executable');
       return true;
-    } else if (result.timedOut) {
+    }
+    if (result.timedOut) {
       // Command timed out during --help check, but it exists
       logger.warn('[ChromaDB] chroma --help timed out, but executable exists');
       return true;
-    } else if (result.error && result.error.code !== 'ENOENT') {
+    }
+    if (result.error && result.error.code !== 'ENOENT') {
       // Some other error (not "command not found")
       logger.warn('[ChromaDB] chroma executable check failed:', result.error.code);
       return true; // Assume it exists

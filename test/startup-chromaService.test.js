@@ -37,6 +37,11 @@ jest.mock('../src/main/utils/chromaSpawnUtils', () => ({
   buildChromaSpawnPlan: jest.fn()
 }));
 
+// FIX: Mock preflightChecks to allow spawn tests to proceed past port availability check
+jest.mock('../src/main/services/startup/preflightChecks', () => ({
+  isPortAvailable: jest.fn().mockResolvedValue(true) // Port is available, proceed to spawn
+}));
+
 jest.mock('../src/main/services/chromadb', () => ({
   getInstance: jest.fn().mockReturnValue({
     getServerConfig: jest.fn().mockReturnValue({
@@ -246,6 +251,26 @@ describe('chromaService', () => {
       expect(result.success).toBe(false);
       expect(result.disabled).toBe(true);
       expect(result.reason).toBe('missing_dependency');
+    });
+
+    test('does NOT spawn when ChromaDB is already running (uses existing instance)', async () => {
+      // Mock that ChromaDB is already responding to health checks
+      axios.get.mockResolvedValue({ status: 200 });
+
+      const result = await chromaService.startChromaDB({
+        serviceStatus,
+        errors,
+        chromadbDependencyMissing: false,
+        cachedChromaSpawnPlan: null,
+        setCachedSpawnPlan: jest.fn()
+      });
+
+      // Should detect existing instance and NOT spawn
+      expect(result.success).toBe(true);
+      expect(result.alreadyRunning).toBe(true);
+      expect(spawn).not.toHaveBeenCalled(); // Critical: NO spawn
+      expect(serviceStatus.chromadb.status).toBe('running');
+      expect(serviceStatus.chromadb.health).toBe('healthy');
     });
 
     test('uses external CHROMA_SERVER_URL without requiring local python module', async () => {

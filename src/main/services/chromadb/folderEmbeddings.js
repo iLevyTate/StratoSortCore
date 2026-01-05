@@ -119,6 +119,10 @@ async function directBatchUpsertFolders({ folders, folderCollection, queryCache 
   const documents = [];
   const skipped = [];
 
+  // FIX: Track seen IDs to prevent duplicate ID error from ChromaDB
+  const seenIds = new Set();
+  let duplicateCount = 0;
+
   for (const folder of folders) {
     if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
       logger.warn('[FolderOps] Skipping invalid folder in batch', {
@@ -141,6 +145,17 @@ async function directBatchUpsertFolders({ folders, folderCollection, queryCache 
       continue;
     }
 
+    // FIX: Skip duplicate IDs - ChromaDB requires unique IDs in batch
+    if (seenIds.has(folder.id)) {
+      duplicateCount++;
+      logger.debug('[FolderOps] Skipping duplicate folder ID in batch', {
+        id: folder.id,
+        name: folder.name
+      });
+      continue;
+    }
+    seenIds.add(folder.id);
+
     // FIX: Validate vector for NaN/Infinity before including in batch
     const validation = validateEmbeddingVector(folder.vector, folder.id);
     if (!validation.valid) {
@@ -162,6 +177,15 @@ async function directBatchUpsertFolders({ folders, folderCollection, queryCache 
     embeddings.push(folder.vector);
     metadatas.push(sanitized);
     documents.push(folder.name || folder.id);
+  }
+
+  // Log if duplicates were found
+  if (duplicateCount > 0) {
+    logger.info('[FolderOps] Deduplicated batch before upsert', {
+      originalCount: folders.length,
+      uniqueCount: ids.length,
+      duplicatesRemoved: duplicateCount
+    });
   }
 
   if (ids.length === 0) {
@@ -496,7 +520,7 @@ async function batchQueryFolders({
 
     // Batch query folders
     const results = await folderCollection.query({
-      queryEmbeddings: queryEmbeddings,
+      queryEmbeddings,
       nResults: topK
     });
 

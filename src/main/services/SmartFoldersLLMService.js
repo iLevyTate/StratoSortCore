@@ -1,4 +1,5 @@
 const { logger } = require('../../shared/logger');
+
 logger.setContext('SmartFoldersLLMService');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { fetchWithRetry } = require('../utils/ollamaApiRetry');

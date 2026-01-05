@@ -85,7 +85,7 @@ class ClusteringService {
       await this.chromaDb.initialize();
 
       // Null check for fileCollection to prevent runtime crash
-      const fileCollection = this.chromaDb.fileCollection;
+      const { fileCollection } = this.chromaDb;
       if (!fileCollection) {
         logger.warn('[ClusteringService] File collection not available');
         return [];

@@ -79,7 +79,6 @@ async function replaceFileWithRetry(tempPath, filePath, options = {}) {
   // This is less "atomic" but avoids losing data when Windows denies rename.
   try {
     await fs.copyFile(tempPath, filePath);
-    return;
   } catch (copyError) {
     // Prefer the original error for debugging, but attach copy failure details.
     if (lastError) lastError.copyFailure = copyError;

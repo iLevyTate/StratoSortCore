@@ -178,13 +178,14 @@ describe('Analysis Fallback Utils', () => {
       expect(keywords).toContain('pdf');
     });
 
-    test('limits keywords to 7', () => {
+    test('limits keywords to 10 (increased to include semantic keywords)', () => {
       const keywords = getIntelligentKeywords(
         'report_summary_analysis_proposal_presentation.pdf',
         '.pdf'
       );
 
-      expect(keywords.length).toBeLessThanOrEqual(7);
+      // Limit increased from 7 to 10 to accommodate semantic extension keywords
+      expect(keywords.length).toBeLessThanOrEqual(10);
     });
 
     test('handles unknown category', () => {

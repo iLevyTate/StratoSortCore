@@ -411,3 +411,22 @@ npm test -- --watch
 - Run before each release
 - Include known bug scenarios
 - Test backward compatibility
+
+## Manual Verification Strategy
+
+While we aim for high automated coverage, certain features require manual verification, particularly
+those involving:
+
+1.  **AI Model Output Quality**: Subjective quality of descriptions and suggestions.
+2.  **UI/UX Interactions**: Drag-and-drop, animations, and responsive layouts.
+3.  **System Integration**: Interaction with external services (Ollama, ChromaDB) across different
+    OS environments.
+
+### Verification Documents
+
+- **[Manual Test Plan](MANUAL_TEST_PLAN.md)**: Comprehensive step-by-step validation of all
+  features.
+- **[Fix Verification Checklist](FIX_VERIFICATION_CHECKLIST.md)**: Targeted checklist for verifying
+  specific bug fixes and new features.
+
+These documents should be executed before any major release candidate.

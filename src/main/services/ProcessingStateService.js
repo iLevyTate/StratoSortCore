@@ -5,6 +5,7 @@ const { app } = require('electron');
 const { logger } = require('../../shared/logger');
 const { isNotFoundError } = require('../../shared/errorClassifier');
 const { RETRY } = require('../../shared/performanceConstants');
+
 logger.setContext('ProcessingStateService');
 
 /**

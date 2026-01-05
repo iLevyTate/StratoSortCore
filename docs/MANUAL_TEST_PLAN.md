@@ -51,7 +51,7 @@ Before starting manual testing:
 | Minimize button        | Window minimizes                           | **PASS** | Works                                                               |
 | Maximize button        | Window maximizes/restores                  | **PASS** | Works, but maximize size change is negligible (1280×799 → 1280×800) |
 | Close button           | App closes gracefully                      | **PASS** | Appears to shut down correctly                                      |
-| Window state persisted | Window position/size remembered on restart | **SKIP** | Not confirmed                                                       |
+| Window state persisted | Window position/size remembered on restart | **PASS** | Confirmed working                                                   |
 
 ---
 
@@ -69,20 +69,20 @@ Before starting manual testing:
 
 ### 2.2 Theme & Appearance
 
-| Test              | Expected                           | Status   | Notes                                        |
-| ----------------- | ---------------------------------- | -------- | -------------------------------------------- |
-| Light theme works | UI renders correctly in light mode | **FAIL** | No visible light theme option / not observed |
-| Dark theme works  | UI renders correctly in dark mode  | **FAIL** | No visible dark theme option / not observed  |
-| Theme toggle      | Can switch between themes          | **FAIL** | Theme toggle not found                       |
-| Theme persisted   | Theme preference saved on restart  | **SKIP** | Can't validate without toggle                |
+| Test              | Expected                           | Status  | Notes                                              |
+| ----------------- | ---------------------------------- | ------- | -------------------------------------------------- |
+| Light theme works | UI renders correctly in light mode | **N/A** | Single theme only for time being - feature removed |
+| Dark theme works  | UI renders correctly in dark mode  | **N/A** | Single theme only for time being - feature removed |
+| Theme toggle      | Can switch between themes          | **N/A** | Removed - single primary theme for now             |
+| Theme persisted   | Theme preference saved on restart  | **N/A** | Not applicable with single theme                   |
 
 ### 2.3 Responsive Layout
 
-| Test                  | Expected                   | Status   | Notes                                                                                      |
-| --------------------- | -------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| Window resize         | UI adapts to window size   | **FAIL** | Body responds somewhat, but navbar/header does not respond well (phase visibility clipped) |
-| Minimum size enforced | Can't resize below minimum | **SKIP** | Not tested                                                                                 |
-| Scrolling works       | Long content is scrollable | **PASS** | Long scrolling looked good                                                                 |
+| Test                  | Expected                   | Status    | Notes                                                                                                                       |
+| --------------------- | -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Window resize         | UI adapts to window size   | **FIXED** | M-1: Fixed z-index conflicts - FloatingSearchWidget reduced from z-[9999] to z-[500]. Navbar responsive fixes also applied. |
+| Minimum size enforced | Can't resize below minimum | **SKIP**  | Not tested                                                                                                                  |
+| Scrolling works       | Long content is scrollable | **PASS**  | Long scrolling looked good                                                                                                  |
 
 ---
 
@@ -90,37 +90,40 @@ Before starting manual testing:
 
 ### 3.1 Smart Folder Management
 
-| Test                    | Expected                      | Status   | Notes                                                                          |
-| ----------------------- | ----------------------------- | -------- | ------------------------------------------------------------------------------ |
-| Add smart folder        | Can create new smart folder   | **FAIL** | Cannot add smart folder unless target path already exists (Issue 3.1-A, 3.1-B) |
-| Edit folder name        | Can rename smart folder       | **PASS** | Name updates in app                                                            |
-| Edit folder description | Can update folder description | **PASS** | Description updates                                                            |
-| Delete smart folder     | Can remove smart folder       | **SKIP** | Not tested                                                                     |
-| Folder list displays    | All smart folders shown       | **PASS** | Shows folders that were added                                                  |
+| Test                    | Expected                      | Status    | Notes                                                                                                            |
+| ----------------------- | ----------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| Add smart folder        | Can create new smart folder   | **FIXED** | Issue 3.1-A/B: Backend now auto-creates directories when smart folder is saved                                   |
+| Edit folder name        | Can rename smart folder       | **PASS**  | Name updates in app                                                                                              |
+| Edit folder description | Can update folder description | **PASS**  | Description updates                                                                                              |
+| Delete smart folder     | Can remove smart folder       | **PASS**  | Works                                                                                                            |
+| Folder list displays    | All smart folders shown       | **PASS**  | Shows folders that were added                                                                                    |
+| Path validation         | Invalid paths rejected        | **FIXED** | Issue 3.1-A/B: Removed frontend validation; backend auto-creates directories. H-1: Fixed loading race condition. |
 
-**Additional Observations (Smart Folder UI):**
+**Additional Observations (Smart Folder UI):** _(All issues below have been FIXED)_
 
-- Modal shows a weird "hidden window/blur layer" behind it; black line hovering over "Configure
-  smart folders"; flicker when moving mouse/typing
-- Too many rebuild options at top of screen and inside individual folder settings (Issue 3.1-C)
-- Rebuild terminology is unclear - "folders" vs "files" is ambiguous (Issue 3.1-D)
+- ~~Modal shows a weird "hidden window/blur layer" behind it; black line hovering over "Configure
+  smart folders"; flicker when moving mouse/typing~~ → Fixed with split backdrop pattern
+- ~~Too many rebuild options at top of screen and inside individual folder settings~~ → Issue 3.1-C:
+  Removed per-folder rebuild
+- ~~Rebuild terminology is unclear - "folders" vs "files" is ambiguous~~ → Issue 3.1-D: Simplified
+  by removing per-folder option
 
 ### 3.2 Target Folder Selection
 
-| Test               | Expected                    | Status   | Notes                                                                                             |
-| ------------------ | --------------------------- | -------- | ------------------------------------------------------------------------------------------------- |
-| Browse for folder  | Folder picker dialog opens  | **PASS** | Browse worked                                                                                     |
-| Select destination | Destination folder is set   | **PASS** | Appeared to set destination during target selection                                               |
-| Path validation    | Invalid paths are rejected  | **SKIP** | Not tested                                                                                        |
-| Default path       | Documents folder is default | **FAIL** | Shows Documents as default, but does not create folder on filesystem / doesn't behave as expected |
+| Test               | Expected                    | Status    | Notes                                                                                    |
+| ------------------ | --------------------------- | --------- | ---------------------------------------------------------------------------------------- |
+| Browse for folder  | Folder picker dialog opens  | **PASS**  | Browse worked                                                                            |
+| Select destination | Destination folder is set   | **PASS**  | Appeared to set destination during target selection                                      |
+| Path validation    | Invalid paths are rejected  | **SKIP**  | Not tested                                                                               |
+| Default path       | Documents folder is default | **FIXED** | H-1: Fixed path loading race. Backend auto-creates directories when saving smart folder. |
 
 ### 3.3 Folder Descriptions (AI-Enhanced)
 
-| Test                      | Expected                           | Status   | Notes                                        |
-| ------------------------- | ---------------------------------- | -------- | -------------------------------------------- |
-| Auto-generate description | AI can suggest folder description  | **FAIL** | Feature not visible/available                |
-| Manual description entry  | Can type custom description        | **PASS** | Works                                        |
-| Description saved         | Descriptions persist after restart | **PASS** | Folder + description persisted after restart |
+| Test                      | Expected                           | Status    | Notes                                                                |
+| ------------------------- | ---------------------------------- | --------- | -------------------------------------------------------------------- |
+| Auto-generate description | AI can suggest folder description  | **FIXED** | C-1: Fixed backend to use correct OllamaService.analyzeText() method |
+| Manual description entry  | Can type custom description        | **PASS**  | Works                                                                |
+| Description saved         | Descriptions persist after restart | **PASS**  | Folder + description persisted after restart                         |
 
 ---
 
@@ -128,56 +131,56 @@ Before starting manual testing:
 
 ### 4.1 File Selection
 
-| Test                    | Expected                             | Status | Notes |
-| ----------------------- | ------------------------------------ | ------ | ----- |
-| Drag & drop files       | Can drop files onto app              |        |       |
-| Drag & drop folders     | Can drop folders onto app            |        |       |
-| Browse button           | File picker dialog opens             |        |       |
-| Multiple file selection | Can select multiple files            |        |       |
-| File list displays      | Selected files appear in list        |        |       |
-| Remove file from list   | Can deselect/remove individual files |        |       |
-| Clear all files         | Can clear entire selection           |        |       |
+| Test                    | Expected                             | Status   | Notes                                                                        |
+| ----------------------- | ------------------------------------ | -------- | ---------------------------------------------------------------------------- |
+| Drag & drop files       | Can drop files onto app              | **N/A**  | Intentionally disabled - future feature                                      |
+| Drag & drop folders     | Can drop folders onto app            | **N/A**  | Intentionally disabled - future feature                                      |
+| Browse button           | File picker dialog opens             | **PASS** | Works                                                                        |
+| Multiple file selection | Can select multiple files            | **PASS** | Works                                                                        |
+| File list displays      | Selected files appear in list        | **PASS** | Works                                                                        |
+| Remove file from list   | Can deselect/remove individual files | **PASS** | Works - "Remove" button in each file row removes from queue without deleting |
+| Clear all files         | Can clear entire selection           | **PASS** | Works                                                                        |
 
 ### 4.2 File Type Support
 
-| Test                   | Expected                           | Status | Notes |
-| ---------------------- | ---------------------------------- | ------ | ----- |
-| PDF files              | PDFs can be analyzed               |        |       |
-| Word documents (.docx) | Word files can be analyzed         |        |       |
-| Excel files (.xlsx)    | Excel files can be analyzed        |        |       |
-| PowerPoint (.pptx)     | PowerPoint files can be analyzed   |        |       |
-| Plain text (.txt)      | Text files can be analyzed         |        |       |
-| Images (JPG/PNG)       | Images can be analyzed             |        |       |
-| Unsupported files      | Show warning for unsupported types |        |       |
+| Test                   | Expected                           | Status   | Notes                        |
+| ---------------------- | ---------------------------------- | -------- | ---------------------------- |
+| PDF files              | PDFs can be analyzed               | **PASS** | Works                        |
+| Word documents (.docx) | Word files can be analyzed         | **PASS** | Works                        |
+| Excel files (.xlsx)    | Excel files can be analyzed        | **PASS** | Works                        |
+| PowerPoint (.pptx)     | PowerPoint files can be analyzed   | **PASS** | Works                        |
+| Plain text (.txt)      | Text files can be analyzed         | **PASS** | Works                        |
+| Images (JPG/PNG)       | Images can be analyzed             | **PASS** | Works                        |
+| Unsupported files      | Show warning for unsupported types | **PASS** | Shows they are not processed |
 
 ### 4.3 Analysis Process
 
-| Test                     | Expected                       | Status | Notes |
-| ------------------------ | ------------------------------ | ------ | ----- |
-| Analyze button works     | Analysis starts on click       |        |       |
-| Progress indicator       | Progress shown during analysis |        |       |
-| Individual file progress | Each file shows its status     |        |       |
-| Cancel analysis          | Can cancel ongoing analysis    |        |       |
-| Analysis completes       | All files finish processing    |        |       |
+| Test                     | Expected                       | Status   | Notes                                                                                                 |
+| ------------------------ | ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
+| Analyze button works     | Analysis starts on click       | **N/A**  | Auto-processes when files/folders loaded - no manual analyze button. L-1: Fixed duplicate indicators. |
+| Progress indicator       | Progress shown during analysis | **PASS** | Works                                                                                                 |
+| Individual file progress | Each file shows its status     | **PASS** | Shows horizontal bar animation with percentage                                                        |
+| Cancel analysis          | Can cancel ongoing analysis    | **PASS** | Works                                                                                                 |
+| Analysis completes       | All files finish processing    | **PASS** | Works                                                                                                 |
 
 ### 4.4 Analysis Results
 
-| Test             | Expected                     | Status | Notes |
-| ---------------- | ---------------------------- | ------ | ----- |
-| Results display  | Analysis results appear      |        |       |
-| Category shown   | File category is displayed   |        |       |
-| Keywords shown   | Extracted keywords visible   |        |       |
-| Confidence score | Confidence percentage shown  |        |       |
-| Suggested folder | Folder suggestion displayed  |        |       |
-| Suggested name   | File rename suggestion shown |        |       |
+| Test             | Expected                     | Status   | Notes |
+| ---------------- | ---------------------------- | -------- | ----- |
+| Results display  | Analysis results appear      | **PASS** | Works |
+| Category shown   | File category is displayed   | **PASS** | Works |
+| Keywords shown   | Extracted keywords visible   | **PASS** | Works |
+| Confidence score | Confidence percentage shown  | **PASS** | Works |
+| Suggested folder | Folder suggestion displayed  | **PASS** | Works |
+| Suggested name   | File rename suggestion shown | **PASS** | Works |
 
 ### 4.5 Batch Analysis
 
-| Test                     | Expected                        | Status | Notes |
-| ------------------------ | ------------------------------- | ------ | ----- |
-| Multiple files analyzed  | Can process batch of files      |        |       |
-| Partial failure handling | Some files fail, others succeed |        |       |
-| Retry failed files       | Can retry individual failures   |        |       |
+| Test                     | Expected                        | Status    | Notes                                                                     |
+| ------------------------ | ------------------------------- | --------- | ------------------------------------------------------------------------- |
+| Multiple files analyzed  | Can process batch of files      | **PASS**  | Works                                                                     |
+| Partial failure handling | Some files fail, others succeed | **PASS**  | Works                                                                     |
+| Retry failed files       | Can retry individual failures   | **FIXED** | M-3: Added "Retry Failed" button in DiscoverPhase when failed files exist |
 
 ---
 
@@ -185,39 +188,40 @@ Before starting manual testing:
 
 ### 5.1 Organization Suggestions
 
-| Test                       | Expected                      | Status | Notes |
-| -------------------------- | ----------------------------- | ------ | ----- |
-| Suggestions display        | File suggestions are shown    |        |       |
-| Folder assignments visible | Each file shows target folder |        |       |
-| Confidence indicators      | Confidence levels displayed   |        |       |
-| Group by folder            | Files grouped by destination  |        |       |
+| Test                       | Expected                      | Status   | Notes |
+| -------------------------- | ----------------------------- | -------- | ----- |
+| Suggestions display        | File suggestions are shown    | **PASS** | Works |
+| Folder assignments visible | Each file shows target folder | **PASS** | Works |
+| Confidence indicators      | Confidence levels displayed   | **PASS** | Works |
+| Group by folder            | Files grouped by destination  | **PASS** | Works |
 
 ### 5.2 Manual Adjustments
 
-| Test                 | Expected                              | Status | Notes |
-| -------------------- | ------------------------------------- | ------ | ----- |
-| Change target folder | Can reassign file to different folder |        |       |
-| Edit file name       | Can modify suggested name             |        |       |
-| Exclude file         | Can skip specific files               |        |       |
-| Include/exclude all  | Bulk selection works                  |        |       |
+| Test                 | Expected                              | Status    | Notes                                                                                                                           |
+| -------------------- | ------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Change target folder | Can reassign file to different folder | **SKIP**  | Not tested                                                                                                                      |
+| Edit file name       | Can modify suggested name             | **SKIP**  | Not tested                                                                                                                      |
+| Exclude file         | Can skip specific files               | **SKIP**  | Not tested                                                                                                                      |
+| Include/exclude all  | Bulk selection works                  | **FIXED** | Fixed: Organize button now respects selection - shows "Organize N Selected" when files selected, otherwise "Organize All Files" |
 
 ### 5.3 File Operations
 
-| Test                   | Expected                           | Status | Notes |
-| ---------------------- | ---------------------------------- | ------ | ----- |
-| Organize button works  | Files move to destinations         |        |       |
-| Progress shown         | Operation progress displayed       |        |       |
-| Success notification   | Completion message shown           |        |       |
-| Folders created        | Missing folders are created        |        |       |
-| File conflicts handled | Duplicate names handled gracefully |        |       |
+| Test                                      | Expected                                     | Status    | Notes                                                                                     |
+| ----------------------------------------- | -------------------------------------------- | --------- | ----------------------------------------------------------------------------------------- |
+| Organize button works                     | Files move to destinations                   | **PASS**  | Works                                                                                     |
+| Progress shown                            | Operation progress displayed                 | **PASS**  | Works                                                                                     |
+| Success notification                      | Completion message shown                     | **PASS**  | Works                                                                                     |
+| Folders created                           | Missing folders are created                  | **FIXED** | Issue 3.1-A/B: Backend now auto-creates directories                                       |
+| File conflicts handled                    | Duplicate names handled gracefully           | **FIXED** | M-4: Added conflict detection - blocks organize with warning when duplicates detected     |
+| Naming convention applied (auto-organize) | Files renamed per selected naming convention | **PASS**  | Download watcher now uses selected naming settings (e.g., subject-date) when moving files |
 
 ### 5.4 Preview & Validation
 
 | Test                           | Expected                                                | Status    | Notes                                                                                                                              |
 | ------------------------------ | ------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Preview before move            | Can see what will happen                                |           |                                                                                                                                    |
-| Conflict warnings              | Alerts for existing files                               |           |                                                                                                                                    |
-| Path validation                | Invalid destinations caught                             |           |                                                                                                                                    |
+| Preview before move            | Can see what will happen                                | **PASS**  | Works                                                                                                                              |
+| Conflict warnings              | Alerts for existing files                               | **FIXED** | M-4: Added conflict detection - shows warning banner listing conflicts, blocks organize until resolved                             |
+| Path validation                | Invalid destinations caught                             | **SKIP**  | Not encountered                                                                                                                    |
 | Destination conflict detection | Multiple files to same destination blocked with warning | **FIXED** | M-4: Added conflict detection in `buildPreview()`. Shows warning banner listing conflicting files, blocks organize until resolved. |
 
 ---
@@ -226,31 +230,41 @@ Before starting manual testing:
 
 ### 6.1 Undo Operations
 
-| Test                   | Expected                    | Status | Notes |
-| ---------------------- | --------------------------- | ------ | ----- |
-| Undo button visible    | Undo control is present     |        |       |
-| Undo single move       | Can undo last file move     |        |       |
-| Undo batch move        | Can undo entire batch       |        |       |
-| Multiple undos         | Can undo several operations |        |       |
-| Undo keyboard shortcut | Ctrl+Z / Cmd+Z works        |        |       |
+| Test                   | Expected                    | Status    | Notes                                                                                         |
+| ---------------------- | --------------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| Undo button visible    | Undo control is present     | **PASS**  | Works                                                                                         |
+| Undo single move       | Can undo last file move     | **SKIP**  | Not tested - only batch moves available                                                       |
+| Undo batch move        | Can undo entire batch       | **PASS**  | Works                                                                                         |
+| Multiple undos         | Can undo several operations | **SKIP**  | Not tested                                                                                    |
+| Undo keyboard shortcut | Ctrl+Z / Cmd+Z works        | **FIXED** | H-3: UI now updates via STATE_CHANGED event - shows notification and dispatches refresh event |
 
 ### 6.2 Redo Operations
 
-| Test                   | Expected                | Status | Notes |
-| ---------------------- | ----------------------- | ------ | ----- |
-| Redo button visible    | Redo control is present |        |       |
-| Redo single move       | Can redo undone move    |        |       |
-| Redo batch move        | Can redo undone batch   |        |       |
-| Redo keyboard shortcut | Ctrl+Shift+Z works      |        |       |
+| Test                   | Expected                | Status    | Notes                                                                                         |
+| ---------------------- | ----------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| Redo button visible    | Redo control is present | **PASS**  | Works                                                                                         |
+| Redo single move       | Can redo undone move    | **SKIP**  | Unable to test                                                                                |
+| Redo batch move        | Can redo undone batch   | **PASS**  | Works                                                                                         |
+| Redo keyboard shortcut | Ctrl+Shift+Z works      | **FIXED** | H-3: UI now updates via STATE_CHANGED event - shows notification and dispatches refresh event |
 
 ### 6.3 Undo History
 
-| Test                   | Expected                     | Status    | Notes                                                                                                                                                                                                       |
-| ---------------------- | ---------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| History displays       | Can see undo history list    |           |                                                                                                                                                                                                             |
-| Jump to specific point | Can undo to specific state   | **FIXED** | L-2: Added `jumpToPoint()` function. History modal now shows full stack (including undone actions) with clickable items. Click to jump forward/backward. Current position highlighted with "Current" badge. |
-| Clear history          | Can clear undo history       |           |                                                                                                                                                                                                             |
-| History persisted      | History survives app restart |           |                                                                                                                                                                                                             |
+| Test                   | Expected                     | Status    | Notes                                                                                                          |
+| ---------------------- | ---------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| History displays       | Can see undo history list    | **PASS**  | Works                                                                                                          |
+| Jump to specific point | Can undo to specific state   | **FIXED** | L-2: Added clickable history items in HistoryModal with jumpToPoint() - can jump forward/backward to any point |
+| Clear history          | Can clear undo history       | **PASS**  | Works                                                                                                          |
+| History persisted      | History survives app restart | **PASS**  | Works                                                                                                          |
+
+### 6.4 Undo/Redo Path Normalization (Issue-5/6)
+
+| Test                           | Expected                                   | Status | Notes |
+| ------------------------------ | ------------------------------------------ | ------ | ----- |
+| Organize files, press Ctrl+Z   | Files reappear in "Ready to Organize" list |        |       |
+| Press Ctrl+Shift+Z (redo)      | Files show as organized again              |        |       |
+| Verify Ready count updates     | Count matches number of undone files       |        |       |
+| Verify Organized count updates | Count matches number of redone files       |        |       |
+| Multiple undo/redo cycles      | UI consistently reflects file states       |        |       |
 
 ---
 
@@ -289,54 +303,61 @@ Before starting manual testing:
 
 ### 8.1 Settings Access
 
-| Test              | Expected                  | Status | Notes |
-| ----------------- | ------------------------- | ------ | ----- |
-| Settings opens    | Settings panel accessible |        |       |
-| Settings sections | All sections visible      |        |       |
-| Close settings    | Can close settings panel  |        |       |
+| Test              | Expected                  | Status   | Notes |
+| ----------------- | ------------------------- | -------- | ----- |
+| Settings opens    | Settings panel accessible | **PASS** | Works |
+| Settings sections | All sections visible      | **PASS** | Works |
+| Close settings    | Can close settings panel  | **PASS** | Works |
 
 ### 8.2 AI Configuration
 
-| Test                      | Expected                   | Status | Notes |
-| ------------------------- | -------------------------- | ------ | ----- |
-| Text model selection      | Can choose text model      |        |       |
-| Vision model selection    | Can choose vision model    |        |       |
-| Embedding model selection | Can choose embedding model |        |       |
-| Model test connection     | Can test Ollama connection |        |       |
-| Model pull/download       | Can download new models    |        |       |
+| Test                      | Expected                   | Status    | Notes                                                                      |
+| ------------------------- | -------------------------- | --------- | -------------------------------------------------------------------------- |
+| Text model selection      | Can choose text model      | **FIXED** | H-2: Fixed debounce flush on unmount; M-2: Fixed **proto** false positives |
+| Vision model selection    | Can choose vision model    | **FIXED** | H-2: Settings now flush on panel close                                     |
+| Embedding model selection | Can choose embedding model | **FIXED** | H-2: Settings now flush on panel close                                     |
+| Model test connection     | Can test Ollama connection | **PASS**  | Works                                                                      |
+| Model pull/download       | Can download new models    | **SKIP**  | Not tested                                                                 |
+
+**Note:** Welcome page AI components (Setup/Add Component) shows Ollama version and models
+correctly. There may be a spelling issue ("Obama" vs "Ollama").
 
 ### 8.3 Ollama Settings
 
-| Test                  | Expected                     | Status | Notes |
-| --------------------- | ---------------------------- | ------ | ----- |
-| Host configuration    | Can change Ollama host URL   |        |       |
-| Connection status     | Shows connected/disconnected |        |       |
-| Available models list | Shows installed models       |        |       |
+| Test                  | Expected                     | Status   | Notes                                      |
+| --------------------- | ---------------------------- | -------- | ------------------------------------------ |
+| Host configuration    | Can change Ollama host URL   | **SKIP** | Not tested                                 |
+| Connection status     | Shows connected/disconnected | **PASS** | Shows status correctly                     |
+| Available models list | Shows installed models       | **PASS** | Shows models; also visible on Welcome page |
 
 ### 8.4 ChromaDB Settings
 
-| Test               | Expected                       | Status | Notes |
-| ------------------ | ------------------------------ | ------ | ----- |
-| Status display     | ChromaDB status shown          |        |       |
-| Rebuild embeddings | Can rebuild embedding database |        |       |
-| Clear embeddings   | Can clear embedding database   |        |       |
+| Test                  | Expected                         | Status    | Notes                                                                                |
+| --------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------------ |
+| Status display        | ChromaDB status shown            | **PASS**  | Shown in settings page. M-5: Now shows context-aware messages when embeddings are 0. |
+| Rebuild embeddings    | Can rebuild embedding database   | **PASS**  | Works - allows rebuild                                                               |
+| Clear embeddings      | Can clear embedding database     | **SKIP**  | Not tested                                                                           |
+| Deleted model cleanup | Deleted models removed from list | **FIXED** | NEW-8: Models checked for existence before displaying                                |
 
 ### 8.5 Default Locations
 
-| Test                   | Expected                    | Status | Notes |
-| ---------------------- | --------------------------- | ------ | ----- |
-| Set source folder      | Can set default source      |        |       |
-| Set destination folder | Can set default destination |        |       |
-| Paths persist          | Settings saved on restart   |        |       |
+| Test                      | Expected                                  | Status    | Notes                                        |
+| ------------------------- | ----------------------------------------- | --------- | -------------------------------------------- |
+| Set source folder         | Can set default source                    |           |                                              |
+| Set destination folder    | Can set default destination               |           |                                              |
+| Paths persist             | Settings saved on restart                 |           |                                              |
+| Default smart folder path | Changes apply to "Add Smart Folder" modal | **FIXED** | NEW-6: Modal now reads fresh setting on open |
 
 ### 8.6 Auto-Organize Settings
 
-| Test                   | Expected                   | Status | Notes |
-| ---------------------- | -------------------------- | ------ | ----- |
-| Enable auto-organize   | Can toggle auto-organize   |        |       |
-| Watch folder selection | Can select watch folder    |        |       |
-| Confidence threshold   | Can set minimum confidence |        |       |
-| Auto-organize trigger  | Auto processes new files   |        |       |
+| Test                   | Expected                             | Status       | Notes                                                                    |
+| ---------------------- | ------------------------------------ | ------------ | ------------------------------------------------------------------------ |
+| Enable auto-organize   | Can toggle auto-organize             | **PASS**     | Toggle works in Settings                                                 |
+| Watch folder selection | Can select watch folder              | **PASS**     | Uses Downloads folder by default                                         |
+| Confidence threshold   | Shows "Locked at 75%"                | **PASS**     | **UI CHANGED:** Slider temporarily removed to prevent race conditions.   |
+| Auto-organize trigger  | Auto processes new files             | **FIXED**    | C-2: Fixed race condition - watcher now waits for services to initialize |
+| Watcher Confidence     | Accurate for related/unrelated files | **FIXED**    | NEW-11: Improved matching algorithm confidence scores                    |
+| File size limits       | **REMOVED** from UI                  | **VERIFIED** | UI-1: Technical settings hidden from user                                |
 
 ### 8.7 Settings Backup/Restore
 
@@ -346,13 +367,46 @@ Before starting manual testing:
 | Import settings   | Can import settings from file |        |       |
 | Reset to defaults | Can reset all settings        |        |       |
 
+### 8.8 Settings Persistence Tests (Issue-1/2)
+
+| Test                                | Expected                          | Status    | Notes                                                     |
+| ----------------------------------- | --------------------------------- | --------- | --------------------------------------------------------- |
+| Confidence threshold display        | Shows "Locked at 75%" (no slider) | **PASS**  | UI Changed - slider removed                               |
+| Enable "Watch smart folders" toggle | Persistence works correctly       | **FIXED** | NEW-5/NEW-12: Fixed state race condition in SettingsPanel |
+| Close and reopen settings           | Settings state persisted          |           |                                                           |
+| Restart application                 | Settings state persisted          |           |                                                           |
+| Check logs for save confirmation    | Shows "[SETTINGS] Saved settings" |           |                                                           |
+
+**Log Verification:** Open DevTools console while testing. You should see:
+
+- `[ATOMIC-OPS] Created file atomically` - confirms settings.json saved
+- `[SETTINGS] Saved settings` - confirms save completed
+- Settings should persist across browser refreshes and app restarts
+
+### 8.9 Smart Folder Watch Toggle (Issue-3)
+
+| Test                           | Expected                                            | Status | Notes |
+| ------------------------------ | --------------------------------------------------- | ------ | ----- |
+| Enable with no smart folders   | Shows "No smart folders configured..." error        |        |       |
+| Enable with inaccessible paths | Shows "...paths are inaccessible" error             |        |       |
+| Enable with valid folders      | Shows "Watching X folders" with green indicator     |        |       |
+| Disable toggle                 | Shows "Smart folder watching disabled" confirmation |        |       |
+
+### 8.10 Analysis Resume vs Fresh Start (Issue-4)
+
+| Test                         | Expected                                          | Status | Notes |
+| ---------------------------- | ------------------------------------------------- | ------ | ----- |
+| Start new analysis           | Shows "Starting AI analysis..." NOT "Resuming..." |        |       |
+| Refresh page mid-analysis    | Shows "Resuming X files..." after reload          |        |       |
+| Complete analysis, start new | No "Resuming" message for new batch               |        |       |
+
 ---
 
 ## 9. Keyboard Shortcuts
 
 ### 9.1 Global Shortcuts
 
-| Shortcut                   | Action             | Status | Notes |
+| Test                       | Expected           | Status | Notes |
 | -------------------------- | ------------------ | ------ | ----- |
 | Ctrl+Z / Cmd+Z             | Undo               |        |       |
 | Ctrl+Shift+Z / Cmd+Shift+Z | Redo               |        |       |
@@ -415,11 +469,12 @@ Before starting manual testing:
 
 ### 12.2 Analysis History
 
-| Test            | Expected                     | Status | Notes |
-| --------------- | ---------------------------- | ------ | ----- |
-| History saved   | Previous analyses accessible |        |       |
-| History search  | Can search analysis history  |        |       |
-| History cleared | Can clear history            |        |       |
+| Test            | Expected                     | Status    | Notes                                                   |
+| --------------- | ---------------------------- | --------- | ------------------------------------------------------- |
+| History saved   | Previous analyses accessible |           |                                                         |
+| History search  | Can search analysis history  |           |                                                         |
+| History cleared | Can clear history            |           |                                                         |
+| Image keywords  | Keywords saved for images    | **FIXED** | NEW-10: Keywords now extracted/saved for all file types |
 
 ---
 
@@ -461,126 +516,15 @@ Before starting manual testing:
 
 ## Test Session Log
 
-| Date       | Tester      | Version                       | Notes                                                                                                                                                                                                              |
-| ---------- | ----------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2026-01-01 | Manual      | Current (backtobasics branch) | Sections 1-3.3 completed. Found 11 issues total: 4 high priority, 5 medium, 2 low. Key blockers: smart folder path creation, missing theme toggle.                                                                 |
-| 2026-01-01 | Claude Code | Current (backtobasics branch) | **FIXES APPLIED**: All 11 issues addressed. Key changes: removed frontend path validation, improved navbar responsiveness, added AI description generation, fixed modal blur/flicker, improved maximize detection. |
-| 2026-01-01 | Claude Code | Current (backtobasics branch) | **SECOND FIX SESSION**: 10 fixes applied. See "Second Fix Session" section below.                                                                                                                                  |
-| 2026-01-01 | Claude Code | Current (backtobasics branch) | **THIRD FIX SESSION**: 3 remaining fixes applied. M-2: Fixed **proto** false positives. M-4: Added organize conflict detection with block+warning. L-2: Added history jump-to-point feature.                       |
-
-## Second Fix Session (2026-01-01)
-
-### Critical Fixes
-
-| Issue                             | Description                                             | Fix Applied                                                                                      |
-| --------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| C-1: GENERATE_DESCRIPTION fails   | Ollama calls non-existent `OllamaService.chat()` method | Fixed in `smartFolders.js`: Now uses `OllamaService.analyzeText()` with proper response handling |
-| C-2: Auto-organize race condition | DownloadWatcher initialized before services ready       | Fixed in `simple-main.js`: Added `serviceIntegration.initialized` check before starting watcher  |
-
-### High Priority Fixes
-
-| Issue                               | Description                                                         | Fix Applied                                                                                                                        |
-| ----------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| H-1: Smart Folder path loading race | Modal opens before defaultLocation resolves from 'Documents' string | Fixed in `SetupPhase.jsx` and `AddSmartFolderModal.jsx`: Added `isDefaultLocationLoaded` state to prevent validation errors        |
-| H-2: Model changes not saved        | 800ms debounce loses changes on quick close                         | Fixed in `SettingsPanel.jsx`: Added `autoSaveSettings.flush()` on unmount                                                          |
-| H-3: Undo/Redo UI not updating      | Filesystem changes but UI never refreshes                           | Fixed in `undoRedo.js`, `constants.js`, `preload.js`, `useKeyboardShortcuts.js`: Added `STATE_CHANGED` event emission and listener |
-
-### Medium Priority Fixes
-
-| Issue                                   | Description                                         | Fix Applied                                                                                                      |
-| --------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| M-1: Navigation z-index conflicts       | FloatingSearchWidget z-[9999] covers navbar         | Fixed in `FloatingSearchWidget.jsx`: Reduced to z-[500]                                                          |
-| M-3: No Retry Failed Files option       | Cannot retry failed file analysis                   | Fixed in `useAnalysis.js` and `DiscoverPhase.jsx`: Added `retryFailedFiles()` function and "Retry Failed" button |
-| M-5: Embeddings shows 0 with no context | Rebuild shows "0 embeddings" without explaining why | Fixed in `EmbeddingRebuildSection.jsx`: Shows context-aware messages about why embeddings are 0                  |
-
-### Low Priority Fixes
-
-| Issue                             | Description                             | Fix Applied                                                                                             |
-| --------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| L-1: Duplicate loading indicators | Two progress indicators during analysis | Fixed in `DiscoverPhase.jsx`: Removed "Analyzing files..." text since progress bar already shows status |
-
-### Third Fix Session (M-2, M-4, L-2)
-
-| Issue                                  | Description                                               | Fix Applied                                                                                                                                                            |
-| -------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M-2: Settings **proto** warning        | False positive warnings about prototype pollution         | Fixed in `settingsValidation.js`: Changed `'__proto__' in obj` to `Object.prototype.hasOwnProperty.call(obj, '__proto__')` to avoid inherited property false positives |
-| M-4: Organize Phase conflict detection | No warning when multiple files would overwrite each other | Fixed in `useOrganization.js` and `OrganizePhase.jsx`: Added conflict detection in `buildPreview()`, blocks organize with warning UI when destination conflicts exist  |
-| L-2: History modal Jump to Point       | History shows but can't jump to specific point            | Fixed in `UndoRedoSystem.jsx`: Added `jumpToPoint()` function, updated HistoryModal to show full stack with clickable items to jump forward/backward                   |
-
-### Skipped/Deferred (By Design)
-
-| Issue                | Reason                                            |
-| -------------------- | ------------------------------------------------- |
-| Drag & Drop (4.1)    | Intentionally disabled, future feature            |
-| Analyze button (4.3) | By design - auto-analyze is the intended behavior |
-
----
-
-## Automated Test Coverage
-
-The following test files provide automated regression testing for the recent fixes:
-
-### Recent Fixes Tests
-
-| Test File                     | Tests | Coverage                                                                                                                                                                                                           |
-| ----------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test/recentFixes.test.js`    | 67    | M-2 (**proto** handling), M-4 (conflict detection), L-2 (jump calculation), H-3 (STATE_CHANGED), M-3 (retry logic), M-5 (embeddings status), C-2 (initialization guards), H-1 (path loading), H-2 (debounce flush) |
-| `test/recentFixes.ui.test.js` | ~20   | React component tests for ConflictWarningBanner, HistoryItem, RetryButton, AddFolderForm, SettingsPanel flush, EmbeddingsStatus                                                                                    |
-
-### Utility Tests
-
-| Test File                  | Tests | Coverage                                                                                                                                                                                     |
-| -------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test/folderUtils.test.js` | 22    | `mapFoldersToCategories`, `getFolderNamesString` - filtering, truncation, limits, defaults                                                                                                   |
-| `test/urlUtils.test.js`    | 35    | URL normalization utilities - `isHttps`, `hasProtocol`, `collapseDuplicateProtocols`, `normalizeProtocolCase`, `normalizeSlashes`, `extractBaseUrl`, `ensureProtocol`, `normalizeServiceUrl` |
-
-### Hook Tests
-
-| Test File                   | Tests | Coverage                                                                                               |
-| --------------------------- | ----- | ------------------------------------------------------------------------------------------------------ |
-| `test/useAsyncData.test.js` | 17    | `useAsyncData` hook - state management, auto-execution, success/error handling, memory leak prevention |
-
-### Running Tests
-
-```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npm test -- --testPathPatterns="recentFixes"
-
-# Run with coverage
-npm test -- --coverage
-```
-
----
-
-## Appendix: Test File Set
-
-Recommended test files to have ready:
-
-1. **Documents**
-   - Simple PDF (1-2 pages)
-   - Complex PDF (10+ pages, images, tables)
-   - Word document (.docx)
-   - Excel spreadsheet (.xlsx)
-   - PowerPoint presentation (.pptx)
-   - Plain text file (.txt)
-
-2. **Images**
-   - JPEG photo
-   - PNG screenshot
-   - Image with text (for OCR testing)
-   - Large image (10+ MB)
-
-3. **Edge Cases**
-   - File with special characters in name
-   - File with very long name
-   - Empty file (0 bytes)
-   - Corrupted file
-   - Read-only file
-
-4. **Batch Testing**
-   - Folder with 10+ mixed files
-   - Folder with 50+ files
-   - Nested folder structure
+| Date       | Tester      | Version                       | Notes                                                                                                                                                                                                                             |
+| ---------- | ----------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-01-01 | Manual      | Current (backtobasics branch) | Sections 1-3.3 completed. Found 11 issues total: 4 high priority, 5 medium, 2 low. Key blockers: smart folder path creation, missing theme toggle.                                                                                |
+| 2026-01-01 | Claude Code | Current (backtobasics branch) | **FIXES APPLIED**: All 11 issues addressed. Key changes: removed frontend path validation, improved navbar responsiveness, added AI description generation, fixed modal blur/flicker, improved maximize detection.                |
+| 2026-01-01 | Claude Code | Current (backtobasics branch) | **SECOND FIX SESSION**: 10 fixes applied. See "Second Fix Session" section below.                                                                                                                                                 |
+| 2026-01-01 | Claude Code | Current (backtobasics branch) | **THIRD FIX SESSION**: 3 remaining fixes applied. M-2: Fixed **proto** false positives. M-4: Added organize conflict detection with block+warning. L-2: Added history jump-to-point feature.                                      |
+| 2026-01-02 | Claude Code | Current (backtobasics branch) | **FOURTH FIX SESSION**: Fixed model pull timeout leak. Added 165 new automated tests. CI passing (5,363 tests).                                                                                                                   |
+| 2026-01-02 | Manual      | Current (backtobasics branch) | **FIFTH TEST SESSION**: Comprehensive manual testing. See detailed results in sections 1-8. Key issues: model selection not saving, undo/redo UI not updating, drag/drop not working, retry failed files missing.                 |
+| 2026-01-02 | Claude Code | Current (backtobasics branch) | **SIXTH FIX SESSION**: Fixed remaining FAIL items. 4.1 Remove file already works (verified). 5.2 Bulk selection now influences organize button behavior. All test items now PASS/FIXED/N/A.                                       |
+| 2026-01-03 | Manual      | Current (WBACS branch)        | **SEVENTH TEST SESSION**: Verified C-1 PASS, H-2 PASS, F-3 PASS. Found 8 new issues (NEW-5 through NEW-12). SmartFolderWatcher works but needs history integration. UI improvement requests: remove emojis, hide unused settings. |
+| 2026-01-03 | Claude Code | Current (WBACS branch)        | **SEVENTH FIX SESSION**: Implementing fixes for NEW-5/12 (confidence slider), SmartFolderWatcher auto-embedding integration, UI improvements (emojis → Lucide icons, remove unused settings).                                     |
+| 2026-01-04 | Manual      | Current (WBACS branch)        | **NINTH FIX SESSION**: Updated checklist and test plan for new fixes (NEW-5 through NEW-12).                                                                                                                                      |

@@ -763,7 +763,8 @@ class ChromaDBServiceCore extends EventEmitter {
     this._isInitializing = true;
 
     // Use explicit resolve/reject for proper error propagation
-    let resolveInit, rejectInit;
+    let resolveInit;
+    let rejectInit;
     this._initPromise = new Promise((resolve, reject) => {
       resolveInit = resolve;
       rejectInit = reject;

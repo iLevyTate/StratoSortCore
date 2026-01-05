@@ -226,7 +226,8 @@ async function processFilesIndividually(files, smartFolders, options, results, s
 async function processNewFile(filePath, smartFolders, options, suggestionService, undoRedo) {
   const {
     autoOrganizeEnabled = false,
-    confidenceThreshold = 0.9 // Higher threshold for automatic processing
+    // FIX: Use same default as settings (0.75) for consistency - actual value comes from options
+    confidenceThreshold = 0.75
   } = options;
 
   if (!autoOrganizeEnabled) {
@@ -308,7 +309,7 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     // Only auto-organize if confidence is very high
     if (suggestion.success && suggestion.primary && suggestion.confidence >= confidenceThreshold) {
       // Ensure primary suggestion folder/path are valid strings
-      const primary = suggestion.primary;
+      const { primary } = suggestion;
       const safePrimary = {
         ...primary,
         folder:

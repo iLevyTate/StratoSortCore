@@ -83,13 +83,12 @@ function registerFolderHandlers({ ipcMain, IPC_CHANNELS, shell }) {
               path: normalizedPath,
               alreadyExisted: true
             };
-          } else {
-            return {
-              success: false,
-              error: 'A file with this name already exists',
-              errorCode: 'FILE_EXISTS'
-            };
           }
+          return {
+            success: false,
+            error: 'A file with this name already exists',
+            errorCode: 'FILE_EXISTS'
+          };
         } catch (statError) {
           // ENOENT means folder doesn't exist, which is expected
           if (statError.code !== 'ENOENT') {

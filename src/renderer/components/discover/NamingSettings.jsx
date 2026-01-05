@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import Select from '../ui/Select';
 import Input from '../ui/Input';
@@ -28,7 +28,7 @@ const NamingSettings = memo(function NamingSettings({
   // FIX #19: Validate separator against unsafe characters that could break file paths
   const handleSeparatorChange = useCallback(
     (e) => {
-      const value = e.target.value;
+      const { value } = e.target;
       // Only allow safe characters (reject path-breaking ones)
       if (value === '' || !UNSAFE_SEPARATOR_CHARS.test(value)) {
         setSeparator(value);
@@ -37,6 +37,18 @@ const NamingSettings = memo(function NamingSettings({
     },
     [setSeparator]
   );
+
+  // Persist naming preferences to settings so DownloadWatcher can pick them up
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.electronAPI?.settings?.save) return;
+    // Fire-and-forget; settingsService merges partials
+    window.electronAPI.settings.save({
+      namingConvention,
+      separator,
+      dateFormat,
+      caseConvention
+    });
+  }, [namingConvention, separator, dateFormat, caseConvention]);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-[var(--section-gap)]">

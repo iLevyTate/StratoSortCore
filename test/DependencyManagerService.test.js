@@ -59,7 +59,8 @@ const mockFsPromises = {
 const mockCreateWriteStream = jest.fn();
 jest.mock('fs', () => ({
   promises: mockFsPromises,
-  createWriteStream: (...args) => mockCreateWriteStream(...args)
+  createWriteStream: (...args) => mockCreateWriteStream(...args),
+  unlink: jest.fn((_p, cb) => (typeof cb === 'function' ? cb(null) : undefined))
 }));
 
 // Mock ollamaDetection globally for all tests in this file
@@ -177,71 +178,82 @@ describe('DependencyManagerService', () => {
     expect(result.alreadyInstalled).toBe(true);
   });
 
-  // eslint-disable-next-line jest/no-disabled-tests -- Complex integration test requiring real FS operations
-  test.skip('installOllama downloads installer, runs silent install, and attempts to spawn ollama serve', async () => {
-    preflight.checkOllamaInstallation
-      .mockResolvedValueOnce({ installed: false, version: null }) // pre
-      .mockResolvedValueOnce({ installed: true, version: '0.2.0' }); // post
+  test('addProgressCallback supports multiple listeners and unsubscribe', async () => {
+    const svc = new DependencyManagerService();
+    const cb1 = jest.fn();
+    const cb2 = jest.fn(() => {
+      throw new Error('listener failed');
+    });
 
-    // Mock ollamaDetection utility
-    jest.mock('../src/main/utils/ollamaDetection', () => ({
-      isOllamaInstalled: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
-      getOllamaVersion: jest.fn().mockResolvedValue('0.2.0'),
-      isOllamaRunning: jest.fn().mockResolvedValue(true)
-    }));
-    const resHandlers = {};
-    const res = {
+    const unsub1 = svc.addProgressCallback(cb1);
+    svc.addProgressCallback(cb2);
+
+    // Should not throw even if one listener fails
+    svc._emitProgress('msg', { stage: 'x' });
+    expect(cb1).toHaveBeenCalledWith(expect.objectContaining({ message: 'msg', stage: 'x' }));
+
+    unsub1();
+    cb1.mockClear();
+    svc._emitProgress('msg2');
+    expect(cb1).not.toHaveBeenCalled();
+  });
+
+  test('installOllama downloads (follows redirect), runs installer, and spawns ollama serve', async () => {
+    const ollamaDetection = require('../src/main/utils/ollamaDetection');
+    ollamaDetection.isOllamaInstalled.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    ollamaDetection.getOllamaVersion.mockResolvedValue('0.2.0');
+    ollamaDetection.isOllamaRunning.mockResolvedValue(true);
+
+    // Redirect then 200
+    const resHandlers1 = {};
+    const res1 = {
+      statusCode: 302,
+      headers: { location: 'https://example.com/redirected.exe' },
+      resume: jest.fn(),
+      on: jest.fn((evt, cb) => {
+        resHandlers1[evt] = cb;
+      })
+    };
+    const resHandlers2 = {};
+    const res2 = {
       statusCode: 200,
       headers: { 'content-length': '4' },
       on: jest.fn((evt, cb) => {
-        resHandlers[evt] = cb;
-      })
+        resHandlers2[evt] = cb;
+      }),
+      destroy: jest.fn()
     };
     const req = { on: jest.fn() };
-    mockHttpsGet.mockImplementation((_url, cb) => {
-      cb(res);
-      // simulate data/end asynchronously-ish
-      resHandlers.data?.(Buffer.from('ab'));
-      resHandlers.data?.(Buffer.from('cd'));
-      resHandlers.end?.();
+    mockHttpsGet.mockImplementation((url, cb) => {
+      if (String(url).includes('OllamaSetup.exe')) {
+        cb(res1);
+        return req;
+      }
+      cb(res2);
+      // simulate data/end
+      resHandlers2.data?.(Buffer.from('ab'));
+      resHandlers2.data?.(Buffer.from('cd'));
+      resHandlers2.end?.();
       return req;
     });
 
-    // Mock file stream with event handler support for error handling
     mockCreateWriteStream.mockReturnValue({
       write: jest.fn(),
       end: jest.fn((cb) => cb && cb()),
-      close: jest.fn(),
       destroy: jest.fn(),
       on: jest.fn()
     });
 
+    // Installer succeeds, PATH detection succeeds (returns status 0)
     asyncSpawnUtils.asyncSpawn
-      // installer run succeeds
-      .mockResolvedValueOnce({ status: 0, stdout: '', stderr: '' })
-      // detectOllamaExePath PATH check: `ollama --version` fails so fallback to file paths
-      .mockResolvedValueOnce({ status: 1, stdout: '', stderr: 'not found' });
-
-    // Make fileExists checks succeed for the default Program Files candidate by faking fs.access
-    mockFsPromises.access.mockResolvedValue(undefined);
-
-    // Ollama health flips quickly
-    ollamaService.isOllamaRunning.mockResolvedValue(true);
+      .mockResolvedValueOnce({ status: 0, stdout: '', stderr: '' }) // installer
+      .mockResolvedValueOnce({ status: 0, stdout: 'ollama version 0.2.0', stderr: '' }); // detectOllamaExePath
 
     const onProgress = jest.fn();
     const svc = new DependencyManagerService({ onProgress });
-
-    // We need to ensure asyncSpawn is mocked correctly for the install call
-    // The previous implementation used asyncSpawn to run the installer
-    // But now installOllama might be using a different logic or the mock isn't matching
-    // Let's check the installOllama implementation in DependencyManagerService.js if needed.
-    // Assuming it calls asyncSpawn with 'OllamaSetup.exe'
-
     const result = await svc.installOllama();
 
     expect(result.success).toBe(true);
-    // The expected call might be different if path joining happens
-    // Using stringContaining to match the path
     expect(asyncSpawnUtils.asyncSpawn).toHaveBeenCalledWith(
       expect.stringContaining('OllamaSetup.exe'),
       ['/S'],
@@ -253,5 +265,54 @@ describe('DependencyManagerService', () => {
       expect.objectContaining({ stdio: 'ignore' })
     );
     expect(onProgress).toHaveBeenCalled();
+  });
+
+  test('installOllama returns error when installer fails', async () => {
+    const ollamaDetection = require('../src/main/utils/ollamaDetection');
+    ollamaDetection.isOllamaInstalled.mockResolvedValueOnce(false);
+
+    // Simple 200 download
+    const resHandlers = {};
+    const res = {
+      statusCode: 200,
+      headers: { 'content-length': '2' },
+      on: jest.fn((evt, cb) => {
+        resHandlers[evt] = cb;
+      }),
+      destroy: jest.fn()
+    };
+    const req = { on: jest.fn() };
+    mockHttpsGet.mockImplementationOnce((_url, cb) => {
+      cb(res);
+      resHandlers.data?.(Buffer.from('ok'));
+      resHandlers.end?.();
+      return req;
+    });
+    mockCreateWriteStream.mockReturnValue({
+      write: jest.fn(),
+      end: jest.fn((cb) => cb && cb()),
+      destroy: jest.fn(),
+      on: jest.fn()
+    });
+
+    asyncSpawnUtils.asyncSpawn.mockResolvedValueOnce({ status: 1, stdout: '', stderr: 'fail' });
+
+    const svc = new DependencyManagerService();
+    const result = await svc.installOllama();
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('installer failed');
+  });
+
+  test('installChromaDb returns error when python launcher cannot be found', async () => {
+    preflight.checkPythonInstallation.mockResolvedValue({
+      installed: true,
+      version: 'Python 3.12'
+    });
+    asyncSpawnUtils.findPythonLauncherAsync.mockResolvedValue(null);
+
+    const svc = new DependencyManagerService();
+    const result = await svc.installChromaDb();
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('Python launcher');
   });
 });

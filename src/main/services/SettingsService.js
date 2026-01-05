@@ -10,6 +10,7 @@ const { isNotFoundError } = require('../../shared/errorClassifier');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
 const { LIMITS, DEBOUNCE, TIMEOUTS } = require('../../shared/performanceConstants');
 const { SettingsBackupService } = require('./SettingsBackupService');
+
 logger.setContext('SettingsService');
 
 /**
@@ -273,6 +274,15 @@ class SettingsService {
   async save(settings) {
     // Fixed: Use mutex to prevent race conditions from concurrent saves
     return this._withMutex(async () => {
+      // Force confidenceThreshold to a sane number before validation/merge
+      const coerceConfidence = (val, fallback) => {
+        const num = Number(val);
+        if (Number.isFinite(num)) {
+          return Math.min(1, Math.max(0, num));
+        }
+        return fallback;
+      };
+
       // Validate settings before saving
       const validation = validateSettings(settings);
       if (!validation.valid) {
@@ -290,12 +300,25 @@ class SettingsService {
       }
 
       // Sanitize settings to remove any invalid values
-      const sanitized = sanitizeSettings(settings);
+      const sanitized = sanitizeSettings({
+        ...settings,
+        confidenceThreshold: coerceConfidence(
+          settings?.confidenceThreshold,
+          DEFAULT_SETTINGS.confidenceThreshold
+        )
+      });
 
       // Load current settings first to avoid data loss on partial updates
       // This is now safe because we're inside the mutex
       const current = await this.load();
-      const merged = { ...current, ...sanitized };
+      const merged = {
+        ...current,
+        ...sanitized,
+        confidenceThreshold: coerceConfidence(
+          sanitized?.confidenceThreshold ?? current.confidenceThreshold,
+          DEFAULT_SETTINGS.confidenceThreshold
+        )
+      };
 
       // CRITICAL: Create backup before saving - mandatory with retry logic
       // createBackup handles directory creation via atomicFileOps
@@ -332,7 +355,7 @@ class SettingsService {
             throw new Error(errorMsg);
           }
           // Wait before retry with exponential backoff
-          const delay = initialBackupDelay * Math.pow(2, attempt);
+          const delay = initialBackupDelay * 2 ** attempt;
           logger.warn(
             `[SettingsService] Retrying backup in ${delay}ms (attempt ${attempt + 2}/${maxBackupRetries})`
           );
@@ -382,7 +405,7 @@ class SettingsService {
 
             if (isFileLockError && attempt < maxSaveRetries - 1) {
               // Calculate exponential backoff delay
-              const delay = baseSaveDelay * Math.pow(2, attempt);
+              const delay = baseSaveDelay * 2 ** attempt;
               logger.warn(
                 `[SettingsService] File lock error on save attempt ${attempt + 1}/${maxSaveRetries}: ${saveError.code}. Retrying in ${delay}ms...`
               );

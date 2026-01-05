@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { AlertTriangle, Search as SearchIcon, X, Network, Sparkles, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Search as SearchIcon, X, Sparkles, RefreshCw } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
@@ -64,7 +64,8 @@ function DiscoverPhase() {
     resetAnalysisState,
     actions,
     readySelectedFilesCount,
-    getCurrentPhase
+    getCurrentPhase,
+    organizedFiles // FIX H-3: Get organized files to filter from display
   } = useDiscoverState();
 
   const { addNotification } = useNotification();
@@ -96,10 +97,27 @@ function DiscoverPhase() {
     [selectedFiles]
   );
 
-  const visibleAnalysisResults = useMemo(
-    () => (analysisResults || []).filter((result) => selectedPaths.has(result.path)),
-    [analysisResults, selectedPaths]
-  );
+  // FIX H-3: Create set of organized file paths for filtering
+  const organizedPaths = useMemo(() => {
+    const paths = new Set();
+    (organizedFiles || []).forEach((f) => {
+      // Normalize paths for comparison (handle Windows/Unix path separators and case)
+      const normalizedPath = (f.originalPath || '').replace(/[\\/]+/g, '/').toLowerCase();
+      if (normalizedPath) paths.add(normalizedPath);
+    });
+    return paths;
+  }, [organizedFiles]);
+
+  const visibleAnalysisResults = useMemo(() => {
+    return (analysisResults || []).filter((result) => {
+      // Must be in selected files
+      if (!selectedPaths.has(result.path)) return false;
+      // FIX H-3: Must NOT be in organized files (already processed)
+      const normalizedResultPath = (result.path || '').replace(/[\\/]+/g, '/').toLowerCase();
+      if (organizedPaths.has(normalizedResultPath)) return false;
+      return true;
+    });
+  }, [analysisResults, selectedPaths, organizedPaths]);
 
   const visibleReadyCount = useMemo(
     () => visibleAnalysisResults.filter((r) => r.analysis && !r.error).length,
@@ -110,6 +128,14 @@ function DiscoverPhase() {
     () => visibleAnalysisResults.filter((r) => r.error).length,
     [visibleAnalysisResults]
   );
+
+  // FIX H-3: Count of selected files that are NOT yet organized
+  const unorganizedSelectedCount = useMemo(() => {
+    return (selectedFiles || []).filter((f) => {
+      const normalizedPath = (f.path || '').replace(/[\\/]+/g, '/').toLowerCase();
+      return !organizedPaths.has(normalizedPath);
+    }).length;
+  }, [selectedFiles, organizedPaths]);
 
   // Check embeddings and prompt user after first successful analysis
   useEffect(() => {
@@ -389,15 +415,6 @@ function DiscoverPhase() {
             >
               <SearchIcon className="w-4 h-4" /> Semantic Search
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => openSearchModal('graph')}
-              className="text-sm gap-compact"
-              title="Visualize file relationships in an interactive graph"
-            >
-              <Network className="w-4 h-4" /> Explore Graph
-            </Button>
           </div>
         </div>
 
@@ -409,10 +426,11 @@ function DiscoverPhase() {
                 <h3 className="heading-tertiary m-0 flex items-center gap-compact">
                   <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" /> Select Content
                 </h3>
-                {selectedFiles.length > 0 && (
+                {/* FIX H-3: Use unorganizedSelectedCount to exclude already-organized files */}
+                {unorganizedSelectedCount > 0 && (
                   <span className="status-chip info">
-                    {selectedFiles.length} file
-                    {selectedFiles.length !== 1 ? 's' : ''} ready
+                    {unorganizedSelectedCount} file
+                    {unorganizedSelectedCount !== 1 ? 's' : ''} ready
                   </span>
                 )}
               </div>
@@ -455,7 +473,8 @@ function DiscoverPhase() {
           </section>
 
           {/* Middle Section - Queue & Status Actions */}
-          {(selectedFiles.length > 0 || isAnalyzing) && (
+          {/* FIX H-3: Use unorganizedSelectedCount to hide when all files organized */}
+          {(unorganizedSelectedCount > 0 || isAnalyzing) && (
             <div className="surface-panel flex items-center justify-between bg-white/85 backdrop-blur-md animate-fade-in p-default gap-default">
               <div className="flex items-center flex-1 gap-default">
                 {isAnalyzing ? (
@@ -467,8 +486,9 @@ function DiscoverPhase() {
                   </div>
                 ) : (
                   <div className="text-sm text-system-gray-600 flex items-center gap-compact">
-                    <span className="status-dot success animate-pulse"></span>
-                    Ready to analyze {selectedFiles.length} files
+                    <span className="status-dot success animate-pulse" />
+                    {/* FIX H-3: Use unorganizedSelectedCount to exclude already-organized files */}
+                    Ready to analyze {unorganizedSelectedCount} files
                   </div>
                 )}
               </div>
@@ -520,7 +540,8 @@ function DiscoverPhase() {
           )}
 
           {/* Bottom Section - Results (or skeleton while analyzing) */}
-          {(visibleAnalysisResults.length > 0 || (isAnalyzing && selectedFiles.length > 0)) && (
+          {/* FIX H-3: Use unorganizedSelectedCount to hide when all files organized */}
+          {(visibleAnalysisResults.length > 0 || (isAnalyzing && unorganizedSelectedCount > 0)) && (
             <div className="flex-1 min-h-content-md surface-panel flex flex-col overflow-hidden animate-slide-up">
               <div className="border-b border-border-soft/70 bg-white/70 flex items-center justify-between p-default">
                 <h3 className="heading-tertiary m-0 text-sm uppercase tracking-wider text-system-gray-500">

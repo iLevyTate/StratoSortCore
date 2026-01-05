@@ -44,6 +44,7 @@ const {
 
 const {
   getAnalysisByPath: getAnalysisByPathHelper,
+  getAnalysisByHash: getAnalysisByHashHelper,
   getAnalysisByCategory: getAnalysisByCategoryHelper,
   getAnalysisByTag: getAnalysisByTagHelper,
   getRecentAnalysis: getRecentAnalysisHelper,
@@ -254,8 +255,8 @@ class AnalysisHistoryServiceCore {
 
       const analysisEntry = {
         id: crypto.randomUUID(),
-        fileHash: fileHash,
-        timestamp: timestamp,
+        fileHash,
+        timestamp,
 
         // File information
         originalPath: fileInfo.path,
@@ -365,6 +366,11 @@ class AnalysisHistoryServiceCore {
   async getAnalysisByPath(filePath) {
     await this.initialize();
     return getAnalysisByPathHelper(this.analysisHistory, this.analysisIndex, filePath);
+  }
+
+  async getAnalysisByHash(fileHash) {
+    await this.initialize();
+    return getAnalysisByHashHelper(this.analysisHistory, this.analysisIndex, fileHash);
   }
 
   async getAnalysisByCategory(category, options = {}) {
