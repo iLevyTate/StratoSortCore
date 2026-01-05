@@ -18,7 +18,6 @@ function AddSmartFolderModal({
   onClose,
   onAdd,
   defaultLocation,
-  isDefaultLocationLoaded = false,
   existingFolders = [],
   showNotification
 }) {
@@ -360,7 +359,6 @@ AddSmartFolderModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   onAdd: PropTypes.func.isRequired,
   defaultLocation: PropTypes.string.isRequired,
-  isDefaultLocationLoaded: PropTypes.bool,
   existingFolders: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),

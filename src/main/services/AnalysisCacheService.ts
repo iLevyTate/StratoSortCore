@@ -5,13 +5,18 @@ import { createSingletonHelpers } from '../../shared/singletonFactory';
 logger.setContext('AnalysisCacheService');
 
 interface CacheEntry {
-  value: any;
+  value: unknown;
   timestamp: number;
 }
 
 interface AnalysisStats {
   size: number;
   maxEntries: number;
+}
+
+interface SmartFolderLike {
+  name?: string;
+  description?: string;
 }
 
 export class AnalysisCacheService {
@@ -31,7 +36,7 @@ export class AnalysisCacheService {
    * Generate a cache key for text content and analysis options
    */
   // eslint-disable-next-line class-methods-use-this
-  generateKey(textContent: string, model: string, smartFolders: any[]): string {
+  generateKey(textContent: string, model: string, smartFolders: SmartFolderLike[]): string {
     // Limit input size to prevent excessive hash computation
     const MAX_TEXT_LENGTH = 50000; // 50KB max for hash key
     const truncatedText =
@@ -66,7 +71,7 @@ export class AnalysisCacheService {
     return `file:${filePath}:${stats.size}:${stats.mtimeMs}`;
   }
 
-  get(key: string): any | null {
+  get<T = unknown>(key: string): T | null {
     const entry = this.cache.get(key);
     if (!entry) return null;
 
@@ -79,10 +84,10 @@ export class AnalysisCacheService {
     // LRU: Move to end by re-inserting
     this.cache.delete(key);
     this.cache.set(key, { ...entry, timestamp: Date.now() });
-    return entry.value;
+    return entry.value as T;
   }
 
-  set(key: string, value: any): void {
+  set(key: string, value: unknown): void {
     // Evict oldest entry if at capacity (LRU eviction)
     if (this.cache.size >= this.maxEntries) {
       const iterator = this.cache.keys();

@@ -145,9 +145,10 @@ async function downloadToFile(
         received += chunk.length;
         try {
           fileStream?.write(chunk);
-        } catch (e: any) {
-          res.destroy(e);
-          cleanup(e);
+        } catch (e: unknown) {
+          const error = e instanceof Error ? e : new Error(String(e));
+          res.destroy(error);
+          cleanup(error);
           return; // eslint-disable-line no-useless-return
         }
         if (typeof onProgress === 'function' && total > 0) {
@@ -161,8 +162,8 @@ async function downloadToFile(
           fileStream?.end(() => {
             cleanup(null);
           });
-        } catch (e: any) {
-          cleanup(e);
+        } catch (e: unknown) {
+          cleanup(e instanceof Error ? e : new Error(String(e)));
         }
       });
 
@@ -384,9 +385,9 @@ export class DependencyManagerService {
             windowsHide: true
           });
           child.unref?.();
-        } catch (e: any) {
+        } catch (e: unknown) {
           logger.warn('[DependencyManager] Failed to spawn Ollama after install', {
-            error: e?.message
+            error: e instanceof Error ? e.message : String(e)
           });
         }
       }

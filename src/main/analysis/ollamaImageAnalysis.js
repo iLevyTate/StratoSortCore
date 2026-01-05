@@ -365,7 +365,7 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
 
   // Check if suggested name indicates landscape/scenic content
   const suggestedIsLandscape = landscapeTerms.some((term) => suggestedLower.includes(term));
-  const keywordsAreLandscape = landscapeTerms.some((term) => keywordsStr.includes(term));
+  // const keywordsAreLandscape = landscapeTerms.some((term) => keywordsStr.includes(term)); // Unused
 
   // CRITICAL: Detect financial document → landscape hallucination
   if (filenameIsFinancial && suggestedIsLandscape) {
@@ -374,9 +374,9 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
     analysis.hallucination_detected = true;
 
     // Override with filename-based suggestion
-    const fallbackName = getIntelligentImageCategory(fileName, '')
-      .toLowerCase()
-      .replace(/\s+/g, '_');
+    // const fallbackName = getIntelligentImageCategory(fileName, '')
+    //   .toLowerCase()
+    //   .replace(/\s+/g, '_');
     analysis.suggestedName = safeSuggestedName(fileName, '');
     logger.warn('[HALLUCINATION] Landscape suggested for financial file, overriding', {
       original: suggestedLower,

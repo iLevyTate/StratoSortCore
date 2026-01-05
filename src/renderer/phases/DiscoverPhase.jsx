@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { AlertTriangle, Search as SearchIcon, X, Network, Sparkles, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Search as SearchIcon, X, Sparkles, RefreshCw } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';

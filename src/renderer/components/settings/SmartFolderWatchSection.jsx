@@ -14,7 +14,7 @@ import { Button } from '../ui';
  * 4. Main process handleSettingsChanged starts/stops watcher automatically
  * 5. For immediate feedback, we also call the IPC directly
  */
-function SmartFolderWatchSection({ settings, setSettings, addNotification, flushSettings }) {
+function SmartFolderWatchSection({ settings, setSettings, addNotification }) {
   const [watcherStatus, setWatcherStatus] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -236,8 +236,7 @@ function SmartFolderWatchSection({ settings, setSettings, addNotification, flush
 SmartFolderWatchSection.propTypes = {
   settings: PropTypes.object.isRequired,
   setSettings: PropTypes.func.isRequired,
-  addNotification: PropTypes.func,
-  flushSettings: PropTypes.func
+  addNotification: PropTypes.func
 };
 
 export default SmartFolderWatchSection;
