@@ -252,7 +252,10 @@ function createMainWindow() {
     // Material-UI requires 'unsafe-inline' for styles to work
     // In a more secure setup, we'd use nonces or hashes, but for now we need inline styles
     const styleSrc = "'self' 'unsafe-inline'";
-    const csp = `default-src 'self'; script-src 'self'; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${sanitizedOllamaHost} ${wsHost}; object-src 'none'; base-uri 'self'; form-action 'self';`;
+    // Allow 'unsafe-eval' only in development to support React Fast Refresh and other dev tooling
+    // Keep production CSP strict (no unsafe-eval)
+    const scriptSrc = isDev ? "'self' 'unsafe-eval'" : "'self'";
+    const csp = `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${sanitizedOllamaHost} ${wsHost}; object-src 'none'; base-uri 'self'; form-action 'self';`;
 
     callback({
       responseHeaders: {
