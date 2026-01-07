@@ -87,9 +87,10 @@ class SettingsService {
       const raw = await fs.readFile(this.settingsPath, 'utf-8');
       const parsed = JSON.parse(raw);
       const merged = { ...this.defaults, ...parsed };
-      this._cache = merged;
+      const sanitized = sanitizeSettings(merged);
+      this._cache = sanitized;
       this._cacheTimestamp = now;
-      return merged;
+      return sanitized;
     } catch (err) {
       // FIX: Attempt auto-recovery from backup if settings file is corrupted
       if (err && !isNotFoundError(err)) {
@@ -138,9 +139,10 @@ class SettingsService {
             const raw = await fs.readFile(this.settingsPath, 'utf-8');
             const parsed = JSON.parse(raw);
             const merged = { ...this.defaults, ...parsed };
-            this._cache = merged;
+            const sanitized = sanitizeSettings(merged);
+            this._cache = sanitized;
             this._cacheTimestamp = Date.now();
-            return merged;
+            return sanitized;
           }
         } catch (backupErr) {
           logger.warn(
