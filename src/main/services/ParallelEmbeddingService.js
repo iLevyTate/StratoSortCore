@@ -32,15 +32,16 @@ const SEMAPHORE_CONFIG = {
  */
 class ParallelEmbeddingService {
   constructor(options = {}) {
-    // Configurable concurrency limit
+    // Configurable concurrency limit - increased hard cap for powerful GPUs
     this.concurrencyLimit = Math.min(
       options.concurrencyLimit || this._calculateOptimalConcurrency(),
-      10 // Hard cap to prevent overwhelming Ollama
+      10 // Hard cap increased from 5 to 10
     );
 
     // Semaphore state
     this.activeRequests = 0;
     this.waitQueue = [];
+    this._isShuttingDown = false;
 
     // Statistics tracking
     this.stats = {
@@ -85,8 +86,8 @@ class ParallelEmbeddingService {
       });
     }
 
-    // Cap at reasonable maximum
-    return Math.min(concurrency, 5);
+    // Cap at reasonable maximum - higher for GPU setups
+    return Math.min(concurrency, 10);
   }
 
   /**
@@ -96,6 +97,11 @@ class ParallelEmbeddingService {
    * @throws {Error} If queue is full or timeout is reached
    */
   async _acquireSlot() {
+    if (this._isShuttingDown) {
+      const error = new Error('ParallelEmbeddingService: Service shutting down');
+      error.code = 'SERVICE_SHUTDOWN';
+      throw error;
+    }
     // FIX: Atomic increment-then-check pattern to prevent race condition
     // Previous pattern: if (active < limit) { active++ } - two concurrent calls could both pass
     // New pattern: active++; if (active > limit) { active--; queue } - atomic acquisition
@@ -503,6 +509,8 @@ class ParallelEmbeddingService {
       queuedRequests: this.waitQueue.length
     });
 
+    this._isShuttingDown = true;
+
     // Reject all pending queued requests and clear their timeouts
     const shutdownError = new Error('ParallelEmbeddingService: Service shutting down');
     shutdownError.code = 'SERVICE_SHUTDOWN';
@@ -518,7 +526,6 @@ class ParallelEmbeddingService {
 
     // Clear the queue
     this.waitQueue = [];
-    this.activeRequests = 0;
 
     logger.info('[ParallelEmbeddingService] Shutdown complete');
   }

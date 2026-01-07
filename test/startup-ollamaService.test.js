@@ -42,6 +42,16 @@ jest.mock('../src/shared/performanceConstants', () => ({
   }
 }));
 
+jest.mock('../src/main/services/PerformanceService', () => ({
+  getRecommendedEnvSettings: jest.fn().mockResolvedValue({
+    recommendations: {
+      OLLAMA_MAX_LOADED_MODELS: '1',
+      OLLAMA_NUM_PARALLEL: '1',
+      OLLAMA_KEEP_ALIVE: '10m'
+    }
+  })
+}));
+
 describe('ollamaService', () => {
   let ollamaService;
   let axios;
@@ -428,6 +438,106 @@ describe('ollamaService', () => {
       exitHandler(0, null);
 
       expect(serviceStatus.ollama.status).toBe('stopped');
+    });
+
+    // FIX M1: Tests for cleanup function return
+    test('returns cleanup function on successful startup', async () => {
+      axios.get.mockRejectedValue({ code: 'ECONNREFUSED' });
+
+      const mockProcess = {
+        stdout: { on: jest.fn(), removeListener: jest.fn() },
+        stderr: { on: jest.fn(), removeListener: jest.fn() },
+        on: jest.fn(),
+        removeListener: jest.fn(),
+        kill: jest.fn(),
+        pid: 12345
+      };
+      spawn.mockReturnValue(mockProcess);
+
+      const promise = ollamaService.startOllama({ serviceStatus });
+
+      await jest.advanceTimersByTimeAsync(200);
+
+      const result = await promise;
+
+      // Verify cleanup function is returned
+      expect(result.cleanup).toBeDefined();
+      expect(typeof result.cleanup).toBe('function');
+    });
+
+    test('cleanup function removes all event listeners', async () => {
+      axios.get.mockRejectedValue({ code: 'ECONNREFUSED' });
+
+      const mockProcess = {
+        stdout: { on: jest.fn(), removeListener: jest.fn() },
+        stderr: { on: jest.fn(), removeListener: jest.fn() },
+        on: jest.fn(),
+        removeListener: jest.fn(),
+        kill: jest.fn(),
+        pid: 12345
+      };
+      spawn.mockReturnValue(mockProcess);
+
+      const promise = ollamaService.startOllama({ serviceStatus });
+
+      await jest.advanceTimersByTimeAsync(200);
+
+      const result = await promise;
+
+      // Call cleanup
+      result.cleanup();
+
+      // Verify all listeners were removed
+      expect(mockProcess.stdout.removeListener).toHaveBeenCalledWith('data', expect.any(Function));
+      expect(mockProcess.stderr.removeListener).toHaveBeenCalledWith('data', expect.any(Function));
+      expect(mockProcess.removeListener).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockProcess.removeListener).toHaveBeenCalledWith('exit', expect.any(Function));
+    });
+
+    test('cleanup is called on PORT_IN_USE before returning', async () => {
+      axios.get.mockRejectedValue({ code: 'ECONNREFUSED' });
+
+      let stderrHandler;
+      const mockProcess = {
+        stdout: { on: jest.fn(), removeListener: jest.fn() },
+        stderr: {
+          on: jest.fn((event, cb) => {
+            if (event === 'data') stderrHandler = cb;
+          }),
+          removeListener: jest.fn()
+        },
+        on: jest.fn(),
+        removeListener: jest.fn(),
+        kill: jest.fn(),
+        pid: 12345
+      };
+      spawn.mockReturnValue(mockProcess);
+
+      const promise = ollamaService.startOllama({ serviceStatus });
+
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Trigger port in use
+      stderrHandler(Buffer.from('address already in use'));
+
+      await jest.advanceTimersByTimeAsync(200);
+
+      const result = await promise;
+
+      expect(result.portInUse).toBe(true);
+      // Cleanup should have been called before returning
+      expect(mockProcess.stdout.removeListener).toHaveBeenCalled();
+      expect(mockProcess.stderr.removeListener).toHaveBeenCalled();
+    });
+
+    test('no cleanup function returned for external Ollama', async () => {
+      // Ollama already running
+      axios.get.mockResolvedValue({ status: 200 });
+
+      const result = await ollamaService.startOllama({ serviceStatus });
+
+      expect(result.external).toBe(true);
+      expect(result.cleanup).toBeUndefined();
     });
   });
 });

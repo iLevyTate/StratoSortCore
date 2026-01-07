@@ -14,6 +14,7 @@ const { axiosWithRetry, checkOllamaHealth } = require('../../utils/ollamaApiRetr
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
 const { shouldUseShell } = require('../../../shared/platformUtils');
 const { SERVICE_URLS } = require('../../../shared/configDefaults');
+const { getRecommendedEnvSettings } = require('../PerformanceService');
 
 logger.setContext('StartupManager:Ollama');
 
@@ -68,13 +69,36 @@ async function startOllama({ serviceStatus }) {
   }
 
   logger.info('[STARTUP] Starting Ollama server...');
+
+  // FIX: Apply performance tuning variables
+  const { recommendations } = await getRecommendedEnvSettings();
+
+  // Filter out any undefined/null values
+  const envVars = Object.entries(recommendations).reduce((acc, [key, value]) => {
+    if (value !== undefined && value !== null) {
+      acc[key] = String(value);
+    }
+    return acc;
+  }, {});
+
+  logger.info('[STARTUP] Ollama performance tuning applied:', {
+    parallel: envVars.OLLAMA_NUM_PARALLEL,
+    gpu: envVars.OLLAMA_NUM_GPU,
+    batch: envVars.OLLAMA_NUM_BATCH,
+    threads: envVars.OLLAMA_NUM_THREAD
+  });
+
   let ollamaProcess;
   try {
     ollamaProcess = spawn('ollama', ['serve'], {
       detached: false,
       stdio: 'pipe',
       shell: shouldUseShell(),
-      windowsHide: true
+      windowsHide: true,
+      env: {
+        ...process.env,
+        ...envVars
+      }
     });
   } catch (error) {
     throw new Error(`Failed to spawn Ollama binary: ${error.message}`);
@@ -82,12 +106,40 @@ async function startOllama({ serviceStatus }) {
 
   let startupError = null;
 
-  ollamaProcess.stdout?.on('data', (data) => {
+  // FIX: Store event handler references for cleanup to prevent memory leaks
+  const handlers = {
+    stdout: null,
+    stderr: null,
+    error: null,
+    exit: null
+  };
+
+  // FIX: Cleanup function to remove all event listeners
+  const cleanupListeners = () => {
+    try {
+      if (handlers.stdout && ollamaProcess.stdout) {
+        ollamaProcess.stdout.removeListener('data', handlers.stdout);
+      }
+      if (handlers.stderr && ollamaProcess.stderr) {
+        ollamaProcess.stderr.removeListener('data', handlers.stderr);
+      }
+      if (handlers.error) {
+        ollamaProcess.removeListener('error', handlers.error);
+      }
+      if (handlers.exit) {
+        ollamaProcess.removeListener('exit', handlers.exit);
+      }
+    } catch (e) {
+      logger.debug('[Ollama] Cleanup error (non-fatal):', e?.message);
+    }
+  };
+
+  handlers.stdout = (data) => {
     const message = data.toString().trim();
     logger.debug(`[Ollama] ${message}`);
-  });
+  };
 
-  ollamaProcess.stderr?.on('data', (data) => {
+  handlers.stderr = (data) => {
     const message = data.toString().trim();
     logger.debug(`[Ollama stderr] ${message}`);
 
@@ -100,22 +152,25 @@ async function startOllama({ serviceStatus }) {
       startupError = 'PORT_IN_USE';
       logger.info('[STARTUP] Ollama port already in use, assuming external instance is running');
     }
-  });
+  };
 
-  ollamaProcess.on('error', (error) => {
+  handlers.error = (error) => {
     logger.error('[Ollama] Process error:', error);
     startupError = error.message;
-  });
+  };
 
-  ollamaProcess.on('exit', (code, signal) => {
+  handlers.exit = (code, signal) => {
     logger.warn(`[Ollama] Process exited with code ${code}, signal ${signal}`);
     serviceStatus.ollama.status = 'stopped';
     // FIX: Also update health status to reflect service is not running
     serviceStatus.ollama.health = 'unhealthy';
 
+    // FIX: Clean up event listeners on exit to prevent memory leaks
+    cleanupListeners();
+
     // FIX: Emit status change to notify renderer
     try {
-      const { emitServiceStatusChange } = require('../../ipc/dependencies');
+      const { emitServiceStatusChange } = require('../../ipc/serviceStatusEvents');
       emitServiceStatusChange({
         service: 'ollama',
         status: 'stopped',
@@ -125,13 +180,21 @@ async function startOllama({ serviceStatus }) {
     } catch (e) {
       logger.debug('[Ollama] Could not emit status change', { error: e?.message });
     }
-  });
+  };
+
+  // Register event handlers
+  ollamaProcess.stdout?.on('data', handlers.stdout);
+  ollamaProcess.stderr?.on('data', handlers.stderr);
+  ollamaProcess.on('error', handlers.error);
+  ollamaProcess.on('exit', handlers.exit);
 
   // Wait briefly to check for immediate failures
   await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_MEDIUM));
 
   // If we got a port-in-use error, treat as external instance
   if (startupError === 'PORT_IN_USE') {
+    // FIX: Clean up event listeners before returning to prevent memory leaks
+    cleanupListeners();
     try {
       ollamaProcess.kill();
     } catch {
@@ -144,7 +207,9 @@ async function startOllama({ serviceStatus }) {
     throw new Error(`Failed to start Ollama: ${startupError}`);
   }
 
-  return { process: ollamaProcess };
+  // FIX M1: Return cleanup function for caller to invoke on app shutdown
+  // This prevents event listener persistence when Ollama runs successfully until shutdown
+  return { process: ollamaProcess, cleanup: cleanupListeners };
 }
 
 module.exports = {

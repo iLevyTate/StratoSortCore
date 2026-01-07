@@ -668,6 +668,14 @@ class UndoRedoService {
           { oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta }
         ]);
       }
+
+      // Keep pending embedding queue IDs consistent with undo/redo moves too.
+      try {
+        const embeddingQueue = require('../analysis/embeddingQueue');
+        embeddingQueue.updateByFilePath?.(oldPath, newPath);
+      } catch {
+        // Non-fatal
+      }
     } catch (error) {
       // Non-fatal - log but don't fail the undo/redo
       logger.warn('[UndoRedoService] Failed to update ChromaDB path', {
@@ -699,6 +707,14 @@ class UndoRedoService {
           updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
         }
         await chromaDb.updateFilePaths(updates);
+      }
+
+      // Also update any pending embeddings in the queue (so they flush under the new IDs).
+      try {
+        const embeddingQueue = require('../analysis/embeddingQueue');
+        embeddingQueue.updateByFilePaths?.(pathChanges);
+      } catch {
+        // Non-fatal
       }
     } catch (error) {
       logger.warn('[UndoRedoService] Failed to batch update ChromaDB paths', {

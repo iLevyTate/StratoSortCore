@@ -421,7 +421,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                     <div className="mt-4 space-y-3">
                       {folderImprovements.map((improvement, index) => (
                         <div
-                          key={index}
+                          key={improvement.id || improvement.type || `improvement-${index}`}
                           className="p-3 bg-white rounded-lg border border-system-gray-200 shadow-sm"
                         >
                           <div className="flex items-start gap-3">

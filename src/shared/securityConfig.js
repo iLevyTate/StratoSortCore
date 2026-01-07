@@ -16,7 +16,6 @@ const PLATFORM = typeof process !== 'undefined' && process.platform ? process.pl
 
 // Import shared validation constants
 const {
-  THEME_VALUES,
   LOGGING_LEVELS,
   NUMERIC_LIMITS,
   URL_PATTERN,
@@ -148,7 +147,6 @@ const SETTINGS_VALIDATION = {
     'launchOnStartup',
     'autoOrganize',
     'backgroundMode',
-    'theme',
     'language',
     'loggingLevel',
     'cacheSize',
@@ -163,8 +161,6 @@ const SETTINGS_VALIDATION = {
     'defaultSmartFolderLocation',
     'lastBrowsedPath',
     'confidenceThreshold',
-    // Smart folder watching
-    'smartFolderWatchEnabled',
     // Naming convention settings
     'namingConvention',
     'dateFormat',
@@ -181,12 +177,13 @@ const SETTINGS_VALIDATION = {
     'retryAttempts',
     // UI limits
     'workflowRestoreMaxAge',
-    'saveDebounceMs'
+    'saveDebounceMs',
+    // Deprecated settings (kept for backward compatibility)
+    'smartFolderWatchEnabled'
   ]),
 
   // Valid values for enum fields (from shared validationConstants)
   enums: {
-    theme: THEME_VALUES,
     loggingLevel: LOGGING_LEVELS
   },
 
@@ -250,6 +247,7 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'file-operation-complete', // File move/delete notifications for search invalidation
   'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
   'dependencies-service-changed', // Service status change notifications
+  'dependencies-service-status-changed', // FIX: Missing channel for dependency status updates
   'notification' // Toast notifications from main process
 ];
 

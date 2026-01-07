@@ -14,42 +14,76 @@ import { createSelector } from '@reduxjs/toolkit';
 /**
  * Creates a selector that returns stable references when output is unchanged.
  * Prevents unnecessary re-renders in consuming components.
+ *
+ * FIX: Uses WeakMap to store per-state-tree caching, avoiding global closure race condition.
+ * Each unique state root gets its own cached result, preventing cross-component interference.
  */
 const createStableSelector = (dependencies, combiner) => {
   const baseSelector = createSelector(dependencies, combiner);
 
-  // Store previous result for reference stability
-  let prevResult = null;
+  // FIX: Use WeakMap keyed by first dependency result to avoid global state sharing
+  // This ensures each selector instance maintains its own cache per input reference
+  const cacheMap = new WeakMap();
+  let lastPrimitiveKey = null;
+  let lastPrimitiveResult = null;
 
   return (state) => {
     const result = baseSelector(state);
 
-    // For arrays, check if contents are the same
-    if (Array.isArray(result) && Array.isArray(prevResult)) {
+    // Get a cache key from the first dependency (typically a slice of state)
+    const firstDep = dependencies[0];
+    const cacheKey = typeof firstDep === 'function' ? firstDep(state) : state;
+
+    // For object cache keys, use WeakMap
+    if (cacheKey && typeof cacheKey === 'object') {
+      const prevResult = cacheMap.get(cacheKey);
+
+      // For arrays, check if contents are the same
+      if (Array.isArray(result) && Array.isArray(prevResult)) {
+        if (
+          result.length === prevResult.length &&
+          result.every((item, i) => item === prevResult[i])
+        ) {
+          return prevResult; // Return cached reference
+        }
+      }
+
+      // For objects, check shallow equality
       if (
-        result.length === prevResult.length &&
-        result.every((item, i) => item === prevResult[i])
+        result &&
+        typeof result === 'object' &&
+        !Array.isArray(result) &&
+        prevResult &&
+        typeof prevResult === 'object'
       ) {
-        return prevResult; // Return cached reference
+        const keys = Object.keys(result);
+        const prevKeys = Object.keys(prevResult);
+        if (
+          keys.length === prevKeys.length &&
+          keys.every((key) => result[key] === prevResult[key])
+        ) {
+          return prevResult; // Return cached reference
+        }
+      }
+
+      cacheMap.set(cacheKey, result);
+      return result;
+    }
+
+    // Fallback for primitive cache keys
+    if (cacheKey === lastPrimitiveKey && lastPrimitiveResult !== null) {
+      if (Array.isArray(result) && Array.isArray(lastPrimitiveResult)) {
+        if (
+          result.length === lastPrimitiveResult.length &&
+          result.every((item, i) => item === lastPrimitiveResult[i])
+        ) {
+          return lastPrimitiveResult;
+        }
       }
     }
 
-    // For objects, check shallow equality
-    if (
-      result &&
-      typeof result === 'object' &&
-      !Array.isArray(result) &&
-      prevResult &&
-      typeof prevResult === 'object'
-    ) {
-      const keys = Object.keys(result);
-      const prevKeys = Object.keys(prevResult);
-      if (keys.length === prevKeys.length && keys.every((key) => result[key] === prevResult[key])) {
-        return prevResult; // Return cached reference
-      }
-    }
-
-    prevResult = result;
+    lastPrimitiveKey = cacheKey;
+    lastPrimitiveResult = result;
     return result;
   };
 };

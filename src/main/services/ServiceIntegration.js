@@ -68,6 +68,10 @@ class ServiceIntegration {
     // if (this.initialized) check and run in parallel, causing undefined behavior
     this._initPromise = null;
 
+    // Track last initialization outcome for debugging/telemetry
+    this._lastInitStatus = null;
+    this._lastInitError = null;
+
     // Reference to the container for external access
     this.container = container;
   }
@@ -113,155 +117,236 @@ class ServiceIntegration {
   async _doInitialize(options = {}) {
     logger.info('[ServiceIntegration] Starting initialization...');
 
-    // Register core services with the container
-    this._registerCoreServices();
+    // FIX L3: Clear stale init status from any previous initialization attempts
+    this._lastInitStatus = null;
+    this._lastInitError = null;
 
-    // Initialize core services
-    this.analysisHistory = container.resolve(ServiceIds.ANALYSIS_HISTORY);
-    this.undoRedo = container.resolve(ServiceIds.UNDO_REDO);
-    this.processingState = container.resolve(ServiceIds.PROCESSING_STATE);
-
-    // Initialize ChromaDB and folder matching
-    this.chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
-    if (!this.chromaDbService) {
-      logger.warn(
-        '[ServiceIntegration] ChromaDB service is null, some features will be unavailable'
-      );
-    }
-
-    this.folderMatchingService = container.resolve(ServiceIds.FOLDER_MATCHING);
-
-    // Initialize suggestion service
-    const settingsService = container.resolve(ServiceIds.SETTINGS);
-    if (!settingsService) {
-      logger.warn('[ServiceIntegration] Settings service is null, using defaults');
-    }
-
-    this.suggestionService = container.resolve(ServiceIds.ORGANIZATION_SUGGESTION);
-
-    // Initialize auto-organize service
-    this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
-
-    // FIX: Use startup result to skip redundant ChromaDB availability check (saves 2-4s)
-    // StartupManager already verified ChromaDB is running, so we don't need to recheck
-    let isChromaReady = false;
-    const { startupResult } = options;
-
-    if (startupResult?.services?.chromadb?.success) {
-      // Trust the startup result - ChromaDB was already verified running
-      logger.info('[ServiceIntegration] Using startup result: ChromaDB is available');
-      isChromaReady = true;
-    } else if (!this.chromaDbService) {
-      logger.warn('[ServiceIntegration] ChromaDB service is null');
-      isChromaReady = false;
-    } else if (!startupResult) {
-      // No startup result provided - fall back to availability check (legacy path)
-      logger.debug('[ServiceIntegration] No startup result, checking ChromaDB availability...');
-      try {
-        let timeoutId;
-        const timeoutPromise = new Promise((resolve) => {
-          timeoutId = setTimeout(() => resolve(false), 2000);
-        });
-
-        try {
-          isChromaReady = await Promise.race([
-            this.chromaDbService.isServerAvailable(2000),
-            timeoutPromise
-          ]);
-        } finally {
-          if (timeoutId) clearTimeout(timeoutId);
-        }
-      } catch (error) {
-        logger.warn('[ServiceIntegration] ChromaDB availability check failed:', error.message);
-        isChromaReady = false;
-      }
-    } else {
-      // Startup result provided but ChromaDB wasn't successful
-      logger.warn('[ServiceIntegration] ChromaDB startup was not successful');
-      isChromaReady = false;
-    }
-
-    if (!isChromaReady) {
-      logger.warn(
-        '[ServiceIntegration] ChromaDB server is not available. Running in degraded mode.'
-      );
-      // Continue without ChromaDB - don't block startup
-    }
-
-    // FIX: Tiered initialization with explicit dependency ordering
-    // Tracks initialization status for each service
+    // Track initialization status for each service (returned to callers)
     const initStatus = {
       initialized: [],
       errors: [],
       skipped: []
     };
 
-    // Tier 0: Initialize independent services in parallel
-    const tier0Results = await Promise.allSettled([
-      this.analysisHistory.initialize(),
-      this.undoRedo.initialize(),
-      this.processingState.initialize()
-    ]);
+    try {
+      // Register core services with the container
+      this._registerCoreServices();
 
-    // Process Tier 0 results
-    SERVICE_INITIALIZATION_ORDER.tier0.forEach((name, index) => {
-      const result = tier0Results[index];
-      if (result.status === 'fulfilled') {
-        initStatus.initialized.push(name);
-      } else {
-        initStatus.errors.push({
-          service: name,
-          error: result.reason?.message || String(result.reason)
-        });
-        logger.error(`[ServiceIntegration] ${name} initialization failed:`, result.reason?.message);
-      }
-    });
+      // Initialize core services
+      this.analysisHistory = container.resolve(ServiceIds.ANALYSIS_HISTORY);
+      this.undoRedo = container.resolve(ServiceIds.UNDO_REDO);
+      this.processingState = container.resolve(ServiceIds.PROCESSING_STATE);
 
-    // Tier 1: Initialize ChromaDB if server is available
-    if (isChromaReady && this.chromaDbService) {
-      try {
-        await this.chromaDbService.initialize();
-        initStatus.initialized.push('chromaDb');
-      } catch (error) {
-        initStatus.errors.push({ service: 'chromaDb', error: error.message });
-        logger.error('[ServiceIntegration] ChromaDB initialization failed:', error.message);
-        isChromaReady = false; // Prevent dependent services from initializing
-      }
-    } else {
-      initStatus.skipped.push('chromaDb');
-      logger.warn('[ServiceIntegration] ChromaDB initialization skipped - server not available');
-    }
-
-    // Tier 2: Initialize services that depend on ChromaDB
-    // FolderMatchingService depends on ChromaDB for vector operations
-    if (this.folderMatchingService && isChromaReady) {
-      try {
-        await this.folderMatchingService.initialize();
-        initStatus.initialized.push('folderMatching');
-      } catch (error) {
-        initStatus.errors.push({ service: 'folderMatching', error: error.message });
+      // Initialize ChromaDB and folder matching
+      this.chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
+      if (!this.chromaDbService) {
         logger.warn(
-          '[ServiceIntegration] FolderMatchingService initialization failed:',
-          error.message
+          '[ServiceIntegration] ChromaDB service is null, some features will be unavailable'
         );
-        // Non-fatal - continue with degraded functionality
       }
-    } else if (this.folderMatchingService) {
-      initStatus.skipped.push('folderMatching');
-      logger.warn('[ServiceIntegration] FolderMatchingService skipped - ChromaDB not available');
+
+      this.folderMatchingService = container.resolve(ServiceIds.FOLDER_MATCHING);
+
+      // Initialize suggestion service
+      const settingsService = container.resolve(ServiceIds.SETTINGS);
+      if (!settingsService) {
+        logger.warn('[ServiceIntegration] Settings service is null, using defaults');
+      }
+
+      this.suggestionService = container.resolve(ServiceIds.ORGANIZATION_SUGGESTION);
+
+      // Initialize auto-organize service
+      this.autoOrganizeService = container.resolve(ServiceIds.AUTO_ORGANIZE);
+
+      // FIX: Use startup result to skip redundant ChromaDB availability check (saves 2-4s)
+      // StartupManager already verified ChromaDB is running, so we don't need to recheck
+      let isChromaReady = false;
+      const { startupResult } = options;
+
+      if (startupResult?.services?.chromadb?.success) {
+        // Trust the startup result - ChromaDB was already verified running
+        logger.info('[ServiceIntegration] Using startup result: ChromaDB is available');
+        isChromaReady = true;
+      } else if (!this.chromaDbService) {
+        logger.warn('[ServiceIntegration] ChromaDB service is null');
+        isChromaReady = false;
+      } else if (!startupResult) {
+        // No startup result provided - fall back to availability check (legacy path)
+        logger.debug('[ServiceIntegration] No startup result, checking ChromaDB availability...');
+        try {
+          let timeoutId;
+          const timeoutPromise = new Promise((resolve) => {
+            timeoutId = setTimeout(() => resolve(false), 2000);
+          });
+
+          try {
+            isChromaReady = await Promise.race([
+              this.chromaDbService.isServerAvailable(2000),
+              timeoutPromise
+            ]);
+          } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+          }
+        } catch (error) {
+          logger.warn(
+            '[ServiceIntegration] ChromaDB availability check failed:',
+            error?.message || String(error)
+          );
+          isChromaReady = false;
+        }
+      } else {
+        // Startup result provided but ChromaDB wasn't successful
+        logger.warn('[ServiceIntegration] ChromaDB startup was not successful');
+        isChromaReady = false;
+      }
+
+      if (!isChromaReady) {
+        logger.warn(
+          '[ServiceIntegration] ChromaDB server is not available. Running in degraded mode.'
+        );
+        // Continue without ChromaDB - don't block startup
+      }
+
+      // FIX: Tiered initialization with explicit dependency ordering
+      // Tier 0: Initialize independent services in parallel
+      const tier0Results = await Promise.allSettled([
+        this.analysisHistory.initialize(),
+        this.undoRedo.initialize(),
+        this.processingState.initialize()
+      ]);
+
+      // Process Tier 0 results
+      SERVICE_INITIALIZATION_ORDER.tier0.forEach((name, index) => {
+        const result = tier0Results[index];
+        if (result.status === 'fulfilled') {
+          initStatus.initialized.push(name);
+        } else {
+          initStatus.errors.push({
+            service: name,
+            error: result.reason?.message || String(result.reason)
+          });
+          logger.error(
+            `[ServiceIntegration] ${name} initialization failed:`,
+            result.reason?.message
+          );
+        }
+      });
+
+      // Tier 1: Initialize ChromaDB if server is available
+      if (isChromaReady && this.chromaDbService) {
+        try {
+          await this.chromaDbService.initialize();
+          initStatus.initialized.push('chromaDb');
+
+          // FIX: Wire up cascade orphan marking when analysis entries are removed
+          // This ensures embeddings and chunks are marked orphaned when their analysis entry is pruned
+          if (this.analysisHistory && this.chromaDbService) {
+            this.analysisHistory.setOnEntriesRemovedCallback(async (removedEntries) => {
+              if (!removedEntries || removedEntries.length === 0) return;
+
+              // Embeddings are stored under semantic IDs (file:/image: + path), not analysis-history UUIDs.
+              // Use the most current known path when available (actualPath), otherwise fall back to originalPath.
+              const path = require('path');
+              const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+
+              const fileIds = Array.from(
+                new Set(
+                  removedEntries
+                    .map((e) => e?.actualPath || e?.originalPath)
+                    .filter((p) => typeof p === 'string' && p.length > 0)
+                    .map((p) => {
+                      const ext = (path.extname(p) || '').toLowerCase();
+                      const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+                      return `${isImage ? 'image' : 'file'}:${p}`;
+                    })
+                )
+              );
+              logger.debug('[ServiceIntegration] Marking orphaned embeddings for pruned entries', {
+                count: fileIds.length
+              });
+
+              try {
+                const result = await this.chromaDbService.markEmbeddingsOrphaned(fileIds);
+                logger.info('[ServiceIntegration] Cascade orphan marking complete', {
+                  fileEmbeddings: result.file?.marked || 0,
+                  chunks: result.chunks?.marked || 0
+                });
+              } catch (error) {
+                logger.warn('[ServiceIntegration] Cascade orphan marking failed:', {
+                  error: error.message,
+                  fileIds: fileIds.length
+                });
+              }
+            });
+          }
+        } catch (error) {
+          const errorMsg = error?.message || String(error);
+          initStatus.errors.push({ service: 'chromaDb', error: errorMsg });
+          logger.error('[ServiceIntegration] ChromaDB initialization failed:', errorMsg);
+          isChromaReady = false; // Prevent dependent services from initializing
+        }
+      } else {
+        initStatus.skipped.push('chromaDb');
+        logger.warn('[ServiceIntegration] ChromaDB initialization skipped - server not available');
+      }
+
+      // Tier 2: Initialize services that depend on ChromaDB
+      // FolderMatchingService depends on ChromaDB for vector operations
+      if (this.folderMatchingService && isChromaReady) {
+        try {
+          await this.folderMatchingService.initialize();
+          initStatus.initialized.push('folderMatching');
+        } catch (error) {
+          const errorMsg = error?.message || String(error);
+          initStatus.errors.push({ service: 'folderMatching', error: errorMsg });
+          logger.warn(
+            '[ServiceIntegration] FolderMatchingService initialization failed:',
+            errorMsg
+          );
+          // Non-fatal - continue with degraded functionality
+        }
+      } else if (this.folderMatchingService) {
+        initStatus.skipped.push('folderMatching');
+        logger.warn('[ServiceIntegration] FolderMatchingService skipped - ChromaDB not available');
+      }
+
+      // Log initialization summary
+      logger.info('[ServiceIntegration] Initialization complete', {
+        initialized: initStatus.initialized.length,
+        errors: initStatus.errors.length,
+        skipped: initStatus.skipped.length
+      });
+
+      // Only consider the integration "initialized" if Tier 0 (core) services succeeded.
+      // Other services can fail and the app can run in degraded mode.
+      const criticalTier0Failures = initStatus.errors.filter((e) =>
+        SERVICE_INITIALIZATION_ORDER.tier0.includes(e.service)
+      );
+      const success = criticalTier0Failures.length === 0;
+      this.initialized = success;
+      this._lastInitStatus = initStatus;
+      this._lastInitError = success ? null : criticalTier0Failures.map((e) => e.error).join('; ');
+
+      if (!success) {
+        logger.error('[ServiceIntegration] Initialization failed for core services', {
+          failures: criticalTier0Failures
+        });
+      }
+
+      // FIX: Return structured initialization status for callers to inspect
+      return { ...initStatus, success };
+    } catch (error) {
+      const errorMsg = error?.message || String(error);
+      logger.error(
+        '[ServiceIntegration] Initialization aborted due to unexpected error:',
+        errorMsg
+      );
+      this.initialized = false;
+      initStatus.errors.push({ service: 'serviceIntegration', error: errorMsg });
+      this._lastInitStatus = initStatus;
+      this._lastInitError = errorMsg;
+      return { ...initStatus, success: false };
     }
-
-    // Log initialization summary
-    logger.info('[ServiceIntegration] Initialization complete', {
-      initialized: initStatus.initialized.length,
-      errors: initStatus.errors.length,
-      skipped: initStatus.skipped.length
-    });
-
-    this.initialized = true;
-
-    // FIX: Return structured initialization status for callers to inspect
-    return initStatus;
   }
 
   /**
@@ -332,7 +417,7 @@ class ServiceIntegration {
         } catch (error) {
           logger.warn(
             '[ServiceIntegration] OllamaService not available for clustering:',
-            error.message
+            error?.message || String(error)
           );
         }
 
@@ -472,6 +557,12 @@ class ServiceIntegration {
     try {
       logger.info('[ServiceIntegration] Starting coordinated shutdown...');
 
+      // FIX M2: Clear orphan marking callback before nulling services
+      // This callback holds closures to chromaDbService, preventing garbage collection
+      if (this.analysisHistory?.setOnEntriesRemovedCallback) {
+        this.analysisHistory.setOnEntriesRemovedCallback(null);
+      }
+
       // Use the container's shutdown with explicit shutdown order
       // This ensures dependent services are stopped before their dependencies
       await container.shutdown(SHUTDOWN_ORDER);
@@ -484,12 +575,14 @@ class ServiceIntegration {
       this.folderMatchingService = null;
       this.suggestionService = null;
       this.autoOrganizeService = null;
+      // FIX: Also clear SmartFolderWatcher reference to prevent memory leaks
+      this.smartFolderWatcher = null;
       this.initialized = false;
 
       logger.info('[ServiceIntegration] All services shut down successfully');
     } catch (error) {
       logger.error('[ServiceIntegration] Error during shutdown', {
-        error: error.message
+        error: error?.message || String(error)
       });
     }
   }
@@ -539,28 +632,29 @@ class ServiceIntegration {
         this._autoStartSmartFolderWatcher();
       }
     } catch (error) {
-      logger.warn('[ServiceIntegration] Failed to configure SmartFolderWatcher:', error.message);
+      logger.warn(
+        '[ServiceIntegration] Failed to configure SmartFolderWatcher:',
+        error?.message || String(error)
+      );
     }
   }
 
   /**
-   * Auto-start the SmartFolderWatcher if enabled in settings
+   * Auto-start the SmartFolderWatcher
+   * Smart folder watching is always enabled - files added to smart folders are automatically analyzed
    * @private
    */
   async _autoStartSmartFolderWatcher() {
     if (!this.smartFolderWatcher) return;
 
     try {
-      const settings = container.resolve(ServiceIds.SETTINGS);
-      if (settings) {
-        const config = await settings.load();
-        if (config.smartFolderWatchEnabled) {
-          logger.info('[ServiceIntegration] Auto-starting SmartFolderWatcher...');
-          await this.smartFolderWatcher.start();
-        }
-      }
+      logger.info('[ServiceIntegration] Auto-starting SmartFolderWatcher...');
+      await this.smartFolderWatcher.start();
     } catch (error) {
-      logger.warn('[ServiceIntegration] Error auto-starting SmartFolderWatcher:', error.message);
+      logger.warn(
+        '[ServiceIntegration] Error auto-starting SmartFolderWatcher:',
+        error?.message || String(error)
+      );
     }
   }
 }

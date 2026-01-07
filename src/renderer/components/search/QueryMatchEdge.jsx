@@ -189,8 +189,11 @@ const QueryMatchEdge = memo(
 
                   {/* Match reasons */}
                   <div className="space-y-1">
-                    {reasons.map((reason, idx) => (
-                      <div key={idx} className="flex items-start gap-1.5">
+                    {reasons.map((reason) => (
+                      <div
+                        key={`${reason.type}:${reason.text}`}
+                        className="flex items-start gap-1.5"
+                      >
                         <span className="text-gray-500 mt-0.5">•</span>
                         <span className={typeColors[reason.type] || 'text-gray-300'}>
                           {reason.text}
@@ -226,8 +229,8 @@ QueryMatchEdge.propTypes = {
   sourceY: PropTypes.number.isRequired,
   targetX: PropTypes.number.isRequired,
   targetY: PropTypes.number.isRequired,
-  sourcePosition: PropTypes.string,
-  targetPosition: PropTypes.string,
+  sourcePosition: PropTypes.oneOf(['top', 'right', 'bottom', 'left']),
+  targetPosition: PropTypes.oneOf(['top', 'right', 'bottom', 'left']),
   data: PropTypes.shape({
     score: PropTypes.number,
     matchDetails: PropTypes.shape({

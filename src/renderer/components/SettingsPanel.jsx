@@ -23,9 +23,7 @@ import Button from './ui/Button';
 import IconButton from './ui/IconButton';
 import Collapsible from './ui/Collapsible';
 import { ModalLoadingOverlay } from './LoadingSkeleton';
-import { ConfirmModal } from './Modal';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
-import SmartFolderWatchSection from './settings/SmartFolderWatchSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 import NotificationSettingsSection from './settings/NotificationSettingsSection';
 import OllamaConfigSection from './settings/OllamaConfigSection';
@@ -36,7 +34,6 @@ import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
-import SettingsBackupSection from './settings/SettingsBackupSection';
 // UI-1: ProcessingLimitsSection removed - file size limits/processing params not useful for users
 
 const AnalysisHistoryModal = lazy(() => import('./AnalysisHistoryModal'));
@@ -83,9 +80,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     dispatch(toggleSettings());
   }, [dispatch]);
 
-  // FIX: Use null as initial state to prevent flash of defaults on mount
-  // Settings will be loaded from backend on first render
-  const [settings, setSettings] = useState(null);
+  // FIX: Start with DEFAULT_SETTINGS to prevent loading spinner jerk
+  // Real settings will be merged in via loadSettings() on mount
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [ollamaModelLists, setOllamaModelLists] = useState({
     text: [],
     vision: [],
@@ -97,9 +94,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [isSaving, setIsSaving] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [newModel, setNewModel] = useState('');
-  const [modelToDelete, setModelToDelete] = useState('');
   const [isAddingModel, setIsAddingModel] = useState(false);
-  const [isDeletingModel, setIsDeletingModel] = useState(false);
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
 
@@ -120,7 +115,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   const [showAllModels, setShowAllModels] = useState(false);
   const [showAnalysisHistory, setShowAnalysisHistory] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [analysisStats, setAnalysisStats] = useState(null);
   const didAutoHealthCheckRef = useRef(false);
   const skipAutoSaveRef = useRef(false);
@@ -198,7 +192,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       applySettingsUpdate({ ...DEFAULT_SETTINGS });
       setSettingsLoaded(true);
     }
-  }, []);
+  }, [applySettingsUpdate]);
 
   // Load Ollama models
   const loadOllamaModels = useCallback(async () => {
@@ -230,7 +224,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         embedding: installedEmbeddingModels,
         all: installedModels.slice().sort()
       });
-      setModelToDelete((response?.models || [])[0] || '');
       if (response?.ollamaHealth) setOllamaHealth(response.ollamaHealth);
       if (response?.selected) {
         // Avoid auto-save loops caused by setSettings during hydration
@@ -282,8 +275,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
     };
 
-    loadSettingsIfMounted();
-    loadOllamaModelsIfMounted();
+    // FIX P1-7: Make loading sequential to prevent race condition
+    // Both functions modify settings state, so they must run in sequence
+    (async () => {
+      await loadSettingsIfMounted();
+      await loadOllamaModelsIfMounted();
+    })();
 
     return () => {
       mounted = false;
@@ -491,31 +488,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, [newModel, addNotification, loadOllamaModels]);
 
-  const deleteOllamaModel = useCallback(async () => {
-    if (!modelToDelete) return;
-    try {
-      setIsDeletingModel(true);
-      const res = await window.electronAPI.ollama.deleteModel(modelToDelete);
-      if (res?.success) {
-        addNotification(`Model "${modelToDelete}" removed`, 'success');
-        setModelToDelete('');
-        await loadOllamaModels();
-      } else {
-        const errorMsg = res?.error || '';
-        if (errorMsg.includes('not found')) {
-          addNotification('Model already removed or not found.', 'info');
-          await loadOllamaModels();
-        } else {
-          addNotification('Could not remove model. It may be in use.', 'error');
-        }
-      }
-    } catch (e) {
-      addNotification('Could not remove model. Try again.', 'error');
-    } finally {
-      setIsDeletingModel(false);
-    }
-  }, [modelToDelete, addNotification, loadOllamaModels]);
-
   // Collapsible section keys for expand/collapse all
   const expandAll = useCallback(() => {
     try {
@@ -543,22 +515,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         <p className="text-sm text-system-gray-500 mt-[var(--spacing-sm)]">
           Electron API not available. Please restart the application.
         </p>
-      </div>
-    );
-  }
-
-  // FIX: Show loading state while settings are being fetched from backend
-  // This prevents flash of hardcoded defaults on mount
-  if (settings === null) {
-    return (
-      <div
-        className="settings-modal fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-[var(--panel-padding)]"
-        role="presentation"
-      >
-        <div className="surface-panel w-full max-w-md mx-auto p-8 flex flex-col items-center gap-4 shadow-2xl animate-modal-enter">
-          <div className="animate-spin h-8 w-8 border-4 border-stratosort-blue border-t-transparent rounded-full" />
-          <p className="text-system-gray-600">Loading settings...</p>
-        </div>
       </div>
     );
   }
@@ -621,7 +577,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 <span>AI Configuration</span>
               </div>
             }
-            defaultOpen
+            defaultOpen={false}
             persistKey="settings-ai"
           >
             <div className="flex flex-col gap-[var(--spacing-default)]">
@@ -647,13 +603,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
               <ModelManagementSection
                 newModel={newModel}
                 setNewModel={setNewModel}
-                modelToDelete={modelToDelete}
-                setModelToDelete={setModelToDelete}
-                ollamaModelLists={ollamaModelLists}
                 isAddingModel={isAddingModel}
-                isDeletingModel={isDeletingModel}
                 onAddModel={addOllamaModel}
-                onDeleteModel={() => modelToDelete && setShowDeleteConfirm(true)}
               />
               <EmbeddingRebuildSection addNotification={addNotification} />
             </div>
@@ -666,37 +617,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 <span>Performance</span>
               </div>
             }
-            defaultOpen
+            defaultOpen={false}
             persistKey="settings-performance"
           >
             <div className="flex flex-col gap-[var(--spacing-default)]">
-              <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-2">
-                  Max Concurrent Analysis ({settings.maxConcurrentAnalysis})
-                </label>
-                <input
-                  type="range"
-                  min="1"
-                  max="8"
-                  value={settings.maxConcurrentAnalysis}
-                  onChange={(e) =>
-                    applySettingsUpdate((prev) => ({
-                      ...prev,
-                      maxConcurrentAnalysis: parseInt(e.target.value, 10)
-                    }))
-                  }
-                  className="w-full"
-                />
-              </div>
+              {/* UI-1: Processing Limits section removed - file size limits/processing params not useful for users */}
               <AutoOrganizeSection settings={settings} setSettings={applySettingsUpdate} />
-              <SmartFolderWatchSection
-                settings={settings}
-                setSettings={applySettingsUpdate}
-                addNotification={addNotification}
-                flushSettings={autoSaveSettings?.flush}
-              />
               <BackgroundModeSection settings={settings} setSettings={applySettingsUpdate} />
-              {/* UI-1: Processing Limits section removed - file size limits not useful for users */}
             </div>
           </Collapsible>
 
@@ -707,7 +634,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 <span>Default Locations</span>
               </div>
             }
-            defaultOpen
+            defaultOpen={false}
             persistKey="settings-defaults"
           >
             <DefaultLocationsSection settings={settings} setSettings={applySettingsUpdate} />
@@ -725,7 +652,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 <span>Application</span>
               </div>
             }
-            defaultOpen
+            defaultOpen={false}
             persistKey="settings-app"
           >
             <ApplicationSection settings={settings} setSettings={applySettingsUpdate} />
@@ -733,11 +660,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             {/* Notification Settings */}
             <div className="mt-6 pt-6 border-t border-system-gray-200">
               <NotificationSettingsSection settings={settings} setSettings={applySettingsUpdate} />
-            </div>
-
-            {/* Settings Backup & Restore */}
-            <div className="mt-6 pt-6 border-t border-system-gray-200">
-              <SettingsBackupSection addNotification={addNotification} />
             </div>
           </Collapsible>
 
@@ -808,18 +730,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           />
         </Suspense>
       )}
-
-      {/* Delete model confirmation modal */}
-      <ConfirmModal
-        isOpen={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
-        onConfirm={deleteOllamaModel}
-        title="Delete Model?"
-        message={`Are you sure you want to delete "${modelToDelete}"? This cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        variant="danger"
-      />
     </div>
   );
 });

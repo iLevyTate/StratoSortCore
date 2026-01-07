@@ -865,6 +865,8 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
 
           // Skip if either embedding is missing or malformed
           if (!embA?.vector || !embB?.vector) continue;
+          // Skip mismatched dimensions to avoid silent 0-similarity results
+          if (embA.vector.length !== embB.vector.length) continue;
 
           const similarity = cosineSimilarity(embA.vector, embB.vector);
 
@@ -984,6 +986,10 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
           const idB = ids[j];
           const embA = embeddings.get(idA);
           const embB = embeddings.get(idB);
+
+          if (!embA?.vector || !embB?.vector) continue;
+          // Skip mismatched dimensions to avoid silent 0-similarity results
+          if (embA.vector.length !== embB.vector.length) continue;
 
           const similarity = cosineSimilarity(embA.vector, embB.vector);
 

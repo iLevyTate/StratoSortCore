@@ -16,7 +16,7 @@ describe('Recent Fixes Regression Tests', () => {
 
     test('does not warn about __proto__ on normal settings objects', () => {
       // A normal settings object should NOT trigger __proto__ warning
-      const normalSettings = { theme: 'dark', notifications: true };
+      const normalSettings = { language: 'en', notifications: true };
       const result = validateSettings(normalSettings);
 
       // Should have no warnings about __proto__
@@ -28,7 +28,7 @@ describe('Recent Fixes Regression Tests', () => {
       // Create object with __proto__ as own property (attack attempt)
       const maliciousSettings = Object.create(null);
       maliciousSettings.__proto__ = { malicious: true };
-      maliciousSettings.theme = 'dark';
+      maliciousSettings.language = 'en';
 
       const result = validateSettings(maliciousSettings);
 
@@ -39,18 +39,18 @@ describe('Recent Fixes Regression Tests', () => {
     test('sanitizeSettings removes explicitly set __proto__', () => {
       const maliciousSettings = Object.create(null);
       maliciousSettings.__proto__ = { malicious: true };
-      maliciousSettings.theme = 'dark';
+      maliciousSettings.language = 'en';
 
       const sanitized = sanitizeSettings(maliciousSettings);
 
-      // __proto__ should be removed, theme should remain
+      // __proto__ should be removed; other keys should be preserved
       expect(Object.prototype.hasOwnProperty.call(sanitized, '__proto__')).toBe(false);
-      expect(sanitized.theme).toBe('dark');
+      expect(sanitized.language).toBe('en');
     });
 
     test('constructor key only warns when it differs from Object constructor', () => {
       // Normal object has constructor === Object, should not warn
-      const normalSettings = { theme: 'light' };
+      const normalSettings = { language: 'en' };
       const result1 = validateSettings(normalSettings);
       const ctorWarnings1 = result1.warnings.filter((w) => w.includes('constructor'));
       expect(ctorWarnings1).toHaveLength(0);
@@ -58,7 +58,7 @@ describe('Recent Fixes Regression Tests', () => {
       // Explicit constructor property with different value should warn
       const maliciousSettings = Object.create(null);
       maliciousSettings.constructor = function EvilConstructor() {};
-      maliciousSettings.theme = 'dark';
+      maliciousSettings.language = 'en';
 
       const result2 = validateSettings(maliciousSettings);
       expect(result2.warnings.some((w) => w.includes('constructor'))).toBe(true);

@@ -119,6 +119,17 @@ async function updateDatabasePath(source, destination, log) {
         { oldId: `file:${safeSource}`, newId: `file:${safeDest}`, newMeta },
         { oldId: `image:${safeSource}`, newId: `image:${safeDest}`, newMeta }
       ]);
+
+      // Keep pending embedding queue IDs in sync with moves/renames too.
+      // Otherwise a queued embedding may flush later under a stale oldId.
+      try {
+        const embeddingQueue = require('../../analysis/embeddingQueue');
+        embeddingQueue.updateByFilePath?.(safeSource, safeDest);
+      } catch (queueErr) {
+        log.debug('[FILE-OPS] Embedding queue path update skipped', {
+          error: queueErr.message
+        });
+      }
     }
   } catch (dbError) {
     log.warn('[FILE-OPS] Database path update failed after move', {
@@ -231,6 +242,25 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             log
           );
 
+          // Keep analysis history (and therefore BM25 search) aligned with the new path/name.
+          // Batch operations already do this; single-file moves must too.
+          try {
+            const historyService = getServiceIntegration()?.analysisHistory;
+            if (historyService?.updateEntryPaths) {
+              await historyService.updateEntryPaths([
+                {
+                  oldPath: moveValidation.source,
+                  newPath: moveValidation.destination,
+                  newName: path.basename(moveValidation.destination)
+                }
+              ]);
+            }
+          } catch (historyErr) {
+            log.warn('[FILE-OPS] Failed to update analysis history paths after move', {
+              error: historyErr.message
+            });
+          }
+
           // Notify renderer of file operation for search index invalidation
           try {
             const mainWindow = getMainWindow();
@@ -319,6 +349,18 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
 
           await fs.unlink(deleteValidation.source);
           const dbDeleteWarning = await deleteFromDatabase(deleteValidation.source, log);
+
+          // Remove analysis-history entries for this path so BM25-backed search doesn't surface deleted files.
+          try {
+            const historyService = getServiceIntegration()?.analysisHistory;
+            if (historyService?.removeEntriesByPath) {
+              await historyService.removeEntriesByPath(deleteValidation.source);
+            }
+          } catch (historyErr) {
+            log.warn('[FILE-OPS] Failed to remove analysis history entries after delete', {
+              error: historyErr.message
+            });
+          }
 
           // Notify renderer of file operation for search index invalidation
           try {

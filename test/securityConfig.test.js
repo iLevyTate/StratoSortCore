@@ -138,14 +138,8 @@ describe('securityConfig', () => {
     test('allowedKeys includes common settings', () => {
       expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('ollamaHost')).toBe(true);
       expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('textModel')).toBe(true);
-      expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('theme')).toBe(true);
-    });
-
-    test('enums has valid theme values', () => {
-      expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('light');
-      expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('dark');
-      expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('system');
-      expect(securityConfig.SETTINGS_VALIDATION.enums.theme).toContain('auto');
+      // Theme switching is no longer supported.
+      expect(securityConfig.SETTINGS_VALIDATION.allowedKeys.has('theme')).toBe(false);
     });
 
     test('enums has valid loggingLevel values', () => {

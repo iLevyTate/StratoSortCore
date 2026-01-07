@@ -53,7 +53,6 @@ const loadState = () => {
             ui: {
               currentPhase: parsedLegacy.currentPhase || PHASES.WELCOME,
               previousPhase: null,
-              theme: 'light',
               sidebarOpen: true,
               showSettings: false,
               isLoading: false,
@@ -110,7 +109,6 @@ const loadState = () => {
       ui: {
         currentPhase: parsed.ui?.currentPhase || PHASES.WELCOME,
         previousPhase: parsed.ui?.previousPhase || null,
-        theme: parsed.ui?.theme || 'light',
         sidebarOpen: parsed.ui?.sidebarOpen !== false, // default true
         showSettings: parsed.ui?.showSettings || false,
         isLoading: false, // Always reset loading state

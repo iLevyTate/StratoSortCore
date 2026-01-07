@@ -327,55 +327,8 @@ function updateDownloadWatcher(settings) {
   }
 }
 
-/**
- * Update smart folder watcher based on settings.smartFolderWatchEnabled
- * This is the single source of truth for starting/stopping the watcher.
- * @param {Object} settings - Current settings object
- */
-function updateSmartFolderWatcher(settings) {
-  const enabled = settings?.smartFolderWatchEnabled;
-
-  // FIX: Ensure services are initialized before controlling watcher
-  if (!serviceIntegration?.initialized) {
-    logger.debug('[SMART-FOLDER-WATCHER] Services not initialized yet - skipping');
-    return;
-  }
-
-  const watcher = serviceIntegration?.smartFolderWatcher;
-  if (!watcher) {
-    if (enabled) {
-      logger.warn('[SMART-FOLDER-WATCHER] Watcher not available - cannot start');
-    }
-    return;
-  }
-
-  if (enabled) {
-    // Start if not already running
-    if (!watcher.isRunning && !watcher.isStarting) {
-      logger.info('[SMART-FOLDER-WATCHER] Starting watcher via settings change...');
-      // Start async, don't block
-      watcher
-        .start()
-        .then((started) => {
-          if (started) {
-            logger.info('[SMART-FOLDER-WATCHER] Watcher started successfully');
-          } else {
-            const status = watcher.getStatus();
-            logger.warn('[SMART-FOLDER-WATCHER] Failed to start:', status.lastStartError);
-          }
-        })
-        .catch((err) => {
-          logger.error('[SMART-FOLDER-WATCHER] Error starting watcher:', err);
-        });
-    }
-  } else {
-    // Stop if running
-    if (watcher.isRunning || watcher.isStarting) {
-      logger.info('[SMART-FOLDER-WATCHER] Stopping watcher via settings change...');
-      watcher.stop();
-    }
-  }
-}
+// Note: Smart folder watching is always enabled - files added to smart folders are automatically analyzed
+// The watcher is started automatically during service initialization in ServiceIntegration.js
 
 function handleSettingsChanged(settings) {
   // MEDIUM PRIORITY FIX (MED-1): Validate settings structure before use
@@ -387,7 +340,7 @@ function handleSettingsChanged(settings) {
 
   currentSettings = settings;
   updateDownloadWatcher(settings);
-  updateSmartFolderWatcher(settings);
+  // Note: Smart folder watcher is always enabled - no settings-based control needed
   // Propagate confidence threshold to auto-organize service (so it doesn't stick to defaults)
   try {
     serviceIntegration?.autoOrganizeService?.applySettings?.(settings);
@@ -406,10 +359,10 @@ const { registerAllIpc } = require('./ipc');
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
-console.log('[DEBUG] Single instance lock:', gotTheLock);
+logger.debug('Single instance lock:', gotTheLock);
 
 if (!gotTheLock) {
-  console.log('[DEBUG] Failed to get lock, quitting');
+  logger.debug('Failed to get lock, quitting');
   app.quit();
 } else {
   const secondInstanceHandler = (_event, argv) => {
@@ -634,7 +587,7 @@ app.whenReady().then(async () => {
         // Verify folder was persisted
         const reloadedFolders = await loadCustomFolders();
         const persistedDefault = reloadedFolders.find(
-          (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized'
+          (f) => f?.isDefault || f?.name?.toLowerCase() === 'uncategorized'
         );
 
         if (!persistedDefault) {

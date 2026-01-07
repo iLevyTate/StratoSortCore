@@ -12,17 +12,18 @@ retaining the same logo and identity while targeting this branch’s priorities.
 
 ## Features
 
-- Local AI analysis powered by Ollama and fully offline
-- Smart organization suggestions for files and folders
-- **Smart Folder Monitoring**: Automatically detects, analyzes, and organizes files added to watched
-  folders
-- Image understanding beyond filenames
-- Safe operations with full undo/redo with history navigation
-- Privacy-first by design—no tracking or data exfiltration
-- Batch processing for large sets of files
-- Smart folders that adapt to user choices
+- **Local AI Analysis**: Powered by **Ollama** and fully offline.
+- **Smart Organization**: Automatically categorizes files based on content, not just filenames.
+- **Smart Folder Monitoring**: Watches specific folders and organizes new files as they arrive.
+- **Image Understanding**: Analyzes visual content to categorize photos and screenshots.
+- **Safe Operations**: Full undo/redo capability with history navigation.
+- **Privacy-First**: No data exfiltration. All processing happens on your machine.
+- **Vector Search**: Uses **ChromaDB** for semantic understanding and retrieval.
 
 ## Download & Install
+
+> **Platform support note**: Releases are published for Windows/macOS/Linux, but **only the Windows
+> build is robustly tested**. macOS/Linux builds are provided on a best-effort basis.
 
 ### Windows
 
@@ -47,20 +48,12 @@ retaining the same logo and identity while targeting this branch’s priorities.
 
 ## Getting Started
 
-1. Launch StratoSort — the app will run a preflight check for AI readiness (Ollama and ChromaDB).
-2. Select files or folders to organize.
-3. Click **Analyze** for AI-driven suggestions.
-4. Review suggestions and confidence scores.
-5. Click **Organize** to move files, or adjust and re-analyze.
-6. Use undo/redo as needed.
-
-## Use Cases
-
-- Downloads folder cleanup
-- Photo organization by visual content
-- Document management by type and content
-- Project file structuring
-- Receipt and invoice filing
+1. **Install**: Follow platform instructions above.
+2. **Launch**: StratoSort runs a preflight check for Ollama and ChromaDB.
+3. **Discover**: Add files or folders — **analysis starts automatically** as soon as items are
+   loaded.
+4. **Review**: Check AI suggestions and confidence scores.
+5. **Organize**: Apply changes. Undo/redo is always available.
 
 ## System Requirements
 
@@ -77,234 +70,79 @@ retaining the same logo and identity while targeting this branch’s priorities.
 - 12GB+ free disk space
 - GPU with 4GB+ VRAM (optional for faster processing)
 
+**Robustly tested:** Windows 11 (PowerShell, Node 18).  
+**macOS/Linux:** Supported, but not yet tested to the same depth as Windows.
+
 ## Privacy & Security
 
-- 100% local processing
-- No internet required after setup
-- No data collection or tracking
-- Open source for inspection
-
-## Keyboard Shortcuts
-
-- Undo: `Ctrl+Z` (Windows/Linux) or `Cmd+Z` (Mac)
-- Redo: `Ctrl+Shift+Z` or `Ctrl+Y` (Windows/Linux) or `Cmd+Shift+Z` (Mac)
-- Select All: `Ctrl+A` (Windows/Linux) or `Cmd+A` (Mac)
+- **100% Local**: No internet required after setup.
+- **No Tracking**: No data collection or exfiltration.
+- **Open Source**: Inspect the code to verify our claims.
 
 ## Advanced Features
 
 ### Smart Folders
 
-- Configure keywords and descriptions
-- AI learns from selections and improves over time
+Configure keywords and descriptions. The AI learns from selections and improves over time.
 
 ### Auto-Organization
 
-1. Go to Settings → Auto-Organize.
-2. Enable "Watch Downloads Folder" or "Watch Smart Folders".
-3. Set confidence thresholds (optional).
-4. New files are analyzed and organized automatically.
+Enable "Watch Downloads Folder" or "Watch Smart Folders" in Settings to automatically analyze and
+organize new files.
 
 ### Batch Operations
 
-- Select multiple files/folders
-- Analyze and apply suggestions in bulk
-- Undo available for entire batch operations
+Select multiple files/folders, analyze, and apply suggestions in bulk with full undo support.
 
 ---
 
-## For Developers
+## For Developers & Contributors
 
-### Building from Source
+### Tech Stack
 
-#### Prerequisites
+- **Electron**: Cross-platform desktop framework
+- **React**: UI library
+- **Ollama**: Local AI inference (Text/Vision)
+- **ChromaDB**: Vector database for semantic search
+- **Tailwind CSS**: Styling
 
-- Node.js 18+ and npm 8+
-- Git
-- Tesseract OCR installed and on PATH (for PDF/image OCR fallback)
-
-#### Setup
+### Quick Start
 
 ```bash
 git clone https://github.com/iLevyTate/elstratosort.git
 cd elstratosort
-npm install       # Automatically sets up Ollama, ChromaDB, and AI models
-npm run dev       # Start development mode
+npm ci            # Uses the pinned lockfile (eslint 8.57.1)
+npm run dev       # Start Electron + React in dev mode
 ```
 
-> **⚠️ Beta Notice**: The automatic dependency installation feature is currently in beta and may not
-> work as expected on all systems. If you encounter issues during `npm install` or the app fails to
-> detect Ollama/ChromaDB, please use the manual installation instructions below.
-
-**Automatic Setup Commands** (Beta):
+### Key Scripts
 
 ```bash
-npm run setup:deps         # Install both Ollama and ChromaDB
-npm run setup:ollama       # Install Ollama + pull models
-npm run setup:chromadb     # Install ChromaDB Python module
-npm run setup:ollama:check # Verify Ollama installation
-npm run setup:chromadb:check # Verify ChromaDB installation
+npm run dev            # Dev mode
+npm run lint           # ESLint
+npm test               # Jest unit/integration
+npm run build          # Production webpack build
+npm run dist:win       # Create Windows installer (run on Windows)
+npm run dist:mac       # Create macOS installer (run on macOS)
+npm run dist:linux     # Create Linux packages (run on Linux/WSL)
+npm run setup:deps     # Install Ollama + ChromaDB (beta)
 ```
 
-#### Manual Dependency Installation (Recommended for Full Functionality)
+### Building installers
 
-If the automatic setup doesn't work, install dependencies manually via CLI:
-
-**1. Install Ollama**
-
-```bash
-# Windows (PowerShell as Administrator)
-winget install Ollama.Ollama
-# Or download from: https://ollama.ai/download
-
-# macOS
-brew install ollama
-# Or download from: https://ollama.ai/download
-
-# Linux
-curl -fsSL https://ollama.ai/install.sh | sh
-```
-
-**2. Pull Required AI Models**
-
-After installing Ollama, pull the required models:
-
-```bash
-# Start Ollama service (if not running)
-ollama serve
-
-# In a new terminal, pull the models (~6GB total)
-ollama pull llama3.2:latest      # Text analysis model
-ollama pull gemma3:latest        # Vision/image analysis model (multimodal)
-ollama pull mxbai-embed-large    # Embedding model for similarity search
-```
-
-**3. Install ChromaDB**
-
-ChromaDB requires Python 3.8+ to be installed on your system.
-
-```bash
-# Windows (PowerShell)
-pip install --user chromadb
-
-# macOS/Linux
-pip3 install --user chromadb
-# Or with pipx for isolated installation:
-pipx install chromadb
-```
-
-**4. Verify Installation**
-
-```bash
-# Verify Ollama is running
-curl http://127.0.0.1:11434/api/tags
-# Or on Windows: Invoke-RestMethod http://127.0.0.1:11434/api/tags
-
-# Verify ChromaDB module is installed
-python -c "import chromadb; print('ChromaDB OK')"
-# Or: python3 -c "import chromadb; print('ChromaDB OK')"
-```
-
-#### Build Commands
-
-- Quick build (Windows): run `BUILD_INSTALLER.bat` or `BUILD_INSTALLER.ps1` to produce an installer
-  in `release/build/`.
-- Manual builds:
-
-```bash
-npm run build        # Build renderer
-npm run dist         # Create installer for current platform
-npm run dist:win     # Create Windows installer
-npm run dist:mac     # Create macOS installer
-npm run dist:linux   # Create Linux packages
-```
-
-#### Installer Location
-
-After running `npm run dist` or `npm run dist:win`, installers are created in:
-
-- Windows: `release/build/StratoSort-Setup-<version>.exe` (NSIS installer with custom branding)
-- macOS: `release/build/StratoSort-<version>.dmg`
-- Linux: `release/build/StratoSort-<version>.AppImage`
-
-### Testing
-
-```bash
-npm test                     # Run all Jest tests (unit + integration)
-npm run test:coverage        # Run tests with coverage report
-npm run test:e2e             # Run Playwright E2E tests
-npm run lint                 # Check code style (ESLint)
-npm run format:check         # Check code formatting (Prettier)
-npm run ci                   # Full CI pipeline: format, lint, test, build
-```
-
-### Architecture Overview
-
-- **Electron multi-process**: Sandboxed React renderer communicating with the Node.js main process
-  via IPC.
-- **Data plane**: ChromaDB stores embeddings; backend services orchestrate analysis and
-  organization.
-- **AI**: Ollama provides local LLM inference (text + vision models); ChromaDB handles vector
-  search.
-- **State**: Redux Toolkit with persistence middleware in the renderer.
-- **Security**: Context isolation with a constrained preload bridge (`window.electronAPI`), IPC
-  channel allowlisting, and rate limiting.
-- **Dependency Management**: Automated Ollama + ChromaDB installation and startup via preflight
-  checks.
-- Further detail: see `docs/ARCHITECTURE.md` and `docs/DI_PATTERNS.md`.
+- **Windows (preferred)**: Run the GitHub Actions workflow **“Windows Dist (Manual)”** (Actions →
+  select workflow → Run). Artifacts include the NSIS installer, portable EXE, and blockmap. Locally,
+  run `npm run dist:win` on Windows.
+- **macOS/Linux (optional)**: Build on the target OS with `npm run dist:mac` or
+  `npm run dist:linux`. On Windows, Linux builds may require WSL or Developer Mode to allow
+  symlinks.
 
 ### Contributing
 
 1. Fork the repository.
 2. Create a feature branch.
-3. Make changes.
-4. Run tests and linting.
-5. Submit a pull request.
-
----
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) — System design and data flow
-- [Configuration Reference](docs/CONFIG.md) — Environment variables and settings
-- [Dependency Injection Patterns](docs/DI_PATTERNS.md) — Service container usage
-- [Learning Guide](docs/LEARNING_GUIDE.md) — Onboarding for new developers
-- [Reference & Glossary](docs/REFERENCE_AND_GLOSSARY.md) — Terminology and concepts
-- [Code Examples](docs/CODE_EXAMPLES.md) — Common patterns and examples
-- [Testing Strategy](docs/TESTING_STRATEGY.md) — Test organization and coverage
-- [Manual Test Plan](docs/MANUAL_TEST_PLAN.md) — Comprehensive manual testing procedures
-- [Fix Verification Checklist](docs/FIX_VERIFICATION_CHECKLIST.md) — Targeted verification for
-  specific fixes
-- [Code Quality Standards](docs/CODE_QUALITY_STANDARDS.md) — Style guide and best practices
-
-## Troubleshooting
-
-### AI Models Not Working
-
-- Run `npm run setup:ollama:check` to verify Ollama installation.
-- Ensure Ollama is running: `ollama serve` or let the app auto-start it.
-- Check Settings → AI Configuration for model status.
-- Re-run setup: `npm run setup:ollama` to pull missing models.
-
-### ChromaDB Connection Issues
-
-- The app auto-starts ChromaDB on first run (Python-based local server).
-- To use an external/Dockerized ChromaDB: set `CHROMA_SERVER_URL` (e.g.,
-  `http://192.168.1.100:8000`).
-- Verify ChromaDB: `curl http://127.0.0.1:8000/api/v1/heartbeat`
-- Re-run setup: `npm run setup:chromadb`
-
-### Files Not Moving
-
-- Check file permissions (Windows: ensure files aren't locked by another app).
-- Ensure destination folders exist.
-- Review the operation log in the app.
-
-### Performance Issues
-
-- Close other applications to free RAM/CPU.
-- Check available disk space (models require ~6GB).
-- Consider using smaller AI models (e.g., `qwen2.5:3b` instead of `7b`).
-- Check `docs/CONFIG.md` for performance tuning variables.
+3. Make changes and verify with `npm test`.
+4. Submit a Pull Request.
 
 ## License
 
@@ -316,13 +154,3 @@ MIT License - See [LICENSE](LICENSE) for details.
 - Issues: [Report a bug](https://github.com/iLevyTate/elstratosort/issues)
 - Ollama: [ollama.ai](https://ollama.ai)
 - ChromaDB: [trychroma.com](https://www.trychroma.com)
-
-## Acknowledgments
-
-- Powered by [Ollama](https://ollama.ai) for local AI
-- Built with [Electron](https://www.electronjs.org/) and [React](https://reactjs.org/)
-- UI components from [Tailwind CSS](https://tailwindcss.com/)
-
----
-
-Built for privacy-conscious users.

@@ -86,7 +86,7 @@ async function handleCircuitBreakerRecovery(serviceName, serviceStatus, startSer
 
       // FIX: Emit recovery notification to renderer
       try {
-        const { emitServiceStatusChange } = require('../../ipc/dependencies');
+        const { emitServiceStatusChange } = require('../../ipc/serviceStatusEvents');
         emitServiceStatusChange({
           service: serviceName,
           status: 'running',
@@ -195,7 +195,7 @@ async function checkServiceHealthWithRecovery(
 
         // FIX: Emit circuit breaker trip notification to renderer
         try {
-          const { emitServiceStatusChange } = require('../../ipc/dependencies');
+          const { emitServiceStatusChange } = require('../../ipc/serviceStatusEvents');
           emitServiceStatusChange({
             service: serviceName,
             status: 'permanently_failed',

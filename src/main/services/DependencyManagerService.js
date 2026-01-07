@@ -175,7 +175,10 @@ async function detectOllamaExePath() {
   if (process.env.ProgramFiles) {
     candidates.push(path.join(process.env.ProgramFiles, 'Ollama', 'ollama.exe'));
   }
-  candidates.push('C:\\Program Files\\Ollama\\ollama.exe');
+  // Also check x86 Program Files for 32-bit installations
+  if (process.env['ProgramFiles(x86)']) {
+    candidates.push(path.join(process.env['ProgramFiles(x86)'], 'Ollama', 'ollama.exe'));
+  }
 
   for (const candidate of candidates) {
     if (await fileExists(candidate)) return candidate;

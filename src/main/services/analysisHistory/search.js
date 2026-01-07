@@ -47,7 +47,7 @@ function buildEntryText(entry) {
  * @param {boolean} options.skipCache - Force bypass cache (default: false)
  * @returns {{results: Array, total: number, hasMore: boolean, fromCache: boolean}}
  */
-function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options = {}) {
+async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options = {}) {
   const cacheStore = cache || {};
   cacheStore.entryEmbeddings =
     cacheStore.entryEmbeddings instanceof Map ? cacheStore.entryEmbeddings : new Map();
@@ -83,21 +83,40 @@ function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options =
   // Decide search mode: semantic with fallback to keyword if embeddings fail
   const embeddingService = semantic ? getParallelEmbedding() : null;
   let queryEmbedding = null;
+  let queryModel = null;
   let semanticAvailable = false;
 
   if (embeddingService) {
     try {
-      const result = embeddingService.embedText?.(query);
-      if (result && typeof result.then === 'function') {
-        // If async, skip semantic for sync search path
-        semanticAvailable = false;
-      } else {
-        const { vector } = result || {};
-        queryEmbedding = vector;
-        semanticAvailable = Array.isArray(queryEmbedding);
-      }
-    } catch (err) {
+      const result = await embeddingService.embedText(query);
+      queryEmbedding = result?.vector;
+      queryModel = result?.model || null;
+      semanticAvailable = Array.isArray(queryEmbedding) && queryEmbedding.length > 0;
+    } catch {
       semanticAvailable = false;
+    }
+  }
+
+  // Prevent unbounded growth of in-memory embedding cache
+  const MAX_ENTRY_EMBEDDINGS = 2000;
+  if (cacheStore.entryEmbeddings.size > MAX_ENTRY_EMBEDDINGS) {
+    cacheStore.entryEmbeddings.clear();
+  }
+
+  // Avoid unbounded embedding work on large histories:
+  // - Always include keyword matches (cheap)
+  // - Include up to N additional entries for semantic-only matches (by recency)
+  const MAX_SEMANTIC_ENTRIES = 300;
+  let semanticCandidateIds = null;
+  if (semanticAvailable) {
+    if (entries.length <= MAX_SEMANTIC_ENTRIES) {
+      semanticCandidateIds = null; // All entries are candidates
+    } else {
+      const byRecency = entries
+        .slice()
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, MAX_SEMANTIC_ENTRIES);
+      semanticCandidateIds = new Set(byRecency.map((e) => e.id));
     }
   }
 
@@ -106,21 +125,25 @@ function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options =
     let score = 0;
     let sim = 0;
 
-    if (semanticAvailable) {
+    const isSemanticCandidate =
+      semanticAvailable && (!semanticCandidateIds || semanticCandidateIds.has(entry.id));
+
+    if (isSemanticCandidate) {
       // Compute or reuse entry embedding
-      const cachedEmbedding = cacheStore.entryEmbeddings.get(entry.id);
+      const cacheKey = queryModel ? `${entry.id}:${queryModel}` : String(entry.id);
+      const cachedEmbedding = cacheStore.entryEmbeddings.get(cacheKey);
       let entryVector = cachedEmbedding?.vector;
       if (!entryVector) {
         const text = buildEntryText(entry);
-        const embedResult = embeddingService.embedText?.(text);
-        if (embedResult && typeof embedResult.then === 'function') {
-          entryVector = null;
-        } else {
-          const { vector } = embedResult || {};
+        try {
+          const { vector, model } = await embeddingService.embedText(text);
           entryVector = vector;
-          if (entryVector) {
-            cacheStore.entryEmbeddings.set(entry.id, { vector });
+          if (Array.isArray(entryVector) && entryVector.length > 0) {
+            const entryCacheKey = model ? `${entry.id}:${model}` : String(entry.id);
+            cacheStore.entryEmbeddings.set(entryCacheKey, { vector: entryVector, model });
           }
+        } catch {
+          entryVector = null;
         }
       }
       if (entryVector) {
@@ -131,7 +154,7 @@ function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options =
     }
 
     // Fallback keyword scoring (also boosts semantic matches)
-    const fileNameLower = entry.fileName.toLowerCase();
+    const fileNameLower = String(entry.fileName || '').toLowerCase();
     if (fileNameLower.includes(queryLower)) {
       score += 10;
       if (fileNameLower === queryLower) {
@@ -174,7 +197,7 @@ function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, options =
       score += 3;
     }
 
-    if (score > 0 || semanticAvailable) {
+    if (score > 0 || isSemanticCandidate) {
       allResults.push({
         ...entry,
         searchScore: score,

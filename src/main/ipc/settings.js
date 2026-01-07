@@ -9,15 +9,14 @@ const {
 } = require('./ipcWrappers');
 const { getConfigurableLimits, sanitizeSettings } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
+const path = require('path');
 const { settingsSchema, z } = require('./validationSchemas');
 
 // Import centralized security configuration
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
 const {
-  THEME_VALUES,
   LOGGING_LEVELS,
   NUMERIC_LIMITS,
-  isValidTheme,
   isValidLoggingLevel,
   isValidNumericSetting
 } = require('../../shared/validationConstants');
@@ -82,6 +81,21 @@ function validateImportedSettings(settings, logger) {
   const sanitized = {};
   let ignoredCount = 0;
 
+  const isSafeAbsolutePathString = (p) => {
+    if (typeof p !== 'string') return false;
+    const trimmed = p.trim();
+    if (!trimmed) return false;
+    // Disallow control characters / null bytes.
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001F]/.test(trimmed)) return false;
+    // Disallow URL-style inputs (e.g. file://, http://).
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) return false;
+    // Disallow Windows device/extended-length prefixes which can bypass normal path handling.
+    if (trimmed.startsWith('\\\\?\\') || trimmed.startsWith('\\\\.\\')) return false;
+    const normalized = path.normalize(trimmed);
+    return path.isAbsolute(normalized);
+  };
+
   for (const [key, value] of Object.entries(settings)) {
     // Skip unknown keys
     if (!ALLOWED_SETTINGS_KEYS.has(key)) {
@@ -114,8 +128,12 @@ function validateImportedSettings(settings, logger) {
           if (urlError.message.includes('credentials')) {
             throw urlError;
           }
-          // URL parsing failed but regex passed - allow with warning
-          logger.warn(`[SETTINGS-IMPORT] URL parsing failed but pattern valid: ${value}`);
+          // FIX: Reject URLs that fail parsing - don't allow potentially malformed URLs
+          // even if they pass the regex, as they could cause issues downstream
+          logger.warn(`[SETTINGS-IMPORT] Rejecting malformed URL: ${value}`, {
+            error: urlError.message
+          });
+          throw new Error(`Invalid ${key}: URL is malformed and cannot be parsed`);
         }
         break;
       }
@@ -138,7 +156,6 @@ function validateImportedSettings(settings, logger) {
       case 'backgroundMode':
       case 'autoUpdateCheck':
       case 'telemetryEnabled':
-      case 'smartFolderWatchEnabled':
       case 'notifications':
       case 'notifyOnAutoAnalysis':
       case 'notifyOnLowConfidence':
@@ -147,12 +164,6 @@ function validateImportedSettings(settings, logger) {
       case 'dependencyWizardShown':
         if (typeof value !== 'boolean') {
           throw new Error(`Invalid ${key}: must be boolean`);
-        }
-        break;
-
-      case 'theme':
-        if (!isValidTheme(value)) {
-          throw new Error(`Invalid ${key}: must be one of ${THEME_VALUES.join(', ')}`);
         }
         break;
 
@@ -221,8 +232,13 @@ function validateImportedSettings(settings, logger) {
 
       case 'defaultSmartFolderLocation':
       case 'lastBrowsedPath':
-        if (value !== null && (typeof value !== 'string' || value.length > 1000)) {
-          throw new Error(`Invalid ${key}: must be a string path (max 1000 chars) or null`);
+        if (value !== null) {
+          if (typeof value !== 'string' || value.length > 1000) {
+            throw new Error(`Invalid ${key}: must be a string path (max 1000 chars) or null`);
+          }
+          if (!isSafeAbsolutePathString(value)) {
+            throw new Error(`Invalid ${key}: must be an absolute, safe local filesystem path`);
+          }
         }
         break;
 
@@ -443,11 +459,20 @@ function registerSettingsIpc({
           filePath = result.filePath;
         }
 
+        // Serialize export data with proper error handling
+        let jsonContent;
+        try {
+          jsonContent = JSON.stringify(exportData, null, 2);
+        } catch (serializeError) {
+          logger.error('[SETTINGS] Failed to serialize export data:', serializeError);
+          throw new Error('Failed to serialize settings data for export');
+        }
+
         // Write export file
         // FIX: Use atomic write (temp + rename) to prevent corruption on crash
         const tempPath = `${filePath}.tmp.${Date.now()}`;
         try {
-          await fs.writeFile(tempPath, JSON.stringify(exportData, null, 2), 'utf8');
+          await fs.writeFile(tempPath, jsonContent, 'utf8');
           await fs.rename(tempPath, filePath);
         } catch (writeError) {
           // Clean up temp file on failure
@@ -522,7 +547,19 @@ function registerSettingsIpc({
 
         // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
         // Prevents prototype pollution, command injection, and data exfiltration
-        const sanitizedSettings = validateImportedSettings(importData.settings, logger);
+        let sanitizedSettings = validateImportedSettings(importData.settings, logger);
+
+        // If Zod schemas are available, enforce schema validation for imported settings too.
+        if (z && settingsSchema) {
+          const parsed = settingsSchema.safeParse(sanitizedSettings);
+          if (!parsed.success) {
+            const first = parsed.error?.issues?.[0];
+            throw new Error(
+              `Invalid settings file: ${first?.path?.join('.') || 'settings'} ${first?.message || 'failed validation'}`
+            );
+          }
+          sanitizedSettings = parsed.data;
+        }
 
         // Save sanitized settings
         const saveResult = await settingsService.save(sanitizedSettings);

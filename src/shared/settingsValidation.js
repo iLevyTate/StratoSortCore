@@ -5,12 +5,7 @@
 
 const { DEFAULT_SETTINGS } = require('./defaultSettings');
 const { PROTOTYPE_POLLUTION_KEYS } = require('./securityConfig');
-const {
-  THEME_VALUES,
-  LENIENT_URL_PATTERN,
-  LOGGING_LEVELS,
-  NUMERIC_LIMITS
-} = require('./validationConstants');
+const { LENIENT_URL_PATTERN, LOGGING_LEVELS, NUMERIC_LIMITS } = require('./validationConstants');
 const {
   normalizeSlashes,
   normalizeProtocolCase,
@@ -30,11 +25,6 @@ const URL_PATTERN = LENIENT_URL_PATTERN;
  * Validation rules for settings
  */
 const VALIDATION_RULES = {
-  theme: {
-    type: 'string',
-    enum: THEME_VALUES,
-    required: false
-  },
   notifications: {
     type: 'boolean',
     required: false
@@ -255,12 +245,6 @@ const VALIDATION_RULES = {
     type: 'boolean',
     required: false
   },
-  // FIX Issue-1: Add smartFolderWatchEnabled validation rule
-  // This was missing, causing the setting to be treated as "unknown"
-  smartFolderWatchEnabled: {
-    type: 'boolean',
-    required: false
-  },
   // Notification settings
   notificationMode: {
     type: 'string',
@@ -272,6 +256,11 @@ const VALIDATION_RULES = {
     required: false
   },
   notifyOnLowConfidence: {
+    type: 'boolean',
+    required: false
+  },
+  // Deprecated settings (kept for backward compatibility)
+  smartFolderWatchEnabled: {
     type: 'boolean',
     required: false
   }
@@ -359,6 +348,11 @@ function validateSettings(settings) {
     if (PROTOTYPE_POLLUTION_KEYS.includes(key)) {
       continue;
     }
+    // Theme switching is no longer supported. Ignore this legacy key silently
+    // to avoid breaking older settings files.
+    if (key === 'theme') {
+      continue;
+    }
     const rule = VALIDATION_RULES[key];
 
     if (!rule) {
@@ -399,6 +393,11 @@ function sanitizeSettings(settings) {
   for (const [key, value] of Object.entries(settings)) {
     // Prevent prototype pollution
     if (PROTOTYPE_POLLUTION_KEYS.includes(key)) {
+      continue;
+    }
+    // Theme switching is no longer supported. Drop this legacy key so we don't
+    // keep persisting dead configuration.
+    if (key === 'theme') {
       continue;
     }
 

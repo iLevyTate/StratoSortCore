@@ -12,6 +12,7 @@ const fs = require('fs').promises;
 const os = require('os');
 const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
+const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../../shared/constants');
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { globalBatchProcessor } = require('../../utils/llmOptimization');
 const { cosineSimilarity } = require('../../../shared/vectorMath');
@@ -50,6 +51,17 @@ const {
 } = require('./filePatternAnalyzer');
 
 logger.setContext('OrganizationSuggestionService');
+
+function getSemanticFileId(filePath) {
+  const safePath = typeof filePath === 'string' ? filePath : '';
+  const ext = (path.extname(safePath) || '').toLowerCase();
+  const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+  return `${isImage ? 'image' : 'file'}:${safePath}`;
+}
+
+function stripSemanticPrefix(fileId) {
+  return typeof fileId === 'string' ? fileId.replace(/^(file|image):/, '') : '';
+}
 
 /**
  * Calculate optimal concurrency based on CPU cores
@@ -536,7 +548,7 @@ class OrganizationSuggestionServiceCore {
    */
   async getSemanticFolderMatches(file, smartFolders) {
     try {
-      const fileId = `file:${file.path}`;
+      const fileId = getSemanticFileId(file.path);
       const summary = generateFileSummary(file);
 
       await this.folderMatcher.upsertFileEmbedding(fileId, summary, {
@@ -675,7 +687,7 @@ class OrganizationSuggestionServiceCore {
     }
 
     try {
-      const fileId = `file:${file.path}`;
+      const fileId = getSemanticFileId(file.path);
 
       // Ensure clusters are computed (use cached if fresh)
       if (this.clustering.isClustersStale()) {
@@ -712,7 +724,7 @@ class OrganizationSuggestionServiceCore {
       for (const member of fileCluster.members) {
         if (member.id === fileId) continue;
 
-        const memberPath = member.metadata?.path || member.id;
+        const memberPath = member.metadata?.path || stripSemanticPrefix(member.id);
         // Check if this cluster member has been organized to a smart folder
         for (const folder of smartFolders) {
           if (memberPath.startsWith(folder.path)) {
@@ -805,7 +817,7 @@ class OrganizationSuggestionServiceCore {
       }
 
       const clusters = this.clustering.clusters || [];
-      const fileIdSet = new Set(files.map((f) => `file:${f.path}`));
+      const fileIdSet = new Set(files.map((f) => getSemanticFileId(f.path)));
       const groups = [];
       const outliers = [];
 
@@ -815,7 +827,7 @@ class OrganizationSuggestionServiceCore {
 
         for (const member of cluster.members) {
           if (fileIdSet.has(member.id)) {
-            const file = files.find((f) => `file:${f.path}` === member.id);
+            const file = files.find((f) => getSemanticFileId(f.path) === member.id);
             if (file) {
               clusterFiles.push({
                 ...file,
@@ -850,7 +862,7 @@ class OrganizationSuggestionServiceCore {
       }
 
       for (const file of files) {
-        const fileId = `file:${file.path}`;
+        const fileId = getSemanticFileId(file.path);
         if (!clusteredFileIds.has(fileId)) {
           outliers.push({
             ...file,
@@ -965,7 +977,7 @@ class OrganizationSuggestionServiceCore {
       const wellClustered = [];
 
       for (const file of files) {
-        const fileId = `file:${file.path}`;
+        const fileId = getSemanticFileId(file.path);
 
         // Find this file's cluster membership
         let bestClusterScore = 0;

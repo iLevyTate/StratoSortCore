@@ -13,6 +13,9 @@ const { WINDOW, PROCESS, TIMEOUTS } = require('../../shared/performanceConstants
 
 logger.setContext('Platform');
 
+// taskkill can be slow to terminate process trees on Windows; give it a generous fixed timeout.
+const TASKKILL_TIMEOUT_MS = 5000;
+
 /**
  * Bring a window to the foreground with platform-specific handling.
  *
@@ -29,10 +32,14 @@ function bringWindowToForeground(win) {
 
   if (isWindows) {
     // Windows requires setAlwaysOnTop trick to reliably bring window to front
+    // Also use moveTop() and show() for additional reliability
+    win.moveTop();
+    win.show();
     win.setAlwaysOnTop(true);
     setTimeout(() => {
       if (win && !win.isDestroyed()) {
         win.setAlwaysOnTop(false);
+        win.focus();
       }
     }, WINDOW.ALWAYS_ON_TOP_DURATION_MS);
   }
@@ -78,7 +85,7 @@ async function killProcessWindows(pid) {
 
   const result = await asyncSpawn('taskkill', ['/pid', String(pid), '/f', '/t'], {
     windowsHide: true,
-    timeout: PROCESS.KILL_COMMAND_TIMEOUT_MS * 50, // 5 seconds for taskkill
+    timeout: TASKKILL_TIMEOUT_MS,
     encoding: 'utf8'
   });
 

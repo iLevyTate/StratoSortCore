@@ -60,7 +60,8 @@ describe('ChromaDB File Operations', () => {
       upsert: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue({ ids: [], embeddings: [], metadatas: [] }),
-      query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] })
+      query: jest.fn().mockResolvedValue({ ids: [[]], distances: [[]], metadatas: [[]] }),
+      count: jest.fn().mockResolvedValue(10)
     };
 
     mockQueryCache = {

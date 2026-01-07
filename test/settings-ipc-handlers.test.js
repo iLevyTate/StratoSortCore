@@ -76,7 +76,6 @@ jest.mock('../src/shared/settingsValidation', () => ({
 jest.mock('../src/shared/securityConfig', () => ({
   SETTINGS_VALIDATION: {
     allowedKeys: new Set([
-      'theme',
       'ollamaHost',
       'textModel',
       'visionModel',
@@ -103,7 +102,6 @@ jest.mock('../src/shared/securityConfig', () => ({
       'maxConcurrentAnalysis',
       'defaultSmartFolderLocation',
       'lastBrowsedPath',
-      'smartFolderWatchEnabled',
       'autoUpdateOllama',
       'autoUpdateChromaDb',
       'dependencyWizardShown'
@@ -207,9 +205,9 @@ describe('Settings IPC Handlers', () => {
 
     // Mock settings service
     mockSettingsService = {
-      load: jest.fn().mockResolvedValue({ theme: 'dark', ollamaHost: 'http://localhost:11434' }),
+      load: jest.fn().mockResolvedValue({ language: 'en', ollamaHost: 'http://localhost:11434' }),
       save: jest.fn().mockResolvedValue({
-        settings: { theme: 'dark', ollamaHost: 'http://localhost:11434' },
+        settings: { language: 'en', ollamaHost: 'http://localhost:11434' },
         validationWarnings: []
       }),
       createBackup: jest.fn().mockResolvedValue({
@@ -228,7 +226,7 @@ describe('Settings IPC Handlers', () => {
       ]),
       restoreFromBackup: jest.fn().mockResolvedValue({
         success: true,
-        settings: { theme: 'light' }
+        settings: { language: 'en' }
       }),
       deleteBackup: jest.fn().mockResolvedValue({ success: true })
     };
@@ -316,7 +314,7 @@ describe('Settings IPC Handlers', () => {
       const importPath = '/tmp/import-settings.json';
       const importData = {
         version: '1.0.0',
-        settings: { theme: 'light', ollamaHost: 'http://localhost:11434' }
+        settings: { language: 'en', ollamaHost: 'http://localhost:11434' }
       };
       mockFs.stat.mockResolvedValueOnce({ size: 500 });
       mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
@@ -337,7 +335,7 @@ describe('Settings IPC Handlers', () => {
       mockFs.readFile.mockResolvedValueOnce(
         JSON.stringify({
           version: '1.0.0',
-          settings: { theme: 'dark' }
+          settings: { language: 'en' }
         })
       );
 
@@ -400,7 +398,6 @@ describe('Settings IPC Handlers', () => {
       const importData = {
         version: '1.0.0',
         settings: {
-          theme: 'light',
           ollamaHost: 'http://custom:11434',
           textModel: 'llama3',
           visionModel: 'llava'
@@ -485,7 +482,6 @@ describe('Settings IPC Handlers', () => {
       mockSettingsService.restoreFromBackup.mockResolvedValueOnce({
         success: true,
         settings: {
-          theme: 'light',
           ollamaHost: 'http://restored:11434',
           textModel: 'restored-model'
         }
@@ -553,7 +549,7 @@ describe('Settings IPC Handlers', () => {
       const importPath = '/tmp/malicious-settings.json';
       // Use raw JSON string because JS object literal __proto__ sets prototype, not own property
       const maliciousJson =
-        '{"version":"1.0.0","settings":{"__proto__":{"isAdmin":true},"theme":"dark"}}';
+        '{"version":"1.0.0","settings":{"__proto__":{"isAdmin":true},"language":"en"}}';
       mockFs.stat.mockResolvedValueOnce({ size: 500 });
       mockFs.readFile.mockResolvedValueOnce(maliciousJson);
 
@@ -656,24 +652,6 @@ describe('Settings IPC Handlers', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('must be boolean');
-    });
-
-    test('rejects invalid theme values', async () => {
-      const importPath = '/tmp/bad-theme-settings.json';
-      const importData = {
-        version: '1.0.0',
-        settings: {
-          theme: 'rainbow'
-        }
-      };
-      mockFs.stat.mockResolvedValueOnce({ size: 500 });
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(importData));
-
-      const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
-      const result = await handler({}, importPath);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('must be one of');
     });
 
     test('rejects invalid language codes', async () => {
@@ -865,6 +843,7 @@ describe('Settings IPC Handlers', () => {
       const importData = {
         version: '1.0.0',
         settings: {
+          // Theme is no longer supported; it is treated like any unknown key.
           theme: 'dark',
           unknownKey: 'some value',
           anotherUnknown: 123
@@ -902,7 +881,7 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.GET];
       const result = await handler({});
 
-      expect(result).toEqual({ theme: 'dark', ollamaHost: 'http://localhost:11434' });
+      expect(result).toEqual({ language: 'en', ollamaHost: 'http://localhost:11434' });
       expect(mockSettingsService.load).toHaveBeenCalled();
     });
 
@@ -937,7 +916,7 @@ describe('Settings IPC Handlers', () => {
   describe('SAVE handler', () => {
     test('saves settings successfully', async () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
-      const result = await handler({}, { theme: 'light' });
+      const result = await handler({}, { language: 'en' });
 
       expect(result.success).toBe(true);
       expect(mockSettingsService.save).toHaveBeenCalled();
@@ -973,7 +952,7 @@ describe('Settings IPC Handlers', () => {
 
     test('notifies settings changed', async () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
-      await handler({}, { theme: 'light' });
+      await handler({}, { language: 'en' });
 
       expect(mockOnSettingsChanged).toHaveBeenCalled();
     });
@@ -981,9 +960,7 @@ describe('Settings IPC Handlers', () => {
     test('preserves new settings fields through validation', async () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
       const newSettings = {
-        theme: 'dark',
         notifications: true,
-        smartFolderWatchEnabled: true,
         namingConvention: 'date-subject',
         notificationMode: 'tray',
         maxFileSize: 1024 * 1024 * 50
@@ -1002,7 +979,7 @@ describe('Settings IPC Handlers', () => {
       mockSettingsService.save.mockRejectedValueOnce(error);
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
-      const result = await handler({}, { theme: 'invalid' });
+      const result = await handler({}, { language: 'invalid' });
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Save failed');
@@ -1038,7 +1015,7 @@ describe('Settings IPC Handlers', () => {
       });
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
-      const result = await handler({}, { theme: 'light' });
+      const result = await handler({}, { language: 'en' });
 
       expect(result.success).toBe(true);
       // Should warn about non-function but not fail
@@ -1064,7 +1041,7 @@ describe('Settings IPC Handlers', () => {
       });
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.SAVE];
-      const result = await handler({}, { theme: 'light' });
+      const result = await handler({}, { language: 'en' });
 
       expect(result.success).toBe(true);
       expect(result.propagationSuccess).toBe(false);

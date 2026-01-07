@@ -12,12 +12,6 @@
  */
 
 /**
- * Valid theme values
- * Used for application color theme setting
- */
-const THEME_VALUES = ['light', 'dark', 'auto', 'system'];
-
-/**
  * Valid logging level values
  * Used for application logging verbosity
  */
@@ -58,15 +52,6 @@ const MODEL_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*$/;
  * Maximum model name length
  */
 const MAX_MODEL_NAME_LENGTH = 100;
-
-/**
- * Validate a theme value
- * @param {string} value - Value to validate
- * @returns {boolean} True if valid
- */
-function isValidTheme(value) {
-  return typeof value === 'string' && THEME_VALUES.includes(value);
-}
 
 /**
  * Validate a logging level value
@@ -114,7 +99,6 @@ function isValidModelName(name) {
 
 module.exports = {
   // Enum values
-  THEME_VALUES,
   LOGGING_LEVELS,
 
   // Numeric limits
@@ -127,7 +111,6 @@ module.exports = {
   MAX_MODEL_NAME_LENGTH,
 
   // Validation functions
-  isValidTheme,
   isValidLoggingLevel,
   isValidNumericSetting,
   isValidUrl,

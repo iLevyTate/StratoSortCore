@@ -3,13 +3,13 @@
 **Purpose:** Manual verification of all fixes applied during fix sessions. Test each item and mark
 PASS/FAIL.
 
-**Date:** 2026-01-04 **Tester:** Manual Testing Session **Build:** `npm run dev`
+**Date:** 2026-01-05 **Tester:** Manual Testing Session **Build:** `npm run dev`
 
 ---
 
 ## Pre-Test Setup
 
-- [ ] Ollama is running (`ollama serve`)
+- [ ] Follow the shared Pre-Test Checklist in `docs/MANUAL_TEST_PLAN.md`
 - [ ] App started with `npm run dev`
 - [ ] Have 3-5 test files ready (PDFs, images, etc.)
 
@@ -31,6 +31,8 @@ non-existent `OllamaService.chat()` method
 | 5    | Wait for response                               | Description auto-populates with AI-generated text | **PASS** |
 
 **Result:** [X] PASS [ ] FAIL **Notes:** Steps 1-5 verified passing in 2026-01-03 testing session
+**Submission:** Use the template in `docs/MANUAL_TEST_PLAN.md` (Targeted Fix Verification). Primary
+validation platform: Windows 11; please note your OS if different.
 
 ---
 
@@ -125,7 +127,7 @@ navbar elements
 | 3    | Try to click navbar items while search is open               | Navbar items are clickable, not blocked by search |        |
 | 4    | Resize window to small size                                  | Navbar and search don't overlap awkwardly         |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -134,14 +136,14 @@ navbar elements
 **Files:** `src/renderer/phases/discover/useAnalysis.js`, `src/renderer/phases/DiscoverPhase.jsx`
 **Issue:** No way to retry failed file analysis
 
-| Step | Action                                                   | Expected                                   | Status |
-| ---- | -------------------------------------------------------- | ------------------------------------------ | ------ |
-| 1    | Add files for analysis                                   | Files added to queue                       |        |
-| 2    | Disconnect Ollama mid-analysis (or use unsupported file) | Some files fail with error state           |        |
-| 3    | Look for "Retry X Failed" button                         | Button appears when failed files exist     |        |
-| 4    | Reconnect Ollama, click "Retry Failed"                   | Failed files are re-queued and re-analyzed |        |
+| Step | Action                                                   | Expected                                | Status |
+| ---- | -------------------------------------------------------- | --------------------------------------- | ------ |
+| 1    | Add files for analysis                                   | Files added to queue                    |        |
+| 2    | Disconnect Ollama mid-analysis (or use unsupported file) | Some files fail with error state        |        |
+| 3    | Look for "Retry X Failed" button                         | Button appears when failed files exist  |        |
+| 4    | Reconnect Ollama, click "Retry Failed"                   | Failed files are re-queued and analyzed |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -159,7 +161,7 @@ same destination
 | 4    | Try to click Organize                                | Warning banner appears listing conflicts |        |
 | 5    | Organize button should be disabled                   | Cannot proceed until conflicts resolved  |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -175,7 +177,7 @@ shown without explanation
 | 3    | Analyze some files                  | Files analyzed                                                             |        |
 | 4    | Check embeddings section again      | Shows count with helpful context if rebuild needed                         |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -192,7 +194,7 @@ analysis
 | 2    | Look at the results section header        | Shows "X successful, Y failed" count |        |
 | 3    | Should NOT show "Analyzing files..." text | Only progress bar indicates status   |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -225,7 +227,7 @@ but couldn't jump to specific point
 | 3    | Click "Remove"                                    | File removed from queue (not deleted from disk) |        |
 | 4    | Notification shows "Removed from queue: filename" | Confirmation shown                              |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -241,7 +243,7 @@ but couldn't jump to specific point
 | 4    | Click the button                             | Only selected files are organized                      |        |
 | 5    | Deselect all files                           | Button shows "Organize All Files"                      |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -255,7 +257,7 @@ but couldn't jump to specific point
 | 2    | Check navbar                          | All nav items visible or properly hidden |        |
 | 3    | Check search widget doesn't block nav | Can click nav items                      |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -267,7 +269,7 @@ but couldn't jump to specific point
 | 2    | Check for blur/flicker issues | No black lines, no flickering backdrop |        |
 | 3    | Type in fields, move mouse    | Smooth interaction, no visual glitches |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -275,9 +277,23 @@ but couldn't jump to specific point
 
 ### F-1: SmartFolderWatcher - Auto-Analyze Files in Smart Folders
 
-**Files:** `src/main/services/SmartFolderWatcher.js`,
-`src/renderer/components/settings/SmartFolderWatchSection.jsx` **Feature:** Automatically analyze
-files when they are added to or modified in smart folders
+**Files:** `src/main/services/SmartFolderWatcher.js` **Feature:** Automatically analyze files when
+they are added to or modified in smart folders
+
+**Architecture:** SmartFolderWatcher is always enabled and included with DownloadWatcher as part of
+the auto-organize pipeline:
+
+1. **DownloadWatcher** (optional, controlled by "Auto-organize downloads" setting):
+   - Monitors the Downloads folder for new files
+   - Analyzes and moves files to the appropriate smart folder
+
+2. **SmartFolderWatcher** (always enabled, auto-starts on app launch):
+   - Monitors ALL configured smart folders for new/modified files
+   - Automatically analyzes files and generates embeddings for ChromaDB
+   - Works whether files arrive via DownloadWatcher OR manual copy/move
+
+**Complete Flow:** Download file → DownloadWatcher moves to smart folder → SmartFolderWatcher
+analyzes → File indexed in ChromaDB for semantic search
 
 #### Pre-Test Setup
 
@@ -286,19 +302,7 @@ files when they are added to or modified in smart folders
 | 1    | Have at least 1 smart folder configured              | Smart folders exist in Setup phase |        |
 | 2    | Place a test file (PDF, image, etc.) on your Desktop | File ready for testing             |        |
 | 3    | Ensure Ollama is running                             | `ollama serve` active              |        |
-
-#### Enable Smart Folder Watching
-
-| Step | Action                                                   | Expected                                     | Status |
-| ---- | -------------------------------------------------------- | -------------------------------------------- | ------ |
-| 1    | Open Settings (gear icon)                                | Settings panel opens                         |        |
-| 2    | Scroll to "Performance" section                          | Section visible                              |        |
-| 3    | Find "Watch smart folders for new/modified files" toggle | Toggle visible with eye icon                 |        |
-| 4    | Enable the toggle                                        | Toggle turns on, shows "Starting..." briefly |        |
-| 5    | Wait for status indicator                                | Green dot with "Watching" status appears     |        |
-| 6    | Check folder count                                       | Shows "X folders" being watched              |        |
-
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+| 4    | Start the app                                        | SmartFolderWatcher auto-starts     |        |
 
 #### Test Auto-Analysis of New Files
 
@@ -310,7 +314,7 @@ files when they are added to or modified in smart folders
 | 4    | Open Analysis History (Settings > Analysis History > View) | New file appears in history      |        |
 | 5    | Check embedding count (Settings > Embeddings)              | File count increased             |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 #### Test Re-Analysis of Modified Files
 
@@ -322,55 +326,42 @@ files when they are added to or modified in smart folders
 | 4    | Check Settings > Performance section              | "Re-analyzed: 1" counter increments |        |
 | 5    | Check Analysis History                            | File's timestamp updated            |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
-#### Test Manual Scan for Unanalyzed Files
+#### Test Watcher Auto-Start on App Launch
 
-| Step | Action                                    | Expected                                                    | Status |
-| ---- | ----------------------------------------- | ----------------------------------------------------------- | ------ |
-| 1    | Ensure watcher is enabled and running     | Green "Watching" status                                     |        |
-| 2    | Click "Scan for Unanalyzed Files" button  | Button shows "Scanning..."                                  |        |
-| 3    | Wait for scan to complete                 | Notification shows "Scanned X files, queued Y for analysis" |        |
-| 4    | If files were queued, wait for processing | Files are analyzed automatically                            |        |
+| Step | Action                          | Expected                                  | Status |
+| ---- | ------------------------------- | ----------------------------------------- | ------ |
+| 1    | Close the app completely        | App closes                                |        |
+| 2    | Restart the app (`npm run dev`) | App starts                                |        |
+| 3    | Check console logs              | "[SmartFolderWatcher] Starting..." logged |        |
+| 4    | Add a file to a smart folder    | File analyzed automatically               |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
-#### Test Watcher Persistence Across Restart
+#### Test Integration with DownloadWatcher
 
-| Step | Action                          | Expected                              | Status |
-| ---- | ------------------------------- | ------------------------------------- | ------ |
-| 1    | Enable watcher in settings      | Watcher running                       |        |
-| 2    | Close the app completely        | App closes                            |        |
-| 3    | Restart the app (`npm run dev`) | App starts                            |        |
-| 4    | Open Settings > Performance     | Watcher toggle still enabled          |        |
-| 5    | Check watcher status            | Shows "Watching" with green indicator |        |
+| Step | Action                                       | Expected                                 | Status |
+| ---- | -------------------------------------------- | ---------------------------------------- | ------ |
+| 1    | Enable "Auto-organize downloads" in Settings | DownloadWatcher starts                   |        |
+| 2    | Download/save a file to Downloads folder     | File detected by DownloadWatcher         |        |
+| 3    | Wait for auto-organize                       | File moved to appropriate smart folder   |        |
+| 4    | Wait 3-5 seconds                             | SmartFolderWatcher detects and analyzes  |        |
+| 5    | Check Analysis History                       | File appears with analysis and embedding |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
-
-#### Test Watcher Disable
-
-| Step | Action                                   | Expected                                   | Status |
-| ---- | ---------------------------------------- | ------------------------------------------ | ------ |
-| 1    | Open Settings > Performance              | Section visible                            |        |
-| 2    | Disable the "Watch smart folders" toggle | Toggle turns off                           |        |
-| 3    | Check status indicator                   | No longer shows "Watching"                 |        |
-| 4    | Add a file to a smart folder             | File added                                 |        |
-| 5    | Wait 5 seconds                           | File should NOT be auto-analyzed           |        |
-| 6    | Check Analysis History                   | New file NOT in history (watcher disabled) |        |
-
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 #### Error Handling
 
-| Step | Action                             | Expected                         | Status |
-| ---- | ---------------------------------- | -------------------------------- | ------ |
-| 1    | Enable watcher with Ollama stopped | Watcher starts                   |        |
-| 2    | Add a file to a smart folder       | File queued                      |        |
-| 3    | Check for graceful error handling  | Error count increments, no crash |        |
-| 4    | Start Ollama                       | Ollama running                   |        |
-| 5    | Add another file                   | File analyzed successfully       |        |
+| Step | Action                            | Expected                         | Status |
+| ---- | --------------------------------- | -------------------------------- | ------ |
+| 1    | Start app with Ollama stopped     | Watcher starts anyway            |        |
+| 2    | Add a file to a smart folder      | File queued                      |        |
+| 3    | Check for graceful error handling | Error count increments, no crash |        |
+| 4    | Start Ollama                      | Ollama running                   |        |
+| 5    | Add another file                  | File analyzed successfully       |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -386,7 +377,7 @@ mode
 | 3    | Check for separate DevTools window            | DevTools window opens automatically |        |
 | 4    | DevTools window is detached (separate window) | Not docked in main window           |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ******\_\_\_******
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\***\_\_\_**\*\***
 
 ---
 
@@ -444,7 +435,7 @@ default path.
 | 4    | Go to Setup Phase > Add Smart Folder   | Modal opens                      |        |
 | 5    | Check "Folder Path" field              | Pre-filled with NEW default path |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***
 
 ---
 
@@ -459,7 +450,7 @@ still appear in embedding maintenance.
 | 2    | Open Settings > Embeddings      | Model list should update or show status |        |
 | 3    | Check "Current Embedding Model" | Should handle missing model gracefully  |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***
 
 ---
 
@@ -475,7 +466,7 @@ embeddings" display during operations.
 | 3    | Click "Rebuild Embeddings" | Status changes to "Rebuilding..."                 |        |
 | 4    | Watch counts               | Counts update logically, no confusing "0" flicker |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***
 
 ---
 
@@ -491,7 +482,7 @@ in analysis history.
 | 3    | Check Keywords column           | Should contain keywords (e.g., "screenshot, text, blue") |        |
 | 4    | Export to CSV                   | CSV should include Keywords column                       |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***
 
 ---
 
@@ -508,7 +499,7 @@ in analysis history.
 | 4    | Add a RELATED file (e.g. "Invoice_123.pdf")         | File added                               |        |
 | 5    | Check Watcher Notification/Log                      | Confidence should be HIGH                |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***
 
 ---
 
@@ -558,7 +549,7 @@ parameters" were cluttering the UI.
 | 2    | Check "Performance" / "Advanced" sections | "File size limit" inputs should be GONE      |        |
 | 3    | Check "Processing parameters"             | "Chunk size", "Overlap", etc. should be GONE |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***
 
 ### UI-2: Professional Icons
 
@@ -572,4 +563,4 @@ with professional Lucide icons.
 | 2    | Open Settings > Embeddings       | Check statistics display                               |        |
 | 3    | Verify Icon Style                | Should use clean, monochrome icons (Lucide), no emojis |        |
 
-**Result:** [ ] PASS [ ] FAIL **Notes:** ********\_\_\_********
+**Result:** [ ] PASS [ ] FAIL **Notes:** **\*\*\*\***\_\_\_**\*\*\*\***

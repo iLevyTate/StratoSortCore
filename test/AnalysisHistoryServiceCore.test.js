@@ -46,7 +46,9 @@ jest.mock('../src/main/services/analysisHistory/cacheManager', () => ({
     SEARCH_CACHE_TTL_MS: 10000
   })),
   invalidateCachesOnAdd: jest.fn(),
+  invalidateCachesOnRemove: jest.fn(),
   updateIncrementalStatsOnAdd: jest.fn(),
+  updateIncrementalStatsOnRemove: jest.fn(),
   clearCaches: jest.fn(),
   warmCache: jest.fn()
 }));
@@ -88,7 +90,8 @@ jest.mock('../src/main/services/analysisHistory/indexManager', () => ({
     byDate: {}
   })),
   generateFileHash: jest.fn((path, size, lastModified) => `hash-${path}-${size}-${lastModified}`),
-  updateIndexes: jest.fn()
+  updateIndexes: jest.fn(),
+  removeFromIndexes: jest.fn()
 }));
 
 // Mock search
@@ -323,6 +326,42 @@ describe('AnalysisHistoryServiceCore', () => {
         'query',
         { limit: 10 }
       );
+    });
+  });
+
+  describe('removeEntriesByPath', () => {
+    beforeEach(async () => {
+      await service.initialize();
+    });
+
+    test('removes entries that match originalPath or organization.actual', async () => {
+      // Seed history with two entries pointing to the same current file via different fields.
+      service.analysisHistory.entries = {
+        a: {
+          id: 'a',
+          fileHash: 'h1',
+          timestamp: new Date().toISOString(),
+          originalPath: '/old/file.pdf',
+          fileName: 'file.pdf',
+          fileSize: 1,
+          analysis: { tags: [] },
+          organization: { actual: '/new/file.pdf' }
+        },
+        b: {
+          id: 'b',
+          fileHash: 'h2',
+          timestamp: new Date().toISOString(),
+          originalPath: '/new/file.pdf',
+          fileName: 'file.pdf',
+          fileSize: 1,
+          analysis: { tags: [] },
+          organization: {}
+        }
+      };
+
+      const res = await service.removeEntriesByPath('/new/file.pdf');
+      expect(res.removed).toBe(2);
+      expect(Object.keys(service.analysisHistory.entries)).toHaveLength(0);
     });
   });
 

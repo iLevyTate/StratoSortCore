@@ -37,6 +37,16 @@ async function runCommand(command, args, timeout = 5000) {
           // Process may have already exited
         }
       }
+      // Ensure we release event listeners promptly (avoids retaining closures in edge cases).
+      if (proc) {
+        try {
+          proc.stdout?.removeAllListeners?.();
+          proc.stderr?.removeAllListeners?.();
+          proc.removeAllListeners?.();
+        } catch {
+          // Non-fatal cleanup
+        }
+      }
     };
 
     const safeResolve = (value) => {
@@ -325,7 +335,7 @@ async function getRecommendedEnvSettings() {
   const recommendations = {
     // Limit to 1 model in memory to reduce VRAM usage
     OLLAMA_MAX_LOADED_MODELS: '1',
-    // Single parallel request for embedding workloads (more stable)
+    // Default base parallel request count (will be overridden by GPU logic)
     OLLAMA_NUM_PARALLEL: '1',
     // Keep model loaded for 10 minutes to avoid reload latency
     OLLAMA_KEEP_ALIVE: '10m'
@@ -341,18 +351,29 @@ async function getRecommendedEnvSettings() {
 
     // Batch size based on VRAM
     const vram = caps.gpuMemoryMB || 0;
+
     if (vram >= GPU_TUNING.VERY_HIGH_MEMORY_THRESHOLD) {
+      // 16GB+
+      recommendations.OLLAMA_NUM_PARALLEL = '8';
       recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_VERY_HIGH_MEMORY);
     } else if (vram >= GPU_TUNING.HIGH_MEMORY_THRESHOLD) {
+      // 12GB+
+      recommendations.OLLAMA_NUM_PARALLEL = '6';
       recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_HIGH_MEMORY);
     } else if (vram >= GPU_TUNING.MEDIUM_MEMORY_THRESHOLD) {
+      // 8GB+
+      recommendations.OLLAMA_NUM_PARALLEL = '4';
       recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_MEDIUM_MEMORY);
     } else {
+      // Low VRAM (<8GB)
+      recommendations.OLLAMA_NUM_PARALLEL = '2';
       recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_LOW_MEMORY);
     }
   } else {
     recommendations.OLLAMA_NUM_GPU = '0';
     recommendations.OLLAMA_NUM_BATCH = String(GPU_TUNING.NUM_BATCH_CPU_ONLY);
+    // Keep parallel requests low for CPU
+    recommendations.OLLAMA_NUM_PARALLEL = '2';
   }
 
   return {
@@ -362,7 +383,7 @@ async function getRecommendedEnvSettings() {
       'Set these in your shell profile (~/.bashrc, ~/.zshrc) or system environment',
       'OLLAMA_NUM_THREAD should match physical CPU cores (not logical/hyperthreaded)',
       'OLLAMA_KEEP_ALIVE prevents costly model reloading between requests',
-      'For embedding workloads, OLLAMA_NUM_PARALLEL=1 is more stable'
+      'OLLAMA_NUM_PARALLEL scales with VRAM capacity'
     ]
   };
 }

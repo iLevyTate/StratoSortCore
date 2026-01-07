@@ -2,27 +2,95 @@
 
 ## Purpose
 
-This document provides a step-by-step manual test plan for verifying all StratoSort features. Use
-this to identify any broken or missing functionality during development.
+Single source for manual testing: PR smoke, targeted fix verification, full regression, and local
+developer pre-checks.
 
 ## How to Use This Document
 
-1. Go through each section in order
-2. Mark each test as PASS, FAIL, or SKIP
-3. Add notes for any issues found
-4. Update the "Issues Found" section at the bottom
+1. Pick the scope that matches your change (below).
+2. Run the relevant checklist.
+3. Record PASS/FAIL/NOTES.
+4. Submit results using the template in this doc.
+
+**Tested platform:** Primary validation is on Windows 11 (the only platform robustly tested). If you
+test on macOS/Linux, please state your OS in the submission template.
+
+### Test Scopes (pick one per PR)
+
+- **PR Smoke (minimum for every PR)**: A small set of core flows to prove the build is healthy.
+- **Targeted Fix Verification**: If you fixed a specific bug, run the relevant steps and note the
+  fix ID.
+- **Full Regression**: Run the full plan when touching risky areas (IPC, analysis pipeline,
+  filesystem moves, watchers).
 
 ---
 
-## Pre-Test Checklist
+## Pre-Test Checklist (use before any scope)
 
-Before starting manual testing:
+- [ ] Dependencies: `npm ci` (eslint 8.57.1 lockfile)
+- [ ] Ollama running (`ollama serve`) and models pulled (text/vision/embedding)
+- [ ] ChromaDB available (auto-start local or external URL)
+- [ ] App running (`npm run dev`)
+- [ ] Test files ready (PDFs, images, docs, etc.)
+- [ ] OS noted (primary validation: Windows 11; please state if macOS/Linux)
 
-- [ ] Ollama is running (`ollama serve`)
-- [ ] Required models are installed (check with `ollama list`)
-- [ ] ChromaDB will auto-start (or is already running)
-- [ ] App is built and running (`npm run dev`)
-- [ ] Have test files ready (PDFs, images, documents, etc.)
+---
+
+## PR Smoke Checklist (run for every PR)
+
+- [ ] Setup: Add Smart Folder → generate AI description → save
+- [ ] Discover: Add sample files (pdf/docx/image) → **auto-analysis starts** → view
+      suggestions/confidence
+- [ ] Organize: Apply suggestions → verify move → undo → redo
+- [ ] Smart Folder Watcher (if enabled): Drop a file into a watched folder → confirm
+      analysis/notification
+
+If any item fails, stop and note it in your submission.
+
+---
+
+## Targeted Fix Verification (formerly Fix Verification Checklist)
+
+Use when validating specific fixes. Run only the relevant sections below and report via the
+template.
+
+- **C-1: AI Description Generation**
+  - Open Setup → Add Smart Folder → enter name → click "Generate with AI" → expect description
+    filled.
+- **C-2: Auto-Organize Race**
+  - Enable Auto-organize downloads → restart app → no errors → drop file in Downloads → processed or
+    gracefully skipped.
+- **H-1: Smart Folder Path Loading Race**
+  - Open Setup → Add Smart Folder quickly → path shows full absolute path.
+- **H-2: Settings Debounce Flush**
+  - Change Text Model → close settings within 1s → reopen → change persisted.
+- **H-3: Undo/Redo UI Sync**
+  - Organize files → undo → redo; UI reflects filesystem changes.
+- Additional high/medium items: run the relevant steps in the regression sections below.
+
+---
+
+## Full Regression (use when touching core flows)
+
+Run the existing sections in this document (Navigation & UI, Setup, Discover, Organize, etc.). Note
+PASS/FAIL/NOTES inline. Prior content retained below this line; use as the comprehensive list.
+
+---
+
+## Submission Template (add to PR description or comment)
+
+```
+Manual Testing
+- Scope: PR Smoke / Targeted Fix Verification / Full Regression
+- Build: <commit SHA> | Mode: dev/prod | OS: <Win/macOS/Linux> | Node: <version>
+- Ollama: running? models pulled? (text/vision/embedding)
+- ChromaDB: local/external? reachable?
+- Results:
+  - PR Smoke: Setup [PASS/FAIL/NOTES]; Discover [...]; Organize [...]; Watcher [...]
+  - Targeted Fixes: <IDs or sections run, PASS/FAIL/NOTES>
+  - Regression Areas (if run): <list with PASS/FAIL/NOTES>
+- Issues found: <links or "None">
+```
 
 ---
 
@@ -155,13 +223,13 @@ Before starting manual testing:
 
 ### 4.3 Analysis Process
 
-| Test                     | Expected                       | Status   | Notes                                                                                                 |
-| ------------------------ | ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
-| Analyze button works     | Analysis starts on click       | **N/A**  | Auto-processes when files/folders loaded - no manual analyze button. L-1: Fixed duplicate indicators. |
-| Progress indicator       | Progress shown during analysis | **PASS** | Works                                                                                                 |
-| Individual file progress | Each file shows its status     | **PASS** | Shows horizontal bar animation with percentage                                                        |
-| Cancel analysis          | Can cancel ongoing analysis    | **PASS** | Works                                                                                                 |
-| Analysis completes       | All files finish processing    | **PASS** | Works                                                                                                 |
+| Test                     | Expected                       | Status   | Notes                                                                    |
+| ------------------------ | ------------------------------ | -------- | ------------------------------------------------------------------------ |
+| Analyze button works     | Analysis starts on click       | **N/A**  | Auto-processes when files/folders are loaded - no manual Analyze button. |
+| Progress indicator       | Progress shown during analysis | **PASS** | Works                                                                    |
+| Individual file progress | Each file shows its status     | **PASS** | Shows horizontal bar animation with percentage                           |
+| Cancel analysis          | Can cancel ongoing analysis    | **PASS** | Works                                                                    |
+| Analysis completes       | All files finish processing    | **PASS** | Works                                                                    |
 
 ### 4.4 Analysis Results
 

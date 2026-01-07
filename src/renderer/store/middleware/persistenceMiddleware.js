@@ -177,7 +177,6 @@ const persistenceMiddleware = (store) => (next) => (action) => {
         const stateToSave = {
           ui: {
             currentPhase: state.ui.currentPhase,
-            theme: state.ui.theme,
             sidebarOpen: state.ui.sidebarOpen,
             showSettings: state.ui.showSettings
           },

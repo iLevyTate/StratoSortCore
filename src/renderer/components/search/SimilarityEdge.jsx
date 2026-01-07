@@ -236,8 +236,8 @@ SimilarityEdge.propTypes = {
   sourceY: PropTypes.number.isRequired,
   targetX: PropTypes.number.isRequired,
   targetY: PropTypes.number.isRequired,
-  sourcePosition: PropTypes.string,
-  targetPosition: PropTypes.string,
+  sourcePosition: PropTypes.oneOf(['top', 'right', 'bottom', 'left']),
+  targetPosition: PropTypes.oneOf(['top', 'right', 'bottom', 'left']),
   data: PropTypes.shape({
     similarity: PropTypes.number,
     sourceData: PropTypes.shape({

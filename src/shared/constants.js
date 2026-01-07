@@ -150,6 +150,8 @@ const IPC_CHANNELS = {
   EMBEDDINGS: {
     REBUILD_FOLDERS: 'embeddings-rebuild-folders',
     REBUILD_FILES: 'embeddings-rebuild-files',
+    FULL_REBUILD: 'embeddings-full-rebuild',
+    REANALYZE_ALL: 'embeddings-reanalyze-all',
     CLEAR_STORE: 'embeddings-clear-store',
     GET_STATS: 'embeddings-get-stats',
     FIND_SIMILAR: 'embeddings-find-similar',
@@ -363,14 +365,6 @@ const ACTION_TYPES = {
   ANALYSIS_RESULT: 'ANALYSIS_RESULT'
 };
 
-// Theme constants
-const THEMES = {
-  LIGHT: 'light',
-  DARK: 'dark',
-  SYSTEM: 'system',
-  AUTO: 'auto' // Alias for 'system' - follow system theme
-};
-
 // Keyboard shortcuts (only define shortcuts that are actually used in the app)
 const SHORTCUTS = {
   UNDO: 'Ctrl+Z',
@@ -451,7 +445,8 @@ const SUPPORTED_IMAGE_EXTENSIONS = [
   '.bmp',
   '.webp',
   '.tiff',
-  '.svg'
+  '.svg',
+  '.heic'
 ];
 
 const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv'];
@@ -548,7 +543,6 @@ const exports_object = {
   ERROR_TYPES,
   FILE_SYSTEM_ERROR_CODES,
   ACTION_TYPES,
-  THEMES,
   SHORTCUTS,
   LIMITS,
   SUPPORTED_TEXT_EXTENSIONS,

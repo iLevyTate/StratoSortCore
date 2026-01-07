@@ -56,11 +56,12 @@ const Button = memo(function Button({
   const classes = useMemo(() => {
     const variantClass = VARIANT_TO_CLASS[variant] || VARIANT_TO_CLASS.primary;
     const sizeClass = SIZE_TO_CLASS[size] || SIZE_TO_CLASS.md;
-    const disabledClass = disabled || isLoading ? 'opacity-50 cursor-not-allowed' : '';
+    // FIX: Loading state keeps full opacity (shows spinner), disabled state uses opacity-50
+    const stateClass = disabled ? 'opacity-50 cursor-not-allowed' : isLoading ? 'cursor-wait' : '';
     // Accessibility: Add focus-visible ring for keyboard navigation
     const focusClass =
       'focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2 focus-visible:outline-none';
-    return `${variantClass} ${sizeClass} ${focusClass} ${disabledClass} ${className}`.trim();
+    return `${variantClass} ${sizeClass} ${focusClass} ${stateClass} ${className}`.trim();
   }, [variant, size, disabled, isLoading, className]);
 
   // Bug #39: Ensure button has accessible label

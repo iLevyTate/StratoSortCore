@@ -67,7 +67,6 @@ describe('persistenceMiddleware', () => {
     const defaultState = {
       ui: {
         currentPhase: 'discover',
-        theme: 'light',
         sidebarOpen: true,
         showSettings: false
       },
@@ -146,7 +145,7 @@ describe('persistenceMiddleware', () => {
 
     test('does not save in WELCOME phase', () => {
       mockStore.getState.mockReturnValue({
-        ui: { currentPhase: 'welcome', theme: 'light', sidebarOpen: true, showSettings: false },
+        ui: { currentPhase: 'welcome', sidebarOpen: true, showSettings: false },
         files: {
           selectedFiles: [],
           organizedFiles: [],
@@ -223,7 +222,7 @@ describe('persistenceMiddleware', () => {
 
       // Change phase
       mockStore.getState.mockReturnValue({
-        ui: { currentPhase: 'organize', theme: 'light', sidebarOpen: true, showSettings: false },
+        ui: { currentPhase: 'organize', sidebarOpen: true, showSettings: false },
         files: {
           selectedFiles: [],
           organizedFiles: [],
@@ -255,7 +254,7 @@ describe('persistenceMiddleware', () => {
 
       // Add files
       mockStore.getState.mockReturnValue({
-        ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
+        ui: { currentPhase: 'discover', sidebarOpen: true, showSettings: false },
         files: {
           selectedFiles: [{ path: '/file.txt' }],
           organizedFiles: [],
@@ -374,7 +373,7 @@ describe('persistenceMiddleware', () => {
       // MAX_DEBOUNCE_WAIT_MS is 5000ms, so after 5 seconds of debouncing, it should force save
       for (let i = 0; i < 10; i++) {
         mockStore.getState.mockReturnValue({
-          ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
+          ui: { currentPhase: 'discover', sidebarOpen: true, showSettings: false },
           files: {
             selectedFiles: Array(i + 1).fill({}),
             organizedFiles: [],
@@ -405,7 +404,7 @@ describe('persistenceMiddleware', () => {
         .map((_, i) => ({ path: `/file${i}.txt` }));
 
       mockStore.getState.mockReturnValue({
-        ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
+        ui: { currentPhase: 'discover', sidebarOpen: true, showSettings: false },
         files: {
           selectedFiles: largeFilesList,
           organizedFiles: [],
@@ -438,7 +437,7 @@ describe('persistenceMiddleware', () => {
       }
 
       mockStore.getState.mockReturnValue({
-        ui: { currentPhase: 'discover', theme: 'light', sidebarOpen: true, showSettings: false },
+        ui: { currentPhase: 'discover', sidebarOpen: true, showSettings: false },
         files: {
           selectedFiles: [],
           organizedFiles: [],

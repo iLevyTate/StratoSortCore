@@ -72,7 +72,7 @@
     "artifactName": "StratoSort-Setup-${version}.exe"
   },
   "mac": {
-    "icon": "assets/icons/icons/png/512x512.png",
+    "icon": "assets/icons/mac/icon.png",
     "category": "public.app-category.productivity",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
@@ -91,8 +91,12 @@
   },
   "dmg": {
     "title": "StratoSort ${version}",
-    "icon": "assets/icons/png/512x512.png",
+    "icon": "assets/icons/mac/icon.png",
     "background": "assets/installer/dmg-background.png",
+    "window": {
+      "width": 540,
+      "height": 380
+    },
     "contents": [
       {
         "x": 130,
@@ -107,7 +111,7 @@
     ]
   },
   "linux": {
-    "icon": "assets/icons/icons/png/512x512.png",
+    "icon": "assets/icons/icons/png",
     "target": [
       {
         "target": "AppImage",
@@ -118,7 +122,18 @@
         "arch": ["x64"]
       }
     ],
-    "category": "Office"
+    "category": "Office;Utility;FileTools",
+    "synopsis": "AI-powered file organization",
+    "description": "StratoSort uses AI to intelligently organize your files into smart folders. Features include semantic search, automatic categorization, and customizable organization rules.",
+    "mimeTypes": [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "text/plain",
+      "text/markdown"
+    ]
   },
   "extraResources": [
     {

@@ -182,6 +182,9 @@ class OllamaService {
   async shutdown() {
     logger.info('[OllamaService] Shutting down...');
 
+    // FIX L2: Clear model change callbacks to prevent memory leaks
+    this._modelChangeCallbacks.clear();
+
     if (this._ollamaClient) {
       await this._ollamaClient.shutdown();
     }

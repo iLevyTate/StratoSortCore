@@ -668,6 +668,51 @@ async function recordUndoAndUpdateDatabase(
         batchId
       });
     }
+
+    // Update any queued embeddings to avoid flushing stale IDs after batch moves.
+    try {
+      const embeddingQueue = require('../../analysis/embeddingQueue');
+      const successfulResults = results.filter((r) => r.success && r.source && r.destination);
+      const changes = successfulResults.map((r) => ({ oldPath: r.source, newPath: r.destination }));
+      if (changes.length > 0) {
+        embeddingQueue.updateByFilePaths?.(changes);
+      }
+    } catch (error) {
+      log.debug('[FILE-OPS] Embedding queue path update skipped', {
+        error: error.message,
+        batchId
+      });
+    }
+
+    // Update analysis history entries with new paths for BM25 search
+    try {
+      const { getInstance: getAnalysisHistory } = require('../../services/analysisHistory');
+      const analysisHistoryService = getAnalysisHistory();
+
+      if (analysisHistoryService?.updateEntryPaths) {
+        const successfulResults = results.filter((r) => r.success && r.source && r.destination);
+
+        const historyUpdates = successfulResults.map((r) => ({
+          oldPath: r.source,
+          newPath: r.destination,
+          newName: path.basename(r.destination)
+        }));
+
+        if (historyUpdates.length > 0) {
+          const updateResult = await analysisHistoryService.updateEntryPaths(historyUpdates);
+          log.debug('[FILE-OPS] Updated analysis history paths', {
+            batchId,
+            updated: updateResult.updated,
+            notFound: updateResult.notFound
+          });
+        }
+      }
+    } catch (error) {
+      log.warn('[FILE-OPS] Error updating analysis history paths', {
+        error: error.message,
+        batchId
+      });
+    }
   }
 }
 module.exports = {

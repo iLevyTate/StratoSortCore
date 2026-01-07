@@ -9,7 +9,6 @@ const { DEFAULT_AI_MODELS } = require('./constants');
 
 const DEFAULT_SETTINGS = {
   // UI
-  theme: 'system',
   notifications: true,
   // Notification display options - where to show notifications
   // 'both' = UI toast + system tray, 'ui' = UI only, 'tray' = tray only, 'none' = disabled
@@ -26,8 +25,6 @@ const DEFAULT_SETTINGS = {
   autoOrganize: false,
   backgroundMode: false,
   launchOnStartup: false,
-  // Smart Folder Watching - auto-analyze files added/modified in smart folders
-  smartFolderWatchEnabled: false,
   // Organization Confidence Threshold (files must meet this confidence to be auto-organized)
   confidenceThreshold: 0.75,
   // Naming convention defaults (used by auto-organize / download watcher)

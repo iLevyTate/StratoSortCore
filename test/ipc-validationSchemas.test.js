@@ -49,7 +49,6 @@ describe('IPC Validation Schemas', () => {
   describe('settings schema', () => {
     testIfZod('accepts valid settings', () => {
       const result = schemas.settings.safeParse({
-        theme: 'dark',
         language: 'en',
         launchOnStartup: true
       });
@@ -58,16 +57,9 @@ describe('IPC Validation Schemas', () => {
 
     testIfZod('accepts partial settings', () => {
       const result = schemas.settings.safeParse({
-        theme: 'light'
+        language: 'en'
       });
       expect(result.success).toBe(true);
-    });
-
-    testIfZod('rejects invalid theme', () => {
-      const result = schemas.settings.safeParse({
-        theme: 'invalid-theme'
-      });
-      expect(result.success).toBe(false);
     });
 
     testIfZod('accepts valid logging levels', () => {
@@ -141,12 +133,6 @@ describe('IPC Validation Schemas', () => {
 
       const invalidTimeout = { analysisTimeout: 100 }; // Too small
       expect(schemas.settings.safeParse(invalidTimeout).success).toBe(false);
-    });
-
-    testIfZod('validates smart folder watch enabled', () => {
-      expect(schemas.settings.safeParse({ smartFolderWatchEnabled: true }).success).toBe(true);
-      expect(schemas.settings.safeParse({ smartFolderWatchEnabled: false }).success).toBe(true);
-      expect(schemas.settings.safeParse({ smartFolderWatchEnabled: 'yes' }).success).toBe(false);
     });
   });
 
@@ -406,7 +392,19 @@ describe('IPC Validation Schemas', () => {
       const moduleWithoutZod = require('../src/main/ipc/validationSchemas');
 
       expect(moduleWithoutZod.z).toBeNull();
-      expect(moduleWithoutZod.schemas).toBeNull();
+      // FIX: Now provides fallback validators instead of null schemas for security
+      expect(moduleWithoutZod._usingFallback).toBe(true);
+      expect(moduleWithoutZod.schemas).not.toBeNull();
+      expect(moduleWithoutZod.schemas.filePath._isFallback).toBe(true);
+      expect(moduleWithoutZod.schemas.settings._isFallback).toBe(true);
+      expect(moduleWithoutZod.schemas.smartFolder._isFallback).toBe(true);
+
+      // Test that fallback validators work
+      const validPath = moduleWithoutZod.schemas.filePath.safeParse('/test/path');
+      expect(validPath.success).toBe(true);
+
+      const invalidPath = moduleWithoutZod.schemas.filePath.safeParse('');
+      expect(invalidPath.success).toBe(false);
     });
   });
 });

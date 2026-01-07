@@ -19,6 +19,8 @@ const {
   getCacheTTLs,
   invalidateCachesOnAdd,
   updateIncrementalStatsOnAdd,
+  updateIncrementalStatsOnRemove,
+  invalidateCachesOnRemove,
   clearCaches: clearCachesHelper,
   warmCache: warmCacheHelper
 } = require('./cacheManager');
@@ -33,7 +35,12 @@ const {
   createDefaultStructures: createDefaultStructuresFiles
 } = require('./persistence');
 
-const { createEmptyIndex, generateFileHash, updateIndexes } = require('./indexManager');
+const {
+  createEmptyIndex,
+  generateFileHash,
+  updateIndexes,
+  removeFromIndexes
+} = require('./indexManager');
 
 const { searchAnalysis: searchAnalysisHelper } = require('./search');
 
@@ -87,6 +94,22 @@ class AnalysisHistoryServiceCore {
 
     // Write lock to prevent concurrent modifications
     this._writeLock = null;
+
+    // FIX: Callback for cascade orphan marking when entries are removed
+    // Set via setOnEntriesRemovedCallback from ServiceIntegration
+    this._onEntriesRemovedCallback = null;
+  }
+
+  /**
+   * Set callback for cascade orphan marking when entries are removed during maintenance
+   * Called from ServiceIntegration after ChromaDB service is initialized
+   * @param {Function} callback - Async function receiving array of {id, fileHash, originalPath, actualPath?}
+   */
+  setOnEntriesRemovedCallback(callback) {
+    if (typeof callback === 'function') {
+      this._onEntriesRemovedCallback = callback;
+      logger.debug('[AnalysisHistoryService] Set onEntriesRemoved callback for orphan marking');
+    }
   }
 
   _normalizeResults(result) {
@@ -332,7 +355,7 @@ class AnalysisHistoryServiceCore {
         }
       });
 
-      // Cleanup if needed
+      // Cleanup if needed - FIX: Pass onEntriesRemoved callback for cascade orphan marking
       await performMaintenanceIfNeeded(
         this.analysisHistory,
         this.analysisIndex,
@@ -340,7 +363,8 @@ class AnalysisHistoryServiceCore {
         this,
         this.config,
         () => this.saveHistory(),
-        () => this.saveIndex()
+        () => this.saveIndex(),
+        { onEntriesRemoved: this._onEntriesRemovedCallback }
       );
 
       return analysisEntry.id;
@@ -461,6 +485,156 @@ class AnalysisHistoryServiceCore {
 
   clearCaches() {
     clearCachesHelper(this._cache, this);
+  }
+
+  /**
+   * Update entry paths after files have been moved/organized.
+   * This updates the organization.actual field so that search results
+   * show the current file location, not the original path.
+   *
+   * @param {Array<{oldPath: string, newPath: string, newName?: string}>} pathUpdates - Path update mappings
+   * @returns {Promise<{updated: number, notFound: number}>} Update results
+   */
+  async updateEntryPaths(pathUpdates) {
+    await this.initialize();
+
+    if (!pathUpdates || !Array.isArray(pathUpdates) || pathUpdates.length === 0) {
+      return { updated: 0, notFound: 0 };
+    }
+
+    // Acquire write lock
+    while (this._writeLock) {
+      await this._writeLock;
+    }
+
+    let releaseLock;
+    this._writeLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+
+    try {
+      let updated = 0;
+      let notFound = 0;
+
+      // Build a map of oldPath -> update info for faster lookup
+      const updateMap = new Map();
+      for (const update of pathUpdates) {
+        if (update.oldPath && update.newPath) {
+          updateMap.set(update.oldPath, update);
+        }
+      }
+
+      // Scan through entries and update matching ones
+      const entries = this.analysisHistory?.entries || {};
+      for (const entry of Object.values(entries)) {
+        // Check if this entry's original path matches any update
+        const update = updateMap.get(entry.originalPath);
+        if (update) {
+          // Update the organization fields
+          if (!entry.organization) {
+            entry.organization = {};
+          }
+          entry.organization.actual = update.newPath;
+          if (update.newName) {
+            entry.organization.newName = update.newName;
+            entry.organization.renamed = true;
+          }
+          updated++;
+          updateMap.delete(entry.originalPath); // Remove to track not found
+        }
+      }
+
+      notFound = updateMap.size;
+
+      if (updated > 0) {
+        this.analysisHistory.updatedAt = new Date().toISOString();
+
+        // Invalidate caches since paths have changed
+        clearCachesHelper(this._cache, this);
+
+        // Save to disk
+        await this.saveHistory();
+
+        logger.info(
+          `[AnalysisHistoryService] Updated ${updated} entry paths, ${notFound} not found`
+        );
+      }
+
+      return { updated, notFound };
+    } finally {
+      this._writeLock = null;
+      releaseLock();
+    }
+  }
+
+  /**
+   * Remove analysis history entries associated with a path.
+   * Used to keep BM25/analysis-history-backed search in sync after deletes.
+   *
+   * Matches either the original path or the organization.actual path.
+   *
+   * @param {string} filePath
+   * @returns {Promise<{removed: number}>}
+   */
+  async removeEntriesByPath(filePath) {
+    await this.initialize();
+
+    const target = typeof filePath === 'string' ? filePath : '';
+    if (!target) return { removed: 0 };
+
+    // Acquire write lock
+    while (this._writeLock) {
+      await this._writeLock;
+    }
+    let releaseLock;
+    this._writeLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+
+    const removedEntries = [];
+    try {
+      const entries = this.analysisHistory?.entries || {};
+      for (const [id, entry] of Object.entries(entries)) {
+        const original = entry?.originalPath;
+        const actual = entry?.organization?.actual;
+        if (original === target || actual === target) {
+          removedEntries.push({
+            id,
+            fileHash: entry.fileHash,
+            originalPath: entry.originalPath,
+            actualPath: entry.organization?.actual || null
+          });
+
+          delete entries[id];
+          updateIncrementalStatsOnRemove(this._cache, entry);
+          removeFromIndexes(this.analysisIndex, entry);
+        }
+      }
+
+      if (removedEntries.length > 0) {
+        invalidateCachesOnRemove(this._cache, this);
+        this.analysisHistory.updatedAt = new Date().toISOString();
+        await this.saveHistory();
+      }
+
+      // Notify about removals so Chroma can mark any remaining embeddings/chunks orphaned.
+      // (For app-driven deletes we also delete embeddings directly, but this keeps behavior consistent.)
+      if (this._onEntriesRemovedCallback && removedEntries.length > 0) {
+        try {
+          await this._onEntriesRemovedCallback(removedEntries);
+        } catch (e) {
+          logger.warn('[AnalysisHistoryService] onEntriesRemoved callback failed', {
+            error: e.message,
+            count: removedEntries.length
+          });
+        }
+      }
+
+      return { removed: removedEntries.length };
+    } finally {
+      this._writeLock = null;
+      releaseLock();
+    }
   }
 }
 

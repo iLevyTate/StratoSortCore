@@ -117,7 +117,7 @@ File 3 → Extract → LLM Call 3 (3-8s) → Result 3
 │ • Content + metadata hash keys       │
 └──────────────────────────────────────┘
         ↓
-    100% hit rate for re-analysis
+    High cache hit rate for repeated analysis (unchanged files)
 ```
 
 ### 4. Performance Optimizer

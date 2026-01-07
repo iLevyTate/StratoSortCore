@@ -37,8 +37,18 @@ const {
   batchDeleteFileEmbeddings: batchDeleteFileEmbeddingsOp,
   updateFilePaths: updateFilePathsOp,
   querySimilarFiles: querySimilarFilesOp,
-  resetFiles: resetFilesOp
+  resetFiles: resetFilesOp,
+  markEmbeddingsOrphaned: markEmbeddingsOrphanedOp,
+  getOrphanedEmbeddings: getOrphanedEmbeddingsOp
 } = require('./fileOperations');
+const {
+  batchUpsertFileChunks: batchUpsertFileChunksOp,
+  querySimilarFileChunks: querySimilarFileChunksOp,
+  resetFileChunks: resetFileChunksOp,
+  markChunksOrphaned: markChunksOrphanedOp,
+  getOrphanedChunks: getOrphanedChunksOp,
+  updateFileChunkPaths: updateFileChunkPathsOp
+} = require('./chunkOperations');
 const {
   directUpsertFolder,
   directBatchUpsertFolders,
@@ -104,6 +114,7 @@ class ChromaDBServiceCore extends EventEmitter {
     this.dbPath = path.join(app.getPath('userData'), 'chromadb');
     this.client = null;
     this.fileCollection = null;
+    this.fileChunkCollection = null;
     this.folderCollection = null;
     this.initialized = false;
 
@@ -115,7 +126,8 @@ class ChromaDBServiceCore extends EventEmitter {
     // FIX: Track collection dimensions to detect embedding model changes
     this._collectionDimensions = {
       files: null,
-      folders: null
+      folders: null,
+      fileChunks: null
     };
 
     // Query cache
@@ -130,8 +142,11 @@ class ChromaDBServiceCore extends EventEmitter {
     this.batchInsertDelay = BATCH_INSERT_DELAY_MS;
 
     // In-flight query deduplication with bounds to prevent memory exhaustion
-    this.inflightQueries = new Map();
+    // FIX: Store timestamps with promises to enable stale cleanup
+    this.inflightQueries = new Map(); // Map<key, { promise, addedAt }>
     this.MAX_INFLIGHT_QUERIES = getConfig('CHROMADB.maxInflightQueries', 100);
+    this._stalePromiseCleanupInterval = null;
+    this.STALE_PROMISE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     // Connection health monitoring
     this.isOnline = false;
@@ -209,18 +224,25 @@ class ChromaDBServiceCore extends EventEmitter {
    * Get the embedding dimension of an existing collection by peeking at stored embeddings.
    * FIX: Helps detect dimension mismatches when embedding models change.
    *
-   * @param {'files' | 'folders'} collectionType - Which collection to check
+   * @param {'files' | 'folders' | 'fileChunks'} collectionType - Which collection to check
    * @returns {Promise<number | null>} Dimension of stored embeddings, or null if collection is empty
    */
-  async getCollectionDimension(collectionType) {
+  async getCollectionDimension(collectionType, { skipCache = false } = {}) {
     try {
-      const collection = collectionType === 'files' ? this.fileCollection : this.folderCollection;
+      const collection =
+        collectionType === 'files'
+          ? this.fileCollection
+          : collectionType === 'folders'
+            ? this.folderCollection
+            : this.fileChunkCollection;
       if (!collection) {
+        // FIX P1-5: Invalidate cache if collection doesn't exist
+        this._collectionDimensions[collectionType] = null;
         return null;
       }
 
-      // Return cached dimension if available
-      if (this._collectionDimensions[collectionType] !== null) {
+      // Return cached dimension if available (unless skipCache requested)
+      if (!skipCache && this._collectionDimensions[collectionType] !== null) {
         return this._collectionDimensions[collectionType];
       }
 
@@ -247,7 +269,7 @@ class ChromaDBServiceCore extends EventEmitter {
    * FIX: Provides clear error when embedding model changed and dimensions mismatch.
    *
    * @param {Array<number>} vector - Embedding vector to validate
-   * @param {'files' | 'folders'} collectionType - Which collection this is for
+   * @param {'files' | 'folders' | 'fileChunks'} collectionType - Which collection this is for
    * @returns {Promise<{ valid: boolean, error?: string, expectedDim?: number, actualDim?: number }>}
    */
   async validateEmbeddingDimension(vector, collectionType) {
@@ -297,7 +319,8 @@ class ChromaDBServiceCore extends EventEmitter {
   _clearDimensionCache() {
     this._collectionDimensions = {
       files: null,
-      folders: null
+      folders: null,
+      fileChunks: null
     };
   }
 
@@ -311,7 +334,10 @@ class ChromaDBServiceCore extends EventEmitter {
     this.isOnline = false;
     this.client = null;
     this.fileCollection = null;
+    this.fileChunkCollection = null;
     this.folderCollection = null;
+    // Clear cached dimensions since collections/embedding state may change after re-init.
+    this._clearDimensionCache();
     this._initPromise = null;
     this._isInitializing = false;
     return this.initialize();
@@ -512,15 +538,51 @@ class ChromaDBServiceCore extends EventEmitter {
     if (this.healthCheckInterval.unref) {
       this.healthCheckInterval.unref();
     }
+
+    // FIX: Initialize stale promise cleanup interval to prevent memory leaks
+    // from promises that never settle (e.g., due to network issues)
+    this._stalePromiseCleanupInterval = setInterval(() => {
+      this._cleanupStaleInflightQueries();
+    }, this.STALE_PROMISE_TIMEOUT_MS);
+
+    if (this._stalePromiseCleanupInterval.unref) {
+      this._stalePromiseCleanupInterval.unref();
+    }
   }
 
   /**
-   * Stop periodic health check
+   * Clean up stale in-flight queries that have been pending too long
+   * FIX: Prevents memory exhaustion from promises that never settle
+   * @private
+   */
+  _cleanupStaleInflightQueries() {
+    const now = Date.now();
+    let cleanedCount = 0;
+    for (const [key, entry] of this.inflightQueries.entries()) {
+      // Handle both old format (just promise) and new format ({ promise, addedAt })
+      const addedAt = entry?.addedAt || 0;
+      if (now - addedAt > this.STALE_PROMISE_TIMEOUT_MS) {
+        this.inflightQueries.delete(key);
+        cleanedCount++;
+      }
+    }
+    if (cleanedCount > 0) {
+      logger.debug('[ChromaDB] Cleaned up stale in-flight queries', { cleanedCount });
+    }
+  }
+
+  /**
+   * Stop periodic health check and stale promise cleanup
    */
   stopHealthCheck() {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
+    }
+    // FIX: Also clean up the stale promise cleanup interval
+    if (this._stalePromiseCleanupInterval) {
+      clearInterval(this._stalePromiseCleanupInterval);
+      this._stalePromiseCleanupInterval = null;
     }
   }
 
@@ -542,13 +604,22 @@ class ChromaDBServiceCore extends EventEmitter {
         this.inflightQueries.delete(oldestKey);
       }
     }
-    this.inflightQueries.set(key, promise);
+    // Always store a real Promise so we can reliably attach finally() cleanup.
+    const wrappedPromise = Promise.resolve(promise);
+    // FIX: Store timestamp with promise for stale cleanup
+    this.inflightQueries.set(key, { promise: wrappedPromise, addedAt: Date.now() });
 
-    // FIX: CRITICAL - Remove entry when promise settles to prevent memory leak
-    // Previously, completed promises remained in the map indefinitely
-    promise.finally(() => {
-      this.inflightQueries.delete(key);
+    // FIX: CRITICAL - Remove entry when promise settles to prevent memory leak.
+    // Also protect against unexpected errors in cleanup itself.
+    wrappedPromise.finally(() => {
+      try {
+        this.inflightQueries.delete(key);
+      } catch {
+        // Non-fatal; map cleanup should never crash the app.
+      }
     });
+
+    return wrappedPromise;
   }
 
   /**
@@ -758,10 +829,8 @@ class ChromaDBServiceCore extends EventEmitter {
       this._isInitializing = false;
     }
 
-    // FIX: Atomic pattern - set promise BEFORE setting _isInitializing
+    // FIX P1-6: Atomic pattern - set promise BEFORE setting _isInitializing
     // This ensures concurrent calls always see the promise
-    this._isInitializing = true;
-
     // Use explicit resolve/reject for proper error propagation
     let resolveInit;
     let rejectInit;
@@ -769,6 +838,8 @@ class ChromaDBServiceCore extends EventEmitter {
       resolveInit = resolve;
       rejectInit = reject;
     });
+    // Set _isInitializing AFTER promise is assigned to eliminate race window
+    this._isInitializing = true;
 
     // Perform actual initialization in a separate async block
     (async () => {
@@ -797,6 +868,19 @@ class ChromaDBServiceCore extends EventEmitter {
           'ChromaDB file collection init'
         );
 
+        this.fileChunkCollection = await withTimeout(
+          this.client.getOrCreateCollection({
+            name: 'file_chunk_embeddings',
+            embeddingFunction: explicitEmbeddingsOnlyEmbeddingFunction,
+            metadata: {
+              description: 'Chunk embeddings for extracted text (semantic search deep recall)',
+              'hnsw:space': 'cosine'
+            }
+          }),
+          CHROMADB_INIT_TIMEOUT_MS,
+          'ChromaDB file chunk collection init'
+        );
+
         this.folderCollection = await withTimeout(
           this.client.getOrCreateCollection({
             name: 'folder_embeddings',
@@ -821,7 +905,7 @@ class ChromaDBServiceCore extends EventEmitter {
         });
 
         // Count operations with timeout protection
-        const [fileCount, folderCount] = await Promise.all([
+        const [fileCount, folderCount, fileChunkCount] = await Promise.all([
           withTimeout(
             this.fileCollection.count(),
             CHROMADB_OPERATION_TIMEOUT_MS,
@@ -831,6 +915,11 @@ class ChromaDBServiceCore extends EventEmitter {
             this.folderCollection.count(),
             CHROMADB_OPERATION_TIMEOUT_MS,
             'ChromaDB folder count'
+          ),
+          withTimeout(
+            this.fileChunkCollection.count(),
+            CHROMADB_OPERATION_TIMEOUT_MS,
+            'ChromaDB file chunk count'
           )
         ]);
 
@@ -838,7 +927,8 @@ class ChromaDBServiceCore extends EventEmitter {
           dbPath: this.dbPath,
           serverUrl: this.serverUrl,
           fileCount,
-          folderCount
+          folderCount,
+          fileChunkCount
         });
 
         // FIX: Resolve the promise to signal successful initialization
@@ -1030,24 +1120,27 @@ class ChromaDBServiceCore extends EventEmitter {
 
     if (this.inflightQueries.has(cacheKey)) {
       logger.debug('[ChromaDB] Deduplicating in-flight query', { fileId });
-      return this.inflightQueries.get(cacheKey);
+      // FIX: Extract promise from stored entry { promise, addedAt }
+      const entry = this.inflightQueries.get(cacheKey);
+      return entry?.promise || entry;
     }
 
     // Wrap query with timeout to prevent UI freeze on slow server
-    const queryPromise = this._executeWithNotFoundRecovery('queryFolders', async () =>
-      withTimeout(
-        executeQueryFolders({
-          fileId,
-          topK,
-          fileCollection: this.fileCollection,
-          folderCollection: this.folderCollection
-        }),
-        CHROMADB_OPERATION_TIMEOUT_MS,
-        'ChromaDB queryFolders'
+    const queryPromise = this._addInflightQuery(
+      cacheKey,
+      this._executeWithNotFoundRecovery('queryFolders', async () =>
+        withTimeout(
+          executeQueryFolders({
+            fileId,
+            topK,
+            fileCollection: this.fileCollection,
+            folderCollection: this.folderCollection
+          }),
+          CHROMADB_OPERATION_TIMEOUT_MS,
+          'ChromaDB queryFolders'
+        )
       )
     );
-    // Use bounded helper to prevent memory exhaustion
-    this._addInflightQuery(cacheKey, queryPromise);
 
     // FIX: Removed redundant finally block - _addInflightQuery already handles cleanup
     // via promise.finally(). The double-delete was harmless but confusing.
@@ -1291,11 +1384,25 @@ class ChromaDBServiceCore extends EventEmitter {
 
   async updateFilePaths(pathUpdates) {
     await this.initialize();
-    return updateFilePathsOp({
+    const updatedFiles = await updateFilePathsOp({
       pathUpdates,
       fileCollection: this.fileCollection,
       queryCache: this.queryCache
     });
+    await updateFileChunkPathsOp({
+      pathUpdates,
+      chunkCollection: this.fileChunkCollection
+    });
+
+    // Ensure both old and new file IDs can't serve stale cached results
+    if (this.queryCache && Array.isArray(pathUpdates)) {
+      pathUpdates.forEach((u) => {
+        if (u?.oldId) this.queryCache.invalidateForFile(u.oldId);
+        if (u?.newId) this.queryCache.invalidateForFile(u.newId);
+      });
+    }
+
+    return updatedFiles;
   }
 
   async querySimilarFiles(queryEmbedding, topK = 10) {
@@ -1304,6 +1411,23 @@ class ChromaDBServiceCore extends EventEmitter {
       queryEmbedding,
       topK,
       fileCollection: this.fileCollection
+    });
+  }
+
+  async batchUpsertFileChunks(chunks) {
+    await this.initialize();
+    return batchUpsertFileChunksOp({
+      chunks,
+      chunkCollection: this.fileChunkCollection
+    });
+  }
+
+  async querySimilarFileChunks(queryEmbedding, topK = 20) {
+    await this.initialize();
+    return querySimilarFileChunksOp({
+      queryEmbedding,
+      topK,
+      chunkCollection: this.fileChunkCollection
     });
   }
 
@@ -1317,9 +1441,144 @@ class ChromaDBServiceCore extends EventEmitter {
     this._collectionDimensions.files = null;
   }
 
+  async resetFileChunks() {
+    await this.initialize();
+    this.fileChunkCollection = await resetFileChunksOp({
+      client: this.client,
+      embeddingFunction: explicitEmbeddingsOnlyEmbeddingFunction
+    });
+    this._collectionDimensions.fileChunks = null;
+  }
+
   async resetAll() {
     await this.resetFiles();
+    await this.resetFileChunks();
     await this.resetFolders();
+  }
+
+  // ============== Orphan Management ==============
+
+  /**
+   * Mark file embeddings as orphaned (soft delete)
+   * FIX: Called when analysis history entries are pruned to mark corresponding embeddings
+   *
+   * @param {Array<string>} fileIds - Array of file IDs to mark as orphaned
+   * @returns {Promise<{ marked: number, failed: number }>}
+   */
+  async markEmbeddingsOrphaned(fileIds) {
+    if (!fileIds || fileIds.length === 0) {
+      return { marked: 0, failed: 0 };
+    }
+
+    await this.initialize();
+
+    // Mark file embeddings
+    const fileResult = await markEmbeddingsOrphanedOp({
+      fileIds,
+      fileCollection: this.fileCollection,
+      queryCache: this.queryCache
+    });
+
+    // Also mark associated chunks
+    const chunkResult = await markChunksOrphanedOp({
+      fileIds,
+      chunkCollection: this.fileChunkCollection
+    });
+
+    logger.info('[ChromaDB] Marked embeddings as orphaned', {
+      filesMarked: fileResult.marked,
+      chunksMarked: chunkResult.marked
+    });
+
+    return {
+      marked: fileResult.marked,
+      failed: fileResult.failed,
+      chunksMarked: chunkResult.marked,
+      chunksFailed: chunkResult.failed
+    };
+  }
+
+  /**
+   * Get all orphaned file embeddings
+   *
+   * @param {number} [maxAge] - Optional max age in milliseconds to filter by
+   * @returns {Promise<Array<string>>} Array of orphaned file IDs
+   */
+  async getOrphanedEmbeddings(maxAge) {
+    await this.initialize();
+    return getOrphanedEmbeddingsOp({
+      fileCollection: this.fileCollection,
+      maxAge
+    });
+  }
+
+  /**
+   * Get all orphaned chunk embeddings
+   *
+   * @param {number} [maxAge] - Optional max age in milliseconds to filter by
+   * @returns {Promise<Array<string>>} Array of orphaned chunk IDs
+   */
+  async getOrphanedChunks(maxAge) {
+    await this.initialize();
+    return getOrphanedChunksOp({
+      chunkCollection: this.fileChunkCollection,
+      maxAge
+    });
+  }
+
+  /**
+   * Delete orphaned embeddings older than specified age
+   * Used for periodic cleanup of soft-deleted embeddings
+   *
+   * @param {number} [maxAge=7 * 24 * 60 * 60 * 1000] - Max age in milliseconds (default 7 days)
+   * @returns {Promise<{ files: number, chunks: number }>}
+   */
+  async cleanupOrphanedEmbeddings(maxAge = 7 * 24 * 60 * 60 * 1000) {
+    await this.initialize();
+
+    // Get orphaned embeddings older than maxAge
+    const orphanedFiles = await this.getOrphanedEmbeddings(maxAge);
+    const orphanedChunks = await this.getOrphanedChunks(maxAge);
+
+    let filesDeleted = 0;
+    let chunksDeleted = 0;
+
+    // Delete orphaned file embeddings
+    if (orphanedFiles.length > 0) {
+      try {
+        await batchDeleteFileEmbeddingsOp({
+          fileIds: orphanedFiles,
+          fileCollection: this.fileCollection,
+          queryCache: this.queryCache
+        });
+        filesDeleted = orphanedFiles.length;
+      } catch (error) {
+        logger.warn('[ChromaDB] Failed to delete orphaned file embeddings', {
+          error: error.message
+        });
+      }
+    }
+
+    // Delete orphaned chunk embeddings
+    if (orphanedChunks.length > 0) {
+      try {
+        await this.fileChunkCollection.delete({ ids: orphanedChunks });
+        chunksDeleted = orphanedChunks.length;
+      } catch (error) {
+        logger.warn('[ChromaDB] Failed to delete orphaned chunk embeddings', {
+          error: error.message
+        });
+      }
+    }
+
+    if (filesDeleted > 0 || chunksDeleted > 0) {
+      logger.info('[ChromaDB] Cleaned up orphaned embeddings', {
+        filesDeleted,
+        chunksDeleted
+      });
+    }
+
+    return { files: filesDeleted, chunks: chunksDeleted };
   }
 
   // ============== Migration ==============
@@ -1375,10 +1634,12 @@ class ChromaDBServiceCore extends EventEmitter {
     try {
       const fileCount = await this.fileCollection.count();
       const folderCount = await this.folderCollection.count();
+      const fileChunkCount = await this.fileChunkCollection.count();
 
       return {
         files: fileCount,
         folders: folderCount,
+        fileChunks: fileChunkCount,
         dbPath: this.dbPath,
         serverUrl: this.serverUrl,
         initialized: this.initialized,
@@ -1390,6 +1651,7 @@ class ChromaDBServiceCore extends EventEmitter {
       return {
         files: 0,
         folders: 0,
+        fileChunks: 0,
         dbPath: this.dbPath,
         serverUrl: this.serverUrl,
         initialized: false,
@@ -1437,8 +1699,12 @@ class ChromaDBServiceCore extends EventEmitter {
       logger.info(`[ChromaDB] Waiting for ${this.inflightQueries.size} in-flight queries...`);
       try {
         const { TIMEOUTS } = require('../../../shared/performanceConstants');
+        // FIX: Extract promises from stored entries { promise, addedAt }
+        const promises = Array.from(this.inflightQueries.values()).map(
+          (entry) => entry?.promise || entry
+        );
         await Promise.race([
-          Promise.allSettled(Array.from(this.inflightQueries.values())),
+          Promise.allSettled(promises),
           new Promise((resolve) => setTimeout(resolve, TIMEOUTS.HEALTH_CHECK))
         ]);
       } catch (error) {

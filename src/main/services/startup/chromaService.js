@@ -346,7 +346,7 @@ async function startChromaDB({
 
     // FIX: Emit status change to notify renderer
     try {
-      const { emitServiceStatusChange } = require('../../ipc/dependencies');
+      const { emitServiceStatusChange } = require('../../ipc/serviceStatusEvents');
       emitServiceStatusChange({
         service: 'chromadb',
         status: 'stopped',

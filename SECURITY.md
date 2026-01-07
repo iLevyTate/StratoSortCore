@@ -29,7 +29,8 @@ steps:
 ### For Critical Vulnerabilities
 
 1. **Do NOT** create a public GitHub issue
-2. Email the maintainers directly at [security@stratosort.com](mailto:security@stratosort.com)
+2. Report privately via **GitHub Security Advisories** (preferred)
+   - Use the repository’s **Security** tab → **Report a vulnerability**
 3. Include:
    - A clear description of the vulnerability
    - Steps to reproduce the issue

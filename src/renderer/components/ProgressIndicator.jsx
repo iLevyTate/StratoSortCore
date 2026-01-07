@@ -133,7 +133,14 @@ function ProgressIndicator() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-[var(--section-gap)]">
               <div className="text-sm text-system-gray-600">{metadata.progress}%</div>
-              <div className="w-32 h-2 bg-system-gray-200 rounded-[var(--radius-full)] overflow-hidden">
+              <div
+                className="w-32 h-2 bg-system-gray-200 rounded-[var(--radius-full)] overflow-hidden"
+                role="progressbar"
+                aria-valuenow={metadata.progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`${metadata.title || 'Progress'}: ${metadata.progress}%`}
+              >
                 <div
                   className="h-full bg-stratosort-blue transition-all [transition-duration:var(--duration-slow)]"
                   style={{ width: `${metadata.progress}%` }}

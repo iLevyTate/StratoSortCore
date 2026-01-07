@@ -1,39 +1,7 @@
 const { createHandler, safeHandle } = require('./ipcWrappers');
 const { getInstance: getDependencyManager } = require('../services/DependencyManagerService');
 const { getStartupManager } = require('../services/startup');
-
-// Store references for cross-module access to emit service status events
-let _getMainWindow = null;
-let _IPC_CHANNELS = null;
-let _safeLogger = null;
-
-/**
- * Emit service status change to renderer.
- * Can be called from StartupManager, health monitoring, or IPC handlers.
- *
- * @param {Object} payload - Status change payload
- * @param {string} payload.service - 'chromadb' | 'ollama'
- * @param {string} payload.status - 'running' | 'stopped' | 'starting' | 'failed' | 'disabled'
- * @param {string} payload.health - 'healthy' | 'unhealthy' | 'unknown' | 'permanently_failed'
- * @param {Object} [payload.details] - Additional details (error messages, circuit breaker state, etc.)
- */
-function emitServiceStatusChange(payload) {
-  try {
-    const win = typeof _getMainWindow === 'function' ? _getMainWindow() : null;
-    if (win && !win.isDestroyed() && _IPC_CHANNELS?.DEPENDENCIES?.SERVICE_STATUS_CHANGED) {
-      win.webContents.send(_IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED, {
-        timestamp: Date.now(),
-        ...payload
-      });
-      _safeLogger?.debug?.('[DependenciesIPC] Emitted service status change', {
-        service: payload.service,
-        status: payload.status
-      });
-    }
-  } catch (e) {
-    _safeLogger?.debug?.('[DependenciesIPC] Failed to emit service status', { error: e?.message });
-  }
-}
+const { configureServiceStatusEmitter, emitServiceStatusChange } = require('./serviceStatusEvents');
 
 /**
  * Dependency management IPC.
@@ -45,17 +13,15 @@ function emitServiceStatusChange(payload) {
  * race conditions between UI-triggered installs and background setup.
  */
 function registerDependenciesIpc({ ipcMain, IPC_CHANNELS, logger, getMainWindow }) {
-  // Store references for emitServiceStatusChange
-  _getMainWindow = getMainWindow;
-  _IPC_CHANNELS = IPC_CHANNELS;
-
   const safeLogger = logger || {
     info: () => {},
     debug: () => {},
     warn: () => {},
     error: () => {}
   };
-  _safeLogger = safeLogger;
+
+  // Configure shared service-status emitter for other modules (startup/health monitoring)
+  configureServiceStatusEmitter({ getMainWindow, IPC_CHANNELS, logger: safeLogger });
 
   const sendProgress = (payload) => {
     try {

@@ -23,7 +23,7 @@ const {
   DEFAULT_AI_MODELS,
   FILE_SIZE_LIMITS
 } = require('../constants');
-const { THEME_VALUES } = require('../validationConstants');
+// NOTE: Theme switching is no longer supported; no theme values are needed here.
 
 /**
  * Configuration Schema Definition
@@ -496,13 +496,6 @@ const CONFIG_SCHEMA = {
    * User interface settings
    */
   UI: {
-    /** Application theme */
-    theme: {
-      type: 'enum',
-      default: DEFAULT_SETTINGS.theme,
-      values: THEME_VALUES,
-      description: 'Application color theme'
-    },
     /** Enable notifications */
     notifications: {
       type: 'boolean',

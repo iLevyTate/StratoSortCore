@@ -681,17 +681,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   embeddings: {
     rebuildFolders: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS),
     rebuildFiles: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
+    fullRebuild: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD),
+    reanalyzeAll: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
     // Enhanced search with hybrid BM25 + vector fusion
-    // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore }
+    // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore, chunkWeight, chunkTopK }
     search: (query, options = {}) => {
-      const { topK = 20, mode = 'hybrid', minScore } = options;
+      const { topK = 20, mode = 'hybrid', minScore, chunkWeight, chunkTopK } = options;
       return secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
         query,
         topK,
         mode,
-        ...(typeof minScore === 'number' && { minScore })
+        ...(typeof minScore === 'number' && { minScore }),
+        ...(typeof chunkWeight === 'number' && { chunkWeight }),
+        ...(Number.isInteger(chunkTopK) && { chunkTopK })
       });
     },
     scoreFiles: (query, fileIds) =>

@@ -76,7 +76,6 @@ export const fetchSettings = createAsyncThunk('ui/fetchSettings', async (_, { ge
 const initialState = {
   currentPhase: PHASES.WELCOME || 'welcome',
   previousPhase: null, // Track previous phase for back navigation
-  theme: 'light', // 'light', 'dark', 'system'
   sidebarOpen: true,
   showSettings: false,
   isLoading: false,
@@ -143,9 +142,6 @@ const uiSlice = createSlice({
     setAnalyzing: (state, action) => {
       state.isAnalyzing = Boolean(action.payload);
     },
-    setTheme: (state, action) => {
-      state.theme = action.payload;
-    },
     toggleSidebar: (state) => {
       state.sidebarOpen = !state.sidebarOpen;
     },
@@ -165,10 +161,8 @@ const uiSlice = createSlice({
       state.activeModal = action.payload;
     },
     resetUi: () => {
-      // Reset to initial state but preserve theme preference
       return {
         ...initialState
-        // Theme persisted separately, so we don't reset it
       };
     },
     // Clear navigation error
@@ -213,7 +207,6 @@ const uiSlice = createSlice({
 
 export const {
   setPhase,
-  setTheme,
   toggleSidebar,
   toggleSettings,
   setLoading,

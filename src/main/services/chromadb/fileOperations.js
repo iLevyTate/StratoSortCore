@@ -427,12 +427,22 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
  */
 async function querySimilarFiles({ queryEmbedding, topK = 10, fileCollection }) {
   try {
+    // Check collection count before querying
+    const count = await fileCollection.count();
+    logger.debug(`[FileOps] Querying collection with ${count} embeddings, topK=${topK}`);
+
+    if (count === 0) {
+      logger.warn('[FileOps] Collection is empty - no embeddings to search');
+      return [];
+    }
+
     const results = await fileCollection.query({
       queryEmbeddings: [queryEmbedding],
       nResults: topK
     });
 
     if (!results.ids || !results.ids[0] || results.ids[0].length === 0) {
+      logger.debug('[FileOps] Query returned no matching results');
       return [];
     }
 
@@ -495,6 +505,160 @@ async function resetFiles({ client, embeddingFunction }) {
   }
 }
 
+/**
+ * Mark file embeddings as orphaned (soft delete) by updating their metadata
+ * This is used when analysis history entries are pruned but we want to preserve
+ * embeddings for potential recovery or deferred cleanup.
+ *
+ * FIX: Prevents orphaned embeddings from accumulating unbounded storage
+ *
+ * @param {Object} params - Parameters
+ * @param {Array<string>} params.fileIds - Array of file IDs to mark as orphaned
+ * @param {Object} params.fileCollection - ChromaDB file collection
+ * @param {Object} params.queryCache - Query cache instance
+ * @returns {Promise<{ marked: number, failed: number }>}
+ */
+async function markEmbeddingsOrphaned({ fileIds, fileCollection, queryCache }) {
+  if (!fileIds || fileIds.length === 0) {
+    return { marked: 0, failed: 0 };
+  }
+
+  let marked = 0;
+  let failed = 0;
+
+  try {
+    // Process in batches to avoid overwhelming ChromaDB
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
+      const batch = fileIds.slice(i, i + BATCH_SIZE);
+
+      try {
+        // Get existing embeddings to update their metadata
+        const existing = await fileCollection.get({
+          ids: batch,
+          include: ['embeddings', 'metadatas', 'documents']
+        });
+
+        if (!existing?.ids || existing.ids.length === 0) {
+          continue;
+        }
+
+        // Update metadata to mark as orphaned
+        const updatedIds = [];
+        const updatedEmbeddings = [];
+        const updatedMetadatas = [];
+        const updatedDocuments = [];
+
+        for (let j = 0; j < existing.ids.length; j++) {
+          const existingMeta = existing.metadatas?.[j] || {};
+          const embedding = existing.embeddings?.[j];
+          const document = existing.documents?.[j];
+
+          if (!embedding) continue;
+
+          updatedIds.push(existing.ids[j]);
+          updatedEmbeddings.push(embedding);
+          updatedMetadatas.push(
+            sanitizeMetadata({
+              ...existingMeta,
+              orphaned: 'true',
+              orphanedAt: new Date().toISOString()
+            })
+          );
+          updatedDocuments.push(document || existing.ids[j]);
+        }
+
+        if (updatedIds.length > 0) {
+          await fileCollection.upsert({
+            ids: updatedIds,
+            embeddings: updatedEmbeddings,
+            metadatas: updatedMetadatas,
+            documents: updatedDocuments
+          });
+          marked += updatedIds.length;
+
+          // Invalidate cache for all marked files
+          if (queryCache) {
+            updatedIds.forEach((id) => queryCache.invalidateForFile(id));
+          }
+        }
+      } catch (batchError) {
+        logger.warn('[FileOps] Failed to mark batch as orphaned:', {
+          batchStart: i,
+          error: batchError.message
+        });
+        failed += batch.length;
+      }
+    }
+
+    if (marked > 0) {
+      logger.info('[FileOps] Marked file embeddings as orphaned', {
+        marked,
+        failed,
+        total: fileIds.length
+      });
+    }
+
+    return { marked, failed };
+  } catch (error) {
+    logger.error('[FileOps] Failed to mark embeddings as orphaned:', {
+      count: fileIds.length,
+      error: error.message
+    });
+    return { marked, failed: fileIds.length - marked };
+  }
+}
+
+/**
+ * Get all orphaned embeddings (for cleanup operations)
+ *
+ * @param {Object} params - Parameters
+ * @param {Object} params.fileCollection - ChromaDB file collection
+ * @param {number} [params.maxAge] - Maximum age in milliseconds (optional, filters by orphanedAt)
+ * @returns {Promise<Array<string>>} Array of orphaned file IDs
+ */
+async function getOrphanedEmbeddings({ fileCollection, maxAge }) {
+  try {
+    // Query for orphaned embeddings using where filter
+    const results = await fileCollection.get({
+      where: { orphaned: 'true' },
+      include: ['metadatas']
+    });
+
+    if (!results?.ids || results.ids.length === 0) {
+      return [];
+    }
+
+    // If maxAge specified, filter by orphanedAt timestamp
+    if (maxAge && typeof maxAge === 'number') {
+      const cutoffTime = Date.now() - maxAge;
+      const filteredIds = [];
+
+      for (let i = 0; i < results.ids.length; i++) {
+        const meta = results.metadatas?.[i];
+        if (meta?.orphanedAt) {
+          const orphanedTime = new Date(meta.orphanedAt).getTime();
+          if (orphanedTime <= cutoffTime) {
+            filteredIds.push(results.ids[i]);
+          }
+        } else {
+          // No timestamp, include it (legacy orphaned entry)
+          filteredIds.push(results.ids[i]);
+        }
+      }
+
+      return filteredIds;
+    }
+
+    return results.ids;
+  } catch (error) {
+    logger.error('[FileOps] Failed to get orphaned embeddings:', {
+      error: error.message
+    });
+    return [];
+  }
+}
+
 module.exports = {
   directUpsertFile,
   directBatchUpsertFiles,
@@ -503,5 +667,7 @@ module.exports = {
   updateFilePaths,
   querySimilarFiles,
   resetFiles,
+  markEmbeddingsOrphaned,
+  getOrphanedEmbeddings,
   OperationType
 };

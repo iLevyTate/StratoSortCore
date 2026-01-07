@@ -129,6 +129,15 @@ function DiscoverPhase() {
     [visibleAnalysisResults]
   );
 
+  const analyzedPaths = useMemo(() => {
+    const paths = new Set();
+    (analysisResults || []).forEach((result) => {
+      const normalizedPath = (result.path || '').replace(/[\\/]+/g, '/').toLowerCase();
+      if (normalizedPath) paths.add(normalizedPath);
+    });
+    return paths;
+  }, [analysisResults]);
+
   // FIX H-3: Count of selected files that are NOT yet organized
   const unorganizedSelectedCount = useMemo(() => {
     return (selectedFiles || []).filter((f) => {
@@ -136,6 +145,18 @@ function DiscoverPhase() {
       return !organizedPaths.has(normalizedPath);
     }).length;
   }, [selectedFiles, organizedPaths]);
+
+  // Files that have been selected but have no analysis result yet (still pending)
+  const pendingAnalysisCount = useMemo(() => {
+    return (selectedFiles || []).filter((f) => {
+      const normalizedPath = (f.path || '').replace(/[\\/]+/g, '/').toLowerCase();
+      if (!normalizedPath) return false;
+      return !organizedPaths.has(normalizedPath) && !analyzedPaths.has(normalizedPath);
+    }).length;
+  }, [selectedFiles, organizedPaths, analyzedPaths]);
+
+  const shouldShowQueueBar =
+    isAnalyzing || pendingAnalysisCount > 0 || visibleAnalysisResults.length > 0;
 
   // Check embeddings and prompt user after first successful analysis
   useEffect(() => {
@@ -474,7 +495,7 @@ function DiscoverPhase() {
 
           {/* Middle Section - Queue & Status Actions */}
           {/* FIX H-3: Use unorganizedSelectedCount to hide when all files organized */}
-          {(unorganizedSelectedCount > 0 || isAnalyzing) && (
+          {shouldShowQueueBar && (
             <div className="surface-panel flex items-center justify-between bg-white/85 backdrop-blur-md animate-fade-in p-default gap-default">
               <div className="flex items-center flex-1 gap-default">
                 {isAnalyzing ? (
@@ -487,8 +508,19 @@ function DiscoverPhase() {
                 ) : (
                   <div className="text-sm text-system-gray-600 flex items-center gap-compact">
                     <span className="status-dot success animate-pulse" />
-                    {/* FIX H-3: Use unorganizedSelectedCount to exclude already-organized files */}
-                    Ready to analyze {unorganizedSelectedCount} files
+                    {/* FIX H-3: Use pendingAnalysisCount to exclude already-analyzed files */}
+                    {pendingAnalysisCount > 0 ? (
+                      <>
+                        Ready to analyze {pendingAnalysisCount} file
+                        {pendingAnalysisCount !== 1 ? 's' : ''}
+                      </>
+                    ) : (
+                      <>
+                        Analysis complete
+                        {visibleReadyCount > 0 && ` • ${visibleReadyCount} ready`}
+                        {visibleFailedCount > 0 && ` • ${visibleFailedCount} failed`}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

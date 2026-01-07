@@ -8,8 +8,10 @@
  */
 
 const lunr = require('lunr');
+const path = require('path');
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
+const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
 
 logger.setContext('SearchService');
 
@@ -32,7 +34,10 @@ const DEFAULT_OPTIONS = {
   mode: 'hybrid', // 'vector', 'bm25', 'hybrid'
   vectorWeight: SEARCH.VECTOR_WEIGHT,
   bm25Weight: SEARCH.BM25_WEIGHT,
-  minScore: MIN_RESULT_SCORE // Minimum score threshold
+  minScore: MIN_RESULT_SCORE, // Minimum score threshold
+  // Share the non-BM25 weight between file-level and chunk-level vectors.
+  // Chunk results improve deep recall for natural-language queries.
+  chunkWeight: 0.5
 };
 
 class SearchService {
@@ -122,7 +127,11 @@ class SearchService {
 
       await this.history.initialize();
       const entries = this.history.analysisHistory?.entries || {};
-      const documents = Object.values(entries);
+      // De-dupe by canonical file ID (path-based) and prefer the most recent analysis entry.
+      // This is required because analysis history uses UUIDs per analysis run, while semantic search uses path IDs.
+      const documents = Object.values(entries).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
 
       if (documents.length === 0) {
         logger.warn('[SearchService] No documents to index');
@@ -131,12 +140,18 @@ class SearchService {
         return { success: true, indexed: 0 };
       }
 
-      // Clear existing document map
-      this.documentMap.clear();
+      const getCanonicalFileId = (filePath) => {
+        const safePath = typeof filePath === 'string' ? filePath : '';
+        const ext = (path.extname(safePath) || '').toLowerCase();
+        const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
+        return `${isImage ? 'image' : 'file'}:${safePath}`;
+      };
 
-      // Build lunr index
+      // Build index into local variables first so a build failure doesn't leave partial state behind.
+      const nextDocumentMap = new Map();
       const self = this;
-      this.bm25Index = lunr(function () {
+      const seenIds = new Set();
+      const nextIndex = lunr(function () {
         // Configure fields with boosting
         this.ref('id');
         this.field('fileName', { boost: 3 });
@@ -149,9 +164,23 @@ class SearchService {
         // Add documents
         for (const doc of documents) {
           const analysis = doc.analysis || {};
+          const organization = doc.organization || {};
+
+          // FIX: Use current path/name after organization, not original path
+          // If file was moved/renamed, use the actual destination path
+          const currentPath = organization.actual || doc.originalPath;
+          const currentName = organization.newName || doc.fileName || '';
+          const canonicalId = getCanonicalFileId(currentPath);
+
+          // De-dupe: keep the most recent analysis per canonical file ID
+          if (!currentPath || seenIds.has(canonicalId)) {
+            continue;
+          }
+          seenIds.add(canonicalId);
+
           const indexDoc = {
-            id: doc.id,
-            fileName: doc.fileName || '',
+            id: canonicalId,
+            fileName: currentName,
             subject: analysis.subject || '',
             summary: analysis.summary || '',
             tags: (analysis.tags || []).join(' '),
@@ -162,10 +191,11 @@ class SearchService {
           this.add(indexDoc);
 
           // Store document metadata for result enrichment
-          self.documentMap.set(doc.id, {
-            id: doc.id,
-            path: doc.originalPath,
-            name: doc.fileName,
+          nextDocumentMap.set(canonicalId, {
+            id: canonicalId,
+            analysisId: doc.id,
+            path: currentPath,
+            name: currentName,
             type: doc.mimeType || 'document',
             subject: analysis.subject,
             summary: analysis.summary,
@@ -175,6 +205,10 @@ class SearchService {
         }
       });
 
+      // Commit the new index atomically.
+      this.bm25Index = nextIndex;
+      this.documentMap = nextDocumentMap;
+
       this.indexBuiltAt = Date.now();
       this.indexVersion++;
 
@@ -183,7 +217,8 @@ class SearchService {
       try {
         const serializedIndex = JSON.stringify(this.bm25Index);
         const serializedDocMap = JSON.stringify(Array.from(this.documentMap.entries()));
-        const totalSize = serializedIndex.length + serializedDocMap.length;
+        const totalSize =
+          Buffer.byteLength(serializedIndex, 'utf8') + Buffer.byteLength(serializedDocMap, 'utf8');
 
         if (totalSize < this._maxCacheSize) {
           this._serializedIndex = serializedIndex;
@@ -205,8 +240,15 @@ class SearchService {
         this._serializedDocMap = null;
       }
 
-      logger.info(`[SearchService] BM25 index built with ${documents.length} documents`);
-      return { success: true, indexed: documents.length };
+      // Log sample of indexed content for debugging
+      const sampleDocs = documents.slice(0, 3).map((d) => ({
+        fileName: d.fileName,
+        subject: d.analysis?.subject?.slice(0, 50),
+        tags: d.analysis?.tags?.slice(0, 3)
+      }));
+      logger.info(`[SearchService] BM25 index built with ${this.documentMap.size} documents`);
+      logger.debug('[SearchService] Sample indexed docs:', sampleDocs);
+      return { success: true, indexed: this.documentMap.size };
     } catch (error) {
       logger.error('[SearchService] Failed to build BM25 index:', error);
       return { success: false, indexed: 0, error: error.message };
@@ -252,6 +294,45 @@ class SearchService {
     return text.length > maxLength ? text.slice(0, maxLength) : text;
   }
 
+  _padOrTruncateVector(vector, expectedDim) {
+    if (!Array.isArray(vector) || vector.length === 0) return null;
+    if (!Number.isInteger(expectedDim) || expectedDim <= 0) return vector;
+    if (vector.length === expectedDim) return vector;
+    if (vector.length < expectedDim) {
+      return vector.concat(new Array(expectedDim - vector.length).fill(0));
+    }
+    return vector.slice(0, expectedDim);
+  }
+
+  /**
+   * Normalize query embedding vector to match the stored collection dimension.
+   * Prevents ChromaDB query errors after embedding model/config changes.
+   *
+   * @param {number[]} vector
+   * @param {'files'|'fileChunks'} collectionType
+   * @returns {Promise<number[]|null>}
+   */
+  async _normalizeQueryVector(vector, collectionType) {
+    if (!Array.isArray(vector) || vector.length === 0) return null;
+    try {
+      const expectedDim = await this.chromaDb.getCollectionDimension(collectionType);
+      if (expectedDim == null) return vector; // Empty collection: allow any dimension
+      const normalized = this._padOrTruncateVector(vector, expectedDim);
+      if (normalized && normalized.length !== vector.length) {
+        logger.warn('[SearchService] Normalized query vector dimension for ChromaDB query', {
+          collectionType,
+          expectedDim,
+          actualDim: vector.length
+        });
+      }
+      return normalized;
+    } catch (e) {
+      // If dimension check fails, proceed with raw vector (ChromaDB may still accept it)
+      logger.debug('[SearchService] Failed to normalize query vector dimension:', e.message);
+      return vector;
+    }
+  }
+
   /**
    * Search using BM25 keyword matching
    *
@@ -268,7 +349,9 @@ class SearchService {
     try {
       // Escape special lunr characters
       const safeQuery = this._escapeLunrQuery(query);
+      logger.debug(`[SearchService] BM25 search query: "${query}" -> escaped: "${safeQuery}"`);
       const results = this.bm25Index.search(safeQuery);
+      logger.debug(`[SearchService] BM25 raw results: ${results.length}`);
 
       return results.slice(0, topK).map((result) => {
         const meta = this.documentMap.get(result.ref) || {};
@@ -336,11 +419,17 @@ class SearchService {
         logger.warn('[SearchService] Failed to generate query embedding');
         return [];
       }
+      logger.debug(`[SearchService] Query embedding generated, dim=${embedResult.vector?.length}`);
+
+      const queryVector = await this._normalizeQueryVector(embedResult.vector, 'files');
+      if (!queryVector) return [];
 
       // Query ChromaDB
-      const chromaResults = await this.chromaDb.querySimilarFiles(embedResult.vector, topK);
+      const chromaResults = await this.chromaDb.querySimilarFiles(queryVector, topK);
+      logger.debug(`[SearchService] ChromaDB returned ${chromaResults?.length || 0} results`);
 
       if (!chromaResults || !Array.isArray(chromaResults)) {
+        logger.warn('[SearchService] ChromaDB returned no results or invalid format');
         return [];
       }
 
@@ -351,13 +440,31 @@ class SearchService {
         .filter((w) => w.length > 2);
 
       return chromaResults.map((result) => {
-        const semanticScore = result.score || 1 - (result.distance || 0);
+        // FIX: Use score if available, otherwise convert distance to similarity
+        // ChromaDB cosine distance is in range [0, 2], convert with: 1 - distance/2
+        // Also handle score=0 as a valid score (not falsy fallback)
+        const semanticScore =
+          typeof result.score === 'number'
+            ? result.score
+            : Math.max(0, 1 - (result.distance || 0) / 2);
         const metadata = result.metadata || {};
 
-        // Find query terms that appear in tags
-        const tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+        // FIX: Tags are stored as JSON string in ChromaDB, need to parse them
+        let tags = [];
+        if (Array.isArray(metadata.tags)) {
+          tags = metadata.tags;
+        } else if (typeof metadata.tags === 'string' && metadata.tags) {
+          try {
+            const parsed = JSON.parse(metadata.tags);
+            tags = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            // If parsing fails, treat as empty array
+            tags = [];
+          }
+        }
+
         const queryTermsInTags = tags.filter((tag) =>
-          queryWords.some((word) => tag.toLowerCase().includes(word))
+          queryWords.some((word) => String(tag).toLowerCase().includes(word))
         );
 
         // Check if query terms appear in category
@@ -385,6 +492,68 @@ class SearchService {
   }
 
   /**
+   * Chunk search: query against extractedText chunk embeddings.
+   *
+   * Returns file-level candidates aggregated from chunk hits.
+   * @param {string} query
+   * @param {number} topKFiles
+   * @param {number} topKChunks
+   * @returns {Promise<Array>}
+   */
+  async chunkSearch(query, topKFiles = 20, topKChunks = 80) {
+    try {
+      const embedResult = await this.embedding.embedText(query);
+      if (!embedResult || !embedResult.vector) {
+        logger.warn('[SearchService] Failed to generate query embedding for chunk search');
+        return [];
+      }
+
+      const queryVector = await this._normalizeQueryVector(embedResult.vector, 'fileChunks');
+      if (!queryVector) return [];
+
+      const chunkResults = await this.chromaDb.querySimilarFileChunks(queryVector, topKChunks);
+      if (!Array.isArray(chunkResults) || chunkResults.length === 0) return [];
+
+      // Aggregate chunk hits into file candidates (max score wins)
+      const byFile = new Map();
+      for (const hit of chunkResults) {
+        const meta = hit?.metadata || {};
+        const fileId = meta.fileId;
+        if (!fileId) continue;
+
+        const score = typeof hit.score === 'number' ? hit.score : 0;
+        const existing = byFile.get(fileId);
+        if (!existing || score > existing.score) {
+          byFile.set(fileId, {
+            id: fileId,
+            score,
+            metadata: {
+              path: meta.path,
+              name: meta.name,
+              type: meta.type || 'document'
+            },
+            source: 'chunk',
+            matchDetails: {
+              chunkScore: score,
+              bestSnippet: meta.snippet || hit.document || '',
+              chunkIndex: meta.chunkIndex,
+              charStart: meta.charStart,
+              charEnd: meta.charEnd
+            }
+          });
+        }
+      }
+
+      return Array.from(byFile.values())
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+        .slice(0, topKFiles);
+    } catch (error) {
+      logger.error('[SearchService] Chunk search failed:', error);
+      return [];
+    }
+  }
+
+  /**
    * Normalize scores to [0, 1] range using min-max scaling
    *
    * @param {Array} results - Array of results with scores
@@ -405,7 +574,7 @@ class SearchService {
 
     return results.map((r) => ({
       ...r,
-      score: (r.score - minScore) / range,
+      score: ((typeof r.score === 'number' ? r.score : 0) - minScore) / range,
       originalScore: r.score
     }));
   }
@@ -555,7 +724,19 @@ class SearchService {
    */
   _filterByScore(results, minScore) {
     if (!minScore || minScore <= 0) return results;
-    return results.filter((r) => (r.score || 0) >= minScore);
+    const filtered = results.filter((r) => (r.score || 0) >= minScore);
+    const removedCount = results.length - filtered.length;
+    if (removedCount > 0) {
+      const topRemoved = results
+        .filter((r) => (r.score || 0) < minScore)
+        .slice(0, 3)
+        .map((r) => ({ score: r.score?.toFixed(3), id: r.id?.slice(-20) }));
+      logger.debug(
+        `[SearchService] Filtered out ${removedCount} results below minScore ${minScore}:`,
+        topRemoved
+      );
+    }
+    return filtered;
   }
 
   /**
@@ -577,7 +758,9 @@ class SearchService {
     const {
       topK = DEFAULT_OPTIONS.topK,
       mode = DEFAULT_OPTIONS.mode,
-      minScore = DEFAULT_OPTIONS.minScore
+      minScore = DEFAULT_OPTIONS.minScore,
+      chunkWeight = DEFAULT_OPTIONS.chunkWeight,
+      chunkTopK
     } = options;
 
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
@@ -609,6 +792,11 @@ class SearchService {
         query,
         topK * 2
       );
+      const chunkResults = await this.chunkSearch(
+        query,
+        topK * 2,
+        Number.isInteger(chunkTopK) ? chunkTopK : topK * 6
+      );
 
       // If vector search timed out, use BM25-only with degraded mode indicator
       if (timedOut) {
@@ -628,7 +816,8 @@ class SearchService {
       // Log search results for debugging
       logger.debug('[SearchService] Hybrid search results:', {
         vectorCount: vectorResults.length,
-        bm25Count: bm25Results.length
+        bm25Count: bm25Results.length,
+        chunkCount: chunkResults.length
       });
 
       // Normalize scores within each source so weights are comparable
@@ -642,10 +831,19 @@ class SearchService {
         vectorScore: r.score,
         vectorRawScore: r.originalScore ?? r.score
       }));
+      const normalizedChunks = this._normalizeScores(chunkResults).map((r) => ({
+        ...r,
+        chunkScore: r.score,
+        chunkRawScore: r.originalScore ?? r.score
+      }));
 
       // Weighted hybrid fusion (simple weighted sum of normalized scores)
-      const alpha = SEARCH.VECTOR_WEIGHT;
+      // Keep BM25 weight as configured; split remaining weight between file-vector and chunk-vector.
       const beta = SEARCH.BM25_WEIGHT;
+      const remaining = Math.max(0, 1 - beta);
+      const chunkShare = Math.min(1, Math.max(0, Number(chunkWeight)));
+      const gamma = remaining * chunkShare;
+      const alpha = remaining - gamma;
       const combined = new Map();
 
       const upsert = (entry, source) => {
@@ -658,7 +856,7 @@ class SearchService {
 
         // Prefer vector metadata when available
         const metadata =
-          source === 'vector'
+          source === 'vector' || source === 'chunk'
             ? entry.metadata || existing.metadata
             : existing.metadata || entry.metadata || {};
 
@@ -686,18 +884,26 @@ class SearchService {
           vectorRawScore:
             source === 'vector'
               ? (entry.vectorRawScore ?? existing.vectorRawScore)
-              : existing.vectorRawScore
+              : existing.vectorRawScore,
+          chunkScore:
+            source === 'chunk' ? (entry.chunkScore ?? existing.chunkScore) : existing.chunkScore,
+          chunkRawScore:
+            source === 'chunk'
+              ? (entry.chunkRawScore ?? existing.chunkRawScore)
+              : existing.chunkRawScore
         });
       };
 
       normalizedBm25.forEach((r) => upsert(r, 'bm25'));
       normalizedVector.forEach((r) => upsert(r, 'vector'));
+      normalizedChunks.forEach((r) => upsert(r, 'chunk'));
 
       const fusedResults = Array.from(combined.values())
         .map((item) => {
           const semantic = item.vectorScore ?? 0;
+          const chunk = item.chunkScore ?? 0;
           const keyword = item.bm25Score ?? 0;
-          const combinedScore = alpha * semantic + beta * keyword;
+          const combinedScore = alpha * semantic + gamma * chunk + beta * keyword;
 
           return {
             id: item.id,
@@ -708,12 +914,15 @@ class SearchService {
               ...item.matchDetails,
               hybrid: {
                 semanticScore: semantic,
+                chunkScore: chunk,
                 keywordScore: keyword,
                 combinedScore,
                 semanticWeight: alpha,
+                chunkWeight: gamma,
                 keywordWeight: beta,
                 bm25RawScore: item.bm25RawScore,
-                vectorRawScore: item.vectorRawScore
+                vectorRawScore: item.vectorRawScore,
+                chunkRawScore: item.chunkRawScore
               }
             }
           };

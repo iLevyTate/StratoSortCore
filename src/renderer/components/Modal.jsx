@@ -1,73 +1,7 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
-
-// Inline SVG Icons
-function XIcon({ className }) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      aria-hidden="true"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  );
-}
-
-function AlertTriangleIcon({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-      />
-    </svg>
-  );
-}
-
-function InfoIcon({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-      />
-    </svg>
-  );
-}
-
-function HelpCircleIcon({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-      />
-    </svg>
-  );
-}
-
-function FileTextIcon({ className }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-      />
-    </svg>
-  );
-}
+import { X, AlertTriangle, Info, HelpCircle, FileText } from 'lucide-react';
 
 function Modal({
   isOpen,
@@ -80,19 +14,26 @@ function Modal({
   className = ''
 }) {
   const modalRef = useRef(null);
+  const contentRef = useRef(null);
   const previousFocusRef = useRef(null);
 
   // Store the previously focused element when modal opens
   useEffect(() => {
     if (isOpen) {
       previousFocusRef.current = document.activeElement;
+      // FIX: Reset scroll position when modal opens
+      if (contentRef.current) {
+        contentRef.current.scrollTop = 0;
+      }
     }
   }, [isOpen]);
 
   // Handle ESC key press
   const handleKeyDown = useCallback(
     (event) => {
+      if (event.defaultPrevented) return;
       if (event.key === 'Escape' && isOpen) {
+        event.preventDefault();
         onClose();
       }
     },
@@ -180,8 +121,10 @@ function Modal({
 
   const handleModalKeyDown = (event) => {
     if (event.key === 'Escape') {
-      onClose();
+      // Prevent the document-level ESC listener from also firing (avoids double-close).
       event.preventDefault();
+      event.stopPropagation();
+      onClose();
     } else if (event.key === 'Tab') {
       handleTabKey(event);
     }
@@ -241,14 +184,17 @@ function Modal({
                 className="p-2 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-100 rounded-lg transition-colors"
                 aria-label="Close modal"
               >
-                <XIcon className="w-5 h-5" />
+                <X className="w-5 h-5" />
               </button>
             )}
           </div>
         )}
 
         {/* Content */}
-        <div className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto p-[var(--panel-padding)] bg-white/85 rounded-b-2xl">
+        <div
+          ref={contentRef}
+          className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto p-[var(--panel-padding)] bg-white/85 rounded-b-2xl"
+        >
           {children}
         </div>
       </div>
@@ -272,6 +218,16 @@ export function ConfirmModal({
 }) {
   // FIX: Add loading state to prevent race condition with async onConfirm handlers
   const [isConfirming, setIsConfirming] = useState(false);
+  // FIX: Track mounted state to prevent setState after unmount
+  const isMountedRef = useRef(true);
+
+  // FIX: Track mounted state for async operations
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // FIX: Reset loading state when modal closes/opens
   useEffect(() => {
@@ -288,13 +244,19 @@ export function ConfirmModal({
     try {
       // Await onConfirm in case it's async
       await onConfirm();
-      onClose();
+      if (isMountedRef.current) {
+        onClose();
+      }
     } catch (error) {
       // If onConfirm throws, still allow closing but log the error
       console.error('[ConfirmModal] onConfirm failed:', error);
-      onClose();
+      if (isMountedRef.current) {
+        onClose();
+      }
     } finally {
-      setIsConfirming(false);
+      if (isMountedRef.current) {
+        setIsConfirming(false);
+      }
     }
   }, [isConfirming, onConfirm, onClose]);
 
@@ -323,25 +285,25 @@ export function ConfirmModal({
       case 'danger':
         return (
           <div className="w-12 h-12 bg-stratosort-danger/10 rounded-full flex items-center justify-center">
-            <AlertTriangleIcon className="w-6 h-6 text-stratosort-danger" />
+            <AlertTriangle className="w-6 h-6 text-stratosort-danger" />
           </div>
         );
       case 'warning':
         return (
           <div className="w-12 h-12 bg-stratosort-warning/10 rounded-full flex items-center justify-center">
-            <AlertTriangleIcon className="w-6 h-6 text-stratosort-warning" />
+            <AlertTriangle className="w-6 h-6 text-stratosort-warning" />
           </div>
         );
       case 'info':
         return (
           <div className="w-12 h-12 bg-stratosort-blue/10 rounded-full flex items-center justify-center">
-            <InfoIcon className="w-6 h-6 text-stratosort-blue" />
+            <Info className="w-6 h-6 text-stratosort-blue" />
           </div>
         );
       default:
         return (
           <div className="w-12 h-12 bg-system-gray-100 rounded-full flex items-center justify-center">
-            <HelpCircleIcon className="w-6 h-6 text-system-gray-600" />
+            <HelpCircle className="w-6 h-6 text-system-gray-600" />
           </div>
         );
     }
@@ -369,7 +331,7 @@ export function ConfirmModal({
               {fileName && (
                 <div className="mt-[var(--spacing-cozy)] p-[var(--spacing-cozy)] bg-system-gray-50 rounded-lg border border-border-soft">
                   <div className="flex items-center gap-[var(--spacing-compact)] text-sm">
-                    <FileTextIcon className="w-4 h-4 text-system-gray-400" />
+                    <FileText className="w-4 h-4 text-system-gray-400" />
                     <span className="font-medium text-system-gray-700">{fileName}</span>
                   </div>
                 </div>
@@ -420,15 +382,5 @@ ConfirmModal.propTypes = {
   variant: PropTypes.oneOf(['default', 'danger', 'warning', 'info']),
   fileName: PropTypes.string
 };
-
-const iconPropTypes = {
-  className: PropTypes.string
-};
-
-XIcon.propTypes = iconPropTypes;
-AlertTriangleIcon.propTypes = iconPropTypes;
-InfoIcon.propTypes = iconPropTypes;
-HelpCircleIcon.propTypes = iconPropTypes;
-FileTextIcon.propTypes = iconPropTypes;
 
 export default Modal;

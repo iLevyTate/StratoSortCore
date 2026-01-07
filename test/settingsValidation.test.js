@@ -15,7 +15,7 @@ describe('settingsValidation security', () => {
   test('rejects prototype-pollution keys via warnings', () => {
     // Using JSON.parse to create an object with __proto__ as an actual own property
     // (object literal syntax triggers the __proto__ setter and doesn't create an own property)
-    const input = JSON.parse('{"__proto__": "oops", "theme": "dark"}');
+    const input = JSON.parse('{"__proto__": "oops", "notifications": true}');
     const result = validateSettings(input);
 
     expect(result.valid).toBe(true);
@@ -27,7 +27,7 @@ describe('settingsValidation security', () => {
 
   test('does not false-positive on inherited __proto__', () => {
     // Object literal syntax doesn't create __proto__ as an own property
-    const input = { theme: 'dark' };
+    const input = { notifications: true };
     const result = validateSettings(input);
 
     expect(result.valid).toBe(true);
@@ -36,11 +36,13 @@ describe('settingsValidation security', () => {
   });
 
   test('sanitizeSettings drops prototype-pollution keys', () => {
-    const input = { constructor: 'bad', theme: 'light', maxBatchSize: 10 };
+    const input = { constructor: 'bad', theme: 'light', notifications: true, maxBatchSize: 10 };
     const sanitized = sanitizeSettings(input);
 
     expect(sanitized.constructor).toBeUndefined();
-    expect(sanitized.theme).toBe('light');
+    // Theme is a deprecated/removed setting and should be dropped.
+    expect(sanitized.theme).toBeUndefined();
+    expect(sanitized.notifications).toBe(true);
     expect(sanitized.maxBatchSize).toBe(10);
   });
 });
@@ -54,7 +56,6 @@ describe('Settings Validation', () => {
     });
 
     test('includes critical settings rules', () => {
-      expect(VALIDATION_RULES.theme).toBeDefined();
       expect(VALIDATION_RULES.ollamaHost).toBeDefined();
       expect(VALIDATION_RULES.maxFileSize).toBeDefined();
       expect(VALIDATION_RULES.maxConcurrentAnalysis).toBeDefined();
@@ -62,20 +63,6 @@ describe('Settings Validation', () => {
   });
 
   describe('validateSetting', () => {
-    describe('theme validation', () => {
-      test('accepts valid theme values', () => {
-        expect(validateSetting('theme', 'light', VALIDATION_RULES.theme)).toEqual([]);
-        expect(validateSetting('theme', 'dark', VALIDATION_RULES.theme)).toEqual([]);
-        expect(validateSetting('theme', 'system', VALIDATION_RULES.theme)).toEqual([]);
-      });
-
-      test('rejects invalid theme values', () => {
-        const errors = validateSetting('theme', 'invalid', VALIDATION_RULES.theme);
-        expect(errors).toHaveLength(1);
-        expect(errors[0]).toContain('theme');
-      });
-    });
-
     describe('embedding model validation', () => {
       test('accepts only the vetted embedding model', () => {
         const errors = validateSetting(
@@ -321,7 +308,6 @@ describe('Settings Validation', () => {
     describe('valid settings', () => {
       test('validates complete valid settings object', () => {
         const settings = {
-          theme: 'dark',
           notifications: true,
           ollamaHost: 'http://localhost:11434',
           textModel: 'llama3.2:latest',
@@ -339,7 +325,6 @@ describe('Settings Validation', () => {
 
       test('validates partial settings object', () => {
         const settings = {
-          theme: 'light',
           maxConcurrentAnalysis: 5
         };
 
@@ -356,12 +341,12 @@ describe('Settings Validation', () => {
     });
 
     describe('invalid settings', () => {
-      test('detects invalid theme', () => {
+      test('ignores legacy theme key even if invalid', () => {
         const settings = { theme: 'invalid-theme' };
         const result = validateSettings(settings);
 
-        expect(result.valid).toBe(false);
-        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toEqual([]);
       });
 
       test('detects invalid URL', () => {
@@ -374,14 +359,13 @@ describe('Settings Validation', () => {
 
       test('detects multiple errors', () => {
         const settings = {
-          theme: 'invalid',
           maxConcurrentAnalysis: -1,
           autoOrganize: 'yes'
         };
 
         const result = validateSettings(settings);
         expect(result.valid).toBe(false);
-        expect(result.errors.length).toBeGreaterThanOrEqual(3);
+        expect(result.errors.length).toBeGreaterThanOrEqual(2);
       });
 
       test('detects out-of-range numbers', () => {
@@ -452,7 +436,7 @@ describe('Settings Validation', () => {
   describe('sanitizeSettings', () => {
     test('removes invalid settings', () => {
       const settings = {
-        theme: 'dark', // valid
+        theme: 'dark', // legacy key (should be dropped)
         invalidField: 'should be removed', // Unknown fields are kept for future compatibility
         maxConcurrentAnalysis: 3, // valid
         anotherInvalid: 123 // Unknown fields are kept for future compatibility
@@ -460,7 +444,7 @@ describe('Settings Validation', () => {
 
       const result = sanitizeSettings(settings);
 
-      expect(result.theme).toBe('dark');
+      expect(result.theme).toBeUndefined();
       expect(result.maxConcurrentAnalysis).toBe(3);
       // Unknown settings are kept for future compatibility
       expect(result.invalidField).toBe('should be removed');
@@ -469,14 +453,12 @@ describe('Settings Validation', () => {
 
     test('removes values that fail validation', () => {
       const settings = {
-        theme: 'invalid-theme',
         maxConcurrentAnalysis: -1,
         ollamaHost: 'http://localhost:11434' // valid
       };
 
       const result = sanitizeSettings(settings);
 
-      expect(result.theme).toBeUndefined();
       expect(result.maxConcurrentAnalysis).toBeUndefined();
       expect(result.ollamaHost).toBe('http://localhost:11434');
     });
@@ -499,7 +481,11 @@ describe('Settings Validation', () => {
 
       const result = sanitizeSettings(settings);
 
-      expect(result).toEqual(settings);
+      expect(result).toEqual({
+        notifications: true,
+        maxConcurrentAnalysis: 3,
+        ollamaHost: 'http://localhost:11434'
+      });
     });
 
     test('normalizes common Ollama host inputs (scheme case, backslashes, and paths)', () => {
@@ -533,7 +519,7 @@ describe('Settings Validation', () => {
 
   describe('getDefaultValue', () => {
     test('returns default value for valid setting', () => {
-      expect(getDefaultValue('theme')).toBe('system');
+      expect(getDefaultValue('theme')).toBeUndefined();
       expect(getDefaultValue('notifications')).toBe(true);
       expect(getDefaultValue('maxConcurrentAnalysis')).toBe(3);
     });

@@ -8,28 +8,28 @@ import {
   FolderInput,
   RefreshCw,
   Search as SearchIcon,
-  ChevronDown,
-  ChevronUp,
-  Sparkles,
   Copy,
   Network,
   List,
-  HelpCircle,
   FileText,
-  MessageSquare,
   LayoutGrid,
-  Layers,
   GitBranch,
   CheckSquare,
-  Square
+  Square,
+  MessageSquare,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 
 import Modal, { ConfirmModal } from '../Modal';
 import { Button, Input } from '../ui';
+import HighlightedText from '../ui/HighlightedText';
+import FileIcon, { getFileCategory } from '../ui/FileIcon';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { safeBasename } from '../../utils/pathUtils';
-import { formatScore, scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
+import { isMac } from '../../utils/platform';
+import { scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
 import { makeQueryNodeId, defaultNodePosition } from '../../utils/graphUtils';
 import {
   elkLayout,
@@ -45,6 +45,7 @@ import SimilarityEdge from './SimilarityEdge';
 import QueryMatchEdge from './QueryMatchEdge';
 import SearchAutocomplete from './SearchAutocomplete';
 import ClusterLegend from './ClusterLegend';
+import EmptySearchState from './EmptySearchState';
 
 logger.setContext('UnifiedSearchModal');
 
@@ -77,6 +78,60 @@ const getErrorMessage = (error, context = 'Operation') => {
 
   // Generic fallback with original message
   return msg || `${context} failed`;
+};
+
+/**
+ * FIX: Validate search response structure before rendering
+ * Prevents crashes when API returns malformed data
+ *
+ * @param {Object} response - API response to validate
+ * @param {string} context - Context for error messages
+ * @returns {{ valid: boolean, error?: string, results?: Array }}
+ */
+const validateSearchResponse = (response, context = 'Search') => {
+  // Check for null/undefined response
+  if (!response) {
+    return { valid: false, error: `${context} returned no data` };
+  }
+
+  // Check success flag
+  if (response.success !== true) {
+    return { valid: false, error: response.error || `${context} failed` };
+  }
+
+  // Check if results exists and is an array
+  if (!Array.isArray(response.results)) {
+    logger.warn('[UnifiedSearchModal] Response missing results array', { response });
+    // Allow empty results but ensure it's an array
+    return { valid: true, results: [] };
+  }
+
+  // Filter and validate individual results
+  // Each result should have at minimum an id
+  const validResults = response.results.filter((result) => {
+    if (!result) {
+      logger.debug('[UnifiedSearchModal] Skipping null result');
+      return false;
+    }
+
+    // Must have an id
+    if (!result.id || typeof result.id !== 'string') {
+      logger.debug('[UnifiedSearchModal] Skipping result with invalid id', { result });
+      return false;
+    }
+
+    return true;
+  });
+
+  // Log if we filtered out any results
+  if (validResults.length !== response.results.length) {
+    logger.warn('[UnifiedSearchModal] Filtered invalid results', {
+      original: response.results.length,
+      valid: validResults.length
+    });
+  }
+
+  return { valid: true, results: validResults };
 };
 
 // ============================================================================
@@ -238,6 +293,9 @@ function ResultRow({
   result,
   isSelected,
   isBulkSelected,
+  isFocused,
+  query,
+  index = 0,
   onSelect,
   onToggleBulk,
   onOpen,
@@ -246,20 +304,29 @@ function ResultRow({
 }) {
   const path = result?.metadata?.path || '';
   const name = result?.metadata?.name || safeBasename(path) || result?.id || 'Unknown';
-  const type = result?.metadata?.type || '';
+  const category = result?.metadata?.category || '';
+  const subject = result?.metadata?.subject || '';
+  const bestSnippet =
+    typeof result?.matchDetails?.bestSnippet === 'string' ? result.matchDetails.bestSnippet : '';
   const summaryText =
     result?.metadata?.summary || (typeof result?.document === 'string' ? result.document : '');
-  const trimmedSummary = summaryText ? summaryText.slice(0, 200) : '';
-  const hasMoreSummary = Boolean(summaryText && summaryText.length > 200);
-  const sources = Array.isArray(result?.matchDetails?.sources) ? result.matchDetails.sources : [];
-  const tags = Array.isArray(result?.metadata?.tags) ? result.metadata.tags.slice(0, 3) : [];
+  const trimmedSummary = summaryText ? summaryText.slice(0, 120) : '';
   const relevancePercent =
     typeof result?.score === 'number' ? Math.round(clamp01(result.score) * 100) : null;
+
+  // Get folder name from path for context
+  const folderName = path
+    ? safeBasename(path.substring(0, path.lastIndexOf('/') || path.lastIndexOf('\\')))
+    : '';
+
+  // Calculate animation delay - stagger up to 300ms max
+  const animationDelay = `${Math.min(index * 30, 300)}ms`;
 
   return (
     <div
       role="button"
       tabIndex={0}
+      data-result-item
       onClick={() => onSelect(result)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -267,168 +334,117 @@ function ResultRow({
           onSelect(result);
         }
       }}
+      style={{ animationDelay }}
       className={`
-        w-full text-left rounded-xl border p-3 transition-colors cursor-pointer
-        ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5' : 'border-border-soft bg-white/70 hover:bg-white'}
-        ${isBulkSelected ? 'ring-2 ring-stratosort-blue/30' : ''}
+        group w-full text-left rounded-lg border p-3 transition-all cursor-pointer search-result-item
+        ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5 shadow-sm' : 'border-system-gray-200 bg-white hover:border-system-gray-300 hover:shadow-sm'}
+        ${isBulkSelected ? 'ring-2 ring-stratosort-blue/20' : ''}
+        ${isFocused && !isSelected ? 'ring-2 ring-stratosort-blue/40 border-stratosort-blue/50' : ''}
       `}
     >
       <div className="flex items-start gap-3">
-        {/* Bulk selection checkbox */}
+        {/* Checkbox - only show on hover or when selected */}
         <button
           onClick={(e) => {
             e.stopPropagation();
             onToggleBulk(result.id);
           }}
-          className="shrink-0 mt-0.5 p-0.5 rounded hover:bg-system-gray-100 transition-colors"
-          title={isBulkSelected ? 'Deselect' : 'Select for bulk action'}
+          className={`shrink-0 mt-0.5 p-0.5 rounded transition-opacity ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          title={isBulkSelected ? 'Deselect' : 'Select'}
         >
           {isBulkSelected ? (
             <CheckSquare className="w-4 h-4 text-stratosort-blue" />
           ) : (
-            <Square className="w-4 h-4 text-system-gray-400" />
+            <Square className="w-4 h-4 text-system-gray-300" />
           )}
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-semibold text-system-gray-900 truncate">{name}</span>
-            {type ? (
-              <span className="status-chip info shrink-0" title={type}>
-                {type}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 text-xs text-system-gray-500 break-all">{path}</div>
-
-          {(sources.length > 0 || result?.metadata?.category || tags.length > 0) && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {sources.map((source) => (
-                <span
-                  key={source}
-                  className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue text-[11px] font-medium"
-                >
-                  {source}
-                </span>
-              ))}
-              {result?.metadata?.category ? (
-                <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-medium">
-                  {result.metadata.category}
-                </span>
-              ) : null}
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2 py-1 rounded-full bg-system-gray-100 text-system-gray-600 text-[11px] font-medium"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {trimmedSummary ? (
-            <div className="mt-2 bg-white border border-system-gray-200 rounded-lg p-2 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
-              <div className="flex items-center gap-2 text-[11px] font-semibold text-system-gray-700">
-                <MessageSquare className="w-3.5 h-3.5 text-stratosort-indigo" />
-                Quick summary
-              </div>
-              <div className="text-xs text-system-gray-600 leading-relaxed mt-1">
-                {trimmedSummary}
-                {hasMoreSummary ? '…' : ''}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Match details - shows why this result matched */}
-          {result?.matchDetails && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {/* Matched keywords from BM25 */}
-              {result.matchDetails.matchedTerms?.slice(0, 3).map((term) => (
-                <span
-                  key={term}
-                  className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded border border-amber-200"
-                  title={`Keyword match: "${term}"`}
-                >
-                  {term}
-                </span>
-              ))}
-              {/* Category match from vector search */}
-              {result.matchDetails.queryTermsInCategory && result.metadata?.category && (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200"
-                  title="Category matches your query"
-                >
-                  {result.metadata.category}
-                </span>
-              )}
-              {/* Tags that match query terms */}
-              {result.matchDetails.queryTermsInTags?.slice(0, 2).map((tag) => (
-                <span
-                  key={tag}
-                  className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-700 rounded border border-green-200"
-                  title={`Tag matches your query: ${tag}`}
-                >
-                  {tag}
-                </span>
-              ))}
-              {/* Search sources indicator */}
-              {result.matchDetails.sources?.length > 1 && (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded border border-purple-200"
-                  title="Found by both keyword and semantic search"
-                >
-                  hybrid
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="shrink-0 text-xs font-medium text-system-gray-600">
-          {formatScore(result?.score)}
-        </div>
-      </div>
-
-      {relevancePercent !== null && (
-        <div className="mt-2">
-          <div className="flex items-center justify-between text-[11px] text-system-gray-500">
-            <span>Relevance blend</span>
-            <span className="font-semibold text-system-gray-700">{formatScore(result?.score)}</span>
-          </div>
-          <div className="h-1.5 w-full bg-system-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-stratosort-blue to-stratosort-indigo"
-              style={{ width: `${relevancePercent}%` }}
+          {/* File name - prominent with highlighting */}
+          <div className="flex items-center gap-2">
+            <FileIcon filename={name} size="sm" />
+            <HighlightedText
+              text={name}
+              query={query}
+              className="text-sm font-medium text-system-gray-900 truncate"
             />
+            {relevancePercent !== null && (
+              <span className="text-xs text-system-gray-400 shrink-0">{relevancePercent}%</span>
+            )}
+          </div>
+
+          {/* Subject or summary - with highlighting */}
+          {(subject || trimmedSummary) && (
+            <HighlightedText
+              text={subject || trimmedSummary}
+              query={query}
+              className="mt-1 text-xs text-system-gray-600 line-clamp-2 block"
+              as="p"
+            />
+          )}
+
+          {/* Best snippet (from chunked semantic search) */}
+          {bestSnippet && !subject && (
+            <HighlightedText
+              text={bestSnippet}
+              query={query}
+              className="mt-1 text-[11px] text-system-gray-500 line-clamp-2 block"
+              as="p"
+            />
+          )}
+
+          {/* Location context - subtle */}
+          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-system-gray-400">
+            {folderName && (
+              <span className="flex items-center gap-1">
+                <FolderOpen className="w-3 h-3" />
+                {folderName}
+              </span>
+            )}
+            {category && (
+              <span className="px-1.5 py-0.5 rounded bg-system-gray-100 text-system-gray-500">
+                {category}
+              </span>
+            )}
           </div>
         </div>
-      )}
 
-      {isSelected ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={(e) => (e.stopPropagation(), onOpen(path))}
-          >
-            <ExternalLink className="h-4 w-4" /> Open
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={(e) => (e.stopPropagation(), onReveal(path))}
-          >
-            <FolderOpen className="h-4 w-4" /> Reveal
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => (e.stopPropagation(), onCopyPath(path))}
-          >
-            <Copy className="h-4 w-4" /> Copy path
-          </Button>
-        </div>
-      ) : null}
+        {/* Quick actions - only on selected */}
+        {isSelected && (
+          <div className="flex gap-1 shrink-0">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpen(path);
+              }}
+              className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
+              title="Open file"
+            >
+              <ExternalLink className="w-4 h-4 text-stratosort-blue" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onReveal(path);
+              }}
+              className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
+              title="Show in folder"
+            >
+              <FolderOpen className="w-4 h-4 text-stratosort-blue" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCopyPath(path);
+              }}
+              className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
+              title="Copy path"
+            >
+              <Copy className="w-4 h-4 text-stratosort-blue" />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -437,6 +453,8 @@ ResultRow.propTypes = {
   result: PropTypes.object.isRequired,
   isSelected: PropTypes.bool.isRequired,
   isBulkSelected: PropTypes.bool.isRequired,
+  isFocused: PropTypes.bool,
+  query: PropTypes.string,
   onSelect: PropTypes.func.isRequired,
   onToggleBulk: PropTypes.func.isRequired,
   onOpen: PropTypes.func.isRequired,
@@ -558,192 +576,7 @@ TabButton.propTypes = {
 };
 TabButton.displayName = 'TabButton';
 
-function SearchProcessCard({ icon: Icon, title, description, badge, footnote }) {
-  return (
-    <div className="glass-panel border border-system-gray-200 bg-gradient-to-br from-white to-stratosort-blue/5 p-3 rounded-xl shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="p-2 rounded-lg bg-white/70 border border-system-gray-200 shadow-sm shrink-0">
-          <Icon className="w-4 h-4 text-stratosort-blue" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold text-system-gray-900">{title}</div>
-            {badge ? (
-              <span className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue text-[11px] font-medium">
-                {badge}
-              </span>
-            ) : null}
-          </div>
-          <div className="text-xs text-system-gray-600 leading-relaxed mt-1">{description}</div>
-          {footnote ? (
-            <div className="text-[11px] text-system-gray-400 mt-1">{footnote}</div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-SearchProcessCard.propTypes = {
-  icon: PropTypes.elementType.isRequired,
-  title: PropTypes.string.isRequired,
-  description: PropTypes.string.isRequired,
-  badge: PropTypes.string,
-  footnote: PropTypes.string
-};
-SearchProcessCard.displayName = 'SearchProcessCard';
-
-function SearchExplainer({ stats, searchStatusLabel, query, defaultTopK, isSearching }) {
-  const queryTip =
-    !query || query.length < 2
-      ? 'Type at least 2 characters to search'
-      : `Searching for “${query}”`;
-  const indexedSummary =
-    stats && typeof stats.files === 'number'
-      ? `${stats.files} file${stats.files === 1 ? '' : 's'} • ${stats.folders || 0} folder${
-          stats.folders === 1 ? '' : 's'
-        } indexed`
-      : 'Index status pending';
-  const [showUnderstanding, setShowUnderstanding] = useState(true);
-  const [showDirections, setShowDirections] = useState(true);
-
-  return (
-    <div className="surface-panel p-4 border border-system-gray-200 rounded-xl space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="space-y-0.5">
-          <div className="text-sm font-semibold text-system-gray-900">Semantic search guidance</div>
-          <div className="text-xs text-system-gray-500">
-            Show or hide the “how it works” explainer and quick directions whenever you need a
-            refresher.
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div
-            className={`px-3 py-1 rounded-full text-[11px] font-semibold border ${
-              isSearching
-                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            }`}
-          >
-            {searchStatusLabel}
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowUnderstanding((v) => !v)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-system-gray-700 bg-white border border-system-gray-200 rounded-lg hover:border-stratosort-blue focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
-            aria-expanded={showUnderstanding}
-            aria-controls="semantic-understanding"
-          >
-            {showUnderstanding ? (
-              <ChevronUp className="w-3.5 h-3.5 text-system-gray-500" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-system-gray-500" />
-            )}
-            {showUnderstanding ? 'Hide understanding' : 'Show understanding'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowDirections((v) => !v)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-system-gray-700 bg-white border border-system-gray-200 rounded-lg hover:border-stratosort-blue focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
-            aria-expanded={showDirections}
-            aria-controls="semantic-directions"
-          >
-            {showDirections ? (
-              <ChevronUp className="w-3.5 h-3.5 text-system-gray-500" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-system-gray-500" />
-            )}
-            {showDirections ? 'Hide directions' : 'Show directions'}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 text-[11px] text-system-gray-600">
-        <span className="px-2 py-1 rounded-full bg-stratosort-blue/10 text-stratosort-blue font-medium">
-          Hybrid: semantic + keyword
-        </span>
-        <span className="px-2 py-1 rounded-full bg-system-gray-100 text-system-gray-700 font-medium">
-          Showing top {defaultTopK}
-        </span>
-        <span className="px-2 py-1 rounded-full bg-system-gray-100 text-system-gray-700 font-medium">
-          {indexedSummary}
-        </span>
-        <span className="px-2 py-1 rounded-full bg-system-gray-50 text-system-gray-500 font-medium">
-          {queryTip}
-        </span>
-      </div>
-
-      {showUnderstanding ? (
-        <div id="semantic-understanding" className="grid sm:grid-cols-3 gap-3">
-          <SearchProcessCard
-            icon={Sparkles}
-            title="Understand intent"
-            description="Your query is embedded to capture meaning, synonyms, and topics so we can match files even when wording differs."
-            badge="Semantic"
-          />
-          <SearchProcessCard
-            icon={Layers}
-            title="Hybrid ranker"
-            description="We blend semantic similarity with BM25 keywords, balance the weights, and rerank the combined list."
-            badge="Hybrid"
-            footnote={`Top ${defaultTopK} shown`}
-          />
-          <SearchProcessCard
-            icon={List}
-            title="Explain results"
-            description="We keep scores visible, highlight matched terms/categories, and show a quick summary for context."
-            badge="Transparent"
-            footnote={indexedSummary}
-          />
-        </div>
-      ) : null}
-
-      {showDirections ? (
-        <div id="semantic-directions" className="grid gap-3 sm:grid-cols-[1.4fr,1fr] items-start">
-          <div className="glass-panel border border-system-gray-200 bg-white p-3 rounded-xl shadow-sm space-y-2">
-            <div className="text-sm font-semibold text-system-gray-900">Quick directions</div>
-            <ol className="list-decimal list-inside text-xs text-system-gray-600 space-y-1.5">
-              <li>
-                Describe what you need in plain language — topics, people, or outcomes work well.
-              </li>
-              <li>
-                Refine with specifics like dates, file types, or folder names to tighten matches.
-              </li>
-              <li>Open a result to view, or use “Reveal in folder” to jump to its location.</li>
-            </ol>
-            <div className="text-[11px] text-system-gray-500">
-              Tip: Press <kbd className="px-1 py-0.5 bg-system-gray-100 rounded">Ctrl/Cmd + K</kbd>{' '}
-              anytime to open search.
-            </div>
-          </div>
-          <div className="glass-panel border border-system-gray-200 bg-white p-3 rounded-xl shadow-sm space-y-2">
-            <div className="text-sm font-semibold text-system-gray-900">Example prompts</div>
-            <div className="space-y-1 text-xs text-system-gray-600">
-              <div className="italic">tax documents from 2024</div>
-              <div className="italic">photos of family vacation</div>
-              <div className="italic">project proposal for client</div>
-              <div className="italic">invoice for the 3D printer order</div>
-            </div>
-            {stats?.files === 0 && (
-              <div className="mt-1 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
-                No files indexed yet. Build embeddings first.
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-SearchExplainer.propTypes = {
-  stats: PropTypes.object,
-  searchStatusLabel: PropTypes.string.isRequired,
-  query: PropTypes.string,
-  defaultTopK: PropTypes.number.isRequired,
-  isSearching: PropTypes.bool.isRequired
-};
-SearchExplainer.displayName = 'SearchExplainer';
+// SearchExplainer and SearchProcessCard removed - users don't need to understand how search works
 
 // ============================================================================
 // Main Component
@@ -776,6 +609,8 @@ export default function UnifiedSearchModal({
   const [isSearching, setIsSearching] = useState(false);
   const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
   const [searchRefreshTrigger, setSearchRefreshTrigger] = useState(0);
+  const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
+  const [viewMode, setViewMode] = useState('all'); // 'all' or 'grouped'
 
   // Graph tab state
   const [nodes, setNodes] = useState([]);
@@ -812,6 +647,7 @@ export default function UnifiedSearchModal({
   const lastSearchRef = useRef(0);
   const withinReqRef = useRef(0);
   const reactFlowInstance = useRef(null);
+  const resultListRef = useRef(null);
 
   // Refs for tracking auto-load state
   const hasAutoLoadedClusters = useRef(false);
@@ -828,6 +664,7 @@ export default function UnifiedSearchModal({
       // Cancel any pending layout operations when modal closes
       cancelPendingLayout();
       hasAutoLoadedClusters.current = false;
+      reactFlowInstance.current = null; // Clear ref to prevent memory leak
       return () => {};
     }
     setActiveTab(effectiveInitialTab);
@@ -864,9 +701,92 @@ export default function UnifiedSearchModal({
     return () => cancelPendingLayout();
   }, [isOpen, effectiveInitialTab]);
 
+  // FIX P2-14: Reset focusedResultIndex when switching tabs
+  // Prevents stale focus state when returning to search tab
+  useEffect(() => {
+    setFocusedResultIndex(-1);
+  }, [activeTab]);
+
+  // ============================================================================
+  // Shared: File Actions (defined early for keyboard shortcut dependency)
+  // ============================================================================
+
+  const openFile = useCallback(async (filePath) => {
+    if (!filePath) {
+      logger.warn('[Search] Cannot open file: path is empty');
+      setError('Cannot open file: no path available');
+      return;
+    }
+    try {
+      // FIX: Use window.electronAPI.files.open which maps to FILES.OPEN_FILE channel
+      const result = await window.electronAPI?.files?.open?.(filePath);
+      if (result && !result.success) {
+        const errorMsg =
+          result.errorCode === 'FILE_NOT_FOUND'
+            ? 'File not found. It may have been moved or deleted.'
+            : result.error || 'Failed to open file';
+        setError(errorMsg);
+        logger.warn('[Search] Open file failed:', result.error);
+      }
+    } catch (e) {
+      logger.error('[Search] Failed to open file', e);
+      setError('Failed to open file');
+    }
+  }, []);
+
+  const revealFile = useCallback(async (filePath) => {
+    if (!filePath) {
+      logger.warn('[Search] Cannot reveal file: path is empty');
+      setError('Cannot reveal file: no path available');
+      return;
+    }
+    try {
+      // FIX: Use window.electronAPI.files.reveal which maps to FILES.REVEAL_FILE channel
+      const result = await window.electronAPI?.files?.reveal?.(filePath);
+      if (result && !result.success) {
+        const errorMsg =
+          result.errorCode === 'FILE_NOT_FOUND'
+            ? 'File not found. It may have been moved or deleted.'
+            : result.error || 'Failed to reveal file';
+        setError(errorMsg);
+        logger.warn('[Search] Reveal file failed:', result.error);
+      }
+    } catch (e) {
+      logger.error('[Search] Failed to reveal file', e);
+      setError('Failed to reveal file location');
+    }
+  }, []);
+
+  const copyPath = useCallback(async (filePath) => {
+    if (!filePath) {
+      logger.warn('[Search] Cannot copy path: path is empty');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(filePath);
+    } catch (e) {
+      logger.warn('[Search] Clipboard write failed', e?.message || e);
+    }
+  }, []);
+
   // ============================================================================
   // Keyboard Shortcuts
   // ============================================================================
+
+  // Reset focused index when search results change
+  useEffect(() => {
+    setFocusedResultIndex(-1);
+  }, [searchResults]);
+
+  // Scroll focused result into view
+  useEffect(() => {
+    if (focusedResultIndex >= 0 && resultListRef.current) {
+      const items = resultListRef.current.querySelectorAll('[data-result-item]');
+      if (items[focusedResultIndex]) {
+        items[focusedResultIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+  }, [focusedResultIndex]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -889,6 +809,49 @@ export default function UnifiedSearchModal({
       if (e.key === 'Escape') {
         if (selectedNodeId) {
           setSelectedNodeId(null);
+        }
+        if (focusedResultIndex >= 0) {
+          setFocusedResultIndex(-1);
+        }
+      }
+
+      // Arrow key navigation for search results
+      if (activeTab === 'search' && searchResults.length > 0) {
+        // Check if autocomplete dropdown is open (has visible suggestions)
+        const autocompleteOpen = document.querySelector('[role="listbox"]');
+        if (autocompleteOpen) return; // Let autocomplete handle arrow keys
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setFocusedResultIndex((prev) => {
+            const next = Math.min(prev + 1, searchResults.length - 1);
+            // Also select when navigating
+            if (searchResults[next]) {
+              setSelectedSearchId(searchResults[next].id);
+            }
+            return next;
+          });
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setFocusedResultIndex((prev) => {
+            const next = Math.max(prev - 1, -1);
+            // Select result or clear selection when at -1
+            if (next >= 0 && searchResults[next]) {
+              setSelectedSearchId(searchResults[next].id);
+            } else if (next === -1) {
+              setSelectedSearchId(null); // Clear selection when defocusing
+            }
+            return next;
+          });
+        }
+        // Enter to open focused result
+        if (e.key === 'Enter' && focusedResultIndex >= 0 && !e.ctrlKey && !e.metaKey) {
+          const result = searchResults[focusedResultIndex];
+          if (result?.metadata?.path) {
+            e.preventDefault();
+            openFile(result.metadata.path);
+          }
         }
       }
 
@@ -913,7 +876,15 @@ export default function UnifiedSearchModal({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, activeTab, selectedNodeId, nodes.length]);
+  }, [
+    isOpen,
+    activeTab,
+    selectedNodeId,
+    nodes.length,
+    searchResults,
+    focusedResultIndex,
+    openFile
+  ]);
 
   // ============================================================================
   // Shared: Stats & Rebuild
@@ -948,6 +919,7 @@ export default function UnifiedSearchModal({
 
   // Listen for file operation events (move/delete) to refresh search results
   useEffect(() => {
+    if (!isOpen) return undefined;
     // Guard: Exit early if API not available to prevent unnecessary effect re-runs
     const api = window.electronAPI?.events?.onFileOperationComplete;
     if (!api) return undefined;
@@ -964,8 +936,8 @@ export default function UnifiedSearchModal({
         refreshStats();
       }
     });
-    return cleanup;
-  }, [refreshStats]);
+    return typeof cleanup === 'function' ? cleanup : undefined;
+  }, [isOpen, refreshStats]);
 
   const rebuildFolders = useCallback(async () => {
     if (!window?.electronAPI?.embeddings?.rebuildFolders) return;
@@ -998,37 +970,6 @@ export default function UnifiedSearchModal({
   }, [refreshStats]);
 
   // ============================================================================
-  // Shared: File Actions
-  // ============================================================================
-
-  const openFile = useCallback(async (filePath) => {
-    if (!filePath) return;
-    try {
-      await window.electronAPI?.files?.open?.(filePath);
-    } catch (e) {
-      logger.error('[Search] Failed to open file', e);
-    }
-  }, []);
-
-  const revealFile = useCallback(async (filePath) => {
-    if (!filePath) return;
-    try {
-      await window.electronAPI?.files?.reveal?.(filePath);
-    } catch (e) {
-      logger.error('[Search] Failed to reveal file', e);
-    }
-  }, []);
-
-  const copyPath = useCallback(async (filePath) => {
-    if (!filePath) return;
-    try {
-      await navigator.clipboard.writeText(filePath);
-    } catch (e) {
-      logger.warn('[Search] Clipboard write failed', e?.message || e);
-    }
-  }, []);
-
-  // ============================================================================
   // Bulk Selection Handlers
   // ============================================================================
 
@@ -1044,7 +985,7 @@ export default function UnifiedSearchModal({
     });
   }, []);
 
-  const selectAllResults = useCallback(() => {
+  const _selectAllResults = useCallback(() => {
     setBulkSelectedIds(new Set(searchResults.map((r) => r.id)));
   }, [searchResults]);
 
@@ -1052,7 +993,7 @@ export default function UnifiedSearchModal({
     setBulkSelectedIds(new Set());
   }, []);
 
-  const copySelectedPaths = useCallback(async () => {
+  const _copySelectedPaths = useCallback(async () => {
     const paths = searchResults
       .filter((r) => bulkSelectedIds.has(r.id))
       .map((r) => r.metadata?.path)
@@ -1376,14 +1317,16 @@ export default function UnifiedSearchModal({
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
 
-        if (!response || response.success !== true) {
+        // FIX: Use proper validation to ensure response structure is valid
+        const validation = validateSearchResponse(response, 'Search');
+        if (!validation.valid) {
           setSearchResults([]);
           setSelectedSearchId(null);
-          setError(getErrorMessage({ message: response?.error }, 'Search'));
+          setError(getErrorMessage({ message: validation.error }, 'Search'));
           return;
         }
 
-        const next = Array.isArray(response.results) ? response.results : [];
+        const next = validation.results;
         setSearchResults(next);
         setSelectedSearchId(next[0]?.id || null);
         setBulkSelectedIds(new Set()); // Clear bulk selection on new results
@@ -1394,7 +1337,10 @@ export default function UnifiedSearchModal({
         setSelectedSearchId(null);
         setError(getErrorMessage(e, 'Search'));
       } finally {
-        if (!cancelled && lastSearchRef.current === requestId) {
+        // FIX: Always reset isSearching for this request to prevent stuck loading state
+        // Even if a newer request has started, we still need to clean up this request's state
+        // The check ensures we only reset if we were the one who set it to true
+        if (lastSearchRef.current === requestId || cancelled) {
           setIsSearching(false);
         }
       }
@@ -1413,6 +1359,36 @@ export default function UnifiedSearchModal({
     if (!debouncedQuery || debouncedQuery.length < 2) return 'Type to search';
     return `${searchResults.length} result${searchResults.length === 1 ? '' : 's'}`;
   }, [isSearching, error, debouncedQuery, searchResults.length]);
+
+  // Group results by file type category
+  const groupedResults = useMemo(() => {
+    if (!searchResults.length) return {};
+    const groups = {};
+    searchResults.forEach((result) => {
+      const name = result?.metadata?.name || result?.id || '';
+      const category = getFileCategory(name);
+      if (!groups[category]) {
+        groups[category] = [];
+      }
+      groups[category].push(result);
+    });
+    // Sort categories by count (most results first)
+    const sortedCategories = Object.keys(groups).sort(
+      (a, b) => groups[b].length - groups[a].length
+    );
+    const sortedGroups = {};
+    sortedCategories.forEach((cat) => {
+      sortedGroups[cat] = groups[cat];
+    });
+    return sortedGroups;
+  }, [searchResults]);
+
+  // Pre-compute ID-to-index map for O(1) lookup in grouped view
+  const resultIdToIndex = useMemo(() => {
+    const map = new Map();
+    searchResults.forEach((r, i) => map.set(r.id, i));
+    return map;
+  }, [searchResults]);
 
   // ============================================================================
   // Graph Tab Logic
@@ -1901,12 +1877,12 @@ export default function UnifiedSearchModal({
       }
 
       // Fetch and add similarity edges between file nodes
-      const fileNodeIds = nextNodes.filter((n) => n.type === 'fileNode').map((n) => n.id);
+      const expandedFileIds = nextNodes.filter((n) => n.type === 'fileNode').map((n) => n.id);
 
-      if (fileNodeIds.length >= 2) {
+      if (expandedFileIds.length >= 2) {
         try {
           const simEdgesResp = await window.electronAPI?.embeddings?.getSimilarityEdges?.(
-            fileNodeIds,
+            expandedFileIds,
             { threshold: 0.5, maxEdgesPerNode: 2 }
           );
 
@@ -2361,28 +2337,39 @@ export default function UnifiedSearchModal({
   // ============================================================================
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Search & Explore" size="full">
-      <div className="flex flex-col gap-4 min-h-[70vh]">
-        {/* Header: Tabs + Stats */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-system-gray-200">
-          <div className="flex items-center gap-2">
-            <TabButton
-              active={activeTab === 'search'}
-              onClick={() => setActiveTab('search')}
-              icon={List}
-              label="Search Results"
-            />
-            {SHOW_GRAPH && (
+    <Modal isOpen={isOpen} onClose={onClose} title="Search Files" size="full">
+      <div className="flex flex-col gap-4 min-h-[60vh]">
+        {/* Header - simplified when graph is hidden */}
+        {SHOW_GRAPH ? (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-system-gray-200">
+            <div className="flex items-center gap-2">
+              <TabButton
+                active={activeTab === 'search'}
+                onClick={() => setActiveTab('search')}
+                icon={List}
+                label="Search Results"
+              />
               <TabButton
                 active={activeTab === 'graph'}
                 onClick={() => setActiveTab('graph')}
                 icon={Network}
                 label="Explore Graph"
               />
-            )}
+            </div>
+            <StatsDisplay stats={stats} isLoadingStats={isLoadingStats} onRefresh={refreshStats} />
           </div>
-          <StatsDisplay stats={stats} isLoadingStats={isLoadingStats} onRefresh={refreshStats} />
-        </div>
+        ) : (
+          <div className="flex items-center justify-between text-xs text-system-gray-400">
+            <span>{stats?.files || 0} files indexed</span>
+            <button
+              onClick={refreshStats}
+              disabled={isLoadingStats}
+              className="hover:text-system-gray-600 transition-colors"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        )}
 
         {/* Empty embeddings banner */}
         {showEmptyBanner && (
@@ -2404,232 +2391,245 @@ export default function UnifiedSearchModal({
         {/* Search Tab Content */}
         {activeTab === 'search' && (
           <div className="flex flex-col gap-4 flex-1">
-            <SearchExplainer
-              stats={stats}
-              searchStatusLabel={searchStatusLabel}
-              query={debouncedQuery}
-              defaultTopK={defaultTopK}
-              isSearching={isSearching}
-            />
-            {/* Search input with autocomplete */}
+            {/* Clean search input */}
             <div className="flex items-center gap-3">
               <SearchAutocomplete
                 value={query}
                 onChange={setQuery}
                 onSearch={(q) => {
                   setQuery(q);
-                  // The debounced search will trigger automatically
                 }}
-                placeholder="Search your library (e.g., W2 2024, car registration renewal)"
+                placeholder="Describe what you're looking for..."
                 ariaLabel="Search query"
                 className="flex-1"
                 autoFocus
               />
-              <div className="flex items-center gap-2 text-xs text-system-gray-500 shrink-0">
-                <SearchIcon className="h-4 w-4" aria-hidden="true" />
-                <span>{searchStatusLabel}</span>
-              </div>
+              {isSearching && (
+                <div className="flex items-center gap-2 text-xs text-system-gray-400 shrink-0">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <span>Searching...</span>
+                </div>
+              )}
             </div>
 
-            {/* Bulk action bar - shown when items are selected */}
-            {bulkSelectedIds.size > 0 && (
-              <div className="flex items-center gap-3 p-3 bg-stratosort-blue/10 border border-stratosort-blue/20 rounded-xl">
-                <span className="text-sm font-medium text-stratosort-blue">
-                  {bulkSelectedIds.size} selected
-                </span>
-                <div className="flex gap-2">
-                  <Button variant="primary" size="sm" onClick={moveSelectedToFolder}>
-                    <FolderInput className="h-4 w-4" /> Move to Folder
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={copySelectedPaths}>
-                    <Copy className="h-4 w-4" /> Copy Paths
-                  </Button>
-                </div>
-                <div className="ml-auto flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={selectAllResults}>
-                    Select All ({searchResults.length})
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={clearBulkSelection}>
-                    Clear
-                  </Button>
+            {/* Results header with view toggle */}
+            {searchResults.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-system-gray-500">{searchStatusLabel}</span>
+                <div className="flex items-center gap-1 bg-system-gray-100 rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('all')}
+                    aria-label="View all results"
+                    aria-pressed={viewMode === 'all'}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                      viewMode === 'all'
+                        ? 'bg-white text-system-gray-900 shadow-sm'
+                        : 'text-system-gray-500 hover:text-system-gray-700'
+                    }`}
+                  >
+                    <List className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grouped')}
+                    aria-label="Group results by type"
+                    aria-pressed={viewMode === 'grouped'}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                      viewMode === 'grouped'
+                        ? 'bg-white text-system-gray-900 shadow-sm'
+                        : 'text-system-gray-500 hover:text-system-gray-700'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+                    By Type
+                  </button>
                 </div>
               </div>
             )}
 
+            {/* Bulk action bar - only shown when items are selected */}
+            {bulkSelectedIds.size > 0 && (
+              <div className="flex items-center gap-3 p-2 bg-stratosort-blue/5 border border-stratosort-blue/20 rounded-lg">
+                <span className="text-sm text-stratosort-blue">
+                  {bulkSelectedIds.size} selected
+                </span>
+                <Button variant="secondary" size="sm" onClick={moveSelectedToFolder}>
+                  <FolderInput className="h-3.5 w-3.5" /> Move
+                </Button>
+                <Button variant="ghost" size="sm" onClick={clearBulkSelection}>
+                  Clear
+                </Button>
+              </div>
+            )}
+
             {/* Results grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
-              <div className="flex flex-col gap-2 overflow-y-auto max-h-[50vh]">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 flex-1">
+              <div ref={resultListRef} className="flex flex-col gap-2 overflow-y-auto max-h-[60vh]">
                 {searchResults.length === 0 && !error ? (
-                  <div className="text-sm text-system-gray-500 py-6 text-center">
-                    {debouncedQuery && debouncedQuery.length >= 2 ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <SearchIcon className="w-8 h-8 text-system-gray-300" />
-                        <span>No matches found for &ldquo;{debouncedQuery}&rdquo;</span>
-                        <span className="text-xs text-system-gray-400">
-                          Try different keywords or check if files are indexed.
+                  <EmptySearchState
+                    query={debouncedQuery}
+                    hasIndexedFiles={stats?.files > 0}
+                    onSearchClick={setQuery}
+                  />
+                ) : null}
+
+                {/* Flat list view */}
+                {viewMode === 'all' &&
+                  searchResults.map((r, index) => (
+                    <ResultRow
+                      key={r.id}
+                      result={r}
+                      isSelected={r.id === selectedSearchId}
+                      isBulkSelected={bulkSelectedIds.has(r.id)}
+                      isFocused={index === focusedResultIndex}
+                      query={debouncedQuery}
+                      index={index}
+                      onSelect={(res) => {
+                        setSelectedSearchId(res.id);
+                        setFocusedResultIndex(index);
+                      }}
+                      onToggleBulk={toggleBulkSelection}
+                      onOpen={openFile}
+                      onReveal={revealFile}
+                      onCopyPath={copyPath}
+                    />
+                  ))}
+
+                {/* Grouped by type view */}
+                {viewMode === 'grouped' &&
+                  Object.entries(groupedResults).map(([category, results]) => (
+                    <div key={category} className="mb-4">
+                      <div className="flex items-center gap-2 mb-2 sticky top-0 bg-white py-1 z-10">
+                        <h4 className="text-xs font-semibold text-system-gray-500 uppercase tracking-wide">
+                          {category}
+                        </h4>
+                        <span className="text-xs text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded-full">
+                          {results.length}
                         </span>
                       </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-3">
-                        <HelpCircle className="w-8 h-8 text-system-gray-300" />
-                        <div>
-                          <div className="font-medium mb-1">Semantic Search</div>
-                          <span>Find files by meaning, not just keywords.</span>
-                        </div>
-                        <div className="text-xs text-system-gray-400 max-w-xs space-y-1">
-                          <div>
-                            <strong>Examples:</strong>
-                          </div>
-                          <div className="italic">tax documents from 2024</div>
-                          <div className="italic">photos of family vacation</div>
-                          <div className="italic">project proposal for client</div>
-                        </div>
-                        {stats?.files === 0 && (
-                          <div className="mt-2 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
-                            No files indexed yet. Build embeddings first.
-                          </div>
+                      <div className="flex flex-col gap-2">
+                        {results.map((r) => {
+                          const globalIndex = resultIdToIndex.get(r.id) ?? -1;
+                          return (
+                            <ResultRow
+                              key={r.id}
+                              result={r}
+                              isSelected={r.id === selectedSearchId}
+                              isBulkSelected={bulkSelectedIds.has(r.id)}
+                              isFocused={globalIndex === focusedResultIndex}
+                              query={debouncedQuery}
+                              index={globalIndex >= 0 ? globalIndex : 0}
+                              onSelect={(res) => {
+                                setSelectedSearchId(res.id);
+                                setFocusedResultIndex(globalIndex);
+                              }}
+                              onToggleBulk={toggleBulkSelection}
+                              onOpen={openFile}
+                              onReveal={revealFile}
+                              onCopyPath={copyPath}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              {/* Preview panel - clean and focused */}
+              <div className="surface-panel p-4 min-h-[12rem] flex flex-col">
+                {selectedSearchResult ? (
+                  <div className="flex flex-col gap-4 flex-1">
+                    {/* File info header */}
+                    <div>
+                      <h3 className="text-base font-semibold text-system-gray-900 break-words">
+                        {selectedSearchResult?.metadata?.name ||
+                          safeBasename(selectedSearchResult?.metadata?.path) ||
+                          'File'}
+                      </h3>
+                      <p className="text-xs text-system-gray-500 mt-1 break-all">
+                        {selectedSearchResult?.metadata?.path}
+                      </p>
+                    </div>
+
+                    {/* Subject/summary - the main content */}
+                    {(selectedSearchResult?.metadata?.subject ||
+                      selectedSearchResult?.metadata?.summary) && (
+                      <div className="bg-system-gray-50 rounded-lg p-3">
+                        {selectedSearchResult?.metadata?.subject && (
+                          <p className="text-sm font-medium text-system-gray-800">
+                            {selectedSearchResult.metadata.subject}
+                          </p>
+                        )}
+                        {selectedSearchResult?.metadata?.summary && (
+                          <p className="text-sm text-system-gray-600 mt-1">
+                            {selectedSearchResult.metadata.summary}
+                          </p>
                         )}
                       </div>
                     )}
-                  </div>
-                ) : null}
 
-                {searchResults.map((r) => (
-                  <ResultRow
-                    key={r.id}
-                    result={r}
-                    isSelected={r.id === selectedSearchId}
-                    isBulkSelected={bulkSelectedIds.has(r.id)}
-                    onSelect={(res) => setSelectedSearchId(res.id)}
-                    onToggleBulk={toggleBulkSelection}
-                    onOpen={openFile}
-                    onReveal={revealFile}
-                    onCopyPath={copyPath}
-                  />
-                ))}
-              </div>
+                    {/* Tags - compact display */}
+                    {Array.isArray(selectedSearchResult?.metadata?.tags) &&
+                      selectedSearchResult.metadata.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedSearchResult.metadata.tags.slice(0, 6).map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 text-xs"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {selectedSearchResult.metadata.tags.length > 6 && (
+                            <span className="text-xs text-system-gray-400">
+                              +{selectedSearchResult.metadata.tags.length - 6} more
+                            </span>
+                          )}
+                        </div>
+                      )}
 
-              <div className="surface-panel p-4 min-h-[12rem]">
-                <h3 className="text-sm font-semibold text-system-gray-900 mb-2">Preview</h3>
-                {selectedSearchResult ? (
-                  <div className="text-sm text-system-gray-700 flex flex-col gap-3">
-                    <div className="flex flex-col gap-1">
-                      <div className="font-medium break-all">
-                        {selectedSearchResult?.metadata?.path || selectedSearchResult.id}
+                    {/* Document content preview */}
+                    {selectedSearchResult?.document && (
+                      <div className="flex-1 overflow-y-auto">
+                        <p className="text-xs text-system-gray-600 whitespace-pre-wrap leading-relaxed">
+                          {String(selectedSearchResult.document).slice(0, 600)}
+                          {String(selectedSearchResult.document).length > 600 && '...'}
+                        </p>
                       </div>
-                      <div className="text-xs text-system-gray-500">
-                        Combined score: {formatScore(selectedSearchResult.score)}
-                      </div>
-                      {(() => {
-                        const hybrid = selectedSearchResult?.matchDetails?.hybrid || {};
-                        const semanticScore = hybrid.semanticScore ?? hybrid.vectorScore;
-                        const keywordScore = hybrid.keywordScore ?? hybrid.bm25Score;
-                        const combinedScore = hybrid.combinedScore ?? selectedSearchResult.score;
-                        const weights =
-                          hybrid.semanticWeight || hybrid.keywordWeight
-                            ? ` (w_sem=${hybrid.semanticWeight ?? '—'}, w_kw=${hybrid.keywordWeight ?? '—'})`
-                            : '';
-                        return (
-                          <div className="text-xs text-system-gray-500 space-y-0.5">
-                            <div>Semantic score: {formatScore(semanticScore)}</div>
-                            <div>Keyword score: {formatScore(keywordScore)}</div>
-                            <div>
-                              Hybrid score: {formatScore(combinedScore)}
-                              {weights}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    <div className="surface-panel bg-system-gray-50 border border-system-gray-200 rounded-lg p-3 space-y-2">
-                      <div className="text-xs font-semibold text-system-gray-600 uppercase">
-                        Why this matched
-                      </div>
-                      <ul className="text-xs text-system-gray-600 space-y-1 list-disc list-inside">
-                        {selectedSearchResult?.matchDetails?.matchedTerms?.length ? (
-                          <li>
-                            Keyword terms:{' '}
-                            {selectedSearchResult.matchDetails.matchedTerms.join(', ')}
-                          </li>
-                        ) : null}
-                        {selectedSearchResult?.matchDetails?.sources?.length ? (
-                          <li>Sources: {selectedSearchResult.matchDetails.sources.join(', ')}</li>
-                        ) : null}
-                        {selectedSearchResult?.metadata?.category ? (
-                          <li>Category: {selectedSearchResult.metadata.category}</li>
-                        ) : null}
-                        {Array.isArray(selectedSearchResult?.metadata?.tags) &&
-                        selectedSearchResult.metadata.tags.length ? (
-                          <li>
-                            Tags: {selectedSearchResult.metadata.tags.slice(0, 5).join(', ')}
-                            {selectedSearchResult.metadata.tags.length > 5 ? '…' : ''}
-                          </li>
-                        ) : null}
-                        {Array.isArray(selectedSearchResult?.metadata?.keywords) &&
-                        selectedSearchResult.metadata.keywords.length ? (
-                          <li>
-                            Semantic topics:{' '}
-                            {selectedSearchResult.metadata.keywords.slice(0, 5).join(', ')}
-                            {selectedSearchResult.metadata.keywords.length > 5 ? '…' : ''}
-                          </li>
-                        ) : null}
-                        {selectedSearchResult?.metadata?.subject ? (
-                          <li>Subject: {selectedSearchResult.metadata.subject}</li>
-                        ) : null}
-                        {(() => {
-                          const hybrid = selectedSearchResult?.matchDetails?.hybrid || {};
-                          if (hybrid.bm25RawScore || hybrid.vectorRawScore) {
-                            return (
-                              <li>
-                                Raw scores — semantic: {formatScore(hybrid.vectorRawScore)};
-                                keyword: {formatScore(hybrid.bm25RawScore)}
-                              </li>
-                            );
-                          }
-                          return null;
-                        })()}
-                        {!selectedSearchResult?.matchDetails?.matchedTerms &&
-                        !(selectedSearchResult?.metadata?.tags || []).length ? (
-                          <li>Semantic similarity matched the overall topic.</li>
-                        ) : null}
-                      </ul>
-                    </div>
-
-                    {selectedSearchResult?.document ? (
-                      <div className="text-xs text-system-gray-600 whitespace-pre-wrap">
-                        {String(selectedSearchResult.document).slice(0, 800)}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-system-gray-500">No preview text available.</div>
                     )}
-                    <div className="pt-2 flex flex-wrap gap-2">
+
+                    {/* Actions - prominent at bottom */}
+                    <div className="flex gap-2 pt-2 mt-auto border-t border-system-gray-100">
                       <Button
                         variant="primary"
                         size="sm"
+                        className="flex-1"
                         onClick={() => openFile(selectedSearchResult?.metadata?.path)}
                       >
-                        <ExternalLink className="h-4 w-4" /> Open
+                        <ExternalLink className="h-4 w-4" /> Open File
                       </Button>
                       <Button
                         variant="secondary"
                         size="sm"
                         onClick={() => revealFile(selectedSearchResult?.metadata?.path)}
                       >
-                        <FolderOpen className="h-4 w-4" /> Reveal
+                        <FolderOpen className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => copyPath(selectedSearchResult?.metadata?.path)}
                       >
-                        <Copy className="h-4 w-4" /> Copy path
+                        <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm text-system-gray-500">
-                    Select a result to see details.
+                  <div className="flex-1 flex flex-col items-center justify-center text-center">
+                    <FileText className="w-12 h-12 text-system-gray-200 mb-3" />
+                    <p className="text-sm text-system-gray-500">Select a file to preview</p>
                   </div>
                 )}
               </div>
@@ -2871,7 +2871,7 @@ export default function UnifiedSearchModal({
                       <strong>Drag</strong> nodes to rearrange
                     </div>
                     <div className="pt-1">
-                      <strong>Ctrl+F</strong> to focus search
+                      <strong>{isMac ? '⌘F' : 'Ctrl+F'}</strong> to focus search
                     </div>
                   </div>
                 </div>

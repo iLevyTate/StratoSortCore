@@ -16,17 +16,29 @@ describe('deriveWatcherConfidencePercent', () => {
     expect(deriveWatcherConfidencePercent({ confidence: 150 })).toBe(100);
   });
 
-  test('falls back to default when confidence is missing', () => {
-    expect(deriveWatcherConfidencePercent({})).toBe(DEFAULT_CONFIDENCE_PERCENT);
+  test('falls back conservatively when confidence is missing', () => {
+    expect(deriveWatcherConfidencePercent({})).toBe(35);
+    expect(deriveWatcherConfidencePercent({})).toBeLessThan(DEFAULT_CONFIDENCE_PERCENT);
   });
 
-  test('boosts fallback when useful fields exist', () => {
+  test('keeps derived fallback conservative even when useful fields exist', () => {
     const percent = deriveWatcherConfidencePercent({
       category: 'Finance',
       keywords: ['invoice', '2024', 'customer'],
       suggestedName: 'invoice-2024.pdf'
     });
-    expect(percent).toBeGreaterThan(DEFAULT_CONFIDENCE_PERCENT);
-    expect(percent).toBe(85);
+    expect(percent).toBe(50);
+    expect(percent).toBeLessThan(DEFAULT_CONFIDENCE_PERCENT);
+  });
+
+  test('maps similarity 0..1 into a conservative 30..70 range', () => {
+    expect(deriveWatcherConfidencePercent({ similarity: 0 })).toBe(30);
+    expect(deriveWatcherConfidencePercent({ similarity: 0.9 })).toBe(66);
+    expect(deriveWatcherConfidencePercent({ similarity: 1 })).toBe(70);
+  });
+
+  test('caps percent-like score/similarity at 70 when explicit confidence is missing', () => {
+    expect(deriveWatcherConfidencePercent({ score: 90 })).toBe(70);
+    expect(deriveWatcherConfidencePercent({ similarity: 99 })).toBe(70);
   });
 });

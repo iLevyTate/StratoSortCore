@@ -46,7 +46,7 @@ const mockWatcher = {
   isRunning: false
 };
 const mockSettings = {
-  load: jest.fn().mockResolvedValue({ smartFolderWatchEnabled: true })
+  load: jest.fn().mockResolvedValue({})
 };
 
 jest.mock('../src/main/services/ServiceContainer', () => ({
@@ -91,26 +91,14 @@ describe('ServiceIntegration SmartFolderWatcher wiring', () => {
     expect(autoStartSpy).toHaveBeenCalled();
   });
 
-  test('_autoStartSmartFolderWatcher starts watcher when enabled in settings', async () => {
+  test('_autoStartSmartFolderWatcher always starts watcher (watching is always enabled)', async () => {
     const ServiceIntegration = require('../src/main/services/ServiceIntegration');
     const integration = new ServiceIntegration();
     integration.smartFolderWatcher = mockWatcher;
 
-    mockSettings.load.mockResolvedValueOnce({ smartFolderWatchEnabled: true });
     await integration._autoStartSmartFolderWatcher();
 
-    expect(mockSettings.load).toHaveBeenCalled();
+    // Smart folder watching is always enabled - no settings check needed
     expect(mockWatcher.start).toHaveBeenCalled();
-  });
-
-  test('_autoStartSmartFolderWatcher does not start watcher when disabled', async () => {
-    const ServiceIntegration = require('../src/main/services/ServiceIntegration');
-    const integration = new ServiceIntegration();
-    integration.smartFolderWatcher = mockWatcher;
-
-    mockSettings.load.mockResolvedValueOnce({ smartFolderWatchEnabled: false });
-    await integration._autoStartSmartFolderWatcher();
-
-    expect(mockWatcher.start).not.toHaveBeenCalled();
   });
 });

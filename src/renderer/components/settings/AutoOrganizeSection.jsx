@@ -12,10 +12,7 @@ const DEFAULT_CONFIDENCE = 0.75; // 75%
  */
 function AutoOrganizeSection({ settings, setSettings }) {
   const confidencePercent = useMemo(
-    () =>
-      Math.round(
-        ((settings.confidenceThreshold ?? DEFAULT_CONFIDENCE) || DEFAULT_CONFIDENCE) * 100
-      ),
+    () => Math.round((settings.confidenceThreshold ?? DEFAULT_CONFIDENCE) * 100),
     [settings.confidenceThreshold]
   );
 
@@ -34,19 +31,15 @@ function AutoOrganizeSection({ settings, setSettings }) {
 
       {/* Confidence threshold - only shown when autoOrganize is enabled */}
       {settings.autoOrganize && (
-        <div className="ml-6 space-y-3 p-3 bg-system-gray-50 rounded-lg">
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label className="text-sm text-system-gray-700">Minimum confidence</label>
-              <span className="text-sm font-medium text-system-gray-500">
-                Locked at {confidencePercent}% (temporarily not configurable)
-              </span>
-            </div>
-            <p className="text-xs text-system-gray-500">
-              Confidence is currently fixed. Auto-organize will use this threshold until editing is
-              re-enabled.
-            </p>
+        <div className="ml-6 p-3 bg-system-gray-50 rounded border border-system-gray-200">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm font-medium text-system-gray-700">Minimum confidence</span>
+            <span className="text-sm font-medium text-stratosort-blue">{confidencePercent}%</span>
           </div>
+          <p className="text-xs text-system-gray-500">
+            Files must meet this confidence level to be automatically organized. Lower confidence
+            matches require manual review.
+          </p>
         </div>
       )}
     </div>

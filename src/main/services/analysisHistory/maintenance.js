@@ -4,6 +4,8 @@
  * Maintenance operations for analysis history.
  * Handles cleanup, expired entries, and migration.
  *
+ * FIX: Now includes cascade marking for orphaned embeddings when entries are pruned
+ *
  * @module analysisHistory/maintenance
  */
 
@@ -22,6 +24,8 @@ logger.setContext('AnalysisHistory-Maintenance');
  * @param {Object} config - Config object
  * @param {Function} saveHistory - Function to save history
  * @param {Function} saveIndex - Function to save index
+ * @param {Object} [options] - Optional parameters
+ * @param {Function} [options.onEntriesRemoved] - Callback when entries are removed, receives array of {id, fileHash, originalPath, actualPath?}
  */
 async function performMaintenanceIfNeeded(
   analysisHistory,
@@ -30,12 +34,16 @@ async function performMaintenanceIfNeeded(
   state,
   config,
   saveHistory,
-  saveIndex
+  saveIndex,
+  options = {}
 ) {
+  const { onEntriesRemoved } = options;
+  const allRemovedEntries = [];
+
   // Cleanup old entries if we exceed the limit
   const entryCount = Object.keys(analysisHistory.entries).length;
   if (entryCount > config.maxHistoryEntries) {
-    await cleanupOldEntries(
+    const removed = await cleanupOldEntries(
       analysisHistory,
       analysisIndex,
       cache,
@@ -44,12 +52,15 @@ async function performMaintenanceIfNeeded(
       saveHistory,
       saveIndex
     );
+    if (removed && removed.length > 0) {
+      allRemovedEntries.push(...removed);
+    }
   }
 
   // Remove entries older than retention period
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - config.retentionDays);
-  await removeExpiredEntries(
+  const expired = await removeExpiredEntries(
     analysisHistory,
     analysisIndex,
     cache,
@@ -58,6 +69,23 @@ async function performMaintenanceIfNeeded(
     saveHistory,
     saveIndex
   );
+  if (expired && expired.length > 0) {
+    allRemovedEntries.push(...expired);
+  }
+
+  // FIX: Notify caller about removed entries so embeddings can be marked orphaned
+  if (onEntriesRemoved && allRemovedEntries.length > 0) {
+    try {
+      await onEntriesRemoved(allRemovedEntries);
+    } catch (error) {
+      logger.warn('[AnalysisHistory-Maintenance] onEntriesRemoved callback failed', {
+        error: error.message,
+        count: allRemovedEntries.length
+      });
+    }
+  }
+
+  return allRemovedEntries;
 }
 
 /**
@@ -69,6 +97,7 @@ async function performMaintenanceIfNeeded(
  * @param {Object} config - Config object
  * @param {Function} saveHistory - Function to save history
  * @param {Function} saveIndex - Function to save index
+ * @returns {Promise<Array<{id: string, fileHash: string, originalPath: string}>>} Removed entries
  */
 async function cleanupOldEntries(
   analysisHistory,
@@ -83,8 +112,17 @@ async function cleanupOldEntries(
   const sortedEntries = entries.sort((a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp));
 
   const toRemove = sortedEntries.slice(0, entries.length - config.maxHistoryEntries);
+  const removedEntries = [];
 
   for (const [id, entry] of toRemove) {
+    // FIX: Capture entry info before deletion for cascade orphan marking
+    removedEntries.push({
+      id,
+      fileHash: entry.fileHash,
+      originalPath: entry.originalPath,
+      actualPath: entry.organization?.actual || null
+    });
+
     delete analysisHistory.entries[id];
     // Update incremental stats before removing from indexes
     updateIncrementalStatsOnRemove(cache, entry);
@@ -94,11 +132,16 @@ async function cleanupOldEntries(
   // Invalidate caches after bulk removal
   if (toRemove.length > 0) {
     invalidateCachesOnRemove(cache, state);
+    logger.info('[AnalysisHistory-Maintenance] Cleaned up old entries', {
+      removedCount: toRemove.length
+    });
   }
 
   analysisHistory.metadata.lastCleanup = new Date().toISOString();
   await saveHistory();
   await saveIndex();
+
+  return removedEntries;
 }
 
 /**
@@ -110,6 +153,7 @@ async function cleanupOldEntries(
  * @param {Date} cutoffDate - Cutoff date
  * @param {Function} saveHistory - Function to save history
  * @param {Function} saveIndex - Function to save index
+ * @returns {Promise<Array<{id: string, fileHash: string, originalPath: string}>>} Removed entries
  */
 async function removeExpiredEntries(
   analysisHistory,
@@ -121,25 +165,36 @@ async function removeExpiredEntries(
   saveIndex
 ) {
   const entries = Object.entries(analysisHistory.entries);
-  let removedCount = 0;
+  const removedEntries = [];
 
   for (const [id, entry] of entries) {
     if (new Date(entry.timestamp) < cutoffDate) {
+      // FIX: Capture entry info before deletion for cascade orphan marking
+      removedEntries.push({
+        id,
+        fileHash: entry.fileHash,
+        originalPath: entry.originalPath,
+        actualPath: entry.organization?.actual || null
+      });
+
       delete analysisHistory.entries[id];
       // Update incremental stats before removing from indexes
       updateIncrementalStatsOnRemove(cache, entry);
       removeFromIndexes(analysisIndex, entry);
-      removedCount++;
     }
   }
 
-  if (removedCount > 0) {
+  if (removedEntries.length > 0) {
     // Invalidate caches after bulk removal
     invalidateCachesOnRemove(cache, state);
-    logger.info(`[AnalysisHistoryService] Removed ${removedCount} expired analysis entries`);
+    logger.info(
+      `[AnalysisHistoryService] Removed ${removedEntries.length} expired analysis entries`
+    );
     await saveHistory();
     await saveIndex();
   }
+
+  return removedEntries;
 }
 
 /**

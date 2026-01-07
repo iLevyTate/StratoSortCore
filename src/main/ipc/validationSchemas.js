@@ -6,11 +6,7 @@
  */
 
 const { URL_PATTERN } = require('../../shared/settingsValidation');
-const {
-  THEME_VALUES,
-  LOGGING_LEVELS,
-  NUMERIC_LIMITS
-} = require('../../shared/validationConstants');
+const { LOGGING_LEVELS, NUMERIC_LIMITS } = require('../../shared/validationConstants');
 const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
 const { logger } = require('../../shared/logger');
 
@@ -28,18 +24,118 @@ try {
   z = null;
 }
 
-// Export null schemas if zod is not available
+// FIX: Provide fallback validation when Zod is not available
+// This ensures basic type checking even without Zod, preventing security bypasses
 if (!z) {
+  // Create simple fallback validators that provide basic type safety
+  const createFallbackValidator = (name, validator) => ({
+    parse: (data) => {
+      const result = validator(data);
+      if (result.error) {
+        const error = new Error(result.error);
+        error.name = 'ValidationError';
+        throw error;
+      }
+      return result.data !== undefined ? result.data : data;
+    },
+    safeParse: (data) => {
+      try {
+        const result = validator(data);
+        if (result.error) {
+          return { success: false, error: { message: result.error } };
+        }
+        return { success: true, data: result.data !== undefined ? result.data : data };
+      } catch (e) {
+        return { success: false, error: { message: e.message } };
+      }
+    },
+    _isFallback: true,
+    _name: name
+  });
+
+  // Basic fallback validators for critical schemas
+  const fallbackFilePathSchema = createFallbackValidator('filePath', (data) => {
+    if (typeof data !== 'string' || data.length === 0) {
+      return { error: 'File path must be a non-empty string' };
+    }
+    return { data };
+  });
+
+  const fallbackSettingsSchema = createFallbackValidator('settings', (data) => {
+    if (typeof data !== 'object' || data === null) {
+      return { error: 'Settings must be an object' };
+    }
+    // Basic sanitization - remove dangerous keys
+    const sanitized = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        continue;
+      }
+      // Use defineProperty to avoid triggering special setters (e.g. __proto__) on assignment
+      Object.defineProperty(sanitized, key, {
+        value,
+        enumerable: true,
+        configurable: true,
+        writable: true
+      });
+    }
+    return { data: sanitized };
+  });
+
+  const fallbackSmartFolderSchema = createFallbackValidator('smartFolder', (data) => {
+    if (typeof data !== 'object' || data === null) {
+      return { error: 'Smart folder must be an object' };
+    }
+    if (typeof data.name !== 'string' || data.name.length === 0) {
+      return { error: 'Smart folder name is required' };
+    }
+    if (typeof data.path !== 'string' || data.path.length === 0) {
+      return { error: 'Smart folder path is required' };
+    }
+    return { data };
+  });
+
+  const fallbackSearchQuerySchema = createFallbackValidator('searchQuery', (data) => {
+    if (typeof data !== 'object' || data === null) {
+      return { error: 'Search query must be an object' };
+    }
+    return { data };
+  });
+
+  const fallbackPaginationSchema = createFallbackValidator('pagination', (data) => {
+    if (typeof data !== 'object' || data === null) {
+      return { error: 'Pagination must be an object' };
+    }
+    if (data.limit !== undefined && (typeof data.limit !== 'number' || data.limit < 1)) {
+      return { error: 'Limit must be a positive number' };
+    }
+    if (data.offset !== undefined && (typeof data.offset !== 'number' || data.offset < 0)) {
+      return { error: 'Offset must be a non-negative number' };
+    }
+    return { data };
+  });
+
+  logger.warn('[validationSchemas] Zod not available, using fallback validation', {
+    error: zodLoadError?.message
+  });
+
   module.exports = {
     z: null,
-    schemas: null,
+    schemas: {
+      filePath: fallbackFilePathSchema,
+      settings: fallbackSettingsSchema,
+      smartFolder: fallbackSmartFolderSchema,
+      searchQuery: fallbackSearchQuerySchema,
+      pagination: fallbackPaginationSchema
+    },
     zodLoadError,
-    filePathSchema: null,
-    settingsSchema: null,
-    smartFolderSchema: null,
-    batchOperationSchema: null,
-    searchQuerySchema: null,
-    paginationSchema: null
+    filePathSchema: fallbackFilePathSchema,
+    settingsSchema: fallbackSettingsSchema,
+    smartFolderSchema: fallbackSmartFolderSchema,
+    batchOperationSchema: null, // Complex schema - skip in fallback
+    searchQuerySchema: fallbackSearchQuerySchema,
+    paginationSchema: fallbackPaginationSchema,
+    _usingFallback: true
   };
 } else {
   // ===== Primitive Schemas =====
@@ -163,7 +259,6 @@ if (!z) {
       telemetryEnabled: z.boolean().nullish(),
 
       // UI Preferences
-      theme: z.enum(THEME_VALUES).nullish(),
       language: z.string().max(20).nullish(),
       loggingLevel: z.enum(LOGGING_LEVELS).nullish(),
 
@@ -180,9 +275,6 @@ if (!z) {
         .min(NUMERIC_LIMITS.maxBatchSize.min)
         .max(NUMERIC_LIMITS.maxBatchSize.max)
         .nullish(),
-
-      // Smart Folder Watching
-      smartFolderWatchEnabled: z.boolean().nullish(),
 
       // Notification settings
       notifications: z.boolean().nullish(),
@@ -420,6 +512,85 @@ if (!z) {
   });
 
   /**
+   * Semantic search parameters
+   * FIX P1-5: Add Zod schema for SEARCH handler validation
+   */
+  const semanticSearchSchema = z.object({
+    query: z
+      .string()
+      .min(2, 'Query must be at least 2 characters')
+      .max(2000, 'Query too long (max 2000)'),
+    topK: z.number().int().min(1).max(100).optional().default(20),
+    mode: z.enum(['hybrid', 'vector', 'bm25']).optional().default('hybrid'),
+    minScore: z.number().min(0).max(1).optional(),
+    chunkWeight: z.number().min(0).max(1).optional(),
+    chunkTopK: z.number().int().min(1).max(2000).optional()
+  });
+
+  /**
+   * Score files against query
+   * FIX P1-5: Add Zod schema for SCORE_FILES handler validation
+   */
+  const scoreFilesSchema = z.object({
+    query: z
+      .string()
+      .min(2, 'Query must be at least 2 characters')
+      .max(2000, 'Query too long (max 2000)'),
+    fileIds: z
+      .array(z.string().min(1).max(2048))
+      .min(1, 'At least one file ID is required')
+      .max(1000, 'Maximum 1000 file IDs allowed')
+  });
+
+  /**
+   * Cluster computation parameters
+   * FIX P1-5: Add Zod schema for COMPUTE_CLUSTERS handler validation
+   */
+  const computeClustersSchema = z.object({
+    k: z
+      .union([z.literal('auto'), z.number().int().min(1).max(100)])
+      .optional()
+      .default('auto'),
+    generateLabels: z.boolean().optional().default(true)
+  });
+
+  /**
+   * Get cluster members parameters
+   */
+  const getClusterMembersSchema = z.object({
+    clusterId: z.number().int().min(0, 'Cluster ID must be a non-negative integer')
+  });
+
+  /**
+   * Similarity edges parameters
+   * FIX P1-5: Add Zod schema for GET_SIMILARITY_EDGES handler validation
+   */
+  const similarityEdgesSchema = z.object({
+    fileIds: z
+      .array(z.string().min(1).max(2048))
+      .min(2, 'At least 2 file IDs required for similarity edges')
+      .max(500, 'Maximum 500 file IDs for performance'),
+    threshold: z.number().min(0).max(1).optional().default(0.5),
+    maxEdgesPerNode: z.number().int().min(1).max(20).optional().default(5)
+  });
+
+  /**
+   * File metadata parameters
+   */
+  const getFileMetadataSchema = z.object({
+    fileIds: z.array(z.string().min(1).max(2048)).max(100, 'Maximum 100 file IDs per request')
+  });
+
+  /**
+   * Find duplicates parameters
+   * FIX P1-5: Add Zod schema for FIND_DUPLICATES handler validation
+   */
+  const findDuplicatesSchema = z.object({
+    threshold: z.number().min(0.7).max(1).optional().default(0.9),
+    maxResults: z.number().int().min(1).max(200).optional().default(50)
+  });
+
+  /**
    * Smart folder matching input
    */
   const smartFolderMatchSchema = z.object({
@@ -490,6 +661,13 @@ if (!z) {
 
     // Embeddings
     findSimilar: findSimilarSchema,
+    semanticSearch: semanticSearchSchema,
+    scoreFiles: scoreFilesSchema,
+    computeClusters: computeClustersSchema,
+    getClusterMembers: getClusterMembersSchema,
+    similarityEdges: similarityEdgesSchema,
+    getFileMetadata: getFileMetadataSchema,
+    findDuplicates: findDuplicatesSchema,
 
     // Ollama
     ollamaHost: ollamaHostSchema,

@@ -23,17 +23,18 @@ function ModelSelectionSection({
   visionModelOptions,
   embeddingModelOptions
 }) {
-  // Track the initial embedding model to detect changes
-  const initialEmbeddingModelRef = useRef(settings.embeddingModel);
+  // Show the "model changed -> rebuild required" message only when the user explicitly changes
+  // the dropdown (avoids confusing banners during initial settings/model hydration).
   const [embeddingModelChanged, setEmbeddingModelChanged] = useState(false);
+  const didMountRef = useRef(false);
 
-  // Detect when embedding model changes from initial value
   useEffect(() => {
-    if (settings.embeddingModel !== initialEmbeddingModelRef.current) {
-      setEmbeddingModelChanged(true);
-    } else {
-      setEmbeddingModelChanged(false);
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
     }
+    // If the model gets reset programmatically (rare), keep the banner visible only if it was
+    // explicitly triggered by user interaction.
   }, [settings.embeddingModel]);
   const hasTextModels = textModelOptions.length > 0;
   const hasVisionModels = visionModelOptions.length > 0;
@@ -115,12 +116,13 @@ function ModelSelectionSection({
           <>
             <Select
               value={settings.embeddingModel}
-              onChange={(e) =>
+              onChange={(e) => {
+                setEmbeddingModelChanged(true);
                 setSettings((prev) => ({
                   ...prev,
                   embeddingModel: e.target.value
-                }))
-              }
+                }));
+              }}
             >
               {embeddingModelOptions.map((model) => (
                 <option key={model} value={model}>
@@ -128,6 +130,10 @@ function ModelSelectionSection({
                 </option>
               ))}
             </Select>
+            <div className="mt-2 text-xs text-system-gray-500">
+              Changing embedding models requires rebuilding embeddings (different models have
+              different vector dimensions and are not compatible).
+            </div>
             {embeddingModelChanged && (
               <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />

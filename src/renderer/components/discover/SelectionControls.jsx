@@ -17,7 +17,7 @@ const SelectionControls = memo(function SelectionControls({
         Scan Folder
       </Button>
       {isScanning && (
-        <span className="status-chip info" role="status" aria-live="polite">
+        <span className="sr-only" role="status" aria-live="polite">
           Scanning files...
         </span>
       )}

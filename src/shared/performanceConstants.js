@@ -189,7 +189,7 @@ const THRESHOLDS = {
   MEMORY_WARNING_PERCENT: 80,
   DISK_WARNING_PERCENT: 90,
   CPU_WARNING_PERCENT: 85,
-  MIN_SIMILARITY_SCORE: 0.5,
+  MIN_SIMILARITY_SCORE: 0.25,
   MIN_MATCH_CONFIDENCE: 0.6,
   FOLDER_MATCH_CONFIDENCE: 0.55, // Min score for folder categorization
   QUEUE_HIGH_WATERMARK: 0.75,
@@ -217,6 +217,24 @@ const SEARCH = {
   DEFAULT_TOP_K_SIMILAR: 10,
   // Minimum epsilon for division safety
   MIN_EPSILON: 0.001
+};
+
+/**
+ * Text Chunking Constants
+ * Parameters for splitting large documents into embeddable chunks
+ * Used for deep semantic recall from extracted text
+ */
+const CHUNKING = {
+  // Default chunk size in characters
+  CHUNK_SIZE: 1000,
+  // Overlap between consecutive chunks for context preservation
+  OVERLAP: 200,
+  // Maximum number of chunks per document (prevents runaway chunking)
+  MAX_CHUNKS: 80,
+  // Minimum text length to trigger chunking
+  MIN_TEXT_LENGTH: 200,
+  // Maximum chunks to return per file in search results
+  MAX_CHUNKS_PER_FILE: 3
 };
 
 const LIMITS = {
@@ -386,6 +404,7 @@ module.exports = {
   PAGINATION,
   THRESHOLDS,
   SEARCH,
+  CHUNKING,
   LIMITS,
   IMAGE,
   NETWORK,

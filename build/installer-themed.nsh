@@ -1,12 +1,16 @@
 ; StratoSort Themed Installer Hooks (NSIS / MUI2)
 ; Adds premium branding to the NSIS wizard using images in build resources:
-; - assets/installer/header.png
-; - assets/installer/welcome.png
-; - assets/installer/finish.png
+; - assets/installer/header.png  (150x57 px)
+; - assets/installer/welcome.png (164x314 px)
+; - assets/installer/finish.png  (164x314 px)
 ;
 ; Notes:
 ; - electron-builder sets BUILD_RESOURCES_DIR for us (points at configured buildResources dir).
 ; - We keep the existing custom install/uninstall hooks (marker + shortcuts).
+
+; ============================================================================
+; BRANDING & APPEARANCE
+; ============================================================================
 
 ; Enable a branded header image across pages
 !define MUI_HEADERIMAGE
@@ -24,6 +28,35 @@
 !endif
 !define MUI_WELCOMEFINISHPAGE_BITMAP "${BUILD_RESOURCES_DIR}\\installer\\welcome.png"
 !define MUI_UNWELCOMEFINISHPAGE_BITMAP "${BUILD_RESOURCES_DIR}\\installer\\finish.png"
+
+; ============================================================================
+; WELCOME PAGE CUSTOMIZATION
+; ============================================================================
+!define MUI_WELCOMEPAGE_TITLE "Welcome to StratoSort Setup"
+!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of StratoSort.$\r$\n$\r$\nStratoSort uses AI to intelligently organize your files into smart folders. After installation, the app will help you set up the optional AI components (Ollama and ChromaDB).$\r$\n$\r$\nClick Next to continue."
+
+; ============================================================================
+; FINISH PAGE CUSTOMIZATION
+; ============================================================================
+!ifdef MUI_FINISHPAGE_RUN
+  !undef MUI_FINISHPAGE_RUN
+!endif
+!ifdef MUI_FINISHPAGE_RUN_TEXT
+  !undef MUI_FINISHPAGE_RUN_TEXT
+!endif
+!define MUI_FINISHPAGE_TITLE "StratoSort Installation Complete"
+!define MUI_FINISHPAGE_TEXT "StratoSort has been installed on your computer.$\r$\n$\r$\nWhen you first launch, you'll be guided through setting up AI components for intelligent file organization.$\r$\n$\r$\nClick Finish to exit Setup."
+
+; ============================================================================
+; DIRECTORY PAGE CUSTOMIZATION
+; ============================================================================
+!define MUI_DIRECTORYPAGE_TEXT_TOP "Setup will install StratoSort in the following folder. To install in a different folder, click Browse and select another folder. Click Install to start the installation."
+
+; ============================================================================
+; ABORT WARNING
+; ============================================================================
+!define MUI_ABORTWARNING
+!define MUI_ABORTWARNING_TEXT "Are you sure you want to cancel StratoSort installation?"
 
 ; StratoSort Custom Installer Hooks
 !macro customInstall
