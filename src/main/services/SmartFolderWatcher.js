@@ -23,8 +23,14 @@ const { WatcherError } = require('../errors/FileSystemError');
 const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtils');
 const { generateFileHash } = require('./analysisHistory/indexManager');
 const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
+const { recordAnalysisResult } = require('../ipc/analysisUtils');
 
 logger.setContext('SmartFolderWatcher');
+
+// CRITICAL: Prevent unbounded memory growth under heavy file activity (e.g., large archive extraction).
+// We bound the analysis queue and apply light deduplication by filePath.
+const MAX_ANALYSIS_QUEUE_SIZE = 500;
+const QUEUE_DROP_LOG_INTERVAL_MS = 10_000;
 
 // Temporary/incomplete file patterns to ignore
 const TEMP_FILE_PATTERNS = [
@@ -177,6 +183,9 @@ class SmartFolderWatcher {
     this.isStarting = false;
     this.watchedPaths = new Set();
 
+    // FIX M3: Promise deduplication for concurrent start() calls
+    this._startPromise = null;
+
     // Processing state
     this.processingFiles = new Set();
     this.pendingAnalysis = new Map(); // filePath -> { mtime, timeout }
@@ -185,6 +194,8 @@ class SmartFolderWatcher {
 
     // Configuration
     this.debounceDelay = 1000; // 1 second debounce
+    // Maximum time to keep deferring analysis for a hot file (prevents indefinite postponement)
+    this.maxDebounceWaitMs = 5000;
     this.stabilityThreshold = 3000; // 3 seconds - file must be stable for this long
     this.queueProcessInterval = 2000; // Process queue every 2 seconds
     this.maxConcurrentAnalysis = 2; // Max files to analyze at once
@@ -192,54 +203,56 @@ class SmartFolderWatcher {
     // Timers
     this.queueTimer = null;
 
+    // Queue backpressure state (for bounded queue + rate-limited logging)
+    this._lastQueueDropLogAt = 0;
+    this._queueDropsSinceLog = 0;
+
     // Stats
     this.stats = {
       filesAnalyzed: 0,
       filesReanalyzed: 0,
       errors: 0,
+      queueDropped: 0,
       lastActivity: null
     };
   }
 
   /**
    * Start watching smart folders
-   * @param {Object} [options={}] - Start options
-   * @param {boolean} [options.skipSettingsCheck=false] - Skip checking settings.smartFolderWatchEnabled
-   *   This is used when the watcher is started via IPC after the user explicitly enables it,
-   *   because the setting may not be persisted to disk yet due to debouncing.
+   * Smart folder watching is always enabled - files added to smart folders are automatically analyzed
    * @returns {Promise<boolean>} True if started successfully
    */
-  async start(options = {}) {
-    const { skipSettingsCheck = false } = options;
-
+  async start() {
     if (this.isRunning) {
       logger.debug('[SMART-FOLDER-WATCHER] Already running');
       return true;
     }
 
-    if (this.isStarting) {
-      logger.debug('[SMART-FOLDER-WATCHER] Already starting');
-      return false;
+    // FIX M3: Return existing start promise if one is in progress
+    // This prevents race condition where concurrent callers get false
+    if (this._startPromise) {
+      logger.debug('[SMART-FOLDER-WATCHER] Returning existing start promise');
+      return this._startPromise;
     }
 
     this.isStarting = true;
+    this._startPromise = this._doStart();
 
     try {
-      // Check if feature is enabled (skip when called from IPC after user toggle)
-      // FIX: The settings check is skipped when called via IPC because the frontend
-      // may not have persisted the setting to disk yet (debounced save).
-      // The IPC handler is only called when user explicitly enables the feature.
-      if (!skipSettingsCheck) {
-        const settings = await this.settingsService.load();
-        if (!settings.smartFolderWatchEnabled) {
-          logger.info('[SMART-FOLDER-WATCHER] Feature disabled in settings');
-          this.isStarting = false;
-          return false;
-        }
-      } else {
-        logger.debug('[SMART-FOLDER-WATCHER] Skipping settings check (explicit start)');
-      }
+      return await this._startPromise;
+    } finally {
+      this._startPromise = null;
+      this.isStarting = false;
+    }
+  }
 
+  /**
+   * Internal start implementation
+   * @private
+   * @returns {Promise<boolean>} True if started successfully
+   */
+  async _doStart() {
+    try {
       // Get smart folders to watch
       const folders = this.getSmartFolders();
 
@@ -248,7 +261,6 @@ class SmartFolderWatcher {
         const errorMsg =
           'No smart folders configured. Please add smart folders in the Setup phase first.';
         logger.warn('[SMART-FOLDER-WATCHER] Start failed:', errorMsg);
-        this.isStarting = false;
         this._lastStartError = errorMsg;
         return false;
       }
@@ -258,7 +270,6 @@ class SmartFolderWatcher {
       if (validPaths.length === 0) {
         const errorMsg = `All ${folders.length} smart folder path(s) are inaccessible. Please check that the folders exist and you have read permissions.`;
         logger.warn('[SMART-FOLDER-WATCHER] Start failed:', errorMsg);
-        this.isStarting = false;
         this._lastStartError = errorMsg;
         return false;
       }
@@ -311,7 +322,7 @@ class SmartFolderWatcher {
         );
         this.watchedPaths = new Set(validPaths);
         this.isRunning = true;
-        this.isStarting = false;
+        // Note: isStarting is cleared in start() finally block
       });
 
       // Start queue processor
@@ -320,7 +331,7 @@ class SmartFolderWatcher {
       return true;
     } catch (error) {
       logger.error('[SMART-FOLDER-WATCHER] Failed to start:', error.message);
-      this.isStarting = false;
+      // Note: isStarting is cleared in start() finally block
       this.stats.errors++;
       return false;
     }
@@ -362,6 +373,8 @@ class SmartFolderWatcher {
     this.watchedPaths.clear();
     this.processingFiles.clear();
     this.analysisQueue = [];
+    this._lastQueueDropLogAt = 0;
+    this._queueDropsSinceLog = 0;
 
     logger.info('[SMART-FOLDER-WATCHER] Stopped');
   }
@@ -460,20 +473,26 @@ class SmartFolderWatcher {
 
     logger.debug('[SMART-FOLDER-WATCHER] File event:', eventType, filePath);
 
+    const now = Date.now();
+
     // Debounce - clear existing timeout for this file
+    let firstEventAt = now;
     if (this.pendingAnalysis.has(filePath)) {
       const existing = this.pendingAnalysis.get(filePath);
+      firstEventAt = typeof existing.firstEventAt === 'number' ? existing.firstEventAt : now;
       if (existing.timeout) {
         clearTimeout(existing.timeout);
       }
     }
 
     // Set new debounce timeout
+    const elapsed = now - firstEventAt;
+    const delay = elapsed >= this.maxDebounceWaitMs ? 0 : this.debounceDelay;
     const timeout = setTimeout(() => {
       this._queueFileForAnalysis(filePath, mtime, eventType);
-    }, this.debounceDelay);
+    }, delay);
 
-    this.pendingAnalysis.set(filePath, { mtime, timeout, eventType });
+    this.pendingAnalysis.set(filePath, { mtime, timeout, eventType, firstEventAt });
   }
 
   /**
@@ -495,8 +514,8 @@ class SmartFolderWatcher {
         return;
       }
 
-      // Add to queue
-      this.analysisQueue.push({
+      // Add to queue (bounded + deduplicated)
+      this._enqueueAnalysisItem({
         filePath,
         mtime,
         eventType,
@@ -513,6 +532,44 @@ class SmartFolderWatcher {
         this.stats.errors++;
       }
     }
+  }
+
+  /**
+   * Add an item to the analysis queue with bounds + best-effort deduplication.
+   * @private
+   * @param {{filePath: string, mtime: number, eventType: string, queuedAt: number}} item
+   */
+  _enqueueAnalysisItem(item) {
+    const { filePath } = item;
+
+    // If already queued, replace the existing entry with the latest metadata.
+    const existingIndex = this.analysisQueue.findIndex((q) => q.filePath === filePath);
+    if (existingIndex !== -1) {
+      this.analysisQueue[existingIndex] = item;
+      return;
+    }
+
+    // Enforce a maximum queue size by dropping the oldest item.
+    if (this.analysisQueue.length >= MAX_ANALYSIS_QUEUE_SIZE) {
+      const dropped = this.analysisQueue.shift();
+      if (dropped) {
+        this.stats.queueDropped++;
+        this._queueDropsSinceLog++;
+      }
+
+      const now = Date.now();
+      if (now - this._lastQueueDropLogAt >= QUEUE_DROP_LOG_INTERVAL_MS) {
+        logger.warn('[SMART-FOLDER-WATCHER] Analysis queue full; dropping oldest items', {
+          maxQueueSize: MAX_ANALYSIS_QUEUE_SIZE,
+          droppedSinceLastLog: this._queueDropsSinceLog,
+          queueLength: this.analysisQueue.length
+        });
+        this._lastQueueDropLogAt = now;
+        this._queueDropsSinceLog = 0;
+      }
+    }
+
+    this.analysisQueue.push(item);
   }
 
   /**
@@ -682,6 +739,38 @@ class SmartFolderWatcher {
         // This ensures files watched by SmartFolderWatcher are searchable without manual rebuild
         await this._embedAnalyzedFile(filePath, result);
 
+        // FIX: Record to analysis history so smart folder analysis appears in history
+        {
+          const analysis = result?.analysis || result || {};
+          const keywords = Array.isArray(analysis.keywords)
+            ? analysis.keywords
+            : Array.isArray(analysis.tags)
+              ? analysis.tags
+              : [];
+
+          const historyPayload = {
+            // The history utility uses suggestedName as the subject fallback.
+            // Prefer any naming-convention output; otherwise keep the original basename.
+            suggestedName: analysis.suggestedName || path.basename(filePath),
+            category: analysis.category || analysis.folder || 'uncategorized',
+            keywords,
+            confidence: typeof analysis.confidence === 'number' ? analysis.confidence : 0,
+            summary: analysis.summary || analysis.description || analysis.purpose || '',
+            extractedText: analysis.extractedText || null,
+            smartFolder: analysis.smartFolder || analysis.folder || null,
+            model: analysis.model || result.model || (isImageFile(filePath) ? 'vision' : 'llm')
+          };
+
+          await recordAnalysisResult({
+            filePath,
+            result: historyPayload,
+            processingTime: Number(result.processingTimeMs || result.processingTime || 0),
+            modelType: isImageFile(filePath) ? 'vision' : 'llm',
+            analysisHistory: this.analysisHistoryService,
+            logger
+          });
+        }
+
         // Update stats
         if (eventType === 'add') {
           this.stats.filesAnalyzed++;
@@ -764,7 +853,7 @@ class SmartFolderWatcher {
       }
 
       // Generate embedding vector using folderMatcher
-      const textToEmbed = [summary, subject, keywords.join(' ')].filter(Boolean).join(' ');
+      const textToEmbed = [summary, subject, keywords?.join(' ')].filter(Boolean).join(' ');
       const embedding = await this.folderMatcher.embedText(textToEmbed);
 
       if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
@@ -773,7 +862,9 @@ class SmartFolderWatcher {
       }
 
       // Prepare metadata for ChromaDB
-      const fileId = `file:${filePath.replace(/\\/g, '/')}`;
+      // IMPORTANT: IDs must match the rest of the semantic pipeline.
+      // Do NOT normalize path separators in the ID; other producers/consumers use the native path.
+      const fileId = `${isImageFile(filePath) ? 'image' : 'file'}:${filePath}`;
       const fileName = path.basename(filePath);
 
       // Upsert to ChromaDB
@@ -854,7 +945,7 @@ class SmartFolderWatcher {
           const needsAnalysis = await this._needsAnalysis(file, mtime);
 
           if (needsAnalysis) {
-            this.analysisQueue.push({
+            this._enqueueAnalysisItem({
               filePath: file,
               mtime,
               eventType: 'scan',
@@ -869,6 +960,48 @@ class SmartFolderWatcher {
     }
 
     logger.info('[SMART-FOLDER-WATCHER] Scan complete:', { scanned, queued });
+    return { scanned, queued };
+  }
+
+  /**
+   * Force reanalysis of ALL files in smart folders, regardless of existing analysis.
+   * Use this when changing AI models to regenerate all analysis with the new model.
+   * @returns {Promise<{scanned: number, queued: number}>}
+   */
+  async forceReanalyzeAll() {
+    logger.info('[SMART-FOLDER-WATCHER] Force reanalyzing ALL files...');
+
+    let scanned = 0;
+    let queued = 0;
+
+    for (const folderPath of this.watchedPaths) {
+      try {
+        const files = await this._scanDirectory(folderPath);
+        scanned += files.length;
+
+        for (const file of files) {
+          try {
+            const stats = await fs.stat(file);
+            const mtime = new Date(stats.mtime).getTime();
+
+            // Queue ALL files for reanalysis, ignoring existing analysis
+            this._enqueueAnalysisItem({
+              filePath: file,
+              mtime,
+              eventType: 'reanalyze',
+              queuedAt: Date.now()
+            });
+            queued++;
+          } catch (fileErr) {
+            logger.debug('[SMART-FOLDER-WATCHER] Cannot stat file:', file, fileErr.message);
+          }
+        }
+      } catch (error) {
+        logger.warn('[SMART-FOLDER-WATCHER] Error scanning folder:', folderPath, error.message);
+      }
+    }
+
+    logger.info('[SMART-FOLDER-WATCHER] Force reanalyze queued:', { scanned, queued });
     return { scanned, queued };
   }
 
