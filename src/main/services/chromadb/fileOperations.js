@@ -158,7 +158,17 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
             path: file.meta?.path || '',
             name: file.meta?.name || '',
             model: file.model || '',
-            updatedAt: file.updatedAt || new Date().toISOString()
+            updatedAt: file.updatedAt || new Date().toISOString(),
+            // Extended schema fields for filtering and retrieval
+            date: file.meta?.date || '',
+            entity: file.meta?.entity || '',
+            type: file.meta?.type || '',
+            category: file.meta?.category || '',
+            project: file.meta?.project || '',
+            summary: file.meta?.summary || '',
+            keywords: Array.isArray(file.meta?.keywords)
+              ? file.meta.keywords.join(',')
+              : file.meta?.keywords || ''
           };
 
           const sanitized = sanitizeMetadata({

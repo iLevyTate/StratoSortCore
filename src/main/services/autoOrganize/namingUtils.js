@@ -398,6 +398,61 @@ function makeUniqueFileName(desiredName, usedCounts) {
   return raw;
 }
 
+/**
+ * Process a naming template string by replacing tokens with values from the analysis result.
+ * Supports standard tokens: {date}, {entity}, {type}, {category}, {project}, {summary}, {original}.
+ *
+ * @param {string} template - The naming template (e.g. "{date}_{entity}_{type}")
+ * @param {Object} context - The context object containing replacement values
+ * @param {string} [context.originalName] - Original filename
+ * @param {Object} [context.analysis] - Analysis result
+ * @param {string} [context.extension] - File extension (including dot)
+ * @returns {string} The processed filename
+ */
+function processTemplate(template, context) {
+  if (!template) return context.originalName || 'untitled';
+
+  const { analysis, originalName, extension } = context;
+  const originalBase = originalName ? originalName.replace(/\.[^/.]+$/, '') : '';
+
+  // Helper to safely get a string value or empty string
+  const getVal = (key) => {
+    const val = analysis && analysis[key];
+    return typeof val === 'string' ? val.trim() : '';
+  };
+
+  let result = template;
+
+  // Replace tokens
+  result = result.replace(/\{date\}/gi, getVal('date') || formatDate(new Date(), 'YYYY-MM-DD'));
+  result = result.replace(/\{entity\}/gi, getVal('entity') || 'Unknown');
+  result = result.replace(/\{type\}/gi, getVal('type') || 'Document');
+  result = result.replace(/\{category\}/gi, getVal('category') || 'Uncategorized');
+  result = result.replace(/\{project\}/gi, getVal('project') || 'General');
+  result = result.replace(/\{summary\}/gi, getVal('summary') || '');
+  result = result.replace(/\{original\}/gi, originalBase);
+
+  // Sanitize the result to be a valid filename
+  // 1. Remove characters illegal in filenames (Windows/Unix)
+  result = result.replace(/[\\/:*?"<>|]/g, '');
+  // 2. Collapse multiple spaces/separators
+  result = result.replace(/[\s_-]{2,}/g, '_');
+  // 3. Trim leading/trailing separators
+  result = result.replace(/^[\s_-]+|[\s_-]+$/g, '');
+
+  // Fallback if result became empty
+  if (!result) {
+    result = originalBase || 'untitled';
+  }
+
+  // Ensure extension is preserved/appended
+  if (extension && !result.toLowerCase().endsWith(extension.toLowerCase())) {
+    result += extension;
+  }
+
+  return result;
+}
+
 module.exports = {
   formatDate,
   applyCaseConvention,
@@ -405,5 +460,6 @@ module.exports = {
   extractExtension,
   extractFileName,
   generateSuggestedNameFromAnalysis,
-  makeUniqueFileName
+  makeUniqueFileName,
+  processTemplate
 };

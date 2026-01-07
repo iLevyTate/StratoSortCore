@@ -48,6 +48,8 @@ function normalizeTextForModel(input, maxLen) {
   return text;
 }
 
+const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
+
 async function analyzeTextWithOllama(
   textContent,
   originalFileName,
@@ -120,19 +122,11 @@ FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a 
 - If filename suggests financial content (budget, invoice, receipt, tax), look for financial terms in the text
 - If filename suggests a specific category, your analysis should align with it unless the content clearly indicates otherwise
 
-Your response MUST be a valid JSON object with ALL these fields:
-{
-  "date": "YYYY-MM-DD format. Use the date explicitly found in the document content (e.g. invoice date, meeting date). If NO date is found in the text, use the Document File Date provided above: ${fileDate || 'today'}",
-  "project": "main subject/project from content (2-5 words)",
-  "purpose": "document's purpose based on content (5-10 words)",
-  "category": "most appropriate category (must be one of the folder names above)"${folderCategoriesStr},
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "confidence": 85,
-  "suggestedName": "short-descriptive-name (MAX 40 chars, 2-5 key words, NO dates/IDs)"
-}
+Your response MUST be a valid JSON object matching this schema exactly:
+${JSON.stringify(ANALYSIS_SCHEMA_PROMPT, null, 2)}
 
 IMPORTANT FOR suggestedName:
-- Keep it SHORT: maximum 40 characters (excluding extension)
+- Keep it SHORT: maximum 50 characters (excluding extension)
 - PRESERVE semantic meaning from the original filename "${originalFileName}"
 - If filename contains key terms like "budget", "invoice", "report", include them in your suggested name
 - If the content matches the filename theme, your suggested name should reflect both
@@ -147,6 +141,7 @@ CRITICAL REQUIREMENTS:
 2. Keywords should include relevant terms from BOTH the content AND the filename
 3. Do NOT return an empty keywords array
 4. If filename hints at a category and content doesn't contradict it, use that category
+5. If available Smart Folders are listed above, the 'category' field MUST strictly match one of them.
 
 Document content (${truncated.length} characters, ${chunkCount} chunk(s)):
 ${truncated}`;
