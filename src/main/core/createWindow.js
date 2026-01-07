@@ -2,6 +2,7 @@ const { BrowserWindow, shell, app } = require('electron');
 const path = require('path');
 const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { bringWindowToForeground } = require('./platformBehavior');
 
 logger.setContext('CreateWindow');
 const windowStateKeeper = require('electron-window-state');
@@ -157,6 +158,28 @@ function createMainWindow() {
     win.maximize();
   }
 
+  // FIX: Force electron-window-state to save immediately on close
+  // The library uses debounced saves which may not complete if window closes quickly
+  // We call saveState() directly to ensure state is persisted synchronously
+  win.on('close', () => {
+    try {
+      const isMaximized = win.isMaximized();
+      const isFullScreen = win.isFullScreen();
+
+      logger.debug('Window closing, triggering state save', {
+        isMaximized,
+        isFullScreen
+      });
+
+      // Force electron-window-state to save immediately
+      // This uses its internal tracking which properly handles pre-maximized bounds
+      mainWindowState.saveState(win);
+      logger.debug('Window state saved via electron-window-state');
+    } catch (e) {
+      logger.warn('Could not save window state on close', { error: e.message });
+    }
+  });
+
   // Add cleanup for window state keeper on window close
   win.once('closed', () => {
     try {
@@ -210,19 +233,26 @@ function createMainWindow() {
     } catch (error) {
       logger.debug('Failed to get Ollama host', { error: error.message });
     }
+
+    // Sanitize hosts for CSP to prevent injection attacks
+    // Only extract valid URL origins to include in CSP
+    let sanitizedOllamaHost = '';
     let wsHost = '';
     try {
       const url = new URL(ollamaHost);
+      // Only use the origin (protocol + host) - this prevents CSP injection
+      sanitizedOllamaHost = url.origin;
       wsHost = url.protocol === 'https:' ? `wss://${url.host}` : `ws://${url.host}`;
     } catch (error) {
       logger.debug('Failed to parse Ollama host URL', { error: error.message });
+      sanitizedOllamaHost = '';
       wsHost = '';
     }
 
     // Material-UI requires 'unsafe-inline' for styles to work
     // In a more secure setup, we'd use nonces or hashes, but for now we need inline styles
     const styleSrc = "'self' 'unsafe-inline'";
-    const csp = `default-src 'self'; script-src 'self'; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${ollamaHost} ${wsHost}; object-src 'none'; base-uri 'self'; form-action 'self';`;
+    const csp = `default-src 'self'; script-src 'self'; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${sanitizedOllamaHost} ${wsHost}; object-src 'none'; base-uri 'self'; form-action 'self';`;
 
     callback({
       responseHeaders: {
@@ -235,10 +265,10 @@ function createMainWindow() {
         // COOP/COEP can break some integrations; set COOP only
         'Cross-Origin-Opener-Policy': ['same-origin'],
         'Cross-Origin-Resource-Policy': ['same-origin'],
-        // Disable sensitive features by default
+        // Disable sensitive features by default, but allow clipboard for copy path functionality
         'Permissions-Policy': [
           [
-            'accelerometer=(), autoplay=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()'
+            'accelerometer=(), autoplay=(), camera=(), clipboard-read=(self), clipboard-write=(self), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), usb=(), xr-spatial-tracking=()'
           ].join('')
         ]
       }
@@ -265,6 +295,22 @@ function createMainWindow() {
             // Auto-open DevTools in development mode or when forced via env var
             // Opened after window is ready to ensure detached window displays properly
             if (isDev || getEnvBool('FORCE_DEV_TOOLS')) {
+              // FIX: Listen for devtools-opened event to bring main window to foreground
+              // This ensures we act after DevTools has fully opened and stolen focus
+              win.webContents.once('devtools-opened', () => {
+                // Small delay to let DevTools finish rendering
+                setTimeout(() => {
+                  if (!win.isDestroyed()) {
+                    bringWindowToForeground(win);
+                    // Second attempt in case DevTools grabs focus again
+                    setTimeout(() => {
+                      if (!win.isDestroyed()) {
+                        bringWindowToForeground(win);
+                      }
+                    }, 300);
+                  }
+                }, 100);
+              });
               win.webContents.openDevTools({ mode: 'detach' });
             }
           }
@@ -294,9 +340,14 @@ function createMainWindow() {
     logger.warn('Blocked webview attachment attempt');
   });
 
-  // Deny all permission requests by default (camera, mic, etc.)
+  // Deny all permission requests by default, but allow clipboard access
   try {
     win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+      // FIX: Allow clipboard read/write permissions for features like "Copy Path"
+      if (permission === 'clipboard-read' || permission === 'clipboard-sanitized-write') {
+        callback(true);
+        return;
+      }
       logger.debug('Denied permission request', { permission });
       callback(false);
     });
