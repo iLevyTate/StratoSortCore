@@ -477,16 +477,14 @@ class EmbeddingQueue {
   removeByFilePath(filePath) {
     if (!filePath) return 0;
 
-    const fileId = `file:${filePath}`;
+    const fileIds = [`file:${filePath}`, `image:${filePath}`];
     const initialLength = this.queue.length;
 
     // Remove from main queue
-    this.queue = this.queue.filter((item) => item.id !== fileId);
+    this.queue = this.queue.filter((item) => !fileIds.includes(item.id));
 
     // Remove from failed items
-    if (this._failedItemHandler.failedItems.has(fileId)) {
-      this._failedItemHandler.failedItems.delete(fileId);
-    }
+    fileIds.forEach((id) => this._failedItemHandler.failedItems.delete(id));
 
     const removedCount = initialLength - this.queue.length;
 
@@ -512,7 +510,7 @@ class EmbeddingQueue {
   removeByFilePaths(filePaths) {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return 0;
 
-    const fileIds = new Set(filePaths.map((p) => `file:${p}`));
+    const fileIds = new Set(filePaths.flatMap((p) => [`file:${p}`, `image:${p}`]));
     const initialLength = this.queue.length;
 
     // Remove from main queue
@@ -539,6 +537,82 @@ class EmbeddingQueue {
     }
 
     return removedCount;
+  }
+
+  /**
+   * Update pending items by file path after a move/rename.
+   * This prevents queued embeddings from being flushed under stale IDs.
+   *
+   * Updates both file: and image: prefixed IDs and also updates failed items.
+   *
+   * @param {string} oldPath
+   * @param {string} newPath
+   * @returns {number} Number of queued items updated
+   */
+  updateByFilePath(oldPath, newPath) {
+    if (!oldPath || !newPath) return 0;
+
+    const idPairs = [
+      { oldId: `file:${oldPath}`, newId: `file:${newPath}` },
+      { oldId: `image:${oldPath}`, newId: `image:${newPath}` }
+    ];
+
+    let updated = 0;
+    for (const { oldId, newId } of idPairs) {
+      // Update main queue items in-place
+      for (const item of this.queue) {
+        if (item?.id === oldId) {
+          item.id = newId;
+          if (item.meta && typeof item.meta === 'object') {
+            item.meta.path = newPath;
+            if (typeof item.meta.name === 'string') {
+              item.meta.name = path.basename(newPath);
+            }
+          }
+          updated++;
+        }
+      }
+
+      // Update failed items map keys
+      const failed = this._failedItemHandler.failedItems.get(oldId);
+      if (failed) {
+        this._failedItemHandler.failedItems.delete(oldId);
+        // Keep the stored item consistent
+        if (failed.item && typeof failed.item === 'object') {
+          failed.item.id = newId;
+          if (failed.item.meta && typeof failed.item.meta === 'object') {
+            failed.item.meta.path = newPath;
+            if (typeof failed.item.meta.name === 'string') {
+              failed.item.meta.name = path.basename(newPath);
+            }
+          }
+        }
+        this._failedItemHandler.failedItems.set(newId, failed);
+      }
+    }
+
+    if (updated > 0) {
+      this.persistQueue().catch((err) =>
+        logger.warn('[EmbeddingQueue] Failed to persist after path update:', err.message)
+      );
+    }
+
+    return updated;
+  }
+
+  /**
+   * Batch update pending items by multiple file path changes.
+   * @param {Array<{oldPath: string, newPath: string}>} pathChanges
+   * @returns {number} Total updated count
+   */
+  updateByFilePaths(pathChanges) {
+    if (!Array.isArray(pathChanges) || pathChanges.length === 0) return 0;
+    let total = 0;
+    for (const change of pathChanges) {
+      if (!change?.oldPath || !change?.newPath) continue;
+      total += this.updateByFilePath(change.oldPath, change.newPath);
+    }
+    return total;
   }
 
   /**
