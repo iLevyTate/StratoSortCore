@@ -74,6 +74,82 @@ class Logger {
     this.context = '';
     this.fileFormat = 'jsonl'; // 'jsonl' | 'text'
     this._fileWriteFailed = false;
+    this.MAX_LOG_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    this.MAX_ROTATED_FILES = 3;
+    this._isRotating = false;
+  }
+
+  /**
+   * Check if log rotation is needed and perform it
+   * @private
+   */
+  async rotateLogIfNeeded() {
+    if (!this.logFile || this._isRotating || this._fileWriteFailed) return;
+
+    try {
+      const fs = require('fs');
+      // Use sync stat to avoid race conditions during rapid logging
+      const stats = fs.statSync(this.logFile);
+
+      if (stats.size > this.MAX_LOG_FILE_SIZE) {
+        this._isRotating = true;
+        await this.rotateLog();
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        // If file doesn't exist, no need to rotate. Other errors are warnings.
+        if (this.enableConsole) {
+          // Use console directly to avoid recursion
+          console.warn(`[Logger] Failed to check log size: ${error.message}`);
+        }
+      }
+    } finally {
+      this._isRotating = false;
+    }
+  }
+
+  /**
+   * Rotate log files (log.log -> log.1.log -> log.2.log ...)
+   * @private
+   */
+  async rotateLog() {
+    try {
+      const fs = require('fs').promises;
+
+      // Delete the oldest rotated file if it exists
+      const oldestFile = `${this.logFile}.${this.MAX_ROTATED_FILES}`;
+      try {
+        await fs.unlink(oldestFile);
+      } catch (e) {
+        // Ignore if doesn't exist
+      }
+
+      // Rename existing rotated files (3->4, 2->3, 1->2)
+      for (let i = this.MAX_ROTATED_FILES - 1; i >= 1; i--) {
+        const current = `${this.logFile}.${i}`;
+        const next = `${this.logFile}.${i + 1}`;
+        try {
+          await fs.rename(current, next);
+        } catch (e) {
+          // Ignore if doesn't exist
+        }
+      }
+
+      // Rename current log file to .1
+      try {
+        await fs.rename(this.logFile, `${this.logFile}.1`);
+      } catch (e) {
+        // If rename fails, we might just continue appending to big file
+        // or it might be locked.
+        if (this.enableConsole) {
+          console.warn(`[Logger] Failed to rotate current log file: ${e.message}`);
+        }
+      }
+    } catch (error) {
+      if (this.enableConsole) {
+        console.error(`[Logger] Log rotation failed: ${error.message}`);
+      }
+    }
   }
 
   setLevel(level) {
@@ -198,6 +274,14 @@ class Logger {
     if (this._fileWriteFailed) return;
 
     try {
+      // Check for rotation before writing
+      if (this.enableFile && this.logFile && !this._fileWriteFailed) {
+        // We use a promise check but don't await it to avoid blocking the main thread
+        // for every log write. If rotation is needed, it will happen eventually.
+        // For critical size enforcement, we would await, but logging performance is priority.
+        this.rotateLogIfNeeded().catch(() => {});
+      }
+
       const fsSync = require('fs');
       const line =
         this.fileFormat === 'text'
@@ -215,11 +299,14 @@ class Logger {
     } catch (error) {
       // Avoid recursive logging loops; disable file logging after first failure.
       this._fileWriteFailed = true;
-      // In dev, this is helpful; in prod we keep it silent.
+      // In dev, surface a concise hint without using console.* to respect CSP.
       if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
         try {
-          // eslint-disable-next-line no-console
-          console.error('Failed to write to log file:', error?.message || error);
+          const message = `LOGGER FILE WRITE FAILED: ${error?.message || error}\n`;
+          // Write directly to stderr to avoid recursive logger usage or console calls.
+          if (typeof process.stderr?.write === 'function') {
+            process.stderr.write(message);
+          }
         } catch {
           // ignore
         }

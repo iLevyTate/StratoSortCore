@@ -2,7 +2,68 @@
 jest.unmock('fs');
 jest.unmock('fs/promises');
 
-const { ipcMain, dialog, shell } = require('./mocks/electron');
+// Inline Electron mock to avoid recursion issues
+const _ipcHandlers = new Map();
+const mockIpcMain = {
+  _handlers: _ipcHandlers,
+  handle: jest.fn((channel, handler) => {
+    _ipcHandlers.set(channel, handler);
+  }),
+  on: jest.fn(),
+  removeHandler: jest.fn((channel) => {
+    _ipcHandlers.delete(channel);
+  }),
+  removeAllListeners: jest.fn()
+};
+
+const mockApp = {
+  getPath: jest.fn((name) => {
+    const paths = {
+      userData: '/mock/userData',
+      appData: '/mock/appData',
+      temp: '/mock/temp',
+      home: '/mock/home',
+      documents: '/mock/documents',
+      downloads: '/mock/downloads'
+    };
+    return paths[name] || `/mock/${name}`;
+  }),
+  once: jest.fn()
+};
+
+const mockDialog = {
+  showOpenDialog: jest.fn().mockResolvedValue({ canceled: false, filePaths: [] }),
+  showSaveDialog: jest.fn().mockResolvedValue({ canceled: false, filePath: '' }),
+  showMessageBox: jest.fn().mockResolvedValue({ response: 0 }),
+  showErrorBox: jest.fn()
+};
+
+const mockShell = {
+  openPath: jest.fn().mockResolvedValue(''),
+  openExternal: jest.fn().mockResolvedValue(),
+  showItemInFolder: jest.fn(),
+  trashItem: jest.fn().mockResolvedValue()
+};
+
+jest.mock('electron', () => ({
+  ipcMain: mockIpcMain,
+  app: mockApp,
+  dialog: mockDialog,
+  shell: mockShell
+}));
+
+// Mock path validation to allow temp paths (hoisted)
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPath: jest.fn().mockImplementation((filePath) =>
+    Promise.resolve({
+      valid: true,
+      normalizedPath: filePath
+    })
+  )
+}));
+
+// Use the mocked versions for the test
+const { ipcMain, dialog, shell } = require('electron');
 
 // Mock ChromaDBService with full interface
 const mockUpdateFilePaths = jest.fn().mockResolvedValue(0);
@@ -43,7 +104,7 @@ describe('Files IPC - batch organize', () => {
   function register() {
     const { IPC_CHANNELS, ACTION_TYPES } = require('../src/shared/constants');
     const registerAllIpc = require('../src/main/ipc').registerAllIpc;
-    const logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    const logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() };
     const getMainWindow = () => ({
       isDestroyed: () => false,
       webContents: { send: jest.fn() }
@@ -93,6 +154,7 @@ describe('Files IPC - batch organize', () => {
     const os = require('os');
     const path = require('path');
     const fs = require('fs').promises;
+
     // Ensure a real temp directory exists (Windows runners can have non-existent tmp paths)
     let tmpBase;
     try {
