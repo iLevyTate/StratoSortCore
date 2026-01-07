@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { FolderOpen } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import SettingRow from './SettingRow';
 
 /**
  * Default locations section for smart folder configuration
@@ -21,11 +22,12 @@ function DefaultLocationsSection({ settings, setSettings }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
-          Default Smart Folder Location
-        </label>
-        <div className="flex flex-col sm:flex-row gap-3">
+      <SettingRow
+        layout="col"
+        label="Default Smart Folder Location"
+        description="Where new smart folders will be created by default."
+      >
+        <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
           <Input
             type="text"
             value={settings.defaultSmartFolderLocation}
@@ -45,16 +47,13 @@ function DefaultLocationsSection({ settings, setSettings }) {
             title="Browse"
             aria-label="Browse for default folder"
             leftIcon={<FolderOpen className="w-4 h-4" />}
-            size="sm"
+            size="md"
             className="shrink-0"
           >
             Browse
           </Button>
         </div>
-        <p className="text-xs text-system-gray-500 mt-3">
-          Where new smart folders will be created by default
-        </p>
-      </div>
+      </SettingRow>
     </div>
   );
 }

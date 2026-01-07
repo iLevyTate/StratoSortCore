@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { FileText } from 'lucide-react';
 import Select from '../ui/Select';
 import Input from '../ui/Input';
+import SettingRow from './SettingRow';
 
 // Characters that could break file paths - used for separator validation
 const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
@@ -52,30 +53,26 @@ function NamingSettingsSection({ settings, setSettings }) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Section header */}
-      <div className="flex items-center gap-2 mb-4">
-        <FileText className="w-5 h-5 text-stratosort-blue" />
-        <h3 className="text-sm font-medium text-system-gray-900">File Naming Defaults</h3>
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <FileText className="w-5 h-5 text-stratosort-blue" />
+          <h3 className="text-base font-medium text-system-gray-900">File Naming Defaults</h3>
+        </div>
+        <p className="text-sm text-system-gray-500 ml-7">
+          Configure how files are renamed when automatically organized by watchers.
+        </p>
       </div>
 
-      <p className="text-xs text-system-gray-500 mb-4">
-        Configure how files are renamed when automatically organized by watchers.
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div>
-          <label
-            htmlFor="settings-naming-convention"
-            className="block text-sm font-medium text-system-gray-700 mb-2"
-          >
-            Convention
-          </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <SettingRow layout="col" label="Convention" className="h-full">
           <Select
             id="settings-naming-convention"
             value={settings.namingConvention || 'subject-date'}
             onChange={handleConventionChange}
             aria-label="Naming convention"
+            className="w-full"
           >
             <option value="subject-date">subject-date</option>
             <option value="date-subject">date-subject</option>
@@ -83,40 +80,30 @@ function NamingSettingsSection({ settings, setSettings }) {
             <option value="category-subject">category-subject</option>
             <option value="keep-original">keep-original</option>
           </Select>
-        </div>
+        </SettingRow>
 
-        <div>
-          <label
-            htmlFor="settings-date-format"
-            className="block text-sm font-medium text-system-gray-700 mb-2"
-          >
-            Date format
-          </label>
+        <SettingRow layout="col" label="Date Format" className="h-full">
           <Select
             id="settings-date-format"
             value={settings.dateFormat || 'YYYY-MM-DD'}
             onChange={handleDateFormatChange}
             aria-label="Date format"
+            className="w-full"
           >
             <option value="YYYY-MM-DD">YYYY-MM-DD</option>
             <option value="MM-DD-YYYY">MM-DD-YYYY</option>
             <option value="DD-MM-YYYY">DD-MM-YYYY</option>
             <option value="YYYYMMDD">YYYYMMDD</option>
           </Select>
-        </div>
+        </SettingRow>
 
-        <div>
-          <label
-            htmlFor="settings-case-convention"
-            className="block text-sm font-medium text-system-gray-700 mb-2"
-          >
-            Case
-          </label>
+        <SettingRow layout="col" label="Case" className="h-full">
           <Select
             id="settings-case-convention"
             value={settings.caseConvention || 'kebab-case'}
             onChange={handleCaseChange}
             aria-label="Case convention"
+            className="w-full"
           >
             <option value="kebab-case">kebab-case</option>
             <option value="snake_case">snake_case</option>
@@ -125,27 +112,23 @@ function NamingSettingsSection({ settings, setSettings }) {
             <option value="lowercase">lowercase</option>
             <option value="UPPERCASE">UPPERCASE</option>
           </Select>
-        </div>
+        </SettingRow>
 
-        <div>
-          <label
-            htmlFor="settings-separator"
-            className="block text-sm font-medium text-system-gray-700 mb-2"
-          >
-            Separator
-          </label>
+        <SettingRow
+          layout="col"
+          label="Separator"
+          className="h-full"
+          description="Letters, numbers, dash or underscore."
+        >
           <Input
             id="settings-separator"
             value={settings.separator || '-'}
             onChange={handleSeparatorChange}
             placeholder="-"
             aria-label="Separator character"
-            aria-describedby="settings-separator-hint"
+            className="w-full"
           />
-          <p id="settings-separator-hint" className="mt-2 text-xs text-system-gray-500">
-            Use letters, numbers, dash or underscore.
-          </p>
-        </div>
+        </SettingRow>
       </div>
     </div>
   );

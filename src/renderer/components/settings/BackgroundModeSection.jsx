@@ -1,28 +1,33 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import Switch from '../ui/Switch';
+import SettingRow from './SettingRow';
 
 function BackgroundModeSection({ settings, setSettings }) {
   return (
-    <div className="space-y-2">
-      <label className="flex items-center gap-3">
-        <input
-          type="checkbox"
+    <div className="space-y-6">
+      <SettingRow
+        label="Background Mode"
+        description="Keep running in the background when the window is closed."
+      >
+        <Switch
           checked={settings.backgroundMode}
-          onChange={(e) =>
+          onChange={(checked) =>
             setSettings((prev) => ({
               ...prev,
-              backgroundMode: e.target.checked
+              backgroundMode: checked
             }))
           }
-          className="form-checkbox accent-stratosort-blue"
         />
-        <span className="text-sm text-system-gray-700">Keep running in background</span>
-      </label>
+      </SettingRow>
+
       {settings.backgroundMode && !settings.autoOrganize && (
-        <p className="ml-6 text-xs text-amber-600">
-          Enable &quot;Automatically organize new downloads&quot; below to process files while
-          running in background.
-        </p>
+        <div className="ml-0 pl-4 border-l-2 border-amber-200">
+          <p className="text-xs text-amber-700">
+            Enable &quot;Auto-organize Downloads&quot; above to process files while running in
+            background.
+          </p>
+        </div>
       )}
     </div>
   );

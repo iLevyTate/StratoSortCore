@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Link2, RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import SettingRow from './SettingRow';
 import { SERVICE_URLS } from '../../../shared/configDefaults';
 
 /**
@@ -22,12 +23,13 @@ function OllamaConfigSection({
   onRefreshModels
 }) {
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
-          Ollama Host URL
-        </label>
-        <div className="flex flex-col sm:flex-row gap-3">
+    <div className="space-y-6">
+      <SettingRow
+        layout="col"
+        label="Ollama Host URL"
+        description="The URL where your Ollama instance is running."
+      >
+        <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
           <Input
             type="text"
             value={settings.ollamaHost}
@@ -46,13 +48,14 @@ function OllamaConfigSection({
             type="button"
             title="Test Ollama connection"
             leftIcon={<Link2 className="w-4 h-4" />}
-            size="sm"
+            size="md"
             className="shrink-0"
           >
-            Test
+            Test Connection
           </Button>
         </div>
-      </div>
+      </SettingRow>
+
       <div className="flex items-center gap-3 h-9">
         <Button
           onClick={onRefreshModels}

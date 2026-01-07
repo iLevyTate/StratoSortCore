@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
+import Switch from '../ui/Switch';
+import SettingRow from './SettingRow';
 
 const DEFAULT_CONFIDENCE = 0.75; // 75%
 
@@ -17,29 +19,35 @@ function AutoOrganizeSection({ settings, setSettings }) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Auto-organize toggle */}
-      <label className="flex items-center gap-3">
-        <input
-          type="checkbox"
+      <SettingRow
+        label="Auto-organize Downloads"
+        description="Automatically organize new files detected in your download folder."
+      >
+        <Switch
           checked={settings.autoOrganize || false}
-          onChange={(e) => setSettings((prev) => ({ ...prev, autoOrganize: e.target.checked }))}
-          className="form-checkbox accent-stratosort-blue"
+          onChange={(checked) => setSettings((prev) => ({ ...prev, autoOrganize: checked }))}
         />
-        <span className="text-sm text-system-gray-700">Automatically organize new downloads</span>
-      </label>
+      </SettingRow>
 
       {/* Confidence threshold - only shown when autoOrganize is enabled */}
       {settings.autoOrganize && (
-        <div className="ml-6 p-3 bg-system-gray-50 rounded border border-system-gray-200">
+        <div className="ml-0 pl-4 border-l-2 border-system-gray-100 space-y-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm font-medium text-system-gray-700">Minimum confidence</span>
             <span className="text-sm font-medium text-stratosort-blue">{confidencePercent}%</span>
           </div>
-          <p className="text-xs text-system-gray-500">
+          <p className="text-xs text-system-gray-500 mb-3">
             Files must meet this confidence level to be automatically organized. Lower confidence
             matches require manual review.
           </p>
+          <div className="h-2 bg-system-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-stratosort-blue rounded-full transition-all duration-300"
+              style={{ width: `${confidencePercent}%` }}
+            />
+          </div>
         </div>
       )}
     </div>

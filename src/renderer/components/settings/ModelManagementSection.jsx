@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import SettingRow from './SettingRow';
 
 /**
  * Model management section for adding Ollama models
@@ -9,9 +10,12 @@ import Input from '../ui/Input';
 function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddModel }) {
   return (
     <div className="border-t border-system-gray-200 pt-6 mt-6">
-      <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">Add Model</label>
-        <div className="flex flex-col sm:flex-row gap-3">
+      <SettingRow
+        layout="col"
+        label="Add Model"
+        description="Download new models from the Ollama library."
+      >
+        <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
           <Input
             type="text"
             value={newModel}
@@ -25,13 +29,13 @@ function ModelManagementSection({ newModel, setNewModel, isAddingModel, onAddMod
             type="button"
             disabled={isAddingModel}
             title="Pull model"
-            size="sm"
+            size="md"
             className="shrink-0"
           >
-            {isAddingModel ? 'Adding…' : 'Add'}
+            {isAddingModel ? 'Adding…' : 'Add Model'}
           </Button>
         </div>
-      </div>
+      </SettingRow>
     </div>
   );
 }

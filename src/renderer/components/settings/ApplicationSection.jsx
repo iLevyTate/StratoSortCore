@@ -1,5 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import Switch from '../ui/Switch';
+import SettingRow from './SettingRow';
 
 /**
  * Application settings section (launch on startup, etc.)
@@ -8,21 +10,20 @@ function ApplicationSection({ settings, setSettings }) {
   return (
     <div className="space-y-6">
       {/* Launch on Startup */}
-      <label className="flex items-center gap-3">
-        <input
-          type="checkbox"
-          id="launchOnStartup"
+      <SettingRow
+        label="Launch on Startup"
+        description="Automatically start StratoSort when you log in to your computer."
+      >
+        <Switch
           checked={!!settings.launchOnStartup}
-          onChange={(e) =>
+          onChange={(checked) =>
             setSettings((prev) => ({
               ...prev,
-              launchOnStartup: e.target.checked
+              launchOnStartup: checked
             }))
           }
-          className="form-checkbox accent-stratosort-blue"
         />
-        <span className="text-sm text-system-gray-700">Launch StratoSort on system startup</span>
-      </label>
+      </SettingRow>
     </div>
   );
 }

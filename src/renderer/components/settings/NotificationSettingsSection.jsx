@@ -1,6 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Bell, Monitor, Smartphone, MessageSquare, AlertTriangle } from 'lucide-react';
+import { Monitor, Smartphone, MessageSquare, AlertTriangle } from 'lucide-react';
+import Switch from '../ui/Switch';
+import SettingRow from './SettingRow';
 
 /**
  * NotificationSettingsSection - Settings section for notification preferences
@@ -17,114 +19,135 @@ function NotificationSettingsSection({ settings, setSettings }) {
   const notificationMode = settings.notificationMode || 'both';
 
   return (
-    <div className="space-y-4">
-      {/* Section header */}
-      <div className="flex items-center gap-2 mb-4">
-        <Bell className="w-5 h-5 text-stratosort-blue" />
-        <h3 className="text-sm font-medium text-system-gray-900">Notification Settings</h3>
-      </div>
-
+    <div className="space-y-6">
       {/* Master notifications toggle */}
-      <label className="flex items-center gap-3">
-        <input
-          type="checkbox"
+      <SettingRow
+        label="Enable Notifications"
+        description="Show notifications for important events and analysis results."
+      >
+        <Switch
           checked={settings.notifications !== false}
-          onChange={(e) => updateSetting('notifications', e.target.checked)}
-          className="form-checkbox accent-stratosort-blue"
+          onChange={(checked) => updateSetting('notifications', checked)}
         />
-        <span className="text-sm text-system-gray-700">Enable notifications</span>
-      </label>
+      </SettingRow>
 
       {/* Notification mode selection */}
       {settings.notifications !== false && (
-        <div className="ml-6 space-y-3">
-          <p className="text-xs text-system-gray-500">Where to show notifications:</p>
+        <div className="ml-0 pl-4 border-l-2 border-system-gray-100 space-y-6">
+          <SettingRow
+            layout="col"
+            label="Display Mode"
+            description="Choose where notifications should appear."
+          >
+            <div className="grid gap-3">
+              <label
+                className={`
+                flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
+                ${notificationMode === 'both' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-system-gray-200 hover:border-stratosort-blue/50'}
+              `}
+              >
+                <input
+                  type="radio"
+                  name="notificationMode"
+                  value="both"
+                  checked={notificationMode === 'both'}
+                  onChange={() => updateSetting('notificationMode', 'both')}
+                  className="form-radio text-stratosort-blue focus:ring-stratosort-blue"
+                />
+                <div className="flex items-center gap-2">
+                  <Monitor
+                    className={`w-4 h-4 ${notificationMode === 'both' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
+                  />
+                  <Smartphone
+                    className={`w-4 h-4 ${notificationMode === 'both' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
+                  />
+                  <span className="text-sm font-medium text-system-gray-900">
+                    App and system tray (Recommended)
+                  </span>
+                </div>
+              </label>
 
-          <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-3">
-              <input
-                type="radio"
-                name="notificationMode"
-                value="both"
-                checked={notificationMode === 'both'}
-                onChange={() => updateSetting('notificationMode', 'both')}
-                className="form-radio accent-stratosort-blue"
-              />
-              <div className="flex items-center gap-2">
-                <Monitor className="w-4 h-4 text-system-gray-500" />
-                <Smartphone className="w-4 h-4 text-system-gray-500" />
-                <span className="text-sm text-system-gray-700">
-                  App and system tray (Recommended)
-                </span>
-              </div>
-            </label>
+              <label
+                className={`
+                flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
+                ${notificationMode === 'ui' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-system-gray-200 hover:border-stratosort-blue/50'}
+              `}
+              >
+                <input
+                  type="radio"
+                  name="notificationMode"
+                  value="ui"
+                  checked={notificationMode === 'ui'}
+                  onChange={() => updateSetting('notificationMode', 'ui')}
+                  className="form-radio text-stratosort-blue focus:ring-stratosort-blue"
+                />
+                <div className="flex items-center gap-2">
+                  <Monitor
+                    className={`w-4 h-4 ${notificationMode === 'ui' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
+                  />
+                  <span className="text-sm font-medium text-system-gray-900">
+                    App only (in-window toasts)
+                  </span>
+                </div>
+              </label>
 
-            <label className="flex items-center gap-3">
-              <input
-                type="radio"
-                name="notificationMode"
-                value="ui"
-                checked={notificationMode === 'ui'}
-                onChange={() => updateSetting('notificationMode', 'ui')}
-                className="form-radio accent-stratosort-blue"
-              />
-              <div className="flex items-center gap-2">
-                <Monitor className="w-4 h-4 text-system-gray-500" />
-                <span className="text-sm text-system-gray-700">App only (in-window toasts)</span>
-              </div>
-            </label>
+              <label
+                className={`
+                flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
+                ${notificationMode === 'tray' ? 'bg-stratosort-blue/5 border-stratosort-blue' : 'bg-white border-system-gray-200 hover:border-stratosort-blue/50'}
+              `}
+              >
+                <input
+                  type="radio"
+                  name="notificationMode"
+                  value="tray"
+                  checked={notificationMode === 'tray'}
+                  onChange={() => updateSetting('notificationMode', 'tray')}
+                  className="form-radio text-stratosort-blue focus:ring-stratosort-blue"
+                />
+                <div className="flex items-center gap-2">
+                  <Smartphone
+                    className={`w-4 h-4 ${notificationMode === 'tray' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
+                  />
+                  <span className="text-sm font-medium text-system-gray-900">System tray only</span>
+                </div>
+              </label>
+            </div>
+          </SettingRow>
 
-            <label className="flex items-center gap-3">
-              <input
-                type="radio"
-                name="notificationMode"
-                value="tray"
-                checked={notificationMode === 'tray'}
-                onChange={() => updateSetting('notificationMode', 'tray')}
-                className="form-radio accent-stratosort-blue"
-              />
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-system-gray-500" />
-                <span className="text-sm text-system-gray-700">System tray only</span>
-              </div>
-            </label>
-          </div>
+          <div className="pt-4 border-t border-system-gray-100">
+            <h4 className="text-sm font-medium text-system-gray-900 mb-4">Notification Events</h4>
+            <div className="space-y-4">
+              <SettingRow
+                label={
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-system-gray-500" />
+                    <span>Auto-analyzed files</span>
+                  </div>
+                }
+                description="Notify when files are analyzed by smart folder or download watchers."
+              >
+                <Switch
+                  checked={settings.notifyOnAutoAnalysis !== false}
+                  onChange={(checked) => updateSetting('notifyOnAutoAnalysis', checked)}
+                />
+              </SettingRow>
 
-          {/* Notification types */}
-          <div className="mt-4 pt-4 border-t border-system-gray-200 space-y-3">
-            <p className="text-xs text-system-gray-500 font-medium">Notification types:</p>
-
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={settings.notifyOnAutoAnalysis !== false}
-                onChange={(e) => updateSetting('notifyOnAutoAnalysis', e.target.checked)}
-                className="form-checkbox accent-stratosort-blue"
-              />
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-system-gray-500" />
-                <span className="text-sm text-system-gray-700">Auto-analyzed files</span>
-              </div>
-            </label>
-            <p className="text-xs text-system-gray-400 ml-6">
-              Notify when files are analyzed by smart folder or download watchers
-            </p>
-
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={settings.notifyOnLowConfidence !== false}
-                onChange={(e) => updateSetting('notifyOnLowConfidence', e.target.checked)}
-                className="form-checkbox accent-stratosort-blue"
-              />
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
-                <span className="text-sm text-system-gray-700">Low confidence files</span>
-              </div>
-            </label>
-            <p className="text-xs text-system-gray-400 ml-6">
-              Notify when a file doesn&apos;t meet the confidence threshold for auto-organization
-            </p>
+              <SettingRow
+                label={
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span>Low confidence files</span>
+                  </div>
+                }
+                description="Notify when a file doesn't meet the confidence threshold for auto-organization."
+              >
+                <Switch
+                  checked={settings.notifyOnLowConfidence !== false}
+                  onChange={(checked) => updateSetting('notifyOnLowConfidence', checked)}
+                />
+              </SettingRow>
+            </div>
           </div>
         </div>
       )}
