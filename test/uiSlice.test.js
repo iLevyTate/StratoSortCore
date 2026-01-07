@@ -34,7 +34,6 @@ jest.mock('../src/shared/logger', () => ({
 
 import uiReducer, {
   setPhase,
-  setTheme,
   toggleSidebar,
   toggleSettings,
   setLoading,
@@ -55,7 +54,6 @@ describe('uiSlice', () => {
   const initialState = {
     currentPhase: 'welcome',
     previousPhase: null,
-    theme: 'light',
     sidebarOpen: true,
     showSettings: false,
     isLoading: false,
@@ -73,7 +71,6 @@ describe('uiSlice', () => {
       const result = uiReducer(undefined, { type: 'unknown' });
 
       expect(result.currentPhase).toBe('welcome');
-      expect(result.theme).toBe('light');
       expect(result.sidebarOpen).toBe(true);
     });
   });
@@ -168,14 +165,6 @@ describe('uiSlice', () => {
     });
   });
 
-  describe('setTheme', () => {
-    test('sets theme', () => {
-      const result = uiReducer(initialState, setTheme('dark'));
-
-      expect(result.theme).toBe('dark');
-    });
-  });
-
   describe('toggleSidebar', () => {
     test('toggles sidebar open to closed', () => {
       const result = uiReducer(initialState, toggleSidebar());
@@ -267,21 +256,21 @@ describe('uiSlice', () => {
 
   describe('updateSettings', () => {
     test('updates settings', () => {
-      const result = uiReducer(initialState, updateSettings({ theme: 'dark', autoSave: true }));
+      const result = uiReducer(initialState, updateSettings({ language: 'en', autoSave: true }));
 
-      expect(result.settings.theme).toBe('dark');
+      expect(result.settings.language).toBe('en');
       expect(result.settings.autoSave).toBe(true);
     });
 
     test('merges with existing settings', () => {
       const state = {
         ...initialState,
-        settings: { theme: 'light', existing: true }
+        settings: { language: 'fr', existing: true }
       };
 
-      const result = uiReducer(state, updateSettings({ theme: 'dark' }));
+      const result = uiReducer(state, updateSettings({ language: 'en' }));
 
-      expect(result.settings.theme).toBe('dark');
+      expect(result.settings.language).toBe('en');
       expect(result.settings.existing).toBe(true);
     });
 
@@ -353,7 +342,7 @@ describe('uiSlice', () => {
     });
 
     test('sets settings on fulfilled', () => {
-      const settings = { theme: 'dark', language: 'en' };
+      const settings = { language: 'en' };
 
       const result = uiReducer(initialState, {
         type: fetchSettings.fulfilled.type,

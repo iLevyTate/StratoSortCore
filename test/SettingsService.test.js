@@ -66,9 +66,9 @@ jest.mock('../src/shared/settingsValidation', () => ({
 // Mock default settings
 jest.mock('../src/shared/defaultSettings', () => ({
   DEFAULT_SETTINGS: {
-    theme: 'system',
     autoOrganize: false,
-    downloadConfidenceThreshold: 0.9
+    confidenceThreshold: 0.75,
+    notifications: true
   }
 }));
 
@@ -128,22 +128,24 @@ describe('SettingsService', () => {
 
       const settings = await service.load();
 
-      expect(settings.theme).toBe('system');
       expect(settings.autoOrganize).toBe(false);
+      expect(settings.confidenceThreshold).toBe(0.75);
     });
 
     test('returns merged settings from file', async () => {
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ theme: 'dark', customSetting: true }));
+      mockFs.readFile.mockResolvedValueOnce(
+        JSON.stringify({ language: 'en', customSetting: true })
+      );
 
       const settings = await service.load();
 
-      expect(settings.theme).toBe('dark');
+      expect(settings.language).toBe('en');
       expect(settings.customSetting).toBe(true);
       expect(settings.autoOrganize).toBe(false); // Default
     });
 
     test('uses cache for rapid calls', async () => {
-      mockFs.readFile.mockResolvedValue(JSON.stringify({ theme: 'dark' }));
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ language: 'en' }));
 
       await service.load();
       await service.load();
@@ -157,7 +159,8 @@ describe('SettingsService', () => {
 
       const settings = await service.load();
 
-      expect(settings.theme).toBe('system'); // Falls back to defaults
+      expect(settings.autoOrganize).toBe(false); // Falls back to defaults
+      expect(settings.confidenceThreshold).toBe(0.75);
     });
   });
 
@@ -165,7 +168,7 @@ describe('SettingsService', () => {
     test('validates settings before saving', async () => {
       const { validateSettings } = require('../src/shared/settingsValidation');
 
-      await service.save({ theme: 'dark' });
+      await service.save({ language: 'en' });
 
       expect(validateSettings).toHaveBeenCalled();
     });
@@ -174,15 +177,15 @@ describe('SettingsService', () => {
       const { validateSettings } = require('../src/shared/settingsValidation');
       validateSettings.mockReturnValueOnce({
         valid: false,
-        errors: ['Invalid theme'],
+        errors: ['Invalid setting'],
         warnings: []
       });
 
-      await expect(service.save({ theme: 'invalid' })).rejects.toThrow('Invalid settings');
+      await expect(service.save({ language: 'invalid' })).rejects.toThrow('Invalid settings');
     });
 
     test('creates backup before saving', async () => {
-      await service.save({ theme: 'dark' });
+      await service.save({ language: 'en' });
 
       // Should have called mkdir for backup directory
       expect(mockFs.mkdir).toHaveBeenCalled();
@@ -190,23 +193,23 @@ describe('SettingsService', () => {
 
     test('merges with existing settings', async () => {
       mockFs.readFile.mockResolvedValueOnce(
-        JSON.stringify({ theme: 'light', existingSetting: true })
+        JSON.stringify({ language: 'fr', existingSetting: true })
       );
 
       const { backupAndReplace } = require('../src/shared/atomicFileOperations');
 
-      await service.save({ theme: 'dark' });
+      await service.save({ language: 'en' });
 
       const savedContent = JSON.parse(backupAndReplace.mock.calls[0][1]);
-      expect(savedContent.theme).toBe('dark');
+      expect(savedContent.language).toBe('en');
       expect(savedContent.existingSetting).toBe(true);
     });
 
     test('returns saved settings and metadata', async () => {
-      const result = await service.save({ theme: 'dark' });
+      const result = await service.save({ language: 'en' });
 
       expect(result.settings).toBeDefined();
-      expect(result.settings.theme).toBe('dark');
+      expect(result.settings.language).toBe('en');
       expect(result.backupCreated).toBe(true);
     });
 
@@ -215,7 +218,7 @@ describe('SettingsService', () => {
       const { logger } = require('../src/shared/logger');
 
       validateSettings.mockReturnValueOnce({ valid: true, errors: [], warnings: ['warn-1'] });
-      await service.save({ theme: 'dark' });
+      await service.save({ language: 'en' });
 
       expect(logger.warn).toHaveBeenCalledWith(
         '[SettingsService] Validation warnings',
@@ -230,7 +233,7 @@ describe('SettingsService', () => {
         .mockResolvedValueOnce({ success: false, error: 'IO' })
         .mockResolvedValueOnce({ success: true, path: '/tmp/backup.json' });
 
-      const result = await service.save({ theme: 'dark' });
+      const result = await service.save({ language: 'en' });
       expect(result.backupCreated).toBe(true);
       expect(createBackupSpy).toHaveBeenCalledTimes(2);
     });
@@ -243,7 +246,7 @@ describe('SettingsService', () => {
         .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'EBUSY' }))
         .mockResolvedValueOnce({ success: true });
 
-      const savePromise = service.save({ theme: 'dark' });
+      const savePromise = service.save({ language: 'en' });
 
       // First attempt schedules a retry after 100ms
       await jest.advanceTimersByTimeAsync(110);
@@ -255,7 +258,7 @@ describe('SettingsService', () => {
 
   describe('invalidateCache', () => {
     test('clears cached settings', async () => {
-      mockFs.readFile.mockResolvedValue(JSON.stringify({ theme: 'dark' }));
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ language: 'en' }));
 
       await service.load();
       service.invalidateCache();
@@ -267,7 +270,7 @@ describe('SettingsService', () => {
 
   describe('reload', () => {
     test('invalidates cache and reloads', async () => {
-      mockFs.readFile.mockResolvedValue(JSON.stringify({ theme: 'dark' }));
+      mockFs.readFile.mockResolvedValue(JSON.stringify({ language: 'en' }));
 
       await service.load();
       const invalidateSpy = jest.spyOn(service, 'invalidateCache');
@@ -304,7 +307,7 @@ describe('SettingsService', () => {
 
       electron.BrowserWindow.getAllWindows.mockReturnValueOnce([badWin]);
 
-      await service._notifySettingsChanged({ theme: 'dark' });
+      await service._notifySettingsChanged({ language: 'en' });
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Failed to send settings-changed event:')
       );
@@ -323,7 +326,7 @@ describe('SettingsService', () => {
 
   describe('createBackup', () => {
     test('creates backup with timestamp', async () => {
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ theme: 'dark' }));
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ language: 'en' }));
 
       const result = await service.createBackup();
 
@@ -333,7 +336,7 @@ describe('SettingsService', () => {
     });
 
     test('includes SHA256 hash', async () => {
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ theme: 'dark' }));
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify({ language: 'en' }));
 
       await service.createBackup();
 
@@ -424,19 +427,19 @@ describe('SettingsService', () => {
       mockFs.readFile.mockResolvedValueOnce(
         JSON.stringify({
           timestamp: '2024-01-01T00:00:00Z',
-          settings: { theme: 'dark', autoOrganize: true }
+          settings: { language: 'en', autoOrganize: true }
         })
       );
 
       const result = await service.restoreFromBackup(validBackupPath);
 
       expect(result.success).toBe(true);
-      expect(result.settings.theme).toBe('dark');
+      expect(result.settings.language).toBe('en');
     });
 
     test('verifies SHA256 hash', async () => {
       // This is a simplified test - in reality the hash would need to match
-      const settings = { theme: 'dark' };
+      const settings = { language: 'en' };
       const backupData = {
         timestamp: '2024-01-01T00:00:00Z',
         appVersion: '1.0.0',

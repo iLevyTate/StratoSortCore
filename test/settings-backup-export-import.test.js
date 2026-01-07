@@ -68,7 +68,7 @@ describe('Settings Backup, Export, and Import', () => {
       });
 
       test('backup file contains settings data', async () => {
-        const testSettings = { ...DEFAULT_SETTINGS, theme: 'dark' };
+        const testSettings = { ...DEFAULT_SETTINGS, language: 'en' };
         settingsService._cache = testSettings;
 
         await settingsService.createBackup();
@@ -431,7 +431,7 @@ describe('Settings Backup, Export, and Import', () => {
       test('restores settings from valid backup', async () => {
         const backupSettings = {
           ...DEFAULT_SETTINGS,
-          theme: 'dark',
+          language: 'en',
           notifications: false
         };
         const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
@@ -486,7 +486,7 @@ describe('Settings Backup, Export, and Import', () => {
       });
 
       test('validates restored settings', async () => {
-        const invalidSettings = { ...DEFAULT_SETTINGS, theme: 'invalid-theme' };
+        const invalidSettings = { ...DEFAULT_SETTINGS, loggingLevel: 'verbose' };
         const backupPath = path.join(mockBackupDir, 'settings-2024-01-15T10-00-00-000Z.json');
 
         fs.readFile.mockImplementation(async (filePath) => {
@@ -623,7 +623,7 @@ describe('Settings Backup, Export, and Import', () => {
     describe('successful export', () => {
       test('exports settings to specified file', async () => {
         const exportPath = '/export/my-settings.json';
-        const currentSettings = { ...DEFAULT_SETTINGS, theme: 'dark' };
+        const currentSettings = { ...DEFAULT_SETTINGS, language: 'en' };
 
         settingsService.settings = currentSettings;
 
@@ -640,7 +640,7 @@ describe('Settings Backup, Export, and Import', () => {
 
         expect(fs.writeFile).toHaveBeenCalledWith(
           exportPath,
-          expect.stringContaining('"theme": "dark"'),
+          expect.stringContaining('"language": "en"'),
           'utf8'
         );
       });
@@ -704,7 +704,7 @@ describe('Settings Backup, Export, and Import', () => {
     describe('successful import', () => {
       test('imports valid settings file', async () => {
         const importPath = '/import/settings.json';
-        const importedSettings = { ...DEFAULT_SETTINGS, theme: 'dark' };
+        const importedSettings = { ...DEFAULT_SETTINGS, language: 'en' };
         const importData = {
           version: '1.0.0',
           exportDate: '2024-01-15T10:00:00.000Z',
@@ -721,7 +721,7 @@ describe('Settings Backup, Export, and Import', () => {
       });
 
       test('validates imported settings', async () => {
-        const importedSettings = { ...DEFAULT_SETTINGS, theme: 'invalid' };
+        const importedSettings = { ...DEFAULT_SETTINGS, loggingLevel: 'verbose' };
         const importData = {
           version: '1.0.0',
           settings: importedSettings
@@ -733,7 +733,7 @@ describe('Settings Backup, Export, and Import', () => {
         const parsed = JSON.parse(fileContent);
 
         // Validation would happen in the IPC handler
-        expect(parsed.settings.theme).toBe('invalid');
+        expect(parsed.settings.loggingLevel).toBe('verbose');
       });
 
       test('creates backup before importing', async () => {
@@ -852,7 +852,6 @@ describe('Settings Backup, Export, and Import', () => {
     test('backup contains complete settings data', async () => {
       const fullSettings = {
         ...DEFAULT_SETTINGS,
-        theme: 'dark',
         notifications: false,
         maxFileSize: 50 * 1024 * 1024
       };
@@ -873,7 +872,6 @@ describe('Settings Backup, Export, and Import', () => {
     test('export-restore cycle preserves all settings', async () => {
       const originalSettings = {
         ...DEFAULT_SETTINGS,
-        theme: 'dark',
         notifications: false,
         maxConcurrentAnalysis: 5
       };

@@ -20,10 +20,6 @@ describe('defaultSettings', () => {
   });
 
   describe('UI settings', () => {
-    test('has theme setting', () => {
-      expect(DEFAULT_SETTINGS.theme).toBe('system');
-    });
-
     test('has notifications setting', () => {
       expect(DEFAULT_SETTINGS.notifications).toBe(true);
     });

@@ -99,6 +99,7 @@ describe('Embeddings/Semantic IPC', () => {
     const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
     // IMPROVED BEHAVIOR: Now uses batch operations for better performance
     const inserted = [];
+    const insertedChunks = [];
 
     // FIX: Mock Ollama utilities for model verification
     jest.doMock('../src/main/ollamaUtils', () => ({
@@ -108,6 +109,13 @@ describe('Embeddings/Semantic IPC', () => {
         })
       })),
       getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+    }));
+
+    // Chunk embeddings use ParallelEmbeddingService (not FolderMatchingService).
+    jest.doMock('../src/main/services/ParallelEmbeddingService', () => ({
+      getInstance: () => ({
+        embedText: jest.fn(async () => ({ vector: [0.5, 0.25, 0.125], model: 'embeddinggemma' }))
+      })
     }));
 
     const mockFolderMatcher = {
@@ -132,6 +140,7 @@ describe('Embeddings/Semantic IPC', () => {
         initialize: jest.fn(async () => {}),
         resetFolders: jest.fn(async () => {}),
         resetFiles: jest.fn(async () => {}),
+        resetFileChunks: jest.fn(async () => {}),
         migrateFromJsonl: jest.fn(async () => 0),
         cleanup: jest.fn(async () => {}),
         resetAll: jest.fn(async () => {}),
@@ -139,6 +148,10 @@ describe('Embeddings/Semantic IPC', () => {
         batchUpsertFolders: jest.fn(async (payloads) => payloads.length),
         batchUpsertFiles: jest.fn(async (payloads) => {
           payloads.forEach((p) => inserted.push(p));
+          return payloads.length;
+        }),
+        batchUpsertFileChunks: jest.fn(async (payloads) => {
+          payloads.forEach((p) => insertedChunks.push(p));
           return payloads.length;
         }),
         // Event emitter methods required for chromadb IPC
@@ -168,7 +181,11 @@ describe('Embeddings/Semantic IPC', () => {
             subject: 'Q1',
             summary: 'Quarterly report',
             tags: ['finance'],
-            extractedText: 'numbers'
+            // MIN_TEXT_LENGTH is 200, so provide sufficient text for chunking
+            extractedText:
+              'This is a quarterly financial report containing important budget figures and revenue projections. ' +
+              'The document includes detailed analysis of Q1 performance metrics across all business units. ' +
+              'Revenue grew significantly compared to previous quarters due to strong market conditions.'
           }
         }
       ])
@@ -189,6 +206,9 @@ describe('Embeddings/Semantic IPC', () => {
     expect(result.success).toBe(true);
     expect(result.files).toBe(1);
     expect(inserted.length).toBe(1); // Only file entries tracked (folders processed separately)
+    expect(result.fileChunks).toBeGreaterThan(0);
+    expect(insertedChunks.length).toBeGreaterThan(0);
+    expect(insertedChunks[0].id).toContain('chunk:');
     // The file entry should have the correct ID format
     expect(inserted[0].id).toContain('file:');
   });
@@ -669,7 +689,7 @@ describe('Embeddings/Semantic IPC', () => {
       expect(fsOperations.filter((op) => op.op === 'rename')).toHaveLength(0);
     }, 10000);
 
-    test('REBUILD_FILES only calls resetFiles (collection reset), not DB directory operations', async () => {
+    test('REBUILD_FILES only resets collections (files + chunks), not DB directory operations', async () => {
       jest.resetModules();
       const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
       const resetFilesCalls = [];
@@ -703,7 +723,11 @@ describe('Embeddings/Semantic IPC', () => {
           resetFiles: jest.fn(async () => {
             resetFilesCalls.push('resetFiles');
           }),
+          resetFileChunks: jest.fn(async () => {
+            resetFilesCalls.push('resetFileChunks');
+          }),
           batchUpsertFiles: jest.fn(async () => 1),
+          batchUpsertFileChunks: jest.fn(async () => 1),
           migrateFromJsonl: jest.fn(async () => 0),
           // Event emitter methods required for chromadb IPC
           on: jest.fn(),
@@ -767,6 +791,7 @@ describe('Embeddings/Semantic IPC', () => {
 
       expect(result.success).toBe(true);
       expect(resetFilesCalls).toContain('resetFiles');
+      expect(resetFilesCalls).toContain('resetFileChunks');
       // Should NOT perform any file system rename operations (DB directory reset)
       expect(fsOperations.filter((op) => op.op === 'rename')).toHaveLength(0);
     }, 10000);
@@ -894,6 +919,7 @@ describe('Embeddings/Semantic IPC', () => {
         initialize: jest.fn(async () => {}),
         isServerAvailable: jest.fn(async () => true),
         migrateFromJsonl: jest.fn(async () => 0),
+        getCollectionDimension: jest.fn(async () => 2),
         fileCollection: {
           get: jest.fn(async () => ({
             ids: ['a', 'b'],

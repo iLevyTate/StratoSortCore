@@ -25,7 +25,7 @@ describe('SettingsService cache', () => {
     jest.doMock('../src/shared/defaultSettings', () => ({
       DEFAULT_SETTINGS: {
         notifications: true,
-        theme: 'dark',
+        language: 'en',
         autoStart: false
       }
     }));
@@ -61,9 +61,9 @@ describe('SettingsService cache', () => {
     // First load: file may not exist -> defaults
     await svc.load();
     // Save to create file
-    const saveResult = await svc.save({ notifications: false, theme: 'light' });
+    const saveResult = await svc.save({ notifications: false, language: 'fr' });
     expect(saveResult.settings.notifications).toBe(false);
-    expect(saveResult.settings.theme).toBe('light');
+    expect(saveResult.settings.language).toBe('fr');
 
     readSpy.mockClear();
     const s2 = await svc.load();
@@ -71,7 +71,7 @@ describe('SettingsService cache', () => {
 
     // Within TTL, subsequent loads should not trigger readFile
     expect(readSpy).toHaveBeenCalledTimes(0);
-    expect(s2.theme).toBe('light');
+    expect(s2.language).toBe('fr');
     expect(s3.notifications).toBe(false);
   });
 });

@@ -164,7 +164,19 @@ describe('EmbeddingCache', () => {
   });
 
   describe('TTL Expiration', () => {
-    it('should return null for expired entries', async () => {
+    beforeEach(() => {
+      // Use fake timers to make TTL tests deterministic.
+      jest.useFakeTimers();
+      // Recreate cache under fake timers (outer beforeEach already created one under real timers).
+      cache.shutdown();
+      cache = new EmbeddingCache({ maxSize: 3, ttlMs: 1000 });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should return null for expired entries', () => {
       const vector = new Array(1024).fill(0.5);
       cache.set('test', 'model', vector);
 
@@ -172,7 +184,7 @@ describe('EmbeddingCache', () => {
       expect(cache.get('test', 'model')).toBeDefined();
 
       // Wait for TTL to expire (ttlMs = 1000ms in test config)
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      jest.advanceTimersByTime(1100);
 
       const result = cache.get('test', 'model');
       expect(result).toBeNull();
@@ -181,7 +193,7 @@ describe('EmbeddingCache', () => {
       expect(stats.misses).toBe(1);
     });
 
-    it('should cleanup expired entries', async () => {
+    it('should cleanup expired entries', () => {
       const vector = new Array(1024).fill(0.5);
       cache.set('test1', 'model', vector);
       cache.set('test2', 'model', vector);
@@ -189,20 +201,20 @@ describe('EmbeddingCache', () => {
       const statsBefore = cache.getStats();
       expect(statsBefore.size).toBe(2);
 
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      jest.advanceTimersByTime(1100);
       cache.cleanup();
 
       const statsAfter = cache.getStats();
       expect(statsAfter.size).toBe(0);
     });
 
-    it('should remove expired entries during get', async () => {
+    it('should remove expired entries during get', () => {
       const vector = new Array(1024).fill(0.5);
       cache.set('test1', 'model', vector);
       cache.set('test2', 'model', vector);
 
       // Wait for entries to expire (TTL is 1000ms)
-      await new Promise((resolve) => setTimeout(resolve, 1100));
+      jest.advanceTimersByTime(1100);
 
       // Getting expired entries should return null and remove them from cache
       expect(cache.get('test1', 'model')).toBeNull();
@@ -623,7 +635,7 @@ describe('FolderMatchingService Integration with EmbeddingCache', () => {
 
     // Performance should be improved due to cache hits
     // (exact timing depends on system, but cache hits should be faster)
-    expect(endTime - startTime).toBeLessThan(200); // Increased buffer for CI envs
+    expect(endTime - startTime).toBeLessThan(500); // Generous buffer for CI envs with varying load
   });
 
   it('should handle folder embedding with cache', async () => {

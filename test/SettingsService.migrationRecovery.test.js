@@ -58,7 +58,6 @@ jest.mock('../src/shared/settingsValidation', () => ({
 
 jest.mock('../src/shared/defaultSettings', () => ({
   DEFAULT_SETTINGS: {
-    theme: 'system',
     confidenceThreshold: 0.7
   }
 }));
@@ -107,7 +106,7 @@ describe('SettingsService migration + recovery', () => {
     mockFs.readFile
       .mockResolvedValueOnce('not valid json')
       // after restoreBackup, SettingsService re-reads settingsPath
-      .mockResolvedValueOnce(JSON.stringify({ theme: 'dark' }));
+      .mockResolvedValueOnce(JSON.stringify({ language: 'en' }));
 
     mockBackupService.listBackups.mockResolvedValueOnce([
       { filename: 'settings-2026-01-01.json', path: '/tmp/settings-2026-01-01.json' }
@@ -115,7 +114,7 @@ describe('SettingsService migration + recovery', () => {
     mockBackupService.restoreBackup.mockResolvedValueOnce({ success: true });
 
     const settings = await svc.load();
-    expect(settings.theme).toBe('dark');
+    expect(settings.language).toBe('en');
     expect(mockBackupService.restoreBackup).toHaveBeenCalled();
   });
 

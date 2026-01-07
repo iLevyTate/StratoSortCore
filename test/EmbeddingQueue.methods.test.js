@@ -216,26 +216,73 @@ describe('EmbeddingQueueCore Methods', () => {
     beforeEach(() => {
       embeddingQueue.queue = [
         { id: 'file:/path/1', vector: [] },
+        { id: 'image:/path/1', vector: [] },
         { id: 'file:/path/2', vector: [] }
       ];
       mockFailedItemHandler.failedItems.set('file:/path/1', {});
+      mockFailedItemHandler.failedItems.set('image:/path/1', {});
     });
 
     test('removeByFilePath removes from queue and failed items', () => {
       const removed = embeddingQueue.removeByFilePath('/path/1');
 
-      expect(removed).toBe(1);
+      expect(removed).toBe(2);
       expect(embeddingQueue.queue).toHaveLength(1);
       expect(embeddingQueue.queue[0].id).toBe('file:/path/2');
       expect(mockFailedItemHandler.failedItems.has('file:/path/1')).toBe(false);
+      expect(mockFailedItemHandler.failedItems.has('image:/path/1')).toBe(false);
       expect(persistQueueData).toHaveBeenCalled();
     });
 
     test('removeByFilePaths removes multiple items', () => {
       const removed = embeddingQueue.removeByFilePaths(['/path/1', '/path/2']);
 
-      expect(removed).toBe(2);
+      expect(removed).toBe(3);
       expect(embeddingQueue.queue).toHaveLength(0);
+      expect(persistQueueData).toHaveBeenCalled();
+    });
+  });
+
+  describe('path update methods', () => {
+    beforeEach(() => {
+      embeddingQueue.queue = [
+        {
+          id: 'file:/old/path/a.txt',
+          vector: [],
+          meta: { path: '/old/path/a.txt', name: 'a.txt' }
+        },
+        {
+          id: 'image:/old/path/a.txt',
+          vector: [],
+          meta: { path: '/old/path/a.txt', name: 'a.txt' }
+        }
+      ];
+      mockFailedItemHandler.failedItems.set('file:/old/path/a.txt', {
+        item: {
+          id: 'file:/old/path/a.txt',
+          vector: [],
+          meta: { path: '/old/path/a.txt', name: 'a.txt' }
+        }
+      });
+      mockFailedItemHandler.failedItems.set('image:/old/path/a.txt', {
+        item: {
+          id: 'image:/old/path/a.txt',
+          vector: [],
+          meta: { path: '/old/path/a.txt', name: 'a.txt' }
+        }
+      });
+    });
+
+    test('updateByFilePath updates queued and failed item IDs for file: and image:', () => {
+      const updated = embeddingQueue.updateByFilePath('/old/path/a.txt', '/new/path/a.txt');
+      expect(updated).toBe(2);
+
+      const ids = embeddingQueue.queue.map((i) => i.id).sort();
+      expect(ids).toEqual(['file:/new/path/a.txt', 'image:/new/path/a.txt'].sort());
+      expect(mockFailedItemHandler.failedItems.has('file:/old/path/a.txt')).toBe(false);
+      expect(mockFailedItemHandler.failedItems.has('image:/old/path/a.txt')).toBe(false);
+      expect(mockFailedItemHandler.failedItems.has('file:/new/path/a.txt')).toBe(true);
+      expect(mockFailedItemHandler.failedItems.has('image:/new/path/a.txt')).toBe(true);
       expect(persistQueueData).toHaveBeenCalled();
     });
   });

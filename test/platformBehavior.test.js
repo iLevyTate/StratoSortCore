@@ -94,11 +94,15 @@ describe('platformBehavior', () => {
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(false),
         setAlwaysOnTop: jest.fn(),
+        moveTop: jest.fn(),
+        show: jest.fn(),
         focus: jest.fn()
       };
 
       platformBehavior.bringWindowToForeground(mockWindow);
 
+      expect(mockWindow.moveTop).toHaveBeenCalled();
+      expect(mockWindow.show).toHaveBeenCalled();
       expect(mockWindow.setAlwaysOnTop).toHaveBeenCalledWith(true);
       expect(mockWindow.focus).toHaveBeenCalled();
 
@@ -134,6 +138,8 @@ describe('platformBehavior', () => {
       const mockWindow = {
         isDestroyed: jest.fn().mockReturnValue(false),
         setAlwaysOnTop: jest.fn(),
+        moveTop: jest.fn(),
+        show: jest.fn(),
         focus: jest.fn()
       };
 

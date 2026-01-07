@@ -56,60 +56,68 @@ describe('search', () => {
       }
     });
 
-    test('finds entries by fileName', () => {
+    test('finds entries by fileName', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'invoice');
+      const result = await search.searchAnalysis(history, cache, 60000, 'invoice', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('invoice_2024.pdf');
       expect(result.fromCache).toBe(false);
     });
 
-    test('finds entries by subject', () => {
+    test('finds entries by subject', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'quarterly');
+      const result = await search.searchAnalysis(history, cache, 60000, 'quarterly', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('report.pdf');
     });
 
-    test('finds entries by summary', () => {
+    test('finds entries by summary', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'consulting');
+      const result = await search.searchAnalysis(history, cache, 60000, 'consulting', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('contract.pdf');
     });
 
-    test('finds entries by tag', () => {
+    test('finds entries by tag', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'legal');
+      const result = await search.searchAnalysis(history, cache, 60000, 'legal', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('contract.pdf');
     });
 
-    test('finds entries by category', () => {
+    test('finds entries by category', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
@@ -117,59 +125,68 @@ describe('search', () => {
       };
 
       // Search for category 'legal' which only appears in one entry
-      const result = search.searchAnalysis(history, cache, 60000, 'legal');
+      const result = await search.searchAnalysis(history, cache, 60000, 'legal', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('contract.pdf');
     });
 
-    test('finds entries by extracted text', () => {
+    test('finds entries by extracted text', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'contract text');
+      const result = await search.searchAnalysis(history, cache, 60000, 'contract text', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('contract.pdf');
     });
 
-    test('returns multiple matches', () => {
+    test('returns multiple matches', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'finance');
+      const result = await search.searchAnalysis(history, cache, 60000, 'finance', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(2);
     });
 
-    test('sorts by score then timestamp', () => {
+    test('sorts by score then timestamp', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'finance');
+      const result = await search.searchAnalysis(history, cache, 60000, 'finance', {
+        semantic: false
+      });
 
       // Results should be sorted by search score
       expect(result.results[0].searchScore).toBeGreaterThanOrEqual(result.results[1].searchScore);
     });
 
-    test('respects limit parameter', () => {
+    test('respects limit parameter', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'finance', {
-        limit: 1
+      const result = await search.searchAnalysis(history, cache, 60000, 'finance', {
+        limit: 1,
+        semantic: false
       });
 
       expect(result.results.length).toBe(1);
@@ -177,23 +194,24 @@ describe('search', () => {
       expect(result.hasMore).toBe(true);
     });
 
-    test('respects offset parameter', () => {
+    test('respects offset parameter', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'finance', {
+      const result = await search.searchAnalysis(history, cache, 60000, 'finance', {
         limit: 1,
-        offset: 1
+        offset: 1,
+        semantic: false
       });
 
       expect(result.results.length).toBe(1);
       expect(result.hasMore).toBe(false);
     });
 
-    test('uses cache when available', () => {
+    test('uses cache when available', async () => {
       const history = createHistory();
       const cachedResults = [{ fileName: 'cached.pdf', searchScore: 10 }];
       const cache = {
@@ -201,13 +219,15 @@ describe('search', () => {
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'test');
+      const result = await search.searchAnalysis(history, cache, 60000, 'test', {
+        semantic: false
+      });
 
       expect(result.fromCache).toBe(true);
       expect(result.results[0].fileName).toBe('cached.pdf');
     });
 
-    test('bypasses cache when skipCache is true', () => {
+    test('bypasses cache when skipCache is true', async () => {
       const history = createHistory();
       const cachedResults = [{ fileName: 'cached.pdf', searchScore: 10 }];
       const cache = {
@@ -215,15 +235,16 @@ describe('search', () => {
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'invoice', {
-        skipCache: true
+      const result = await search.searchAnalysis(history, cache, 60000, 'invoice', {
+        skipCache: true,
+        semantic: false
       });
 
       expect(result.fromCache).toBe(false);
       expect(result.results[0].fileName).toBe('invoice_2024.pdf');
     });
 
-    test('removes expired cache entries', () => {
+    test('removes expired cache entries', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map([
@@ -232,26 +253,28 @@ describe('search', () => {
         searchResultsMaxSize: 50
       };
 
-      search.searchAnalysis(history, cache, 60000, 'test');
+      await search.searchAnalysis(history, cache, 60000, 'test', { semantic: false });
 
       // Cache entry should be deleted and not used
     });
 
-    test('returns empty results for no matches', () => {
+    test('returns empty results for no matches', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'nonexistent');
+      const result = await search.searchAnalysis(history, cache, 60000, 'nonexistent', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(0);
       expect(result.total).toBe(0);
       expect(result.hasMore).toBe(false);
     });
 
-    test('gives exact fileName match bonus', () => {
+    test('gives exact fileName match bonus', async () => {
       const history = {
         entries: {
           1: {
@@ -271,13 +294,15 @@ describe('search', () => {
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'test');
+      const result = await search.searchAnalysis(history, cache, 60000, 'test', {
+        semantic: false
+      });
 
       // Exact match should have higher score
       expect(result.results[0].fileName).toBe('test');
     });
 
-    test('handles entries without tags', () => {
+    test('handles entries without tags', async () => {
       const history = {
         entries: {
           1: {
@@ -292,12 +317,14 @@ describe('search', () => {
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'test');
+      const result = await search.searchAnalysis(history, cache, 60000, 'test', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
     });
 
-    test('handles entries with empty tags', () => {
+    test('handles entries with empty tags', async () => {
       const history = {
         entries: {
           1: {
@@ -312,19 +339,23 @@ describe('search', () => {
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'test');
+      const result = await search.searchAnalysis(history, cache, 60000, 'test', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
     });
 
-    test('is case insensitive', () => {
+    test('is case insensitive', async () => {
       const history = createHistory();
       const cache = {
         searchResults: new Map(),
         searchResultsMaxSize: 50
       };
 
-      const result = search.searchAnalysis(history, cache, 60000, 'INVOICE');
+      const result = await search.searchAnalysis(history, cache, 60000, 'INVOICE', {
+        semantic: false
+      });
 
       expect(result.results.length).toBe(1);
       expect(result.results[0].fileName).toBe('invoice_2024.pdf');

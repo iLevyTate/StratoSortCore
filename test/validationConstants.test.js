@@ -4,14 +4,12 @@
  */
 
 const {
-  THEME_VALUES,
   LOGGING_LEVELS,
   NUMERIC_LIMITS,
   URL_PATTERN,
   LENIENT_URL_PATTERN,
   MODEL_NAME_PATTERN,
   MAX_MODEL_NAME_LENGTH,
-  isValidTheme,
   isValidLoggingLevel,
   isValidNumericSetting,
   isValidUrl,
@@ -20,7 +18,6 @@ const {
 
 describe('validationConstants', () => {
   test('exports expected enums', () => {
-    expect(THEME_VALUES).toEqual(expect.arrayContaining(['light', 'dark', 'system']));
     expect(LOGGING_LEVELS).toEqual(expect.arrayContaining(['error', 'warn', 'info', 'debug']));
   });
 
@@ -34,19 +31,6 @@ describe('validationConstants', () => {
     expect(LENIENT_URL_PATTERN).toBeInstanceOf(RegExp);
     expect(MODEL_NAME_PATTERN).toBeInstanceOf(RegExp);
     expect(typeof MAX_MODEL_NAME_LENGTH).toBe('number');
-  });
-
-  describe('isValidTheme', () => {
-    test('accepts valid themes', () => {
-      for (const t of THEME_VALUES) {
-        expect(isValidTheme(t)).toBe(true);
-      }
-    });
-
-    test('rejects invalid themes', () => {
-      expect(isValidTheme('rainbow')).toBe(false);
-      expect(isValidTheme(null)).toBe(false);
-    });
   });
 
   describe('isValidLoggingLevel', () => {

@@ -67,6 +67,7 @@ const mockCollection = {
 jest.mock('chromadb', () => ({
   ChromaClient: jest.fn().mockImplementation(() => ({
     getOrCreateCollection: jest.fn().mockResolvedValue(mockCollection),
+    createCollection: jest.fn().mockResolvedValue(mockCollection),
     deleteCollection: jest.fn().mockResolvedValue(undefined)
   }))
 }));
@@ -153,6 +154,16 @@ jest.mock('../src/main/services/chromadb/fileOperations', () => ({
   updateFilePaths: jest.fn().mockResolvedValue({ updated: 2 }),
   querySimilarFiles: jest.fn().mockResolvedValue([]),
   resetFiles: jest.fn().mockResolvedValue(mockCollection)
+}));
+
+// Mock chunk operations
+jest.mock('../src/main/services/chromadb/chunkOperations', () => ({
+  batchUpsertFileChunks: jest.fn().mockResolvedValue(5),
+  querySimilarFileChunks: jest.fn().mockResolvedValue([]),
+  resetFileChunks: jest.fn().mockResolvedValue(mockCollection),
+  markChunksOrphaned: jest.fn().mockResolvedValue({ marked: 0, failed: 0 }),
+  getOrphanedChunks: jest.fn().mockResolvedValue([]),
+  updateFileChunkPaths: jest.fn().mockResolvedValue(2)
 }));
 
 // Mock folder embeddings
@@ -671,10 +682,12 @@ describe('ChromaDBServiceCore', () => {
       const pathUpdates = [{ id: 'file-1', newPath: '/new/path.pdf' }];
 
       const { updateFilePaths } = require('../src/main/services/chromadb/fileOperations');
+      const { updateFileChunkPaths } = require('../src/main/services/chromadb/chunkOperations');
 
       await service.updateFilePaths(pathUpdates);
 
       expect(updateFilePaths).toHaveBeenCalled();
+      expect(updateFileChunkPaths).toHaveBeenCalled();
     });
   });
 

@@ -161,15 +161,6 @@ describe('constants', () => {
     });
   });
 
-  describe('THEMES', () => {
-    test('defines theme options', () => {
-      expect(constants.THEMES.LIGHT).toBe('light');
-      expect(constants.THEMES.DARK).toBe('dark');
-      expect(constants.THEMES.SYSTEM).toBe('system');
-      expect(constants.THEMES.AUTO).toBe('auto');
-    });
-  });
-
   describe('SHORTCUTS', () => {
     test('defines keyboard shortcuts', () => {
       expect(constants.SHORTCUTS.UNDO).toBe('Ctrl+Z');

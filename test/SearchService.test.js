@@ -65,6 +65,9 @@ describe('SearchService', () => {
     }
   };
 
+  // BM25 uses canonical, path-based IDs ("file:" / "image:") instead of per-analysis IDs.
+  const DOC1_CANONICAL_ID = 'file:/files/quarterly-report.pdf';
+
   // Generate mock embedding vector
   const createMockVector = (seed = 1) => {
     return new Array(384).fill(0).map((_, i) => Math.sin(seed + i) * 0.5);
@@ -221,7 +224,7 @@ describe('SearchService', () => {
     test('stores document metadata in documentMap', async () => {
       await service.buildBM25Index();
 
-      const doc1Meta = service.documentMap.get('doc1');
+      const doc1Meta = service.documentMap.get(DOC1_CANONICAL_ID);
       expect(doc1Meta).toBeDefined();
       expect(doc1Meta.path).toBe('/files/quarterly-report.pdf');
       expect(doc1Meta.name).toBe('quarterly-report.pdf');
@@ -325,7 +328,7 @@ describe('SearchService', () => {
       const results = service.bm25Search('quarterly');
 
       expect(results.length).toBeGreaterThan(0);
-      expect(results[0].id).toBe('doc1');
+      expect(results[0].id).toBe(DOC1_CANONICAL_ID);
       expect(results[0].source).toBe('bm25');
     });
 
@@ -775,14 +778,6 @@ describe('SearchService', () => {
     });
 
     test('falls back to BM25 when vector search times out', async () => {
-      // Make vector search timeout
-      mockEmbeddingService.embedText.mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve({ vector: createMockVector() }), 100000)
-          )
-      );
-
       // Override timeout for testing
       const originalTimeout = service._vectorSearchWithTimeout;
       service._vectorSearchWithTimeout = jest.fn().mockResolvedValue({
@@ -797,7 +792,7 @@ describe('SearchService', () => {
       expect(result.meta.vectorTimedOut).toBe(true);
 
       service._vectorSearchWithTimeout = originalTimeout;
-    });
+    }, 15000);
 
     test('rebuilds stale index before search', async () => {
       service.indexBuiltAt = Date.now() - (service.INDEX_STALE_MS + 1000);

@@ -64,23 +64,23 @@ describe('SettingsService atomic save', () => {
 
   test('interrupted write leaves original file intact', async () => {
     // Write original settings file
-    const originalSettings = { theme: 'dark' };
+    const originalSettings = { language: 'fr' };
     await fs.writeFile(filePath, JSON.stringify(originalSettings, null, 2));
 
     // Mock backupAndReplace to reject with an error (simulating write failure)
     mockBackupAndReplace.mockRejectedValueOnce(new Error('simulated failure'));
 
     // Attempt to save should fail
-    await expect(service.save({ theme: 'light' })).rejects.toThrow('simulated failure');
+    await expect(service.save({ language: 'en' })).rejects.toThrow('simulated failure');
 
-    // Original file should still have the dark theme
+    // Original file should still have the original content
     const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-    expect(content.theme).toBe('dark');
+    expect(content.language).toBe('fr');
   });
 
   test('successful save updates the file', async () => {
     // Write original settings file
-    const originalSettings = { theme: 'dark' };
+    const originalSettings = { language: 'fr' };
     await fs.writeFile(filePath, JSON.stringify(originalSettings, null, 2));
 
     // Mock backupAndReplace to succeed and actually write the file
@@ -90,11 +90,11 @@ describe('SettingsService atomic save', () => {
     });
 
     // Save should succeed
-    const result = await service.save({ theme: 'light' });
-    expect(result.settings.theme).toBe('light');
+    const result = await service.save({ language: 'en' });
+    expect(result.settings.language).toBe('en');
 
-    // File should have new theme
+    // File should have new value
     const content = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-    expect(content.theme).toBe('light');
+    expect(content.language).toBe('en');
   });
 });

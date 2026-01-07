@@ -91,12 +91,13 @@ describe('EmbeddingQueue', () => {
       const filePath = '/test/path/file.txt';
       queue.queue = [
         { id: `file:${filePath}`, vector: [0.1, 0.2] },
+        { id: `image:${filePath}`, vector: [0.1, 0.2] },
         { id: 'file:/other/file.txt', vector: [0.3, 0.4] }
       ];
 
       const removed = queue.removeByFilePath(filePath);
 
-      expect(removed).toBe(1);
+      expect(removed).toBe(2);
       expect(queue.queue.length).toBe(1);
       expect(queue.queue[0].id).toBe('file:/other/file.txt');
     });
@@ -104,9 +105,14 @@ describe('EmbeddingQueue', () => {
     test('removes item from failed items by file path', () => {
       const filePath = '/test/path/file.txt';
       const fileId = `file:${filePath}`;
+      const imageId = `image:${filePath}`;
 
       queue._failedItemHandler.failedItems.set(fileId, {
         item: { id: fileId },
+        retryCount: 1
+      });
+      queue._failedItemHandler.failedItems.set(imageId, {
+        item: { id: imageId },
         retryCount: 1
       });
 
@@ -114,6 +120,7 @@ describe('EmbeddingQueue', () => {
 
       expect(removed).toBe(0); // No items in main queue
       expect(queue._failedItemHandler.failedItems.has(fileId)).toBe(false);
+      expect(queue._failedItemHandler.failedItems.has(imageId)).toBe(false);
     });
 
     test('returns 0 for null file path', () => {
@@ -141,13 +148,15 @@ describe('EmbeddingQueue', () => {
       const filePaths = ['/test/path/file1.txt', '/test/path/file2.txt'];
       queue.queue = [
         { id: 'file:/test/path/file1.txt', vector: [0.1, 0.2] },
+        { id: 'image:/test/path/file1.txt', vector: [0.1, 0.2] },
         { id: 'file:/test/path/file2.txt', vector: [0.3, 0.4] },
+        { id: 'image:/test/path/file2.txt', vector: [0.3, 0.4] },
         { id: 'file:/other/file.txt', vector: [0.5, 0.6] }
       ];
 
       const removed = queue.removeByFilePaths(filePaths);
 
-      expect(removed).toBe(2);
+      expect(removed).toBe(4);
       expect(queue.queue.length).toBe(1);
       expect(queue.queue[0].id).toBe('file:/other/file.txt');
     });
@@ -161,12 +170,17 @@ describe('EmbeddingQueue', () => {
         item: { id: 'file:/test/path/file2.txt' },
         retryCount: 1
       });
+      queue._failedItemHandler.failedItems.set('image:/test/path/file2.txt', {
+        item: { id: 'image:/test/path/file2.txt' },
+        retryCount: 1
+      });
 
       const removed = queue.removeByFilePaths(filePaths);
 
       expect(removed).toBe(1);
       expect(queue.queue.length).toBe(0);
       expect(queue._failedItemHandler.failedItems.has('file:/test/path/file2.txt')).toBe(false);
+      expect(queue._failedItemHandler.failedItems.has('image:/test/path/file2.txt')).toBe(false);
     });
 
     test('returns 0 for empty array', () => {
