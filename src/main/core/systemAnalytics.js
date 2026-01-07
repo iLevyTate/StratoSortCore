@@ -50,10 +50,12 @@ const systemAnalytics = {
 
     try {
       const memUsage = process.memoryUsage();
+      const percentage =
+        memUsage.heapTotal > 0 ? Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100) : 0;
       metrics.memory = {
         used: Math.round(memUsage.heapUsed / 1024 / 1024),
         total: Math.round(memUsage.heapTotal / 1024 / 1024),
-        rss: Math.round(memUsage.rss / 1024 / 1024)
+        percentage
       };
     } catch (error) {
       logger.warn('Could not collect memory metrics:', error.message);
