@@ -33,6 +33,11 @@ function sanitizeFolderPath(inputPath) {
     throw new Error('Invalid path: contains null bytes');
   }
 
+  // Block UNC paths (network paths) for security - they can behave unexpectedly
+  if (normalized.startsWith('\\\\') || normalized.startsWith('//')) {
+    throw new Error('Invalid path: network/UNC paths are not allowed');
+  }
+
   // Get allowed base paths from centralized config
   const ALLOWED_BASE_PATHS = ALLOWED_APP_PATHS.map((appPath) => {
     try {
@@ -43,17 +48,24 @@ function sanitizeFolderPath(inputPath) {
   }).filter(Boolean);
 
   // Check if path is within allowed directories
+  // FIX P0-4: Use path.relative() for more robust containment check
+  // This prevents edge cases with symbolic links and unusual path formats
   const isAllowed = ALLOWED_BASE_PATHS.some((basePath) => {
     const normalizedBase = path.normalize(path.resolve(basePath));
 
-    // Case-insensitive check for Windows and macOS
+    // Use path.relative to check containment - more robust than startsWith
+    let relative;
     if (process.platform === 'win32' || process.platform === 'darwin') {
-      const normLower = normalized.toLowerCase();
-      const baseLower = normalizedBase.toLowerCase();
-      return normLower.startsWith(baseLower + path.sep) || normLower === baseLower;
+      // Case-insensitive comparison for Windows and macOS
+      relative = path.relative(normalizedBase.toLowerCase(), normalized.toLowerCase());
+    } else {
+      relative = path.relative(normalizedBase, normalized);
     }
 
-    return normalized.startsWith(normalizedBase + path.sep) || normalized === normalizedBase;
+    // Path is contained if relative path doesn't escape with '..' and isn't absolute
+    const isContained = !relative.startsWith('..') && !path.isAbsolute(relative);
+    // Also allow exact match (empty relative path)
+    return isContained || relative === '';
   });
 
   if (!isAllowed) {
@@ -900,7 +912,7 @@ Now generate a description for "${folderName}":`;
           setCustomFolders(originalFolders);
           if (directoryCreated && !directoryExisted) {
             try {
-              await fs.rmdir(normalizedPath);
+              await fs.rm(normalizedPath, { recursive: true, force: true });
             } catch {
               // Non-fatal if rollback cleanup fails
             }
@@ -1000,12 +1012,12 @@ Now generate a description for "${folderName}":`;
   // ============== Smart Folder Watcher IPC Handlers ==============
 
   // Start the smart folder watcher
+  // Note: Smart folder watching is always enabled - this is mainly used for restart/recovery
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SMART_FOLDERS.WATCHER_START,
     withErrorLogging(logger, async () => {
       try {
-        // FIX: Call getter function to get current watcher instance (resolves race condition)
         const smartFolderWatcher = getSmartFolderWatcher?.();
         if (!smartFolderWatcher) {
           return {
@@ -1014,14 +1026,9 @@ Now generate a description for "${folderName}":`;
           };
         }
 
-        // FIX: Skip settings check because this IPC handler is only called when the user
-        // explicitly enables the watcher via the UI toggle. The setting may not be
-        // persisted to disk yet due to debounced saves, causing the watcher's internal
-        // settings check to fail. Since the user action is explicit, we can trust it.
-        const started = await smartFolderWatcher.start({ skipSettingsCheck: true });
+        const started = await smartFolderWatcher.start();
         const status = smartFolderWatcher.getStatus();
 
-        // FIX: Provide detailed error message when start fails
         let errorMessage = null;
         if (!started) {
           errorMessage = status.lastStartError || 'Failed to start watcher (unknown reason)';
@@ -1133,7 +1140,8 @@ Now generate a description for "${folderName}":`;
         if (!smartFolderWatcher.isRunning) {
           return {
             success: false,
-            error: 'Watcher is not running. Enable smart folder watching first.'
+            error:
+              'Watcher is not running. Please wait for it to start or check if smart folders are configured.'
           };
         }
 
