@@ -1,0 +1,38 @@
+name: Windows Dist (Manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer
+        run: npm run dist:win
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratosort-windows-dist
+          path: |
+            release/build/StratoSort-Setup-*.exe
+            release/build/StratoSort-*-win-*.exe
+            release/build/*.blockmap
+            release/build/latest.yml
+          if-no-files-found: error

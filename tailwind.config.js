@@ -377,7 +377,6 @@ module.exports = {
     }
   },
   plugins: [
-    require('daisyui'),
     // Custom plugin for dynamic auto-fit/auto-fill grid utilities
     plugin(function ({ matchUtilities, theme }) {
       matchUtilities(
@@ -392,29 +391,5 @@ module.exports = {
         { values: theme('spacing') }
       );
     })
-  ],
-  daisyui: {
-    themes: [
-      {
-        stratosort: {
-          // Aligned with BRAND_COLORS.stratosort
-          primary: '#2563EB', // stratosort-blue
-          secondary: '#8B5CF6', // system.purple
-          accent: '#F59E0B', // stratosort-accent (amber)
-          neutral: '#334155', // system-gray-700
-          'base-100': '#FFFFFF', // surface-primary
-          'base-200': '#F8FAFC', // surface-muted
-          'base-300': '#F1F5F9', // system-gray-100
-          info: '#2563EB', // stratosort-blue (was #3B82F6)
-          success: '#10B981', // stratosort-success
-          warning: '#F97316', // stratosort-warning (was #F59E0B)
-          error: '#EF4444' // stratosort-danger
-        }
-      }
-    ],
-    darkTheme: false,
-    base: true,
-    styled: true,
-    utils: true
-  }
+  ]
 };
