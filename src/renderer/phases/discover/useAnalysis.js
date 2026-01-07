@@ -21,6 +21,22 @@ import {
 
 logger.setContext('DiscoverPhase:Analysis');
 
+// FIX: Module-level timeout ID storage for auto-advance cleanup
+// This allows showAnalysisCompletionNotification to return the timeout ID
+// for proper cleanup when components unmount
+let pendingAutoAdvanceTimeoutId = null;
+
+/**
+ * Clear any pending auto-advance timeout
+ * Call this on component unmount to prevent state updates on unmounted components
+ */
+export function clearAutoAdvanceTimeout() {
+  if (pendingAutoAdvanceTimeoutId) {
+    clearTimeout(pendingAutoAdvanceTimeoutId);
+    pendingAutoAdvanceTimeoutId = null;
+  }
+}
+
 /**
  * Analyze a file with retry logic for transient failures.
  * Extracted from analyzeFiles for better testability.
@@ -164,7 +180,10 @@ function showAnalysisCompletionNotification({
       4000,
       'analysis-complete'
     );
-    setTimeout(() => {
+    // FIX: Store timeout ID for cleanup on unmount
+    clearAutoAdvanceTimeout(); // Clear any previous pending timeout
+    pendingAutoAdvanceTimeoutId = setTimeout(() => {
+      pendingAutoAdvanceTimeoutId = null;
       // FIX: Check if still in DISCOVER phase before auto-advancing
       // This prevents unexpected navigation if user moved away during the delay
       const currentPhase = getCurrentPhase?.();
@@ -184,7 +203,10 @@ function showAnalysisCompletionNotification({
       4000,
       'analysis-complete'
     );
-    setTimeout(() => {
+    // FIX: Store timeout ID for cleanup on unmount
+    clearAutoAdvanceTimeout(); // Clear any previous pending timeout
+    pendingAutoAdvanceTimeoutId = setTimeout(() => {
+      pendingAutoAdvanceTimeoutId = null;
       // FIX: Check if still in DISCOVER phase before auto-advancing
       const currentPhase = getCurrentPhase?.();
       if (currentPhase === PHASES.DISCOVER) {
@@ -950,6 +972,27 @@ export function useAnalysis(options) {
       }
     }
   }, [isAnalyzing, selectedFiles, fileStates, addNotification, resetAnalysisState]);
+
+  // FIX: Cleanup effect to clear auto-advance timeout on unmount
+  // This prevents "Can't perform state update on unmounted component" warnings
+  useEffect(() => {
+    return () => {
+      clearAutoAdvanceTimeout();
+      // Also clear any other pending timeouts
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+      if (analysisTimeoutRef.current) {
+        clearTimeout(analysisTimeoutRef.current);
+        analysisTimeoutRef.current = null;
+      }
+      if (lockTimeoutRef.current) {
+        clearTimeout(lockTimeoutRef.current);
+        lockTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     analyzeFiles,

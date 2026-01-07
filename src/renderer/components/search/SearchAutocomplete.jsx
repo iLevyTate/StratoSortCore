@@ -17,6 +17,10 @@ const RECENT_SEARCHES_KEY = 'stratosort-recent-searches';
 const MAX_RECENT_SEARCHES = 10;
 const MAX_SUGGESTIONS = 5;
 
+// Detect macOS (using userAgentData with fallback to userAgent)
+const isMac =
+  navigator.userAgentData?.platform === 'macOS' || /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+
 /**
  * Load recent searches from localStorage
  */
@@ -89,6 +93,7 @@ const SearchAutocomplete = memo(
     const inputRef = useRef(null);
     const containerRef = useRef(null);
     const fetchTimeoutRef = useRef(null);
+    const latestQueryRef = useRef('');
 
     // Load recent searches on mount
     useEffect(() => {
@@ -102,6 +107,7 @@ const SearchAutocomplete = memo(
       }
 
       const trimmed = value?.trim() || '';
+      latestQueryRef.current = trimmed;
 
       if (trimmed.length < 2) {
         setSuggestions([]);
@@ -113,16 +119,22 @@ const SearchAutocomplete = memo(
 
       // Debounce the fetch
       fetchTimeoutRef.current = setTimeout(async () => {
+        const queryAtScheduleTime = trimmed;
         try {
           // Search for matching files
-          const result = await window.electronAPI?.embeddings?.search?.({
-            query: trimmed,
+          const result = await window.electronAPI?.embeddings?.search?.(queryAtScheduleTime, {
             topK: MAX_SUGGESTIONS,
             mode: 'hybrid'
           });
 
           // Check cancellation before updating state (prevents memory leak)
-          if (!isCancelled && result?.success && result.results) {
+          // Also ensure we don't apply stale results if the query changed while this request was in-flight.
+          if (
+            !isCancelled &&
+            latestQueryRef.current === queryAtScheduleTime &&
+            result?.success &&
+            result.results
+          ) {
             const fileSuggestions = result.results.map((r) => ({
               type: 'file',
               label: r.metadata?.name || r.id,
@@ -201,6 +213,14 @@ const SearchAutocomplete = memo(
         setSelectedIndex(allSuggestions.length > 0 ? allSuggestions.length - 1 : -1);
       }
     }, [allSuggestions.length, selectedIndex]);
+
+    // Scroll selected item into view for keyboard navigation
+    useEffect(() => {
+      if (selectedIndex >= 0) {
+        const element = document.getElementById(`search-suggestion-${selectedIndex}`);
+        element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }, [selectedIndex]);
 
     const handleInputChange = (e) => {
       onChange(e.target.value);
@@ -322,6 +342,13 @@ const SearchAutocomplete = memo(
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+
+          {/* Keyboard shortcut hint when empty */}
+          {!value && !disabled && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded border border-system-gray-200 font-medium pointer-events-none">
+              {isMac ? '⌘K' : 'Ctrl+K'}
+            </span>
+          )}
         </div>
 
         {/* Suggestions dropdown */}
@@ -339,7 +366,12 @@ const SearchAutocomplete = memo(
             </div>
 
             {/* Suggestions list */}
-            <ul id="search-suggestions-listbox" className="max-h-64 overflow-y-auto" role="listbox">
+            <ul
+              id="search-suggestions-listbox"
+              className="max-h-64 overflow-y-auto"
+              role="listbox"
+              aria-label="Search suggestions"
+            >
               {items.map((item, index) => (
                 <li
                   key={`${item.type}-${item.value}-${index}`}
@@ -365,9 +397,10 @@ const SearchAutocomplete = memo(
                   <span className="flex-1 truncate">{item.label}</span>
 
                   {/* Score badge for files */}
-                  {item.type === 'file' && item.score && (
+                  {/* FIX P2-15: Clamp score to 0-1 range before percentage display */}
+                  {item.type === 'file' && typeof item.score === 'number' && (
                     <span className="text-[10px] text-system-gray-400 shrink-0">
-                      {Math.round(item.score * 100)}%
+                      {Math.round(Math.max(0, Math.min(1, item.score)) * 100)}%
                     </span>
                   )}
 

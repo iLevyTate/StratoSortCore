@@ -125,14 +125,22 @@ const ClusterNode = memo(({ data, selected }) => {
               }}
               className="p-1 rounded hover:bg-amber-200/50 transition-colors"
               title="Cluster actions"
+              aria-label="Cluster actions"
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
             >
               <MoreVertical className="w-4 h-4 text-amber-600" />
             </button>
 
             {menuOpen && (
-              <div className="absolute right-0 top-7 bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-48 py-1 animate-in fade-in zoom-in-95 duration-100">
+              <div
+                role="menu"
+                aria-label="Cluster actions"
+                className="absolute right-0 top-7 bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-48 py-1 animate-in fade-in zoom-in-95 duration-100"
+              >
                 {onCreateSmartFolder && (
                   <button
+                    role="menuitem"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleMenuAction(onCreateSmartFolder);
@@ -145,6 +153,7 @@ const ClusterNode = memo(({ data, selected }) => {
                 )}
                 {onMoveAllToFolder && (
                   <button
+                    role="menuitem"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleMenuAction(onMoveAllToFolder);
@@ -157,6 +166,7 @@ const ClusterNode = memo(({ data, selected }) => {
                 )}
                 {onExportFileList && (
                   <button
+                    role="menuitem"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleMenuAction(onExportFileList);

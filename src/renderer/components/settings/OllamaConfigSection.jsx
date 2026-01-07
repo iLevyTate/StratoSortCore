@@ -53,15 +53,22 @@ function OllamaConfigSection({
           </Button>
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 h-9">
         <Button
           onClick={onRefreshModels}
           variant="secondary"
           type="button"
           title="Refresh models"
           disabled={isRefreshingModels}
-          leftIcon={isRefreshingModels ? null : <RefreshCw className="w-4 h-4" />}
+          leftIcon={
+            isRefreshingModels ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )
+          }
           size="sm"
+          className="w-36 justify-center"
         >
           {isRefreshingModels ? 'Refreshing…' : 'Refresh Models'}
         </Button>
@@ -71,21 +78,33 @@ function OllamaConfigSection({
           type="button"
           title="Toggle raw model list"
           size="sm"
+          className="w-36 justify-center"
         >
           {showAllModels ? 'Hide Models' : 'View All Models'}
         </Button>
-        {pullProgressText && (
-          <span className="text-xs text-system-gray-600">{pullProgressText}</span>
-        )}
-        {ollamaHealth && (
-          <span
-            className={`text-xs ${ollamaHealth.status === 'healthy' ? 'text-green-600' : 'text-red-600'}`}
-          >
-            {ollamaHealth.status === 'healthy'
-              ? `Healthy (${ollamaHealth.modelCount || 0} models)`
-              : `Unhealthy${ollamaHealth.error ? `: ${ollamaHealth.error}` : ''}`}
-          </span>
-        )}
+        <div className="flex-1 flex items-center justify-start min-w-0">
+          {pullProgressText ? (
+            <span className="text-xs text-system-gray-600 truncate" title={pullProgressText}>
+              {pullProgressText}
+            </span>
+          ) : ollamaHealth ? (
+            <span
+              className={`text-xs truncate ${ollamaHealth.status === 'healthy' ? 'text-green-600' : 'text-red-600'}`}
+              title={
+                ollamaHealth.status === 'healthy'
+                  ? `Healthy (${ollamaHealth.modelCount || 0} models)`
+                  : `Unhealthy${ollamaHealth.error ? `: ${ollamaHealth.error}` : ''}`
+              }
+            >
+              {ollamaHealth.status === 'healthy'
+                ? `Healthy (${ollamaHealth.modelCount || 0} models)`
+                : `Unhealthy${ollamaHealth.error ? `: ${ollamaHealth.error}` : ''}`}
+            </span>
+          ) : (
+            // Placeholder to prevent layout shift
+            <span className="text-xs text-transparent select-none">Status placeholder</span>
+          )}
+        </div>
       </div>
       {showAllModels && (
         <div className="mt-4 p-4 bg-system-gray-50 rounded border border-system-gray-200 text-xs">

@@ -81,7 +81,9 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
 
   // Fill remaining space if row is incomplete
   while (rowItems.length < columnsPerRow) {
-    rowItems.push(<div key={`empty-${rowItems.length}`} className="flex-1 min-w-0" />);
+    rowItems.push(
+      <div key={`empty-${rowItems.length}`} className="flex-1 min-w-0" aria-hidden="true" />
+    );
   }
 
   return (
@@ -135,19 +137,41 @@ function VirtualizedFileGrid({
   useEffect(() => {
     if (!containerRef.current) return undefined;
 
+    let isActive = true;
+    let rafId = null;
+
+    // FIX: Use requestAnimationFrame to debounce resize callbacks
+    // This prevents state updates from firing during the resize observer callback
+    // which can cause "ResizeObserver loop limit exceeded" errors and memory leaks
     const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        const { width, height } = entry.contentRect;
-        setDimensions({
-          width: width || containerWidth,
-          height: height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
-        });
+      if (!isActive) return;
+
+      // Cancel any pending RAF to debounce rapid resize events
+      if (rafId) {
+        cancelAnimationFrame(rafId);
       }
+
+      rafId = requestAnimationFrame(() => {
+        if (!isActive) return;
+        const entry = entries[0];
+        if (entry) {
+          const { width, height } = entry.contentRect;
+          setDimensions({
+            width: width || containerWidth,
+            height: height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
+          });
+        }
+      });
     });
 
     observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    return () => {
+      isActive = false;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      observer.disconnect();
+    };
   }, [containerWidth]);
 
   const columnsPerRow = getColumnCount(dimensions.width);
@@ -198,7 +222,7 @@ function VirtualizedFileGrid({
     selectedFiles
   ]);
 
-  // react-window v2 expects rowProps (not itemData).
+  // react-window List passes shared data via itemData (consumed by the row renderer).
   const rowProps = useMemo(
     () => ({
       files,
@@ -292,26 +316,28 @@ function VirtualizedFileGrid({
         </div>
         <List
           key={`list-${rowHeight}-${columnsPerRow}`}
-          rowComponent={VirtualizedFileRow}
-          rowCount={rowCount}
-          rowHeight={rowHeight}
-          rowProps={rowProps}
+          itemCount={rowCount}
+          itemSize={rowHeight}
+          itemData={rowProps}
           overscanCount={2}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-          style={{ height: listHeight, width: '100%' }}
-        />
+          height={listHeight}
+          width={dimensions.width}
+        >
+          {({ index, style, data }) => <VirtualizedFileRow index={index} style={style} {...data} />}
+        </List>
       </div>
     );
   }
 
   // For smaller lists, render normally without virtualization overhead
   // Use auto-fit grid that adapts to content amount
-  // Center content when sparse data (≤5 files) for better visual balance
-  const isSparse = files.length <= 5;
+  // FIX: Remove place-content-center to prevent cutoff on small screens/tall content
+  // Added p-6 (padding all around) to ensure shadows are not cut off and provide breathing room
   return (
     <div
       ref={containerRef}
-      className={`grid grid-adaptive-lg gap-4 h-full overflow-y-auto modern-scrollbar ${isSparse ? 'place-content-center' : ''}`}
+      className="grid grid-adaptive-lg gap-4 h-full overflow-y-auto modern-scrollbar p-6"
     >
       {files.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);

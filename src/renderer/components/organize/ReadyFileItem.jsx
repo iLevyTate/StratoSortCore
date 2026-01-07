@@ -50,9 +50,23 @@ function ReadyFileItem({
 
   return (
     <div
-      className={`surface-card w-full transition-all [transition-duration:var(--duration-normal)] overflow-visible ${isSelected ? 'ring-2 ring-stratosort-blue/25 shadow-md' : ''}`}
+      className={`surface-card w-full h-full relative transition-all [transition-duration:var(--duration-normal)] overflow-visible ${isSelected ? 'ring-2 ring-stratosort-blue/25 shadow-md' : ''}`}
     >
-      <div className="flex items-start gap-3">
+      {/* Absolute positioned status elements to maximize content width */}
+      <div className="absolute top-4 right-4 z-10">
+        <StatusBadge variant={tone}>
+          <span className={stateDisplay.spinning ? 'animate-spin' : ''}>{stateDisplay.icon}</span>
+          <span className="hidden sm:inline">{stateDisplay.label}</span>
+        </StatusBadge>
+      </div>
+
+      {computedConfidence !== null && (
+        <div className="absolute bottom-4 right-4 z-10 text-[11px] text-system-gray-500">
+          Confidence {computedConfidence}%
+        </div>
+      )}
+
+      <div className="flex gap-3 h-full">
         <input
           type="checkbox"
           checked={isSelected}
@@ -61,7 +75,8 @@ function ReadyFileItem({
           aria-label={`Select ${file.name}`}
         />
         <div className="flex-1 min-w-0 overflow-visible">
-          <div className="flex items-center gap-3 mb-3">
+          {/* Header Section - with padding right to avoid badge */}
+          <div className="flex items-center gap-3 mb-3 pr-28">
             <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
             <div className="flex-1 min-w-0 overflow-visible w-full">
               <div
@@ -82,6 +97,8 @@ function ReadyFileItem({
               </div>
             </div>
           </div>
+
+          {/* Analysis Section - Full Width (Middle section flows under badge area if needed) */}
           {analysis ? (
             <>
               <div className="grid grid-cols-1 gap-3 mb-3 w-full">
@@ -124,7 +141,7 @@ function ReadyFileItem({
                 </button>
               </div>
               {destination && (
-                <div className="text-sm text-system-gray-600 mt-2 overflow-visible">
+                <div className="text-sm text-system-gray-600 mt-2 overflow-visible pr-28">
                   <strong>Destination:</strong>{' '}
                   <span
                     className="text-stratosort-blue block mt-1 break-all line-clamp-2"
@@ -139,17 +156,6 @@ function ReadyFileItem({
             <div className="text-sm text-system-red-600 mt-2">
               Analysis failed - will be skipped
             </div>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <StatusBadge variant={tone}>
-            <span className={stateDisplay.spinning ? 'animate-spin' : ''}>{stateDisplay.icon}</span>
-            <span className="hidden sm:inline">{stateDisplay.label}</span>
-          </StatusBadge>
-          {computedConfidence !== null && (
-            <span className="text-[11px] text-system-gray-500">
-              Confidence {computedConfidence}%
-            </span>
           )}
         </div>
       </div>
@@ -191,4 +197,51 @@ ReadyFileItem.propTypes = {
   onViewDetails: PropTypes.func
 };
 
-export default memo(ReadyFileItem);
+function areReadyFileItemPropsEqual(prev, next) {
+  // If key callbacks change, we must re-render so handlers use the latest functions.
+  if (prev.onToggleSelected !== next.onToggleSelected) return false;
+  if (prev.onEdit !== next.onEdit) return false;
+  if (prev.onViewDetails !== next.onViewDetails) return false;
+
+  if (prev.index !== next.index) return false;
+  if (prev.isSelected !== next.isSelected) return false;
+  if (prev.destination !== next.destination) return false;
+  if (prev.category !== next.category) return false;
+
+  // Most parent renders pass the same smartFolders reference; if it changes, re-render.
+  if (prev.smartFolders !== next.smartFolders) return false;
+
+  // Compare file fields used by this component (avoid deep equality on analysis).
+  const prevFile = prev.file;
+  const nextFile = next.file;
+  if (prevFile !== nextFile) {
+    if (prevFile?.path !== nextFile?.path) return false;
+    if (prevFile?.name !== nextFile?.name) return false;
+    if (prevFile?.size !== nextFile?.size) return false;
+    if (prevFile?.source !== nextFile?.source) return false;
+    if (prevFile?.analysis !== nextFile?.analysis) return false;
+  }
+
+  // Compare editing fields used by this component.
+  const prevEditing = prev.editing;
+  const nextEditing = next.editing;
+  if (prevEditing !== nextEditing) {
+    if (prevEditing?.suggestedName !== nextEditing?.suggestedName) return false;
+    if (prevEditing?.category !== nextEditing?.category) return false;
+    if (prevEditing?.analysis !== nextEditing?.analysis) return false;
+  }
+
+  // Compare stateDisplay fields used for UI.
+  const prevState = prev.stateDisplay;
+  const nextState = next.stateDisplay;
+  if (prevState !== nextState) {
+    if (prevState?.label !== nextState?.label) return false;
+    if (prevState?.color !== nextState?.color) return false;
+    if (prevState?.spinning !== nextState?.spinning) return false;
+    if (prevState?.icon !== nextState?.icon) return false;
+  }
+
+  return true;
+}
+
+export default memo(ReadyFileItem, areReadyFileItemPropsEqual);

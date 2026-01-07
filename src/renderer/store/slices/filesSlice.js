@@ -1,16 +1,28 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 
-// Thunk to fetch smart folders (only once, then cached)
+// Thunk to fetch smart folders with optional cache bypass
+// FIX: Added forceRefresh parameter to allow cache invalidation when folders change
 export const fetchSmartFolders = createAsyncThunk(
   'files/fetchSmartFolders',
-  async (_, { getState }) => {
+  async (forceRefresh = false, { getState }) => {
     const { files } = getState();
-    // Return cached value if already fetched and not empty
-    if (files.smartFolders && files.smartFolders.length > 0) {
+    // Return cached value if already fetched, not empty, and not forcing refresh
+    if (!forceRefresh && files.smartFolders && files.smartFolders.length > 0) {
       return files.smartFolders;
     }
     const folders = await window.electronAPI?.smartFolders?.get?.();
     return Array.isArray(folders) ? folders : [];
+  }
+);
+
+// Thunk to invalidate and refetch smart folders
+// Call this when smart folders are modified (added, removed, or edited)
+export const invalidateSmartFolders = createAsyncThunk(
+  'files/invalidateSmartFolders',
+  async (_, { dispatch }) => {
+    // Force a refresh by dispatching fetchSmartFolders with forceRefresh=true
+    const result = await dispatch(fetchSmartFolders(true));
+    return result.payload;
   }
 );
 

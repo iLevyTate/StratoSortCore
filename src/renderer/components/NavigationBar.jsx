@@ -429,15 +429,15 @@ function NavigationBar() {
 
   // Scroll effect for glass morphism - throttled to prevent excessive re-renders
   useEffect(() => {
-    let scrollTimeout = null;
+    let scrollRafId = null;
     let isMounted = true;
 
     const handleScroll = () => {
-      if (scrollTimeout) {
+      if (scrollRafId) {
         return; // Skip if already scheduled
       }
-      scrollTimeout = requestAnimationFrame(() => {
-        scrollTimeout = null;
+      scrollRafId = requestAnimationFrame(() => {
+        scrollRafId = null;
         if (isMounted) {
           setIsScrolled(window.scrollY > 10);
         }
@@ -448,8 +448,8 @@ function NavigationBar() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       isMounted = false;
-      if (scrollTimeout) {
-        cancelAnimationFrame(scrollTimeout);
+      if (scrollRafId) {
+        cancelAnimationFrame(scrollRafId);
       }
       window.removeEventListener('scroll', handleScroll);
     };
@@ -475,6 +475,8 @@ function NavigationBar() {
 
   // Check if navigation should be blocked
   const isBlockedByOperation = isOrganizing || isAnalyzing || isLoading;
+  // Only show a nav spinner for loading states other than analysis to avoid duplicate indicators
+  const navSpinnerActive = isOrganizing || isLoading;
 
   return (
     <header
@@ -515,7 +517,7 @@ function NavigationBar() {
                 phase={phase}
                 isActive={isActive}
                 canNavigate={canNavigate}
-                isLoading={isActive && isBlockedByOperation}
+                isLoading={isActive && navSpinnerActive}
                 onClick={() => canNavigate && handlePhaseChange(phase)}
                 onHover={setHoveredTab}
                 isHovered={hoveredTab === phase}

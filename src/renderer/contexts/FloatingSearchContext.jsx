@@ -2,7 +2,9 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import PropTypes from 'prop-types';
 import FloatingSearchWidget from '../components/search/FloatingSearchWidget';
 import UnifiedSearchModal from '../components/search/UnifiedSearchModal';
+import SearchErrorBoundary from '../components/search/SearchErrorBoundary';
 import { TIMEOUTS } from '../../shared/performanceConstants';
+import { logger } from '../../shared/logger';
 
 const FloatingSearchContext = createContext(null);
 
@@ -124,6 +126,14 @@ export function FloatingSearchProvider({ children }) {
     closeSearchModal
   };
 
+  // FIX: Handle errors from the search modal to prevent crashes
+  const handleSearchError = useCallback((error, errorInfo) => {
+    logger.error('[FloatingSearchProvider] Search modal error caught by boundary', {
+      error: error?.message,
+      componentStack: errorInfo?.componentStack
+    });
+  }, []);
+
   return (
     <FloatingSearchContext.Provider value={contextValue}>
       {children}
@@ -132,12 +142,15 @@ export function FloatingSearchProvider({ children }) {
         onClose={closeWidget}
         onOpenSearch={() => openSearchModal('search')}
       />
-      <UnifiedSearchModal
-        isOpen={isModalOpen}
-        onClose={closeSearchModal}
-        defaultTopK={20}
-        initialTab={modalInitialTab}
-      />
+      {/* FIX: Wrap search modal in error boundary to prevent crash on unhandled errors */}
+      <SearchErrorBoundary onClose={closeSearchModal} onError={handleSearchError}>
+        <UnifiedSearchModal
+          isOpen={isModalOpen}
+          onClose={closeSearchModal}
+          defaultTopK={20}
+          initialTab={modalInitialTab}
+        />
+      </SearchErrorBoundary>
     </FloatingSearchContext.Provider>
   );
 }

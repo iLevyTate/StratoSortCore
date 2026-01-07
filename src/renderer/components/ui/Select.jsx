@@ -28,6 +28,7 @@ const Select = memo(
     // Always call useId unconditionally to follow React hooks rules
     const generatedId = useId();
     const id = rest.id || `select-${generatedId}`;
+    const labelId = label ? `${id}-label` : undefined;
     const errorId = `${id}-error`;
 
     // Extract options from children once for rendering and keyboard nav
@@ -93,12 +94,20 @@ const Select = memo(
     useLayoutEffect(() => {
       if (!isOpen) return;
       updateMenuPosition();
-      const handleWindow = () => updateMenuPosition();
-      window.addEventListener('resize', handleWindow);
-      window.addEventListener('scroll', handleWindow, true);
+      let rafId = null;
+      const schedulePositionUpdate = () => {
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          updateMenuPosition();
+        });
+      };
+      window.addEventListener('resize', schedulePositionUpdate);
+      window.addEventListener('scroll', schedulePositionUpdate, true);
       return () => {
-        window.removeEventListener('resize', handleWindow);
-        window.removeEventListener('scroll', handleWindow, true);
+        if (rafId) cancelAnimationFrame(rafId);
+        window.removeEventListener('resize', schedulePositionUpdate);
+        window.removeEventListener('scroll', schedulePositionUpdate, true);
       };
     }, [isOpen, updateMenuPosition]);
 
@@ -108,7 +117,9 @@ const Select = memo(
       return `form-input-enhanced ${invalidClass} ${className}`.trim();
     }, [invalid, error, className]);
 
-    const selectedOption = options.find((opt) => opt.value === rest.value) ?? options[0];
+    // FIX: Guard against empty options array to prevent undefined display
+    const selectedOption =
+      options.length > 0 ? (options.find((opt) => opt.value === rest.value) ?? options[0]) : null;
 
     const handleSelect = useCallback(
       (option) => {
@@ -147,6 +158,12 @@ const Select = memo(
         } else if (event.key === 'ArrowUp') {
           event.preventDefault();
           setHighlightedIndex((prev) => Math.max(0, prev - 1));
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          setHighlightedIndex(0);
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          setHighlightedIndex(options.length - 1);
         } else if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           const option = options[highlightedIndex];
@@ -159,7 +176,7 @@ const Select = memo(
     return (
       <div className="flex flex-col gap-2" ref={containerRef}>
         {label && (
-          <label htmlFor={id} className="text-sm font-medium text-system-gray-700">
+          <label id={labelId} htmlFor={id} className="text-sm font-medium text-system-gray-700">
             {label}
             {required && (
               <span className="text-stratosort-danger ml-1" aria-label="required">
@@ -180,7 +197,7 @@ const Select = memo(
           aria-invalid={invalid || !!error}
           aria-describedby={error ? errorId : undefined}
           aria-required={required}
-          aria-labelledby={label ? id : undefined}
+          aria-labelledby={labelId}
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           onClick={() => {
@@ -198,9 +215,9 @@ const Select = memo(
           createPortal(
             <div
               ref={menuRef}
-              className="fixed z-[650] rounded-xl border border-border-soft bg-white shadow-lg"
+              className="fixed z-[9999] rounded-xl border border-border-soft bg-white shadow-lg"
               role="listbox"
-              aria-labelledby={label ? id : undefined}
+              aria-labelledby={labelId}
               style={{
                 top: `${menuPosition.top}px`,
                 left: `${menuPosition.left}px`,

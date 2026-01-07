@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { RefreshCw } from 'lucide-react';
 import Button from '../ui/Button';
-import IconButton from '../ui/IconButton';
 import { logger } from '../../../shared/logger';
+import { useAppSelector } from '../../store/hooks';
 
 /**
  * Embedding rebuild section for folder and file embeddings
@@ -11,8 +10,13 @@ import { logger } from '../../../shared/logger';
 function EmbeddingRebuildSection({ addNotification }) {
   const [isRebuildingFolders, setIsRebuildingFolders] = useState(false);
   const [isRebuildingFiles, setIsRebuildingFiles] = useState(false);
+  const [isFullRebuilding, setIsFullRebuilding] = useState(false);
+  const [isReanalyzingAll, setIsReanalyzingAll] = useState(false);
   const [stats, setStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
+
+  const isAnalyzing = useAppSelector((state) => Boolean(state?.analysis?.isAnalyzing));
+  const analysisProgress = useAppSelector((state) => state?.analysis?.analysisProgress);
 
   logger.setContext('EmbeddingRebuildSection');
 
@@ -36,7 +40,10 @@ function EmbeddingRebuildSection({ addNotification }) {
           serverUrl: res.serverUrl || '',
           // FIX: Pass through needsFileEmbeddingRebuild and analysisHistory for proper display
           needsFileEmbeddingRebuild: res.needsFileEmbeddingRebuild,
-          analysisHistory: res.analysisHistory
+          analysisHistory: res.analysisHistory,
+          embeddingIndex: res.embeddingIndex,
+          activeEmbeddingModel: res.activeEmbeddingModel,
+          embeddingModelMismatch: Boolean(res.embeddingModelMismatch)
         });
       } else {
         logger.warn('[EmbeddingRebuildSection] getStats returned failure', { error: res?.error });
@@ -51,28 +58,45 @@ function EmbeddingRebuildSection({ addNotification }) {
   }, []);
 
   useEffect(() => {
-    refreshStats();
+    // Avoid unhandled promise rejections and ensure the interval gets cleared if refresh fails unexpectedly.
+    refreshStats().catch((err) => {
+      logger.debug('[EmbeddingRebuildSection] Initial stats refresh failed', {
+        error: err?.message
+      });
+    });
 
     // FIX: Auto-refresh stats periodically while component is mounted
     // This ensures the count updates after embeddings are added
     const intervalId = setInterval(() => {
-      refreshStats();
+      refreshStats().catch((err) => {
+        logger.debug('[EmbeddingRebuildSection] Periodic stats refresh failed; stopping refresh', {
+          error: err?.message
+        });
+        clearInterval(intervalId);
+      });
     }, 5000); // Refresh every 5 seconds
 
     return () => clearInterval(intervalId);
   }, [refreshStats]);
 
   const statsLabel = useMemo(() => {
+    if (isLoadingStats && !stats) return 'Loading embeddings status...';
     if (!stats) return 'Embeddings status unavailable - check Ollama connection';
+    if (stats.embeddingModelMismatch) {
+      const indexed = stats.embeddingIndex?.model ? `${stats.embeddingIndex.model}` : 'unknown';
+      const active = stats.activeEmbeddingModel ? `${stats.activeEmbeddingModel}` : 'unknown';
+      return `Embedding model mismatch: indexed with ${indexed}, configured ${active}. Run Full Rebuild to apply.`;
+    }
     // FIX M-5: Show helpful context when embeddings are 0 but files have been analyzed
     if (stats.needsFileEmbeddingRebuild) {
-      return `${stats.folders} folder embeddings • ${stats.files} file embeddings (${stats.analysisHistory?.totalFiles || 0} files analyzed - click Rebuild to index)`;
+      const analyzed = stats.analysisHistory?.totalFiles || 0;
+      return `${stats.folders} folder embeddings • ${stats.files} file embeddings (${analyzed} files analyzed - click Rebuild to index)`;
     }
     if (stats.files === 0 && stats.folders === 0) {
       return 'No embeddings yet - analyze files and add smart folders first';
     }
     return `${stats.folders} folder embeddings • ${stats.files} file embeddings`;
-  }, [stats]);
+  }, [stats, isLoadingStats]);
 
   const handleRebuildFolders = useCallback(async () => {
     try {
@@ -111,9 +135,12 @@ function EmbeddingRebuildSection({ addNotification }) {
       const res = await window.electronAPI.embeddings.rebuildFiles();
       if (res?.success) {
         const count = res.files || 0;
+        const totalUnique = typeof res.totalUniqueFiles === 'number' ? res.totalUniqueFiles : null;
         addNotification(
           count > 0
-            ? `Indexed ${count} files for semantic search`
+            ? totalUnique != null && totalUnique > 0
+              ? `Indexed ${count} of ${totalUnique} files for semantic search`
+              : `Indexed ${count} files for semantic search`
             : 'No analyzed files found. Analyze files in Discover first.',
           count > 0 ? 'success' : 'info'
         );
@@ -136,37 +163,109 @@ function EmbeddingRebuildSection({ addNotification }) {
     }
   }, [addNotification, refreshStats]);
 
+  const handleFullRebuild = useCallback(async () => {
+    try {
+      setIsFullRebuilding(true);
+      addNotification('Starting full rebuild... This may take a while.', 'info');
+      const res = await window.electronAPI.embeddings.fullRebuild();
+      if (res?.success) {
+        const folders = res.folders || 0;
+        const files = res.files || 0;
+        const chunks = res.chunks || 0;
+        addNotification(
+          `Full rebuild complete: ${folders} folders, ${files} files, ${chunks} chunks${res.model ? ` (model: ${res.model})` : ''}`,
+          'success'
+        );
+      } else {
+        // Provide actionable error message
+        const errorMsg = res?.error || '';
+        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
+          addNotification('Ollama not running. Start Ollama and try again.', 'error');
+        } else if (errorMsg.includes('ChromaDB')) {
+          addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
+        } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
+          addNotification(
+            `Embedding model not available. Pull it first: ${res.model || 'nomic-embed-text'}`,
+            'error'
+          );
+        } else {
+          addNotification('Full rebuild failed. Check Ollama connection in Settings.', 'error');
+        }
+      }
+    } catch (e) {
+      addNotification('Full rebuild failed. Check Ollama is running.', 'error');
+    } finally {
+      setIsFullRebuilding(false);
+      refreshStats();
+    }
+  }, [addNotification, refreshStats]);
+
+  const handleReanalyzeAll = useCallback(async () => {
+    try {
+      setIsReanalyzingAll(true);
+      addNotification('Starting reanalysis of all files... This may take a while.', 'info');
+      const res = await window.electronAPI.embeddings.reanalyzeAll();
+      if (res?.success) {
+        addNotification(
+          `Queued ${res.queued} files for reanalysis. Analysis will run in the background.`,
+          'success'
+        );
+      } else {
+        const errorMsg = res?.error || '';
+        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
+          addNotification('Ollama not running. Start Ollama and try again.', 'error');
+        } else if (errorMsg.includes('WATCHER_NOT_AVAILABLE')) {
+          addNotification('Configure smart folders first before reanalyzing.', 'error');
+        } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
+          addNotification(
+            `Embedding model not available. Pull it first: ${res.model || 'nomic-embed-text'}`,
+            'error'
+          );
+        } else {
+          addNotification(
+            res?.error || 'Reanalyze failed. Check Ollama connection in Settings.',
+            'error'
+          );
+        }
+      }
+    } catch (e) {
+      addNotification('Reanalyze failed. Check Ollama is running.', 'error');
+    } finally {
+      setIsReanalyzingAll(false);
+      refreshStats();
+    }
+  }, [addNotification, refreshStats]);
+
+  const analysisIsActive = Boolean(isAnalyzing && (analysisProgress?.total || 0) > 0);
+  const analysisCurrent = Number.isFinite(analysisProgress?.current) ? analysisProgress.current : 0;
+  const analysisTotal = Number.isFinite(analysisProgress?.total) ? analysisProgress.total : 0;
+
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <label className="block text-sm font-medium text-system-gray-700 mb-2">
-            Embeddings maintenance
-          </label>
-          <p className="text-xs text-system-gray-500">
-            {statsLabel}
-            {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
+      <div>
+        <label className="block text-sm font-medium text-system-gray-700 mb-2">
+          Embeddings maintenance
+        </label>
+        <p className="text-xs text-system-gray-500">
+          {statsLabel}
+          {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
+        </p>
+        <p className="text-xs text-system-gray-400 mt-1">
+          Rebuilds recreate embeddings from your current smart folders and analysis history. Your
+          analysis data and ChromaDB database are preserved.
+        </p>
+        {analysisIsActive && (
+          <p className="text-xs text-system-gray-500 mt-2">
+            Background analysis running: {analysisCurrent}/{analysisTotal} files
           </p>
-          <p className="text-xs text-system-gray-400 mt-1">
-            Rebuilds recreate embeddings from your current smart folders and analysis history. Your
-            analysis data and ChromaDB database are preserved.
-          </p>
-        </div>
-        <IconButton
-          icon={<RefreshCw className={`w-4 h-4 ${isLoadingStats ? 'animate-spin' : ''}`} />}
-          size="sm"
-          variant="secondary"
-          onClick={refreshStats}
-          aria-label="Refresh embeddings stats"
-          title="Refresh stats"
-          disabled={isLoadingStats}
-        />
+        )}
       </div>
       <div className="flex flex-col sm:flex-row gap-3">
         <Button
           onClick={handleRebuildFolders}
           variant="secondary"
-          disabled={isRebuildingFolders}
+          disabled={isRebuildingFolders || isFullRebuilding}
+          isLoading={isRebuildingFolders}
           type="button"
           title="Rebuild folder embeddings"
           size="sm"
@@ -177,13 +276,65 @@ function EmbeddingRebuildSection({ addNotification }) {
         <Button
           onClick={handleRebuildFiles}
           variant="secondary"
-          disabled={isRebuildingFiles}
+          disabled={isRebuildingFiles || isFullRebuilding}
+          isLoading={isRebuildingFiles}
           type="button"
           title="Rebuild file embeddings from analysis history"
           size="sm"
           className="shrink-0"
         >
           {isRebuildingFiles ? 'Rebuilding…' : 'Rebuild File Embeddings'}
+        </Button>
+      </div>
+      <div className="pt-2 border-t border-system-gray-100">
+        <p className="text-xs text-system-gray-500 mb-2">
+          Use Full Rebuild when changing embedding models or to fix sync issues. This clears all
+          embeddings and rebuilds everything from your analysis history.
+        </p>
+        <Button
+          onClick={handleFullRebuild}
+          variant="primary"
+          disabled={
+            isFullRebuilding || isRebuildingFolders || isRebuildingFiles || isReanalyzingAll
+          }
+          isLoading={isFullRebuilding}
+          type="button"
+          title="Clear all embeddings and rebuild everything with current model"
+          size="sm"
+          className="shrink-0"
+        >
+          {isFullRebuilding
+            ? 'Full Rebuild in Progress…'
+            : 'Full Rebuild (Folders + Files + Search)'}
+        </Button>
+      </div>
+      <div className="pt-2 border-t border-system-gray-100">
+        <p className="text-xs text-system-gray-500 mb-2">
+          Use Reanalyze All when changing AI models (LLM or Vision). This clears all analysis
+          history and embeddings, then re-analyzes every file in your smart folders with the new
+          models.
+        </p>
+        <Button
+          onClick={handleReanalyzeAll}
+          variant="danger"
+          disabled={
+            isReanalyzingAll ||
+            analysisIsActive ||
+            isFullRebuilding ||
+            isRebuildingFolders ||
+            isRebuildingFiles
+          }
+          isLoading={isReanalyzingAll || analysisIsActive}
+          type="button"
+          title="Clear all data and reanalyze every file with current AI models"
+          size="sm"
+          className="shrink-0"
+        >
+          {isReanalyzingAll
+            ? 'Starting Reanalysis…'
+            : analysisIsActive
+              ? `Reanalyzing… ${analysisCurrent}/${analysisTotal}`
+              : 'Reanalyze All Files'}
         </Button>
       </div>
     </div>

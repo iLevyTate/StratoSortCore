@@ -9,8 +9,16 @@ import PropTypes from 'prop-types';
  * @param {string} size - The button size (sm, md, lg)
  * @param {string} variant - The button variant (default, primary, secondary, ghost)
  * @param {string} className - Additional CSS classes
+ * @param {string} aria-label - Required for accessibility - describes the button action
  */
-function IconButton({ icon, size = 'md', variant = 'default', className = '', ...props }) {
+function IconButton({
+  icon,
+  size = 'md',
+  variant = 'default',
+  className = '',
+  'aria-label': ariaLabel,
+  ...props
+}) {
   const sizeClasses = {
     sm: 'h-8 w-8 text-sm',
     md: 'h-10 w-10 text-base',
@@ -37,6 +45,7 @@ function IconButton({ icon, size = 'md', variant = 'default', className = '', ..
         ${variantClasses[variant]}
         ${className}
       `}
+      aria-label={ariaLabel}
       {...props}
     >
       {icon}
@@ -48,7 +57,8 @@ IconButton.propTypes = {
   icon: PropTypes.node.isRequired,
   size: PropTypes.oneOf(['sm', 'md', 'lg']),
   variant: PropTypes.oneOf(['default', 'primary', 'secondary', 'ghost']),
-  className: PropTypes.string
+  className: PropTypes.string,
+  'aria-label': PropTypes.string
 };
 
 export default IconButton;
