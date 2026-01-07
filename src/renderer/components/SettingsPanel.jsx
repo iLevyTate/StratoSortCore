@@ -255,7 +255,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsRefreshingModels(false);
     }
-  }, [addNotification]);
+  }, [addNotification, applySettingsUpdate]);
 
   useEffect(() => {
     // Don't run if API is not available
@@ -370,7 +370,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsSaving(false);
     }
-  }, [settings, addNotification, handleToggleSettings]);
+  }, [settings, addNotification, handleToggleSettings, applySettingsUpdate]);
 
   // Auto-save settings on change (debounced)
   // FIX: Use settingsRef.current to always get the LATEST settings value at execution time

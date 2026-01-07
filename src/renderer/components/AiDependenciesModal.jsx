@@ -24,7 +24,8 @@ function StatusBadge({ status, label }) {
     running: 'bg-green-100 text-green-700 border-green-200',
     installed: 'bg-blue-100 text-blue-700 border-blue-200',
     missing: 'bg-amber-100 text-amber-700 border-amber-200',
-    error: 'bg-red-100 text-red-700 border-red-200'
+    error: 'bg-red-100 text-red-700 border-red-200',
+    checking: 'bg-gray-100 text-gray-600 border-gray-200'
   };
   return (
     <span
@@ -33,13 +34,16 @@ function StatusBadge({ status, label }) {
       {status === 'running' && (
         <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse" />
       )}
+      {status === 'checking' && (
+        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5 animate-pulse" />
+      )}
       {label}
     </span>
   );
 }
 
 StatusBadge.propTypes = {
-  status: PropTypes.oneOf(['running', 'installed', 'missing', 'error']).isRequired,
+  status: PropTypes.oneOf(['running', 'installed', 'missing', 'error', 'checking']).isRequired,
   label: PropTypes.string.isRequired
 };
 
@@ -317,12 +321,14 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
   // Derive status badges
   const getOllamaStatus = () => {
+    if (status === null) return { status: 'checking', label: 'Checking...' };
     if (ollamaRunning) return { status: 'running', label: 'Running' };
     if (ollamaOk) return { status: 'installed', label: 'Installed' };
     return { status: 'missing', label: 'Not Installed' };
   };
 
   const getChromaStatus = () => {
+    if (status === null) return { status: 'checking', label: 'Checking...' };
     if (chromaRunning) return { status: 'running', label: 'Running' };
     if (chromaOk) return { status: 'installed', label: 'Installed' };
     return { status: 'missing', label: 'Not Installed' };
@@ -398,9 +404,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               <Button
                 variant={ollamaOk ? 'secondary' : 'primary'}
                 className="w-full justify-center"
-                disabled={installing.ollama}
+                disabled={installing.ollama || status === null}
                 onClick={installOllama}
-                title="Download and install Ollama silently"
+                title={
+                  status === null ? 'Checking status...' : 'Download and install Ollama silently'
+                }
               >
                 {installing.ollama ? (
                   <>
@@ -551,44 +559,48 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
             <div className="p-4 space-y-4">
               {/* Status Details */}
-              <div className="space-y-1 text-xs text-gray-500">
-                {chromaExternal ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">Mode:</span> External Server
-                    </div>
-                    {status?.chromadb?.serverUrl && (
+              {status !== null && (
+                <div className="space-y-1 text-xs text-gray-500">
+                  {chromaExternal ? (
+                    <>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">URL:</span>
-                        <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">
-                          {status.chromadb.serverUrl}
-                        </code>
+                        <span className="font-medium">Mode:</span> External Server
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`w-2 h-2 rounded-full ${pythonOk ? 'bg-green-400' : 'bg-amber-400'}`}
-                      />
-                      Python: {pythonOk ? pythonVersion || 'Detected' : 'Required'}
-                    </div>
-                  </>
-                )}
-              </div>
+                      {status?.chromadb?.serverUrl && (
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">URL:</span>
+                          <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">
+                            {status.chromadb.serverUrl}
+                          </code>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-2 h-2 rounded-full ${pythonOk ? 'bg-green-400' : 'bg-amber-400'}`}
+                        />
+                        Python: {pythonOk ? pythonVersion || 'Detected' : 'Required'}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               <Button
                 variant={chromaOk ? 'secondary' : 'primary'}
                 className="w-full justify-center"
-                disabled={installing.chromadb || !pythonOk || chromaExternal}
+                disabled={installing.chromadb || !pythonOk || chromaExternal || status === null}
                 onClick={installChromaDb}
                 title={
-                  chromaExternal
-                    ? 'ChromaDB is configured as an external server'
-                    : pythonOk
-                      ? 'Install ChromaDB Python module'
-                      : 'Install Python 3 first'
+                  status === null
+                    ? 'Checking status...'
+                    : chromaExternal
+                      ? 'ChromaDB is configured as an external server'
+                      : pythonOk
+                        ? 'Install ChromaDB Python module'
+                        : 'Install Python 3 first'
                 }
               >
                 {installing.chromadb ? (
@@ -619,7 +631,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               </Button>
 
               {/* Help messages */}
-              {!pythonOk && !chromaExternal && (
+              {!pythonOk && !chromaExternal && status !== null && (
                 <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
                   <p className="text-xs text-amber-700">
                     Python 3 is required. Install it and ensure it&apos;s available as{' '}

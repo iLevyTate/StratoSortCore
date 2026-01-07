@@ -302,7 +302,7 @@ const SearchAutocomplete = memo(
             type="text"
             value={value}
             onChange={handleInputChange}
-            onFocus={() => setShowSuggestions(true)}
+            onClick={() => setShowSuggestions(true)}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             aria-label={ariaLabel}

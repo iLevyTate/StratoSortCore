@@ -108,6 +108,53 @@ const filesSlice = createSlice({
     },
     resetFilesState: () => {
       return initialState;
+    },
+    // FIX: Update file paths after organize/move operations
+    // This ensures Redux state stays in sync with actual file locations
+    updateFilePathsAfterMove: (state, action) => {
+      const { oldPaths, newPaths } = action.payload;
+      if (!Array.isArray(oldPaths) || !Array.isArray(newPaths)) return;
+      if (oldPaths.length !== newPaths.length) return;
+
+      // Create path mapping
+      const pathMap = {};
+      oldPaths.forEach((oldPath, i) => {
+        pathMap[oldPath] = newPaths[i];
+      });
+
+      // Update selectedFiles
+      state.selectedFiles = state.selectedFiles.map((file) => {
+        const newPath = pathMap[file.path];
+        if (newPath) {
+          return {
+            ...file,
+            path: newPath,
+            name: newPath.split(/[\\/]/).pop() || file.name
+          };
+        }
+        return file;
+      });
+
+      // Update fileStates (rename keys)
+      const newFileStates = {};
+      Object.entries(state.fileStates).forEach(([path, fileState]) => {
+        const newPath = pathMap[path];
+        newFileStates[newPath || path] = fileState;
+      });
+      state.fileStates = newFileStates;
+
+      // Update organizedFiles if present
+      state.organizedFiles = state.organizedFiles.map((file) => {
+        const newPath = pathMap[file.originalPath] || pathMap[file.path];
+        if (newPath) {
+          return {
+            ...file,
+            currentPath: newPath,
+            path: file.path ? newPath : file.path
+          };
+        }
+        return file;
+      });
     }
   },
   extraReducers: (builder) => {
@@ -136,7 +183,8 @@ export const {
   setOrganizedFiles,
   setNamingConvention,
   clearFiles,
-  resetFilesState
+  resetFilesState,
+  updateFilePathsAfterMove
 } = filesSlice.actions;
 
 export default filesSlice.reducer;

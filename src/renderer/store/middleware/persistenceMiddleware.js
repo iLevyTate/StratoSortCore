@@ -207,9 +207,7 @@ const persistenceMiddleware = (store) => (next) => (action) => {
               caseConvention: nc?.caseConvention,
               separator: nc?.separator
             };
-            // Debug: observe what we send to main
-            // eslint-disable-next-line no-console
-            console.debug('[NamingSync] Saving naming settings to main', namingPayload);
+            logger.debug('[NamingSync] Saving naming settings to main', namingPayload);
             // Fire-and-forget; main settings merge partials
             window.electronAPI.settings.save(namingPayload);
           }

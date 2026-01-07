@@ -14,6 +14,7 @@ function EmbeddingRebuildSection({ addNotification }) {
   const [isReanalyzingAll, setIsReanalyzingAll] = useState(false);
   const [stats, setStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const isAnalyzing = useAppSelector((state) => Boolean(state?.analysis?.isAnalyzing));
   const analysisProgress = useAppSelector((state) => state?.analysis?.analysisProgress);
@@ -251,8 +252,8 @@ function EmbeddingRebuildSection({ addNotification }) {
           {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
         </p>
         <p className="text-xs text-system-gray-400 mt-1">
-          Rebuilds recreate embeddings from your current smart folders and analysis history. Your
-          analysis data and ChromaDB database are preserved.
+          When changing embedding models, use <strong>Rebuild All Embeddings</strong> to update
+          everything. This preserves your analysis data but regenerates the search index.
         </p>
         {analysisIsActive && (
           <p className="text-xs text-system-gray-500 mt-2">
@@ -260,37 +261,9 @@ function EmbeddingRebuildSection({ addNotification }) {
           </p>
         )}
       </div>
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Button
-          onClick={handleRebuildFolders}
-          variant="secondary"
-          disabled={isRebuildingFolders || isFullRebuilding}
-          isLoading={isRebuildingFolders}
-          type="button"
-          title="Rebuild folder embeddings"
-          size="sm"
-          className="shrink-0"
-        >
-          {isRebuildingFolders ? 'Rebuilding…' : 'Rebuild Folder Embeddings'}
-        </Button>
-        <Button
-          onClick={handleRebuildFiles}
-          variant="secondary"
-          disabled={isRebuildingFiles || isFullRebuilding}
-          isLoading={isRebuildingFiles}
-          type="button"
-          title="Rebuild file embeddings from analysis history"
-          size="sm"
-          className="shrink-0"
-        >
-          {isRebuildingFiles ? 'Rebuilding…' : 'Rebuild File Embeddings'}
-        </Button>
-      </div>
-      <div className="pt-2 border-t border-system-gray-100">
-        <p className="text-xs text-system-gray-500 mb-2">
-          Use Full Rebuild when changing embedding models or to fix sync issues. This clears all
-          embeddings and rebuilds everything from your analysis history.
-        </p>
+
+      {/* Primary Action: Full Rebuild */}
+      <div className="pt-2">
         <Button
           onClick={handleFullRebuild}
           variant="primary"
@@ -301,41 +274,101 @@ function EmbeddingRebuildSection({ addNotification }) {
           type="button"
           title="Clear all embeddings and rebuild everything with current model"
           size="sm"
-          className="shrink-0"
+          className="shrink-0 w-full sm:w-auto"
         >
-          {isFullRebuilding
-            ? 'Full Rebuild in Progress…'
-            : 'Full Rebuild (Folders + Files + Search)'}
+          {isFullRebuilding ? 'Rebuilding All Embeddings…' : 'Rebuild All Embeddings'}
         </Button>
-      </div>
-      <div className="pt-2 border-t border-system-gray-100">
-        <p className="text-xs text-system-gray-500 mb-2">
-          Use Reanalyze All when changing AI models (LLM or Vision). This clears all analysis
-          history and embeddings, then re-analyzes every file in your smart folders with the new
-          models.
+        <p className="text-xs text-system-gray-500 mt-2">
+          Use this after changing the embedding model setting. It updates folder matches, file
+          search, and sorting.
         </p>
-        <Button
-          onClick={handleReanalyzeAll}
-          variant="danger"
-          disabled={
-            isReanalyzingAll ||
-            analysisIsActive ||
-            isFullRebuilding ||
-            isRebuildingFolders ||
-            isRebuildingFiles
-          }
-          isLoading={isReanalyzingAll || analysisIsActive}
-          type="button"
-          title="Clear all data and reanalyze every file with current AI models"
-          size="sm"
-          className="shrink-0"
+      </div>
+
+      {/* Advanced Options Toggle */}
+      <div className="pt-4 border-t border-system-gray-100">
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium focus:outline-none"
         >
-          {isReanalyzingAll
-            ? 'Starting Reanalysis…'
-            : analysisIsActive
-              ? `Reanalyzing… ${analysisCurrent}/${analysisTotal}`
-              : 'Reanalyze All Files'}
-        </Button>
+          {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+          <svg
+            className={`w-3 h-3 transform transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showAdvanced && (
+          <div className="mt-4 space-y-4 pl-4 border-l-2 border-system-gray-100">
+            {/* Partial Rebuilds */}
+            <div>
+              <label className="block text-xs font-medium text-system-gray-700 mb-2">
+                Partial Updates (Use only for specific troubleshooting)
+              </label>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={handleRebuildFolders}
+                  variant="secondary"
+                  disabled={isRebuildingFolders || isFullRebuilding}
+                  isLoading={isRebuildingFolders}
+                  type="button"
+                  title="Rebuild folder embeddings"
+                  size="sm"
+                  className="shrink-0"
+                >
+                  {isRebuildingFolders ? 'Rebuilding…' : 'Rebuild Folders Only'}
+                </Button>
+                <Button
+                  onClick={handleRebuildFiles}
+                  variant="secondary"
+                  disabled={isRebuildingFiles || isFullRebuilding}
+                  isLoading={isRebuildingFiles}
+                  type="button"
+                  title="Rebuild file embeddings from analysis history"
+                  size="sm"
+                  className="shrink-0"
+                >
+                  {isRebuildingFiles ? 'Rebuilding…' : 'Rebuild Files Only'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Reanalyze All (Destructive) */}
+            <div className="pt-2 border-t border-system-gray-100">
+              <label className="block text-xs font-medium text-red-700 mb-2">Danger Zone</label>
+              <p className="text-xs text-system-gray-500 mb-2">
+                <strong>Reanalyze All Files</strong> will delete all analysis history and re-process
+                every file with the LLM. Use this only if you changed the <em>Text/Vision Model</em>{' '}
+                (not just the embedding model).
+              </p>
+              <Button
+                onClick={handleReanalyzeAll}
+                variant="danger"
+                disabled={
+                  isReanalyzingAll ||
+                  analysisIsActive ||
+                  isFullRebuilding ||
+                  isRebuildingFolders ||
+                  isRebuildingFiles
+                }
+                isLoading={isReanalyzingAll || analysisIsActive}
+                type="button"
+                title="Clear all data and reanalyze every file with current AI models"
+                size="sm"
+                className="shrink-0"
+              >
+                {isReanalyzingAll
+                  ? 'Starting Reanalysis…'
+                  : analysisIsActive
+                    ? `Reanalyzing… ${analysisCurrent}/${analysisTotal}`
+                    : 'Reanalyze All Files (Slow)'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

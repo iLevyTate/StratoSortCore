@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import { X, AlertTriangle, Info, HelpCircle, FileText } from 'lucide-react';
+import { logger } from '../../shared/logger';
 
 function Modal({
   isOpen,
@@ -249,7 +250,7 @@ export function ConfirmModal({
       }
     } catch (error) {
       // If onConfirm throws, still allow closing but log the error
-      console.error('[ConfirmModal] onConfirm failed:', error);
+      logger.error('[ConfirmModal] onConfirm failed', { error });
       if (isMountedRef.current) {
         onClose();
       }
