@@ -304,6 +304,14 @@ class ServiceContainer {
       const initPromise = (async () => {
         const instance = await registration.factory(this);
 
+        // FIX M4: Check shutdown state after async factory completes
+        // If shutdown started while we were awaiting, discard the instance
+        if (this._isShuttingDown) {
+          logger.warn(`[ServiceContainer] Service '${name}' resolved during shutdown, discarding`);
+          this._initPromises.delete(name);
+          return null;
+        }
+
         // Cache singleton instances
         if (registration.lifetime === ServiceLifetime.SINGLETON) {
           registration.instance = instance;
@@ -460,6 +468,15 @@ class ServiceContainer {
       await Promise.allSettled(remainingServices);
     }
 
+    // FIX M4: Wait for in-flight async resolutions before clearing registrations
+    // This prevents resolutions from completing after container is cleared
+    if (this._initPromises.size > 0) {
+      logger.debug(
+        `[ServiceContainer] Waiting for ${this._initPromises.size} in-flight resolutions...`
+      );
+      await Promise.allSettled(Array.from(this._initPromises.values()));
+    }
+
     // Clear all registrations
     this._registrations.clear();
     this._initPromises.clear();
@@ -544,16 +561,23 @@ const SHUTDOWN_ORDER = [
   ServiceIds.CLUSTERING, // FIX: HIGH - Added to shutdown order (was missing, causing improper cleanup)
   ServiceIds.PARALLEL_EMBEDDING,
   ServiceIds.FOLDER_MATCHING,
+  // FIX L4: Add notification service (depends on settings, user-facing)
+  ServiceIds.NOTIFICATION_SERVICE,
   // Second: Core infrastructure services
   ServiceIds.EMBEDDING_CACHE,
   ServiceIds.MODEL_MANAGER,
   ServiceIds.OLLAMA_SERVICE,
   ServiceIds.OLLAMA_CLIENT,
   ServiceIds.CHROMA_DB,
+  // FIX L4: Add analysis cache (caching layer, before state services)
+  ServiceIds.ANALYSIS_CACHE,
   // Third: State management services
   ServiceIds.PROCESSING_STATE,
   ServiceIds.UNDO_REDO,
   ServiceIds.ANALYSIS_HISTORY,
+  // FIX L4: Add dependency manager and file access policy (infrastructure services)
+  ServiceIds.DEPENDENCY_MANAGER,
+  ServiceIds.FILE_ACCESS_POLICY,
   // Last: Settings and config
   ServiceIds.SETTINGS
 ];
