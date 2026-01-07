@@ -2,11 +2,13 @@
 
 ## Overview
 
-This document describes the LLM call optimizations implemented to reduce sequential API calls and improve caching, resulting in 50-70% reduction in LLM API calls and 2-3x faster file analysis.
+This document describes the LLM call optimizations implemented to reduce sequential API calls and
+improve caching, resulting in 50-70% reduction in LLM API calls and 2-3x faster file analysis.
 
 ## Problem Statement
 
-Previously, each file analysis made multiple sequential LLM calls (3-8 seconds each), causing severe slowdown:
+Previously, each file analysis made multiple sequential LLM calls (3-8 seconds each), causing severe
+slowdown:
 
 - **Sequential processing**: Files analyzed one-by-one
 - **Redundant calls**: Duplicate LLM calls for identical content
@@ -39,12 +41,12 @@ const { globalDeduplicator } = require('../utils/llmOptimization');
 const key = globalDeduplicator.generateKey({
   text: content,
   model: modelName,
-  folders: smartFolders.map((f) => f.name).join(','),
+  folders: smartFolders.map((f) => f.name).join(',')
 });
 
 // Deduplicate the LLM call
 const result = await globalDeduplicator.deduplicate(key, () =>
-  ollama.generate({ model, prompt, options }),
+  ollama.generate({ model, prompt, options })
 );
 ```
 
@@ -68,15 +70,11 @@ const result = await globalDeduplicator.deduplicate(key, () =>
 ```javascript
 const { globalBatchProcessor } = require('../utils/llmOptimization');
 
-const result = await globalBatchProcessor.processBatch(
-  files,
-  async (file) => analyzeFile(file),
-  {
-    concurrency: 3,
-    onProgress: (progress) => console.log(progress),
-    stopOnError: false,
-  },
-);
+const result = await globalBatchProcessor.processBatch(files, async (file) => analyzeFile(file), {
+  concurrency: 3,
+  onProgress: (progress) => console.log(progress),
+  stopOnError: false
+});
 ```
 
 ### 3. Batch Analysis Service
@@ -105,7 +103,7 @@ const batchService = new BatchAnalysisService({ concurrency: 3 });
 const result = await batchService.analyzeFiles(filePaths, smartFolders, {
   onProgress: (progress) => {
     console.log(`${progress.completed}/${progress.total} files processed`);
-  },
+  }
 });
 
 console.log(`Processed ${result.successful}/${result.total} files`);
@@ -129,7 +127,7 @@ console.log(`Speed: ${result.stats.filesPerSecond} files/sec`);
 
 **Impact**:
 
-- 100% cache hit rate for re-analyzed files
+- High cache hit rates for repeated analyses (e.g., retries / repeated runs on unchanged files)
 - Instant responses for cached content
 - Reduced API costs
 
@@ -179,8 +177,8 @@ const response = await ollama.generate({
   options: {
     temperature: 0.7,
     num_predict: 500,
-    ...perfOptions, // Adds optimized settings
-  },
+    ...perfOptions // Adds optimized settings
+  }
 });
 ```
 
@@ -216,7 +214,7 @@ for (const file of files) {
 const batchResult = await globalBatchProcessor.processBatch(
   files,
   async (file) => getSuggestionsForFile(file),
-  { concurrency: 3 },
+  { concurrency: 3 }
 );
 ```
 
