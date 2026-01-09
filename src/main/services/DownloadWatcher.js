@@ -76,7 +76,9 @@ class DownloadWatcher {
     autoOrganizeService,
     settingsService,
     notificationService,
-    analysisHistoryService
+    analysisHistoryService,
+    chromaDbService,
+    folderMatcher
   }) {
     this.analyzeDocumentFile = analyzeDocumentFile;
     this.analyzeImageFile = analyzeImageFile;
@@ -85,6 +87,9 @@ class DownloadWatcher {
     this.settingsService = settingsService;
     this.notificationService = notificationService;
     this.analysisHistoryService = analysisHistoryService;
+    // FIX: Add chromaDbService and folderMatcher for embedding support
+    this.chromaDbService = chromaDbService;
+    this.folderMatcher = folderMatcher;
     this.watcher = null;
     this.isStarting = false;
     this.restartAttempts = 0;
@@ -608,6 +613,10 @@ class DownloadWatcher {
               analysisHistory: this.analysisHistoryService,
               logger
             });
+
+            // FIX: Embed the file into ChromaDB for semantic search
+            // This ensures DownloadWatcher-organized files are searchable
+            await this._embedAnalyzedFile(result.destination, result);
           } catch (historyErr) {
             logger.debug('[DOWNLOAD-WATCHER] Failed to record history entry:', historyErr.message);
           }
@@ -780,6 +789,14 @@ class DownloadWatcher {
           confidencePercent
         );
       }
+
+      // FIX: Embed fallback-organized file into ChromaDB for semantic search
+      // This ensures files organized via fallback path are also searchable
+      try {
+        await this._embedAnalyzedFile(destPath, result);
+      } catch (embedErr) {
+        logger.debug('[DOWNLOAD-WATCHER] Failed to embed fallback file:', embedErr.message);
+      }
     } catch (e) {
       // FIX: Handle TOCTOU race gracefully - file may have been deleted between check and move
       if (isNotFoundError(e)) {
@@ -936,6 +953,88 @@ class DownloadWatcher {
    */
   shutdown() {
     this.stop();
+  }
+
+  /**
+   * Check if a file path is an image based on extension
+   * @param {string} filePath - Path to check
+   * @returns {boolean} True if the file is an image
+   * @private
+   */
+  _isImageFile(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    return IMAGE_EXTENSIONS.has(ext);
+  }
+
+  /**
+   * Embed an analyzed file into ChromaDB for semantic search
+   * This is called after successful auto-organization to keep embeddings in sync
+   * FIX: Ensures DownloadWatcher-organized files are searchable via semantic search
+   * @private
+   * @param {string} filePath - Path to the file (destination after move)
+   * @param {Object} analysisResult - Result from auto-organize analysis
+   */
+  async _embedAnalyzedFile(filePath, analysisResult) {
+    // Skip if dependencies not available
+    if (!this.folderMatcher || !this.chromaDbService) {
+      logger.debug('[DOWNLOAD-WATCHER] Skipping embedding - services not available');
+      return;
+    }
+
+    try {
+      // Extract analysis data - handle different result structures
+      const analysis = analysisResult.analysis || analysisResult;
+      const summary = analysis.summary || analysis.description || '';
+      const category = analysis.category || analysis.folder || 'Uncategorized';
+      const keywords = analysis.keywords || analysis.tags || [];
+      const subject = analysis.subject || analysis.suggestedName || '';
+
+      // Skip if no meaningful content to embed
+      if (!summary && !subject) {
+        logger.debug('[DOWNLOAD-WATCHER] Skipping embedding - no content:', filePath);
+        return;
+      }
+
+      // Generate embedding vector using folderMatcher
+      const textToEmbed = [summary, subject, keywords?.join(' ')].filter(Boolean).join(' ');
+      const embedding = await this.folderMatcher.embedText(textToEmbed);
+
+      if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
+        logger.warn('[DOWNLOAD-WATCHER] Failed to generate embedding for:', filePath);
+        return;
+      }
+
+      // Prepare metadata for ChromaDB
+      // IMPORTANT: IDs must match the rest of the semantic pipeline
+      const isImage = this._isImageFile(filePath);
+      const fileId = `${isImage ? 'image' : 'file'}:${filePath}`;
+      const fileName = path.basename(filePath);
+
+      // Upsert to ChromaDB
+      await this.chromaDbService.upsertFile({
+        id: fileId,
+        vector: embedding.vector,
+        model: embedding.model || 'unknown',
+        meta: {
+          path: filePath,
+          name: fileName,
+          category,
+          subject,
+          summary: summary.substring(0, 1000), // Limit summary length
+          tags: JSON.stringify(keywords.slice(0, 10)), // Limit tags
+          type: isImage ? 'image' : 'document'
+        },
+        updatedAt: new Date().toISOString()
+      });
+
+      logger.debug('[DOWNLOAD-WATCHER] Embedded file:', filePath);
+    } catch (embedError) {
+      // Non-critical - log but don't fail the operation
+      logger.warn('[DOWNLOAD-WATCHER] Failed to embed file:', {
+        filePath,
+        error: embedError.message
+      });
+    }
   }
 
   resolveDestinationFolder(result, folders) {

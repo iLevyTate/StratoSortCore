@@ -24,6 +24,9 @@ const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtil
 const { generateFileHash } = require('./analysisHistory/indexManager');
 const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
+const { chunkText } = require('../utils/textChunking');
+const { CHUNKING } = require('../../shared/performanceConstants');
+const { AI_DEFAULTS } = require('../../shared/constants');
 
 logger.setContext('SmartFolderWatcher');
 
@@ -811,6 +814,23 @@ class SmartFolderWatcher {
             analysisHistory: this.analysisHistoryService,
             logger
           });
+
+          // FIX P1-2: Invalidate BM25 index after analysis so new files are searchable immediately
+          // This triggers a rebuild on the next search instead of waiting 15 minutes
+          try {
+            const { getSearchServiceInstance } = require('../ipc/semantic');
+            const searchService = getSearchServiceInstance?.();
+            if (searchService?.invalidateIndex) {
+              searchService.invalidateIndex();
+              logger.debug('[SMART-FOLDER-WATCHER] Invalidated BM25 index for new analysis');
+            }
+          } catch (invalidateErr) {
+            // Non-fatal - search will still work with stale index
+            logger.debug(
+              '[SMART-FOLDER-WATCHER] Could not invalidate BM25 index:',
+              invalidateErr.message
+            );
+          }
         }
 
         // Update stats
@@ -927,6 +947,87 @@ class SmartFolderWatcher {
       });
 
       logger.debug('[SMART-FOLDER-WATCHER] Embedded file:', filePath);
+
+      // Conditionally generate chunk embeddings for deep semantic search (opt-in setting)
+      // Check settings for user preference, fallback to constant default
+      let autoChunkEnabled = AI_DEFAULTS.EMBEDDING.AUTO_CHUNK_ON_ANALYSIS;
+      try {
+        const settings = await this.settingsService.load();
+        if (typeof settings.autoChunkOnAnalysis === 'boolean') {
+          autoChunkEnabled = settings.autoChunkOnAnalysis;
+        }
+      } catch (settingsErr) {
+        logger.debug(
+          '[SMART-FOLDER-WATCHER] Could not load settings for chunk preference:',
+          settingsErr.message
+        );
+      }
+
+      if (autoChunkEnabled) {
+        const extractedText = analysis.extractedText || '';
+        if (extractedText.trim().length >= CHUNKING.MIN_TEXT_LENGTH) {
+          try {
+            // FIX P2-2: Delete old chunks before creating new ones (for re-analysis)
+            // This prevents orphaned chunks when file content changes
+            if (typeof this.chromaDbService.deleteFileChunks === 'function') {
+              await this.chromaDbService.deleteFileChunks(fileId);
+            }
+
+            const chunks = chunkText(extractedText, {
+              chunkSize: CHUNKING.CHUNK_SIZE,
+              overlap: CHUNKING.OVERLAP,
+              maxChunks: CHUNKING.MAX_CHUNKS
+            });
+
+            const chunkEmbeddings = [];
+            for (const c of chunks) {
+              try {
+                const chunkEmbedding = await this.folderMatcher.embedText(c.text);
+                if (!chunkEmbedding?.vector?.length) continue;
+
+                const snippet = c.text.slice(0, 240);
+                chunkEmbeddings.push({
+                  id: `chunk:${fileId}:${c.index}`,
+                  vector: chunkEmbedding.vector,
+                  meta: {
+                    fileId,
+                    path: filePath,
+                    name: fileName,
+                    chunkIndex: c.index,
+                    charStart: c.charStart,
+                    charEnd: c.charEnd,
+                    snippet,
+                    // FIX P0-3: Store embedding model version for mismatch detection
+                    model: chunkEmbedding.model || 'unknown'
+                  },
+                  document: snippet
+                });
+              } catch (chunkErr) {
+                logger.debug('[SMART-FOLDER-WATCHER] Failed to embed chunk:', {
+                  file: fileName,
+                  chunkIndex: c.index,
+                  error: chunkErr?.message
+                });
+              }
+            }
+
+            // Batch upsert chunks if we have any
+            if (
+              chunkEmbeddings.length > 0 &&
+              typeof this.chromaDbService.batchUpsertFileChunks === 'function'
+            ) {
+              await this.chromaDbService.batchUpsertFileChunks(chunkEmbeddings);
+              logger.debug('[SMART-FOLDER-WATCHER] Embedded chunks:', {
+                file: fileName,
+                count: chunkEmbeddings.length
+              });
+            }
+          } catch (chunkingError) {
+            // Non-fatal - chunk embedding failure shouldn't block analysis
+            logger.debug('[SMART-FOLDER-WATCHER] Chunk embedding failed:', chunkingError.message);
+          }
+        }
+      }
     } catch (error) {
       // Non-fatal - embedding failure shouldn't block analysis
       logger.warn('[SMART-FOLDER-WATCHER] Failed to embed file:', filePath, error.message);
