@@ -171,7 +171,9 @@ const IPC_CHANNELS = {
     GET_CLUSTER_MEMBERS: 'embeddings-get-cluster-members',
     GET_SIMILARITY_EDGES: 'embeddings-get-similarity-edges',
     GET_FILE_METADATA: 'embeddings-get-file-metadata',
-    FIND_DUPLICATES: 'embeddings-find-duplicates'
+    FIND_DUPLICATES: 'embeddings-find-duplicates',
+    // Diagnostic endpoint for troubleshooting search issues
+    DIAGNOSE_SEARCH: 'embeddings-diagnose-search'
   },
 
   // Ollama
@@ -501,7 +503,11 @@ const AI_DEFAULTS = {
       'all-minilm', // 384 dims - Fast, smaller
       'bge-large', // 1024 dims - Chinese & English
       'snowflake-arctic-embed' // 1024 dims - High quality
-    ]
+    ],
+    // Opt-in: Generate chunk embeddings during file analysis for deep semantic search
+    // When enabled, extracted text is chunked and embedded for better natural language queries
+    // Note: Increases analysis time but improves search quality significantly
+    AUTO_CHUNK_ON_ANALYSIS: false
   }
 };
 

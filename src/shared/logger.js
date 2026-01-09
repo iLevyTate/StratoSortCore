@@ -330,8 +330,20 @@ class Logger {
 
     if (this.enableConsole) {
       try {
-        const consoleMethod = this.getConsoleMethod(normalizedLevel);
-        consoleMethod(formattedMessage);
+        // Write directly to stdout/stderr for terminal visibility
+        // This ensures output appears in terminal, not just DevTools console
+        if (typeof process !== 'undefined' && process.stdout && process.stderr) {
+          const output = formattedMessage + '\n';
+          if (normalizedLevel <= LOG_LEVELS.WARN) {
+            process.stderr.write(output);
+          } else {
+            process.stdout.write(output);
+          }
+        } else {
+          // Fallback to console for renderer process or environments without process
+          const consoleMethod = this.getConsoleMethod(normalizedLevel);
+          consoleMethod(formattedMessage);
+        }
       } catch (error) {
         // Handle EPIPE errors gracefully (broken console pipe)
         // This can happen when stdout/stderr pipe is closed
@@ -413,6 +425,85 @@ class Logger {
       duration: `${duration}ms`,
       ...metadata
     });
+  }
+
+  /**
+   * Write directly to terminal (stdout/stderr) AND log to file
+   * Use this for important diagnostic output that MUST be visible in terminal
+   * @param {string} level - 'error', 'warn', 'info'
+   * @param {string} message - The message to write
+   * @param {Object} [data] - Optional structured data
+   */
+  terminal(level, message, data = {}) {
+    const normalizedLevel = this.normalizeLevel(level);
+    const timestamp = new Date().toISOString();
+    const levelName = LOG_LEVEL_NAMES[normalizedLevel] || 'INFO';
+    const contextStr = this.context ? ` [${this.context}]` : '';
+
+    // Format message for terminal
+    let output = `${timestamp} ${levelName}${contextStr}: ${message}`;
+    if (data && Object.keys(data).length > 0) {
+      try {
+        output += `\n  ${this.safeStringify(data)}`;
+      } catch (e) {
+        output += `\n  [Data stringify error]`;
+      }
+    }
+    output += '\n';
+
+    // Write directly to stdout/stderr (bypasses console which may not show in terminal)
+    try {
+      if (typeof process !== 'undefined') {
+        if (normalizedLevel <= LOG_LEVELS.ERROR) {
+          process.stderr.write(output);
+        } else {
+          process.stdout.write(output);
+        }
+      }
+    } catch (e) {
+      // Fallback to console if process not available
+      if (this.enableConsole) {
+        const consoleMethod = this.getConsoleMethod(normalizedLevel);
+        consoleMethod(output);
+      }
+    }
+
+    // Also write to log file
+    if (this.enableFile) {
+      const entry =
+        this.fileFormat === 'text'
+          ? output.trim()
+          : this.buildLogEntry(normalizedLevel, message, data);
+      this.writeToFile(normalizedLevel, entry);
+    }
+  }
+
+  /**
+   * Write raw text directly to terminal stdout (no formatting)
+   * Use for diagnostic reports, tables, etc.
+   * @param {string} text - Raw text to write
+   */
+  terminalRaw(text) {
+    try {
+      if (typeof process !== 'undefined' && process.stdout) {
+        process.stdout.write(text);
+      }
+    } catch (e) {
+      // Fallback
+      if (this.enableConsole) {
+        console.log(text);
+      }
+    }
+
+    // Also write to log file if enabled
+    if (this.enableFile && this.logFile) {
+      try {
+        const fs = require('fs');
+        fs.appendFileSync(this.logFile, text);
+      } catch (e) {
+        // Ignore file write errors for raw output
+      }
+    }
   }
 }
 

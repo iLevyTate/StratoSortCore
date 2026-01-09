@@ -175,6 +175,8 @@ const SETTINGS_VALIDATION = {
     'analysisTimeout',
     'fileOperationTimeout',
     'retryAttempts',
+    // Semantic search settings
+    'autoChunkOnAnalysis', // Opt-in: generate chunk embeddings during file analysis
     // UI limits
     'workflowRestoreMaxAge',
     'saveDebounceMs',

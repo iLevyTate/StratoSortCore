@@ -189,9 +189,9 @@ const THRESHOLDS = {
   MEMORY_WARNING_PERCENT: 80,
   DISK_WARNING_PERCENT: 90,
   CPU_WARNING_PERCENT: 85,
-  MIN_SIMILARITY_SCORE: 0.25, // Raised from 0.12 to filter low-quality matches
+  MIN_SIMILARITY_SCORE: 0.15, // Lowered from 0.25 to allow more marginal semantic matches
   MIN_MATCH_CONFIDENCE: 0.6,
-  FOLDER_MATCH_CONFIDENCE: 0.55, // Min score for folder categorization
+  FOLDER_MATCH_CONFIDENCE: 0.65, // Min score for folder categorization (requires strong match to override LLM)
   QUEUE_HIGH_WATERMARK: 0.75,
   QUEUE_CRITICAL_WATERMARK: 0.9,
   // Similarity edge thresholds
