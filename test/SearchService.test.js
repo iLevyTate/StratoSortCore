@@ -999,4 +999,190 @@ describe('SearchService', () => {
       expect(service.isIndexStale()).toBe(true);
     });
   });
+
+  describe('with QueryProcessor and ReRanker', () => {
+    let serviceWithEnhancements;
+    let mockQueryProcessor;
+    let mockReRanker;
+
+    beforeEach(() => {
+      // Create mock QueryProcessor matching the real interface
+      mockQueryProcessor = {
+        processQuery: jest.fn().mockResolvedValue({
+          original: 'vacaton photos',
+          expanded: 'vacation photos holiday trip',
+          corrections: [{ original: 'vacaton', corrected: 'vacation' }],
+          synonymsAdded: [{ word: 'vacation', synonym: 'holiday' }]
+        }),
+        extendVocabulary: jest.fn().mockResolvedValue(undefined),
+        clearCache: jest.fn()
+      };
+
+      // Create mock ReRanker matching the real interface
+      mockReRanker = {
+        rerank: jest.fn().mockImplementation(async (query, results, options) => {
+          // Simulate re-ranking by adding llmScore
+          return results.map((r, i) => ({
+            ...r,
+            llmScore: 0.9 - i * 0.1
+          }));
+        }),
+        isAvailable: jest.fn().mockReturnValue(true),
+        clearCache: jest.fn(),
+        getStats: jest.fn().mockReturnValue({})
+      };
+
+      // Create service with all dependencies including optional ones
+      serviceWithEnhancements = new SearchService({
+        chromaDbService: mockChromaDb,
+        analysisHistoryService: mockHistoryService,
+        parallelEmbeddingService: mockEmbeddingService,
+        queryProcessor: mockQueryProcessor,
+        reRankerService: mockReRanker
+      });
+    });
+
+    test('accepts optional queryProcessor dependency', () => {
+      expect(serviceWithEnhancements.queryProcessor).toBe(mockQueryProcessor);
+    });
+
+    test('accepts optional reRanker dependency', () => {
+      expect(serviceWithEnhancements.reRanker).toBe(mockReRanker);
+    });
+
+    test('works without optional dependencies', () => {
+      const basicService = new SearchService({
+        chromaDbService: mockChromaDb,
+        analysisHistoryService: mockHistoryService,
+        parallelEmbeddingService: mockEmbeddingService
+      });
+
+      expect(basicService.queryProcessor).toBeNull();
+      expect(basicService.reRanker).toBeNull();
+    });
+
+    describe('query processing', () => {
+      beforeEach(async () => {
+        await serviceWithEnhancements.buildBM25Index();
+      });
+
+      test('uses queryProcessor when provided', async () => {
+        await serviceWithEnhancements.hybridSearch('vacaton photos');
+
+        // processQuery is called with query and options object
+        expect(mockQueryProcessor.processQuery).toHaveBeenCalledWith(
+          'vacaton photos',
+          expect.objectContaining({
+            expandSynonyms: true,
+            correctSpelling: false // Default is now false (disabled)
+          })
+        );
+      });
+
+      test('includes queryMeta in results when corrections made', async () => {
+        const result = await serviceWithEnhancements.hybridSearch('vacaton photos');
+
+        // queryMeta is at top level, not in meta
+        expect(result.queryMeta).toBeDefined();
+        expect(result.queryMeta.corrections.length).toBeGreaterThan(0);
+        expect(result.queryMeta.original).toBe('vacaton photos');
+      });
+
+      test('uses expanded query for BM25 search', async () => {
+        const bm25Spy = jest.spyOn(serviceWithEnhancements, 'bm25Search');
+
+        await serviceWithEnhancements.hybridSearch('vacaton photos');
+
+        // Should use expanded query with synonyms
+        expect(bm25Spy).toHaveBeenCalledWith(
+          expect.stringContaining('vacation'),
+          expect.any(Number)
+        );
+      });
+
+      test('handles queryProcessor errors gracefully', async () => {
+        mockQueryProcessor.processQuery.mockRejectedValueOnce(new Error('Processing failed'));
+
+        const result = await serviceWithEnhancements.hybridSearch('test query');
+
+        // Should still return results using original query
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe('re-ranking', () => {
+      beforeEach(async () => {
+        await serviceWithEnhancements.buildBM25Index();
+      });
+
+      test('applies re-ranking when rerank option is true and isAvailable returns true', async () => {
+        // Need at least 2 results for reranking to trigger
+        mockChromaDb.querySimilarFiles.mockResolvedValueOnce([
+          { id: 'doc1', score: 0.9, metadata: { name: 'doc1.pdf', tags: ['finance'] } },
+          { id: 'doc2', score: 0.8, metadata: { name: 'doc2.pdf', tags: ['report'] } }
+        ]);
+
+        await serviceWithEnhancements.hybridSearch('quarterly report', { rerank: true });
+
+        expect(mockReRanker.rerank).toHaveBeenCalled();
+      });
+
+      test('skips re-ranking when rerank option is false', async () => {
+        await serviceWithEnhancements.hybridSearch('quarterly report', { rerank: false });
+
+        expect(mockReRanker.rerank).not.toHaveBeenCalled();
+      });
+
+      test('skips re-ranking when isAvailable returns false', async () => {
+        mockReRanker.isAvailable.mockReturnValue(false);
+
+        await serviceWithEnhancements.hybridSearch('quarterly report', { rerank: true });
+
+        expect(mockReRanker.rerank).not.toHaveBeenCalled();
+      });
+
+      test('passes rerankTopN to reranker in options', async () => {
+        mockChromaDb.querySimilarFiles.mockResolvedValueOnce([
+          { id: 'doc1', score: 0.9, metadata: { name: 'doc1.pdf' } },
+          { id: 'doc2', score: 0.8, metadata: { name: 'doc2.pdf' } }
+        ]);
+
+        await serviceWithEnhancements.hybridSearch('quarterly', {
+          rerank: true,
+          rerankTopN: 5
+        });
+
+        expect(mockReRanker.rerank).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Array),
+          expect.objectContaining({ topN: 5 })
+        );
+      });
+
+      test('updates mode to hybrid-reranked after re-ranking', async () => {
+        mockChromaDb.querySimilarFiles.mockResolvedValueOnce([
+          { id: 'doc1', score: 0.9, metadata: { name: 'doc1.pdf' } },
+          { id: 'doc2', score: 0.8, metadata: { name: 'doc2.pdf' } }
+        ]);
+
+        const result = await serviceWithEnhancements.hybridSearch('quarterly', { rerank: true });
+
+        expect(result.mode).toContain('reranked');
+      });
+
+      test('handles reranker errors gracefully', async () => {
+        mockChromaDb.querySimilarFiles.mockResolvedValueOnce([
+          { id: 'doc1', score: 0.9, metadata: { name: 'doc1.pdf' } },
+          { id: 'doc2', score: 0.8, metadata: { name: 'doc2.pdf' } }
+        ]);
+        mockReRanker.rerank.mockRejectedValueOnce(new Error('Rerank failed'));
+
+        const result = await serviceWithEnhancements.hybridSearch('quarterly', { rerank: true });
+
+        // Should still return results without re-ranking
+        expect(result.success).toBe(true);
+        expect(result.mode).not.toContain('reranked');
+      });
+    });
+  });
 });

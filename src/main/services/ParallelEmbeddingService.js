@@ -230,10 +230,11 @@ class ParallelEmbeddingService {
           vector: result.embedding || result.vector || [],
           model: result.model || 'fallback'
         };
-        logger.debug('[ParallelEmbeddingService] Embedding generated', {
-          model: normalized.model,
-          dim: Array.isArray(normalized.vector) ? normalized.vector.length : 0
-        });
+        // Reduce log verbosity for successful embeddings - only log debug if needed
+        // logger.debug('[ParallelEmbeddingService] Embedding generated', {
+        //   model: normalized.model,
+        //   dim: Array.isArray(normalized.vector) ? normalized.vector.length : 0
+        // });
         return normalized;
       }
 

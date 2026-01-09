@@ -121,10 +121,11 @@ const SearchAutocomplete = memo(
       fetchTimeoutRef.current = setTimeout(async () => {
         const queryAtScheduleTime = trimmed;
         try {
-          // Search for matching files
+          // Search for matching files (autocomplete uses quick search without re-ranking)
           const result = await window.electronAPI?.embeddings?.search?.(queryAtScheduleTime, {
             topK: MAX_SUGGESTIONS,
-            mode: 'hybrid'
+            mode: 'hybrid',
+            rerank: false // Disable re-ranking for fast autocomplete
           });
 
           // Check cancellation before updating state (prevents memory leak)
@@ -135,12 +136,13 @@ const SearchAutocomplete = memo(
             result?.success &&
             result.results
           ) {
-            const fileSuggestions = result.results.map((r) => ({
+            const fileSuggestions = result.results.map((r, index) => ({
               type: 'file',
               label: r.metadata?.name || r.id,
               value: r.metadata?.name || r.id,
               path: r.metadata?.path,
-              score: r.score
+              score: r.score,
+              rank: index // Add rank for badge display
             }));
             setSuggestions(fileSuggestions);
           }
@@ -396,11 +398,18 @@ const SearchAutocomplete = memo(
                   {/* Label */}
                   <span className="flex-1 truncate">{item.label}</span>
 
-                  {/* Score badge for files */}
-                  {/* FIX P2-15: Clamp score to 0-1 range before percentage display */}
-                  {item.type === 'file' && typeof item.score === 'number' && (
-                    <span className="text-[10px] text-system-gray-400 shrink-0">
-                      {Math.round(Math.max(0, Math.min(1, item.score)) * 100)}%
+                  {/* Rank indicator for top file results instead of percentage */}
+                  {item.type === 'file' && item.rank !== undefined && item.rank < 3 && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${
+                        item.rank === 0
+                          ? 'bg-amber-100 text-amber-700'
+                          : item.rank === 1
+                            ? 'bg-slate-100 text-slate-600'
+                            : 'bg-orange-50 text-orange-600'
+                      }`}
+                    >
+                      {item.rank === 0 ? '1st' : item.rank === 1 ? '2nd' : '3rd'}
                     </span>
                   )}
 

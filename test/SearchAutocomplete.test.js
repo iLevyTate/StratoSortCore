@@ -143,7 +143,11 @@ describe('SearchAutocomplete', () => {
       });
 
       await waitFor(() => {
-        expect(mockSearch).toHaveBeenCalledWith('doc', { topK: 5, mode: 'hybrid' });
+        expect(mockSearch).toHaveBeenCalledWith('doc', {
+          topK: 5,
+          mode: 'hybrid',
+          rerank: false
+        });
       });
     });
 
@@ -299,7 +303,9 @@ describe('SearchAutocomplete', () => {
   });
 
   describe('Score display', () => {
-    test('displays score as percentage for file suggestions', async () => {
+    // P2-15: Percentage scores removed per search UX improvement plan
+    // Scores are no longer displayed to users - replaced with rank badges in main results
+    test('does not display percentage scores in autocomplete suggestions', async () => {
       mockSearch.mockResolvedValue({
         success: true,
         results: [{ id: 'file1', metadata: { name: 'doc.pdf' }, score: 0.95 }]
@@ -316,14 +322,22 @@ describe('SearchAutocomplete', () => {
       fireEvent.click(input);
 
       await waitFor(() => {
-        expect(screen.getByText('95%')).toBeInTheDocument();
+        // File name should be displayed
+        expect(screen.getByText('doc.pdf')).toBeInTheDocument();
       });
+
+      // Percentage should NOT be displayed
+      expect(screen.queryByText('95%')).not.toBeInTheDocument();
+      expect(screen.queryByText('100%')).not.toBeInTheDocument();
     });
 
-    test('clamps score to 0-1 range (score > 1)', async () => {
+    test('still uses score internally for ranking', async () => {
       mockSearch.mockResolvedValue({
         success: true,
-        results: [{ id: 'file1', metadata: { name: 'doc.pdf' }, score: 1.5 }]
+        results: [
+          { id: 'file1', metadata: { name: 'high-score.pdf' }, score: 0.95 },
+          { id: 'file2', metadata: { name: 'low-score.pdf' }, score: 0.5 }
+        ]
       });
 
       const onChange = jest.fn();
@@ -337,30 +351,9 @@ describe('SearchAutocomplete', () => {
       fireEvent.click(input);
 
       await waitFor(() => {
-        // Score 1.5 should be clamped to 1.0 = 100%
-        expect(screen.getByText('100%')).toBeInTheDocument();
-      });
-    });
-
-    test('clamps score to 0-1 range (negative score)', async () => {
-      mockSearch.mockResolvedValue({
-        success: true,
-        results: [{ id: 'file1', metadata: { name: 'doc.pdf' }, score: -0.5 }]
-      });
-
-      const onChange = jest.fn();
-      render(<SearchAutocomplete value="doc" onChange={onChange} />);
-
-      act(() => {
-        jest.advanceTimersByTime(200);
-      });
-
-      const input = screen.getByRole('combobox');
-      fireEvent.click(input);
-
-      await waitFor(() => {
-        // Score -0.5 should be clamped to 0 = 0%
-        expect(screen.getByText('0%')).toBeInTheDocument();
+        // Both files should appear in ranked order (scores used internally)
+        expect(screen.getByText('high-score.pdf')).toBeInTheDocument();
+        expect(screen.getByText('low-score.pdf')).toBeInTheDocument();
       });
     });
   });

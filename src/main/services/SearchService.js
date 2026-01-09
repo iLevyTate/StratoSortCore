@@ -4,6 +4,10 @@
  * Combines keyword-based BM25 search with semantic vector search
  * using Reciprocal Rank Fusion for optimal result quality.
  *
+ * Enhanced with:
+ * - QueryProcessor for spell correction and synonym expansion
+ * - ReRankerService for LLM-based re-ranking of top results
+ *
  * @module services/SearchService
  */
 
@@ -12,6 +16,10 @@ const path = require('path');
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+
+// Optional services for enhanced query processing
+const { getInstance: getQueryProcessor } = require('./QueryProcessor');
+const { getInstance: getReRanker } = require('./ReRankerService');
 
 logger.setContext('SearchService');
 
@@ -37,7 +45,13 @@ const DEFAULT_OPTIONS = {
   minScore: MIN_RESULT_SCORE, // Minimum score threshold
   // Share the non-BM25 weight between file-level and chunk-level vectors.
   // Chunk results improve deep recall for natural-language queries.
-  chunkWeight: 0.5
+  chunkWeight: 0.5,
+  // Query processing options
+  expandSynonyms: true, // Expand query with WordNet synonyms
+  correctSpelling: false, // DISABLED - causes false corrections on common words (are->api, that->tax)
+  // Re-ranking options
+  rerank: true, // Enable LLM re-ranking of top results
+  rerankTopN: 10 // Number of top results to re-rank
 };
 
 class SearchService {
@@ -48,8 +62,18 @@ class SearchService {
    * @param {Object} dependencies.chromaDbService - ChromaDB service for vector search
    * @param {Object} dependencies.analysisHistoryService - Analysis history for document data
    * @param {Object} dependencies.parallelEmbeddingService - Embedding service for query vectors
+   * @param {Object} [dependencies.queryProcessor] - Optional QueryProcessor for spell correction/synonyms
+   * @param {Object} [dependencies.reRankerService] - Optional ReRankerService for LLM re-ranking
+   * @param {Object} [dependencies.ollamaService] - Optional OllamaService for re-ranking
    */
-  constructor({ chromaDbService, analysisHistoryService, parallelEmbeddingService } = {}) {
+  constructor({
+    chromaDbService,
+    analysisHistoryService,
+    parallelEmbeddingService,
+    queryProcessor,
+    reRankerService,
+    ollamaService
+  } = {}) {
     // Validate required dependencies
     if (!chromaDbService) {
       throw new Error('SearchService requires chromaDbService dependency');
@@ -64,6 +88,15 @@ class SearchService {
     this.chromaDb = chromaDbService;
     this.history = analysisHistoryService;
     this.embedding = parallelEmbeddingService;
+
+    // Optional enhanced services - use singletons if not provided
+    this.queryProcessor = queryProcessor || null;
+    this.reRanker = reRankerService || null;
+    this.ollamaService = ollamaService || null;
+
+    // Lazy initialize optional services
+    this._queryProcessorInitialized = false;
+    this._reRankerInitialized = false;
 
     this.bm25Index = null;
     this.documentMap = new Map(); // id -> document metadata
@@ -82,6 +115,70 @@ class SearchService {
 
     // Maximum cache size in bytes (50MB) to prevent unbounded growth
     this._maxCacheSize = 50 * 1024 * 1024;
+  }
+
+  /**
+   * Get or initialize QueryProcessor
+   * @returns {Object|null} QueryProcessor instance or null
+   */
+  _getQueryProcessor() {
+    if (this.queryProcessor) return this.queryProcessor;
+    if (this._queryProcessorInitialized) return this.queryProcessor;
+
+    try {
+      this.queryProcessor = getQueryProcessor();
+      this._queryProcessorInitialized = true;
+
+      // Extend vocabulary from analysis history (background)
+      if (this.history) {
+        this.queryProcessor.extendVocabulary(this.history).catch((err) => {
+          logger.debug('[SearchService] Vocabulary extension failed:', err.message);
+        });
+      }
+
+      return this.queryProcessor;
+    } catch (error) {
+      logger.debug('[SearchService] QueryProcessor not available:', error.message);
+      this._queryProcessorInitialized = true;
+      return null;
+    }
+  }
+
+  /**
+   * Get or initialize ReRankerService
+   * @returns {Object|null} ReRankerService instance or null
+   */
+  _getReRanker() {
+    if (this.reRanker) return this.reRanker;
+    if (this._reRankerInitialized) return this.reRanker;
+
+    try {
+      // ReRanker needs OllamaService
+      if (!this.ollamaService) {
+        logger.debug('[SearchService] ReRanker unavailable: no OllamaService');
+        this._reRankerInitialized = true;
+        return null;
+      }
+
+      this.reRanker = getReRanker({ ollamaService: this.ollamaService });
+      this._reRankerInitialized = true;
+      return this.reRanker;
+    } catch (error) {
+      logger.debug('[SearchService] ReRanker not available:', error.message);
+      this._reRankerInitialized = true;
+      return null;
+    }
+  }
+
+  /**
+   * Set OllamaService for re-ranking (can be set after construction)
+   * @param {Object} ollamaService - OllamaService instance
+   */
+  setOllamaService(ollamaService) {
+    this.ollamaService = ollamaService;
+    // Reset reranker initialization so it can be created with the new service
+    this._reRankerInitialized = false;
+    this.reRanker = null;
   }
 
   /**
@@ -538,7 +635,7 @@ class SearchService {
         }
         const chunkCount = (await chunkCollection.count?.()) ?? null;
         if (chunkCount === 0) {
-          logger.warn('[SearchService] Chunk collection empty; no chunk results available');
+          logger.debug('[SearchService] Chunk collection empty; no chunk results available');
           return [];
         }
         logger.debug('[SearchService] Chunk collection ready', { chunkCount, topKChunks });
@@ -813,11 +910,45 @@ class SearchService {
       mode = DEFAULT_OPTIONS.mode,
       minScore = DEFAULT_OPTIONS.minScore,
       chunkWeight = DEFAULT_OPTIONS.chunkWeight,
-      chunkTopK
+      chunkTopK,
+      // Query processing options
+      expandSynonyms = DEFAULT_OPTIONS.expandSynonyms,
+      correctSpelling = DEFAULT_OPTIONS.correctSpelling,
+      // Re-ranking options
+      rerank = DEFAULT_OPTIONS.rerank,
+      rerankTopN = DEFAULT_OPTIONS.rerankTopN
     } = options;
 
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
       return { success: false, results: [], error: 'Query too short' };
+    }
+
+    // Process query through QueryProcessor (spell correction + synonyms)
+    let processedQuery = query;
+    let queryMeta = null;
+    const queryProcessor = this._getQueryProcessor();
+
+    if (queryProcessor && (expandSynonyms || correctSpelling)) {
+      try {
+        const processed = await queryProcessor.processQuery(query, {
+          expandSynonyms,
+          correctSpelling,
+          maxSynonymsPerWord: 3
+        });
+        processedQuery = processed.expanded || query;
+        queryMeta = {
+          original: processed.original,
+          expanded: processed.expanded,
+          corrections: processed.corrections,
+          synonymsAdded: processed.synonymsAdded?.length || 0
+        };
+
+        if (processed.corrections?.length > 0) {
+          logger.debug('[SearchService] Query corrections applied:', processed.corrections);
+        }
+      } catch (procErr) {
+        logger.debug('[SearchService] Query processing failed, using original:', procErr.message);
+      }
     }
 
     try {
@@ -834,7 +965,8 @@ class SearchService {
           topK,
           minScore,
           mode,
-          chunkTopK: Number.isInteger(chunkTopK) ? chunkTopK : topK * 6
+          chunkTopK: Number.isInteger(chunkTopK) ? chunkTopK : topK * 6,
+          queryExpanded: processedQuery !== query
         });
       } catch (statusErr) {
         logger.debug('[SearchService] Failed to gather preflight status', {
@@ -849,19 +981,22 @@ class SearchService {
 
       // Handle different search modes
       if (mode === 'bm25') {
-        const results = this.bm25Search(query, topK);
+        // Use expanded query for BM25 (benefits from synonyms)
+        const results = this.bm25Search(processedQuery, topK);
         const filtered = this._filterByScore(results, minScore);
-        return { success: true, results: filtered, mode: 'bm25' };
+        return { success: true, results: filtered, mode: 'bm25', queryMeta };
       }
 
       if (mode === 'vector') {
+        // Use original query for vector search (embeddings handle semantics)
         const results = await this.vectorSearch(query, topK);
         const filtered = this._filterByScore(results, minScore);
-        return { success: true, results: filtered, mode: 'vector' };
+        return { success: true, results: filtered, mode: 'vector', queryMeta };
       }
 
       // Hybrid mode: combine both search types with timeout protection
-      const bm25Results = this.bm25Search(query, topK * 2);
+      // Use expanded query for BM25, original for vector
+      const bm25Results = this.bm25Search(processedQuery, topK * 2);
       const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
         query,
         topK * 2
@@ -880,9 +1015,11 @@ class SearchService {
           success: true,
           results: filtered,
           mode: 'bm25-fallback',
+          queryMeta,
           meta: {
             vectorTimedOut: true,
-            bm25Count: bm25Results.length
+            bm25Count: bm25Results.length,
+            queryExpanded: processedQuery !== query
           }
         };
       }
@@ -1018,19 +1155,45 @@ class SearchService {
         .sort((a, b) => (b.score || 0) - (a.score || 0));
 
       // Apply minimum score filter to fused results
-      const filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
+      let filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
+
+      // Apply LLM re-ranking if enabled
+      let reranked = false;
+      const reRanker = this._getReRanker();
+
+      if (rerank && reRanker && reRanker.isAvailable() && filteredResults.length > 1) {
+        try {
+          logger.debug('[SearchService] Applying LLM re-ranking to top results', {
+            candidateCount: filteredResults.length,
+            rerankTopN
+          });
+
+          const rerankStartTime = Date.now();
+          filteredResults = await reRanker.rerank(query, filteredResults, { topN: rerankTopN });
+          reranked = true;
+
+          logger.debug('[SearchService] Re-ranking complete', {
+            latencyMs: Date.now() - rerankStartTime
+          });
+        } catch (rerankErr) {
+          logger.warn('[SearchService] Re-ranking failed, using fusion order:', rerankErr.message);
+        }
+      }
 
       return {
         success: true,
         results: filteredResults,
-        mode: 'hybrid',
+        mode: reranked ? 'hybrid-reranked' : 'hybrid',
+        queryMeta,
         meta: {
           vectorCount: vectorResults.length,
           bm25Count: bm25Results.length,
           fusedCount: fusedResults.length,
           filteredCount: filteredResults.length,
           minScoreApplied: minScore,
-          weights: { vector: alpha, bm25: beta }
+          weights: { vector: alpha, bm25: beta },
+          reranked,
+          queryExpanded: processedQuery !== query
         }
       };
     } catch (error) {

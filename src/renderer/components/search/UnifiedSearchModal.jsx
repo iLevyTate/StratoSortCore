@@ -140,8 +140,6 @@ const validateSearchResponse = (response, context = 'Search') => {
 
 const FileNode = memo(({ data, selected }) => {
   const [showActions, setShowActions] = useState(false);
-  const score = data?.withinScore ?? data?.score;
-  const hasScore = typeof score === 'number';
   const filePath = data?.path || '';
 
   const handleOpen = useCallback(
@@ -207,11 +205,7 @@ const FileNode = memo(({ data, selected }) => {
           <div className="text-xs font-medium text-system-gray-900 truncate" title={data?.label}>
             {data?.label}
           </div>
-          {hasScore && (
-            <div className="text-[10px] text-system-gray-500 mt-0.5">
-              {Math.round(score * 100)}% match
-            </div>
-          )}
+          {/* Rank indicator shown via node styling - no percentage display */}
         </div>
       </div>
       <Handle type="source" position={Position.Right} className="!bg-stratosort-blue !w-2 !h-2" />
@@ -304,20 +298,23 @@ function ResultRow({
 }) {
   const path = result?.metadata?.path || '';
   const name = result?.metadata?.name || safeBasename(path) || result?.id || 'Unknown';
-  const category = result?.metadata?.category || '';
-  const subject = result?.metadata?.subject || '';
-  const bestSnippet =
-    typeof result?.matchDetails?.bestSnippet === 'string' ? result.matchDetails.bestSnippet : '';
-  const summaryText =
-    result?.metadata?.summary || (typeof result?.document === 'string' ? result.document : '');
-  const trimmedSummary = summaryText ? summaryText.slice(0, 120) : '';
-  const relevancePercent =
-    typeof result?.score === 'number' ? Math.round(clamp01(result.score) * 100) : null;
+  const category = result?.metadata?.category || 'Uncategorized';
 
-  // Get folder name from path for context
-  const folderName = path
-    ? safeBasename(path.substring(0, path.lastIndexOf('/') || path.lastIndexOf('\\')))
-    : '';
+  // Format date and confidence
+  const dateStr = result?.metadata?.date ? new Date(result.metadata.date).toLocaleDateString() : '';
+
+  const confidence = result?.metadata?.confidence || 0;
+
+  // Parse keywords: might be an array or a comma-separated string from ChromaDB
+  const rawKeywords = result?.metadata?.keywords || [];
+  const keywords = Array.isArray(rawKeywords)
+    ? rawKeywords
+    : typeof rawKeywords === 'string' && rawKeywords.length > 0
+      ? rawKeywords
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : [];
 
   // Calculate animation delay - stagger up to 300ms max
   const animationDelay = `${Math.min(index * 30, 300)}ms`;
@@ -336,115 +333,101 @@ function ResultRow({
       }}
       style={{ animationDelay }}
       className={`
-        group w-full text-left rounded-lg border p-3 transition-all cursor-pointer search-result-item
-        ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5 shadow-sm' : 'border-system-gray-200 bg-white hover:border-system-gray-300 hover:shadow-sm'}
+        group w-full text-left rounded-xl border p-4 transition-all cursor-pointer search-result-item relative
+        ${isSelected ? 'border-stratosort-blue bg-stratosort-blue/5 shadow-sm' : 'border-system-gray-200 bg-white hover:border-system-gray-300 hover:shadow-md'}
         ${isBulkSelected ? 'ring-2 ring-stratosort-blue/20' : ''}
         ${isFocused && !isSelected ? 'ring-2 ring-stratosort-blue/40 border-stratosort-blue/50' : ''}
       `}
     >
-      <div className="flex items-start gap-3">
-        {/* Checkbox - only show on hover or when selected */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleBulk(result.id);
-          }}
-          className={`shrink-0 mt-0.5 p-0.5 rounded transition-opacity ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-          title={isBulkSelected ? 'Deselect' : 'Select'}
-        >
-          {isBulkSelected ? (
-            <CheckSquare className="w-4 h-4 text-stratosort-blue" />
-          ) : (
-            <Square className="w-4 h-4 text-system-gray-300" />
-          )}
-        </button>
+      {/* Bulk Selection Checkbox */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleBulk(result.id);
+        }}
+        className={`absolute top-4 left-3 z-10 p-0.5 rounded transition-opacity ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+        title={isBulkSelected ? 'Deselect' : 'Select'}
+      >
+        {isBulkSelected ? (
+          <CheckSquare className="w-5 h-5 text-stratosort-blue bg-white rounded-sm" />
+        ) : (
+          <Square className="w-5 h-5 text-system-gray-300 bg-white rounded-sm" />
+        )}
+      </button>
 
-        <div className="min-w-0 flex-1">
-          {/* File name - prominent with highlighting */}
-          <div className="flex items-center gap-2">
-            <FileIcon filename={name} size="sm" />
+      <div className="pl-7">
+        {/* Header: Name and Date */}
+        <div className="flex justify-between items-start gap-4 mb-1">
+          <div className="min-w-0 flex-1">
             <HighlightedText
               text={name}
               query={query}
-              className="text-sm font-medium text-system-gray-900 truncate"
+              className="font-semibold text-system-gray-900 truncate block text-base"
             />
-            {relevancePercent !== null && (
-              <span className="text-xs text-system-gray-400 shrink-0">{relevancePercent}%</span>
-            )}
           </div>
-
-          {/* Subject or summary - with highlighting */}
-          {(subject || trimmedSummary) && (
-            <HighlightedText
-              text={subject || trimmedSummary}
-              query={query}
-              className="mt-1 text-xs text-system-gray-600 line-clamp-2 block"
-              as="p"
-            />
+          {dateStr && (
+            <span className="text-xs text-system-gray-400 whitespace-nowrap pt-1 font-medium">
+              {dateStr}
+            </span>
           )}
-
-          {/* Best snippet (from chunked semantic search) */}
-          {bestSnippet && !subject && (
-            <HighlightedText
-              text={bestSnippet}
-              query={query}
-              className="mt-1 text-[11px] text-system-gray-500 line-clamp-2 block"
-              as="p"
-            />
-          )}
-
-          {/* Location context - subtle */}
-          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-system-gray-400">
-            {folderName && (
-              <span className="flex items-center gap-1">
-                <FolderOpen className="w-3 h-3" />
-                {folderName}
-              </span>
-            )}
-            {category && (
-              <span className="px-1.5 py-0.5 rounded bg-system-gray-100 text-system-gray-500">
-                {category}
-              </span>
-            )}
-          </div>
         </div>
 
-        {/* Quick actions - only on selected */}
-        {isSelected && (
-          <div className="flex gap-1 shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpen(path);
-              }}
-              className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
-              title="Open file"
-            >
-              <ExternalLink className="w-4 h-4 text-stratosort-blue" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onReveal(path);
-              }}
-              className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
-              title="Show in folder"
-            >
-              <FolderOpen className="w-4 h-4 text-stratosort-blue" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCopyPath(path);
-              }}
-              className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
-              title="Copy path"
-            >
-              <Copy className="w-4 h-4 text-stratosort-blue" />
-            </button>
+        {/* Sub-header: Category and Confidence */}
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-sm text-stratosort-blue font-medium">{category}</span>
+          <span className="text-sm text-system-gray-400">Confidence: {confidence}%</span>
+        </div>
+
+        {/* Keywords / Tags */}
+        {keywords.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {keywords.map((keyword, idx) => (
+              <span
+                key={`${result.id}-kw-${idx}`}
+                className="px-3 py-1 rounded-full bg-blue-50 text-stratosort-blue text-xs font-medium"
+              >
+                {keyword}
+              </span>
+            ))}
           </div>
         )}
       </div>
+
+      {/* Quick actions - only on selected */}
+      {isSelected && (
+        <div className="absolute bottom-4 right-4 flex gap-1 bg-white/80 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-system-gray-100">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(path);
+            }}
+            className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
+            title="Open file"
+          >
+            <ExternalLink className="w-4 h-4 text-stratosort-blue" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onReveal(path);
+            }}
+            className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
+            title="Show in folder"
+          >
+            <FolderOpen className="w-4 h-4 text-stratosort-blue" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyPath(path);
+            }}
+            className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
+            title="Copy path"
+          >
+            <Copy className="w-4 h-4 text-stratosort-blue" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -607,6 +590,7 @@ export default function UnifiedSearchModal({
   const [searchResults, setSearchResults] = useState([]);
   const [selectedSearchId, setSelectedSearchId] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [queryMeta, setQueryMeta] = useState(null); // Stores spell corrections and synonyms info
   const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
   const [searchRefreshTrigger, setSearchRefreshTrigger] = useState(0);
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
@@ -675,6 +659,7 @@ export default function UnifiedSearchModal({
     setSearchResults([]);
     setSelectedSearchId(null);
     setIsSearching(false);
+    setQueryMeta(null);
     setBulkSelectedIds(new Set());
     // Graph state
     setNodes([]);
@@ -1299,6 +1284,7 @@ export default function UnifiedSearchModal({
       if (!q || q.length < 2) {
         setSearchResults([]);
         setSelectedSearchId(null);
+        setQueryMeta(null);
         setError('');
         return;
       }
@@ -1309,10 +1295,12 @@ export default function UnifiedSearchModal({
       setError('');
 
       try {
-        // Use hybrid search with options
+        // Use hybrid search with LLM re-ranking for top results
         const response = await window.electronAPI?.embeddings?.search?.(q, {
           topK: defaultTopK,
-          mode: 'hybrid'
+          mode: 'hybrid',
+          rerank: true, // Enable LLM re-ranking
+          rerankTopN: 10 // Re-rank top 10 results
         });
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
@@ -1330,6 +1318,8 @@ export default function UnifiedSearchModal({
         setSearchResults(next);
         setSelectedSearchId(next[0]?.id || null);
         setBulkSelectedIds(new Set()); // Clear bulk selection on new results
+        // Store query processing metadata for "Did you mean?" feedback
+        setQueryMeta(response.queryMeta || null);
       } catch (e) {
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
@@ -1732,10 +1722,12 @@ export default function UnifiedSearchModal({
     setGraphStatus('Searching...');
 
     try {
-      // Use hybrid search with options
+      // Use hybrid search with LLM re-ranking for graph results
       const resp = await window.electronAPI?.embeddings?.search?.(q, {
         topK: defaultTopK,
-        mode: 'hybrid'
+        mode: 'hybrid',
+        rerank: true, // Enable LLM re-ranking
+        rerankTopN: 10 // Re-rank top 10 results
       });
       if (!resp || resp.success !== true) {
         throw new Error(resp?.error || 'Search failed');
@@ -2464,10 +2456,27 @@ export default function UnifiedSearchModal({
               </div>
             )}
 
+            {/* Query correction feedback - "Did you mean?" */}
+            {queryMeta?.corrections?.length > 0 && searchResults.length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+                <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                <span className="text-amber-800">
+                  Showing results for{' '}
+                  <span className="font-medium">
+                    {queryMeta.corrections.map((c) => c.corrected).join(', ')}
+                  </span>{' '}
+                  instead of{' '}
+                  <span className="text-amber-600 line-through">
+                    {queryMeta.corrections.map((c) => c.original).join(', ')}
+                  </span>
+                </span>
+              </div>
+            )}
+
             {/* Results grid */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 flex-1">
               <div ref={resultListRef} className="flex flex-col gap-2 overflow-y-auto max-h-[60vh]">
-                {searchResults.length === 0 && !error ? (
+                {searchResults.length === 0 && !error && !isSearching ? (
                   <EmptySearchState
                     query={debouncedQuery}
                     hasIndexedFiles={stats?.files > 0}
