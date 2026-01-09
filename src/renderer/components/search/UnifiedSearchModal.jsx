@@ -531,6 +531,35 @@ EmptyEmbeddingsBanner.propTypes = {
 };
 EmptyEmbeddingsBanner.displayName = 'EmptyEmbeddingsBanner';
 
+/**
+ * Banner shown when search falls back to keyword-only mode
+ * Helps users understand why semantic search isn't working
+ */
+function SearchModeBanner({ meta }) {
+  if (!meta?.fallback) return null;
+
+  return (
+    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 text-xs rounded-lg flex items-center gap-2">
+      <MessageSquare className="w-4 h-4 text-stratosort-warning shrink-0" />
+      <span className="text-system-gray-600">
+        <strong>Limited search:</strong> Using keyword search only
+        {meta.fallbackReason ? ` (${meta.fallbackReason})` : ' (embedding model unavailable)'}.
+        Semantic matching is disabled.
+      </span>
+    </div>
+  );
+}
+
+SearchModeBanner.propTypes = {
+  meta: PropTypes.shape({
+    mode: PropTypes.string,
+    fallback: PropTypes.bool,
+    fallbackReason: PropTypes.string,
+    originalMode: PropTypes.string
+  })
+};
+SearchModeBanner.displayName = 'SearchModeBanner';
+
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
     <button
@@ -591,6 +620,7 @@ export default function UnifiedSearchModal({
   const [selectedSearchId, setSelectedSearchId] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
   const [queryMeta, setQueryMeta] = useState(null); // Stores spell corrections and synonyms info
+  const [searchMeta, setSearchMeta] = useState(null); // Stores search mode and fallback info
   const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set());
   const [searchRefreshTrigger, setSearchRefreshTrigger] = useState(0);
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
@@ -660,6 +690,7 @@ export default function UnifiedSearchModal({
     setSelectedSearchId(null);
     setIsSearching(false);
     setQueryMeta(null);
+    setSearchMeta(null);
     setBulkSelectedIds(new Set());
     // Graph state
     setNodes([]);
@@ -1285,6 +1316,7 @@ export default function UnifiedSearchModal({
         setSearchResults([]);
         setSelectedSearchId(null);
         setQueryMeta(null);
+        setSearchMeta(null);
         setError('');
         return;
       }
@@ -1320,6 +1352,13 @@ export default function UnifiedSearchModal({
         setBulkSelectedIds(new Set()); // Clear bulk selection on new results
         // Store query processing metadata for "Did you mean?" feedback
         setQueryMeta(response.queryMeta || null);
+        // Store search mode metadata (fallback detection)
+        setSearchMeta({
+          mode: response.mode || 'hybrid',
+          fallback: response.meta?.fallback || false,
+          fallbackReason: response.meta?.fallbackReason || null,
+          originalMode: response.meta?.originalMode || null
+        });
       } catch (e) {
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
@@ -2403,6 +2442,9 @@ export default function UnifiedSearchModal({
                 </div>
               )}
             </div>
+
+            {/* Search mode fallback banner */}
+            <SearchModeBanner meta={searchMeta} />
 
             {/* Results header with view toggle */}
             {searchResults.length > 0 && (

@@ -144,17 +144,22 @@ const ipcMiddleware = (store) => {
     }
 
     // FIX: Subscribe to notification events from watchers and background processes
+    // Now uses unified notification schema from main process (no field translation needed)
     if (window.electronAPI.events.onNotification) {
       const notificationCleanup = window.electronAPI.events.onNotification((data) => {
         const { data: validatedData } = validateIncomingEvent('notification', data);
-        // Route notification to toast system
-        store.dispatch(
-          addNotification({
-            message: validatedData.message || validatedData.title || 'Notification',
-            severity: validatedData.severity || validatedData.variant || 'info',
-            duration: validatedData.duration || 4000
-          })
-        );
+
+        // Pass standardized notification directly to Redux
+        // Main process now sends unified schema with: id, message, severity, duration, etc.
+        store.dispatch(addNotification(validatedData));
+
+        // Emit custom event for toast display (decoupled from IPC middleware)
+        // This allows NotificationContext to listen without duplicate IPC listeners
+        try {
+          window.dispatchEvent(new CustomEvent('app:notification', { detail: validatedData }));
+        } catch (e) {
+          logger.warn('[IPC Middleware] Failed to dispatch notification event:', e.message);
+        }
       });
       if (notificationCleanup) cleanupFunctions.push(notificationCleanup);
     }
