@@ -11,13 +11,13 @@
  * Source-based weight multipliers
  */
 const sourceWeights = {
-  semantic: 1.2, // Semantic matches are usually good
-  user_pattern: 1.5, // User patterns are highly relevant
+  llm: 1.3, // LLM content analysis is PRIMARY - semantic understanding first
+  user_pattern: 1.2, // User patterns are valuable but don't override content understanding
+  semantic: 1.1, // Embedding similarity supports but doesn't dominate
+  cluster: 1.1, // Cluster-based suggestions support organization
+  pattern: 1.0, // Historical patterns are baseline
   strategy: 1.0, // Strategy-based are standard
-  llm: 0.8, // LLM suggestions need validation
-  pattern: 1.1, // Pattern matches are reliable
-  llm_creative: 0.7, // Creative suggestions are experimental
-  cluster: 1.4 // Cluster-based suggestions are highly consistent
+  llm_creative: 0.7 // Creative suggestions are experimental
 };
 
 /**
