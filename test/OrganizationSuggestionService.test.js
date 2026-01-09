@@ -40,7 +40,8 @@ describe('OrganizationSuggestionService', () => {
         category: 'documents',
         project: 'TestProject',
         keywords: ['invoice', 'payment', 'Q1'],
-        purpose: 'Financial documentation'
+        purpose: 'Financial documentation',
+        confidence: 90 // High confidence ensures semantic matches are properly weighted
       },
       ...overrides
     };
@@ -188,10 +189,14 @@ describe('OrganizationSuggestionService', () => {
         // Assertions
         expect(result.success).toBe(true);
         expect(result.primary).toBeDefined();
-        expect(result.primary.folder).toBe('Invoices');
+        // With LLM-first weights (1.3), LLM suggestions take priority over semantic matches
+        // This is intentional - content analysis from LLM is now the primary driver
+        expect(result.primary.folder).toBe('Financial Documents');
         expect(result.confidence).toBeGreaterThan(0);
         expect(result.alternatives).toBeInstanceOf(Array);
         expect(result.alternatives.length).toBeLessThanOrEqual(4);
+        // Semantic match should still appear in alternatives
+        expect(result.alternatives.some((a) => a.folder === 'Invoices')).toBe(true);
         expect(result.explanation).toBeDefined();
         expect(result.strategies).toBeDefined();
 
