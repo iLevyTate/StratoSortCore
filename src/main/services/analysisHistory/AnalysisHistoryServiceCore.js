@@ -597,6 +597,9 @@ class AnalysisHistoryServiceCore {
           if (update.newName) {
             entry.organization.newName = update.newName;
             entry.organization.renamed = true;
+            // Also update the base fileName field for BM25 index consistency
+            // This ensures searches find the file by its new name immediately
+            entry.fileName = update.newName;
           }
 
           // FIX: Update the path index for fast lookups by new path
@@ -697,6 +700,108 @@ class AnalysisHistoryServiceCore {
       }
 
       return { removed: removedEntries.length };
+    } finally {
+      this._writeLock = null;
+      releaseLock();
+    }
+  }
+
+  /**
+   * Clone an analysis history entry for a copied file.
+   * This creates a new entry for the destination with the same analysis data.
+   *
+   * @param {string} sourcePath - Original file path
+   * @param {string} destPath - Copied file path
+   * @returns {Promise<{success: boolean, cloned?: boolean, error?: string}>}
+   */
+  async cloneEntryForCopy(sourcePath, destPath) {
+    await this.initialize();
+
+    if (!sourcePath || !destPath) {
+      return { success: false, error: 'Source and destination paths required' };
+    }
+
+    // Find the source entry
+    const sourceEntry = await this.getAnalysisByPath(sourcePath);
+    if (!sourceEntry) {
+      // No analysis history for source file - not an error, just nothing to clone
+      return { success: true, cloned: false };
+    }
+
+    // Acquire write lock
+    while (this._writeLock) {
+      await this._writeLock;
+    }
+    let releaseLock;
+    this._writeLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+
+    try {
+      // Generate new ID and file hash for the copy
+      const newId = crypto.randomUUID();
+      const destStats = await require('fs')
+        .promises.stat(destPath)
+        .catch(() => null);
+      const newFileHash = generateFileHash(
+        destPath,
+        destStats?.size || sourceEntry.fileSize,
+        destStats?.mtimeMs || Date.now()
+      );
+
+      // Clone the entry with new path information
+      const clonedEntry = {
+        ...sourceEntry,
+        id: newId,
+        fileHash: newFileHash,
+        originalPath: destPath,
+        fileName: path.basename(destPath),
+        timestamp: new Date().toISOString(),
+        lastModified: destStats?.mtimeMs || Date.now(),
+        fileSize: destStats?.size || sourceEntry.fileSize,
+        // Reset organization since this is a new file
+        organization: {
+          suggested: sourceEntry.organization?.suggested || null,
+          actual: destPath,
+          renamed: false,
+          newName: null,
+          smartFolder: sourceEntry.organization?.smartFolder || null
+        },
+        // Mark as cloned for audit purposes
+        processing: {
+          ...sourceEntry.processing,
+          clonedFrom: sourcePath,
+          clonedAt: new Date().toISOString()
+        }
+      };
+
+      // Add to entries
+      this.analysisHistory.entries[newId] = clonedEntry;
+
+      // Update indexes
+      updateIndexes(this.analysisIndex, clonedEntry);
+      updateIncrementalStatsOnAdd(this._cache, clonedEntry);
+      invalidateCachesOnAdd(this._cache, this);
+
+      // Save to disk
+      this.analysisHistory.updatedAt = new Date().toISOString();
+      await this.saveHistory();
+      await this.saveIndex();
+
+      logger.info('[AnalysisHistoryService] Cloned entry for copied file', {
+        source: sourcePath,
+        dest: destPath,
+        newId
+      });
+
+      return { success: true, cloned: true, newId };
+    } catch (error) {
+      logger.error('[AnalysisHistoryService] Failed to clone entry for copy', {
+        error: error.message,
+        source: sourcePath,
+        dest: destPath
+      });
+      return { success: false, error: error.message };
     } finally {
       this._writeLock = null;
       releaseLock();
