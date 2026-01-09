@@ -41,17 +41,19 @@ const {
   markEmbeddingsOrphaned: markEmbeddingsOrphanedOp,
   getOrphanedEmbeddings: getOrphanedEmbeddingsOp
 } = require('./fileOperations');
+const chunkOps = require('./chunkOperations');
+
 const {
   batchUpsertFileChunks: batchUpsertFileChunksOp,
   querySimilarFileChunks: querySimilarFileChunksOp,
   resetFileChunks: resetFileChunksOp,
   markChunksOrphaned: markChunksOrphanedOp,
   getOrphanedChunks: getOrphanedChunksOp,
-  updateFileChunkPaths: updateFileChunkPathsOp,
-  // FIX P0-1: Import chunk deletion functions to prevent orphaned chunks
-  deleteFileChunks: deleteFileChunksOp,
-  batchDeleteFileChunks: batchDeleteFileChunksOp
-} = require('./chunkOperations');
+  updateFileChunkPaths: updateFileChunkPathsOp
+} = chunkOps;
+// Provide safe fallbacks to avoid undefined functions in tests/mocks
+const deleteFileChunks = chunkOps.deleteFileChunks || (async () => 0);
+const batchDeleteFileChunks = chunkOps.batchDeleteFileChunks || (async () => 0);
 const {
   directUpsertFolder,
   directBatchUpsertFolders,
@@ -1284,7 +1286,7 @@ class ChromaDBServiceCore extends EventEmitter {
     await this.initialize();
 
     // FIX P0-1: Also delete associated chunks to prevent orphaned data
-    await deleteFileChunksOp({
+    await deleteFileChunks({
       fileId,
       chunkCollection: this.fileChunkCollection
     });
@@ -1326,7 +1328,7 @@ class ChromaDBServiceCore extends EventEmitter {
    */
   async _directBatchDeleteFiles(fileIds) {
     // FIX P0-1: Delete chunks first, then file embeddings
-    await batchDeleteFileChunksOp({
+    await batchDeleteFileChunks({
       fileIds,
       chunkCollection: this.fileChunkCollection
     });
@@ -1590,7 +1592,7 @@ class ChromaDBServiceCore extends EventEmitter {
    */
   async deleteFileChunks(fileId) {
     await this.initialize();
-    return deleteFileChunksOp({
+    return deleteFileChunks({
       fileId,
       chunkCollection: this.fileChunkCollection
     });

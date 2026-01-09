@@ -483,6 +483,9 @@ function normalizePathForIndex(filePath) {
     normalized = normalized.toLowerCase();
   }
 
+  // Use forward slashes for canonical IDs to avoid platform-specific separators
+  normalized = normalized.replace(/\\/g, '/');
+
   return normalized;
 }
 

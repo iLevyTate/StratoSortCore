@@ -57,13 +57,15 @@ jest.mock('../src/main/ipc/files/batchOrganizeHandler', () => ({
   handleBatchOrganize: jest.fn().mockResolvedValue({ success: true })
 }));
 
-// Mock chromadb
-jest.mock('../src/main/services/chromadb', () => ({
+// Mock chromadb (both index paths to match production import)
+const chromaMockFactory = () => ({
   getInstance: jest.fn().mockReturnValue({
     updateFilePaths: jest.fn().mockResolvedValue(undefined),
     deleteFileEmbedding: jest.fn().mockResolvedValue(undefined)
   })
-}));
+});
+jest.mock('../src/main/services/chromadb', () => chromaMockFactory());
+jest.mock('../src/main/services/chromadb/index.js', () => chromaMockFactory());
 
 // Mock embeddingQueue
 jest.mock('../src/main/analysis/embeddingQueue', () => ({

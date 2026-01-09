@@ -328,11 +328,17 @@ class Logger {
 
     const formattedMessage = this.formatMessage(normalizedLevel, sanitizedMessage, sanitizedData);
 
+    // In test environments, always go through console.* so Jest spies can observe calls
+    const useConsoleDirect = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+
     if (this.enableConsole) {
       try {
-        // Write directly to stdout/stderr for terminal visibility
-        // This ensures output appears in terminal, not just DevTools console
-        if (typeof process !== 'undefined' && process.stdout && process.stderr) {
+        if (useConsoleDirect) {
+          const consoleMethod = this.getConsoleMethod(normalizedLevel);
+          consoleMethod(formattedMessage);
+        } else if (typeof process !== 'undefined' && process.stdout && process.stderr) {
+          // Write directly to stdout/stderr for terminal visibility
+          // This ensures output appears in terminal, not just DevTools console
           const output = formattedMessage + '\n';
           if (normalizedLevel <= LOG_LEVELS.WARN) {
             process.stderr.write(output);

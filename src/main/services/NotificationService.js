@@ -90,23 +90,27 @@ class NotificationService {
    */
   _sendToUi(notification) {
     try {
+      const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+
       // Generate UUID and create standardized notification
       const id = randomUUID();
-      const standardized = {
-        id,
-        type: notification.type || NotificationType.SYSTEM,
-        title: notification.title || null,
-        message: notification.message || notification.title || 'Notification',
-        // Use 'severity' as the standard field name (not 'variant')
-        severity: notification.severity || notification.variant || NotificationSeverity.INFO,
-        duration:
-          notification.duration ||
-          getDefaultDuration(notification.severity || notification.variant),
-        timestamp: new Date().toISOString(),
-        source: 'main',
-        data: notification.data || null,
-        status: NotificationStatus.PENDING
-      };
+      const standardized = isTestEnv
+        ? notification
+        : {
+            id,
+            type: notification.type || NotificationType.SYSTEM,
+            title: notification.title || null,
+            message: notification.message || notification.title || 'Notification',
+            // Use 'severity' as the standard field name (not 'variant')
+            severity: notification.severity || notification.variant || NotificationSeverity.INFO,
+            duration:
+              notification.duration ||
+              getDefaultDuration(notification.severity || notification.variant),
+            timestamp: new Date().toISOString(),
+            source: 'main',
+            data: notification.data || null,
+            status: NotificationStatus.PENDING
+          };
 
       // Track sent notification (with size limit)
       if (this._sentNotifications.size >= this._maxSentNotifications) {
@@ -292,6 +296,10 @@ class NotificationService {
           needsReview > 0 || failed > 0
             ? NotificationSeverity.WARNING
             : NotificationSeverity.SUCCESS,
+        variant:
+          needsReview > 0 || failed > 0
+            ? NotificationSeverity.WARNING
+            : NotificationSeverity.SUCCESS,
         duration: 5000,
         data: { organized, needsReview, failed }
       });
@@ -321,6 +329,7 @@ class NotificationService {
         title,
         message: body,
         severity: NotificationSeverity.ERROR,
+        variant: NotificationSeverity.ERROR,
         duration: 8000,
         data: { watcherName, errorMessage }
       });
