@@ -682,7 +682,7 @@ class SmartFolderWatcher {
    * @private
    */
   async _analyzeFile(item) {
-    const { filePath, eventType } = item;
+    const { filePath, eventType, applyNaming } = item;
 
     if (this.processingFiles.has(filePath)) {
       return;
@@ -694,7 +694,9 @@ class SmartFolderWatcher {
       // Verify file still exists
       await fs.stat(filePath);
 
-      logger.info('[SMART-FOLDER-WATCHER] Analyzing file:', filePath);
+      logger.info('[SMART-FOLDER-WATCHER] Analyzing file:', filePath, {
+        applyNaming: applyNaming !== false
+      });
 
       // Get smart folders for categorization
       const smartFolders = this.getSmartFolders();
@@ -713,47 +715,66 @@ class SmartFolderWatcher {
       }
 
       if (result) {
-        // Apply user's naming convention to the suggested name
-        try {
-          const settings = await this.settingsService.load();
-          const namingSettings = {
-            convention: settings.namingConvention || 'keep-original',
-            separator: settings.separator || '-',
-            dateFormat: settings.dateFormat || 'YYYY-MM-DD',
-            caseConvention: settings.caseConvention
-          };
+        // Apply user's naming convention to the suggested name (unless explicitly disabled)
+        // Default behavior is to apply naming (backward compatibility)
+        const shouldApplyNaming = applyNaming !== false;
 
-          // Get file timestamps for date-based naming
-          const stats = await fs.stat(filePath);
-          const fileTimestamps = {
-            created: stats.birthtime,
-            modified: stats.mtime
-          };
+        if (shouldApplyNaming) {
+          try {
+            // IMPORTANT: Load naming conventions from persisted Settings, NOT Redux state
+            // The SmartFolderWatcher uses the Settings naming conventions to ensure consistent
+            // naming behavior across all automatic operations (watchers & reanalysis).
+            // The Discover phase has its own session-based naming controls in Redux.
+            const settings = await this.settingsService.load();
+            const namingSettings = {
+              convention: settings.namingConvention || 'keep-original',
+              separator: settings.separator || '-',
+              dateFormat: settings.dateFormat || 'YYYY-MM-DD',
+              caseConvention: settings.caseConvention
+            };
 
+            // Get file timestamps for date-based naming
+            const stats = await fs.stat(filePath);
+            const fileTimestamps = {
+              created: stats.birthtime,
+              modified: stats.mtime
+            };
+
+            const analysis = result.analysis || result;
+            const originalFileName = path.basename(filePath);
+
+            // Generate suggested name using user's naming convention
+            const suggestedName = generateSuggestedNameFromAnalysis({
+              originalFileName,
+              analysis,
+              settings: namingSettings,
+              fileTimestamps
+            });
+
+            if (suggestedName && analysis) {
+              analysis.suggestedName = suggestedName;
+              logger.debug('[SMART-FOLDER-WATCHER] Applied naming convention:', {
+                original: originalFileName,
+                suggested: suggestedName,
+                convention: namingSettings.convention
+              });
+            }
+          } catch (namingError) {
+            logger.debug(
+              '[SMART-FOLDER-WATCHER] Could not apply naming convention:',
+              namingError.message
+            );
+          }
+        } else {
+          // Keep original name when applyNaming is false
           const analysis = result.analysis || result;
           const originalFileName = path.basename(filePath);
-
-          // Generate suggested name using user's naming convention
-          const suggestedName = generateSuggestedNameFromAnalysis({
-            originalFileName,
-            analysis,
-            settings: namingSettings,
-            fileTimestamps
-          });
-
-          if (suggestedName && analysis) {
-            analysis.suggestedName = suggestedName;
-            logger.debug('[SMART-FOLDER-WATCHER] Applied naming convention:', {
-              original: originalFileName,
-              suggested: suggestedName,
-              convention: namingSettings.convention
+          if (analysis) {
+            analysis.suggestedName = originalFileName;
+            logger.debug('[SMART-FOLDER-WATCHER] Keeping original name:', {
+              original: originalFileName
             });
           }
-        } catch (namingError) {
-          logger.debug(
-            '[SMART-FOLDER-WATCHER] Could not apply naming convention:',
-            namingError.message
-          );
         }
 
         // FIX: Immediately embed the analyzed file into ChromaDB for semantic search
@@ -1003,8 +1024,10 @@ class SmartFolderWatcher {
    * Use this when changing AI models to regenerate all analysis with the new model.
    * @returns {Promise<{scanned: number, queued: number}>}
    */
-  async forceReanalyzeAll() {
-    logger.info('[SMART-FOLDER-WATCHER] Force reanalyzing ALL files...');
+  async forceReanalyzeAll(options = {}) {
+    logger.info('[SMART-FOLDER-WATCHER] Force reanalyzing ALL files...', {
+      applyNaming: options.applyNaming
+    });
 
     let scanned = 0;
     let queued = 0;
@@ -1024,7 +1047,8 @@ class SmartFolderWatcher {
               filePath: file,
               mtime,
               eventType: 'reanalyze',
-              queuedAt: Date.now()
+              queuedAt: Date.now(),
+              applyNaming: options.applyNaming
             });
             queued++;
           } catch (fileErr) {

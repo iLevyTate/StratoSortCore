@@ -200,8 +200,11 @@ describe('Files IPC - batch organize', () => {
       const imageUpdates = updateCalls.filter((u) => u.oldId.startsWith('image:'));
       expect(fileUpdates).toHaveLength(2);
       expect(imageUpdates).toHaveLength(2);
-      expect(fileUpdates[0].oldId).toContain('src_A');
-      expect(fileUpdates[0].newId).toContain('dest_A');
+      // Parallel processing means order is not guaranteed - check both files exist
+      expect(fileUpdates.some((u) => u.oldId.includes('src_A'))).toBe(true);
+      expect(fileUpdates.some((u) => u.oldId.includes('src_B'))).toBe(true);
+      expect(fileUpdates.some((u) => u.newId.includes('dest_A'))).toBe(true);
+      expect(fileUpdates.some((u) => u.newId.includes('dest_B'))).toBe(true);
     } finally {
       if (tmpBase) await fs.rm(tmpBase, { recursive: true, force: true });
     }

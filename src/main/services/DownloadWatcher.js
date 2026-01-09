@@ -519,6 +519,10 @@ class DownloadWatcher {
     }
 
     try {
+      // IMPORTANT: Load naming conventions from persisted Settings, NOT Redux state
+      // The DownloadWatcher uses the Settings naming conventions to ensure consistent
+      // naming behavior across all automatic operations (watchers & reanalysis).
+      // The Discover phase has its own session-based naming controls in Redux.
       const settings = await this.settingsService.load();
 
       // Use the new auto-organize service with suggestions

@@ -156,17 +156,25 @@ export function useFileStateDisplay(fileStates) {
 
 /**
  * Hook for file editing
+ * @param {Object} options - Hook options
+ * @param {Function} [options.onEditChange] - Callback when an edit occurs (index, field, value)
  * @returns {Object} File editing state and handlers
  */
-export function useFileEditing() {
+export function useFileEditing({ onEditChange } = {}) {
   const [editingFiles, setEditingFiles] = useState({});
 
-  const handleEditFile = useCallback((fileIndex, field, value) => {
-    setEditingFiles((prev) => ({
-      ...prev,
-      [fileIndex]: { ...prev[fileIndex], [field]: value }
-    }));
-  }, []);
+  const handleEditFile = useCallback(
+    (fileIndex, field, value) => {
+      setEditingFiles((prev) => ({
+        ...prev,
+        [fileIndex]: { ...prev[fileIndex], [field]: value }
+      }));
+      if (onEditChange) {
+        onEditChange(fileIndex, field, value);
+      }
+    },
+    [onEditChange]
+  );
 
   const getFileWithEdits = useCallback(
     (file, index) => {
