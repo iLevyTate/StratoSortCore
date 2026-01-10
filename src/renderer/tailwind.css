@@ -98,13 +98,6 @@
   }
 }
 
-@layer utilities {
-  /* Map design token to a Tailwind utility for surfaces */
-  .bg-surface-muted {
-    background-color: var(--surface-muted);
-  }
-}
-
 @layer base {
   *,
   *::before,
@@ -113,11 +106,13 @@
   }
 
   html {
-    @apply min-h-screen scroll-smooth bg-surface-muted;
+    @apply min-h-screen scroll-smooth;
+    background-color: var(--surface-muted);
   }
 
   body {
-    @apply font-sans text-system-gray-700 bg-surface-muted min-h-screen;
+    @apply font-sans text-system-gray-700 min-h-screen;
+    background-color: var(--surface-muted);
     font-size: var(--body-text);
     line-height: 1.55;
     text-rendering: optimizeLegibility;
@@ -151,7 +146,8 @@
 
 @layer components {
   .app-surface {
-    @apply h-screen bg-surface-muted text-system-gray-800;
+    @apply h-screen text-system-gray-800;
+    background-color: var(--surface-muted);
   }
 
   .app-region-drag {
