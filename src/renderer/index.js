@@ -9,7 +9,7 @@ import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
 import { applyPlatformClass } from './utils/platform';
 import { GlobalErrorBoundary } from './components/ErrorBoundary';
-import './tailwind.css';
+import './styles.css';
 
 // Fetch commonly-used data early so it's cached before components need it
 store.dispatch(fetchDocumentsPath());
