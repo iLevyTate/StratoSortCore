@@ -26,11 +26,13 @@ describe('Suggestion Ranker', () => {
 
   describe('sourceWeights', () => {
     test('defines expected weights', () => {
-      expect(sourceWeights.semantic).toBe(1.2);
-      expect(sourceWeights.user_pattern).toBe(1.5);
+      // LLM content analysis is now PRIMARY - semantic understanding first
+      expect(sourceWeights.llm).toBe(1.3);
+      expect(sourceWeights.user_pattern).toBe(1.2);
+      expect(sourceWeights.semantic).toBe(1.1);
+      expect(sourceWeights.cluster).toBe(1.1);
+      expect(sourceWeights.pattern).toBe(1.0);
       expect(sourceWeights.strategy).toBe(1.0);
-      expect(sourceWeights.llm).toBe(0.8);
-      expect(sourceWeights.pattern).toBe(1.1);
       expect(sourceWeights.llm_creative).toBe(0.7);
     });
   });
@@ -94,24 +96,24 @@ describe('Suggestion Ranker', () => {
       const result = rankSuggestions(suggestions);
 
       expect(result[0].weightedScore).toBeDefined();
-      expect(result[0].weightedScore).toBe(0.8 * 1.2); // semantic weight
+      expect(result[0].weightedScore).toBe(0.8 * 1.1); // semantic weight
     });
   });
 
   describe('applySourceWeight', () => {
     test('applies semantic weight', () => {
       const score = applySourceWeight({ score: 1.0, source: 'semantic' });
-      expect(score).toBe(1.2);
+      expect(score).toBe(1.1);
     });
 
     test('applies user_pattern weight', () => {
       const score = applySourceWeight({ score: 1.0, source: 'user_pattern' });
-      expect(score).toBe(1.5);
+      expect(score).toBe(1.2);
     });
 
     test('applies llm weight', () => {
       const score = applySourceWeight({ score: 1.0, source: 'llm' });
-      expect(score).toBe(0.8);
+      expect(score).toBe(1.3); // LLM is now highest priority
     });
 
     test('returns default weight for unknown source', () => {

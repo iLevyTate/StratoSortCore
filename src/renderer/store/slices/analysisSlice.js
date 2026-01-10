@@ -84,6 +84,16 @@ const analysisSlice = createSlice({
     setAnalysisStats: (state, action) => {
       state.stats = action.payload;
     },
+    updateAnalysisResult: (state, action) => {
+      const { path, changes } = action.payload;
+      const index = state.results.findIndex((r) => r.path === path);
+      if (index >= 0 && state.results[index].analysis) {
+        state.results[index].analysis = {
+          ...state.results[index].analysis,
+          ...changes
+        };
+      }
+    },
     resetAnalysisState: () => {
       return initialState;
     }
@@ -98,6 +108,7 @@ export const {
   stopAnalysis,
   setAnalysisResults,
   setAnalysisStats,
+  updateAnalysisResult,
   resetAnalysisState
 } = analysisSlice.actions;
 

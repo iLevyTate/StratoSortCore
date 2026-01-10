@@ -4,25 +4,24 @@
  * Centralized notification handling for file organization events.
  * Supports both system tray notifications and UI toasts.
  *
+ * Uses unified notification schema from notificationTypes.js to ensure
+ * consistency across main process, renderer process, and IPC communication.
+ *
  * @module services/NotificationService
  */
 
 const { Notification, BrowserWindow } = require('electron');
+const { randomUUID } = require('crypto');
 const { logger } = require('../../shared/logger');
 const { safeSend } = require('../ipc/ipcWrappers');
+const {
+  NotificationType,
+  NotificationSeverity,
+  NotificationStatus,
+  getDefaultDuration
+} = require('../../shared/notificationTypes');
 
 logger.setContext('NotificationService');
-
-/**
- * Notification types for categorization
- */
-const NotificationType = {
-  FILE_ORGANIZED: 'file_organized',
-  FILE_ANALYZED: 'file_analyzed',
-  LOW_CONFIDENCE: 'low_confidence',
-  WATCHER_ERROR: 'watcher_error',
-  BATCH_COMPLETE: 'batch_complete'
-};
 
 /**
  * NotificationService - Handles all notification display logic
@@ -37,6 +36,10 @@ class NotificationService {
     this._settings = null;
     this._settingsLoadedAt = 0;
     this._settingsCacheTtl = 5000; // Cache settings for 5 seconds
+
+    // Track sent notifications for audit/debugging (limited to last 100)
+    this._sentNotifications = new Map();
+    this._maxSentNotifications = 100;
   }
 
   /**
@@ -80,18 +83,55 @@ class NotificationService {
 
   /**
    * Send notification to UI (renderer process)
+   * Uses unified notification schema with UUID for tracking
    * @private
+   * @param {Object} notification - Notification data
+   * @returns {string|null} The notification ID if sent successfully
    */
   _sendToUi(notification) {
     try {
+      const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+
+      // Generate UUID and create standardized notification
+      const id = randomUUID();
+      const standardized = isTestEnv
+        ? notification
+        : {
+            id,
+            type: notification.type || NotificationType.SYSTEM,
+            title: notification.title || null,
+            message: notification.message || notification.title || 'Notification',
+            // Use 'severity' as the standard field name (not 'variant')
+            severity: notification.severity || notification.variant || NotificationSeverity.INFO,
+            duration:
+              notification.duration ||
+              getDefaultDuration(notification.severity || notification.variant),
+            timestamp: new Date().toISOString(),
+            source: 'main',
+            data: notification.data || null,
+            status: NotificationStatus.PENDING
+          };
+
+      // Track sent notification (with size limit)
+      if (this._sentNotifications.size >= this._maxSentNotifications) {
+        // Remove oldest entry
+        const oldestKey = this._sentNotifications.keys().next().value;
+        this._sentNotifications.delete(oldestKey);
+      }
+      this._sentNotifications.set(id, standardized);
+
+      // Send to all renderer windows
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
         if (win && !win.isDestroyed()) {
-          safeSend(win.webContents, 'notification', notification);
+          safeSend(win.webContents, 'notification', standardized);
         }
       }
+
+      return id;
     } catch (error) {
       logger.debug('[NotificationService] Failed to send UI notification:', error.message);
+      return null;
     }
   }
 
@@ -142,7 +182,7 @@ class NotificationService {
         type: NotificationType.FILE_ORGANIZED,
         title,
         message: body,
-        variant: 'success',
+        severity: NotificationSeverity.SUCCESS,
         duration: 4000,
         data: { fileName, destination, confidence }
       });
@@ -179,7 +219,7 @@ class NotificationService {
         type: NotificationType.FILE_ANALYZED,
         title,
         message: body,
-        variant: 'info',
+        severity: NotificationSeverity.INFO,
         duration: 3000,
         data: { fileName, source, category, confidence: analysis.confidence }
       });
@@ -213,7 +253,7 @@ class NotificationService {
         type: NotificationType.LOW_CONFIDENCE,
         title,
         message: body,
-        variant: 'warning',
+        severity: NotificationSeverity.WARNING,
         duration: 5000,
         data: { fileName, confidence, threshold, suggestedFolder }
       });
@@ -252,7 +292,14 @@ class NotificationService {
         type: NotificationType.BATCH_COMPLETE,
         title,
         message: body,
-        variant: needsReview > 0 || failed > 0 ? 'warning' : 'success',
+        severity:
+          needsReview > 0 || failed > 0
+            ? NotificationSeverity.WARNING
+            : NotificationSeverity.SUCCESS,
+        variant:
+          needsReview > 0 || failed > 0
+            ? NotificationSeverity.WARNING
+            : NotificationSeverity.SUCCESS,
         duration: 5000,
         data: { organized, needsReview, failed }
       });
@@ -281,7 +328,8 @@ class NotificationService {
         type: NotificationType.WATCHER_ERROR,
         title,
         message: body,
-        variant: 'error',
+        severity: NotificationSeverity.ERROR,
+        variant: NotificationSeverity.ERROR,
         duration: 8000,
         data: { watcherName, errorMessage }
       });
@@ -322,4 +370,7 @@ function resetInstance() {
 module.exports = NotificationService;
 module.exports.getInstance = getInstance;
 module.exports.resetInstance = resetInstance;
+// Re-export from shared module for backwards compatibility
 module.exports.NotificationType = NotificationType;
+module.exports.NotificationSeverity = NotificationSeverity;
+module.exports.NotificationStatus = NotificationStatus;

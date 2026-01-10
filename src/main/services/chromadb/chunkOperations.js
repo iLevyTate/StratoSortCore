@@ -447,11 +447,100 @@ async function updateFileChunkPaths({ pathUpdates, chunkCollection }) {
   return updated;
 }
 
+/**
+ * Delete all chunks belonging to a specific file
+ * FIX P0-1: Prevents orphaned chunks when files are deleted
+ *
+ * @param {Object} params - Parameters
+ * @param {string} params.fileId - The parent file ID whose chunks should be deleted
+ * @param {Object} params.chunkCollection - ChromaDB chunk collection
+ * @returns {Promise<number>} Number of deleted chunks
+ */
+async function deleteFileChunks({ fileId, chunkCollection }) {
+  if (!fileId || typeof fileId !== 'string') {
+    return 0;
+  }
+
+  try {
+    // Find all chunks belonging to this file
+    const chunks = await chunkCollection.get({
+      where: { fileId },
+      include: [] // Only need IDs
+    });
+
+    if (!chunks?.ids || chunks.ids.length === 0) {
+      return 0;
+    }
+
+    // Delete all found chunks
+    await chunkCollection.delete({ ids: chunks.ids });
+
+    logger.debug('[ChunkOps] Deleted file chunks', {
+      fileId,
+      count: chunks.ids.length
+    });
+
+    return chunks.ids.length;
+  } catch (error) {
+    logger.error('[ChunkOps] Failed to delete file chunks:', {
+      fileId,
+      error: error.message
+    });
+    return 0;
+  }
+}
+
+/**
+ * Batch delete chunks for multiple files
+ * FIX P0-1: Efficient bulk deletion when multiple files are removed
+ *
+ * @param {Object} params - Parameters
+ * @param {Array<string>} params.fileIds - Array of parent file IDs whose chunks should be deleted
+ * @param {Object} params.chunkCollection - ChromaDB chunk collection
+ * @returns {Promise<number>} Total number of deleted chunks
+ */
+async function batchDeleteFileChunks({ fileIds, chunkCollection }) {
+  if (!Array.isArray(fileIds) || fileIds.length === 0) {
+    return 0;
+  }
+
+  let totalDeleted = 0;
+
+  // Process in batches to avoid overwhelming ChromaDB
+  const BATCH_SIZE = 20;
+  for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
+    const batch = fileIds.slice(i, i + BATCH_SIZE);
+
+    for (const fileId of batch) {
+      try {
+        const deleted = await deleteFileChunks({ fileId, chunkCollection });
+        totalDeleted += deleted;
+      } catch (error) {
+        logger.warn('[ChunkOps] Failed to delete chunks for file in batch:', {
+          fileId,
+          error: error.message
+        });
+      }
+    }
+  }
+
+  if (totalDeleted > 0) {
+    logger.info('[ChunkOps] Batch deleted file chunks', {
+      fileCount: fileIds.length,
+      chunksDeleted: totalDeleted
+    });
+  }
+
+  return totalDeleted;
+}
+
 module.exports = {
   batchUpsertFileChunks,
   querySimilarFileChunks,
   resetFileChunks,
   markChunksOrphaned,
   getOrphanedChunks,
-  updateFileChunkPaths
+  updateFileChunkPaths,
+  deleteFileChunks,
+  batchDeleteFileChunks
 };

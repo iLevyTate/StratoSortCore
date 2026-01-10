@@ -48,6 +48,8 @@ function normalizeTextForModel(input, maxLen) {
   return text;
 }
 
+const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
+
 async function analyzeTextWithOllama(
   textContent,
   originalFileName,
@@ -114,39 +116,26 @@ async function analyzeTextWithOllama(
     const fileDateContext = fileDate ? `\nDocument File Date: ${fileDate}` : '';
 
     const prompt = `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
-${fileDateContext}
+${fileDateContext}${folderCategoriesStr}
 
 FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a HINT for the document's purpose, but verify against the actual content.
-- If filename suggests financial content (budget, invoice, receipt, tax), look for financial terms in the text
-- If filename suggests a specific category, your analysis should align with it unless the content clearly indicates otherwise
 
-Your response MUST be a valid JSON object with ALL these fields:
-{
-  "date": "YYYY-MM-DD format. Use the date explicitly found in the document content (e.g. invoice date, meeting date). If NO date is found in the text, use the Document File Date provided above: ${fileDate || 'today'}",
-  "project": "main subject/project from content (2-5 words)",
-  "purpose": "document's purpose based on content (5-10 words)",
-  "category": "most appropriate category (must be one of the folder names above)"${folderCategoriesStr},
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "confidence": 85,
-  "suggestedName": "short-descriptive-name (MAX 40 chars, 2-5 key words, NO dates/IDs)"
-}
+Your response MUST be a valid JSON object matching this schema exactly:
+${JSON.stringify(ANALYSIS_SCHEMA_PROMPT, null, 2)}
+
+IMPORTANT FOR keywords:
+- Extract 3-7 keywords PURELY from the document content.
+- Focus on the main topics, entities, and subjects found in the text.
 
 IMPORTANT FOR suggestedName:
-- Keep it SHORT: maximum 40 characters (excluding extension)
-- PRESERVE semantic meaning from the original filename "${originalFileName}"
-- If filename contains key terms like "budget", "invoice", "report", include them in your suggested name
-- If the content matches the filename theme, your suggested name should reflect both
-- Do NOT suggest completely unrelated names that contradict the filename
-- Examples based on context:
-  - "financial-budget-report.pdf" → "budget_report_summary" (preserves key terms)
-  - "meeting-notes-jan.docx" → "january_meeting_notes" (preserves context)
-  - "project-proposal-v2.pdf" → "project_proposal" (preserves purpose)
+- Generate a short, concise name (1-3 words) based on the DOCUMENT TOPIC.
+- Example: "budget_report", "project_proposal", "meeting_notes".
+- Use underscores instead of spaces.
+- Do NOT include the file extension.
 
 CRITICAL REQUIREMENTS:
-1. The keywords array MUST contain 3-7 keywords extracted from the document content
-2. Keywords should include relevant terms from BOTH the content AND the filename
-3. Do NOT return an empty keywords array
-4. If filename hints at a category and content doesn't contradict it, use that category
+1. The keywords array MUST contain 3-7 keywords extracted from the document content.
+2. If available Smart Folders are listed above, the 'category' field MUST strictly match one of them.
 
 Document content (${truncated.length} characters, ${chunkCount} chunk(s)):
 ${truncated}`;
@@ -309,9 +298,14 @@ ${truncated}`;
           }
 
           // Build validated result object
+          // Include summary, entity, type for rich semantic folder matching
           const result = {
             rawText: textContent.substring(0, 2000),
             date: parsedJson.date || undefined,
+            // Semantic fields for folder matching - these drive organization decisions
+            summary: typeof parsedJson.summary === 'string' ? parsedJson.summary : undefined,
+            entity: typeof parsedJson.entity === 'string' ? parsedJson.entity : undefined,
+            type: typeof parsedJson.type === 'string' ? parsedJson.type : undefined,
             project: typeof parsedJson.project === 'string' ? parsedJson.project : undefined,
             purpose: typeof parsedJson.purpose === 'string' ? parsedJson.purpose : undefined,
             category: normalizeCategoryToSmartFolders(

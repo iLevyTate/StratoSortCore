@@ -95,9 +95,17 @@ class ModelManager {
       }
 
       // Ensure we have a working model
-      await this.ensureWorkingModel();
+      try {
+        await this.ensureWorkingModel();
+      } catch (modelError) {
+        // Don't fail hard if ensureWorkingModel fails, just log as warning
+        // The user might configure models later or services might spin up
+        logger.warn('[ModelManager] Could not ensure working model during startup (non-fatal):', {
+          error: modelError.message
+        });
+      }
 
-      // Mark as initialized
+      // Mark as initialized even if models aren't fully ready yet
       this.initialized = true;
 
       logger.info(`[ModelManager] Initialized with model: ${this.selectedModel}`);

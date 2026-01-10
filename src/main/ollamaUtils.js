@@ -106,31 +106,31 @@ function getOllamaEmbeddingModel() {
 }
 
 // Function to set/update the Ollama model
-async function setOllamaModel(modelName) {
+async function setOllamaModel(modelName, shouldSave = true) {
   selectedTextModel = modelName;
   try {
-    await getSettings().save({ textModel: modelName });
-    logger.info(`[OLLAMA] Text model set to: ${modelName} and saved.`);
+    if (shouldSave) await getSettings().save({ textModel: modelName });
+    logger.info(`[OLLAMA] Text model set to: ${modelName}${shouldSave ? ' and saved.' : ''}`);
   } catch (error) {
     logger.error('[OLLAMA] Error saving text model selection', { error });
   }
 }
 
-async function setOllamaVisionModel(modelName) {
+async function setOllamaVisionModel(modelName, shouldSave = true) {
   selectedVisionModel = modelName;
   try {
-    await getSettings().save({ visionModel: modelName });
-    logger.info(`[OLLAMA] Vision model set to: ${modelName} and saved.`);
+    if (shouldSave) await getSettings().save({ visionModel: modelName });
+    logger.info(`[OLLAMA] Vision model set to: ${modelName}${shouldSave ? ' and saved.' : ''}`);
   } catch (error) {
     logger.error('[OLLAMA] Error saving vision model selection', { error });
   }
 }
 
-async function setOllamaEmbeddingModel(modelName) {
+async function setOllamaEmbeddingModel(modelName, shouldSave = true) {
   selectedEmbeddingModel = modelName;
   try {
-    await getSettings().save({ embeddingModel: modelName });
-    logger.info(`[OLLAMA] Embedding model set to: ${modelName} and saved.`);
+    if (shouldSave) await getSettings().save({ embeddingModel: modelName });
+    logger.info(`[OLLAMA] Embedding model set to: ${modelName}${shouldSave ? ' and saved.' : ''}`);
   } catch (error) {
     logger.error('[OLLAMA] Error saving embedding model selection', { error });
   }
@@ -140,7 +140,7 @@ function getOllamaHost() {
   return ollamaHost;
 }
 
-async function setOllamaHost(host) {
+async function setOllamaHost(host, shouldSave = true) {
   try {
     if (typeof host === 'string' && host.trim()) {
       const normalizedHost = normalizeOllamaUrl(host);
@@ -170,7 +170,7 @@ async function setOllamaHost(host) {
       // Track the host used to create the instance to avoid redundant recreation
       ollamaInstanceHost = ollamaHost;
 
-      await getSettings().save({ ollamaHost });
+      if (shouldSave) await getSettings().save({ ollamaHost });
       logger.info(`[OLLAMA] Host set to: ${ollamaHost}`);
     }
   } catch (error) {

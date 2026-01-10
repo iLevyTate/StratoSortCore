@@ -7,6 +7,7 @@ const {
 } = require('../services/ParallelEmbeddingService');
 const { SearchService } = require('../services/SearchService');
 const { ClusteringService } = require('../services/ClusteringService');
+const { getInstance: getQueryProcessor } = require('../services/QueryProcessor');
 const { SUPPORTED_IMAGE_EXTENSIONS, AI_DEFAULTS } = require('../../shared/constants');
 const {
   BATCH,
@@ -138,6 +139,45 @@ function setClusteringServiceInstance(service) {
   _clusteringServiceRef = service;
 }
 
+// FIX P0-2: Rebuild operation lock to prevent concurrent rebuilds
+// This prevents data corruption when user clicks rebuild multiple times
+let _rebuildLock = {
+  isLocked: false,
+  operation: null,
+  startedAt: null
+};
+
+/**
+ * Acquire rebuild lock for an operation
+ * @param {string} operation - Name of the operation (e.g., 'REBUILD_FILES', 'FULL_REBUILD')
+ * @returns {{ acquired: boolean, reason?: string }}
+ */
+function acquireRebuildLock(operation) {
+  if (_rebuildLock.isLocked) {
+    return {
+      acquired: false,
+      reason: `Another rebuild operation is in progress: ${_rebuildLock.operation} (started ${Math.round((Date.now() - _rebuildLock.startedAt) / 1000)}s ago)`
+    };
+  }
+  _rebuildLock = {
+    isLocked: true,
+    operation,
+    startedAt: Date.now()
+  };
+  return { acquired: true };
+}
+
+/**
+ * Release the rebuild lock
+ */
+function releaseRebuildLock() {
+  _rebuildLock = {
+    isLocked: false,
+    operation: null,
+    startedAt: null
+  };
+}
+
 function registerEmbeddingsIpc(servicesOrParams) {
   let container;
   if (servicesOrParams instanceof IpcServiceContext) {
@@ -166,6 +206,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   /**
    * Gets or initializes the SearchService.
    * Uses promise-based waiting to handle concurrent initialization requests.
+   * Now includes OllamaService for LLM re-ranking support.
    * @returns {SearchService|Promise<SearchService>} The service instance or a promise that resolves to it
    */
   function getSearchService() {
@@ -188,6 +229,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const serviceIntegration = getServiceIntegration && getServiceIntegration();
         const historyService = serviceIntegration?.analysisHistory;
         const embeddingService = getParallelEmbeddingService();
+        const ollamaService = serviceIntegration?.ollamaService;
 
         if (!historyService) {
           throw new Error(
@@ -201,7 +243,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
         searchService = new SearchService({
           chromaDbService,
           analysisHistoryService: historyService,
-          parallelEmbeddingService: embeddingService
+          parallelEmbeddingService: embeddingService,
+          ollamaService // Pass OllamaService for LLM re-ranking
         });
 
         // Store reference for cross-module access (e.g., fileOperationHandlers)
@@ -454,6 +497,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS,
     createChromaHandler(async () => {
+      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+      const lockResult = acquireRebuildLock('REBUILD_FOLDERS');
+      if (!lockResult.acquired) {
+        return {
+          success: false,
+          error: lockResult.reason,
+          errorCode: 'REBUILD_IN_PROGRESS'
+        };
+      }
+
       try {
         // FIX: Verify embedding model is available before starting
         const modelCheck = await verifyEmbeddingModelAvailable(logger);
@@ -564,6 +617,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           error: e.message,
           errorCode: e.code || 'REBUILD_FAILED'
         };
+      } finally {
+        // FIX P0-2: Always release lock when done
+        releaseRebuildLock();
       }
     })
   );
@@ -578,6 +634,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES,
     createChromaHandler(async () => {
+      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+      const lockResult = acquireRebuildLock('REBUILD_FILES');
+      if (!lockResult.acquired) {
+        return {
+          success: false,
+          error: lockResult.reason,
+          errorCode: 'REBUILD_IN_PROGRESS'
+        };
+      }
+
       try {
         // FIX: Verify embedding model is available before starting
         const modelCheck = await verifyEmbeddingModelAvailable(logger);
@@ -786,7 +852,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
                       chunkIndex: c.index,
                       charStart: c.charStart,
                       charEnd: c.charEnd,
-                      snippet
+                      snippet,
+                      // FIX P0-3: Store embedding model version for mismatch detection
+                      model: chunkModel || 'unknown'
                     },
                     document: snippet,
                     updatedAt: new Date().toISOString()
@@ -896,6 +964,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           error: e.message,
           errorCode: e.code || 'REBUILD_FAILED'
         };
+      } finally {
+        // FIX P0-2: Always release lock when done
+        releaseRebuildLock();
       }
     })
   );
@@ -910,6 +981,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD,
     createChromaHandler(async () => {
+      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+      const lockResult = acquireRebuildLock('FULL_REBUILD');
+      if (!lockResult.acquired) {
+        return {
+          success: false,
+          error: lockResult.reason,
+          errorCode: 'REBUILD_IN_PROGRESS'
+        };
+      }
+
       const results = {
         folders: { success: 0, failed: 0 },
         files: { success: 0, failed: 0 },
@@ -1086,7 +1167,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
                           chunkIndex: chunk.index,
                           charStart: chunk.charStart,
                           charEnd: chunk.charEnd,
-                          snippet
+                          snippet,
+                          // FIX P0-3: Store embedding model version for mismatch detection
+                          model: chunkModel || 'unknown'
                         },
                         document: snippet,
                         updatedAt: new Date().toISOString()
@@ -1170,6 +1253,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           errorCode: 'FULL_REBUILD_FAILED',
           partialResults: results
         };
+      } finally {
+        // FIX P0-2: Always release lock when done
+        releaseRebuildLock();
       }
     })
   );
@@ -1182,9 +1268,21 @@ function registerEmbeddingsIpc(servicesOrParams) {
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL,
-    withErrorLogging(logger, async () => {
+    withErrorLogging(logger, async (_event, options = {}) => {
+      // FIX P0-2: Acquire rebuild lock to prevent concurrent rebuilds
+      const lockResult = acquireRebuildLock('REANALYZE_ALL');
+      if (!lockResult.acquired) {
+        return {
+          success: false,
+          error: lockResult.reason,
+          errorCode: 'REBUILD_IN_PROGRESS'
+        };
+      }
+
       try {
-        logger.info('[EMBEDDINGS] Starting reanalyze all files operation...');
+        logger.info('[EMBEDDINGS] Starting reanalyze all files operation...', {
+          applyNaming: options.applyNaming
+        });
 
         // Step 1: Verify models are available
         const modelCheck = await verifyEmbeddingModelAvailable(logger);
@@ -1234,9 +1332,11 @@ function registerEmbeddingsIpc(servicesOrParams) {
         logger.info('[EMBEDDINGS] Clearing all embeddings...');
         await chromaDbService.resetAll();
 
-        // Step 6: Queue all files for reanalysis
+        // Step 6: Queue all files for reanalysis with naming option
         logger.info('[EMBEDDINGS] Queueing all files for reanalysis...');
-        const result = await smartFolderWatcher.forceReanalyzeAll();
+        const result = await smartFolderWatcher.forceReanalyzeAll({
+          applyNaming: options.applyNaming !== false // Default to false if not specified
+        });
 
         logger.info('[EMBEDDINGS] Reanalyze all queued:', result);
 
@@ -1254,6 +1354,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
           error: e.message,
           errorCode: 'REANALYZE_ALL_FAILED'
         };
+      } finally {
+        // FIX P0-2: Always release lock when done
+        releaseRebuildLock();
       }
     })
   );
@@ -1333,6 +1436,43 @@ function registerEmbeddingsIpc(servicesOrParams) {
     })
   );
 
+  // Diagnostic endpoint for troubleshooting search issues
+  // Returns detailed analysis of why search might return partial or no results
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.DIAGNOSE_SEARCH,
+    createChromaHandler(async (event, { testQuery = 'test' } = {}) => {
+      try {
+        const serviceIntegration =
+          typeof getServiceIntegration === 'function' ? getServiceIntegration() : null;
+        const searchService = serviceIntegration?.searchService;
+
+        if (!searchService || !searchService.diagnoseSearchIssues) {
+          return {
+            success: false,
+            error: 'SearchService not available or missing diagnoseSearchIssues method'
+          };
+        }
+
+        const diagnostics = await searchService.diagnoseSearchIssues(testQuery);
+
+        return {
+          success: true,
+          diagnostics
+        };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Diagnose search failed:', {
+          error: e.message,
+          stack: e.stack
+        });
+        return {
+          success: false,
+          error: e.message
+        };
+      }
+    })
+  );
+
   // New endpoint for finding similar documents
   safeHandle(
     ipcMain,
@@ -1393,6 +1533,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
   // Global semantic search (query -> ranked files)
   // Uses SearchService.hybridSearch for combined BM25 + vector search with RRF fusion
+  // Enhanced with query processing (spell correction, synonyms) and LLM re-ranking
   safeHandle(
     ipcMain,
     IPC_CHANNELS.EMBEDDINGS.SEARCH,
@@ -1405,7 +1546,13 @@ function registerEmbeddingsIpc(servicesOrParams) {
           mode = 'hybrid',
           minScore,
           chunkWeight,
-          chunkTopK
+          chunkTopK,
+          // Query processing options
+          expandSynonyms = true,
+          correctSpelling = false, // DISABLED - causes false corrections (are->api, that->tax)
+          // Re-ranking options
+          rerank = true,
+          rerankTopN = 10
         } = {}
       ) => {
         const { MAX_TOP_K } = LIMITS;
@@ -1425,6 +1572,11 @@ function registerEmbeddingsIpc(servicesOrParams) {
               success: false,
               error: `topK must be between 1 and ${MAX_TOP_K}`
             };
+          }
+
+          // Validate rerankTopN parameter
+          if (!Number.isInteger(rerankTopN) || rerankTopN < 1 || rerankTopN > 50) {
+            rerankTopN = 10; // Reset to default if invalid
           }
 
           // FIX P1-7: Verify embedding model for vector/hybrid modes
@@ -1465,7 +1617,13 @@ function registerEmbeddingsIpc(servicesOrParams) {
               : {}),
             ...(Number.isInteger(chunkTopK) && chunkTopK >= 1 && chunkTopK <= MAX_TOP_K * 20
               ? { chunkTopK }
-              : {})
+              : {}),
+            // Query processing options
+            expandSynonyms: Boolean(expandSynonyms),
+            correctSpelling: Boolean(correctSpelling),
+            // Re-ranking options
+            rerank: Boolean(rerank),
+            rerankTopN
           };
 
           const result = await service.hybridSearch(cleanQuery, searchOptions);
@@ -1505,6 +1663,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             success: true,
             results: result.results,
             mode: result.mode || effectiveMode,
+            queryMeta: result.queryMeta, // Include query processing info (corrections, synonyms)
             meta: {
               ...result.meta,
               ...(effectiveMode !== mode && { fallback: true, originalMode: mode })
@@ -1675,6 +1834,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
   /**
    * Rebuild the BM25 keyword search index
+   * Also extends QueryProcessor vocabulary for better spell correction
    */
   safeHandle(
     ipcMain,
@@ -1684,6 +1844,20 @@ function registerEmbeddingsIpc(servicesOrParams) {
       try {
         const service = await getSearchService();
         const result = await service.rebuildIndex();
+
+        // Extend vocabulary for spell correction after index rebuild
+        try {
+          const queryProcessor = getQueryProcessor();
+          const serviceIntegration = getServiceIntegration && getServiceIntegration();
+          const historyService = serviceIntegration?.analysisHistory;
+          if (queryProcessor && historyService) {
+            await queryProcessor.extendVocabulary(historyService);
+            logger.debug('[EMBEDDINGS] Vocabulary extended after BM25 rebuild');
+          }
+        } catch (vocabErr) {
+          logger.debug('[EMBEDDINGS] Vocabulary extension failed:', vocabErr.message);
+        }
+
         return result;
       } catch (e) {
         logger.error('[EMBEDDINGS] Rebuild BM25 index failed:', e);

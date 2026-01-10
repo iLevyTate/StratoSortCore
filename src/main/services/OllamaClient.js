@@ -22,6 +22,7 @@ const { TIMEOUTS, RETRY } = require('../../shared/performanceConstants');
 const { isRetryableError, withOllamaRetry } = require('../utils/ollamaApiRetry');
 const { atomicWriteFile, loadJsonFile, safeUnlink } = require('../../shared/atomicFile');
 const { Semaphore } = require('../../shared/RateLimiter');
+const { CircuitBreaker } = require('../utils/CircuitBreaker');
 
 logger.setContext('OllamaClient');
 
@@ -105,6 +106,22 @@ class OllamaClient {
 
     // Track pending operations for graceful shutdown
     this._pendingOperations = new Set();
+
+    // Circuit Breaker for fault tolerance
+    this.circuitBreaker = new CircuitBreaker('OllamaClient', {
+      failureThreshold: 5,
+      successThreshold: 2,
+      timeout: 30000,
+      resetTimeout: 60000
+    });
+
+    // Log circuit breaker state changes
+    this.circuitBreaker.on('stateChange', (data) => {
+      logger.info(
+        `[OllamaClient] Circuit breaker state changed: ${data.previousState} -> ${data.currentState}`,
+        data
+      );
+    });
   }
 
   /**
@@ -533,46 +550,48 @@ class OllamaClient {
       await this._acquireSlot();
 
       try {
-        const result = await this._withRetry(
-          async () => {
-            const { getOllama } = require('../ollamaUtils');
-            const ollama = getOllama();
-            // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
-            // Convert options.prompt → input for the new API
-            const { prompt, ...rest } = options;
+        const result = await this.circuitBreaker.execute(() =>
+          this._withRetry(
+            async () => {
+              const { getOllama } = require('../ollamaUtils');
+              const ollama = getOllama();
+              // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
+              // Convert options.prompt → input for the new API
+              const { prompt, ...rest } = options;
 
-            // FIX: CRITICAL - Add per-request timeout to prevent indefinite hangs
-            // Previously, if model was loading or Ollama was unresponsive, this would hang forever
-            const requestTimeout = TIMEOUTS.EMBEDDING_REQUEST;
-            // FIX: Store timeout ID so we can clear it to prevent memory leak
-            let timeoutId;
-            const timeoutPromise = new Promise((_, reject) => {
-              timeoutId = setTimeout(() => {
-                reject(new Error(`Embedding request timeout after ${requestTimeout}ms`));
-              }, requestTimeout);
-            });
+              // FIX: CRITICAL - Add per-request timeout to prevent indefinite hangs
+              // Previously, if model was loading or Ollama was unresponsive, this would hang forever
+              const requestTimeout = TIMEOUTS.EMBEDDING_REQUEST;
+              // FIX: Store timeout ID so we can clear it to prevent memory leak
+              let timeoutId;
+              const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                  reject(new Error(`Embedding request timeout after ${requestTimeout}ms`));
+                }, requestTimeout);
+              });
 
-            try {
-              const response = await Promise.race([
-                ollama.embed({ ...rest, input: prompt }),
-                timeoutPromise
-              ]);
-              // FIX: Clear timeout on success to prevent memory leak
-              clearTimeout(timeoutId);
+              try {
+                const response = await Promise.race([
+                  ollama.embed({ ...rest, input: prompt }),
+                  timeoutPromise
+                ]);
+                // FIX: Clear timeout on success to prevent memory leak
+                clearTimeout(timeoutId);
 
-              // Convert response back to legacy format for backward compatibility
-              const embedding =
-                Array.isArray(response.embeddings) && response.embeddings.length > 0
-                  ? response.embeddings[0]
-                  : [];
-              return { ...response, embedding };
-            } catch (raceError) {
-              // FIX: Clear timeout on error as well
-              clearTimeout(timeoutId);
-              throw raceError;
-            }
-          },
-          { operation: `Embedding (${options.model})` }
+                // Convert response back to legacy format for backward compatibility
+                const embedding =
+                  Array.isArray(response.embeddings) && response.embeddings.length > 0
+                    ? response.embeddings[0]
+                    : [];
+                return { ...response, embedding };
+              } catch (raceError) {
+                // FIX: Clear timeout on error as well
+                clearTimeout(timeoutId);
+                throw raceError;
+              }
+            },
+            { operation: `Embedding (${options.model})` }
+          )
         );
 
         this.stats.successfulRequests++;
@@ -586,8 +605,8 @@ class OllamaClient {
       this.stats.lastError = error.message;
       this.stats.lastErrorTime = new Date().toISOString();
 
-      // Add to offline queue if service is unhealthy
-      if (!this.isHealthy && isRetryableError(error)) {
+      // Add to offline queue if service is unhealthy or circuit is open
+      if ((!this.isHealthy && isRetryableError(error)) || error.code === 'CIRCUIT_OPEN') {
         this._addToOfflineQueue({
           type: REQUEST_TYPES.EMBEDDING,
           payload: options
@@ -618,13 +637,15 @@ class OllamaClient {
       await this._acquireSlot();
 
       try {
-        const result = await this._withRetry(
-          async () => {
-            const { getOllama } = require('../ollamaUtils');
-            const ollama = getOllama();
-            return ollama.generate(options);
-          },
-          { operation: `Generate (${options.model})` }
+        const result = await this.circuitBreaker.execute(() =>
+          this._withRetry(
+            async () => {
+              const { getOllama } = require('../ollamaUtils');
+              const ollama = getOllama();
+              return ollama.generate(options);
+            },
+            { operation: `Generate (${options.model})` }
+          )
         );
 
         this.stats.successfulRequests++;
@@ -638,8 +659,11 @@ class OllamaClient {
       this.stats.lastError = error.message;
       this.stats.lastErrorTime = new Date().toISOString();
 
-      // Add to offline queue if service is unhealthy (only for non-streaming)
-      if (!this.isHealthy && isRetryableError(error) && !options.stream) {
+      // Add to offline queue if service is unhealthy or circuit is open (only for non-streaming)
+      if (
+        ((!this.isHealthy && isRetryableError(error)) || error.code === 'CIRCUIT_OPEN') &&
+        !options.stream
+      ) {
         this._addToOfflineQueue({
           type: REQUEST_TYPES.GENERATE,
           payload: options

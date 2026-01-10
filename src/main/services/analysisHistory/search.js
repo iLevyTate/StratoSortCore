@@ -197,6 +197,16 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
       score += 3;
     }
 
+    // FIX: Include keyword match for tags (keywords) even if they're stored in the 'keywords' field
+    if (entry.analysis.keywords && Array.isArray(entry.analysis.keywords)) {
+      for (const keyword of entry.analysis.keywords) {
+        if (keyword.toLowerCase().includes(queryLower)) {
+          score += 4;
+          break;
+        }
+      }
+    }
+
     if (score > 0 || isSemanticCandidate) {
       allResults.push({
         ...entry,

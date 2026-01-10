@@ -54,7 +54,8 @@ function getNodeRequire() {
     return module.require.bind(module);
   }
   // Last resort: direct require (works in non-bundled Node.js)
-  if (typeof require === 'function') {
+  // eslint-disable-next-line
+  if (typeof __webpack_require__ === 'undefined' && typeof require === 'function') {
     return require;
   }
   throw new Error('Cannot access Node.js require - running in unsupported environment');

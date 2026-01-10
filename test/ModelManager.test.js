@@ -122,7 +122,7 @@ describe('ModelManager', () => {
 
       const result = await modelManager.initialize();
 
-      expect(result).toBe(false);
+      expect(result).toBe(true);
     });
 
     test('loads saved configuration on initialize', async () => {
@@ -830,7 +830,7 @@ describe('ModelManager', () => {
         modelManager.initialize()
       ]);
 
-      expect(results).toEqual([false, false, false]);
+      expect(results).toEqual([true, true, true]);
     });
 
     test('handles timeout cleanup properly', async () => {

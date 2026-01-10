@@ -310,6 +310,9 @@ function updateDownloadWatcher(settings) {
       const { container, ServiceIds } = require('./services/ServiceContainer');
       const notificationService = container.tryResolve(ServiceIds.NOTIFICATION_SERVICE);
       const analysisHistoryService = container.tryResolve(ServiceIds.ANALYSIS_HISTORY);
+      // FIX: Add chromaDbService and folderMatcher for embedding support
+      const chromaDbService = container.tryResolve(ServiceIds.CHROMA_DB);
+      const folderMatcher = container.tryResolve(ServiceIds.FOLDER_MATCHING);
 
       downloadWatcher = new DownloadWatcher({
         analyzeDocumentFile,
@@ -318,7 +321,9 @@ function updateDownloadWatcher(settings) {
         autoOrganizeService: serviceIntegration.autoOrganizeService,
         settingsService,
         notificationService,
-        analysisHistoryService
+        analysisHistoryService,
+        chromaDbService,
+        folderMatcher
       });
       downloadWatcher.start();
       logger.info('[AUTO-ORGANIZE] Download watcher started successfully');

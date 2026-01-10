@@ -4,6 +4,10 @@
  * Combines keyword-based BM25 search with semantic vector search
  * using Reciprocal Rank Fusion for optimal result quality.
  *
+ * Enhanced with:
+ * - QueryProcessor for spell correction and synonym expansion
+ * - ReRankerService for LLM-based re-ranking of top results
+ *
  * @module services/SearchService
  */
 
@@ -12,6 +16,11 @@ const path = require('path');
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+const { normalizePathForIndex } = require('../../shared/pathSanitization');
+
+// Optional services for enhanced query processing
+const { getInstance: getQueryProcessor } = require('./QueryProcessor');
+const { getInstance: getReRanker } = require('./ReRankerService');
 
 logger.setContext('SearchService');
 
@@ -37,7 +46,13 @@ const DEFAULT_OPTIONS = {
   minScore: MIN_RESULT_SCORE, // Minimum score threshold
   // Share the non-BM25 weight between file-level and chunk-level vectors.
   // Chunk results improve deep recall for natural-language queries.
-  chunkWeight: 0.5
+  chunkWeight: 0.5,
+  // Query processing options
+  expandSynonyms: true, // Expand query with WordNet synonyms
+  correctSpelling: false, // DISABLED - causes false corrections on common words (are->api, that->tax)
+  // Re-ranking options
+  rerank: true, // Enable LLM re-ranking of top results
+  rerankTopN: 10 // Number of top results to re-rank
 };
 
 class SearchService {
@@ -48,8 +63,18 @@ class SearchService {
    * @param {Object} dependencies.chromaDbService - ChromaDB service for vector search
    * @param {Object} dependencies.analysisHistoryService - Analysis history for document data
    * @param {Object} dependencies.parallelEmbeddingService - Embedding service for query vectors
+   * @param {Object} [dependencies.queryProcessor] - Optional QueryProcessor for spell correction/synonyms
+   * @param {Object} [dependencies.reRankerService] - Optional ReRankerService for LLM re-ranking
+   * @param {Object} [dependencies.ollamaService] - Optional OllamaService for re-ranking
    */
-  constructor({ chromaDbService, analysisHistoryService, parallelEmbeddingService } = {}) {
+  constructor({
+    chromaDbService,
+    analysisHistoryService,
+    parallelEmbeddingService,
+    queryProcessor,
+    reRankerService,
+    ollamaService
+  } = {}) {
     // Validate required dependencies
     if (!chromaDbService) {
       throw new Error('SearchService requires chromaDbService dependency');
@@ -64,6 +89,15 @@ class SearchService {
     this.chromaDb = chromaDbService;
     this.history = analysisHistoryService;
     this.embedding = parallelEmbeddingService;
+
+    // Optional enhanced services - use singletons if not provided
+    this.queryProcessor = queryProcessor || null;
+    this.reRanker = reRankerService || null;
+    this.ollamaService = ollamaService || null;
+
+    // Lazy initialize optional services
+    this._queryProcessorInitialized = false;
+    this._reRankerInitialized = false;
 
     this.bm25Index = null;
     this.documentMap = new Map(); // id -> document metadata
@@ -82,6 +116,70 @@ class SearchService {
 
     // Maximum cache size in bytes (50MB) to prevent unbounded growth
     this._maxCacheSize = 50 * 1024 * 1024;
+  }
+
+  /**
+   * Get or initialize QueryProcessor
+   * @returns {Object|null} QueryProcessor instance or null
+   */
+  _getQueryProcessor() {
+    if (this.queryProcessor) return this.queryProcessor;
+    if (this._queryProcessorInitialized) return this.queryProcessor;
+
+    try {
+      this.queryProcessor = getQueryProcessor();
+      this._queryProcessorInitialized = true;
+
+      // Extend vocabulary from analysis history (background)
+      if (this.history) {
+        this.queryProcessor.extendVocabulary(this.history).catch((err) => {
+          logger.debug('[SearchService] Vocabulary extension failed:', err.message);
+        });
+      }
+
+      return this.queryProcessor;
+    } catch (error) {
+      logger.debug('[SearchService] QueryProcessor not available:', error.message);
+      this._queryProcessorInitialized = true;
+      return null;
+    }
+  }
+
+  /**
+   * Get or initialize ReRankerService
+   * @returns {Object|null} ReRankerService instance or null
+   */
+  _getReRanker() {
+    if (this.reRanker) return this.reRanker;
+    if (this._reRankerInitialized) return this.reRanker;
+
+    try {
+      // ReRanker needs OllamaService
+      if (!this.ollamaService) {
+        logger.debug('[SearchService] ReRanker unavailable: no OllamaService');
+        this._reRankerInitialized = true;
+        return null;
+      }
+
+      this.reRanker = getReRanker({ ollamaService: this.ollamaService });
+      this._reRankerInitialized = true;
+      return this.reRanker;
+    } catch (error) {
+      logger.debug('[SearchService] ReRanker not available:', error.message);
+      this._reRankerInitialized = true;
+      return null;
+    }
+  }
+
+  /**
+   * Set OllamaService for re-ranking (can be set after construction)
+   * @param {Object} ollamaService - OllamaService instance
+   */
+  setOllamaService(ollamaService) {
+    this.ollamaService = ollamaService;
+    // Reset reranker initialization so it can be created with the new service
+    this._reRankerInitialized = false;
+    this.reRanker = null;
   }
 
   /**
@@ -142,9 +240,12 @@ class SearchService {
 
       const getCanonicalFileId = (filePath) => {
         const safePath = typeof filePath === 'string' ? filePath : '';
+        // Use normalizePathForIndex for Windows case-insensitivity consistency
+        // This ensures BM25 index keys match ChromaDB lookups
+        const normalizedPath = normalizePathForIndex(safePath);
         const ext = (path.extname(safePath) || '').toLowerCase();
         const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-        return `${isImage ? 'image' : 'file'}:${safePath}`;
+        return `${isImage ? 'image' : 'file'}:${normalizedPath}`;
       };
 
       // Build index into local variables first so a build failure doesn't leave partial state behind.
@@ -153,13 +254,15 @@ class SearchService {
       const seenIds = new Set();
       const nextIndex = lunr(function () {
         // Configure fields with boosting
+        // FIX P1-4: Increased extractedText boost from 1 to 2.5 so content matches
+        // compete better with metadata matches (subject, tags) in search results
         this.ref('id');
         this.field('fileName', { boost: 3 });
         this.field('subject', { boost: 2 });
         this.field('summary', { boost: 1.5 });
         this.field('tags', { boost: 2 });
         this.field('category', { boost: 1.5 });
-        this.field('extractedText', { boost: 1 });
+        this.field('extractedText', { boost: 2.5 });
 
         // Add documents
         for (const doc of documents) {
@@ -538,7 +641,7 @@ class SearchService {
         }
         const chunkCount = (await chunkCollection.count?.()) ?? null;
         if (chunkCount === 0) {
-          logger.warn('[SearchService] Chunk collection empty; no chunk results available');
+          logger.debug('[SearchService] Chunk collection empty; no chunk results available');
           return [];
         }
         logger.debug('[SearchService] Chunk collection ready', { chunkCount, topKChunks });
@@ -813,11 +916,50 @@ class SearchService {
       mode = DEFAULT_OPTIONS.mode,
       minScore = DEFAULT_OPTIONS.minScore,
       chunkWeight = DEFAULT_OPTIONS.chunkWeight,
-      chunkTopK
+      chunkTopK,
+      // Query processing options
+      expandSynonyms = DEFAULT_OPTIONS.expandSynonyms,
+      correctSpelling = DEFAULT_OPTIONS.correctSpelling,
+      // Re-ranking options
+      rerank = DEFAULT_OPTIONS.rerank,
+      rerankTopN = DEFAULT_OPTIONS.rerankTopN
     } = options;
 
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
       return { success: false, results: [], error: 'Query too short' };
+    }
+
+    // FIX P2-1: Normalize query for all search modes (trim, collapse whitespace)
+    // BM25 will additionally expand synonyms, but vector search uses this normalized version
+    const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+
+    // Process query through QueryProcessor (spell correction + synonyms)
+    // Start with normalized query, then optionally expand with synonyms
+    let processedQuery = normalizedQuery;
+    let queryMeta = null;
+    const queryProcessor = this._getQueryProcessor();
+
+    if (queryProcessor && (expandSynonyms || correctSpelling)) {
+      try {
+        const processed = await queryProcessor.processQuery(query, {
+          expandSynonyms,
+          correctSpelling,
+          maxSynonymsPerWord: 3
+        });
+        processedQuery = processed.expanded || query;
+        queryMeta = {
+          original: processed.original,
+          expanded: processed.expanded,
+          corrections: processed.corrections,
+          synonymsAdded: processed.synonymsAdded?.length || 0
+        };
+
+        if (processed.corrections?.length > 0) {
+          logger.debug('[SearchService] Query corrections applied:', processed.corrections);
+        }
+      } catch (procErr) {
+        logger.debug('[SearchService] Query processing failed, using original:', procErr.message);
+      }
     }
 
     try {
@@ -834,7 +976,8 @@ class SearchService {
           topK,
           minScore,
           mode,
-          chunkTopK: Number.isInteger(chunkTopK) ? chunkTopK : topK * 6
+          chunkTopK: Number.isInteger(chunkTopK) ? chunkTopK : topK * 6,
+          queryExpanded: processedQuery !== query
         });
       } catch (statusErr) {
         logger.debug('[SearchService] Failed to gather preflight status', {
@@ -849,25 +992,28 @@ class SearchService {
 
       // Handle different search modes
       if (mode === 'bm25') {
-        const results = this.bm25Search(query, topK);
+        // Use expanded query for BM25 (benefits from synonyms)
+        const results = this.bm25Search(processedQuery, topK);
         const filtered = this._filterByScore(results, minScore);
-        return { success: true, results: filtered, mode: 'bm25' };
+        return { success: true, results: filtered, mode: 'bm25', queryMeta };
       }
 
       if (mode === 'vector') {
-        const results = await this.vectorSearch(query, topK);
+        // FIX P2-1: Use normalized query for vector search (consistent preprocessing)
+        const results = await this.vectorSearch(normalizedQuery, topK);
         const filtered = this._filterByScore(results, minScore);
-        return { success: true, results: filtered, mode: 'vector' };
+        return { success: true, results: filtered, mode: 'vector', queryMeta };
       }
 
       // Hybrid mode: combine both search types with timeout protection
-      const bm25Results = this.bm25Search(query, topK * 2);
+      // FIX P2-1: Use expanded query for BM25, normalized for vector (consistent preprocessing)
+      const bm25Results = this.bm25Search(processedQuery, topK * 2);
       const { results: vectorResults, timedOut } = await this._vectorSearchWithTimeout(
-        query,
+        normalizedQuery,
         topK * 2
       );
       const chunkResults = await this.chunkSearch(
-        query,
+        normalizedQuery,
         topK * 2,
         Number.isInteger(chunkTopK) ? chunkTopK : topK * 6
       );
@@ -880,9 +1026,14 @@ class SearchService {
           success: true,
           results: filtered,
           mode: 'bm25-fallback',
+          queryMeta,
           meta: {
+            fallback: true,
+            fallbackReason: 'vector search timeout',
+            originalMode: 'hybrid',
             vectorTimedOut: true,
-            bm25Count: bm25Results.length
+            bm25Count: bm25Results.length,
+            queryExpanded: processedQuery !== query
           }
         };
       }
@@ -1018,19 +1169,117 @@ class SearchService {
         .sort((a, b) => (b.score || 0) - (a.score || 0));
 
       // Apply minimum score filter to fused results
-      const filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
+      let filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
+
+      // Apply LLM re-ranking if enabled
+      let reranked = false;
+      const reRanker = this._getReRanker();
+
+      if (rerank && reRanker && reRanker.isAvailable() && filteredResults.length > 1) {
+        try {
+          logger.debug('[SearchService] Applying LLM re-ranking to top results', {
+            candidateCount: filteredResults.length,
+            rerankTopN
+          });
+
+          const rerankStartTime = Date.now();
+          filteredResults = await reRanker.rerank(query, filteredResults, { topN: rerankTopN });
+          reranked = true;
+
+          logger.debug('[SearchService] Re-ranking complete', {
+            latencyMs: Date.now() - rerankStartTime
+          });
+        } catch (rerankErr) {
+          logger.warn('[SearchService] Re-ranking failed, using fusion order:', rerankErr.message);
+        }
+      }
+
+      // Build diagnostic warnings for common issues
+      const diagnosticWarnings = [];
+
+      // CRITICAL: Vector search returning 0 results when BM25 has results indicates dimension mismatch
+      if (vectorResults.length === 0 && bm25Results.length > 0) {
+        diagnosticWarnings.push({
+          type: 'VECTOR_SEARCH_EMPTY',
+          severity: 'critical',
+          message:
+            'Vector search returned 0 results but BM25 has results. This strongly indicates an embedding dimension mismatch. Run "Rebuild Embeddings" to fix.'
+        });
+        logger.warn(
+          '[SearchService] Vector search empty but BM25 has results - likely dimension mismatch',
+          {
+            bm25Count: bm25Results.length,
+            query: query.substring(0, 50)
+          }
+        );
+
+        // Auto-run full diagnostics when critical issue detected
+        this._autoRunDiagnostics('Vector search returned 0 results with BM25 having results');
+      }
+
+      // Chunk search empty when file embeddings exist indicates chunks weren't built
+      if (chunkResults.length === 0 && vectorResults.length > 0) {
+        // Only warn if file collection has entries (otherwise chunk collection being empty is expected)
+        try {
+          const chunkCount = (await this.chromaDb?.fileChunkCollection?.count?.()) || 0;
+          if (chunkCount === 0) {
+            diagnosticWarnings.push({
+              type: 'CHUNKS_NOT_BUILT',
+              severity: 'medium',
+              message:
+                'Chunk embeddings not built. Deep text search unavailable. Run "Rebuild Embeddings" to enable.'
+            });
+          }
+        } catch {
+          // Non-critical
+        }
+      }
+
+      // High filter rate indicates potential score calibration issues
+      if (fusedResults.length > 0 && filteredResults.length === 0) {
+        diagnosticWarnings.push({
+          type: 'ALL_RESULTS_FILTERED',
+          severity: 'high',
+          message: `All ${fusedResults.length} results were filtered out by minScore=${minScore}. Consider lowering the threshold.`
+        });
+        // Auto-run diagnostics when all results filtered
+        this._autoRunDiagnostics(
+          `All ${fusedResults.length} results filtered out by minScore=${minScore}`
+        );
+      } else if (fusedResults.length > filteredResults.length * 2) {
+        diagnosticWarnings.push({
+          type: 'HIGH_FILTER_RATE',
+          severity: 'low',
+          message: `${fusedResults.length - filteredResults.length} of ${fusedResults.length} results filtered by minScore=${minScore}.`
+        });
+      }
+
+      // Detect if vector search effectively failed (dimension mismatch or other issue)
+      const vectorSearchFailed = vectorResults.length === 0 && bm25Results.length > 0;
 
       return {
         success: true,
         results: filteredResults,
-        mode: 'hybrid',
+        mode: reranked ? 'hybrid-reranked' : 'hybrid',
+        queryMeta,
         meta: {
           vectorCount: vectorResults.length,
           bm25Count: bm25Results.length,
+          chunkCount: chunkResults.length,
           fusedCount: fusedResults.length,
           filteredCount: filteredResults.length,
           minScoreApplied: minScore,
-          weights: { vector: alpha, bm25: beta }
+          weights: { vector: alpha, bm25: beta, chunk: gamma },
+          reranked,
+          queryExpanded: processedQuery !== query,
+          // Signal fallback when vector search effectively unavailable
+          ...(vectorSearchFailed && {
+            fallback: true,
+            fallbackReason: 'dimension mismatch or model unavailable',
+            originalMode: 'hybrid'
+          }),
+          // Include warnings if any issues detected
+          ...(diagnosticWarnings.length > 0 && { warnings: diagnosticWarnings })
         }
       };
     } catch (error) {
@@ -1046,7 +1295,12 @@ class SearchService {
             success: true,
             results: filtered,
             mode: 'bm25-fallback',
-            meta: { hybridError: error.message }
+            meta: {
+              fallback: true,
+              fallbackReason: 'hybrid search error',
+              originalMode: 'hybrid',
+              hybridError: error.message
+            }
           };
         }
       } catch (bm25Error) {
@@ -1116,6 +1370,47 @@ class SearchService {
     // Clear serialized cache to force full rebuild
     this._serializedIndex = null;
     this._serializedDocMap = null;
+  }
+
+  /**
+   * Invalidate and optionally immediately rebuild the BM25 index
+   * Use this for critical path updates where search results must be consistent immediately
+   *
+   * @param {Object} options - Options
+   * @param {boolean} [options.immediate=true] - Whether to rebuild immediately
+   * @param {string} [options.reason='manual'] - Reason for invalidation
+   * @param {string} [options.oldPath] - Old file path (for move operations)
+   * @param {string} [options.newPath] - New file path (for move operations)
+   * @returns {Promise<{success: boolean, rebuilt?: boolean, indexed?: number, error?: string}>}
+   */
+  async invalidateAndRebuild(options = {}) {
+    const { immediate = true, reason = 'manual', oldPath, newPath } = options;
+
+    // First invalidate the index
+    this.invalidateIndex({ reason, oldPath, newPath });
+
+    if (immediate) {
+      try {
+        logger.info('[SearchService] Triggering immediate BM25 rebuild', { reason });
+        const result = await this.buildBM25Index();
+        return {
+          success: result.success,
+          rebuilt: true,
+          indexed: result.indexed,
+          error: result.error
+        };
+      } catch (error) {
+        logger.warn('[SearchService] Immediate rebuild failed', { error: error.message });
+        return {
+          success: false,
+          rebuilt: false,
+          error: error.message
+        };
+      }
+    }
+
+    // If not immediate, just return success (index will rebuild on next search)
+    return { success: true, rebuilt: false };
   }
 
   /**
@@ -1249,6 +1544,643 @@ class SearchService {
         healthy: false,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * Comprehensive search diagnostics - identifies why search may return partial results
+   * Call this when troubleshooting search issues
+   *
+   * @param {string} [testQuery='test'] - Optional query to test embedding generation
+   * @returns {Promise<Object>} Diagnostic report with issues and recommendations
+   */
+  async diagnoseSearchIssues(testQuery = 'test') {
+    const diagnostics = {
+      timestamp: new Date().toISOString(),
+      issues: [],
+      warnings: [],
+      recommendations: [],
+      details: {}
+    };
+
+    try {
+      // 1. Check ChromaDB collection status
+      let fileCount = 0;
+      let chunkCount = 0;
+      let folderCount = 0;
+
+      try {
+        fileCount = (await this.chromaDb?.fileCollection?.count?.()) || 0;
+        chunkCount = (await this.chromaDb?.fileChunkCollection?.count?.()) || 0;
+        folderCount = (await this.chromaDb?.folderCollection?.count?.()) || 0;
+      } catch (e) {
+        diagnostics.issues.push({
+          type: 'CHROMADB_ERROR',
+          severity: 'critical',
+          message: `ChromaDB connection error: ${e.message}`
+        });
+      }
+
+      diagnostics.details.collections = { fileCount, chunkCount, folderCount };
+
+      if (fileCount === 0) {
+        diagnostics.issues.push({
+          type: 'EMPTY_FILE_COLLECTION',
+          severity: 'critical',
+          message: 'File embeddings collection is empty. Vector search will return no results.'
+        });
+        diagnostics.recommendations.push(
+          'Run "Rebuild Embeddings" from Settings to populate the vector database.'
+        );
+      }
+
+      if (chunkCount === 0 && fileCount > 0) {
+        diagnostics.warnings.push({
+          type: 'EMPTY_CHUNK_COLLECTION',
+          severity: 'medium',
+          message:
+            'Chunk embeddings collection is empty. Deep text search (chunk search) is unavailable.'
+        });
+        diagnostics.recommendations.push(
+          'Run "Rebuild Embeddings" to enable deep text search from extracted content.'
+        );
+      }
+
+      // 2. Check BM25 index status
+      const bm25Status = this.getIndexStatus();
+      diagnostics.details.bm25 = bm25Status;
+
+      if (!bm25Status.hasIndex) {
+        diagnostics.issues.push({
+          type: 'NO_BM25_INDEX',
+          severity: 'high',
+          message: 'BM25 keyword search index not built.'
+        });
+      } else if (bm25Status.documentCount === 0) {
+        diagnostics.issues.push({
+          type: 'EMPTY_BM25_INDEX',
+          severity: 'high',
+          message: 'BM25 index has no documents indexed.'
+        });
+      } else if (bm25Status.isStale) {
+        diagnostics.warnings.push({
+          type: 'STALE_BM25_INDEX',
+          severity: 'low',
+          message: 'BM25 index is stale and will be rebuilt on next search.'
+        });
+      }
+
+      // 3. Check embedding dimension consistency
+      let storedDimension = null;
+      let queryDimension = null;
+      let dimensionMismatch = false;
+
+      try {
+        storedDimension = await this.chromaDb.getCollectionDimension('files');
+        diagnostics.details.storedDimension = storedDimension;
+
+        // Generate a test embedding to check current model dimensions
+        const testResult = await this.embedding.embedText(testQuery);
+        if (testResult?.vector && Array.isArray(testResult.vector)) {
+          queryDimension = testResult.vector.length;
+          diagnostics.details.queryDimension = queryDimension;
+          diagnostics.details.embeddingModel = testResult.model || 'unknown';
+
+          if (storedDimension && queryDimension && storedDimension !== queryDimension) {
+            dimensionMismatch = true;
+            diagnostics.issues.push({
+              type: 'DIMENSION_MISMATCH',
+              severity: 'critical',
+              message: `Embedding dimension mismatch! Stored vectors have ${storedDimension} dimensions, but current model produces ${queryDimension} dimensions. Vector search will fail.`,
+              storedDimension,
+              queryDimension
+            });
+            diagnostics.recommendations.push(
+              'Run "Full Rebuild" from Settings to regenerate all embeddings with the current model.'
+            );
+          }
+        } else {
+          diagnostics.issues.push({
+            type: 'EMBEDDING_GENERATION_FAILED',
+            severity: 'critical',
+            message:
+              'Failed to generate test embedding. Ollama may not be running or embedding model may not be available.'
+          });
+          diagnostics.recommendations.push(
+            'Ensure Ollama is running and the embedding model is installed (ollama pull embeddinggemma).'
+          );
+        }
+      } catch (e) {
+        diagnostics.warnings.push({
+          type: 'DIMENSION_CHECK_ERROR',
+          severity: 'medium',
+          message: `Could not verify embedding dimensions: ${e.message}`
+        });
+      }
+
+      // 4. Check chunk collection dimension (for hybrid search)
+      if (chunkCount > 0 && !dimensionMismatch) {
+        try {
+          const chunkDimension = await this.chromaDb.getCollectionDimension('fileChunks');
+          diagnostics.details.chunkDimension = chunkDimension;
+
+          if (chunkDimension && queryDimension && chunkDimension !== queryDimension) {
+            diagnostics.issues.push({
+              type: 'CHUNK_DIMENSION_MISMATCH',
+              severity: 'high',
+              message: `Chunk collection dimension (${chunkDimension}) differs from current model (${queryDimension}). Chunk search will fail.`
+            });
+          }
+        } catch (e) {
+          // Non-critical
+        }
+      }
+
+      // 5. Compare history count vs embedding count
+      try {
+        await this.history.initialize();
+        const historyEntries = this.history.analysisHistory?.entries || {};
+        const historyCount = Object.keys(historyEntries).length;
+        diagnostics.details.historyCount = historyCount;
+
+        if (historyCount > 0 && fileCount === 0) {
+          diagnostics.issues.push({
+            type: 'HISTORY_WITHOUT_EMBEDDINGS',
+            severity: 'high',
+            message: `Analysis history has ${historyCount} entries but file embeddings collection is empty.`
+          });
+          diagnostics.recommendations.push(
+            'Run "Rebuild Embeddings" to create embeddings from your analysis history.'
+          );
+        } else if (historyCount > fileCount * 1.5) {
+          diagnostics.warnings.push({
+            type: 'EMBEDDINGS_OUT_OF_SYNC',
+            severity: 'medium',
+            message: `Analysis history (${historyCount}) significantly exceeds file embeddings (${fileCount}). Some files may not be searchable.`
+          });
+        }
+      } catch (e) {
+        // Non-critical
+      }
+
+      // 6. Check Ollama health status
+      try {
+        if (this.ollamaService?.getHealthStatus) {
+          const healthStatus = await this.ollamaService.getHealthStatus();
+          const ollamaHealth = healthStatus?.resilientClient || {};
+          diagnostics.details.ollama = {
+            isHealthy: ollamaHealth.isHealthy ?? healthStatus?.available ?? false,
+            consecutiveFailures: ollamaHealth.consecutiveFailures || 0,
+            lastHealthCheck: ollamaHealth.lastHealthCheck,
+            offlineQueueSize: ollamaHealth.offlineQueueSize || 0,
+            available: healthStatus?.available,
+            latencyMs: healthStatus?.latencyMs
+          };
+
+          if (!diagnostics.details.ollama.isHealthy) {
+            diagnostics.issues.push({
+              type: 'OLLAMA_UNHEALTHY',
+              severity: 'critical',
+              message: `Ollama server is unhealthy. Consecutive failures: ${ollamaHealth.consecutiveFailures || 0}`
+            });
+            diagnostics.recommendations.push('Check if Ollama is running: ollama serve');
+          }
+
+          if (ollamaHealth.offlineQueueSize > 0) {
+            diagnostics.warnings.push({
+              type: 'OLLAMA_OFFLINE_QUEUE',
+              severity: 'medium',
+              message: `${ollamaHealth.offlineQueueSize} Ollama requests queued offline waiting for server recovery.`
+            });
+          }
+        }
+      } catch (e) {
+        // Non-critical - Ollama service may not be available
+        logger.debug('[SearchService] Could not get Ollama health status:', e.message);
+      }
+
+      // 7. Check ChromaDB circuit breaker status
+      try {
+        const circuitStats = this.chromaDb?.getCircuitStats?.();
+        if (circuitStats) {
+          diagnostics.details.circuitBreaker = circuitStats;
+
+          if (circuitStats.state === 'OPEN') {
+            diagnostics.issues.push({
+              type: 'CIRCUIT_BREAKER_OPEN',
+              severity: 'critical',
+              message: `ChromaDB circuit breaker is OPEN due to ${circuitStats.failures} failures. All vector operations are blocked.`
+            });
+            diagnostics.recommendations.push(
+              'Wait for circuit breaker to reset or restart the application.'
+            );
+          } else if (circuitStats.state === 'HALF_OPEN') {
+            diagnostics.warnings.push({
+              type: 'CIRCUIT_BREAKER_RECOVERING',
+              severity: 'medium',
+              message: 'ChromaDB circuit breaker is recovering (HALF_OPEN state).'
+            });
+          }
+        }
+      } catch (e) {
+        // Non-critical
+      }
+
+      // 8. Check ChromaDB offline queue status
+      try {
+        const queueStats = this.chromaDb?.getQueueStats?.();
+        if (queueStats) {
+          diagnostics.details.chromaOfflineQueue = queueStats;
+
+          if (queueStats.queueSize > 0) {
+            diagnostics.warnings.push({
+              type: 'CHROMADB_OFFLINE_QUEUE',
+              severity: 'medium',
+              message: `${queueStats.queueSize} ChromaDB operations queued offline. These will process when server recovers.`
+            });
+          }
+        }
+      } catch (e) {
+        // Non-critical
+      }
+
+      // 9. Check query cache stats
+      try {
+        const cacheStats = this.chromaDb?.getQueryCacheStats?.();
+        if (cacheStats) {
+          diagnostics.details.queryCache = cacheStats;
+
+          if (cacheStats.totalQueries > 100 && cacheStats.hitRate < 0.1) {
+            diagnostics.warnings.push({
+              type: 'LOW_CACHE_HIT_RATE',
+              severity: 'low',
+              message: `Query cache hit rate is very low (${(cacheStats.hitRate * 100).toFixed(1)}%). This may indicate cache misconfiguration.`
+            });
+          }
+        }
+      } catch (e) {
+        // Non-critical
+      }
+
+      // 10. Check embedding queue status
+      try {
+        const embeddingQueue = require('../analysis/embeddingQueue');
+        const queueStats = embeddingQueue.getStats?.();
+        if (queueStats) {
+          diagnostics.details.embeddingQueue = {
+            queueLength: queueStats.queueLength,
+            capacityPercent: queueStats.capacityPercent,
+            isFlushing: queueStats.isFlushing,
+            failedItemCount: queueStats.failedItemCount,
+            deadLetterCount: queueStats.deadLetterCount,
+            healthStatus: queueStats.healthStatus
+          };
+
+          if (queueStats.queueLength > 0) {
+            diagnostics.warnings.push({
+              type: 'PENDING_EMBEDDINGS',
+              severity: 'low',
+              message: `${queueStats.queueLength} embeddings pending in queue (${queueStats.capacityPercent?.toFixed(1) || 0}% capacity).`
+            });
+          }
+
+          if (queueStats.failedItemCount > 0) {
+            diagnostics.warnings.push({
+              type: 'FAILED_EMBEDDINGS',
+              severity: 'medium',
+              message: `${queueStats.failedItemCount} embeddings failed and awaiting retry.`
+            });
+          }
+
+          if (queueStats.deadLetterCount > 0) {
+            diagnostics.issues.push({
+              type: 'DEAD_LETTER_ITEMS',
+              severity: 'high',
+              message: `${queueStats.deadLetterCount} embeddings permanently failed (in dead letter queue).`
+            });
+            diagnostics.recommendations.push(
+              'Review dead letter items in Settings > Advanced to identify recurring failures.'
+            );
+          }
+
+          if (queueStats.healthStatus === 'critical') {
+            diagnostics.issues.push({
+              type: 'EMBEDDING_QUEUE_CRITICAL',
+              severity: 'high',
+              message: 'Embedding queue is at critical capacity. New embeddings may be dropped.'
+            });
+          } else if (queueStats.healthStatus === 'warning') {
+            diagnostics.warnings.push({
+              type: 'EMBEDDING_QUEUE_HIGH',
+              severity: 'medium',
+              message: 'Embedding queue is at high capacity. Processing may be slow.'
+            });
+          }
+        }
+      } catch (e) {
+        // Non-critical - queue module may not be available
+      }
+
+      // 11. Check for orphaned embeddings
+      try {
+        const orphanedFiles = await this.chromaDb?.getOrphanedEmbeddings?.({ maxAge: null });
+        const orphanedChunks = await this.chromaDb?.getOrphanedChunks?.({ maxAge: null });
+
+        if (orphanedFiles?.length > 0 || orphanedChunks?.length > 0) {
+          diagnostics.details.orphaned = {
+            files: orphanedFiles?.length || 0,
+            chunks: orphanedChunks?.length || 0
+          };
+
+          if ((orphanedFiles?.length || 0) + (orphanedChunks?.length || 0) > 100) {
+            diagnostics.warnings.push({
+              type: 'ORPHANED_EMBEDDINGS',
+              severity: 'low',
+              message: `${orphanedFiles?.length || 0} orphaned file embeddings and ${orphanedChunks?.length || 0} orphaned chunk embeddings. Consider cleanup.`
+            });
+          }
+        }
+      } catch (e) {
+        // Non-critical
+      }
+
+      // 12. Summary
+      diagnostics.summary = {
+        criticalIssues: diagnostics.issues.filter((i) => i.severity === 'critical').length,
+        highIssues: diagnostics.issues.filter((i) => i.severity === 'high').length,
+        warnings: diagnostics.warnings.length,
+        searchFunctional:
+          fileCount > 0 &&
+          !dimensionMismatch &&
+          (bm25Status.hasIndex || bm25Status.documentCount > 0),
+        vectorSearchFunctional: fileCount > 0 && !dimensionMismatch,
+        chunkSearchFunctional: chunkCount > 0 && !dimensionMismatch,
+        bm25SearchFunctional: bm25Status.hasIndex && bm25Status.documentCount > 0
+      };
+
+      // Log comprehensive diagnostic output to both logger and terminal
+      this._logDiagnosticsToTerminal(diagnostics);
+
+      return diagnostics;
+    } catch (error) {
+      logger.error('[SearchService] Diagnosis failed:', error);
+      return {
+        ...diagnostics,
+        error: error.message,
+        issues: [
+          ...diagnostics.issues,
+          {
+            type: 'DIAGNOSIS_ERROR',
+            severity: 'critical',
+            message: `Diagnostic check failed: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+
+  /**
+   * Auto-run diagnostics when issues are detected (debounced to avoid spam)
+   * @param {string} trigger - What triggered the auto-diagnostic
+   * @private
+   */
+  _autoRunDiagnostics(trigger) {
+    // Debounce: only run once per 5 minutes to avoid spamming terminal
+    const now = Date.now();
+    const DEBOUNCE_MS = 5 * 60 * 1000; // 5 minutes
+
+    if (this._lastAutoDiagnostic && now - this._lastAutoDiagnostic < DEBOUNCE_MS) {
+      logger.debug('[SearchService] Skipping auto-diagnostics (debounced)', {
+        trigger,
+        lastRun: new Date(this._lastAutoDiagnostic).toISOString()
+      });
+      return;
+    }
+
+    this._lastAutoDiagnostic = now;
+
+    // Run diagnostics asynchronously to not block search response
+    logger.terminal('warn', '[SearchService] Auto-running diagnostics due to: ' + trigger);
+
+    // Run in next tick to not block
+    setImmediate(async () => {
+      try {
+        await this.diagnoseSearchIssues('auto-diagnostic');
+      } catch (err) {
+        logger.error('[SearchService] Auto-diagnostics failed:', err.message);
+      }
+    });
+  }
+
+  /**
+   * Log diagnostics to both logger and terminal (stdout) for visibility
+   * @param {Object} diagnostics - The diagnostic report object
+   * @private
+   */
+  _logDiagnosticsToTerminal(diagnostics) {
+    const divider = '='.repeat(70);
+    const subDivider = '-'.repeat(70);
+
+    // Build formatted output
+    const lines = [
+      '',
+      divider,
+      '  SEMANTIC SEARCH DIAGNOSTICS',
+      `  Timestamp: ${diagnostics.timestamp}`,
+      divider,
+      ''
+    ];
+
+    // Summary section
+    lines.push('SUMMARY:');
+    lines.push(subDivider);
+    if (diagnostics.summary) {
+      lines.push(`  Critical Issues: ${diagnostics.summary.criticalIssues}`);
+      lines.push(`  High Issues:     ${diagnostics.summary.highIssues}`);
+      lines.push(`  Warnings:        ${diagnostics.summary.warnings}`);
+      lines.push('');
+      lines.push(
+        `  Search Functional:        ${diagnostics.summary.searchFunctional ? 'YES' : 'NO'}`
+      );
+      lines.push(
+        `  Vector Search Functional: ${diagnostics.summary.vectorSearchFunctional ? 'YES' : 'NO'}`
+      );
+      lines.push(
+        `  Chunk Search Functional:  ${diagnostics.summary.chunkSearchFunctional ? 'YES' : 'NO'}`
+      );
+      lines.push(
+        `  BM25 Search Functional:   ${diagnostics.summary.bm25SearchFunctional ? 'YES' : 'NO'}`
+      );
+    }
+    lines.push('');
+
+    // Details section
+    lines.push('COLLECTION STATUS:');
+    lines.push(subDivider);
+    if (diagnostics.details?.collections) {
+      lines.push(`  File Embeddings:  ${diagnostics.details.collections.fileCount}`);
+      lines.push(`  Chunk Embeddings: ${diagnostics.details.collections.chunkCount}`);
+      lines.push(`  Folder Embeddings: ${diagnostics.details.collections.folderCount}`);
+    }
+    if (diagnostics.details?.historyCount !== undefined) {
+      lines.push(`  Analysis History: ${diagnostics.details.historyCount}`);
+    }
+    lines.push('');
+
+    // Dimension info
+    lines.push('EMBEDDING DIMENSIONS:');
+    lines.push(subDivider);
+    if (diagnostics.details?.storedDimension) {
+      lines.push(`  Stored (in DB):   ${diagnostics.details.storedDimension}`);
+    }
+    if (diagnostics.details?.queryDimension) {
+      lines.push(`  Current Model:    ${diagnostics.details.queryDimension}`);
+    }
+    if (diagnostics.details?.embeddingModel) {
+      lines.push(`  Model Name:       ${diagnostics.details.embeddingModel}`);
+    }
+    if (diagnostics.details?.chunkDimension) {
+      lines.push(`  Chunk Dimension:  ${diagnostics.details.chunkDimension}`);
+    }
+    lines.push('');
+
+    // BM25 status
+    lines.push('BM25 INDEX STATUS:');
+    lines.push(subDivider);
+    if (diagnostics.details?.bm25) {
+      lines.push(`  Has Index:      ${diagnostics.details.bm25.hasIndex ? 'YES' : 'NO'}`);
+      lines.push(`  Document Count: ${diagnostics.details.bm25.documentCount}`);
+      lines.push(`  Is Stale:       ${diagnostics.details.bm25.isStale ? 'YES' : 'NO'}`);
+    }
+    lines.push('');
+
+    // Ollama status
+    if (diagnostics.details?.ollama) {
+      lines.push('OLLAMA STATUS:');
+      lines.push(subDivider);
+      lines.push(`  Available:          ${diagnostics.details.ollama.available ? 'YES' : 'NO'}`);
+      lines.push(`  Healthy:            ${diagnostics.details.ollama.isHealthy ? 'YES' : 'NO'}`);
+      if (diagnostics.details.ollama.latencyMs) {
+        lines.push(`  Latency:            ${diagnostics.details.ollama.latencyMs}ms`);
+      }
+      lines.push(`  Consecutive Fails:  ${diagnostics.details.ollama.consecutiveFailures || 0}`);
+      if (diagnostics.details.ollama.offlineQueueSize > 0) {
+        lines.push(`  Offline Queue:      ${diagnostics.details.ollama.offlineQueueSize}`);
+      }
+      lines.push('');
+    }
+
+    // Circuit breaker status
+    if (diagnostics.details?.circuitBreaker) {
+      lines.push('CIRCUIT BREAKER:');
+      lines.push(subDivider);
+      lines.push(`  State:    ${diagnostics.details.circuitBreaker.state || 'CLOSED'}`);
+      lines.push(`  Failures: ${diagnostics.details.circuitBreaker.failures || 0}`);
+      lines.push('');
+    }
+
+    // Embedding queue status
+    if (diagnostics.details?.embeddingQueue) {
+      lines.push('EMBEDDING QUEUE:');
+      lines.push(subDivider);
+      lines.push(`  Pending:      ${diagnostics.details.embeddingQueue.queueLength || 0}`);
+      lines.push(
+        `  Capacity:     ${diagnostics.details.embeddingQueue.capacityPercent?.toFixed(1) || 0}%`
+      );
+      lines.push(`  Failed:       ${diagnostics.details.embeddingQueue.failedItemCount || 0}`);
+      lines.push(`  Dead Letter:  ${diagnostics.details.embeddingQueue.deadLetterCount || 0}`);
+      lines.push(`  Health:       ${diagnostics.details.embeddingQueue.healthStatus || 'unknown'}`);
+      lines.push('');
+    }
+
+    // Query cache stats
+    if (diagnostics.details?.queryCache) {
+      lines.push('QUERY CACHE:');
+      lines.push(subDivider);
+      lines.push(`  Size:      ${diagnostics.details.queryCache.size || 0}`);
+      lines.push(
+        `  Hit Rate:  ${((diagnostics.details.queryCache.hitRate || 0) * 100).toFixed(1)}%`
+      );
+      lines.push('');
+    }
+
+    // Orphaned embeddings
+    if (diagnostics.details?.orphaned) {
+      lines.push('ORPHANED EMBEDDINGS:');
+      lines.push(subDivider);
+      lines.push(`  Files:  ${diagnostics.details.orphaned.files || 0}`);
+      lines.push(`  Chunks: ${diagnostics.details.orphaned.chunks || 0}`);
+      lines.push('');
+    }
+
+    // Issues section
+    if (diagnostics.issues && diagnostics.issues.length > 0) {
+      lines.push('ISSUES DETECTED:');
+      lines.push(subDivider);
+      diagnostics.issues.forEach((issue, idx) => {
+        const severityIcon =
+          issue.severity === 'critical'
+            ? '[CRITICAL]'
+            : issue.severity === 'high'
+              ? '[HIGH]'
+              : '[MEDIUM]';
+        lines.push(`  ${idx + 1}. ${severityIcon} ${issue.type}`);
+        lines.push(`     ${issue.message}`);
+        lines.push('');
+      });
+    }
+
+    // Warnings section
+    if (diagnostics.warnings && diagnostics.warnings.length > 0) {
+      lines.push('WARNINGS:');
+      lines.push(subDivider);
+      diagnostics.warnings.forEach((warning, idx) => {
+        lines.push(`  ${idx + 1}. [${warning.severity.toUpperCase()}] ${warning.type}`);
+        lines.push(`     ${warning.message}`);
+        lines.push('');
+      });
+    }
+
+    // Recommendations section
+    if (diagnostics.recommendations && diagnostics.recommendations.length > 0) {
+      lines.push('RECOMMENDATIONS:');
+      lines.push(subDivider);
+      diagnostics.recommendations.forEach((rec, idx) => {
+        lines.push(`  ${idx + 1}. ${rec}`);
+      });
+      lines.push('');
+    }
+
+    lines.push(divider);
+    lines.push('');
+
+    // Join all lines
+    const output = lines.join('\n');
+
+    // Write to terminal AND log file using logger.terminalRaw
+    logger.terminalRaw(output);
+
+    // Also log structured data to logger for searchability
+    if (diagnostics.summary?.criticalIssues > 0) {
+      logger.terminal('error', '[SearchService] CRITICAL search issues detected', {
+        summary: diagnostics.summary,
+        issues: diagnostics.issues
+      });
+    } else if (diagnostics.summary?.highIssues > 0) {
+      logger.terminal('warn', '[SearchService] Search issues detected', {
+        summary: diagnostics.summary,
+        issues: diagnostics.issues,
+        warnings: diagnostics.warnings
+      });
+    } else if (diagnostics.warnings?.length > 0) {
+      logger.terminal('info', '[SearchService] Search diagnostics completed with warnings', {
+        summary: diagnostics.summary,
+        warnings: diagnostics.warnings
+      });
+    } else {
+      logger.terminal('info', '[SearchService] Search diagnostics completed - no issues found', {
+        summary: diagnostics.summary
+      });
     }
   }
 

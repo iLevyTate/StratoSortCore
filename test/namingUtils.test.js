@@ -331,6 +331,67 @@ const runNamingTests = (moduleName, modulePath) => {
       });
     });
 
+    describe('processTemplate', () => {
+      // Test only for Main process where processTemplate is available
+      if (moduleName === 'Main') {
+        const mockContext = {
+          originalName: 'scan_001.pdf',
+          extension: '.pdf',
+          analysis: {
+            date: '2023-10-15',
+            entity: 'Amazon',
+            type: 'Invoice',
+            project: 'Office Supplies',
+            category: 'Expenses',
+            summary: 'Invoice for monitor'
+          }
+        };
+
+        test('replaces standard tokens', () => {
+          const template = '{date}_{entity}_{type}';
+          const result = namingUtils.processTemplate(template, mockContext);
+          expect(result).toBe('2023-10-15_Amazon_Invoice.pdf');
+        });
+
+        test('replaces original token', () => {
+          const template = '{original}_processed';
+          const result = namingUtils.processTemplate(template, mockContext);
+          expect(result).toBe('scan_001_processed.pdf');
+        });
+
+        test('handles case insensitivity', () => {
+          const template = '{DATE}_{ENTITY}';
+          const result = namingUtils.processTemplate(template, mockContext);
+          expect(result).toBe('2023-10-15_Amazon.pdf');
+        });
+
+        test('sanitizes illegal characters', () => {
+          const dirtyContext = {
+            ...mockContext,
+            analysis: { ...mockContext.analysis, entity: 'Acme/Corp' }
+          };
+          const template = '{entity}';
+          const result = namingUtils.processTemplate(template, dirtyContext);
+          // "Acme/Corp" -> "AcmeCorp" (illegal chars removed)
+          expect(result).toBe('AcmeCorp.pdf');
+        });
+
+        test('collapses separators', () => {
+          const template = '{date}___{entity}'; // Triple underscore
+          const result = namingUtils.processTemplate(template, mockContext);
+          expect(result).toBe('2023-10-15_Amazon.pdf');
+        });
+
+        test('handles missing values with fallbacks', () => {
+          const emptyContext = { originalName: 'doc.pdf', extension: '.pdf', analysis: {} };
+          const template = '{entity}_{type}';
+          const result = namingUtils.processTemplate(template, emptyContext);
+          // 'Unknown' and 'Document' are the coded fallbacks
+          expect(result).toBe('Unknown_Document.pdf');
+        });
+      }
+    });
+
     if (moduleName === 'Renderer') {
       describe('validateProgressState', () => {
         test('returns true for valid progress', () => {

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
-import { AlertTriangle, Database, Info } from 'lucide-react';
+import { AlertTriangle, Database, Info, FileText } from 'lucide-react';
 import Select from '../ui/Select';
 import Card from '../ui/Card';
 import StatusBadge from '../ui/StatusBadge';
 import SettingRow from './SettingRow';
+import Modal from '../Modal';
+import { logger } from '../../../shared/logger';
 
 // Embedding model dimensions - used for dimension change warnings
 const EMBEDDING_DIMENSIONS = {
@@ -29,16 +31,75 @@ function ModelSelectionSection({
   // Show the "model changed -> rebuild required" message only when the user explicitly changes
   // the dropdown (avoids confusing banners during initial settings/model hydration).
   const [embeddingModelChanged, setEmbeddingModelChanged] = useState(false);
+  const [pendingModel, setPendingModel] = useState(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [isRebuilding, setIsRebuilding] = useState(false);
   const didMountRef = useRef(false);
 
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
+      // Fetch stats for dialog
+      if (window.electronAPI?.embeddings?.getStats) {
+        window.electronAPI.embeddings
+          .getStats()
+          .then((s) => setStats(s))
+          .catch((err) => logger.error('Failed to fetch stats', err));
+      }
       return;
     }
     // If the model gets reset programmatically (rare), keep the banner visible only if it was
     // explicitly triggered by user interaction.
   }, [settings.embeddingModel]);
+
+  const handleEmbeddingModelChange = (e) => {
+    const newModel = e.target.value;
+    if (newModel !== settings.embeddingModel) {
+      setPendingModel(newModel);
+      setShowConfirmDialog(true);
+      // Refresh stats just in case
+      if (window.electronAPI?.embeddings?.getStats) {
+        window.electronAPI.embeddings
+          .getStats()
+          .then((s) => setStats(s))
+          .catch((err) => logger.error('Failed to fetch stats', err));
+      }
+    }
+  };
+
+  const confirmChangeAndRebuild = async () => {
+    setIsRebuilding(true);
+    try {
+      // 1. Update settings
+      setSettings((prev) => ({ ...prev, embeddingModel: pendingModel }));
+      // 2. Trigger rebuild
+      if (window.electronAPI?.embeddings?.fullRebuild) {
+        await window.electronAPI.embeddings.fullRebuild();
+      }
+      // 3. Clear warnings since we just rebuilt
+      setEmbeddingModelChanged(false);
+    } catch (error) {
+      logger.error('Failed to rebuild embeddings', error);
+    } finally {
+      setIsRebuilding(false);
+      setShowConfirmDialog(false);
+      setPendingModel(null);
+    }
+  };
+
+  const confirmChangeOnly = () => {
+    setSettings((prev) => ({ ...prev, embeddingModel: pendingModel }));
+    setEmbeddingModelChanged(true);
+    setShowConfirmDialog(false);
+    setPendingModel(null);
+  };
+
+  const cancelChange = () => {
+    setShowConfirmDialog(false);
+    setPendingModel(null);
+  };
+
   const hasTextModels = textModelOptions.length > 0;
   const hasVisionModels = visionModelOptions.length > 0;
   const hasEmbeddingModels = embeddingModelOptions.length > 0;
@@ -136,13 +197,7 @@ function ModelSelectionSection({
             <div className="space-y-3">
               <Select
                 value={settings.embeddingModel}
-                onChange={(e) => {
-                  setEmbeddingModelChanged(true);
-                  setSettings((prev) => ({
-                    ...prev,
-                    embeddingModel: e.target.value
-                  }));
-                }}
+                onChange={handleEmbeddingModelChange}
                 className="w-full"
               >
                 {embeddingModelOptions.map((model) => (
@@ -177,6 +232,66 @@ function ModelSelectionSection({
           )}
         </SettingRow>
       </div>
+
+      {/* Confirmation Dialog */}
+      <Modal
+        isOpen={showConfirmDialog}
+        onClose={cancelChange}
+        title="Change Embedding Model?"
+        size="small"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-100 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-amber-800">
+              <p className="font-medium mb-1">This will invalidate existing embeddings.</p>
+              <p>
+                Switching from <strong>{settings.embeddingModel}</strong> to{' '}
+                <strong>{pendingModel}</strong> changes the vector dimensions. You will need to
+                rebuild the vector database to search existing files.
+              </p>
+            </div>
+          </div>
+
+          {stats &&
+            (stats.files > 0 || stats.chunks > 0 || stats.analysisHistory?.totalFiles > 0) && (
+              <div className="flex items-center gap-2 p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-sm text-system-gray-600">
+                <FileText className="w-4 h-4" />
+                <span>
+                  {stats.files || 0} files ({stats.chunks || 0} chunks) currently indexed.
+                  {stats.analysisHistory?.totalFiles > 0 &&
+                    ` (~${stats.analysisHistory.totalFiles} files in history)`}
+                </span>
+              </div>
+            )}
+
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              onClick={confirmChangeAndRebuild}
+              disabled={isRebuilding}
+              className="w-full py-2 px-4 bg-system-blue text-white rounded-lg hover:bg-system-blue/90 font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              {isRebuilding ? 'Starting Rebuild...' : 'Change & Rebuild Now'}
+            </button>
+
+            <button
+              onClick={confirmChangeOnly}
+              disabled={isRebuilding}
+              className="w-full py-2 px-4 bg-system-gray-100 text-system-gray-700 rounded-lg hover:bg-system-gray-200 font-medium transition-colors"
+            >
+              Change Only (Rebuild Later)
+            </button>
+
+            <button
+              onClick={cancelChange}
+              disabled={isRebuilding}
+              className="w-full py-2 px-4 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-50 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Card>
   );
 }

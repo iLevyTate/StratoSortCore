@@ -475,13 +475,24 @@ export function useOrganization({
                 .filter((r) => r.success)
                 .map((r) => {
                   const original = analysisResults.find((a) => a.path === r.source) || {};
+                  // FIX: Extract actual destination folder name from path instead of hardcoding "Organized"
+                  // This ensures notifications show the correct folder (e.g., "Uncategorized" not "3D Print")
+                  let actualSmartFolder = 'Organized'; // fallback
+                  if (r.destination) {
+                    // Get the parent directory name from the destination path
+                    const pathParts = r.destination.split(/[\\/]/);
+                    // Get the folder name (second-to-last part before filename)
+                    if (pathParts.length >= 2) {
+                      actualSmartFolder = pathParts[pathParts.length - 2];
+                    }
+                  }
                   return {
                     originalPath: r.source,
                     path: r.destination,
                     originalName:
                       original.name || (original.path ? original.path.split(/[\\/]/).pop() : ''),
                     newName: r.destination ? r.destination.split(/[\\/]/).pop() : '',
-                    smartFolder: 'Organized',
+                    smartFolder: actualSmartFolder,
                     organizedAt: new Date().toISOString()
                   };
                 });
@@ -585,22 +596,42 @@ export function useOrganization({
               // If no results from main process, fall back to original operations
               const uiResults =
                 successfulResults.length > 0
-                  ? successfulResults.map((r) => ({
-                      originalPath: r.source,
-                      path: r.destination,
-                      originalName: r.source?.split(/[\\/]/).pop() || '',
-                      newName: r.destination?.split(/[\\/]/).pop() || '',
-                      smartFolder: 'Organized',
-                      organizedAt: new Date().toISOString()
-                    }))
-                  : operations.map((op) => ({
-                      originalPath: op.source,
-                      path: op.destination,
-                      originalName: op.source.split(/[\\/]/).pop(),
-                      newName: op.destination.split(/[\\/]/).pop(),
-                      smartFolder: 'Organized',
-                      organizedAt: new Date().toISOString()
-                    }));
+                  ? successfulResults.map((r) => {
+                      // FIX: Extract actual destination folder name
+                      let actualSmartFolder = 'Organized';
+                      if (r.destination) {
+                        const pathParts = r.destination.split(/[\\/]/);
+                        if (pathParts.length >= 2) {
+                          actualSmartFolder = pathParts[pathParts.length - 2];
+                        }
+                      }
+                      return {
+                        originalPath: r.source,
+                        path: r.destination,
+                        originalName: r.source?.split(/[\\/]/).pop() || '',
+                        newName: r.destination?.split(/[\\/]/).pop() || '',
+                        smartFolder: actualSmartFolder,
+                        organizedAt: new Date().toISOString()
+                      };
+                    })
+                  : operations.map((op) => {
+                      // FIX: Extract actual destination folder name
+                      let actualSmartFolder = 'Organized';
+                      if (op.destination) {
+                        const pathParts = op.destination.split(/[\\/]/);
+                        if (pathParts.length >= 2) {
+                          actualSmartFolder = pathParts[pathParts.length - 2];
+                        }
+                      }
+                      return {
+                        originalPath: op.source,
+                        path: op.destination,
+                        originalName: op.source.split(/[\\/]/).pop(),
+                        newName: op.destination.split(/[\\/]/).pop(),
+                        smartFolder: actualSmartFolder,
+                        organizedAt: new Date().toISOString()
+                      };
+                    });
 
               if (uiResults.length > 0) {
                 // FIX H-3: Filter out duplicates, but use latest ref data (synced in onUndo)

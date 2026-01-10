@@ -11,9 +11,9 @@ function SettingRow({ label, description, children, className = '', layout = 'ro
 
   return (
     <div
-      className={`flex ${layout === 'row' ? 'flex-row items-center justify-between' : 'flex-col'} gap-4 ${className}`}
+      className={`flex ${layout === 'row' ? 'flex-row items-center justify-between gap-4' : 'flex-col gap-2'} ${className}`}
     >
-      <div className="flex-1 min-w-0">
+      <div className={`${layout === 'row' ? 'flex-1' : ''} min-w-0`}>
         {label && <h3 className="text-sm font-medium text-system-gray-900">{label}</h3>}
         {description && <p className="text-sm text-system-gray-500 mt-1">{description}</p>}
       </div>

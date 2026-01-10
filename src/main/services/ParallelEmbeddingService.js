@@ -206,6 +206,14 @@ class ParallelEmbeddingService {
     try {
       const ollamaService = getOllamaService();
 
+      // Health check enhancement: Fail fast if service is known to be unhealthy
+      const ollamaClient = ollamaService.getClient();
+      if (ollamaClient && typeof ollamaClient.isHealthy === 'boolean' && !ollamaClient.isHealthy) {
+        const error = new Error('Ollama service is unhealthy (circuit open or disconnected)');
+        error.code = 'SERVICE_UNAVAILABLE';
+        throw error;
+      }
+
       // Pass retry configuration to OllamaService
       const options = {
         maxRetries: this.maxRetries,
@@ -222,10 +230,11 @@ class ParallelEmbeddingService {
           vector: result.embedding || result.vector || [],
           model: result.model || 'fallback'
         };
-        logger.debug('[ParallelEmbeddingService] Embedding generated', {
-          model: normalized.model,
-          dim: Array.isArray(normalized.vector) ? normalized.vector.length : 0
-        });
+        // Reduce log verbosity for successful embeddings - only log debug if needed
+        // logger.debug('[ParallelEmbeddingService] Embedding generated', {
+        //   model: normalized.model,
+        //   dim: Array.isArray(normalized.vector) ? normalized.vector.length : 0
+        // });
         return normalized;
       }
 
@@ -280,6 +289,10 @@ class ParallelEmbeddingService {
     let completedCount = 0;
     let modelChangedDuringBatch = false;
 
+    // Cache model lookup (Fix 6: Cache model lookup)
+    let lastModelCheck = Date.now();
+    const MODEL_CHECK_INTERVAL = 5000;
+
     logger.info('[ParallelEmbeddingService] Starting batch embedding', {
       itemCount: items.length,
       concurrencyLimit: this.concurrencyLimit,
@@ -290,12 +303,17 @@ class ParallelEmbeddingService {
     const processItem = async (item, index) => {
       try {
         // FIX: Check if model changed during batch - early exit if detected
-        const currentModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
-        if (currentModel !== batchModel) {
-          modelChangedDuringBatch = true;
-          const errorMsg = `Model changed during batch operation (started with ${batchModel}, now ${currentModel}). Aborting batch to prevent vector dimension mismatch.`;
-          logger.error('[ParallelEmbeddingService] ' + errorMsg);
-          throw new Error(errorMsg);
+        // Cached lookup to avoid reading config on every item
+        const now = Date.now();
+        if (now - lastModelCheck > MODEL_CHECK_INTERVAL) {
+          const currentModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+          if (currentModel !== batchModel) {
+            modelChangedDuringBatch = true;
+            const errorMsg = `Model changed during batch operation (started with ${batchModel}, now ${currentModel}). Aborting batch to prevent vector dimension mismatch.`;
+            logger.error('[ParallelEmbeddingService] ' + errorMsg);
+            throw new Error(errorMsg);
+          }
+          lastModelCheck = now;
         }
 
         const { vector, model } = await this.embedText(item.text);

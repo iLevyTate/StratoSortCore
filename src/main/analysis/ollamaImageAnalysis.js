@@ -12,6 +12,7 @@ const {
   PROCESSING_LIMITS
 } = require('../../shared/constants');
 const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
+const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
 const { normalizeAnalysisResult } = require('./utils');
 const {
   getIntelligentCategory: getIntelligentImageCategory,
@@ -94,37 +95,34 @@ async function analyzeImageWithOllama(
     const prompt = `You are an expert image analyzer for an automated file organization system. Analyze this image named "${originalFileName}" and extract structured information.
 
 CRITICAL FILENAME VALIDATION:
-The original filename is "${originalFileName}". Your analysis MUST be consistent with this filename.
-- If the filename contains "financial", "budget", "invoice", "receipt", "tax" → your analysis MUST identify financial/business content
-- If the filename contains "report", "document", "form" → treat this as a document image, NOT a landscape or scenic photo
-- If the filename contains "screenshot", "screen" → this is likely an interface/application capture
-- If your visual analysis contradicts the filename, TRUST THE FILENAME and re-examine the image for text or document content
+The original filename is "${originalFileName}". Use it as a context hint, but prioritize VISUAL CONTENT for analysis.
+- If the filename suggests a specific topic, verify it against the image content.
+${folderCategoriesStr}
 ${ocrGroundingStr}
 
-Your response should be a JSON object with the following fields:
-- date (if there's a visible date in the image, in YYYY-MM-DD format)
-- project (a short, 2-5 word project name based on BOTH filename and image content)
-- purpose (a concise, 5-10 word description - for documents/reports, describe the document type)
-- category (must match one of the folder names above, prioritize filename hints)${folderCategoriesStr}
-- keywords (an array of 3-7 keywords - MUST include relevant terms from the filename)
-- confidence (60-100; use 50 or lower if visual content seems to contradict the filename)
-- content_type (IMPORTANT: if filename suggests document/report/form, use 'text_document' or 'business_document', NOT 'landscape')
-- has_text (boolean - if image contains ANY readable text, this should be true)
-- colors (array of 2-4 dominant colors)
-- suggestedName (SHORT name, MAX 40 chars - should PRESERVE key terms from original filename)
+Your response MUST be a valid JSON object matching this schema exactly:
+${JSON.stringify(
+  {
+    ...ANALYSIS_SCHEMA_PROMPT,
+    colors: ['#hex1', '#hex2'],
+    has_text: true,
+    content_type: 'text_document OR photograph OR screenshot OR other'
+  },
+  null,
+  2
+)}
+
+IMPORTANT FOR keywords:
+- Extract 3-7 keywords based on the VISUAL CONTENT and any visible text.
+- Do NOT just copy the filename. Look at what is actually in the image.
 
 IMPORTANT FOR suggestedName:
-- Keep it SHORT: maximum 40 characters (excluding extension)
-- PRESERVE semantic meaning from the original filename "${originalFileName}"
-- If filename says "financial-budget-report", suggested name should include "budget" or "financial"
-- Do NOT suggest unrelated names like landscapes for document files
-- Examples based on filename context:
-  - For "quarterly-sales-report.png" → "quarterly_sales_report" (NOT "colorful_chart_graphic")
-  - For "vacation-beach-photo.jpg" → "beach_vacation_photo" (landscape appropriate here)
-  - For "invoice-2024-acme.png" → "acme_invoice" (NOT "white_paper_document")
+- Generate a short, concise name (1-3 words) based on the IMAGE TOPIC.
+- Example: "budget_report", "sunset_beach", "project_diagram".
+- Use underscores instead of spaces.
+- Do NOT include the file extension.
 
-If you cannot determine a field with confidence, omit it from the JSON. Do NOT hallucinate or guess content that contradicts the filename. The output MUST be a valid JSON object.
-
+If you cannot determine a field with confidence, use null.
 Analyze this image:`;
 
     const cfg = await loadOllamaConfig();
@@ -236,8 +234,17 @@ Analyze this image:`;
         }
 
         // Ensure array fields are initialized if undefined
-        const finalKeywords = Array.isArray(parsedJson.keywords) ? parsedJson.keywords : [];
+        let finalKeywords = Array.isArray(parsedJson.keywords) ? parsedJson.keywords : [];
         const finalColors = Array.isArray(parsedJson.colors) ? parsedJson.colors : [];
+
+        // FALLBACK: If keywords are empty, use intelligent fallback from filename
+        if (finalKeywords.length === 0) {
+          finalKeywords = getIntelligentImageKeywords(
+            originalFileName,
+            path.extname(originalFileName)
+          );
+          logger.debug('[IMAGE-ANALYSIS] Fallback keywords generated', { keywords: finalKeywords });
+        }
 
         // Ensure confidence is a reasonable number
         // MEDIUM PRIORITY FIX (MED-10): Use fixed default instead of random value
@@ -690,14 +697,33 @@ async function applySemanticFolderMatching(analysis, filePath, smartFolders) {
     if (Array.isArray(candidates) && candidates.length > 0) {
       const top = candidates[0];
       if (top && typeof top === 'object' && typeof top.score === 'number' && top.name) {
-        if (top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
+        // Only override LLM category if embedding score exceeds both threshold AND LLM confidence
+        // This ensures semantic understanding from content analysis remains primary
+        const llmConfidence = analysis.confidence || 0.7;
+        const shouldOverride =
+          top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE && top.score > llmConfidence;
+
+        if (shouldOverride) {
+          logger.info('[IMAGE] Embedding override - folder match exceeds LLM confidence', {
+            llmCategory: analysis.category,
+            llmConfidence,
+            embeddingCategory: top.name,
+            embeddingScore: top.score
+          });
+          analysis.llmOriginalCategory = analysis.category;
           analysis.category = top.name;
+          analysis.categorySource = 'embedding_override';
           analysis.suggestedFolder = top.name;
           analysis.destinationFolder = top.path || top.name;
-          logger.debug('[IMAGE] Folder match applied', {
-            category: top.name,
-            score: top.score
+        } else if (top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
+          // Embedding met threshold but LLM confidence was higher - keep LLM category
+          logger.debug('[IMAGE] LLM category preserved - confidence higher than embedding', {
+            llmCategory: analysis.category,
+            llmConfidence,
+            embeddingCategory: top.name,
+            embeddingScore: top.score
           });
+          analysis.categorySource = 'llm_preserved';
         }
         analysis.folderMatchCandidates = candidates;
       }

@@ -413,9 +413,9 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
       await handler({}, importPath);
 
-      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://custom:11434');
-      expect(mockSetOllamaModel).toHaveBeenCalledWith('llama3');
-      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('llava');
+      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://custom:11434', false);
+      expect(mockSetOllamaModel).toHaveBeenCalledWith('llama3', false);
+      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('llava', false);
     });
   });
 
@@ -490,8 +490,8 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.RESTORE_BACKUP];
       await handler({}, backupPath);
 
-      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://restored:11434');
-      expect(mockSetOllamaModel).toHaveBeenCalledWith('restored-model');
+      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://restored:11434', false);
+      expect(mockSetOllamaModel).toHaveBeenCalledWith('restored-model', false);
     });
 
     test('notifies settings changed on restore', async () => {
@@ -944,10 +944,10 @@ describe('Settings IPC Handlers', () => {
         }
       );
 
-      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://newhost:11434');
-      expect(mockSetOllamaModel).toHaveBeenCalledWith('newmodel');
-      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('newvision');
-      expect(mockSetOllamaEmbeddingModel).toHaveBeenCalledWith('newembedding');
+      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://newhost:11434', false);
+      expect(mockSetOllamaModel).toHaveBeenCalledWith('newmodel', false);
+      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('newvision', false);
+      expect(mockSetOllamaEmbeddingModel).toHaveBeenCalledWith('newembedding', false);
     });
 
     test('notifies settings changed', async () => {

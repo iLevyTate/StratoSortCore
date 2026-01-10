@@ -41,6 +41,8 @@ const {
   markEmbeddingsOrphaned: markEmbeddingsOrphanedOp,
   getOrphanedEmbeddings: getOrphanedEmbeddingsOp
 } = require('./fileOperations');
+const chunkOps = require('./chunkOperations');
+
 const {
   batchUpsertFileChunks: batchUpsertFileChunksOp,
   querySimilarFileChunks: querySimilarFileChunksOp,
@@ -48,7 +50,10 @@ const {
   markChunksOrphaned: markChunksOrphanedOp,
   getOrphanedChunks: getOrphanedChunksOp,
   updateFileChunkPaths: updateFileChunkPathsOp
-} = require('./chunkOperations');
+} = chunkOps;
+// Provide safe fallbacks to avoid undefined functions in tests/mocks
+const deleteFileChunks = chunkOps.deleteFileChunks || (async () => 0);
+const batchDeleteFileChunks = chunkOps.batchDeleteFileChunks || (async () => 0);
 const {
   directUpsertFolder,
   directBatchUpsertFolders,
@@ -1190,6 +1195,20 @@ class ChromaDBServiceCore extends EventEmitter {
       throw new Error('Invalid file data: missing id or vector');
     }
 
+    // FIX P1-3: Validate embedding dimensions before upsert
+    const dimValidation = await this.validateEmbeddingDimension(file.vector, 'files');
+    if (!dimValidation.valid) {
+      logger.warn('[ChromaDB] Dimension mismatch in upsertFile', {
+        fileId: file.id,
+        expected: dimValidation.expectedDim,
+        actual: dimValidation.actualDim
+      });
+      throw new Error(
+        `Embedding dimension mismatch: expected ${dimValidation.expectedDim}, got ${dimValidation.actualDim}. ` +
+          `Run "Rebuild Embeddings" to fix.`
+      );
+    }
+
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing file upsert', {
         fileId: file.id
@@ -1213,6 +1232,27 @@ class ChromaDBServiceCore extends EventEmitter {
   async batchUpsertFiles(files) {
     if (!files || files.length === 0) {
       return { queued: false, count: 0 };
+    }
+
+    // FIX P1-3: Validate first file's dimensions against collection
+    // (all files should have same dimensions from same embedding model)
+    const firstFileWithVector = files.find((f) => Array.isArray(f.vector) && f.vector.length > 0);
+    if (firstFileWithVector) {
+      const dimValidation = await this.validateEmbeddingDimension(
+        firstFileWithVector.vector,
+        'files'
+      );
+      if (!dimValidation.valid && dimValidation.error === 'dimension_mismatch') {
+        logger.warn('[ChromaDB] Dimension mismatch in batchUpsertFiles', {
+          expected: dimValidation.expectedDim,
+          actual: dimValidation.actualDim,
+          fileCount: files.length
+        });
+        throw new Error(
+          `Embedding dimension mismatch: expected ${dimValidation.expectedDim}, got ${dimValidation.actualDim}. ` +
+            `Run "Rebuild Embeddings" to fix.`
+        );
+      }
     }
 
     if (!this.circuitBreaker.isAllowed()) {
@@ -1244,6 +1284,13 @@ class ChromaDBServiceCore extends EventEmitter {
 
   async deleteFileEmbedding(fileId) {
     await this.initialize();
+
+    // FIX P0-1: Also delete associated chunks to prevent orphaned data
+    await deleteFileChunks({
+      fileId,
+      chunkCollection: this.fileChunkCollection
+    });
+
     return deleteFileEmbeddingOp({
       fileId,
       fileCollection: this.fileCollection,
@@ -1276,14 +1323,95 @@ class ChromaDBServiceCore extends EventEmitter {
 
   /**
    * Direct batch delete files (bypasses circuit breaker)
+   * FIX P0-1: Also deletes associated chunks to prevent orphaned data
    * @private
    */
   async _directBatchDeleteFiles(fileIds) {
+    // FIX P0-1: Delete chunks first, then file embeddings
+    await batchDeleteFileChunks({
+      fileIds,
+      chunkCollection: this.fileChunkCollection
+    });
+
     return batchDeleteFileEmbeddingsOp({
       fileIds,
       fileCollection: this.fileCollection,
       queryCache: this.queryCache
     });
+  }
+
+  /**
+   * Clone a file embedding for a copied file.
+   * Retrieves the source embedding and creates a new entry for the destination.
+   *
+   * @param {string} sourceId - Source file ID (e.g., "file:/path/to/source")
+   * @param {string} destId - Destination file ID (e.g., "file:/path/to/dest")
+   * @param {Object} newMeta - New metadata for the cloned embedding
+   * @returns {Promise<{success: boolean, cloned?: boolean, error?: string}>}
+   */
+  async cloneFileEmbedding(sourceId, destId, newMeta = {}) {
+    if (!sourceId || !destId) {
+      return { success: false, error: 'Source and destination IDs required' };
+    }
+
+    // Check circuit breaker
+    if (!this.circuitBreaker.isAllowed()) {
+      logger.debug('[ChromaDB] Circuit open, cannot clone embedding', {
+        sourceId,
+        destId
+      });
+      return { success: false, error: 'Service unavailable' };
+    }
+
+    await this.initialize();
+
+    try {
+      // Get the source embedding
+      const sourceResult = await this.fileCollection.get({
+        ids: [sourceId],
+        include: ['embeddings', 'metadatas']
+      });
+
+      if (!sourceResult?.ids?.length || !sourceResult.embeddings?.length) {
+        // No embedding for source file - not an error, just nothing to clone
+        return { success: true, cloned: false };
+      }
+
+      // Clone the embedding with new ID and metadata
+      const sourceEmbedding = sourceResult.embeddings[0];
+      const sourceMeta = sourceResult.metadatas?.[0] || {};
+
+      const clonedMeta = {
+        ...sourceMeta,
+        ...newMeta,
+        clonedFrom: sourceId,
+        clonedAt: new Date().toISOString()
+      };
+
+      // Upsert the cloned embedding
+      await this.fileCollection.upsert({
+        ids: [destId],
+        embeddings: [sourceEmbedding],
+        metadatas: [clonedMeta]
+      });
+
+      // Invalidate query cache for the new ID
+      this.queryCache?.invalidateForFile?.(destId);
+
+      logger.debug('[ChromaDB] Cloned file embedding', {
+        sourceId,
+        destId
+      });
+
+      return { success: true, cloned: true };
+    } catch (error) {
+      logger.error('[ChromaDB] Failed to clone file embedding', {
+        error: error.message,
+        sourceId,
+        destId
+      });
+      return { success: false, error: error.message };
+    }
   }
 
   /**
@@ -1415,6 +1543,30 @@ class ChromaDBServiceCore extends EventEmitter {
   }
 
   async batchUpsertFileChunks(chunks) {
+    if (!chunks || chunks.length === 0) {
+      return 0;
+    }
+
+    // FIX P1-3: Validate first chunk's dimensions against collection
+    const firstChunkWithVector = chunks.find((c) => Array.isArray(c.vector) && c.vector.length > 0);
+    if (firstChunkWithVector) {
+      const dimValidation = await this.validateEmbeddingDimension(
+        firstChunkWithVector.vector,
+        'fileChunks'
+      );
+      if (!dimValidation.valid && dimValidation.error === 'dimension_mismatch') {
+        logger.warn('[ChromaDB] Dimension mismatch in batchUpsertFileChunks', {
+          expected: dimValidation.expectedDim,
+          actual: dimValidation.actualDim,
+          chunkCount: chunks.length
+        });
+        throw new Error(
+          `Chunk embedding dimension mismatch: expected ${dimValidation.expectedDim}, got ${dimValidation.actualDim}. ` +
+            `Run "Rebuild Embeddings" to fix.`
+        );
+      }
+    }
+
     await this.initialize();
     return batchUpsertFileChunksOp({
       chunks,
@@ -1427,6 +1579,21 @@ class ChromaDBServiceCore extends EventEmitter {
     return querySimilarFileChunksOp({
       queryEmbedding,
       topK,
+      chunkCollection: this.fileChunkCollection
+    });
+  }
+
+  /**
+   * Delete all chunks belonging to a specific file
+   * FIX P2-2: Used to clean up old chunks before re-analysis
+   *
+   * @param {string} fileId - The parent file ID whose chunks should be deleted
+   * @returns {Promise<number>} Number of deleted chunks
+   */
+  async deleteFileChunks(fileId) {
+    await this.initialize();
+    return deleteFileChunks({
+      fileId,
       chunkCollection: this.fileChunkCollection
     });
   }

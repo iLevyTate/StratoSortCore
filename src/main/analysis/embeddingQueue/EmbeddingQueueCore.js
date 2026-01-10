@@ -76,17 +76,40 @@ class EmbeddingQueue {
 
   /**
    * Acquire flush mutex to prevent concurrent flush operations
+   * @param {number} timeout - Timeout in ms (default: TIMEOUTS.MUTEX_ACQUIRE)
    * @returns {Promise<Function>} Release function to call when done
    * @private
    */
-  _acquireFlushMutex() {
+  async _acquireFlushMutex(timeout = TIMEOUTS.MUTEX_ACQUIRE) {
     let release;
     const next = new Promise((resolve) => {
       release = resolve;
     });
+
     const current = this._flushMutex;
     this._flushMutex = next;
-    return current.then(() => release);
+
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        const error = new Error(`Flush mutex acquisition timed out after ${timeout}ms`);
+        error.code = 'MUTEX_TIMEOUT';
+        reject(error);
+      }, timeout);
+    });
+
+    try {
+      await Promise.race([current, timeoutPromise]);
+      clearTimeout(timeoutId);
+      return release;
+    } catch (error) {
+      if (error.code === 'MUTEX_TIMEOUT') {
+        logger.error('[EmbeddingQueue] Mutex timeout - forcing release to prevent deadlock');
+        // Force release to unblock future waiters, even though we timed out
+        release();
+      }
+      throw error;
+    }
   }
 
   /**
@@ -337,8 +360,17 @@ class EmbeddingQueue {
 
         this.retryCount = 0;
 
-        const fileItems = batch.filter((i) => !i.id.startsWith('folder:'));
-        const folderItems = batch.filter((i) => i.id.startsWith('folder:'));
+        const fileItems = [];
+        const folderItems = [];
+
+        // Single pass segregation (Fix: Avoid double filtering)
+        for (const item of batch) {
+          if (item.id.startsWith('folder:')) {
+            folderItems.push(item);
+          } else {
+            fileItems.push(item);
+          }
+        }
         const failedItemIds = new Set();
         let processedCount = 0;
 

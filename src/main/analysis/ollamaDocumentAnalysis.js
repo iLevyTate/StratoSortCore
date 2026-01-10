@@ -189,15 +189,33 @@ async function applyDocumentFolderMatching(
     });
 
     const top = candidates[0];
-    if (top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
-      logger.info('[DocumentAnalysis] Refining category based on folder match', {
-        originalCategory: analysis.category,
-        newCategory: top.name,
-        score: top.score
+    // Only override LLM category if embedding score exceeds both threshold AND LLM confidence
+    // This ensures semantic understanding from content analysis remains primary
+    const llmConfidence = analysis.confidence || 0.7;
+    const shouldOverride =
+      top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE && top.score > llmConfidence;
+
+    if (shouldOverride) {
+      logger.info('[DocumentAnalysis] Embedding override - folder match exceeds LLM confidence', {
+        llmCategory: analysis.category,
+        llmConfidence,
+        embeddingCategory: top.name,
+        embeddingScore: top.score
       });
+      analysis.llmOriginalCategory = analysis.category;
       analysis.category = top.name;
+      analysis.categorySource = 'embedding_override';
       analysis.suggestedFolder = top.name;
       analysis.destinationFolder = top.path || top.name;
+    } else if (top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
+      // Embedding met threshold but LLM confidence was higher - keep LLM category
+      logger.debug('[DocumentAnalysis] LLM category preserved - confidence higher than embedding', {
+        llmCategory: analysis.category,
+        llmConfidence,
+        embeddingCategory: top.name,
+        embeddingScore: top.score
+      });
+      analysis.categorySource = 'llm_preserved';
     }
     analysis.folderMatchCandidates = candidates;
   } else {

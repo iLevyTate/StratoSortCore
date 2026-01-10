@@ -197,23 +197,16 @@ const persistenceMiddleware = (store) => (next) => (action) => {
           timestamp: Date.now()
         };
 
-        // Sync naming settings to main process so DownloadWatcher uses the chosen convention
-        try {
-          if (typeof window !== 'undefined' && window.electronAPI?.settings?.save) {
-            const nc = state.files.namingConvention;
-            const namingPayload = {
-              namingConvention: nc?.convention,
-              dateFormat: nc?.dateFormat,
-              caseConvention: nc?.caseConvention,
-              separator: nc?.separator
-            };
-            logger.debug('[NamingSync] Saving naming settings to main', namingPayload);
-            // Fire-and-forget; main settings merge partials
-            window.electronAPI.settings.save(namingPayload);
-          }
-        } catch {
-          // Ignore sync errors; local persistence still occurs
-        }
+        // IMPORTANT: Naming conventions are now separated into two independent systems:
+        // 1. Discover phase (Redux state.files.namingConvention) - Session-based, UI-only
+        // 2. Settings (persisted settings.namingConvention) - Persistent, used by watchers/reanalysis
+        //
+        // We do NOT sync Discover phase naming to Settings anymore. This ensures:
+        // - Settings naming conventions control: DownloadWatcher, SmartFolderWatcher, Reanalyze
+        // - Discover naming conventions control: Manual file analysis in Discover phase only
+        //
+        // Previous behavior synced Redux → Settings, which caused Discover choices to
+        // overwrite the user's Settings, breaking the intended separation.
 
         // Persist fileStates separately or limited
         // FIX: Prioritize in-progress and error states over completed ones

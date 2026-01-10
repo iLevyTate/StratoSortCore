@@ -165,7 +165,12 @@ function generateBatchRecommendations(groups, patterns) {
  * @returns {string} Summary text enriched with semantic context
  */
 function generateFileSummary(file) {
+  // Include ALL semantic fields from LLM analysis for comprehensive folder matching
+  // Priority order: summary (richest context) -> entity/type -> purpose/project -> keywords
   const parts = [
+    file.analysis?.summary, // Rich 1-2 sentence semantic summary - highest signal
+    file.analysis?.entity, // Document provider (e.g., "Amazon", "Chase Bank")
+    file.analysis?.type, // Document type (e.g., "Invoice", "Statement")
     file.name,
     file.extension,
     file.analysis?.project,

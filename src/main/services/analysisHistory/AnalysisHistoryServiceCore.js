@@ -12,6 +12,7 @@ const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
 const { LIMITS } = require('../../../shared/performanceConstants');
+const { CircuitBreaker } = require('../../utils/CircuitBreaker');
 
 // Import decomposed modules
 const {
@@ -99,6 +100,18 @@ class AnalysisHistoryServiceCore {
     // FIX: Callback for cascade orphan marking when entries are removed
     // Set via setOnEntriesRemovedCallback from ServiceIntegration
     this._onEntriesRemovedCallback = null;
+
+    // Fix 9: Write Queue Batching
+    this._pendingWrites = [];
+    this._writeBufferTimer = null;
+    this.WRITE_BUFFER_MS = 100;
+
+    // Circuit Breaker for file system operations
+    this.circuitBreaker = new CircuitBreaker('AnalysisHistoryService', {
+      failureThreshold: 3,
+      timeout: 5000,
+      resetTimeout: 10000
+    });
   }
 
   /**
@@ -253,17 +266,43 @@ class AnalysisHistoryServiceCore {
   }
 
   async saveHistory() {
-    await saveHistoryFile(this.historyPath, this.analysisHistory);
+    await this.circuitBreaker.execute(() =>
+      saveHistoryFile(this.historyPath, this.analysisHistory)
+    );
   }
 
   async saveIndex() {
-    await saveIndexFile(this.indexPath, this.analysisIndex);
+    await this.circuitBreaker.execute(() => saveIndexFile(this.indexPath, this.analysisIndex));
   }
 
   async recordAnalysis(fileInfo, analysisResults) {
+    // Fix 9: Buffer writes to reduce lock contention
+    return new Promise((resolve, reject) => {
+      this._pendingWrites.push({ fileInfo, analysisResults, resolve, reject });
+      this._scheduleFlush();
+    });
+  }
+
+  _scheduleFlush() {
+    if (!this._writeBufferTimer) {
+      this._writeBufferTimer = setTimeout(() => this._flushWrites(), this.WRITE_BUFFER_MS);
+    }
+    // Force flush if queue gets too large
+    if (this._pendingWrites.length >= 50) {
+      if (this._writeBufferTimer) clearTimeout(this._writeBufferTimer);
+      this._flushWrites();
+    }
+  }
+
+  async _flushWrites() {
+    this._writeBufferTimer = null;
+    if (this._pendingWrites.length === 0) return;
+
+    const batch = this._pendingWrites.splice(0, this._pendingWrites.length);
+
     await this.initialize();
 
-    // Acquire write lock to prevent concurrent modifications
+    // Acquire write lock
     while (this._writeLock) {
       await this._writeLock;
     }
@@ -275,100 +314,116 @@ class AnalysisHistoryServiceCore {
 
     try {
       const timestamp = new Date().toISOString();
-      const fileHash = generateFileHash(fileInfo.path, fileInfo.size, fileInfo.lastModified);
+      let hasChanges = false;
 
-      const analysisEntry = {
-        id: crypto.randomUUID(),
-        fileHash,
-        timestamp,
+      for (const { fileInfo, analysisResults, resolve, reject } of batch) {
+        try {
+          const fileHash = generateFileHash(fileInfo.path, fileInfo.size, fileInfo.lastModified);
 
-        // File information
-        originalPath: fileInfo.path,
-        fileName: path.basename(fileInfo.path),
-        fileExtension: path.extname(fileInfo.path).toLowerCase(),
-        fileSize: fileInfo.size,
-        lastModified: fileInfo.lastModified,
-        mimeType: fileInfo.mimeType || null,
+          const analysisEntry = {
+            id: crypto.randomUUID(),
+            fileHash,
+            timestamp,
 
-        // Analysis results
-        analysis: {
-          subject: analysisResults.subject || null,
-          category: analysisResults.category || null,
-          tags: analysisResults.tags || [],
-          confidence: analysisResults.confidence || 0,
-          summary: analysisResults.summary || null,
-          extractedText: analysisResults.extractedText || null,
-          keyEntities: analysisResults.keyEntities || [],
-          dates: analysisResults.dates || [],
-          amounts: analysisResults.amounts || [],
-          language: analysisResults.language || null,
-          sentiment: analysisResults.sentiment || null
-        },
+            // File information
+            originalPath: fileInfo.path,
+            fileName: path.basename(fileInfo.path),
+            fileExtension: path.extname(fileInfo.path).toLowerCase(),
+            fileSize: fileInfo.size,
+            lastModified: fileInfo.lastModified,
+            mimeType: fileInfo.mimeType || null,
 
-        // Processing metadata
-        processing: {
-          model: analysisResults.model || 'unknown',
-          processingTimeMs: analysisResults.processingTime || 0,
-          version: this.SCHEMA_VERSION,
-          errorCount: analysisResults.errorCount || 0,
-          warnings: analysisResults.warnings || []
-        },
+            // Analysis results
+            analysis: {
+              subject: analysisResults.subject || null,
+              category: analysisResults.category || null,
+              tags: analysisResults.tags || [],
+              confidence: analysisResults.confidence || 0,
+              summary: analysisResults.summary || null,
+              extractedText: analysisResults.extractedText || null,
+              keyEntities: analysisResults.keyEntities || [],
+              dates: analysisResults.dates || [],
+              amounts: analysisResults.amounts || [],
+              language: analysisResults.language || null,
+              sentiment: analysisResults.sentiment || null
+            },
 
-        // Organization results (if file was moved/renamed)
-        organization: {
-          suggested: analysisResults.suggestedPath || null,
-          actual: analysisResults.actualPath || null,
-          renamed: analysisResults.renamed || false,
-          newName: analysisResults.newName || null,
-          smartFolder: analysisResults.smartFolder || null
-        },
+            // Processing metadata
+            processing: {
+              model: analysisResults.model || 'unknown',
+              processingTimeMs: analysisResults.processingTime || 0,
+              version: this.SCHEMA_VERSION,
+              errorCount: analysisResults.errorCount || 0,
+              warnings: analysisResults.warnings || []
+            },
 
-        // Future expansion fields
-        embedding: null, // For RAG functionality
-        relations: [], // Related files
-        userFeedback: null, // User corrections/ratings
-        exportHistory: [], // Export/share history
-        accessCount: 0,
-        lastAccessed: timestamp
-      };
+            // Organization results (if file was moved/renamed)
+            organization: {
+              suggested: analysisResults.suggestedPath || null,
+              actual: analysisResults.actualPath || null,
+              renamed: analysisResults.renamed || false,
+              newName: analysisResults.newName || null,
+              smartFolder: analysisResults.smartFolder || null
+            },
 
-      // Store the entry
-      this.analysisHistory.entries[analysisEntry.id] = analysisEntry;
-      this.analysisHistory.totalAnalyzed++;
-      this.analysisHistory.totalSize += fileInfo.size;
-      this.analysisHistory.updatedAt = timestamp;
-      this.analysisHistory.metadata.totalEntries++;
+            // Future expansion fields
+            embedding: null, // For RAG functionality
+            relations: [], // Related files
+            userFeedback: null, // User corrections/ratings
+            exportHistory: [], // Export/share history
+            accessCount: 0,
+            lastAccessed: timestamp
+          };
 
-      // Update indexes
-      updateIndexes(this.analysisIndex, analysisEntry);
+          // Store the entry
+          this.analysisHistory.entries[analysisEntry.id] = analysisEntry;
+          this.analysisHistory.totalAnalyzed++;
+          this.analysisHistory.totalSize += fileInfo.size;
+          this.analysisHistory.metadata.totalEntries++;
 
-      // Update incremental stats (avoids full recalculation)
-      updateIncrementalStatsOnAdd(this._cache, analysisEntry);
+          // Update indexes
+          updateIndexes(this.analysisIndex, analysisEntry);
 
-      // Invalidate relevant caches (surgical invalidation, not full)
-      invalidateCachesOnAdd(this._cache);
+          // Update incremental stats (avoids full recalculation)
+          updateIncrementalStatsOnAdd(this._cache, analysisEntry);
 
-      // Save to disk
-      const saveResults = await Promise.allSettled([this.saveHistory(), this.saveIndex()]);
-      saveResults.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          logger.warn(`[ANALYSIS-HISTORY] Save operation ${index} failed:`, result.reason?.message);
+          resolve(analysisEntry.id);
+          hasChanges = true;
+        } catch (err) {
+          logger.error('[AnalysisHistoryService] Error processing batched item:', err);
+          reject(err);
         }
-      });
+      }
 
-      // Cleanup if needed - FIX: Pass onEntriesRemoved callback for cascade orphan marking
-      await performMaintenanceIfNeeded(
-        this.analysisHistory,
-        this.analysisIndex,
-        this._cache,
-        this,
-        this.config,
-        () => this.saveHistory(),
-        () => this.saveIndex(),
-        { onEntriesRemoved: this._onEntriesRemovedCallback }
-      );
+      if (hasChanges) {
+        this.analysisHistory.updatedAt = timestamp;
 
-      return analysisEntry.id;
+        // Invalidate relevant caches (surgical invalidation, not full)
+        invalidateCachesOnAdd(this._cache);
+
+        // Save to disk
+        const saveResults = await Promise.allSettled([this.saveHistory(), this.saveIndex()]);
+        saveResults.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            logger.warn(
+              `[ANALYSIS-HISTORY] Save operation ${index} failed:`,
+              result.reason?.message
+            );
+          }
+        });
+
+        // Cleanup if needed
+        await performMaintenanceIfNeeded(
+          this.analysisHistory,
+          this.analysisIndex,
+          this._cache,
+          this,
+          this.config,
+          () => this.saveHistory(),
+          () => this.saveIndex(),
+          { onEntriesRemoved: this._onEntriesRemovedCallback }
+        );
+      }
     } finally {
       // Release write lock
       this._writeLock = null;
@@ -542,6 +597,9 @@ class AnalysisHistoryServiceCore {
           if (update.newName) {
             entry.organization.newName = update.newName;
             entry.organization.renamed = true;
+            // Also update the base fileName field for BM25 index consistency
+            // This ensures searches find the file by its new name immediately
+            entry.fileName = update.newName;
           }
 
           // FIX: Update the path index for fast lookups by new path
@@ -642,6 +700,108 @@ class AnalysisHistoryServiceCore {
       }
 
       return { removed: removedEntries.length };
+    } finally {
+      this._writeLock = null;
+      releaseLock();
+    }
+  }
+
+  /**
+   * Clone an analysis history entry for a copied file.
+   * This creates a new entry for the destination with the same analysis data.
+   *
+   * @param {string} sourcePath - Original file path
+   * @param {string} destPath - Copied file path
+   * @returns {Promise<{success: boolean, cloned?: boolean, error?: string}>}
+   */
+  async cloneEntryForCopy(sourcePath, destPath) {
+    await this.initialize();
+
+    if (!sourcePath || !destPath) {
+      return { success: false, error: 'Source and destination paths required' };
+    }
+
+    // Find the source entry
+    const sourceEntry = await this.getAnalysisByPath(sourcePath);
+    if (!sourceEntry) {
+      // No analysis history for source file - not an error, just nothing to clone
+      return { success: true, cloned: false };
+    }
+
+    // Acquire write lock
+    while (this._writeLock) {
+      await this._writeLock;
+    }
+    let releaseLock;
+    this._writeLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+
+    try {
+      // Generate new ID and file hash for the copy
+      const newId = crypto.randomUUID();
+      const destStats = await require('fs')
+        .promises.stat(destPath)
+        .catch(() => null);
+      const newFileHash = generateFileHash(
+        destPath,
+        destStats?.size || sourceEntry.fileSize,
+        destStats?.mtimeMs || Date.now()
+      );
+
+      // Clone the entry with new path information
+      const clonedEntry = {
+        ...sourceEntry,
+        id: newId,
+        fileHash: newFileHash,
+        originalPath: destPath,
+        fileName: path.basename(destPath),
+        timestamp: new Date().toISOString(),
+        lastModified: destStats?.mtimeMs || Date.now(),
+        fileSize: destStats?.size || sourceEntry.fileSize,
+        // Reset organization since this is a new file
+        organization: {
+          suggested: sourceEntry.organization?.suggested || null,
+          actual: destPath,
+          renamed: false,
+          newName: null,
+          smartFolder: sourceEntry.organization?.smartFolder || null
+        },
+        // Mark as cloned for audit purposes
+        processing: {
+          ...sourceEntry.processing,
+          clonedFrom: sourcePath,
+          clonedAt: new Date().toISOString()
+        }
+      };
+
+      // Add to entries
+      this.analysisHistory.entries[newId] = clonedEntry;
+
+      // Update indexes
+      updateIndexes(this.analysisIndex, clonedEntry);
+      updateIncrementalStatsOnAdd(this._cache, clonedEntry);
+      invalidateCachesOnAdd(this._cache, this);
+
+      // Save to disk
+      this.analysisHistory.updatedAt = new Date().toISOString();
+      await this.saveHistory();
+      await this.saveIndex();
+
+      logger.info('[AnalysisHistoryService] Cloned entry for copied file', {
+        source: sourcePath,
+        dest: destPath,
+        newId
+      });
+
+      return { success: true, cloned: true, newId };
+    } catch (error) {
+      logger.error('[AnalysisHistoryService] Failed to clone entry for copy', {
+        error: error.message,
+        source: sourcePath,
+        dest: destPath
+      });
+      return { success: false, error: error.message };
     } finally {
       this._writeLock = null;
       releaseLock();

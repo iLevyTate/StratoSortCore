@@ -145,10 +145,14 @@ async function checkServiceHealthWithRecovery(
       let chromaDbService = null;
       try {
         chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
-      } catch {
+      } catch (resolveError) {
         try {
           chromaDbService = require('../chromadb').getInstance();
-        } catch {
+        } catch (requireError) {
+          logger.debug('[HEALTH] Failed to get ChromaDB instance', {
+            resolveError: resolveError.message,
+            requireError: requireError.message
+          });
           chromaDbService = null;
         }
       }
@@ -227,7 +231,11 @@ async function checkServiceHealthWithRecovery(
               const parsed = new URL(baseUrl);
               host = parsed.hostname || host;
               port = Number(parsed.port) || port;
-            } catch {
+            } catch (error) {
+              logger.debug('[HEALTH] Failed to parse Ollama URL', {
+                baseUrl,
+                error: error.message
+              });
               // ignore parse errors
             }
 

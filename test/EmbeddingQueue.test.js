@@ -65,6 +65,9 @@ jest.mock('../src/shared/performanceConstants', () => ({
   },
   CONCURRENCY: {
     EMBEDDING_FLUSH: 3
+  },
+  TIMEOUTS: {
+    MUTEX_ACQUIRE: 5000
   }
 }));
 

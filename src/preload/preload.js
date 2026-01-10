@@ -17,6 +17,7 @@ preloadLogger.setLevel(
 );
 
 const log = {
+  debug: (message, data) => preloadLogger.debug(message, data),
   info: (message, data) => preloadLogger.info(message, data),
   warn: (message, data) => preloadLogger.warn(message, data),
   error: (message, error) => {
@@ -140,7 +141,15 @@ class SecureIPCManager {
       // Argument sanitization
       const sanitizedArgs = this.sanitizeArguments(args);
 
-      log.info(`Secure invoke: ${channel}${sanitizedArgs.length > 0 ? ' [with args]' : ''}`);
+      // Reduce log noise for high-frequency polling channels
+      if (channel === IPC_CHANNELS.EMBEDDINGS.GET_STATS) {
+        // Only log at debug level for stats polling
+        if (process.env.NODE_ENV === 'development') {
+          log.debug(`Secure invoke: ${channel}`);
+        }
+      } else {
+        log.info(`Secure invoke: ${channel}${sanitizedArgs.length > 0 ? ' [with args]' : ''}`);
+      }
 
       // Add retry logic for handler not registered errors
       // 5 attempts with exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms (total ~3.1s)
@@ -682,20 +691,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rebuildFolders: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS),
     rebuildFiles: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES),
     fullRebuild: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FULL_REBUILD),
-    reanalyzeAll: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL),
+    reanalyzeAll: (options) => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REANALYZE_ALL, options),
     clearStore: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_STORE),
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
     // Enhanced search with hybrid BM25 + vector fusion
-    // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore, chunkWeight, chunkTopK }
+    // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore, chunkWeight, chunkTopK, ... }
     search: (query, options = {}) => {
-      const { topK = 20, mode = 'hybrid', minScore, chunkWeight, chunkTopK } = options;
+      const {
+        topK = 20,
+        mode = 'hybrid',
+        minScore,
+        chunkWeight,
+        chunkTopK,
+        correctSpelling,
+        expandSynonyms,
+        rerank,
+        rerankTopN
+      } = options;
+
       return secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
         query,
         topK,
         mode,
+        // Optional numerical/boolean parameters
         ...(typeof minScore === 'number' && { minScore }),
         ...(typeof chunkWeight === 'number' && { chunkWeight }),
-        ...(Number.isInteger(chunkTopK) && { chunkTopK })
+        ...(Number.isInteger(chunkTopK) && { chunkTopK }),
+        ...(typeof correctSpelling === 'boolean' && { correctSpelling }),
+        ...(typeof expandSynonyms === 'boolean' && { expandSynonyms }),
+        ...(typeof rerank === 'boolean' && { rerank }),
+        ...(Number.isInteger(rerankTopN) && { rerankTopN })
       });
     },
     scoreFiles: (query, fileIds) =>
@@ -711,6 +736,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // NOTE: hybridSearch removed - use search() with mode: 'hybrid' instead
     rebuildBM25Index: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX),
     getSearchStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS),
+    // Diagnostic endpoint for troubleshooting search issues
+    diagnoseSearch: (testQuery = 'test') =>
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.DIAGNOSE_SEARCH, { testQuery }),
     // Multi-hop expansion
     findMultiHop: (seedIds, options = {}) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_MULTI_HOP, {

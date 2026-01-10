@@ -41,18 +41,31 @@ jest.mock('../src/main/services/PerformanceService', () => ({
   buildOllamaOptions: jest.fn().mockResolvedValue({ num_gpu: -1, main_gpu: 0 })
 }));
 
-// Mock OllamaService
-const mockOllamaServiceInstance = {
-  generateEmbedding: jest.fn().mockResolvedValue({ vector: [0.1, 0.2, 0.3], model: 'test-model' })
-};
-jest.mock('../src/main/services/OllamaService', () => ({
-  getInstance: jest.fn(() => mockOllamaServiceInstance)
-}));
+// Mock OllamaService - define inside factory to survive jest.resetModules()
+jest.mock('../src/main/services/OllamaService', () => {
+  const mockInstance = {
+    generateEmbedding: jest.fn().mockResolvedValue({
+      success: true,
+      vector: [0.1, 0.2, 0.3],
+      model: 'mxbai-embed-large'
+    }),
+    getClient: jest.fn().mockReturnValue({ isHealthy: true })
+  };
+  return {
+    getInstance: jest.fn(() => mockInstance),
+    __mockInstance: mockInstance // Expose for test access
+  };
+});
+
+// Get reference to mock instance after module load
+const getMockOllamaServiceInstance = () =>
+  require('../src/main/services/OllamaService').__mockInstance;
 
 describe('ParallelEmbeddingService', () => {
   let ParallelEmbeddingService;
   let getInstance;
   let resetInstance;
+  let mockOllamaServiceInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -61,6 +74,9 @@ describe('ParallelEmbeddingService', () => {
     // New API uses embed() with embeddings array response
     mockOllama.embed.mockResolvedValue({ embeddings: [[0.1, 0.2, 0.3]] });
     mockOllama.list.mockResolvedValue({ models: [] });
+
+    // Get fresh mock instance after resetModules
+    mockOllamaServiceInstance = getMockOllamaServiceInstance();
     // Reset OllamaService mock to success
     mockOllamaServiceInstance.generateEmbedding.mockResolvedValue({
       success: true,

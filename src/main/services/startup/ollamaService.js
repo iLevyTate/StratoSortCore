@@ -37,7 +37,8 @@ async function isOllamaRunning() {
       }
     );
     return response.status === 200;
-  } catch {
+  } catch (error) {
+    logger.debug('[STARTUP] Ollama is not running', { error: error.message });
     return false;
   }
 }
@@ -197,7 +198,10 @@ async function startOllama({ serviceStatus }) {
     cleanupListeners();
     try {
       ollamaProcess.kill();
-    } catch {
+    } catch (killError) {
+      logger.debug('[Ollama] Process kill failed (likely already dead)', {
+        error: killError.message
+      });
       // Process may have already exited
     }
     return { process: null, external: true, portInUse: true };

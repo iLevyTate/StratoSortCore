@@ -405,8 +405,27 @@ function getIntelligentKeywords(fileName, extension) {
 function safeSuggestedName(fileName, extension) {
   // CRITICAL FIX: Comprehensive input sanitization to prevent file system issues
 
-  // Strip extension, sanitize the base name, then add extension back
+  // If the filename is already just the extension or empty, use a default topic
+  if (!fileName || fileName === extension) {
+    return `unnamed_file${extension}`;
+  }
+
+  // Strip extension, sanitize the base name
   let nameWithoutExt = fileName.replace(extension, '');
+
+  // Try to extract a topic from the existing filename if it's descriptive
+  // Split by common separators
+  const parts = nameWithoutExt.split(/[_\-.\s]+/);
+  // Take first 1-3 significant words (skip overly short ones like "a", "the", numbers unless relevant)
+  const meaningfulParts = parts.filter((p) => p && p.length > 2 && !/^\d+$/.test(p));
+
+  if (meaningfulParts.length > 0) {
+    // Reassemble first 3 parts
+    nameWithoutExt = meaningfulParts.slice(0, 3).join('_');
+  } else {
+    // Fallback: just clean the original name
+    nameWithoutExt = nameWithoutExt.trim();
+  }
 
   // CRITICAL FIX: Handle reserved Windows file names
   const reservedNames = [

@@ -457,6 +457,65 @@ function prepareFolderMetadata(folder) {
   return sanitizeMetadata(metadata);
 }
 
+/**
+ * Normalize a file path for use as an index key
+ * Ensures consistent lookups across case-sensitive and case-insensitive filesystems
+ *
+ * On Windows (case-insensitive): converts path to lowercase
+ * On Unix (case-sensitive): preserves original case
+ *
+ * This is critical for BM25 index, ChromaDB lookups, and analysis history
+ * to ensure renamed/moved files are found consistently.
+ *
+ * @param {string} filePath - The file path to normalize for indexing
+ * @returns {string} Normalized path suitable for use as a lookup key
+ */
+function normalizePathForIndex(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return '';
+  }
+
+  // First apply standard normalization (resolve . and ..)
+  let normalized = path.normalize(filePath);
+
+  // On Windows, lowercase for case-insensitive comparison
+  if (os.platform() === 'win32') {
+    normalized = normalized.toLowerCase();
+  }
+
+  // Use forward slashes for canonical IDs to avoid platform-specific separators
+  normalized = normalized.replace(/\\/g, '/');
+
+  return normalized;
+}
+
+/**
+ * Create a canonical file ID for use in search indexes and ChromaDB
+ * Format: "file:{normalizedPath}" or "image:{normalizedPath}"
+ *
+ * Uses normalizePathForIndex for consistent lookups on case-insensitive filesystems
+ *
+ * @param {string} filePath - The file path
+ * @param {boolean} [isImage=false] - Whether this is an image file
+ * @returns {string} Canonical ID in format "file:{path}" or "image:{path}"
+ */
+function getCanonicalFileId(filePath, isImage = false) {
+  const normalizedPath = normalizePathForIndex(filePath);
+  const prefix = isImage ? 'image' : 'file';
+  return `${prefix}:${normalizedPath}`;
+}
+
+/**
+ * Check if two file paths refer to the same file (accounting for case sensitivity)
+ *
+ * @param {string} path1 - First file path
+ * @param {string} path2 - Second file path
+ * @returns {boolean} True if paths are equivalent on the current platform
+ */
+function arePathsEquivalent(path1, path2) {
+  return normalizePathForIndex(path1) === normalizePathForIndex(path2);
+}
+
 module.exports = {
   sanitizePath,
   isPathSafe,
@@ -469,5 +528,9 @@ module.exports = {
   validateFileOperationPathSync,
   checkSymlinkSafety,
   isPathDangerous,
-  isPathWithinAllowed
+  isPathWithinAllowed,
+  // Path normalization for index keys
+  normalizePathForIndex,
+  getCanonicalFileId,
+  arePathsEquivalent
 };

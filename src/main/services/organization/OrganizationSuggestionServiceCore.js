@@ -545,6 +545,7 @@ class OrganizationSuggestionServiceCore {
 
   /**
    * Get semantic folder matches using embeddings
+   * Weights match scores by analysis confidence - low-confidence analyses produce lower folder match scores
    */
   async getSemanticFolderMatches(file, smartFolders) {
     try {
@@ -562,18 +563,29 @@ class OrganizationSuggestionServiceCore {
         this.config.topKSemanticMatches
       );
 
+      // Get analysis confidence (0-100 scale, default to 70 if not available)
+      // Use it to dampen match scores - unreliable analysis shouldn't drive strong matches
+      const analysisConfidence = file.analysis?.confidence ?? 70;
+      const confidenceMultiplier = analysisConfidence / 100;
+
       const suggestions = [];
       for (const match of matches) {
         const smartFolder = smartFolders.find(
           (f) => f.id === match.folderId || f.name === match.name || f.path === match.path
         );
 
-        if (smartFolder || match.score > this.config.semanticMatchThreshold) {
+        // Weight the match score by analysis confidence
+        // High-confidence analysis (90%) keeps most of score, low-confidence (40%) is dampened
+        const weightedScore = match.score * confidenceMultiplier;
+
+        if (smartFolder || weightedScore > this.config.semanticMatchThreshold) {
           suggestions.push({
             folder: smartFolder?.name || match.name,
             path: smartFolder?.path || match.path,
-            score: match.score,
-            confidence: match.score,
+            score: weightedScore,
+            confidence: weightedScore,
+            baseScore: match.score,
+            analysisConfidence,
             description: smartFolder?.description || match.description,
             method: 'semantic_embedding',
             isSmartFolder: !!smartFolder

@@ -44,6 +44,7 @@ import {
 } from './organize/useFileEditing';
 import { useOrganization } from './organize/useOrganization';
 import { setFileStates as setFileStatesAction } from '../store/slices/filesSlice';
+import { updateAnalysisResult } from '../store/slices/analysisSlice';
 
 logger.setContext('OrganizePhase');
 
@@ -88,10 +89,7 @@ function OrganizePhase() {
   // File state display
   const { getFileStateDisplay } = useFileStateDisplay(fileStates);
 
-  // File editing
-  const { editingFiles, setEditingFiles, handleEditFile, getFileWithEdits } = useFileEditing();
-
-  // Processed files tracking
+  // Processed files tracking needed before filtering
   const {
     setProcessedFileIds,
     markFilesAsProcessed,
@@ -101,7 +99,6 @@ function OrganizePhase() {
   } = useProcessedFiles(organizedFiles);
 
   // FIX Issue-5/6: Sync processedFileIds when organizedFiles changes (handles undo/redo)
-  // This ensures the UI updates correctly when files are undone/redone
   useEffect(() => {
     if (!organizedFiles || organizedFiles.length === 0) {
       setProcessedFileIds(new Set());
@@ -112,11 +109,34 @@ function OrganizePhase() {
     }
   }, [organizedFiles, setProcessedFileIds, normalizePath]);
 
-  // Compute filtered files
+  // Compute filtered files first so we can use them in editing callback
   const { unprocessedFiles, processedFiles } = useMemo(
     () => getFilteredFiles(filesWithAnalysis),
     [getFilteredFiles, filesWithAnalysis]
   );
+
+  // Callback to sync edits to Redux for global consistency (fixes "Analysis" view mismatch)
+  const handleEditChange = useCallback(
+    (index, field, value) => {
+      const file = unprocessedFiles[index];
+      if (file && file.path) {
+        // Sync category changes immediately so they reflect in other views
+        if (field === 'category') {
+          dispatch(updateAnalysisResult({ path: file.path, changes: { category: value } }));
+        }
+        // Sync name changes (could be debounced if performance becomes an issue)
+        if (field === 'suggestedName') {
+          dispatch(updateAnalysisResult({ path: file.path, changes: { suggestedName: value } }));
+        }
+      }
+    },
+    [unprocessedFiles, dispatch]
+  );
+
+  // File editing
+  const { editingFiles, setEditingFiles, handleEditFile, getFileWithEdits } = useFileEditing({
+    onEditChange: handleEditChange
+  });
 
   // File selection
   const { selectedFiles, setSelectedFiles, toggleFileSelection, selectAllFiles } = useFileSelection(

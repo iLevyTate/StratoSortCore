@@ -33,11 +33,12 @@ async function applySettingsToServices(
   merged,
   { setOllamaHost, setOllamaModel, setOllamaVisionModel, setOllamaEmbeddingModel, logger }
 ) {
-  if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost);
-  if (merged.textModel) await setOllamaModel(merged.textModel);
-  if (merged.visionModel) await setOllamaVisionModel(merged.visionModel);
+  // FIX: Pass false to skip saving to settings file, as we are already in a save operation
+  if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost, false);
+  if (merged.textModel) await setOllamaModel(merged.textModel, false);
+  if (merged.visionModel) await setOllamaVisionModel(merged.visionModel, false);
   if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function') {
-    await setOllamaEmbeddingModel(merged.embeddingModel);
+    await setOllamaEmbeddingModel(merged.embeddingModel, false);
   }
   if (typeof merged.launchOnStartup === 'boolean') {
     try {
@@ -163,6 +164,7 @@ function validateImportedSettings(settings, logger) {
       case 'autoUpdateOllama':
       case 'autoUpdateChromaDb':
       case 'dependencyWizardShown':
+      case 'autoChunkOnAnalysis':
         if (typeof value !== 'boolean') {
           throw new Error(`Invalid ${key}: must be boolean`);
         }
@@ -319,6 +321,20 @@ async function handleSettingsSaveCore(settings, deps) {
       logger
     });
     logger.info('[SETTINGS] Saved settings');
+
+    // Invalidate notification service cache to ensure new settings take effect immediately
+    // This prevents the 5-second TTL cache from causing stale notification behavior
+    try {
+      const NotificationService = require('../services/NotificationService');
+      const notificationService = NotificationService.getInstance?.();
+      if (notificationService?.invalidateCache) {
+        notificationService.invalidateCache();
+        logger.debug('[SETTINGS] Notification service cache invalidated');
+      }
+    } catch (notifyErr) {
+      // Non-fatal - notification service may not be initialized yet
+      logger.debug('[SETTINGS] Could not invalidate notification cache:', notifyErr.message);
+    }
 
     // Enhanced settings propagation with error logging
     let propagationSuccess = true;

@@ -79,6 +79,17 @@ const filesSlice = createSlice({
         delete state.fileStates[action.payload];
       }
     },
+    removeSelectedFiles: (state, action) => {
+      if (!Array.isArray(action.payload)) return;
+      const pathsToRemove = new Set(action.payload);
+      state.selectedFiles = state.selectedFiles.filter((f) => !pathsToRemove.has(f.path));
+      // Batch cleanup file states
+      action.payload.forEach((path) => {
+        if (state.fileStates[path]) {
+          delete state.fileStates[path];
+        }
+      });
+    },
     updateFileState: (state, action) => {
       const { path, state: fileState, metadata } = action.payload;
       state.fileStates[path] = {
@@ -176,6 +187,7 @@ export const {
   setSelectedFiles,
   addSelectedFiles,
   removeSelectedFile,
+  removeSelectedFiles,
   updateFileState,
   setFileStates,
   setSmartFolders,

@@ -120,6 +120,16 @@ export const selectFilesWithAnalysis = createSelector(
       return files; // Return original reference for empty arrays
     }
 
+    // Fix 7: Check if any files need extension extraction
+    const hasAnalysis = Array.isArray(analysisResults) && analysisResults.length > 0;
+    const hasStates = fileStates && Object.keys(fileStates).length > 0;
+    const needsExtensionExtraction = files.some((file) => !file.extension && file.path);
+
+    // Early exit only if no data to merge AND all extensions are already set
+    if (!hasAnalysis && !hasStates && !needsExtensionExtraction) {
+      return files;
+    }
+
     // Create a map for O(1) lookup of analysis results by path
     const analysisMap = new Map();
     if (Array.isArray(analysisResults)) {

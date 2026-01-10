@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import Button from '../ui/Button';
+import Switch from '../ui/Switch';
 import { logger } from '../../../shared/logger';
 import { useAppSelector } from '../../store/hooks';
 
@@ -15,6 +16,7 @@ function EmbeddingRebuildSection({ addNotification }) {
   const [stats, setStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [applyNamingOnReanalyze, setApplyNamingOnReanalyze] = useState(false);
 
   const isAnalyzing = useAppSelector((state) => Boolean(state?.analysis?.isAnalyzing));
   const analysisProgress = useAppSelector((state) => state?.analysis?.analysisProgress);
@@ -27,12 +29,13 @@ function EmbeddingRebuildSection({ addNotification }) {
     try {
       const res = await window.electronAPI.embeddings.getStats();
       // FIX: Better logging to diagnose embedding count issues
-      logger.debug('[EmbeddingRebuildSection] getStats response', {
-        success: res?.success,
-        files: res?.files,
-        folders: res?.folders,
-        error: res?.error
-      });
+      // Reduced verbosity to prevent log spam during polling
+      // logger.debug('[EmbeddingRebuildSection] getStats response', {
+      //   success: res?.success,
+      //   files: res?.files,
+      //   folders: res?.folders,
+      //   error: res?.error
+      // });
       if (res && res.success) {
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
@@ -59,25 +62,63 @@ function EmbeddingRebuildSection({ addNotification }) {
   }, []);
 
   useEffect(() => {
-    // Avoid unhandled promise rejections and ensure the interval gets cleared if refresh fails unexpectedly.
-    refreshStats().catch((err) => {
-      logger.debug('[EmbeddingRebuildSection] Initial stats refresh failed', {
-        error: err?.message
-      });
-    });
+    let timerId;
+    let errorCount = 0;
+    let isMounted = true;
 
-    // FIX: Auto-refresh stats periodically while component is mounted
-    // This ensures the count updates after embeddings are added
-    const intervalId = setInterval(() => {
-      refreshStats().catch((err) => {
-        logger.debug('[EmbeddingRebuildSection] Periodic stats refresh failed; stopping refresh', {
+    // Helper for scheduling next update with backoff and visibility check
+    const scheduleNext = () => {
+      if (!isMounted) return;
+
+      // Exponential backoff: 5s, 10s, 20s... max 60s
+      const delay = Math.min(5000 * 2 ** errorCount, 60000);
+
+      timerId = setTimeout(() => {
+        if (!isMounted) return;
+
+        // Fix: Stop polling when tab/window is not visible
+        if (document.hidden) {
+          // If hidden, just wait standard delay and check again
+          scheduleNext();
+          return;
+        }
+
+        refreshStats()
+          .then(() => {
+            if (isMounted) {
+              errorCount = 0;
+              scheduleNext();
+            }
+          })
+          .catch((err) => {
+            if (isMounted) {
+              logger.debug('[EmbeddingRebuildSection] Stats refresh failed', {
+                error: err?.message,
+                nextRetryMs: delay * 2
+              });
+              errorCount++;
+              scheduleNext();
+            }
+          });
+      }, delay);
+    };
+
+    // Initial load
+    refreshStats()
+      .catch((err) => {
+        logger.debug('[EmbeddingRebuildSection] Initial stats refresh failed', {
           error: err?.message
         });
-        clearInterval(intervalId);
+      })
+      .finally(() => {
+        // Start polling loop
+        if (isMounted) scheduleNext();
       });
-    }, 5000); // Refresh every 5 seconds
 
-    return () => clearInterval(intervalId);
+    return () => {
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
+    };
   }, [refreshStats]);
 
   const statsLabel = useMemo(() => {
@@ -205,7 +246,9 @@ function EmbeddingRebuildSection({ addNotification }) {
     try {
       setIsReanalyzingAll(true);
       addNotification('Starting reanalysis of all files... This may take a while.', 'info');
-      const res = await window.electronAPI.embeddings.reanalyzeAll();
+      const res = await window.electronAPI.embeddings.reanalyzeAll({
+        applyNaming: applyNamingOnReanalyze
+      });
       if (res?.success) {
         addNotification(
           `Queued ${res.queued} files for reanalysis. Analysis will run in the background.`,
@@ -235,7 +278,7 @@ function EmbeddingRebuildSection({ addNotification }) {
       setIsReanalyzingAll(false);
       refreshStats();
     }
-  }, [addNotification, refreshStats]);
+  }, [addNotification, refreshStats, applyNamingOnReanalyze]);
 
   const analysisIsActive = Boolean(isAnalyzing && (analysisProgress?.total || 0) > 0);
   const analysisCurrent = Number.isFinite(analysisProgress?.current) ? analysisProgress.current : 0;
@@ -344,6 +387,32 @@ function EmbeddingRebuildSection({ addNotification }) {
                 every file with the LLM. Use this only if you changed the <em>Text/Vision Model</em>{' '}
                 (not just the embedding model).
               </p>
+              <div className="mb-3">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="apply-naming-on-reanalyze"
+                    checked={applyNamingOnReanalyze}
+                    onChange={setApplyNamingOnReanalyze}
+                    disabled={
+                      isReanalyzingAll ||
+                      analysisIsActive ||
+                      isFullRebuilding ||
+                      isRebuildingFolders ||
+                      isRebuildingFiles
+                    }
+                  />
+                  <label
+                    htmlFor="apply-naming-on-reanalyze"
+                    className="text-sm font-medium text-system-gray-700"
+                  >
+                    Apply naming conventions to files during reanalysis
+                  </label>
+                </div>
+                <p className="text-xs text-system-gray-400 mt-1 ml-14">
+                  When enabled, files will be renamed according to your naming convention settings.
+                  When disabled, original file names will be preserved.
+                </p>
+              </div>
               <Button
                 onClick={handleReanalyzeAll}
                 variant="danger"

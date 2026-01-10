@@ -18,6 +18,7 @@ function normalizeOllamaModelName(name) {
 
 // Unique ID counter for log entries (prevents key collisions)
 let logIdCounter = 0;
+const MAX_LOG_ENTRIES = 50;
 
 // Status badge component
 function StatusBadge({ status, label }) {
@@ -67,7 +68,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
   // Helper to add a log entry
   const addLogEntry = useCallback((text) => {
-    setLogLines((prev) => [...prev.slice(-20), { id: ++logIdCounter, text }]);
+    setLogLines((prev) => [...prev, { id: ++logIdCounter, text }].slice(-MAX_LOG_ENTRIES));
   }, []);
 
   // Memoized refresh function - stable reference for use in effects
@@ -151,7 +152,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
             if (evt.type !== 'dependency' && evt.type !== 'ollama-pull') return;
 
             setLogLines((prev) => {
-              const next = prev.slice(-20);
+              const next = [...prev];
               if (evt.type === 'dependency') {
                 const dep = evt.dependency ? `(${evt.dependency}) ` : '';
                 next.push({ id: ++logIdCounter, text: `${dep}${evt.message || 'Working…'}` });
@@ -170,7 +171,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   text: `(ollama) Downloading ${evt.model}${pct !== null ? ` ${pct}%` : ''}`
                 });
               }
-              return next;
+              return next.slice(-MAX_LOG_ENTRIES);
             });
           } catch (e) {
             logger.debug('Progress handler error', { error: e?.message });
@@ -192,10 +193,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               evt.status === 'permanently_failed'
                 ? `${evt.service} permanently failed (circuit breaker tripped)`
                 : `${evt.service} is now ${evt.status}`;
-            setLogLines((prev) => [
-              ...prev.slice(-20),
-              { id: ++logIdCounter, text: `[status] ${statusMsg}` }
-            ]);
+            setLogLines((prev) =>
+              [...prev, { id: ++logIdCounter, text: `[status] ${statusMsg}` }].slice(
+                -MAX_LOG_ENTRIES
+              )
+            );
             // Auto-refresh status to update UI
             refresh();
           } catch (e) {

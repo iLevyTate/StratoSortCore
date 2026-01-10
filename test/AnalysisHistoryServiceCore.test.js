@@ -241,18 +241,37 @@ describe('AnalysisHistoryServiceCore', () => {
     };
 
     beforeEach(async () => {
+      jest.useFakeTimers();
       await service.initialize();
     });
 
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    // Helper to flush write buffer - need to run timers and allow async to complete
+    const flushWriteBuffer = async () => {
+      // Run all pending timers
+      jest.runAllTimers();
+      // Allow microtasks to flush using Promise.resolve chain
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+
     test('records analysis entry', async () => {
-      const id = await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      const id = await recordPromise;
 
       expect(id).toBeDefined();
       expect(typeof id).toBe('string');
     });
 
     test('updates history totals', async () => {
-      await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      await recordPromise;
 
       expect(service.analysisHistory.totalAnalyzed).toBe(1);
       expect(service.analysisHistory.totalSize).toBe(1024);
@@ -261,7 +280,9 @@ describe('AnalysisHistoryServiceCore', () => {
     test('updates indexes', async () => {
       const { updateIndexes } = require('../src/main/services/analysisHistory/indexManager');
 
-      await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      await recordPromise;
 
       expect(updateIndexes).toHaveBeenCalled();
     });
@@ -271,7 +292,9 @@ describe('AnalysisHistoryServiceCore', () => {
         invalidateCachesOnAdd
       } = require('../src/main/services/analysisHistory/cacheManager');
 
-      await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      await recordPromise;
 
       expect(invalidateCachesOnAdd).toHaveBeenCalled();
     });
@@ -282,7 +305,9 @@ describe('AnalysisHistoryServiceCore', () => {
         saveIndex
       } = require('../src/main/services/analysisHistory/persistence');
 
-      await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      await recordPromise;
 
       expect(saveHistory).toHaveBeenCalled();
       expect(saveIndex).toHaveBeenCalled();
@@ -293,7 +318,9 @@ describe('AnalysisHistoryServiceCore', () => {
         performMaintenanceIfNeeded
       } = require('../src/main/services/analysisHistory/maintenance');
 
-      await service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      await recordPromise;
 
       expect(performMaintenanceIfNeeded).toHaveBeenCalled();
     });

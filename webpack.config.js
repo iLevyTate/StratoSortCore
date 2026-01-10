@@ -24,7 +24,7 @@ module.exports = (env, argv) => {
       publicPath: './',
       globalObject: 'globalThis'
     },
-    target: 'electron-renderer',
+    target: 'web',
     module: {
       rules: [
         {
@@ -98,12 +98,12 @@ module.exports = (env, argv) => {
         assert: require.resolve('assert'),
         fs: false,
         child_process: false,
-        worker_threads: false
+        worker_threads: false,
+        async_hooks: false,
+        vm: false
       }
     },
-    externals: {
-      electron: 'require("electron")'
-    },
+    externals: {},
     plugins: [
       new HtmlWebpackPlugin({
         template: './src/renderer/index.html',
@@ -159,6 +159,12 @@ module.exports = (env, argv) => {
         },
 
     // Performance optimizations
+    performance: {
+      hints: isProduction ? 'warning' : false,
+      maxEntrypointSize: 5120000, // 5MB (relaxed for Electron/Desktop)
+      maxAssetSize: 5120000 // 5MB
+    },
+
     cache: {
       type: 'filesystem',
       buildDependencies: {
