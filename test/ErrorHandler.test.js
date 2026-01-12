@@ -51,7 +51,9 @@ jest.mock('../src/shared/logger', () => ({
     warn: jest.fn(),
     error: jest.fn(),
     log: jest.fn()
-  }
+  },
+  // sanitizeLogData is used by ErrorHandler.js
+  sanitizeLogData: jest.fn((data) => data)
 }));
 
 // Mock constants

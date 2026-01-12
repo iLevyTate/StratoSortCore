@@ -24,7 +24,10 @@ jest.mock('electron', () => ({
 // Mock fs
 const mockFs = {
   mkdir: jest.fn().mockResolvedValue(undefined),
-  lstat: jest.fn().mockRejectedValue({ code: 'ENOENT' })
+  lstat: jest.fn().mockRejectedValue({ code: 'ENOENT' }),
+  // FIX: Add access mock for file existence check after analysis
+  access: jest.fn().mockResolvedValue(undefined),
+  stat: jest.fn().mockResolvedValue({ size: 1000, birthtime: new Date(), mtime: new Date() })
 };
 jest.mock('fs', () => ({
   promises: mockFs
