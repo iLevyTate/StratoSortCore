@@ -5,21 +5,32 @@
  * Shows cluster label, member count, confidence, and metadata preview.
  */
 
-import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { memo, useState, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { Handle, Position } from 'reactflow';
 import {
-  Folder,
-  ChevronRight,
-  ChevronDown,
   Layers,
-  Tag,
-  FolderOpen,
-  FolderPlus,
+  Folder,
   MoreVertical,
+  FolderPlus,
   FolderInput,
-  Download
+  Download,
+  ChevronDown,
+  ChevronRight,
+  Tag,
+  FolderOpen
 } from 'lucide-react';
+import { useMenuAutoClose } from '../../hooks';
+import { getConfidenceColor, CONFIDENCE_COLORS } from '../../utils/confidenceColors';
+
+// Node sizing constants
+const NODE_SIZE = {
+  MIN_WIDTH: 180,
+  MAX_WIDTH: 280,
+  EXTRA_WIDTH_BUFFER: 40,
+  LARGE_CLUSTER_THRESHOLD: 10, // Member count above which to use larger padding
+  LOG_SCALE_DIVISOR: 2 // Divisor for logarithmic scale calculation
+};
 
 const ClusterNode = memo(({ data, selected }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -36,28 +47,19 @@ const ClusterNode = memo(({ data, selected }) => {
   const onCreateSmartFolder = data?.onCreateSmartFolder;
   const onMoveAllToFolder = data?.onMoveAllToFolder;
   const onExportFileList = data?.onExportFileList;
+  const onExpand = data?.onExpand;
+
+  // Handle expand/collapse toggle
+  const handleExpandClick = useCallback(
+    (e) => {
+      e.stopPropagation();
+      onExpand?.(data?.id || data?.clusterId);
+    },
+    [onExpand, data?.id, data?.clusterId]
+  );
 
   // Close menu when clicking outside or pressing Escape
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
-    };
-    // FIX: Add keyboard accessibility - Escape key closes menu
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [menuOpen]);
+  useMenuAutoClose(menuRef, menuOpen, () => setMenuOpen(false));
 
   const handleMenuAction = useCallback(
     (action) => {
@@ -67,22 +69,14 @@ const ClusterNode = memo(({ data, selected }) => {
     [data]
   );
 
-  // Confidence badge colors
-  const confidenceColors = {
-    high: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    medium: 'bg-blue-100 text-blue-700 border-blue-200',
-    low: 'bg-gray-100 text-gray-600 border-gray-200'
-  };
+  // Scale node size based on member count using logarithmic scale for better visual distribution
+  const scaleFactor = Math.min(1, Math.log10(memberCount + 1) / NODE_SIZE.LOG_SCALE_DIVISOR);
+  const dynamicWidth = Math.round(
+    NODE_SIZE.MIN_WIDTH + scaleFactor * (NODE_SIZE.MAX_WIDTH - NODE_SIZE.MIN_WIDTH)
+  );
 
-  // Scale node size based on member count (min: 180px, max: 280px)
-  // Uses logarithmic scale for better visual distribution
-  const baseWidth = 180;
-  const maxWidth = 280;
-  const scaleFactor = Math.min(1, Math.log10(memberCount + 1) / 2);
-  const dynamicWidth = Math.round(baseWidth + scaleFactor * (maxWidth - baseWidth));
-
-  // Scale padding slightly based on size
-  const paddingClass = memberCount > 10 ? 'px-5 py-4' : 'px-4 py-3';
+  // Scale padding based on cluster size
+  const paddingClass = memberCount > NODE_SIZE.LARGE_CLUSTER_THRESHOLD ? 'px-5 py-4' : 'px-4 py-3';
 
   return (
     <div
@@ -95,7 +89,12 @@ const ClusterNode = memo(({ data, selected }) => {
             : 'border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 hover:border-amber-400 hover:shadow-md'
         }
       `}
-      style={{ minWidth: `${dynamicWidth}px`, maxWidth: `${dynamicWidth + 40}px` }}
+      style={{
+        minWidth: `${dynamicWidth}px`,
+        maxWidth: `${dynamicWidth + NODE_SIZE.EXTRA_WIDTH_BUFFER}px`
+      }}
+      onDoubleClick={handleExpandClick}
+      title="Double-click to expand/collapse"
     >
       <Handle type="target" position={Position.Left} className="!bg-amber-500 !w-2.5 !h-2.5" />
 
@@ -181,9 +180,15 @@ const ClusterNode = memo(({ data, selected }) => {
             )}
           </div>
         )}
-        <div className="text-amber-500">
+        <button
+          onClick={handleExpandClick}
+          className="p-1 rounded hover:bg-amber-200/50 transition-colors text-amber-500"
+          title={isExpanded ? 'Collapse cluster' : 'Expand cluster'}
+          aria-label={isExpanded ? 'Collapse cluster' : 'Expand cluster'}
+          aria-expanded={isExpanded}
+        >
           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </div>
+        </button>
       </div>
 
       {/* Metadata preview section */}
@@ -191,9 +196,9 @@ const ClusterNode = memo(({ data, selected }) => {
         {/* Confidence badge */}
         <div className="flex items-center gap-1.5">
           <span
-            className={`text-[10px] px-1.5 py-0.5 rounded border ${confidenceColors[confidence]}`}
+            className={`text-[10px] px-1.5 py-0.5 rounded border ${getConfidenceColor(confidence)}`}
           >
-            {confidence === 'high' ? '●' : confidence === 'medium' ? '◐' : '○'} {confidence}
+            {CONFIDENCE_COLORS[confidence]?.dot || '○'} {confidence}
           </span>
         </div>
 
@@ -238,6 +243,8 @@ ClusterNode.displayName = 'ClusterNode';
 
 ClusterNode.propTypes = {
   data: PropTypes.shape({
+    id: PropTypes.string,
+    clusterId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     expanded: PropTypes.bool,
     memberCount: PropTypes.number,
     label: PropTypes.string,
@@ -247,7 +254,8 @@ ClusterNode.propTypes = {
     commonTags: PropTypes.arrayOf(PropTypes.string),
     onCreateSmartFolder: PropTypes.func,
     onMoveAllToFolder: PropTypes.func,
-    onExportFileList: PropTypes.func
+    onExportFileList: PropTypes.func,
+    onExpand: PropTypes.func
   }),
   selected: PropTypes.bool
 };

@@ -1,6 +1,7 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
-import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
+import { BaseEdge, getSmoothStepPath } from 'reactflow';
 import PropTypes from 'prop-types';
+import BaseEdgeTooltip from './BaseEdgeTooltip';
 
 /**
  * Custom edge component for similarity connections with hover tooltip
@@ -22,6 +23,7 @@ const SimilarityEdge = memo(
     const [isHovered, setIsHovered] = useState(false);
 
     // Get the edge path
+    // Position label 66% along the path (closer to target) for better association
     const [edgePath, labelX, labelY] = getSmoothStepPath({
       sourceX,
       sourceY,
@@ -29,7 +31,9 @@ const SimilarityEdge = memo(
       targetX,
       targetY,
       targetPosition,
-      borderRadius: 8
+      borderRadius: 8,
+      centerX: (sourceX + targetX * 2) / 3,
+      centerY: (sourceY + targetY * 2) / 3
     });
 
     const similarity = data?.similarity ?? 0;
@@ -119,110 +123,73 @@ const SimilarityEdge = memo(
         <BaseEdge id={id} path={edgePath} style={edgeStyle} markerEnd={markerEnd} />
 
         {/* Edge label and tooltip */}
-        <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan"
-            style={{
-              position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              pointerEvents: 'all',
-              zIndex: isHovered ? 1000 : 1
-            }}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-          >
-            {/* Percentage badge */}
-            <div
-              className={`
-                px-1.5 py-0.5 rounded text-[10px] font-medium cursor-pointer
-                transition-all duration-200
-                ${
-                  isHovered
-                    ? 'bg-emerald-500 text-white shadow-lg scale-110'
-                    : 'bg-emerald-100 text-emerald-700'
-                }
-              `}
-            >
-              {similarityPercent}%
-            </div>
-
-            {/* Tooltip on hover */}
-            {isHovered && (
+        <BaseEdgeTooltip
+          isHovered={isHovered}
+          labelX={labelX}
+          labelY={labelY}
+          badgeText={`${similarityPercent}%`}
+          badgeColorClass={
+            isHovered ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-700'
+          }
+          title="Connection Details"
+          headerColorClass="text-emerald-400"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          {/* Similarity score */}
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">Similarity:</span>
+            <span className="font-medium text-emerald-400">{similarityPercent}%</span>
+            <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
               <div
-                className="absolute left-1/2 -translate-x-1/2 mt-2 z-50"
-                style={{ minWidth: '200px', maxWidth: '280px' }}
-              >
-                <div className="bg-gray-900 text-white text-xs rounded-lg shadow-xl p-3 space-y-2">
-                  {/* Header */}
-                  <div className="font-semibold text-emerald-400 border-b border-gray-700 pb-1.5">
-                    Connection Details
-                  </div>
-
-                  {/* Similarity score */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Similarity:</span>
-                    <span className="font-medium text-emerald-400">{similarityPercent}%</span>
-                    <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${similarityPercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Common tags */}
-                  {commonTags.length > 0 && (
-                    <div>
-                      <span className="text-gray-400">Common tags: </span>
-                      <span className="text-blue-400">
-                        {commonTags.slice(0, 4).join(', ')}
-                        {commonTags.length > 4 && ` +${commonTags.length - 4} more`}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Category match */}
-                  {sameCategory && (
-                    <div>
-                      <span className="text-gray-400">Category: </span>
-                      <span className="text-purple-400">{sourceCategory}</span>
-                    </div>
-                  )}
-
-                  {/* Subjects if available */}
-                  {hasSubjects && (
-                    <div className="space-y-0.5">
-                      {sourceSubject && (
-                        <div className="text-[11px]">
-                          <span className="text-gray-500">A: </span>
-                          <span className="text-amber-400 truncate">
-                            {sourceSubject.slice(0, 40)}
-                          </span>
-                        </div>
-                      )}
-                      {targetSubject && (
-                        <div className="text-[11px]">
-                          <span className="text-gray-500">B: </span>
-                          <span className="text-amber-400 truncate">
-                            {targetSubject.slice(0, 40)}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Explanation */}
-                  <div className="text-gray-300 italic text-[11px] pt-1 border-t border-gray-700">
-                    {explanation}
-                  </div>
-
-                  {/* Arrow pointing up */}
-                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 rotate-45" />
-                </div>
-              </div>
-            )}
+                className="h-full bg-emerald-500 rounded-full"
+                style={{ width: `${similarityPercent}%` }}
+              />
+            </div>
           </div>
-        </EdgeLabelRenderer>
+
+          {/* Common tags */}
+          {commonTags.length > 0 && (
+            <div>
+              <span className="text-gray-400">Common tags: </span>
+              <span className="text-blue-400">
+                {commonTags.slice(0, 4).join(', ')}
+                {commonTags.length > 4 && ` +${commonTags.length - 4} more`}
+              </span>
+            </div>
+          )}
+
+          {/* Category match */}
+          {sameCategory && (
+            <div>
+              <span className="text-gray-400">Category: </span>
+              <span className="text-purple-400">{sourceCategory}</span>
+            </div>
+          )}
+
+          {/* Subjects if available */}
+          {hasSubjects && (
+            <div className="space-y-0.5">
+              {sourceSubject && (
+                <div className="text-[11px]">
+                  <span className="text-gray-500">A: </span>
+                  <span className="text-amber-400 truncate">{sourceSubject.slice(0, 40)}</span>
+                </div>
+              )}
+              {targetSubject && (
+                <div className="text-[11px]">
+                  <span className="text-gray-500">B: </span>
+                  <span className="text-amber-400 truncate">{targetSubject.slice(0, 40)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Explanation */}
+          <div className="text-gray-300 italic text-[11px] pt-1 border-t border-gray-700">
+            {explanation}
+          </div>
+        </BaseEdgeTooltip>
       </>
     );
   }
