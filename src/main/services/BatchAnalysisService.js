@@ -10,6 +10,8 @@ const path = require('path');
 const os = require('os');
 const { get: getConfig } = require('../../shared/config/index');
 
+const { getFileTypeCategory } = require('./autoOrganize/fileTypeUtils');
+
 /**
  * BatchAnalysisService
  * Processes multiple files in parallel with intelligent concurrency control
@@ -277,7 +279,11 @@ class BatchAnalysisService {
       flushDuration: `${flushDuration}ms`,
       totalDuration: `${totalDuration}ms`,
       avgPerFile: `${Math.round(avgTime)}ms`,
-      throughput: `${(filePaths.length / (totalDuration / 1000)).toFixed(2)} files/sec`,
+      // FIX H-3: Guard against division by zero when processing is instant
+      throughput:
+        totalDuration > 0
+          ? `${(filePaths.length / (totalDuration / 1000)).toFixed(2)} files/sec`
+          : 'instant',
       embeddingStats: {
         queueProcessed: embeddingStats.startQueueSize - finalQueueStats.queueLength,
         remainingInQueue: finalQueueStats.queueLength,
@@ -298,7 +304,8 @@ class BatchAnalysisService {
         analysisDuration,
         flushDuration,
         avgPerFile: avgTime,
-        filesPerSecond: filePaths.length / (totalDuration / 1000),
+        // FIX H-3: Guard against division by zero
+        filesPerSecond: totalDuration > 0 ? filePaths.length / (totalDuration / 1000) : Infinity,
         embedding: {
           queueSize: finalQueueStats.queueLength,
           failedItems: finalQueueStats.failedItemsCount,
@@ -372,45 +379,22 @@ class BatchAnalysisService {
    * Get file type category
    */
   getFileType(extension) {
-    const imageExtensions = [
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.gif',
-      '.bmp',
-      '.webp',
-      '.svg',
-      '.tiff',
-      '.tif'
-    ];
-    const documentExtensions = ['.pdf', '.doc', '.docx', '.txt', '.rtf'];
-    const spreadsheetExtensions = ['.xlsx', '.xls', '.csv'];
-    const presentationExtensions = ['.pptx', '.ppt'];
-
-    if (imageExtensions.includes(extension)) return 'image';
-    if (documentExtensions.includes(extension)) return 'document';
-    if (spreadsheetExtensions.includes(extension)) return 'spreadsheet';
-    if (presentationExtensions.includes(extension)) return 'presentation';
-
-    return 'other';
+    const category = getFileTypeCategory(extension);
+    // Map new centralized categories (Capitalized Plural) to legacy service format (lowercase singular)
+    const mapping = {
+      Images: 'image',
+      Documents: 'document',
+      Spreadsheets: 'spreadsheet',
+      Presentations: 'presentation'
+    };
+    return mapping[category] || 'other';
   }
 
   /**
    * Check if file is an image
    */
   isImageFile(extension) {
-    const imageExtensions = [
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.gif',
-      '.bmp',
-      '.webp',
-      '.svg',
-      '.tiff',
-      '.tif'
-    ];
-    return imageExtensions.includes(extension.toLowerCase());
+    return getFileTypeCategory(extension) === 'Images';
   }
 
   /**

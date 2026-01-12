@@ -190,7 +190,8 @@ describe('DownloadWatcher Extended Coverage', () => {
     });
 
     test('handles file disappearing during validation (TOCTOU)', async () => {
-      mockFs.access.mockRejectedValueOnce(new Error('ENOENT'));
+      // FIX: Now using fs.stat instead of fs.access for atomic existence check
+      mockFs.stat.mockRejectedValueOnce(new Error('ENOENT'));
       errorClassifier.isNotFoundError.mockReturnValueOnce(true);
 
       const result = await watcher._validateFile('/downloads/gone.txt');
@@ -245,15 +246,15 @@ describe('DownloadWatcher Extended Coverage', () => {
       mockFs.rename.mockRejectedValueOnce(new Error('EBUSY'));
       errorClassifier.getErrorCategory.mockReturnValueOnce(ErrorCategory.FILE_IN_USE);
 
-      // access check fails with NOT_FOUND
-      mockFs.access.mockRejectedValueOnce(new Error('ENOENT'));
+      // FIX: stat check fails with NOT_FOUND (now using fs.stat instead of fs.access)
+      mockFs.stat.mockRejectedValueOnce(new Error('ENOENT'));
       errorClassifier.isNotFoundError.mockReturnValueOnce(true);
 
       await watcher._moveFile('/src', '/dest');
 
       expect(mockFs.rename).toHaveBeenCalledTimes(1);
-      // Access called to verify existence before retry
-      expect(mockFs.access).toHaveBeenCalledWith('/src');
+      // Stat called to verify existence before retry
+      expect(mockFs.stat).toHaveBeenCalledWith('/src');
     });
   });
 

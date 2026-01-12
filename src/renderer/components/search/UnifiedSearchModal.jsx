@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import ReactFlow, { Background, Controls, MiniMap, Handle, Position } from 'reactflow';
+import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
   ExternalLink,
@@ -13,12 +13,16 @@ import {
   List,
   FileText,
   LayoutGrid,
-  GitBranch,
   CheckSquare,
   Square,
   MessageSquare,
   Sparkles,
-  Layers
+  Layers,
+  FolderPlus,
+  ChevronDown,
+  ChevronRight,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 import Modal, { ConfirmModal } from '../Modal';
@@ -27,8 +31,8 @@ import HighlightedText from '../ui/HighlightedText';
 import { getFileCategory } from '../ui/FileIcon';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
+import { GRAPH_FEATURE_FLAGS } from '../../../shared/featureFlags';
 import { safeBasename } from '../../utils/pathUtils';
-import { isMac } from '../../utils/platform';
 import { scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
 import { makeQueryNodeId, defaultNodePosition } from '../../utils/graphUtils';
 import {
@@ -41,19 +45,34 @@ import {
   LARGE_GRAPH_THRESHOLD
 } from '../../utils/elkLayout';
 import ClusterNode from './ClusterNode';
+import FileNode from './nodes/FileNode';
+import QueryNode from './nodes/QueryNode';
+import { useGraphState, useGraphKeyboardNav, useFileActions } from '../../hooks';
 import SimilarityEdge from './SimilarityEdge';
 import QueryMatchEdge from './QueryMatchEdge';
 import SearchAutocomplete from './SearchAutocomplete';
 import ClusterLegend from './ClusterLegend';
 import EmptySearchState from './EmptySearchState';
+import GraphTour from './GraphTour';
+import GraphErrorBoundary from './GraphErrorBoundary';
 
 logger.setContext('UnifiedSearchModal');
 
-// Temporary feature flag: hide graph view
-const SHOW_GRAPH = false;
-
 // Maximum nodes allowed in graph to prevent memory exhaustion
 const MAX_GRAPH_NODES = 300;
+
+// Define nodeTypes and edgeTypes OUTSIDE the component to prevent React Flow warnings
+// See: https://reactflow.dev/error#002
+const NODE_TYPES = {
+  fileNode: FileNode,
+  queryNode: QueryNode,
+  clusterNode: ClusterNode
+};
+
+const EDGE_TYPES = {
+  similarity: SimilarityEdge,
+  queryMatch: QueryMatchEdge
+};
 
 /**
  * Format error messages to be more user-friendly and actionable
@@ -132,151 +151,6 @@ const validateSearchResponse = (response, context = 'Search') => {
   }
 
   return { valid: true, results: validResults };
-};
-
-// ============================================================================
-// Custom Node Components
-// ============================================================================
-
-const FileNode = memo(({ data, selected }) => {
-  const [showActions, setShowActions] = useState(false);
-  const filePath = data?.path || '';
-
-  const handleOpen = useCallback(
-    (e) => {
-      e.stopPropagation();
-      if (filePath) {
-        window.electronAPI?.files?.open?.(filePath);
-      }
-    },
-    [filePath]
-  );
-
-  const handleReveal = useCallback(
-    (e) => {
-      e.stopPropagation();
-      if (filePath) {
-        window.electronAPI?.files?.reveal?.(filePath);
-      }
-    },
-    [filePath]
-  );
-
-  return (
-    <div
-      className={`
-        relative px-3 py-2 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
-        transition-all duration-200 cursor-pointer group
-        ${
-          selected
-            ? 'border-stratosort-blue bg-stratosort-blue/10 shadow-md ring-2 ring-stratosort-blue/30'
-            : 'border-system-gray-200 bg-white hover:border-stratosort-blue/50 hover:shadow-md'
-        }
-      `}
-      style={{ opacity: data?.style?.opacity ?? 1 }}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
-    >
-      <Handle type="target" position={Position.Left} className="!bg-stratosort-blue !w-2 !h-2" />
-
-      {/* Quick actions on hover */}
-      {showActions && filePath && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex gap-1 bg-white shadow-md rounded-lg px-1.5 py-1 border border-system-gray-200 z-10">
-          <button
-            onClick={handleOpen}
-            className="p-1 rounded hover:bg-stratosort-blue/10 transition-colors"
-            title="Open file"
-          >
-            <ExternalLink className="w-3 h-3 text-stratosort-blue" />
-          </button>
-          <button
-            onClick={handleReveal}
-            className="p-1 rounded hover:bg-stratosort-blue/10 transition-colors"
-            title="Reveal in folder"
-          >
-            <FolderOpen className="w-3 h-3 text-stratosort-blue" />
-          </button>
-        </div>
-      )}
-
-      <div className="flex items-start gap-2">
-        <FileText className="w-4 h-4 text-stratosort-blue shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-system-gray-900 truncate" title={data?.label}>
-            {data?.label}
-          </div>
-          {/* Rank indicator shown via node styling - no percentage display */}
-        </div>
-      </div>
-      <Handle type="source" position={Position.Right} className="!bg-stratosort-blue !w-2 !h-2" />
-    </div>
-  );
-});
-
-FileNode.displayName = 'FileNode';
-
-FileNode.propTypes = {
-  data: PropTypes.shape({
-    withinScore: PropTypes.number,
-    score: PropTypes.number,
-    label: PropTypes.string,
-    path: PropTypes.string,
-    style: PropTypes.shape({
-      opacity: PropTypes.number
-    })
-  }),
-  selected: PropTypes.bool
-};
-
-const QueryNode = memo(({ data, selected }) => {
-  return (
-    <div
-      className={`
-        px-3 py-2 rounded-lg border-2 shadow-sm min-w-[120px] max-w-[180px]
-        transition-all duration-200
-        ${
-          selected
-            ? 'border-stratosort-indigo bg-stratosort-indigo/10 shadow-md ring-2 ring-stratosort-indigo/30'
-            : 'border-stratosort-indigo/50 bg-gradient-to-br from-stratosort-indigo/5 to-stratosort-blue/5'
-        }
-      `}
-    >
-      <div className="flex items-start gap-2">
-        <MessageSquare className="w-4 h-4 text-stratosort-indigo shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] uppercase tracking-wider text-stratosort-indigo/70 font-medium">
-            Query
-          </div>
-          <div className="text-xs font-medium text-system-gray-900 truncate" title={data?.label}>
-            {data?.label}
-          </div>
-        </div>
-      </div>
-      <Handle type="source" position={Position.Right} className="!bg-stratosort-indigo !w-2 !h-2" />
-    </div>
-  );
-});
-
-QueryNode.displayName = 'QueryNode';
-
-QueryNode.propTypes = {
-  data: PropTypes.shape({
-    label: PropTypes.string
-  }),
-  selected: PropTypes.bool
-};
-
-// Node types for ReactFlow
-const nodeTypes = {
-  fileNode: FileNode,
-  queryNode: QueryNode,
-  clusterNode: ClusterNode
-};
-
-// Edge types for ReactFlow
-const edgeTypes = {
-  similarity: SimilarityEdge,
-  queryMatch: QueryMatchEdge
 };
 
 // ============================================================================
@@ -438,6 +312,7 @@ ResultRow.propTypes = {
   isBulkSelected: PropTypes.bool.isRequired,
   isFocused: PropTypes.bool,
   query: PropTypes.string,
+  index: PropTypes.number,
   onSelect: PropTypes.func.isRequired,
   onToggleBulk: PropTypes.func.isRequired,
   onOpen: PropTypes.func.isRequired,
@@ -603,7 +478,7 @@ export default function UnifiedSearchModal({
   // Tab state
   // Graph is currently feature-flagged off. If callers pass initialTab="graph",
   // ensure we still render the Search tab content instead of a blank body.
-  const effectiveInitialTab = SHOW_GRAPH ? initialTab : 'search';
+  const effectiveInitialTab = GRAPH_FEATURE_FLAGS.SHOW_GRAPH ? initialTab : 'search';
   const [activeTab, setActiveTab] = useState(effectiveInitialTab);
 
   // Shared state
@@ -618,6 +493,8 @@ export default function UnifiedSearchModal({
   // Search tab state
   const [searchResults, setSearchResults] = useState([]);
   const [selectedSearchId, setSelectedSearchId] = useState(null);
+  const [selectedDocumentDetails, setSelectedDocumentDetails] = useState(null);
+  const [isLoadingDocumentDetails, setIsLoadingDocumentDetails] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [queryMeta, setQueryMeta] = useState(null); // Stores spell corrections and synonyms info
   const [searchMeta, setSearchMeta] = useState(null); // Stores search mode and fallback info
@@ -627,14 +504,14 @@ export default function UnifiedSearchModal({
   const [viewMode, setViewMode] = useState('all'); // 'all' or 'grouped'
 
   // Graph tab state
-  const [nodes, setNodes] = useState([]);
-  const [edges, setEdges] = useState([]);
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const { nodes, edges, selectedNodeId, actions: graphActions } = useGraphState();
   const [freshMetadata, setFreshMetadata] = useState(null);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [addMode, setAddMode] = useState(true);
   const [withinQuery, setWithinQuery] = useState('');
   const [debouncedWithinQuery, setDebouncedWithinQuery] = useState('');
+  // No-op for removed status bar to prevent breaking existing calls
+  // eslint-disable-next-line no-unused-vars
   const [graphStatus, setGraphStatus] = useState('');
 
   // Layout state
@@ -649,6 +526,25 @@ export default function UnifiedSearchModal({
   const [showClusters, setShowClusters] = useState(false);
   const [isComputingClusters, setIsComputingClusters] = useState(false);
 
+  // Graph filtering state
+  const [activeFilters, setActiveFilters] = useState({
+    types: ['cluster', 'file', 'query'],
+    confidence: ['high', 'medium', 'low']
+  });
+
+  // Zoom state
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  const handleToggleFilter = useCallback((category, value) => {
+    setActiveFilters((prev) => {
+      const current = prev[category] || [];
+      const newValues = current.includes(value)
+        ? current.filter((v) => v !== value)
+        : [...current, value];
+      return { ...prev, [category]: newValues };
+    });
+  }, []);
+
   // Duplicates detection state (duplicateGroups stored for potential future export feature)
   // eslint-disable-next-line no-unused-vars
   const [duplicateGroups, setDuplicateGroups] = useState([]);
@@ -656,6 +552,11 @@ export default function UnifiedSearchModal({
 
   // Confirmation modal state
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // UI State for progressive disclosure
+  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [isGraphMaximized, setIsGraphMaximized] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Refs
   const lastSearchRef = useRef(0);
@@ -668,6 +569,25 @@ export default function UnifiedSearchModal({
 
   // Ref to avoid temporal dead zone with loadClusters in keyboard shortcuts
   const loadClustersRef = useRef(null);
+
+  // Ref for expandFromSelected to be used by findSimilar event handler
+  const expandFromSelectedRef = useRef(null);
+
+  // Ref for expandCluster to be used in handleClusterExpand (defined before expandCluster)
+  const expandClusterRef = useRef(null);
+
+  // Refs to access current nodes/edges in callbacks without creating stale closures
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  // File Actions Hook
+  const { openFile, revealFile, copyPath } = useFileActions(setError);
 
   // ============================================================================
   // Reset on open
@@ -693,9 +613,9 @@ export default function UnifiedSearchModal({
     setSearchMeta(null);
     setBulkSelectedIds(new Set());
     // Graph state
-    setNodes([]);
-    setEdges([]);
-    setSelectedNodeId(null);
+    graphActions.setNodes([]);
+    graphActions.setEdges([]);
+    graphActions.selectNode(null);
     setAddMode(true);
     setWithinQuery('');
     setDebouncedWithinQuery('');
@@ -714,8 +634,11 @@ export default function UnifiedSearchModal({
     setIsFindingDuplicates(false);
 
     // Cleanup pending layouts on unmount
-    return () => cancelPendingLayout();
-  }, [isOpen, effectiveInitialTab]);
+    return () => {
+      cancelPendingLayout();
+      graphActions.reset();
+    };
+  }, [isOpen, effectiveInitialTab, graphActions]);
 
   // FIX P2-14: Reset focusedResultIndex when switching tabs
   // Prevents stale focus state when returning to search tab
@@ -727,63 +650,107 @@ export default function UnifiedSearchModal({
   // Shared: File Actions (defined early for keyboard shortcut dependency)
   // ============================================================================
 
-  const openFile = useCallback(async (filePath) => {
-    if (!filePath) {
-      logger.warn('[Search] Cannot open file: path is empty');
-      setError('Cannot open file: no path available');
-      return;
-    }
-    try {
-      // FIX: Use window.electronAPI.files.open which maps to FILES.OPEN_FILE channel
-      const result = await window.electronAPI?.files?.open?.(filePath);
-      if (result && !result.success) {
-        const errorMsg =
-          result.errorCode === 'FILE_NOT_FOUND'
-            ? 'File not found. It may have been moved or deleted.'
-            : result.error || 'Failed to open file';
-        setError(errorMsg);
-        logger.warn('[Search] Open file failed:', result.error);
-      }
-    } catch (e) {
-      logger.error('[Search] Failed to open file', e);
-      setError('Failed to open file');
-    }
-  }, []);
+  const convertSearchToGraph = useCallback(async () => {
+    if (searchResults.length === 0) return;
 
-  const revealFile = useCallback(async (filePath) => {
-    if (!filePath) {
-      logger.warn('[Search] Cannot reveal file: path is empty');
-      setError('Cannot reveal file: no path available');
-      return;
+    // Clear existing graph if not in add mode
+    if (!addMode) {
+      graphActions.setNodes([]);
+      graphActions.setEdges([]);
     }
-    try {
-      // FIX: Use window.electronAPI.files.reveal which maps to FILES.REVEAL_FILE channel
-      const result = await window.electronAPI?.files?.reveal?.(filePath);
-      if (result && !result.success) {
-        const errorMsg =
-          result.errorCode === 'FILE_NOT_FOUND'
-            ? 'File not found. It may have been moved or deleted.'
-            : result.error || 'Failed to reveal file';
-        setError(errorMsg);
-        logger.warn('[Search] Reveal file failed:', result.error);
-      }
-    } catch (e) {
-      logger.error('[Search] Failed to reveal file', e);
-      setError('Failed to reveal file location');
-    }
-  }, []);
 
-  const copyPath = useCallback(async (filePath) => {
-    if (!filePath) {
-      logger.warn('[Search] Cannot copy path: path is empty');
-      return;
+    // Create query node
+    const queryNodeId = makeQueryNodeId(debouncedQuery || 'search', Date.now());
+    const queryNode = {
+      id: queryNodeId,
+      type: 'queryNode',
+      position: { x: 40, y: 200 },
+      data: { kind: 'query', label: debouncedQuery || 'Search Results' },
+      draggable: true
+    };
+
+    // Create file nodes from search results
+    const fileNodes = searchResults.slice(0, 20).map((result, idx) => {
+      const filePath = result?.metadata?.path || result?.id || '';
+      const displayName =
+        result?.metadata?.name ||
+        safeBasename(filePath) ||
+        filePath.split(/[/\\]/).pop() ||
+        result?.id;
+
+      return {
+        id: result.id,
+        type: 'fileNode',
+        position: { x: 280, y: 40 + idx * 70 },
+        data: {
+          kind: 'file',
+          label: displayName,
+          path: filePath,
+          score: result.score || 0,
+          tags: Array.isArray(result?.metadata?.tags) ? result.metadata.tags : [],
+          category: result?.metadata?.category || '',
+          subject: result?.metadata?.subject || ''
+        },
+        draggable: true
+      };
+    });
+
+    // Create edges from query to results
+    const queryEdges = fileNodes.map((node) => {
+      const result = searchResults.find((r) => r.id === node.id);
+      return {
+        id: `e:${queryNodeId}->${node.id}`,
+        source: queryNodeId,
+        target: node.id,
+        type: 'queryMatch',
+        data: {
+          kind: 'query_match',
+          score: result?.score || 0,
+          matchDetails: result?.matchDetails || {}
+        }
+      };
+    });
+
+    // Update graph state
+    graphActions.setNodes((prev) => {
+      if (!addMode) return [queryNode, ...fileNodes];
+      const existing = new Set(prev.map((n) => n.id));
+      const newNodes = [queryNode, ...fileNodes].filter((n) => !existing.has(n.id));
+      return [...prev, ...newNodes];
+    });
+
+    graphActions.setEdges((prev) => {
+      if (!addMode) return queryEdges;
+      const existing = new Set(prev.map((e) => e.id));
+      const newEdges = queryEdges.filter((e) => !existing.has(e.id));
+      return [...prev, ...newEdges];
+    });
+
+    // Switch to graph tab
+    setActiveTab('graph');
+    setGraphStatus(`Converted ${fileNodes.length} results to graph`);
+
+    // Apply layout
+    if (autoLayout) {
+      try {
+        const allNodes = addMode
+          ? [...nodes.filter((n) => n.id !== queryNodeId), queryNode, ...fileNodes]
+          : [queryNode, ...fileNodes];
+        const allEdges = addMode
+          ? [...edges.filter((e) => !e.id.startsWith(`e:${queryNodeId}`)), ...queryEdges]
+          : queryEdges;
+
+        const layoutedNodes = await debouncedElkLayout(allNodes, allEdges, {
+          direction: 'RIGHT',
+          spacing: 60,
+          layerSpacing: 100
+        });
+        graphActions.setNodes(layoutedNodes);
+      } catch (layoutError) {
+        logger.warn('[Graph] Layout after conversion failed:', layoutError);
+      }
     }
-    try {
-      await navigator.clipboard.writeText(filePath);
-    } catch (e) {
-      logger.warn('[Search] Clipboard write failed', e?.message || e);
-    }
-  }, []);
+  }, [searchResults, debouncedQuery, addMode, autoLayout, nodes, edges, graphActions]);
 
   // ============================================================================
   // Keyboard Shortcuts
@@ -824,7 +791,7 @@ export default function UnifiedSearchModal({
       // Escape: Close modal (handled by Modal component, but also clear selection)
       if (e.key === 'Escape') {
         if (selectedNodeId) {
-          setSelectedNodeId(null);
+          graphActions.selectNode(null);
         }
         if (focusedResultIndex >= 0) {
           setFocusedResultIndex(-1);
@@ -899,8 +866,63 @@ export default function UnifiedSearchModal({
     nodes.length,
     searchResults,
     focusedResultIndex,
-    openFile
+    openFile,
+    graphActions
   ]);
+
+  // Graph keyboard navigation (arrow keys, Enter, Escape, Home, End)
+  useGraphKeyboardNav({
+    nodes,
+    edges,
+    selectedNodeId,
+    onSelectNode: graphActions.selectNode,
+    onOpenFile: openFile,
+    reactFlowInstance,
+    enabled: isOpen && activeTab === 'graph' && nodes.length > 0
+  });
+
+  // Listen for findSimilar events from FileNode context menu
+  // Use refs to avoid re-subscribing on every nodes change
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleFindSimilar = (event) => {
+      const { nodeId } = event.detail || {};
+      if (!nodeId) return;
+
+      // Use nodesRef to access current nodes without re-subscribing
+      const currentNodes = nodesRef.current || [];
+      const node = currentNodes.find((n) => n.id === nodeId);
+      if (node && node.data?.kind === 'file') {
+        // Use the ref to call expandFromSelected with the specific node
+        expandFromSelectedRef.current?.(node);
+      }
+    };
+
+    const handleToggleCluster = (event) => {
+      const { nodeId } = event.detail || {};
+      if (nodeId && expandClusterRef.current) {
+        expandClusterRef.current(nodeId);
+      }
+    };
+
+    const handleSearchAgain = (event) => {
+      const { query: searchQuery } = event.detail || {};
+      if (!searchQuery) return;
+      setActiveTab('search');
+      setQuery(searchQuery);
+      setDebouncedQuery(searchQuery);
+    };
+
+    window.addEventListener('graph:findSimilar', handleFindSimilar);
+    window.addEventListener('graph:toggleCluster', handleToggleCluster);
+    window.addEventListener('graph:searchAgain', handleSearchAgain);
+    return () => {
+      window.removeEventListener('graph:findSimilar', handleFindSimilar);
+      window.removeEventListener('graph:toggleCluster', handleToggleCluster);
+      window.removeEventListener('graph:searchAgain', handleSearchAgain);
+    };
+  }, [isOpen]); // Removed nodes - use nodesRef instead to prevent frequent re-subscription
 
   // ============================================================================
   // Shared: Stats & Rebuild
@@ -1225,6 +1247,48 @@ export default function UnifiedSearchModal({
   }, []);
 
   /**
+   * Handle cluster expand/collapse from ClusterNode component
+   * Looks up the cluster node and triggers expansion with memberIds
+   */
+  const handleClusterExpand = useCallback(
+    (clusterId) => {
+      // Use ref to get current nodes state to avoid stale closure issues
+      const currentNodes = nodesRef.current || [];
+      const clusterNode = currentNodes.find((n) => n.id === clusterId);
+
+      if (!clusterNode) {
+        logger.warn('[Graph] Cluster node not found for expand:', clusterId);
+        return;
+      }
+
+      const memberIds = clusterNode.data?.memberIds || [];
+      if (memberIds.length === 0) {
+        logger.warn('[Graph] Cluster has no members to expand:', clusterId);
+        return;
+      }
+
+      // Check if already expanded - toggle collapse
+      if (clusterNode.data?.expanded) {
+        // Collapse: remove member nodes and edges connected to them
+        const memberIdSet = new Set(memberIds);
+        graphActions.setNodes((prev) =>
+          prev
+            .filter((n) => !memberIdSet.has(n.id))
+            .map((n) => (n.id === clusterId ? { ...n, data: { ...n.data, expanded: false } } : n))
+        );
+        graphActions.setEdges((prev) =>
+          prev.filter((e) => !memberIdSet.has(e.source) && !memberIdSet.has(e.target))
+        );
+        setGraphStatus('Cluster collapsed');
+      } else {
+        // Expand using existing expandCluster function
+        expandClusterRef.current?.(clusterId, memberIds);
+      }
+    },
+    [graphActions]
+  );
+
+  /**
    * Find near-duplicate files across the collection
    * Displays them as special clusters in the graph
    */
@@ -1268,13 +1332,15 @@ export default function UnifiedSearchModal({
           commonTags: [],
           onCreateSmartFolder: handleCreateSmartFolderFromCluster,
           onMoveAllToFolder: handleMoveAllToFolder,
-          onExportFileList: handleExportFileList
+          onExportFileList: handleExportFileList,
+          // Expand/collapse callback
+          onExpand: handleClusterExpand
         },
         draggable: true
       }));
 
-      setNodes(dupNodes);
-      setEdges([]);
+      graphActions.setNodes(dupNodes);
+      graphActions.setEdges([]);
       setShowClusters(false);
       setGraphStatus(
         `Found ${result.groups.length} duplicate group(s) with ${result.totalDuplicates} files`
@@ -1285,7 +1351,13 @@ export default function UnifiedSearchModal({
     } finally {
       setIsFindingDuplicates(false);
     }
-  }, [handleCreateSmartFolderFromCluster, handleMoveAllToFolder, handleExportFileList]);
+  }, [
+    handleCreateSmartFolderFromCluster,
+    handleMoveAllToFolder,
+    handleExportFileList,
+    handleClusterExpand,
+    graphActions
+  ]);
 
   // ============================================================================
   // Debounce query
@@ -1304,6 +1376,43 @@ export default function UnifiedSearchModal({
     () => (selectedSearchId ? searchResults.find((r) => r?.id === selectedSearchId) : null),
     [searchResults, selectedSearchId]
   );
+
+  // Fetch full details (including extracted text) when selection changes
+  useEffect(() => {
+    if (!selectedSearchResult) {
+      setSelectedDocumentDetails(null);
+      return undefined;
+    }
+
+    // Don't re-fetch if we already have details for this path
+    if (
+      selectedDocumentDetails?.metadata?.path === selectedSearchResult.metadata?.path ||
+      selectedDocumentDetails?.originalPath === selectedSearchResult.metadata?.path
+    )
+      return undefined;
+
+    let cancelled = false;
+    const fetchDetails = async () => {
+      setIsLoadingDocumentDetails(true);
+      try {
+        const path = selectedSearchResult.metadata?.path;
+        if (path) {
+          const history = await window.electronAPI?.analysisHistory?.getFileHistory?.(path);
+          if (!cancelled && history) {
+            setSelectedDocumentDetails(history);
+          }
+        }
+      } catch (err) {
+        logger.warn('Failed to fetch document details', err);
+      } finally {
+        if (!cancelled) setIsLoadingDocumentDetails(false);
+      }
+    };
+    fetchDetails();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSearchResult, selectedDocumentDetails]);
 
   useEffect(() => {
     if (activeTab !== 'search') return undefined;
@@ -1522,7 +1631,7 @@ export default function UnifiedSearchModal({
         layerSpacing: 120
       });
 
-      setNodes(layoutedNodes);
+      graphActions.setNodes(layoutedNodes);
       setGraphStatus('Layout applied');
     } catch (error) {
       logger.error('[Graph] Layout failed:', error);
@@ -1530,7 +1639,176 @@ export default function UnifiedSearchModal({
     } finally {
       setIsLayouting(false);
     }
-  }, [nodes, edges]);
+  }, [nodes, edges, graphActions]);
+
+  /**
+   * Handle drag over for file drops to graph
+   */
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Check if this is a file drop
+    if (
+      e.dataTransfer?.types?.includes('Files') ||
+      e.dataTransfer?.types?.includes('text/uri-list')
+    ) {
+      e.dataTransfer.dropEffect = 'copy';
+      setIsDragOver(true);
+    }
+  }, []);
+
+  /**
+   * Handle drag leave
+   */
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set false if we're leaving the container (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  /**
+   * Handle file drop to add files to graph
+   */
+  const handleFileDrop = useCallback(
+    async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+
+      if (!e.dataTransfer) return;
+
+      // Get dropped files
+      const fileList = Array.from(e.dataTransfer.files || []);
+      if (fileList.length === 0) return;
+
+      setGraphStatus(`Looking up ${fileList.length} file${fileList.length > 1 ? 's' : ''}...`);
+
+      try {
+        const addedNodes = [];
+        const addedEdges = [];
+
+        for (const file of fileList) {
+          // Get file path - on Electron, dropped files have a path property
+          const filePath = file.path;
+          if (!filePath) continue;
+
+          // Search for this file by name to find it in ChromaDB
+          const fileName = filePath.split(/[\\/]/).pop();
+          const searchResp = await window.electronAPI?.embeddings?.search?.(fileName, {
+            topK: 20,
+            mode: 'hybrid'
+          });
+
+          if (!searchResp?.success || !searchResp.results?.length) {
+            logger.debug('[Graph] File not found in index:', fileName);
+            continue;
+          }
+
+          // Find exact path match in results
+          const matchingResult = searchResp.results.find(
+            (r) => r.metadata?.path?.toLowerCase() === filePath.toLowerCase()
+          );
+
+          if (!matchingResult) {
+            logger.debug('[Graph] No exact path match for:', filePath);
+            continue;
+          }
+
+          // Calculate position for the new node
+          const existingNodeCount = nodes.length + addedNodes.length;
+          const pos = defaultNodePosition(existingNodeCount);
+
+          // Create node using upsertFileNode
+          const node = upsertFileNode(matchingResult, pos);
+          if (node) {
+            // Check if node already exists
+            const existingNode = nodes.find((n) => n.id === node.id);
+            if (!existingNode) {
+              addedNodes.push(node);
+            }
+          }
+        }
+
+        if (addedNodes.length === 0) {
+          setError('Dropped files not found in index. Try analyzing them first.');
+          setGraphStatus('');
+          return;
+        }
+
+        // Add new nodes to graph
+        graphActions.setNodes((prev) => [...prev, ...addedNodes]);
+
+        // If we have existing nodes, try to find similarity connections
+        if (nodes.length > 0 && addedNodes.length > 0) {
+          try {
+            const existingIds = nodes.map((n) => n.id);
+            const newIds = addedNodes.map((n) => n.id);
+
+            // Get similarity edges between new and existing nodes
+            for (const newId of newIds) {
+              const simResp = await window.electronAPI?.embeddings?.findSimilar?.(newId, 5);
+              if (simResp?.success && simResp.results) {
+                for (const sim of simResp.results) {
+                  if (existingIds.includes(sim.id) && sim.score > 0.5) {
+                    addedEdges.push({
+                      id: `e:${newId}->${sim.id}`,
+                      source: newId,
+                      target: sim.id,
+                      type: 'similarity',
+                      animated: false,
+                      data: {
+                        kind: 'similarity',
+                        score: sim.score
+                      }
+                    });
+                  }
+                }
+              }
+            }
+          } catch (simErr) {
+            logger.debug('[Graph] Failed to get similarity edges for dropped files:', simErr);
+          }
+        }
+
+        // Add edges if any
+        if (addedEdges.length > 0) {
+          graphActions.setEdges((prev) => {
+            const existingIds = new Set(prev.map((e) => e.id));
+            const newEdges = addedEdges.filter((e) => !existingIds.has(e.id));
+            return [...prev, ...newEdges];
+          });
+        }
+
+        // Apply layout if auto-layout is enabled
+        if (autoLayout && addedNodes.length > 0) {
+          const allNodes = [...nodes, ...addedNodes];
+          const allEdges = [...edges, ...addedEdges];
+          try {
+            const layoutedNodes = await debouncedElkLayout(allNodes, allEdges, {
+              direction: 'RIGHT',
+              spacing: 80,
+              layerSpacing: 120
+            });
+            graphActions.setNodes(layoutedNodes);
+          } catch (layoutErr) {
+            logger.debug('[Graph] Layout after drop failed:', layoutErr);
+          }
+        }
+
+        setGraphStatus(
+          `Added ${addedNodes.length} file${addedNodes.length > 1 ? 's' : ''} to graph`
+        );
+      } catch (err) {
+        logger.error('[Graph] File drop failed:', err);
+        setError('Failed to add files to graph');
+        setGraphStatus('');
+      }
+    },
+    [nodes, edges, graphActions, upsertFileNode, autoLayout]
+  );
 
   /**
    * Load and display semantic clusters
@@ -1568,6 +1846,8 @@ export default function UnifiedSearchModal({
         position: defaultNodePosition(idx),
         data: {
           kind: 'cluster',
+          id: cluster.id,
+          clusterId: cluster.clusterId,
           label: cluster.label,
           memberCount: cluster.memberCount,
           memberIds: cluster.memberIds,
@@ -1579,29 +1859,34 @@ export default function UnifiedSearchModal({
           // Action callbacks for cluster context menu
           onCreateSmartFolder: handleCreateSmartFolderFromCluster,
           onMoveAllToFolder: handleMoveAllToFolder,
-          onExportFileList: handleExportFileList
+          onExportFileList: handleExportFileList,
+          // Expand/collapse callback
+          onExpand: handleClusterExpand
         },
         draggable: true
       }));
 
-      // Create cross-cluster edges
+      // Create cross-cluster edges with visible similarity labels
       const clusterEdges = crossClusterEdges.map((edge) => ({
         id: `cross:${edge.source}->${edge.target}`,
         source: edge.source,
         target: edge.target,
-        type: 'default',
+        type: 'similarity', // Use similarity edge to show the connection strength
         animated: true,
         style: {
           stroke: '#9ca3af',
-          strokeWidth: 1.5,
+          strokeWidth: Math.max(1, (edge.similarity || 0.5) * 3), // Thicker for stronger connections
           strokeDasharray: '5,5'
         },
-        data: { kind: 'cross_cluster', weight: edge.similarity }
+        data: {
+          kind: 'cross_cluster',
+          similarity: edge.similarity || 0.5 // SimilarityEdge expects 'similarity' field
+        }
       }));
 
       // Update graph
-      setNodes(clusterNodes);
-      setEdges(clusterEdges);
+      graphActions.setNodes(clusterNodes);
+      graphActions.setEdges(clusterEdges);
       setShowClusters(true);
       setGraphStatus(`${clusters.length} clusters found`);
 
@@ -1613,7 +1898,7 @@ export default function UnifiedSearchModal({
             centerY: 300,
             radius: Math.min(250, 80 + clusterNodes.length * 30)
           });
-          setNodes(layoutedNodes);
+          graphActions.setNodes(layoutedNodes);
         } catch (layoutError) {
           logger.warn('[Graph] Cluster layout failed:', layoutError);
         }
@@ -1624,7 +1909,13 @@ export default function UnifiedSearchModal({
     } finally {
       setIsComputingClusters(false);
     }
-  }, [handleCreateSmartFolderFromCluster, handleMoveAllToFolder, handleExportFileList]);
+  }, [
+    handleCreateSmartFolderFromCluster,
+    handleMoveAllToFolder,
+    handleExportFileList,
+    handleClusterExpand,
+    graphActions
+  ]);
 
   // Assign to ref so keyboard shortcuts can access it
   loadClustersRef.current = loadClusters;
@@ -1641,6 +1932,39 @@ export default function UnifiedSearchModal({
     loadClusters();
   }, [isOpen, activeTab, stats, nodes.length, loadClusters]);
 
+  // Real-time updates: Listen for file operations
+  useEffect(() => {
+    const handleFileOperation = async (event) => {
+      const { operationType, filePath, destPath } = event.detail || {};
+      if (!filePath) return;
+
+      if (operationType === 'delete') {
+        // Remove node from graph if it exists
+        graphActions.setNodes((prev) => prev.filter((n) => n.data?.path !== filePath));
+      } else if (operationType === 'move' && destPath) {
+        // Update node path
+        graphActions.setNodes((prev) =>
+          prev.map((n) => {
+            if (n.data?.path === filePath) {
+              return {
+                ...n,
+                data: {
+                  ...n.data,
+                  path: destPath,
+                  label: safeBasename(destPath)
+                }
+              };
+            }
+            return n;
+          })
+        );
+      }
+    };
+
+    window.addEventListener('file-operation-complete', handleFileOperation);
+    return () => window.removeEventListener('file-operation-complete', handleFileOperation);
+  }, [graphActions]);
+
   /**
    * Expand a cluster to show its members with current file names
    */
@@ -1651,8 +1975,9 @@ export default function UnifiedSearchModal({
       setGraphStatus('Expanding cluster...');
 
       try {
-        // Get cluster node for layout calculation
-        const clusterNode = nodes.find((n) => n.id === clusterId);
+        // Get cluster node for layout calculation - use ref for latest nodes
+        const currentNodes = nodesRef.current || [];
+        const clusterNode = currentNodes.find((n) => n.id === clusterId);
 
         // Fetch actual file metadata to get current names (not original names)
         let membersWithMetadata = [];
@@ -1720,7 +2045,7 @@ export default function UnifiedSearchModal({
         }));
 
         // Add to existing graph
-        setNodes((prev) => {
+        graphActions.setNodes((prev) => {
           const existingIds = new Set(prev.map((n) => n.id));
           const newNodes = layoutedMemberNodes.filter((n) => !existingIds.has(n.id));
 
@@ -1735,7 +2060,7 @@ export default function UnifiedSearchModal({
           return [...updated, ...newNodes];
         });
 
-        setEdges((prev) => {
+        graphActions.setEdges((prev) => {
           const existingIds = new Set(prev.map((e) => e.id));
           const newEdges = memberEdges.filter((e) => !existingIds.has(e.id));
           return [...prev, ...newEdges];
@@ -1747,8 +2072,11 @@ export default function UnifiedSearchModal({
         setGraphStatus('');
       }
     },
-    [nodes]
+    [graphActions]
   );
+
+  // Assign to ref so handleClusterExpand can access it
+  expandClusterRef.current = expandCluster;
 
   const runGraphSearch = useCallback(async () => {
     const q = query.trim();
@@ -1826,8 +2154,12 @@ export default function UnifiedSearchModal({
         }
         finalEdges = nextEdges;
       } else {
-        // Add mode - merge with current state (captured at function start)
-        const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+        // Add mode - merge with current state using refs to get latest values
+        // This prevents stale closure issues when state changes during async operation
+        const currentNodes = nodesRef.current || [];
+        const currentEdges = edgesRef.current || [];
+
+        const nodeMap = new Map(currentNodes.map((n) => [n.id, n]));
         nextNodes.forEach((n) => {
           if (!nodeMap.has(n.id)) nodeMap.set(n.id, n);
         });
@@ -1835,20 +2167,20 @@ export default function UnifiedSearchModal({
 
         if (merged.length > MAX_GRAPH_NODES) {
           // Don't add more nodes if limit reached
-          finalNodes = nodes;
+          finalNodes = currentNodes;
           nodeLimitReached = true;
           setError(`Graph limit (${MAX_GRAPH_NODES} nodes) reached. Clear graph to start fresh.`);
         } else {
           finalNodes = merged;
         }
 
-        const edgeMap = new Map(edges.map((e) => [e.id, e]));
+        const edgeMap = new Map(currentEdges.map((e) => [e.id, e]));
         nextEdges.forEach((e) => edgeMap.set(e.id, e));
         finalEdges = Array.from(edgeMap.values());
       }
 
       // Now update state with computed values (only if there are changes)
-      setNodes((prev) => {
+      graphActions.setNodes((prev) => {
         // Skip update if nothing changed (add mode and limit reached)
         if (nodeLimitReached && shouldAddMode) return prev;
         // Check if update is needed
@@ -1858,7 +2190,7 @@ export default function UnifiedSearchModal({
         return finalNodes;
       });
 
-      setEdges((prev) => {
+      graphActions.setEdges((prev) => {
         if (nodeLimitReached && shouldAddMode) return prev;
         if (prev.length === finalEdges.length && prev.every((e, i) => e.id === finalEdges[i]?.id)) {
           return prev;
@@ -1866,7 +2198,7 @@ export default function UnifiedSearchModal({
         return finalEdges;
       });
 
-      setSelectedNodeId(results[0]?.id || queryNodeId);
+      graphActions.selectNode(results[0]?.id || queryNodeId);
       setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'}`);
 
       // Apply auto-layout if enabled (debounced to prevent rapid re-layouts)
@@ -1898,7 +2230,7 @@ export default function UnifiedSearchModal({
               debounceMs: 150
             });
           }
-          setNodes(layoutedNodes);
+          graphActions.setNodes(layoutedNodes);
           if (finalNodes.length <= LARGE_GRAPH_THRESHOLD) {
             setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'} (laid out)`);
           }
@@ -1946,7 +2278,7 @@ export default function UnifiedSearchModal({
             }));
 
             if (similarityEdges.length > 0) {
-              setEdges((prev) => {
+              graphActions.setEdges((prev) => {
                 const existingIds = new Set(prev.map((e) => e.id));
                 const newEdges = similarityEdges.filter((e) => !existingIds.has(e.id));
                 if (newEdges.length === 0) return prev;
@@ -1963,7 +2295,7 @@ export default function UnifiedSearchModal({
       setGraphStatus('');
       setError(getErrorMessage(e, 'Graph search'));
     }
-  }, [query, defaultTopK, addMode, upsertFileNode, autoLayout, nodes, edges]);
+  }, [query, defaultTopK, addMode, autoLayout, graphActions, upsertFileNode]);
 
   const expandFromSelected = useCallback(
     async (overrideNode = null) => {
@@ -2034,7 +2366,7 @@ export default function UnifiedSearchModal({
           });
         });
 
-        setNodes((prev) => {
+        graphActions.setNodes((prev) => {
           // Check if any new nodes need to be added
           const existingIds = new Set(prev.map((n) => n.id));
           const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
@@ -2051,7 +2383,7 @@ export default function UnifiedSearchModal({
           });
           return Array.from(map.values());
         });
-        setEdges((prev) => {
+        graphActions.setEdges((prev) => {
           // Check if any new edges need to be added
           const existingEdgeIds = new Set(prev.map((e) => e.id));
           const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
@@ -2095,10 +2427,62 @@ export default function UnifiedSearchModal({
               layerSpacing: 120,
               debounceMs: 100 // Shorter debounce for explicit user action
             });
-            setNodes(layoutedNodes);
+            graphActions.setNodes(layoutedNodes);
             setGraphStatus(`Expanded: +${results.length} (laid out)`);
           } catch (layoutError) {
             logger.warn('[Graph] Auto-layout after expand failed:', layoutError);
+          }
+        }
+
+        // Fetch similarity edges among newly expanded nodes (not just to the seed)
+        if (nextNodes.length > 1) {
+          try {
+            const expandedNodeIds = nextNodes.map((n) => n.id);
+            const simEdgesResp = await window.electronAPI?.embeddings?.getSimilarityEdges?.(
+              expandedNodeIds,
+              { minSimilarity: 0.5 }
+            );
+
+            if (simEdgesResp?.success && Array.isArray(simEdgesResp.edges)) {
+              // Build node data map for tooltips
+              const nodeDataMap = new Map();
+              nextNodes.forEach((n) => {
+                nodeDataMap.set(n.id, {
+                  label: n.data?.label || '',
+                  tags: n.data?.tags || [],
+                  category: n.data?.category || '',
+                  subject: n.data?.subject || ''
+                });
+              });
+
+              const interNodeEdges = simEdgesResp.edges
+                .filter((e) => e.source !== seedId && e.target !== seedId) // Exclude seed edges (already added)
+                .map((e) => ({
+                  id: `sim:${e.source}->${e.target}`,
+                  source: e.source,
+                  target: e.target,
+                  type: 'similarity',
+                  animated: false,
+                  data: {
+                    kind: 'similarity',
+                    similarity: e.similarity,
+                    sourceData: nodeDataMap.get(e.source) || {},
+                    targetData: nodeDataMap.get(e.target) || {}
+                  }
+                }));
+
+              if (interNodeEdges.length > 0) {
+                graphActions.setEdges((prev) => {
+                  const existingIds = new Set(prev.map((e) => e.id));
+                  const newEdges = interNodeEdges.filter((e) => !existingIds.has(e.id));
+                  if (newEdges.length === 0) return prev;
+                  return [...prev, ...newEdges];
+                });
+                setGraphStatus((prev) => `${prev} • +${interNodeEdges.length} connections`);
+              }
+            }
+          } catch (simErr) {
+            logger.debug('[Graph] Failed to fetch inter-node similarity edges:', simErr);
           }
         }
       } catch (e) {
@@ -2106,8 +2490,11 @@ export default function UnifiedSearchModal({
         setError(getErrorMessage(e, 'Node expansion'));
       }
     },
-    [selectedNode, upsertFileNode, autoLayout, nodes, edges, hopCount, decayFactor]
+    [selectedNode, autoLayout, nodes, edges, hopCount, decayFactor, graphActions, upsertFileNode]
   );
+
+  // Assign to ref so event handlers can access it
+  expandFromSelectedRef.current = expandFromSelected;
 
   // Debounce within-graph query
   useEffect(() => {
@@ -2118,127 +2505,141 @@ export default function UnifiedSearchModal({
     return () => clearTimeout(handle);
   }, [withinQuery]);
 
-  // Score within current graph
+  // Combined Node Styling Effect: Filters + Search Scoring
   useEffect(() => {
-    if (activeTab !== 'graph') return undefined;
+    if (activeTab !== 'graph' || !isOpen) return undefined;
+
     let cancelled = false;
+    const requestId = Date.now();
+    withinReqRef.current = requestId;
 
     const run = async () => {
-      if (!isOpen) return;
+      // 1. Prepare search scores if query exists
+      let scoreMap = null;
       const q = debouncedWithinQuery;
-      if (!q || q.length < 2) {
-        setNodes((prev) => {
-          let changed = false;
-          const updated = prev.map((n) => {
-            if (n.data?.kind !== 'file') return n;
+      let topMatches = [];
 
-            // Check if we need to update (has withinScore or opacity !== 1)
-            const hasWithinScore = n.data?.withinScore !== undefined;
-            const currentOpacity = n.style?.opacity;
+      if (q && q.length >= 2 && fileNodeIds.length > 0) {
+        try {
+          const resp = await window.electronAPI?.embeddings?.scoreFiles?.(q, fileNodeIds);
+          if (cancelled || withinReqRef.current !== requestId) return;
 
-            if (!hasWithinScore && currentOpacity === 1) {
-              return n; // Already cleared, no change needed
-            }
+          if (resp && resp.success === true && Array.isArray(resp.scores)) {
+            scoreMap = new Map(resp.scores.map((s) => [s.id, clamp01(s.score)]));
 
-            changed = true;
-            const restData = { ...(n.data || {}) };
-            delete restData.withinScore;
-            return { ...n, data: restData, style: { ...(n.style || {}), opacity: 1 } };
-          });
-
-          // Only return new array if something actually changed
-          return changed ? updated : prev;
-        });
-        return;
+            topMatches = resp.scores
+              .filter((s) => s.score > 0.5)
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 5);
+          }
+        } catch (e) {
+          setError(getErrorMessage(e, 'File scoring'));
+        }
       }
-      if (fileNodeIds.length === 0) return;
 
-      const requestId = Date.now();
-      withinReqRef.current = requestId;
+      // 2. Apply updates (Filters + Scores)
+      graphActions.setNodes((prev) => {
+        let changed = false;
+        const updated = prev.map((n) => {
+          // Normalize kind from node type or data
+          const kind =
+            n.data?.kind ||
+            (n.type === 'clusterNode' ? 'cluster' : n.type === 'queryNode' ? 'query' : 'file');
 
-      try {
-        const resp = await window.electronAPI?.embeddings?.scoreFiles?.(q, fileNodeIds);
-        if (cancelled) return;
-        if (withinReqRef.current !== requestId) return;
-        if (!resp || resp.success !== true) {
-          throw new Error(resp?.error || 'Score failed');
-        }
+          // -- Filter Logic --
+          const isTypeActive = activeFilters.types.includes(kind);
 
-        const scores = Array.isArray(resp.scores) ? resp.scores : [];
-        const scoreMap = new Map(scores.map((s) => [s.id, clamp01(s.score)]));
+          // Special case: if node is cluster, check confidence
+          let isConfidenceActive = true;
+          if (kind === 'cluster') {
+            // ClusterNode normalizes confidence to low/medium/high
+            const conf = ['high', 'medium', 'low'].includes(n.data?.confidence)
+              ? n.data?.confidence
+              : 'low';
+            isConfidenceActive = activeFilters.confidence.includes(conf);
+          }
 
-        setNodes((prev) => {
-          let changed = false;
-          const updated = prev.map((n) => {
-            if (n.data?.kind !== 'file') return n;
-            const s = scoreMap.get(n.id);
-            const currentScore = n.data?.withinScore;
-            const currentOpacity = n.style?.opacity;
+          const shouldHide = !isTypeActive || !isConfidenceActive;
 
-            if (typeof s !== 'number') {
-              // No score - check if we need to update
-              if (currentScore === 0 && currentOpacity === 0.3) {
-                return n; // Already set to default, no change needed
+          // -- Score/Opacity Logic --
+          let opacity = 1;
+          let borderColor;
+          let borderWidth;
+          let withinScore;
+
+          if (scoreMap) {
+            // Search is active
+            if (kind === 'file' || n.type === 'fileNode') {
+              const s = scoreMap.get(n.id);
+              if (typeof s === 'number') {
+                withinScore = s;
+                opacity = scoreToOpacity(s);
+                if (s > 0.75) {
+                  borderColor = 'rgba(37,99,235,0.9)';
+                  borderWidth = 2;
+                }
+              } else {
+                // Not a match - fade out
+                withinScore = 0;
+                opacity = 0.3;
               }
-              changed = true;
-              return {
-                ...n,
-                data: { ...n.data, withinScore: 0 },
-                style: { ...(n.style || {}), opacity: 0.3 }
-              };
+            } else if (kind === 'cluster' && n.data?.memberIds) {
+              // Keep cluster visible if it contains a matching file
+              const hasMatchingMember = n.data.memberIds.some(
+                (id) => (scoreMap.get(id) || 0) > 0.5
+              );
+              opacity = hasMatchingMember ? 1 : 0.3;
+            } else {
+              // Other nodes (queries, empty clusters) dim when searching files
+              opacity = 0.3;
             }
+          }
 
-            const opacity = scoreToOpacity(s);
-            const borderColor = s > 0.75 ? 'rgba(37,99,235,0.9)' : undefined;
-            const borderWidth = s > 0.75 ? 2 : undefined;
+          // -- Check for changes --
+          const currentHidden = n.hidden === true;
+          const currentOpacity = n.style?.opacity ?? 1;
+          const currentScore = n.data?.withinScore;
 
-            // Check if score/opacity actually changed
-            if (
-              currentScore === s &&
-              currentOpacity === opacity &&
-              n.style?.borderColor === borderColor &&
-              n.style?.borderWidth === borderWidth
-            ) {
-              return n; // No change, preserve reference
+          if (
+            shouldHide === currentHidden &&
+            opacity === currentOpacity &&
+            withinScore === currentScore &&
+            n.style?.borderColor === borderColor &&
+            n.style?.borderWidth === borderWidth
+          ) {
+            return n;
+          }
+
+          changed = true;
+          const newData = { ...(n.data || {}) };
+          if (withinScore !== undefined) newData.withinScore = withinScore;
+          else delete newData.withinScore;
+
+          return {
+            ...n,
+            hidden: shouldHide,
+            data: newData,
+            style: {
+              ...(n.style || {}),
+              opacity,
+              borderColor,
+              borderWidth
             }
-
-            changed = true;
-            return {
-              ...n,
-              data: { ...n.data, withinScore: s },
-              style: {
-                ...(n.style || {}),
-                opacity,
-                borderColor,
-                borderWidth
-              }
-            };
-          });
-
-          // Only return new array if something actually changed
-          return changed ? updated : prev;
+          };
         });
 
-        // Jump to top matches - find nodes with good scores and zoom to them
-        const topMatches = scores
-          .filter((s) => s.score > 0.5)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 5);
+        return changed ? updated : prev;
+      });
 
-        if (topMatches.length > 0 && reactFlowInstance.current) {
-          // Zoom to the top matching nodes
-          reactFlowInstance.current.fitView({
-            nodes: topMatches.map((m) => ({ id: m.id })),
-            padding: 0.3,
-            duration: 300,
-            maxZoom: 1.5
-          });
-
-          // Auto-select the best match
-          setSelectedNodeId(topMatches[0].id);
-        }
-      } catch (e) {
-        setError(getErrorMessage(e, 'File scoring'));
+      // 3. Zoom to matches (only if search was performed and we have matches)
+      if (topMatches.length > 0 && reactFlowInstance.current) {
+        reactFlowInstance.current.fitView({
+          nodes: topMatches.map((m) => ({ id: m.id })),
+          padding: 0.3,
+          duration: 300,
+          maxZoom: 1.5
+        });
+        graphActions.selectNode(topMatches[0].id);
       }
     };
 
@@ -2246,50 +2647,34 @@ export default function UnifiedSearchModal({
     return () => {
       cancelled = true;
     };
-  }, [debouncedWithinQuery, fileNodeIds, isOpen, activeTab]);
+  }, [debouncedWithinQuery, fileNodeIds, isOpen, activeTab, graphActions, activeFilters]);
 
-  const onNodeClick = useCallback((_, node) => {
-    if (!node?.id) return;
-    setSelectedNodeId(node.id);
-  }, []);
+  const onNodeClick = useCallback(
+    (_, node) => {
+      if (!node?.id) return;
+      graphActions.selectNode(node.id);
+    },
+    [graphActions]
+  );
 
-  // Handle ReactFlow change events.
-  // Keep selection as a single source of truth (selectedNodeId) to avoid ReactFlow StoreUpdater loops.
-  const onNodesChange = useCallback((changes) => {
-    // Sync selection without rewriting node objects
-    for (const change of changes) {
-      if (change.type === 'select') {
-        if (change.selected) setSelectedNodeId(change.id);
-        else setSelectedNodeId((prev) => (prev === change.id ? null : prev));
-      }
-    }
+  const onNodesChange = useCallback(
+    (changes) => {
+      // 1. Let React Flow helper handle all node updates (dragging, resizing, selection flags)
+      graphActions.onNodesChange(changes);
 
-    // Persist node position changes from dragging
-    // CRITICAL: Only update if position actually changed to prevent infinite loops
-    const positionChanges = changes.filter((c) => c.type === 'position' && c.position);
-    if (positionChanges.length === 0) return;
-
-    setNodes((nds) => {
-      let changed = false;
-      const updated = nds.map((n) => {
-        const pc = positionChanges.find((c) => c.id === n.id);
-        if (!pc) return n;
-
-        // Only update if position actually changed
-        const currentPos = n.position || { x: 0, y: 0 };
-        const newPos = pc.position;
-        if (currentPos.x === newPos.x && currentPos.y === newPos.y) {
-          return n; // No change, return same object
+      // 2. Sync our separate selection state for the details panel
+      for (const change of changes) {
+        if (change.type === 'select') {
+          if (change.selected) {
+            graphActions.selectNode(change.id);
+          } else {
+            graphActions.selectNode((prev) => (prev === change.id ? null : prev));
+          }
         }
-
-        changed = true;
-        return { ...n, position: newPos };
-      });
-
-      // Only return new array if something actually changed
-      return changed ? updated : nds;
-    });
-  }, []);
+      }
+    },
+    [graphActions]
+  );
 
   // Double-click on a node to expand it (file or cluster)
   const onNodeDoubleClick = useCallback(
@@ -2309,20 +2694,13 @@ export default function UnifiedSearchModal({
 
       // Handle file node double-click
       if (kind === 'file') {
-        setSelectedNodeId(node.id);
+        graphActions.selectNode(node.id);
         // Pass node directly to avoid stale closure (selectedNode won't update until re-render)
         expandFromSelected(node);
       }
     },
-    [expandFromSelected, expandCluster]
+    [expandFromSelected, expandCluster, graphActions]
   );
-
-  // No-op handler for edge changes to prevent ReactFlow from syncing edges back
-  // Edges are managed internally, we don't need to sync ReactFlow's edge state back
-  const onEdgesChange = useCallback(() => {
-    // No-op: edges are managed internally, don't sync back to avoid loops
-    // ReactFlow will still handle edge rendering, we just don't sync state back
-  }, []);
 
   // ============================================================================
   // Computed values
@@ -2352,10 +2730,11 @@ export default function UnifiedSearchModal({
   const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
   const rfProOptions = useMemo(() => ({ hideAttribution: true }), []);
-  const miniMapNodeColor = useCallback(
-    (n) => (n.data?.kind === 'query' ? '#6366f1' : '#3b82f6'),
-    []
-  );
+  const miniMapNodeColor = useCallback((n) => {
+    if (n.data?.kind === 'query') return '#6366f1'; // Indigo for queries
+    if (n.data?.kind === 'cluster' || n.data?.kind === 'duplicate') return '#f59e0b'; // Amber for clusters
+    return '#3b82f6'; // Blue for files
+  }, []);
 
   const showEmptyBanner = stats && typeof stats.files === 'number' && stats.files === 0 && !error;
   // Use fresh metadata from ChromaDB when available (for current file paths after moves)
@@ -2368,10 +2747,16 @@ export default function UnifiedSearchModal({
   // ============================================================================
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Search Files" size="full">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Search Files"
+      size="full"
+      className={`transition-all duration-300 ${isGraphMaximized ? 'bg-system-gray-100' : ''}`}
+    >
       <div className="flex flex-col gap-4 min-h-[60vh]">
         {/* Header - simplified when graph is hidden */}
-        {SHOW_GRAPH ? (
+        {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && !isGraphMaximized ? (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-system-gray-200">
             <div className="flex items-center gap-2">
               <TabButton
@@ -2450,35 +2835,53 @@ export default function UnifiedSearchModal({
             {searchResults.length > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-system-gray-500">{searchStatusLabel}</span>
-                <div className="flex items-center gap-1 bg-system-gray-100 rounded-lg p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('all')}
-                    aria-label="View all results"
-                    aria-pressed={viewMode === 'all'}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                      viewMode === 'all'
-                        ? 'bg-white text-system-gray-900 shadow-sm'
-                        : 'text-system-gray-500 hover:text-system-gray-700'
-                    }`}
+                <div className="flex items-center gap-2">
+                  {/* View in Graph button */}
+                  {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={convertSearchToGraph}
+                      title="Visualize search results as a graph"
+                    >
+                      <Network className="h-3.5 w-3.5" />
+                      View in Graph
+                    </Button>
+                  )}
+                  <div
+                    className="flex items-center gap-1 bg-system-gray-100 rounded-lg p-0.5"
+                    role="group"
+                    aria-label="View mode"
                   >
-                    <List className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('grouped')}
-                    aria-label="Group results by type"
-                    aria-pressed={viewMode === 'grouped'}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                      viewMode === 'grouped'
-                        ? 'bg-white text-system-gray-900 shadow-sm'
-                        : 'text-system-gray-500 hover:text-system-gray-700'
-                    }`}
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                    By Type
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('all')}
+                      aria-label="View all results"
+                      aria-pressed={viewMode === 'all'}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                        viewMode === 'all'
+                          ? 'bg-white text-system-gray-900 shadow-sm'
+                          : 'text-system-gray-500 hover:text-system-gray-700'
+                      }`}
+                    >
+                      <List className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('grouped')}
+                      aria-label="Group results by type"
+                      aria-pressed={viewMode === 'grouped'}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                        viewMode === 'grouped'
+                          ? 'bg-white text-system-gray-900 shadow-sm'
+                          : 'text-system-gray-500 hover:text-system-gray-700'
+                      }`}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+                      By Type
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2605,27 +3008,38 @@ export default function UnifiedSearchModal({
                     </div>
 
                     {/* Subject/summary - the main content */}
-                    {(selectedSearchResult?.metadata?.subject ||
-                      selectedSearchResult?.metadata?.summary) && (
-                      <div className="bg-system-gray-50 rounded-lg p-3">
-                        {selectedSearchResult?.metadata?.subject && (
-                          <p className="text-sm font-medium text-system-gray-800">
-                            {selectedSearchResult.metadata.subject}
-                          </p>
-                        )}
-                        {selectedSearchResult?.metadata?.summary && (
-                          <p className="text-sm text-system-gray-600 mt-1">
-                            {selectedSearchResult.metadata.summary}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const subject =
+                        selectedDocumentDetails?.analysis?.subject ||
+                        selectedSearchResult?.metadata?.subject;
+                      const summary =
+                        selectedDocumentDetails?.analysis?.summary ||
+                        selectedSearchResult?.metadata?.summary;
+
+                      if (!subject && !summary) return null;
+
+                      return (
+                        <div className="bg-system-gray-50 rounded-lg p-3">
+                          {subject && (
+                            <p className="text-sm font-medium text-system-gray-800">{subject}</p>
+                          )}
+                          {summary && (
+                            <p className="text-sm text-system-gray-600 mt-1">{summary}</p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Tags - compact display */}
-                    {Array.isArray(selectedSearchResult?.metadata?.tags) &&
-                      selectedSearchResult.metadata.tags.length > 0 && (
+                    {(() => {
+                      const tags =
+                        selectedDocumentDetails?.analysis?.tags ||
+                        selectedSearchResult?.metadata?.tags;
+                      if (!Array.isArray(tags) || tags.length === 0) return null;
+
+                      return (
                         <div className="flex flex-wrap gap-1.5">
-                          {selectedSearchResult.metadata.tags.slice(0, 6).map((tag) => (
+                          {tags.slice(0, 6).map((tag) => (
                             <span
                               key={tag}
                               className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 text-xs"
@@ -2633,22 +3047,42 @@ export default function UnifiedSearchModal({
                               {tag}
                             </span>
                           ))}
-                          {selectedSearchResult.metadata.tags.length > 6 && (
+                          {tags.length > 6 && (
                             <span className="text-xs text-system-gray-400">
-                              +{selectedSearchResult.metadata.tags.length - 6} more
+                              +{tags.length - 6} more
                             </span>
                           )}
                         </div>
-                      )}
+                      );
+                    })()}
 
                     {/* Document content preview */}
-                    {selectedSearchResult?.document && (
-                      <div className="flex-1 overflow-y-auto">
-                        <p className="text-xs text-system-gray-600 whitespace-pre-wrap leading-relaxed">
-                          {String(selectedSearchResult.document).slice(0, 600)}
-                          {String(selectedSearchResult.document).length > 600 && '...'}
-                        </p>
+                    {isLoadingDocumentDetails ? (
+                      <div className="flex-1 flex items-center justify-center p-4">
+                        <RefreshCw className="w-5 h-5 text-system-gray-300 animate-spin" />
                       </div>
+                    ) : (
+                      (selectedDocumentDetails?.analysis?.extractedText ||
+                        selectedSearchResult?.matchDetails?.bestSnippet ||
+                        selectedSearchResult?.document) && (
+                        <div className="flex-1 overflow-y-auto">
+                          <div className="text-[10px] uppercase text-system-gray-400 font-semibold mb-1 tracking-wider">
+                            Content Preview
+                          </div>
+                          <p className="text-xs text-system-gray-600 whitespace-pre-wrap leading-relaxed">
+                            {String(
+                              selectedDocumentDetails?.analysis?.extractedText ||
+                                selectedSearchResult?.matchDetails?.bestSnippet ||
+                                selectedSearchResult?.document
+                            ).slice(0, 1000)}
+                            {String(
+                              selectedDocumentDetails?.analysis?.extractedText ||
+                                selectedSearchResult?.matchDetails?.bestSnippet ||
+                                selectedSearchResult?.document
+                            ).length > 1000 && '...'}
+                          </p>
+                        </div>
+                      )
                     )}
 
                     {/* Actions - prominent at bottom */}
@@ -2689,257 +3123,359 @@ export default function UnifiedSearchModal({
         )}
 
         {/* Graph Tab Content */}
-        {SHOW_GRAPH && activeTab === 'graph' && (
-          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-3 flex-1 min-h-[60vh]">
+        {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && activeTab === 'graph' && (
+          <div
+            className={`grid gap-3 flex-1 min-h-[60vh] transition-all duration-300 ${
+              isGraphMaximized ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[320px_1fr_320px]'
+            }`}
+          >
             {/* Left: Controls */}
-            <div className="surface-panel p-4 flex flex-col gap-4">
-              <div>
-                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
-                  Add to Graph
+            {!isGraphMaximized && (
+              <div
+                className="surface-panel p-4 flex flex-col gap-4 overflow-y-auto"
+                role="complementary"
+                aria-label="Graph Controls"
+              >
+                {/* 1. Primary Action: Add to Graph */}
+                <div>
+                  <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <SearchIcon className="w-3.5 h-3.5" />
+                    Add to Graph
+                  </div>
+                  <SearchAutocomplete
+                    value={query}
+                    onChange={setQuery}
+                    onSearch={runGraphSearch}
+                    placeholder="Search files..."
+                    ariaLabel="Search to add nodes"
+                  />
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={addMode}
+                        onChange={(e) => setAddMode(e.target.checked)}
+                        className="rounded"
+                      />
+                      Add to existing
+                    </label>
+                    <Button variant="primary" size="sm" onClick={runGraphSearch}>
+                      Add
+                    </Button>
+                  </div>
                 </div>
-                <SearchAutocomplete
-                  value={query}
-                  onChange={setQuery}
-                  onSearch={runGraphSearch}
-                  placeholder="Search to add nodes..."
-                  ariaLabel="Search to add nodes"
-                />
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={addMode}
-                      onChange={(e) => setAddMode(e.target.checked)}
-                      className="rounded"
-                    />
-                    Add to existing
-                  </label>
-                  <Button variant="primary" size="sm" onClick={runGraphSearch}>
-                    <SearchIcon className="h-4 w-4" /> Search
-                  </Button>
-                </div>
-              </div>
 
-              <div>
-                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
-                  Highlight in Graph
-                </div>
-                <Input
-                  value={withinQuery}
-                  onChange={(e) => setWithinQuery(e.target.value)}
-                  placeholder="Re-rank current nodes..."
-                  aria-label="Search within current graph"
-                />
-                <div className="mt-1 text-xs text-system-gray-400">
-                  Adjusts opacity based on relevance to your query.
-                </div>
-              </div>
+                {/* 2. Exploration Tools */}
+                <div className="pt-3 border-t border-system-gray-200">
+                  <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Network className="w-3.5 h-3.5" />
+                    Explore
+                  </div>
 
-              {/* Layout Controls */}
-              <div className="pt-2 border-t border-system-gray-200">
-                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
-                  Layout
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autoLayout}
-                      onChange={(e) => setAutoLayout(e.target.checked)}
-                      className="rounded"
-                    />
-                    Auto-layout
-                  </label>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={applyLayout}
-                    disabled={nodes.length === 0 || isLayouting}
-                    title="Re-apply automatic layout to all nodes"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                    {isLayouting ? 'Laying out...' : 'Layout'}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Multi-hop Expansion Controls */}
-              <div className="pt-2 border-t border-system-gray-200">
-                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
-                  Expansion
-                </div>
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="text-xs text-system-gray-600 flex items-center gap-2">
-                    <span>Hops:</span>
-                    <select
-                      value={hopCount}
-                      onChange={(e) => setHopCount(Number(e.target.value))}
-                      className="text-xs border border-system-gray-200 rounded px-2 py-1"
+                  <div className="space-y-2">
+                    <Button
+                      variant={showClusters ? 'primary' : 'secondary'}
+                      size="sm"
+                      onClick={loadClusters}
+                      disabled={isComputingClusters}
+                      className="w-full justify-center"
+                      title="Group similar files into clusters"
                     >
-                      <option value={1}>1</option>
-                      <option value={2}>2</option>
-                      <option value={3}>3</option>
-                    </select>
-                  </label>
-                  <label className="text-xs text-system-gray-600 flex items-center gap-2">
-                    <span>Decay:</span>
-                    <select
-                      value={decayFactor}
-                      onChange={(e) => setDecayFactor(Number(e.target.value))}
-                      className="text-xs border border-system-gray-200 rounded px-2 py-1"
+                      <Layers className="h-4 w-4 mr-2" />
+                      {isComputingClusters
+                        ? 'Computing...'
+                        : showClusters
+                          ? 'Refresh Clusters'
+                          : 'Auto-discover Clusters'}
+                    </Button>
+
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={applyLayout}
+                      disabled={nodes.length === 0 || isLayouting}
+                      className="w-full justify-center"
+                      title="Organize nodes automatically"
                     >
-                      <option value={0.5}>0.5</option>
-                      <option value={0.6}>0.6</option>
-                      <option value={0.7}>0.7</option>
-                      <option value={0.8}>0.8</option>
-                      <option value={0.9}>0.9</option>
-                    </select>
-                  </label>
+                      <LayoutGrid className="h-4 w-4 mr-2" />
+                      {isLayouting ? 'Organizing...' : 'Re-organize Layout'}
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (nodes.length > 0) {
+                          setShowClearConfirm(true);
+                        }
+                      }}
+                      disabled={nodes.length === 0}
+                      className="w-full justify-center text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      Clear Graph
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={expandFromSelected}
-                    disabled={!selectedNode || selectedKind !== 'file'}
-                    title="Find similar files to the selected node"
+
+                {/* 3. Advanced / Secondary Controls (Collapsible) */}
+                <div className="pt-2 border-t border-system-gray-200">
+                  <button
+                    onClick={() => setShowAdvancedControls(!showAdvancedControls)}
+                    className="flex items-center w-full text-left text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 hover:text-system-gray-800 transition-colors"
                   >
-                    <GitBranch className="h-4 w-4" /> Expand
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (nodes.length > 0) {
-                        setShowClearConfirm(true);
-                      }
-                    }}
-                    disabled={nodes.length === 0}
-                    title={nodes.length === 0 ? 'Nothing to clear' : 'Clear all nodes from graph'}
-                  >
-                    Clear
-                  </Button>
+                    {showAdvancedControls ? (
+                      <ChevronDown className="w-3.5 h-3.5 mr-1" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    Advanced Options
+                  </button>
+
+                  {showAdvancedControls && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 pl-1">
+                      {/* Filter */}
+                      <div>
+                        <div className="text-xs font-medium text-system-gray-700 mb-1.5">
+                          Filter Visibility
+                        </div>
+                        <Input
+                          value={withinQuery}
+                          onChange={(e) => setWithinQuery(e.target.value)}
+                          placeholder="Filter nodes..."
+                          className="h-8 text-xs"
+                        />
+                      </div>
+
+                      {/* Expansion Settings */}
+                      <div>
+                        <div className="text-xs font-medium text-system-gray-700 mb-1.5">
+                          Connection Depth
+                        </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <select
+                            value={hopCount}
+                            onChange={(e) => setHopCount(Number(e.target.value))}
+                            className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1.5 bg-white"
+                          >
+                            <option value={1}>1 level (Direct)</option>
+                            <option value={2}>2 levels</option>
+                            <option value={3}>3 levels (Deep)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Auto-layout Toggle */}
+                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={autoLayout}
+                          onChange={(e) => setAutoLayout(e.target.checked)}
+                          className="rounded"
+                        />
+                        Auto-layout on changes
+                      </label>
+
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleFindDuplicates}
+                        disabled={isFindingDuplicates}
+                        className="w-full justify-center text-xs"
+                      >
+                        <Copy className="h-3.5 w-3.5 mr-1.5" />
+                        Find Duplicates
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status Footer */}
+                <div className="mt-auto pt-4 text-xs text-system-gray-400 border-t border-system-gray-100">
+                  {nodes.length > 0 ? (
+                    <div className="flex justify-between items-center">
+                      <span>{nodes.length} nodes</span>
+                      <span>{edges.length} links</span>
+                    </div>
+                  ) : (
+                    <div className="italic text-center">Empty graph</div>
+                  )}
                 </div>
               </div>
-
-              {/* Clustering Controls */}
-              <div className="pt-2 border-t border-system-gray-200">
-                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
-                  Clustering
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant={showClusters ? 'primary' : 'secondary'}
-                    size="sm"
-                    onClick={loadClusters}
-                    disabled={isComputingClusters}
-                    title="Compute and display semantic clusters of similar files"
-                  >
-                    <Layers className="h-4 w-4" />
-                    {isComputingClusters
-                      ? 'Computing...'
-                      : showClusters
-                        ? 'Refresh Clusters'
-                        : 'Show Clusters'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleFindDuplicates}
-                    disabled={isFindingDuplicates}
-                    title="Find near-duplicate files (90%+ similarity)"
-                  >
-                    <Copy className="h-4 w-4" />
-                    {isFindingDuplicates ? 'Searching...' : 'Find Duplicates'}
-                  </Button>
-                </div>
-                <div className="mt-1 text-xs text-system-gray-400">
-                  Group similar files into clusters. Double-click to expand.
-                </div>
-              </div>
-
-              {graphStatus && <div className="text-xs text-system-gray-600">{graphStatus}</div>}
-            </div>
+            )}
 
             {/* Center: Graph */}
-            <div className="surface-panel p-0 overflow-hidden min-h-[50vh] rounded-xl border border-system-gray-200 relative">
-              {nodes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                  <Network className="w-12 h-12 text-system-gray-300 mb-3" />
-                  <div className="text-sm font-medium text-system-gray-600 mb-1">
-                    Start Exploring
+            <div
+              className={`surface-panel p-0 overflow-hidden min-h-[50vh] rounded-xl border relative transition-all duration-300 ${
+                isGraphMaximized ? 'shadow-lg ring-1 ring-system-gray-200' : ''
+              } ${
+                isDragOver
+                  ? 'border-stratosort-blue border-2 bg-stratosort-blue/5 ring-4 ring-stratosort-blue/20'
+                  : 'border-system-gray-200'
+              }`}
+              role="main"
+              aria-label="Graph Visualization"
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleFileDrop}
+            >
+              {/* Maximize/Minimize Toggle */}
+              <div className="absolute top-3 right-3 z-20 flex gap-2">
+                {isGraphMaximized && nodes.length > 0 && (
+                  <div className="bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-system-gray-600 shadow-sm flex items-center gap-2">
+                    <span>{nodes.length} nodes</span>
+                    <span className="w-px h-3 bg-system-gray-300" />
+                    <span>{edges.length} links</span>
                   </div>
-                  <div className="text-xs text-system-gray-400 max-w-sm mb-4">
-                    Discover relationships between your files using semantic similarity.
+                )}
+                <button
+                  onClick={() => {
+                    setIsGraphMaximized(!isGraphMaximized);
+                    // Wait for layout transition then fit view
+                    setTimeout(() => {
+                      reactFlowInstance.current?.fitView({ padding: 0.2, duration: 800 });
+                    }, 300);
+                  }}
+                  className="p-1.5 bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg shadow-sm text-system-gray-600 hover:text-system-gray-900 hover:bg-white transition-all"
+                  title={isGraphMaximized ? 'Exit Full View' : 'Maximize Graph View'}
+                >
+                  {isGraphMaximized ? (
+                    <Minimize2 className="w-4 h-4" />
+                  ) : (
+                    <Maximize2 className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+
+              {/* Drag overlay indicator */}
+              {isDragOver && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-stratosort-blue/10 backdrop-blur-sm pointer-events-none animate-in fade-in duration-200">
+                  <div className="bg-white rounded-xl shadow-xl px-8 py-6 flex flex-col items-center gap-3 border-2 border-stratosort-blue border-dashed">
+                    <div className="w-12 h-12 rounded-full bg-stratosort-blue/10 flex items-center justify-center">
+                      <FolderPlus className="w-6 h-6 text-stratosort-blue" />
+                    </div>
+                    <div className="text-sm font-medium text-system-gray-900">
+                      Drop files to add to graph
+                    </div>
+                    <div className="text-xs text-system-gray-500">Files must be indexed first</div>
+                  </div>
+                </div>
+              )}
+
+              {nodes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8 animate-in fade-in duration-500">
+                  <div className="w-20 h-20 bg-system-gray-50 rounded-full flex items-center justify-center mb-6">
+                    <Network className="w-10 h-10 text-stratosort-blue opacity-50" />
+                  </div>
+
+                  <h3 className="text-xl font-semibold text-system-gray-900 mb-2">
+                    Explore File Connections
+                  </h3>
+                  <p className="text-sm text-system-gray-500 max-w-md mb-8 leading-relaxed">
+                    Visualize relationships between your files. Search below to add files to the
+                    graph, or use the "Auto-discover" feature to see clusters.
+                  </p>
+
+                  {/* Inline Search for Empty State */}
+                  <div className="w-full max-w-sm mb-8 relative z-10">
+                    <div className="relative group">
+                      <SearchAutocomplete
+                        value={query}
+                        onChange={setQuery}
+                        onSearch={runGraphSearch}
+                        placeholder="Search for files to start..."
+                        className="shadow-lg border-system-gray-200 focus-within:border-stratosort-blue focus-within:ring-4 focus-within:ring-stratosort-blue/10 transition-all"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="text-xs text-system-gray-400 mt-2 flex justify-center gap-4">
+                      <span>or drag files here from the list</span>
+                    </div>
                   </div>
 
                   {/* Quick start options */}
-                  <div className="flex flex-col gap-2 mb-4 w-full max-w-xs">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={loadClusters}
-                      disabled={isComputingClusters || !stats?.files}
-                      className="w-full justify-center"
-                    >
-                      <Layers className="h-4 w-4" />
-                      {isComputingClusters ? 'Computing...' : 'Auto-discover clusters'}
-                    </Button>
-                    <div className="text-[10px] text-system-gray-400">
-                      or search above to add specific files
+                  {stats?.files > 0 && (
+                    <div className="flex flex-col gap-2 mb-8 w-full max-w-xs">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={loadClusters}
+                        disabled={isComputingClusters}
+                        className="w-full justify-center bg-white border border-system-gray-200 hover:bg-system-gray-50 text-system-gray-700 shadow-sm"
+                      >
+                        <Layers className="h-4 w-4 mr-2 text-stratosort-blue" />
+                        {isComputingClusters ? 'Computing...' : 'Auto-discover clusters'}
+                      </Button>
                     </div>
-                  </div>
+                  )}
 
                   {/* Empty state guidance */}
                   {stats?.files === 0 && (
-                    <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg max-w-xs">
-                      <div className="font-medium mb-1">No files indexed yet</div>
-                      <div className="text-amber-600">
-                        Go to Settings &rarr; Embeddings &rarr; Rebuild Files to index your analyzed
-                        files for semantic search.
+                    <div className="mb-8 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg max-w-xs text-left flex gap-3">
+                      <FolderPlus className="w-5 h-5 shrink-0" />
+                      <div>
+                        <div className="font-medium mb-1">No files indexed yet</div>
+                        <div className="text-amber-600 opacity-90">
+                          Go to Settings &rarr; Embeddings &rarr; Rebuild Files to index your
+                          analyzed files.
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {stats?.files > 0 && stats?.files < 10 && (
-                    <div className="mb-4 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-4 py-3 rounded-lg max-w-xs">
-                      <div className="font-medium mb-1">Few files indexed ({stats.files})</div>
-                      <div className="text-blue-600">
-                        Analyze more files to see richer clusters and connections.
-                      </div>
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-xs text-system-gray-400 max-w-md border-t border-system-gray-100 pt-6">
+                    <div className="flex items-center gap-2">
+                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                        Click
+                      </kbd>
+                      <span>to select nodes</span>
                     </div>
-                  )}
-
-                  <div className="text-xs text-system-gray-400 max-w-xs space-y-1 border-t border-system-gray-200 pt-3">
-                    <div className="font-medium text-system-gray-500 mb-1">Tips:</div>
-                    <div>
-                      <strong>Click</strong> a node to select it
+                    <div className="flex items-center gap-2">
+                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                        Double-click
+                      </kbd>
+                      <span>to expand</span>
                     </div>
-                    <div>
-                      <strong>Double-click</strong> to find similar files
+                    <div className="flex items-center gap-2">
+                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                        Drag
+                      </kbd>
+                      <span>to rearrange</span>
                     </div>
-                    <div>
-                      <strong>Drag</strong> nodes to rearrange
-                    </div>
-                    <div className="pt-1">
-                      <strong>{isMac ? '⌘F' : 'Ctrl+F'}</strong> to focus search
+                    <div className="flex items-center gap-2">
+                      <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
+                        Space
+                      </kbd>
+                      <span>to center</span>
                     </div>
                   </div>
                 </div>
               ) : (
-                <>
+                <GraphErrorBoundary
+                  onReset={() => {
+                    // Force re-render by triggering a minor state update
+                    setZoomLevel((z) => z);
+                  }}
+                  onClearGraph={() => {
+                    graphActions.setNodes([]);
+                    graphActions.setEdges([]);
+                    graphActions.selectNode(null);
+                    setError('');
+                  }}
+                >
                   <ReactFlow
                     nodes={rfNodes}
                     edges={edges}
-                    nodeTypes={nodeTypes}
-                    edgeTypes={edgeTypes}
+                    nodeTypes={NODE_TYPES}
+                    edgeTypes={EDGE_TYPES}
                     onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
+                    onEdgesChange={graphActions.onEdgesChange}
+                    className="bg-[var(--surface-muted)]"
                     onNodeClick={onNodeClick}
                     onNodeDoubleClick={onNodeDoubleClick}
                     onInit={(instance) => {
                       reactFlowInstance.current = instance;
                     }}
+                    onMove={(_, viewport) => setZoomLevel(viewport.zoom)}
                     fitView
                     fitViewOptions={rfFitViewOptions}
                     minZoom={0.2}
@@ -2950,85 +3486,225 @@ export default function UnifiedSearchModal({
                     <Background color="#e5e7eb" gap={16} />
                     <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
                     <Controls showInteractive={false} />
+
+                    {/* Zoom Level Indicator */}
+                    {zoomLevel < 0.6 && (
+                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10">
+                        Labels hidden at this zoom • Scroll to zoom in
+                      </div>
+                    )}
                   </ReactFlow>
-
-                  {/* Legend overlay - show when clusters are visible */}
-                  {showClusters && (
-                    <ClusterLegend className="absolute top-3 left-3 z-10 shadow-md" />
-                  )}
-
-                  {/* Compact legend for non-cluster view */}
-                  {!showClusters && nodes.length > 0 && (
-                    <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg px-3 py-2">
-                      <ClusterLegend compact />
-                    </div>
-                  )}
-                </>
+                </GraphErrorBoundary>
               )}
             </div>
 
-            {/* Right: Details */}
-            <div className="surface-panel p-4 flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
-                <div className="text-sm font-semibold text-system-gray-900">Node Details</div>
-              </div>
-
-              {selectedNode ? (
-                <>
-                  <div className="text-sm font-medium text-system-gray-900 break-all">
-                    {selectedLabel}
+            {/* Right: Details & Legend */}
+            {!isGraphMaximized && (
+              <div
+                className="surface-panel flex flex-col h-full overflow-hidden"
+                role="complementary"
+                aria-label="Node Details"
+              >
+                <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
+                  <div className="text-sm font-semibold text-system-gray-900">
+                    {selectedNode ? 'Node Details' : 'Legend'}
                   </div>
-                  {selectedPath && (
-                    <div className="text-xs text-system-gray-500 break-all flex items-center gap-1">
-                      {isLoadingMetadata && (
-                        <span className="inline-block w-3 h-3 border border-system-gray-300 border-t-stratosort-blue rounded-full animate-spin flex-shrink-0" />
+                </div>
+
+                <div className="p-4 overflow-y-auto flex-1">
+                  {selectedNode ? (
+                    <>
+                      {isLoadingMetadata ? (
+                        /* Skeleton loading state */
+                        <div className="animate-pulse space-y-4">
+                          <div className="h-4 bg-system-gray-200 rounded w-3/4" />
+                          <div className="h-3 bg-system-gray-200 rounded w-full" />
+                          <div className="h-3 bg-system-gray-200 rounded w-1/2" />
+                          <div className="flex gap-2 pt-2">
+                            <div className="h-8 bg-system-gray-200 rounded w-20" />
+                            <div className="h-8 bg-system-gray-200 rounded w-20" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-6">
+                          {/* Header Info */}
+                          <div>
+                            <div className="flex items-start gap-3 mb-2">
+                              <div className="mt-1 p-2 bg-white border border-system-gray-200 rounded-lg shadow-sm text-stratosort-blue">
+                                {selectedKind === 'query' ? (
+                                  <SearchIcon className="h-5 w-5" />
+                                ) : selectedKind === 'cluster' ? (
+                                  <Layers className="h-5 w-5" />
+                                ) : (
+                                  <FileText className="h-5 w-5" />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold text-system-gray-900 break-words leading-snug">
+                                  {selectedLabel}
+                                </div>
+                                <div className="text-xs text-system-gray-500 mt-1 capitalize px-2 py-0.5 bg-system-gray-100 rounded-full inline-block">
+                                  {selectedKind} Node
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Properties Section */}
+                          {selectedPath && (
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider">
+                                Properties
+                              </div>
+                              <div className="bg-system-gray-50 rounded-lg p-3 border border-system-gray-100 space-y-2">
+                                <div>
+                                  <div className="text-[10px] text-system-gray-400 uppercase tracking-wide mb-0.5">
+                                    Path
+                                  </div>
+                                  <div className="text-xs text-system-gray-700 font-mono break-all leading-relaxed select-all">
+                                    {selectedPath}
+                                  </div>
+                                </div>
+                                {selectedNode.data?.score > 0 && (
+                                  <div>
+                                    <div className="text-[10px] text-system-gray-400 uppercase tracking-wide mb-0.5">
+                                      Relevance Score
+                                    </div>
+                                    <div className="text-xs text-system-gray-700">
+                                      {Math.round(selectedNode.data.score * 100)}%
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Connections Section */}
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between">
+                              <span>Connections</span>
+                              <span className="text-system-gray-400 font-normal">
+                                {
+                                  edges.filter(
+                                    (e) =>
+                                      e.source === selectedNode.id || e.target === selectedNode.id
+                                  ).length
+                                }{' '}
+                                links
+                              </span>
+                            </div>
+                            {/* We could list neighbors here, but keeping it simple for now */}
+                          </div>
+
+                          {/* Actions Section */}
+                          <div className="space-y-2 pt-2 border-t border-system-gray-100">
+                            <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
+                              Actions
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => openFile(selectedPath)}
+                                disabled={!selectedPath}
+                                className="w-full justify-center"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Open
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => revealFile(selectedPath)}
+                                disabled={!selectedPath}
+                                className="w-full justify-center"
+                              >
+                                <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Reveal
+                              </Button>
+                            </div>
+
+                            {selectedKind === 'file' && selectedPath && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  const fileName = safeBasename(selectedPath) || 'file';
+                                  setQuery(`similar to: ${fileName}`);
+                                  setActiveTab('search');
+                                }}
+                                className="w-full justify-center"
+                              >
+                                <SearchIcon className="h-3.5 w-3.5 mr-1.5" /> Find Similar
+                              </Button>
+                            )}
+                          </div>
+
+                          {selectedKind === 'file' && (
+                            <div className="text-[10px] text-system-gray-300 font-mono mt-4 truncate">
+                              ID: {selectedNode.id}
+                            </div>
+                          )}
+                        </div>
                       )}
-                      <span>{selectedPath}</span>
+                    </>
+                  ) : (
+                    <div className="h-full flex flex-col">
+                      {/* Integrated Legend when no node selected */}
+                      {showClusters ? (
+                        <div className="space-y-4">
+                          <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
+                            Cluster Legend
+                          </div>
+                          <ClusterLegend
+                            className="shadow-none border-none p-0 bg-transparent w-full"
+                            activeFilters={activeFilters}
+                            onToggleFilter={handleToggleFilter}
+                            compact={false}
+                          />
+                        </div>
+                      ) : nodes.length > 0 ? (
+                        <div className="space-y-4">
+                          <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2">
+                            Graph Legend
+                          </div>
+                          <ClusterLegend
+                            compact={false}
+                            className="shadow-none border-none p-0 bg-transparent w-full"
+                            activeFilters={activeFilters}
+                            onToggleFilter={handleToggleFilter}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-center py-12 text-system-gray-400">
+                          <div className="w-12 h-12 rounded-full bg-system-gray-100 flex items-center justify-center mb-3">
+                            <Sparkles className="w-6 h-6 text-system-gray-300" />
+                          </div>
+                          <p className="text-sm font-medium text-system-gray-600">No Selection</p>
+                          <p className="text-xs text-system-gray-400 mt-1 max-w-[200px]">
+                            Select a node to view details, or run a search to populate the graph.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
-
-                  <div className="pt-2 flex flex-wrap gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => openFile(selectedPath)}
-                      disabled={!selectedPath}
-                    >
-                      <ExternalLink className="h-4 w-4" /> Open
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => revealFile(selectedPath)}
-                      disabled={!selectedPath}
-                    >
-                      <FolderOpen className="h-4 w-4" /> Reveal
-                    </Button>
-                  </div>
-
-                  {selectedKind === 'file' && (
-                    <div className="text-xs text-system-gray-400 mt-2">
-                      ID: <span className="break-all font-mono">{selectedNode.id}</span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-sm text-system-gray-500">Click a node to see details.</div>
-              )}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* First-time user tour */}
+      {activeTab === 'graph' && <GraphTour isOpen={isOpen && activeTab === 'graph'} />}
 
       {/* Clear confirmation modal */}
       <ConfirmModal
         isOpen={showClearConfirm}
         onClose={() => setShowClearConfirm(false)}
         onConfirm={() => {
-          setNodes([]);
-          setEdges([]);
-          setSelectedNodeId(null);
+          graphActions.setNodes([]);
+          graphActions.setEdges([]);
+          graphActions.selectNode(null);
           setError('');
           setGraphStatus('');
           setShowClusters(false);

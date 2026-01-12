@@ -118,8 +118,7 @@ function FileRow({ file, index }) {
 function CompletePhase() {
   const dispatch = useAppDispatch();
   const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
-  const fileStates = useAppSelector((state) => state.files.fileStates);
-  const [showActionHistory, setShowActionHistory] = React.useState(false);
+  // Remove unused fileStates and showActionHistory state
 
   const { filesToRender, overflowCount, destinationCount, totalFiles } = useMemo(() => {
     const safeFiles = Array.isArray(organizedFiles) ? organizedFiles : [];
@@ -140,32 +139,7 @@ function CompletePhase() {
     };
   }, [organizedFiles]);
 
-  const actionHistory = useMemo(() => {
-    const safeFileStates = fileStates && typeof fileStates === 'object' ? fileStates : {};
-    const entries = Object.entries(safeFileStates).map(([path, meta = {}]) => {
-      const timestamp = meta.timestamp ? new Date(meta.timestamp) : null;
-      const label =
-        meta.state === 'ready'
-          ? 'Ready'
-          : meta.state === 'analyzing'
-            ? 'Analyzing'
-            : meta.state === 'error'
-              ? 'Error'
-              : 'Updated';
-      const fileName = path?.split(/[\\/]/).pop() || path || 'Unknown file';
-      return {
-        path,
-        fileName,
-        state: meta.state,
-        label,
-        timestamp
-      };
-    });
-
-    return entries
-      .sort((a, b) => (b.timestamp?.getTime?.() || 0) - (a.timestamp?.getTime?.() || 0))
-      .slice(0, 8);
-  }, [fileStates]);
+  // Remove unused actionHistory memo
 
   // FIX: Memoize actions object to prevent recreation on every render
   const actions = useMemo(
@@ -241,19 +215,6 @@ function CompletePhase() {
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              <Button
-                variant={showActionHistory ? 'secondary' : 'ghost'}
-                size="sm"
-                className="flex items-center gap-2"
-                onClick={() => setShowActionHistory((prev) => !prev)}
-                aria-label="Toggle action history"
-                title="Toggle action history"
-              >
-                <ClockIcon className="w-4 h-4" />
-                <span className="hidden sm:inline">
-                  {showActionHistory ? 'Hide history' : 'Action history'}
-                </span>
-              </Button>
               <UndoRedoToolbar className="flex-shrink-0" />
             </div>
           </div>
@@ -323,66 +284,8 @@ function CompletePhase() {
             </div>
           </section>
 
-          {/* Action History + Next Steps */}
+          {/* Next Steps */}
           <div className="flex flex-col gap-[var(--spacing-default)]">
-            {showActionHistory && (
-              <section
-                className="surface-panel flex flex-col"
-                style={{ gap: 'var(--spacing-default)' }}
-              >
-                <div className="flex items-center justify-between">
-                  <h3
-                    className="heading-tertiary m-0 flex items-center"
-                    style={{ gap: 'var(--spacing-compact)' }}
-                  >
-                    <ClipboardListIcon className="w-5 h-5 text-stratosort-blue" /> Action history
-                  </h3>
-                  <span className="text-xs text-system-gray-500">
-                    Recent {actionHistory.length || 0}
-                  </span>
-                </div>
-
-                <div className="flex flex-col" style={{ gap: 'var(--spacing-cozy)' }}>
-                  {actionHistory.length > 0 ? (
-                    actionHistory.map((entry) => (
-                      <div
-                        key={entry.path}
-                        className="flex items-start justify-between rounded-lg border border-border-soft/70 bg-white/80 px-3 py-2"
-                        style={{ gap: 'var(--spacing-cozy)' }}
-                      >
-                        <div
-                          className="flex flex-col min-w-0"
-                          style={{ gap: 'var(--spacing-compact)' }}
-                        >
-                          <span className="text-sm font-medium text-system-gray-900 break-words">
-                            {entry.fileName}
-                          </span>
-                          <span className="text-xs text-system-gray-500 break-words">
-                            {entry.path}
-                          </span>
-                          {entry.timestamp && (
-                            <span className="text-[11px] text-system-gray-500">
-                              {entry.timestamp.toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs font-semibold text-stratosort-blue whitespace-nowrap">
-                          {entry.label}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div
-                      className="text-sm text-system-gray-500 text-center"
-                      style={{ padding: 'var(--spacing-cozy)' }}
-                    >
-                      No recent actions recorded.
-                    </div>
-                  )}
-                </div>
-              </section>
-            )}
-
             <section
               className="surface-panel flex flex-col justify-between"
               style={{ gap: 'var(--spacing-default)' }}

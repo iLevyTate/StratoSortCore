@@ -2,6 +2,9 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { getNvidiaSmiCommand, isMacOS } = require('../../shared/platformUtils');
 const { GPU_TUNING, OLLAMA } = require('../../shared/performanceConstants');
+const { logger } = require('../../shared/logger');
+
+logger.setContext('PerformanceService');
 
 /**
  * PerformanceService
@@ -196,25 +199,44 @@ async function detectAppleGpu() {
  * Detect any available GPU (NVIDIA, AMD, Intel, Apple)
  */
 async function detectGpu() {
+  logger.debug('[PerformanceService] Detecting GPU...');
+
   // Try vendors in order of Ollama optimization level
   const nvidia = await detectNvidiaGpu();
-  if (nvidia) return nvidia;
+  if (nvidia) {
+    logger.info('[PerformanceService] NVIDIA GPU detected', nvidia);
+    return nvidia;
+  }
 
   const apple = await detectAppleGpu();
-  if (apple) return apple;
+  if (apple) {
+    logger.info('[PerformanceService] Apple Silicon GPU detected', apple);
+    return apple;
+  }
 
   const amd = await detectAmdGpu();
-  if (amd) return amd;
+  if (amd) {
+    logger.info('[PerformanceService] AMD GPU detected', amd);
+    return amd;
+  }
 
   const intel = await detectIntelGpu();
-  if (intel) return intel;
+  if (intel) {
+    logger.info('[PerformanceService] Intel GPU detected', intel);
+    return intel;
+  }
 
+  logger.debug('[PerformanceService] No GPU detected, using CPU-only mode');
   return null;
 }
 
 async function detectSystemCapabilities() {
-  if (cachedCapabilities) return cachedCapabilities;
+  if (cachedCapabilities) {
+    logger.debug('[PerformanceService] Returning cached capabilities');
+    return cachedCapabilities;
+  }
 
+  logger.info('[PerformanceService] Detecting system capabilities...');
   const cpuThreads = Array.isArray(os.cpus()) ? os.cpus().length : 4;
   const gpu = await detectGpu();
 
@@ -227,6 +249,15 @@ async function detectSystemCapabilities() {
     // Legacy compatibility
     hasNvidiaGpu: gpu?.vendor === 'nvidia'
   };
+
+  logger.info('[PerformanceService] System capabilities detected', {
+    cpuThreads,
+    hasGpu: cachedCapabilities.hasGpu,
+    gpuVendor: cachedCapabilities.gpuVendor,
+    gpuName: cachedCapabilities.gpuName,
+    gpuMemoryMB: cachedCapabilities.gpuMemoryMB
+  });
+
   return cachedCapabilities;
 }
 
@@ -240,6 +271,7 @@ async function detectSystemCapabilities() {
  * - num_gpu=-1 tells Ollama to use all available GPU layers (safer than hardcoded 9999)
  */
 async function buildOllamaOptions(task = 'text') {
+  logger.debug('[PerformanceService] Building Ollama options', { task });
   const caps = await detectSystemCapabilities();
 
   // Environment variable overrides for fine-tuning
@@ -310,7 +342,7 @@ async function buildOllamaOptions(task = 'text') {
     use_mlock: process.platform === 'linux' && os.totalmem() / 1024 / 1024 / 1024 > 16
   };
 
-  return {
+  const options = {
     // Threading + context
     num_thread: numThread,
     num_ctx: numCtx,
@@ -322,6 +354,17 @@ async function buildOllamaOptions(task = 'text') {
     // CRITICAL: Keep model loaded in memory to avoid reload latency (5-30 seconds per load)
     keep_alive: envKeepAlive
   };
+
+  logger.debug('[PerformanceService] Ollama options built', {
+    task,
+    numThread,
+    numCtx,
+    numBatch,
+    hasGpu: caps.hasGpu,
+    gpuLayers: gpuHints.num_gpu
+  });
+
+  return options;
 }
 
 /**

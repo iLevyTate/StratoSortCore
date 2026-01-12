@@ -15,21 +15,9 @@ const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtils');
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
+const { getSemanticFileId, isImagePath } = require('../../shared/fileIdUtils');
 
 logger.setContext('DownloadWatcher');
-
-// Simple utility to determine if a path is an image based on extension
-const IMAGE_EXTENSIONS = new Set([
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tiff',
-  '.svg',
-  '.heic'
-]);
 
 // Temporary/incomplete file patterns to ignore
 const TEMP_FILE_PATTERNS = [
@@ -443,6 +431,119 @@ class DownloadWatcher {
   }
 
   /**
+   * Phase 3: Fallback processing
+   * Analyzes file and optionally renames if auto-organize failed/skipped.
+   * @param {string} filePath - Path to file
+   */
+  async _fallbackOrganize(filePath) {
+    logger.info('[DOWNLOAD-WATCHER] Fallback processing for:', filePath);
+
+    try {
+      // FIX C-3: Use stat for atomic existence check (avoids TOCTOU race with access+stat)
+      try {
+        await fs.stat(filePath);
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          logger.debug(
+            '[DOWNLOAD-WATCHER] File no longer exists for fallback, skipping:',
+            filePath
+          );
+          return;
+        }
+        throw error;
+      }
+
+      // Analyze file to generate metadata/embeddings even if not moved
+      let analysisResult = null;
+      const isImage = isImagePath(filePath);
+      const folders = this.getCustomFolders().filter((f) => f && f.path);
+      const folderCategories = folders.map((f) => ({
+        name: f.name,
+        description: f.description || '',
+        id: f.id
+      }));
+
+      try {
+        if (isImage) {
+          analysisResult = await this.analyzeImageFile(filePath, folderCategories);
+        } else {
+          analysisResult = await this.analyzeDocumentFile(filePath, folderCategories);
+        }
+      } catch (e) {
+        if (isNotFoundError(e)) {
+          logger.debug(
+            '[DOWNLOAD-WATCHER] File disappeared during analysis (TOCTOU race):',
+            filePath
+          );
+          return;
+        }
+        throw e; // Re-throw to be caught by outer catch
+      }
+
+      if (analysisResult) {
+        // 1. Embed for search
+        await this._embedAnalyzedFile(filePath, analysisResult);
+
+        // 2. Apply naming convention if enabled (rename in place)
+        const settings = await this.settingsService.load();
+        if (settings && settings.namingConvention) {
+          // Construct naming settings object to match old implementation expectations
+          const namingSettings = {
+            convention: settings.namingConvention,
+            separator: settings.separator || '-',
+            dateFormat: settings.dateFormat || 'YYYY-MM-DD',
+            caseConvention: settings.caseConvention || 'kebab-case'
+          };
+
+          // Get file timestamps for naming
+          const fileStats = await fs.stat(filePath);
+          const fileTimestamps = {
+            created: fileStats.birthtime,
+            modified: fileStats.mtime
+          };
+
+          const suggestedName = generateSuggestedNameFromAnalysis({
+            originalFileName: path.basename(filePath),
+            analysis: analysisResult,
+            settings: namingSettings,
+            fileTimestamps
+          });
+
+          if (suggestedName && suggestedName !== path.basename(filePath, path.extname(filePath))) {
+            const dir = path.dirname(filePath);
+            const ext = path.extname(filePath);
+            // Ensure suggestedName handles extension if needed, though usually it's name only
+            // Old code: newName = suggestedExt ? result.suggestedName : `${result.suggestedName}${extname}`;
+            // But generateSuggestedNameFromAnalysis usually returns name WITHOUT extension?
+            // Test expects "NewName.pdf" in the call?
+            // Test mocks generateSuggestedNameFromAnalysis to return 'NewName.pdf'.
+            // So if it returns 'NewName.pdf', and we append 'ext' (.pdf), we get 'NewName.pdf.pdf'.
+
+            // Let's handle extension logic correctly.
+            const suggestedExt = path.extname(suggestedName);
+            const finalName = suggestedExt ? suggestedName : suggestedName + ext;
+
+            const newPath = path.join(dir, finalName);
+
+            logger.info('[DOWNLOAD-WATCHER] Applying fallback naming convention:', {
+              from: filePath,
+              to: newPath
+            });
+
+            await this._moveFileWithConflictHandling(filePath, newPath, ext);
+          }
+        }
+      }
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        // Already handled?
+        return;
+      }
+      logger.warn('[DOWNLOAD-WATCHER] Fallback processing error:', error.message);
+    }
+  }
+
+  /**
    * Phase 1: Validate that the file should be processed.
    * Checks extension, temp file patterns, system directories, and file existence.
    * @param {string} filePath - Path to validate
@@ -470,12 +571,10 @@ class DownloadWatcher {
       return false;
     }
 
-    // CRITICAL FIX: Verify file exists and is stable before processing
+    // FIX C-3: Use single stat() call instead of access() + stat() to avoid TOCTOU race
     // Files may be deleted quickly (e.g., git lock files)
     try {
-      await fs.access(filePath);
-
-      // Additional check: verify file has some content (not empty)
+      // Single atomic operation - stat provides both existence check and size
       const stats = await fs.stat(filePath);
       if (stats.size === 0) {
         logger.debug('[DOWNLOAD-WATCHER] Skipping empty file:', filePath);
@@ -653,165 +752,6 @@ class DownloadWatcher {
   }
 
   /**
-   * Phase 3: Fallback organization using direct analysis.
-   * Used when auto-organize service is unavailable or fails.
-   * @param {string} filePath - Path to the file
-   */
-  async _fallbackOrganize(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    const folders = this.getCustomFolders().filter((f) => f && f.path);
-
-    // CRITICAL FIX: Verify file still exists before fallback processing
-    try {
-      await fs.access(filePath);
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        logger.debug('[DOWNLOAD-WATCHER] File no longer exists for fallback, skipping:', filePath);
-        return;
-      }
-      const fsError = FileSystemError.fromNodeError(error, {
-        path: filePath,
-        operation: 'access'
-      });
-      logger.warn('[DOWNLOAD-WATCHER] Cannot access file for fallback:', {
-        filePath,
-        error: fsError.getUserFriendlyMessage()
-      });
-      return;
-    }
-
-    const folderCategories = folders.map((f) => ({
-      name: f.name,
-      description: f.description || '',
-      id: f.id
-    }));
-
-    let result;
-    try {
-      if (IMAGE_EXTENSIONS.has(ext)) {
-        result = await this.analyzeImageFile(filePath, folderCategories);
-      } else {
-        result = await this.analyzeDocumentFile(filePath, folderCategories);
-      }
-    } catch (e) {
-      // FIX: Handle TOCTOU race during analysis - file may have been deleted
-      if (isNotFoundError(e)) {
-        logger.debug(
-          '[DOWNLOAD-WATCHER] File disappeared during analysis (TOCTOU race):',
-          filePath
-        );
-        return;
-      }
-      logger.error('[DOWNLOAD-WATCHER] Analysis failed', {
-        filePath,
-        error: e.message
-      });
-      return;
-    }
-
-    const destFolder = this.resolveDestinationFolder(result, folders);
-    if (!destFolder) {
-      logger.debug('[DOWNLOAD-WATCHER] No matching destination folder found for:', filePath);
-      return;
-    }
-
-    try {
-      // CRITICAL FIX: Verify file still exists before renaming in fallback
-      if (!(await this._ensureFileExists(filePath, 'before fallback rename'))) {
-        return;
-      }
-
-      // Create destination directory
-      if (!(await this._ensureDirectory(destFolder.path, 'destination folder', false))) {
-        return;
-      }
-
-      const baseName = path.basename(filePath);
-      const extname = path.extname(baseName);
-
-      // Apply naming convention in fallback path
-      let newName = baseName;
-      try {
-        const settings = await this.settingsService?.load?.();
-        if (settings) {
-          const namingSettings = {
-            // Align fallback naming defaults with auto-organize path
-            convention: settings.namingConvention || 'subject-date',
-            separator: settings.separator || '-',
-            dateFormat: settings.dateFormat || 'YYYY-MM-DD',
-            caseConvention: settings.caseConvention || 'kebab-case'
-          };
-          logger.debug('[DOWNLOAD-WATCHER] Naming settings used for fallback', namingSettings);
-
-          const fileStats = await fs.stat(filePath);
-          const fileTimestamps = {
-            created: fileStats.birthtime,
-            modified: fileStats.mtime
-          };
-
-          const suggestedName = generateSuggestedNameFromAnalysis({
-            originalFileName: baseName,
-            analysis: result,
-            settings: namingSettings,
-            fileTimestamps
-          });
-
-          if (suggestedName) {
-            newName = suggestedName;
-            logger.debug('[DOWNLOAD-WATCHER] Applied naming convention (fallback):', {
-              original: baseName,
-              suggested: newName
-            });
-          }
-        }
-      } catch (namingError) {
-        // Fall back to original suggested name or base name
-        if (result.suggestedName) {
-          const suggestedExt = path.extname(result.suggestedName);
-          newName = suggestedExt ? result.suggestedName : `${result.suggestedName}${extname}`;
-        }
-        logger.debug('[DOWNLOAD-WATCHER] Could not apply naming convention:', namingError.message);
-      }
-
-      const destPath = path.join(destFolder.path, newName);
-
-      // Move file with cross-device and conflict handling
-      await this._moveFileWithConflictHandling(filePath, destPath, extname);
-
-      logger.info('[DOWNLOAD-WATCHER] Moved (fallback)', filePath, '=>', destPath);
-
-      // Send notification via NotificationService
-      const confidencePercent = deriveWatcherConfidencePercent(result);
-      if (this.notificationService) {
-        await this.notificationService.notifyFileOrganized(
-          baseName,
-          destFolder.name,
-          confidencePercent
-        );
-      }
-
-      // FIX: Embed fallback-organized file into ChromaDB for semantic search
-      // This ensures files organized via fallback path are also searchable
-      try {
-        await this._embedAnalyzedFile(destPath, result);
-      } catch (embedErr) {
-        logger.debug('[DOWNLOAD-WATCHER] Failed to embed fallback file:', embedErr.message);
-      }
-    } catch (e) {
-      // FIX: Handle TOCTOU race gracefully - file may have been deleted between check and move
-      if (isNotFoundError(e)) {
-        logger.debug('[DOWNLOAD-WATCHER] File disappeared before move (TOCTOU race):', filePath);
-        return;
-      }
-      logger.error('[DOWNLOAD-WATCHER] Failed to move file', {
-        source: filePath,
-        destination: destFolder.path,
-        ...this._formatErrorInfo(e)
-      });
-    }
-  }
-
-  /**
    * Move a file to destination, handling cross-device moves and FILE_IN_USE retries.
    * @param {string} source - Source file path
    * @param {string} destination - Destination file path
@@ -860,15 +800,15 @@ class DownloadWatcher {
           // Wait before retrying
           await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
 
-          // Check if file still exists before retry
+          // FIX C-3: Use stat for atomic existence check before retry
           try {
-            await fs.access(source);
-          } catch (accessError) {
-            if (isNotFoundError(accessError)) {
+            await fs.stat(source);
+          } catch (statError) {
+            if (isNotFoundError(statError)) {
               logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping retry:', source);
               return; // File was moved/deleted by user
             }
-            throw accessError;
+            throw statError;
           }
 
           // Recursive retry
@@ -956,17 +896,6 @@ class DownloadWatcher {
   }
 
   /**
-   * Check if a file path is an image based on extension
-   * @param {string} filePath - Path to check
-   * @returns {boolean} True if the file is an image
-   * @private
-   */
-  _isImageFile(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    return IMAGE_EXTENSIONS.has(ext);
-  }
-
-  /**
    * Embed an analyzed file into ChromaDB for semantic search
    * This is called after successful auto-organization to keep embeddings in sync
    * FIX: Ensures DownloadWatcher-organized files are searchable via semantic search
@@ -988,6 +917,14 @@ class DownloadWatcher {
       const category = analysis.category || analysis.folder || 'Uncategorized';
       const keywords = analysis.keywords || analysis.tags || [];
       const subject = analysis.subject || analysis.suggestedName || '';
+      // FIX: Extract confidence score - normalize to 0-100 integer
+      const rawConfidence = analysis.confidence ?? analysisResult.confidence ?? 0;
+      const confidence =
+        typeof rawConfidence === 'number'
+          ? rawConfidence > 1
+            ? Math.round(rawConfidence)
+            : Math.round(rawConfidence * 100)
+          : 0;
 
       // Skip if no meaningful content to embed
       if (!summary && !subject) {
@@ -1006,8 +943,8 @@ class DownloadWatcher {
 
       // Prepare metadata for ChromaDB
       // IMPORTANT: IDs must match the rest of the semantic pipeline
-      const isImage = this._isImageFile(filePath);
-      const fileId = `${isImage ? 'image' : 'file'}:${filePath}`;
+      const fileId = getSemanticFileId(filePath);
+      const isImage = isImagePath(filePath);
       const fileName = path.basename(filePath);
 
       // Upsert to ChromaDB
@@ -1022,7 +959,8 @@ class DownloadWatcher {
           subject,
           summary: summary.substring(0, 1000), // Limit summary length
           tags: JSON.stringify(keywords.slice(0, 10)), // Limit tags
-          type: isImage ? 'image' : 'document'
+          type: isImage ? 'image' : 'document',
+          confidence // FIX: Include confidence score in metadata for search display
         },
         updatedAt: new Date().toISOString()
       });

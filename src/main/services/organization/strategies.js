@@ -8,6 +8,7 @@
  */
 
 const path = require('path');
+const { FILE_TYPE_CATEGORIES, getFileTypeCategory } = require('../autoOrganize/fileTypeUtils');
 
 /**
  * Organization strategy templates
@@ -44,37 +45,6 @@ const strategies = {
     priority: ['category', 'subcategory', 'tags']
   }
 };
-
-/**
- * File type category mapping
- */
-const fileTypeCategories = {
-  documents: ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'],
-  spreadsheets: ['xls', 'xlsx', 'csv', 'ods'],
-  presentations: ['ppt', 'pptx', 'odp'],
-  images: ['jpg', 'jpeg', 'png', 'gif', 'svg', 'bmp'],
-  videos: ['mp4', 'avi', 'mov', 'wmv', 'flv'],
-  audio: ['mp3', 'wav', 'flac', 'aac', 'm4a'],
-  code: ['js', 'py', 'java', 'cpp', 'html', 'css'],
-  archives: ['zip', 'rar', '7z', 'tar', 'gz']
-};
-
-/**
- * Get file type category from extension
- * @param {string} extension - File extension (with or without leading dot)
- * @returns {string} Category name
- */
-function getFileTypeCategory(extension) {
-  // Normalize extension: strip leading dot and convert to lowercase
-  const ext = (extension || '').toLowerCase().replace(/^\./, '');
-
-  for (const [category, extensions] of Object.entries(fileTypeCategories)) {
-    if (extensions.includes(ext)) {
-      return category.charAt(0).toUpperCase() + category.slice(1);
-    }
-  }
-  return 'Files';
-}
 
 /**
  * Score how well a file fits a strategy
@@ -259,7 +229,8 @@ function getFallbackSuggestion(file, smartFolders) {
 
   return {
     folder: matchingFolder?.name || category,
-    path: matchingFolder?.path || `Documents/${category}`,
+    // FIX: Don't hardcode 'Documents/' prefix as it causes double nesting when joined with defaultLocation
+    path: matchingFolder?.path || category,
     confidence: 0.3,
     method: 'fallback'
   };
@@ -267,7 +238,8 @@ function getFallbackSuggestion(file, smartFolders) {
 
 module.exports = {
   strategies,
-  fileTypeCategories,
+  // Re-export from fileTypeUtils for backward compatibility
+  fileTypeCategories: FILE_TYPE_CATEGORIES,
   getFileTypeCategory,
   scoreFileForStrategy,
   matchesStrategyPattern,

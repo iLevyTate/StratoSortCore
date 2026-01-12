@@ -111,9 +111,11 @@ Select multiple files/folders, analyze, and apply suggestions in bulk with full 
 ```bash
 git clone https://github.com/iLevyTate/elstratosort.git
 cd elstratosort
-npm ci            # Uses the pinned lockfile (eslint 8.57.1)
-npm run dev       # Start Electron + React in dev mode
+npm ci            # Install dependencies
+npm run dev       # Start the app
 ```
+
+**First Launch:** The app will guide you through installing Ollama and downloading AI models.
 
 ### Key Scripts
 

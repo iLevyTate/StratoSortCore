@@ -12,11 +12,11 @@
  */
 
 const lunr = require('lunr');
-const path = require('path');
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
-const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
+const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
+const { getSemanticFileId } = require('../../shared/fileIdUtils');
 
 // Optional services for enhanced query processing
 const { getInstance: getQueryProcessor } = require('./QueryProcessor');
@@ -238,16 +238,6 @@ class SearchService {
         return { success: true, indexed: 0 };
       }
 
-      const getCanonicalFileId = (filePath) => {
-        const safePath = typeof filePath === 'string' ? filePath : '';
-        // Use normalizePathForIndex for Windows case-insensitivity consistency
-        // This ensures BM25 index keys match ChromaDB lookups
-        const normalizedPath = normalizePathForIndex(safePath);
-        const ext = (path.extname(safePath) || '').toLowerCase();
-        const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-        return `${isImage ? 'image' : 'file'}:${normalizedPath}`;
-      };
-
       // Build index into local variables first so a build failure doesn't leave partial state behind.
       const nextDocumentMap = new Map();
       const self = this;
@@ -273,7 +263,11 @@ class SearchService {
           // If file was moved/renamed, use the actual destination path
           const currentPath = organization.actual || doc.originalPath;
           const currentName = organization.newName || doc.fileName || '';
-          const canonicalId = getCanonicalFileId(currentPath);
+
+          // Use normalizePathForIndex for Windows case-insensitivity consistency
+          // This ensures BM25 index keys match ChromaDB lookups
+          const normalizedPath = normalizePathForIndex(currentPath || '');
+          const canonicalId = getSemanticFileId(normalizedPath);
 
           // De-dupe: keep the most recent analysis per canonical file ID
           if (!currentPath || seenIds.has(canonicalId)) {
@@ -288,6 +282,7 @@ class SearchService {
             summary: analysis.summary || '',
             tags: (analysis.tags || []).join(' '),
             category: analysis.category || '',
+            confidence: analysis.confidence || 0,
             extractedText: self._truncateText(analysis.extractedText, 5000)
           };
 
@@ -303,7 +298,8 @@ class SearchService {
             subject: analysis.subject,
             summary: analysis.summary,
             tags: analysis.tags || [],
-            category: analysis.category
+            category: analysis.category,
+            confidence: analysis.confidence
           });
         }
       });
@@ -424,15 +420,22 @@ class SearchService {
       if (expectedDim == null) return vector;
 
       // STRICT CHECK: Fail if dimensions mismatch
-      if (vector.length !== expectedDim) {
+      if (!validateEmbeddingDimensions(vector, expectedDim)) {
+        const errorMsg =
+          `Embedding model changed. Your search index uses ${expectedDim}-dimension embeddings, ` +
+          `but your current model produces ${vector.length}-dimension embeddings. ` +
+          `Please rebuild your search index to use the new model.`;
+
         logger.error('[SearchService] Embedding dimension mismatch - failing vector search', {
           collectionType,
           expected: expectedDim,
           actual: vector.length,
           reason: 'Model mismatch likely'
         });
-        // Return null to signal invalid query vector -> empty results
-        return null;
+
+        // FIX C-1: Throw descriptive error instead of returning null
+        // This allows UI to display actionable message to user
+        throw new Error(errorMsg);
       }
 
       return vector;
@@ -486,7 +489,8 @@ class SearchService {
             type: meta.type,
             tags: meta.tags || [],
             category: meta.category || '',
-            subject: meta.subject || ''
+            subject: meta.subject || '',
+            confidence: meta.confidence || 0
           },
           source: 'bm25',
           matchDetails: {
@@ -706,6 +710,27 @@ class SearchService {
     } catch (error) {
       logger.error('[SearchService] Chunk search failed:', error);
       return [];
+    }
+  }
+
+  /**
+   * Enrich results with metadata from documentMap (AnalysisHistory)
+   * This ensures we have the latest category/confidence even if the search source (e.g. vector) is stale
+   *
+   * @param {Array} results - Search results to enrich
+   * @private
+   */
+  _enrichResults(results) {
+    if (!results || !Array.isArray(results) || this.documentMap.size === 0) return;
+
+    for (const r of results) {
+      if (!r.id) continue;
+      const doc = this.documentMap.get(r.id);
+      if (doc) {
+        // Merge metadata, preferring documentMap (latest analysis) over vector metadata (embed time)
+        // This ensures category, confidence, etc are up to date
+        r.metadata = { ...r.metadata, ...doc };
+      }
     }
   }
 
@@ -1001,6 +1026,7 @@ class SearchService {
       if (mode === 'vector') {
         // FIX P2-1: Use normalized query for vector search (consistent preprocessing)
         const results = await this.vectorSearch(normalizedQuery, topK);
+        this._enrichResults(results);
         const filtered = this._filterByScore(results, minScore);
         return { success: true, results: filtered, mode: 'vector', queryMeta };
       }
@@ -1037,6 +1063,10 @@ class SearchService {
           }
         };
       }
+
+      // Enrich vector/chunk results with up-to-date metadata from documentMap if available
+      this._enrichResults(vectorResults);
+      this._enrichResults(chunkResults);
 
       // Log search results for debugging
       logger.debug('[SearchService] Hybrid search results:', {

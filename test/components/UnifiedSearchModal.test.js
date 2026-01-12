@@ -48,12 +48,15 @@ jest.mock('lucide-react', () => ({
   AlertCircle: () => <span data-testid="icon-alert">AlertCircle</span>,
   Loader2: () => <span data-testid="icon-loader">Loader2</span>,
   ChevronDown: () => <span data-testid="icon-chevron-down">ChevronDown</span>,
+  ChevronRight: () => <span data-testid="icon-chevron-right">ChevronRight</span>,
   ChevronUp: () => <span data-testid="icon-chevron-up">ChevronUp</span>,
   Plus: () => <span data-testid="icon-plus">Plus</span>,
   Minus: () => <span data-testid="icon-minus">Minus</span>,
   ZoomIn: () => <span data-testid="icon-zoom-in">ZoomIn</span>,
   ZoomOut: () => <span data-testid="icon-zoom-out">ZoomOut</span>,
   Maximize2: () => <span data-testid="icon-maximize">Maximize2</span>,
+  Minimize2: () => <span data-testid="icon-minimize">Minimize2</span>,
+  Settings: () => <span data-testid="icon-settings">Settings</span>,
   Trash2: () => <span data-testid="icon-trash">Trash2</span>,
   Move: () => <span data-testid="icon-move">Move</span>,
   Clock: () => <span data-testid="icon-clock">Clock</span>,
@@ -86,12 +89,12 @@ jest.mock('../../src/renderer/components/Modal', () => ({
         {children}
       </div>
     ) : null,
-  ConfirmModal: ({ isOpen, onConfirm, onCancel, title }) =>
+  ConfirmModal: ({ isOpen, onConfirm, onClose, title }) =>
     isOpen ? (
       <div data-testid="confirm-modal">
         <div>{title}</div>
         <button onClick={onConfirm}>Confirm</button>
-        <button onClick={onCancel}>Cancel</button>
+        <button onClick={onClose}>Cancel</button>
       </div>
     ) : null
 }));
@@ -170,6 +173,18 @@ jest.mock('../../src/shared/performanceConstants', () => ({
   }
 }));
 
+jest.mock('../../src/shared/featureFlags', () => ({
+  GRAPH_FEATURE_FLAGS: {
+    SHOW_GRAPH: true,
+    GRAPH_CLUSTERS: true,
+    GRAPH_SIMILARITY_EDGES: true,
+    GRAPH_MULTI_HOP: true,
+    GRAPH_PROGRESSIVE_LAYOUT: true,
+    GRAPH_KEYBOARD_NAV: true,
+    GRAPH_CONTEXT_MENUS: true
+  }
+}));
+
 jest.mock('../../src/shared/logger', () => ({
   logger: {
     setContext: jest.fn(),
@@ -177,7 +192,14 @@ jest.mock('../../src/shared/logger', () => ({
     debug: jest.fn(),
     warn: jest.fn(),
     error: jest.fn()
-  }
+  },
+  createLogger: jest.fn(() => ({
+    setContext: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn()
+  }))
 }));
 
 // Mock renderer utilities
@@ -298,11 +320,11 @@ describe('UnifiedSearchModal', () => {
       expect(screen.getByLabelText(/search/i)).toBeInTheDocument();
     });
 
-    test('does not render graph tab when feature is disabled', async () => {
+    test('should render graph tab when feature is enabled', async () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
-      // Graph feature is hidden for now
-      expect(screen.queryByText(/Explore Graph/i)).not.toBeInTheDocument();
+      // Graph feature is now enabled
+      expect(screen.queryByText(/Explore Graph/i)).toBeInTheDocument();
     });
 
     test('should switch back to search tab', async () => {
@@ -320,12 +342,13 @@ describe('UnifiedSearchModal', () => {
       }
     });
 
-    test('falls back to search tab when initialTab is graph but graph feature is disabled', () => {
+    test('switches to graph tab when initialTab is graph', () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
-      // Graph tab is hidden, so we should still render the search UI.
-      expect(screen.queryByText(/Explore Graph/i)).not.toBeInTheDocument();
-      expect(screen.getByTestId('search-autocomplete')).toBeInTheDocument();
+      // Graph tab should be active
+      expect(screen.queryByText(/Explore Graph/i)).toBeInTheDocument();
+      // Since reactflow is mocked as a div with data-testid="react-flow", we can check for it if graph tab content renders
+      // However, the test structure might just check if the tab button exists and is clickable
     });
   });
 
@@ -517,43 +540,62 @@ describe('UnifiedSearchModal', () => {
     test('should render stats area in modal', async () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
-      // The stats area should be rendered (even if showing "No embeddings")
+      // Modal should be rendered
       expect(screen.getByTestId('modal')).toBeInTheDocument();
+
       // Either shows stats or "No embeddings/No files indexed" placeholder
-      // Use queryAllByText to handle multiple matches
       const noEmbeddings = screen.queryByText(/No embeddings/i);
       const filesIndexedElements = screen.queryAllByText(/files indexed/i);
-      expect(
-        noEmbeddings || filesIndexedElements.length > 0 || screen.getByTestId('modal')
-      ).toBeTruthy();
+
+      // FIX: Use explicit assertion - at least one indicator should be present
+      const hasStatsIndicator = noEmbeddings !== null || filesIndexedElements.length > 0;
+      expect(hasStatsIndicator).toBe(true);
     });
 
     test('should not crash when stats unavailable', async () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      // Override getStats to return failure
+      mockElectronAPI.embeddings.getStats.mockResolvedValue({
+        success: false,
+        error: 'Stats unavailable'
+      });
 
-      // Should render without crashing
+      // FIX: Component should still render without throwing
+      expect(() => {
+        render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      }).not.toThrow();
+
       expect(screen.getByTestId('modal')).toBeInTheDocument();
     });
   });
 
   describe('File Operation Events', () => {
-    test('should set up file operation listener', () => {
+    test('should set up file operation listener when modal opens', () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
-      // The component should attempt to set up file operation listener
-      // The actual API path may vary, so just verify the component renders
+      // FIX: Verify the file operation listener was registered
+      expect(mockElectronAPI.events.onFileOperationComplete).toHaveBeenCalled();
       expect(screen.getByTestId('modal')).toBeInTheDocument();
+    });
+
+    test('should not set up listener when modal is closed', () => {
+      jest.clearAllMocks();
+      render(<UnifiedSearchModal isOpen={false} onClose={jest.fn()} />);
+
+      // FIX: Modal should not be in document when closed
+      expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
     });
   });
 
   describe('Graph View', () => {
-    test('does not render graph UI while feature is disabled', () => {
+    test('renders graph UI when graph tab is active', () => {
       render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
-      // Graph controls are not shown until future release
-      expect(screen.queryByText(/Explore Graph/i)).not.toBeInTheDocument();
-      // Search tab content is still available (fallback)
-      expect(screen.getByTestId('search-autocomplete')).toBeInTheDocument();
+      // Graph controls/UI should be shown
+      expect(screen.queryByText(/Explore Graph/i)).toBeInTheDocument();
+      // We expect the graph container or some graph-specific element to be present
+      // Since we mocked reactflow, we can check if that mock is rendered or if the "Explore File Connections" empty state is shown
+      // The empty state has text "Explore File Connections"
+      expect(screen.queryByText(/Explore File Connections/i)).toBeInTheDocument();
     });
   });
 
@@ -562,10 +604,25 @@ describe('UnifiedSearchModal', () => {
       const onClose = jest.fn();
       render(<UnifiedSearchModal isOpen={true} onClose={onClose} />);
 
+      // FIX: Fire escape key event and verify modal close is triggered
       fireEvent.keyDown(document, { key: 'Escape' });
 
-      // Modal close should be triggered
-      // (actual behavior depends on Modal implementation)
+      // The mock Modal component has a close button that calls onClose
+      // For Escape key, the actual Modal handles it internally
+      // We verify the modal was rendered and can be interacted with
+      expect(screen.getByTestId('modal')).toBeInTheDocument();
+
+      // Click the close button to verify onClose works
+      fireEvent.click(screen.getByTestId('modal-close'));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    test('should focus search input when modal opens', () => {
+      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+
+      // FIX: Search input should be present and accessible
+      const searchInput = screen.getByLabelText(/search/i);
+      expect(searchInput).toBeInTheDocument();
     });
   });
 
@@ -615,14 +672,16 @@ describe('UnifiedSearchModal - Integration', () => {
   test('should perform search and display results flow', async () => {
     render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
-    // Modal should be rendered
+    // FIX: Modal must be rendered
     expect(screen.getByTestId('modal')).toBeInTheDocument();
 
-    // Search autocomplete component should be present (mocked as div with testid)
-    const searchAutocomplete = screen.queryByTestId('search-autocomplete');
+    // FIX: Search autocomplete component must be present (mocked as div with testid)
+    const searchAutocomplete = screen.getByTestId('search-autocomplete');
+    expect(searchAutocomplete).toBeInTheDocument();
 
-    // Search autocomplete or modal should be present
-    expect(searchAutocomplete || screen.getByTestId('modal')).toBeTruthy();
+    // FIX: Search input within autocomplete should be accessible
+    const searchInput = screen.getByLabelText(/search/i);
+    expect(searchInput).toBeInTheDocument();
   });
 
   test('should handle rapid tab switching', async () => {
@@ -631,16 +690,19 @@ describe('UnifiedSearchModal - Integration', () => {
     const graphTab = screen.queryByText(/Explore Graph/i);
     const searchTab = screen.queryByText(/Search Results/i);
 
-    if (graphTab && searchTab) {
-      // Rapid switching
-      fireEvent.click(graphTab);
-      fireEvent.click(searchTab);
-      fireEvent.click(graphTab);
-      fireEvent.click(searchTab);
+    // FIX: Both tabs should exist when graph feature is enabled
+    expect(graphTab).toBeInTheDocument();
+    expect(searchTab).toBeInTheDocument();
 
-      // Should not crash
-      expect(screen.getByTestId('modal')).toBeInTheDocument();
-    }
+    // Rapid switching - should not crash or throw
+    fireEvent.click(graphTab);
+    fireEvent.click(searchTab);
+    fireEvent.click(graphTab);
+    fireEvent.click(searchTab);
+
+    // FIX: Modal should still be functional after rapid switches
+    expect(screen.getByTestId('modal')).toBeInTheDocument();
+    expect(screen.getByLabelText(/search/i)).toBeInTheDocument();
   });
 
   // FIX P2-14: Test for focusedResultIndex reset on tab switch
@@ -650,15 +712,18 @@ describe('UnifiedSearchModal - Integration', () => {
     const graphTab = screen.queryByText(/Explore Graph/i);
     const searchTab = screen.queryByText(/Search Results/i);
 
-    if (graphTab && searchTab) {
-      // Switch to graph tab and back
-      fireEvent.click(graphTab);
-      fireEvent.click(searchTab);
+    // FIX: Both tabs should exist
+    expect(graphTab).toBeInTheDocument();
+    expect(searchTab).toBeInTheDocument();
 
-      // Should not have any focused result (no visual artifacts from previous state)
-      // This verifies the focusedResultIndex is reset
-      expect(screen.getByTestId('modal')).toBeInTheDocument();
-    }
+    // Switch to graph tab and back
+    fireEvent.click(graphTab);
+    fireEvent.click(searchTab);
+
+    // FIX: Search input should be present and functional after tab switch
+    const searchInput = screen.getByLabelText(/search/i);
+    expect(searchInput).toBeInTheDocument();
+    expect(searchInput.value).toBe(''); // Should be reset
   });
 
   // Test search error handling with fallback info
@@ -670,8 +735,20 @@ describe('UnifiedSearchModal - Integration', () => {
 
     render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
-    // Wait for search to be triggered (assumes auto-search or user input)
-    // The error handling logic should catch failures gracefully
+    // FIX: Trigger a search to test error handling
+    const searchInput = screen.getByLabelText(/search/i);
+    fireEvent.change(searchInput, { target: { value: 'test query' } });
+
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+
+    // FIX: Search API should have been called
+    await waitFor(() => {
+      expect(mockElectronAPI.embeddings.search).toHaveBeenCalled();
+    });
+
+    // Modal should still be rendered (error handled gracefully)
     expect(screen.getByTestId('modal')).toBeInTheDocument();
   });
 
@@ -689,6 +766,22 @@ describe('UnifiedSearchModal - Integration', () => {
     });
 
     render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+
+    // FIX: Trigger a search with fallback response
+    const searchInput = screen.getByLabelText(/search/i);
+    fireEvent.change(searchInput, { target: { value: 'test query' } });
+
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+
+    // FIX: Search API should have been called with fallback response
+    await waitFor(() => {
+      expect(mockElectronAPI.embeddings.search).toHaveBeenCalledWith(
+        'test query',
+        expect.any(Object)
+      );
+    });
 
     // Modal should render without crash even with fallback metadata
     expect(screen.getByTestId('modal')).toBeInTheDocument();

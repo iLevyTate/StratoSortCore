@@ -1,18 +1,6 @@
 /* eslint-disable no-console */
 const { spawnSync } = require('child_process');
 
-function run(cmd, args, opts = {}, { spawnSyncImpl = spawnSync } = {}) {
-  const result = spawnSyncImpl(cmd, args, {
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-    ...opts
-  });
-  return {
-    status: result?.status ?? null,
-    error: result?.error ?? null
-  };
-}
-
 function parseBool(value) {
   return String(value).toLowerCase() === 'true';
 }
@@ -28,35 +16,42 @@ function main(
   const isCI = parseBool(env.CI);
   const skipAppDeps = parseBool(env.SKIP_APP_DEPS);
 
-  // Postinstall should be best-effort: do not block installs when optional dependencies
-  // (Ollama, ChromaDB) are not available yet. The app can guide users via the dependency wizard.
-  const runSafe = (cmd, args, opts) => {
-    const result = run(cmd, args, opts, { spawnSyncImpl });
-    if (result.status !== 0) {
-      log.warn?.(`[postinstall] Command failed (ignored): ${cmd} ${args.join(' ')}`, {
-        status: result.status,
-        error: result.error?.message
-      });
-    }
-    return result;
-  };
-
-  // Best practice:
-  // - Keep package install scripts enabled so native deps (e.g. sharp) install correctly.
-  // - Skip electron-builder's install-app-deps during CI runs (not packaging, saves time).
+  // Only required step: rebuild native modules (e.g. Sharp) for Electron's Node version.
+  // The app's UI (AiDependenciesModal) handles Ollama/ChromaDB installation on first launch.
   if (!isCI && !skipAppDeps) {
-    runSafe('npx', ['--no', 'electron-builder', 'install-app-deps'], {
+    log.log('[postinstall] Rebuilding native modules for Electron...');
+    const result = spawnSyncImpl('npx', ['--no', 'electron-builder', 'install-app-deps'], {
+      stdio: 'inherit',
       shell: platform === 'win32'
     });
+
+    if (result.status !== 0) {
+      log.warn('[postinstall] Native module rebuild had issues (non-fatal)');
+    } else {
+      log.log('[postinstall] Native modules ready');
+    }
   }
 
-  // Keep these best-effort; they already support --ci-skip to avoid doing heavy work on CI.
-  runSafe('node', ['scripts/setup-ollama.js', '--auto', '--ci-skip'], {
-    shell: platform === 'win32'
-  });
-  runSafe('node', ['scripts/setup-chromadb.js', '--auto', '--ci-skip'], {
-    shell: platform === 'win32'
-  });
+  // Run setup scripts (best effort)
+  const setupScripts = ['scripts/setup-ollama.js', 'scripts/setup-chromadb.js'];
+  for (const script of setupScripts) {
+    try {
+      // Use node to run the script
+      const result = spawnSyncImpl(process.execPath, [script], {
+        stdio: 'inherit',
+        env: { ...env, FORCE_COLOR: '1' }
+      });
+      if (result.status !== 0) {
+        log.warn(`[postinstall] ${script} failed (non-fatal)`);
+      }
+    } catch (e) {
+      log.warn(`[postinstall] Failed to run ${script}: ${e.message}`);
+    }
+  }
+
+  log.log('\n[StratoSort] Setup complete!');
+  log.log('  Run: npm run dev');
+  log.log('  The app will guide you through AI setup on first launch.\n');
 
   return 0;
 }

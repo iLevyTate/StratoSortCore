@@ -246,16 +246,17 @@ LazyLoadingSpinner.propTypes = {
 };
 
 // Modal loading overlay for lazy-loaded modals/panels
+// Uses fade-in animation to prevent jarring black flash during Suspense loads
 export function ModalLoadingOverlay({ message = 'Loading...' }) {
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-modal animate-modal-backdrop"
       role="status"
       aria-label={message}
     >
-      <div className="bg-white rounded-lg shadow-xl p-21 text-center">
-        <div className="animate-spin w-13 h-13 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8" />
-        <p className="text-system-gray-700">{message}</p>
+      <div className="bg-white rounded-xl shadow-xl px-8 py-6 text-center animate-modal-enter">
+        <div className="animate-spin w-10 h-10 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-3" />
+        <p className="text-sm text-system-gray-600">{message}</p>
         <span className="sr-only">{message}</span>
       </div>
     </div>

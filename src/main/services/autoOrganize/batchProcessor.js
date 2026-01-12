@@ -7,16 +7,14 @@
  */
 
 const path = require('path');
-const crypto = require('crypto');
 const { logger } = require('../../../shared/logger');
 const { sanitizeFile } = require('./fileTypeUtils');
 const { getFallbackDestination, buildDestinationPath } = require('./folderOperations');
+const { safeSuggestion } = require('./pathUtils');
+// FIX C-5: Import from idUtils to break circular dependency with fileProcessor
+const { generateSecureId } = require('./idUtils');
 
 logger.setContext('AutoOrganize-Batch');
-
-// Helper to generate secure random IDs
-const generateSecureId = (prefix) =>
-  `${prefix}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
 
 /**
  * Process batch suggestion results
@@ -36,6 +34,14 @@ async function processBatchResults(batchSuggestions, files, options, results, su
   const groups = Array.isArray(batchSuggestions?.groups) ? batchSuggestions.groups : [];
 
   for (const group of groups) {
+    // Validate group.files is an array before iterating
+    if (!Array.isArray(group?.files)) {
+      logger.warn('[AutoOrganize] Skipping group with invalid files array', {
+        folder: group?.folder || 'unknown'
+      });
+      continue;
+    }
+
     for (const fileWithSuggestion of group.files) {
       const lookupKey = fileWithSuggestion.path || fileWithSuggestion.name;
       const file = fileMap.get(lookupKey) || fileWithSuggestion;
@@ -72,20 +78,10 @@ async function processBatchResults(batchSuggestions, files, options, results, su
       if (confidence >= confidenceThreshold) {
         // High confidence - organize automatically
         // Ensure suggestion folder/path are valid strings
-        const safeSuggestion = {
-          ...suggestion,
-          folder:
-            typeof suggestion.folder === 'string'
-              ? suggestion.folder
-              : suggestion.folder?.name || 'Uncategorized',
-          path:
-            typeof suggestion.path === 'string'
-              ? suggestion.path
-              : suggestion.path?.path || undefined
-        };
+        const safeSuggestionObj = safeSuggestion(suggestion);
         const destination = buildDestinationPath(
           file,
-          safeSuggestion,
+          safeSuggestionObj,
           defaultLocation,
           preserveNames
         );
@@ -165,7 +161,16 @@ async function batchOrganize(
   };
 
   // Process groups with error handling
-  for (const group of batchSuggestions.groups) {
+  const groups = Array.isArray(batchSuggestions.groups) ? batchSuggestions.groups : [];
+  for (const group of groups) {
+    // Validate group.files is an array before iterating
+    if (!Array.isArray(group?.files)) {
+      logger.warn('[AutoOrganize] Skipping group with invalid files array in batchOrganize', {
+        folder: group?.folder || 'unknown'
+      });
+      continue;
+    }
+
     try {
       if (group.confidence >= confidenceThreshold) {
         // Auto-approve high confidence groups
@@ -175,12 +180,9 @@ async function batchOrganize(
         for (const file of group.files) {
           try {
             // Ensure folder and path are valid strings
-            const folderName =
-              typeof group.folder === 'string'
-                ? group.folder
-                : group.folder?.name || 'Uncategorized';
-            const folderPath =
-              typeof group.path === 'string' ? group.path : group.path?.path || undefined;
+            const safeGroup = safeSuggestion(group);
+            const folderName = safeGroup.folder;
+            const folderPath = safeGroup.path;
 
             const destination = buildDestFn(
               file,
@@ -237,9 +239,11 @@ async function batchOrganize(
 
         // Only add group if at least some files succeeded
         if (groupOperations.length > 0) {
+          // Use path-based comparison instead of object reference equality
+          const failedPaths = new Set(groupFailures.map((failure) => failure.filePath));
           results.groups.push({
             folder: group.folder,
-            files: group.files.filter((f) => !groupFailures.find((failure) => failure.file === f)),
+            files: group.files.filter((f) => !failedPaths.has(f.path)),
             confidence: group.confidence,
             autoApproved: true,
             partialSuccess: groupFailures.length > 0

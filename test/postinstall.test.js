@@ -18,7 +18,7 @@ describe('scripts/postinstall.js', () => {
       // setup-chromadb fails (should be ignored)
       .mockReturnValueOnce({ status: 1, error: new Error('python missing') });
 
-    const log = { warn: jest.fn() };
+    const log = { warn: jest.fn(), log: jest.fn() };
 
     const code = main({
       env: { CI: 'false', SKIP_APP_DEPS: 'false' },
@@ -40,7 +40,7 @@ describe('scripts/postinstall.js', () => {
       env: { CI: 'true', SKIP_APP_DEPS: 'false' },
       platform: 'win32',
       spawnSyncImpl,
-      log: { warn: jest.fn() }
+      log: { warn: jest.fn(), log: jest.fn() }
     });
 
     expect(code).toBe(0);
@@ -55,7 +55,7 @@ describe('scripts/postinstall.js', () => {
       env: { CI: 'false', SKIP_APP_DEPS: 'true' },
       platform: 'win32',
       spawnSyncImpl,
-      log: { warn: jest.fn() }
+      log: { warn: jest.fn(), log: jest.fn() }
     });
 
     expect(code).toBe(0);

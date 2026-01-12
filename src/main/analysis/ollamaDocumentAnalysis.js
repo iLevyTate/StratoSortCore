@@ -172,11 +172,26 @@ async function applyDocumentFolderMatching(
   const { vector, model } = await folderMatcher.embedText(summaryForEmbedding || '');
   const candidates = await folderMatcher.matchVectorToFolders(vector, 5);
 
+  // FIX: Include category and confidence in metadata for search display
+  const rawConfidence = analysis.confidence ?? 0;
+  const confidencePercent =
+    typeof rawConfidence === 'number'
+      ? rawConfidence > 1
+        ? Math.round(rawConfidence)
+        : Math.round(rawConfidence * 100)
+      : 0;
   embeddingQueue.enqueue({
     id: fileId,
     vector,
     model,
-    meta: { path: filePath, name: fileName },
+    meta: {
+      path: filePath,
+      name: fileName,
+      category: analysis.category || 'Uncategorized',
+      confidence: confidencePercent,
+      type: 'document',
+      summary: (summaryForEmbedding || '').substring(0, 500)
+    },
     updatedAt: new Date().toISOString()
   });
 

@@ -12,15 +12,15 @@ import {
   Search,
   Package
 } from 'lucide-react';
-import { logger } from '../../shared/logger';
-import { ConfirmModal } from './Modal';
+import { createLogger } from '../../shared/logger';
+import Modal, { ConfirmModal } from './Modal';
 import { useNotification } from '../contexts/NotificationContext';
 
 // Use shared action type constants so renderer/main/tests are aligned
 import { ACTION_TYPES as SHARED_ACTION_TYPES } from '../../shared/constants';
 
-// Set logger context for this component
-logger.setContext('UndoRedoSystem');
+// Create scoped logger for this module (avoids polluting global logger context)
+const logger = createLogger('UndoRedoSystem');
 
 // Secure random ID generator using Web Crypto API
 const generateSecureId = () => {
@@ -81,6 +81,180 @@ const ACTION_METADATA = {
     icon: Package,
     category: 'Batch Operations'
   }
+};
+
+// Helper functions for common actions
+// Update createFileAction to conform to main IPC payloads
+export const createFileAction = ({ actionType, description, source, destination }) => ({
+  type: actionType,
+  description,
+  execute: async () => {
+    // Only move/copy/delete are supported here; match the main payload shape
+    if (destination) {
+      return await window.electronAPI.files.performOperation({
+        type: 'move',
+        source,
+        destination
+      });
+    }
+    throw new Error('Unsupported operation: destination required for move');
+  },
+  undo: async () => {
+    if (destination) {
+      return await window.electronAPI.files.performOperation({
+        type: 'move',
+        source: destination,
+        destination: source
+      });
+    }
+    throw new Error('Unsupported undo operation');
+  },
+  metadata: { source, destination }
+});
+
+export const createSettingsAction = (description, newSettings, oldSettings) => ({
+  type: ACTION_TYPES.SETTINGS_CHANGE,
+  description,
+  execute: async () => {
+    return await window.electronAPI.settings.save(newSettings);
+  },
+  undo: async () => {
+    return await window.electronAPI.settings.save(oldSettings);
+  },
+  metadata: { newSettings, oldSettings }
+});
+
+// Batch organize action that uses main process to perform and record undo/redo
+export const createOrganizeBatchAction = (description, operations, stateCallbacks = {}) => ({
+  type: ACTION_TYPES.BATCH_OPERATION,
+  description,
+  execute: async () => {
+    const result = await window.electronAPI.files.performOperation({
+      type: 'batch_organize',
+      operations
+    });
+    if (stateCallbacks.onExecute) {
+      try {
+        stateCallbacks.onExecute(result);
+      } catch {
+        // Non-fatal if state callback fails
+      }
+    }
+    return result;
+  },
+  undo: async (action) => {
+    // Try to construct reverse operations from result available in the action object
+    if (action && action.result && action.result.results) {
+      const reverseOps = action.result.results
+        .filter((r) => r.success && r.source && r.destination)
+        .map((r) => ({
+          source: r.destination,
+          destination: r.source
+        }));
+
+      if (reverseOps.length > 0) {
+        const result = await window.electronAPI.files.performOperation({
+          type: 'batch_organize',
+          operations: reverseOps
+        });
+
+        if (stateCallbacks.onUndo) {
+          try {
+            stateCallbacks.onUndo(result);
+          } catch {
+            // Non-fatal if state callback fails
+          }
+        }
+        return result;
+      }
+    }
+
+    // Fallback to legacy behavior if no result data
+    const result = await window.electronAPI.undoRedo.undo();
+    if (stateCallbacks.onUndo) {
+      try {
+        stateCallbacks.onUndo(result);
+      } catch {
+        // Non-fatal if state callback fails
+      }
+    }
+    return result;
+  },
+  redo: async (action) => {
+    // For redo, we can just execute the original operations again
+    // But we should check if we have the operations in metadata (from rehydration) or closed over
+    // If rehydrated, use metadata.operations. If not, use 'operations' arg.
+
+    const opsToRun = (action && action.metadata && action.metadata.operations) || operations;
+
+    if (opsToRun && opsToRun.length > 0) {
+      const result = await window.electronAPI.files.performOperation({
+        type: 'batch_organize',
+        operations: opsToRun
+      });
+
+      if (stateCallbacks.onRedo) {
+        try {
+          stateCallbacks.onRedo(result);
+        } catch {
+          // Non-fatal
+        }
+      }
+      return result;
+    }
+
+    // Fallback
+    const result = await window.electronAPI.undoRedo.redo();
+    if (stateCallbacks.onRedo) {
+      try {
+        stateCallbacks.onRedo(result);
+      } catch {
+        // Non-fatal if state callback fails
+      }
+    }
+    return result;
+  },
+  metadata: {
+    operationCount: Array.isArray(operations) ? operations.length : 0,
+    operations: operations // Save operations for rehydration/redo
+  }
+});
+
+// Helper to rehydrate actions from storage
+const rehydrateAction = (serializedAction) => {
+  const { type, metadata, description } = serializedAction;
+
+  try {
+    if (type === ACTION_TYPES.BATCH_OPERATION) {
+      if (metadata && metadata.operations) {
+        return createOrganizeBatchAction(description, metadata.operations);
+      }
+    }
+
+    if (
+      type === ACTION_TYPES.FILE_MOVE ||
+      type === ACTION_TYPES.FILE_DELETE ||
+      type === ACTION_TYPES.FILE_RENAME ||
+      type === ACTION_TYPES.FOLDER_CREATE ||
+      type === ACTION_TYPES.FOLDER_DELETE ||
+      type === ACTION_TYPES.FOLDER_RENAME
+    ) {
+      return createFileAction({
+        actionType: type,
+        description,
+        source: metadata?.source,
+        destination: metadata?.destination
+      });
+    }
+
+    if (type === ACTION_TYPES.SETTINGS_CHANGE) {
+      return createSettingsAction(description, metadata?.newSettings, metadata?.oldSettings);
+    }
+  } catch (err) {
+    logger.error('Failed to rehydrate action', { type, error: err.message });
+  }
+
+  return null;
 };
 
 // Undo Stack Manager
@@ -187,6 +361,15 @@ class UndoStack {
     this.notifyListeners();
   }
 
+  // Restore stack from persistence
+  load(savedStack, savedPointer) {
+    if (Array.isArray(savedStack)) {
+      this.stack = savedStack;
+      this.pointer = typeof savedPointer === 'number' ? savedPointer : savedStack.length - 1;
+      this.notifyListeners();
+    }
+  }
+
   addListener(listener) {
     this.listeners.add(listener);
   }
@@ -215,10 +398,34 @@ export function UndoRedoProvider({ children }) {
   const isMountedRef = React.useRef(true);
   React.useEffect(() => {
     isMountedRef.current = true;
+
+    // Load persisted stack on mount
+    try {
+      const saved = localStorage.getItem('stratosort_undo_stack');
+      if (saved) {
+        const { stack, pointer } = JSON.parse(saved);
+        if (Array.isArray(stack)) {
+          // Rehydrate actions with methods
+          const rehydratedStack = stack
+            .map((item) => {
+              const action = rehydrateAction(item);
+              return action ? { ...item, ...action } : null; // Merge rehydrated methods with saved data
+            })
+            .filter(Boolean);
+
+          if (rehydratedStack.length > 0) {
+            undoStack.load(rehydratedStack, pointer);
+          }
+        }
+      }
+    } catch (e) {
+      logger.error('Failed to load undo stack', e);
+    }
+
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+  }, [undoStack]); // undoStack is stable (from useState)
 
   // FIX: Add mutex to prevent concurrent action execution
   const actionMutexRef = React.useRef(false);
@@ -273,8 +480,33 @@ export function UndoRedoProvider({ children }) {
     setCanUndo(undoStack.canUndo());
     setCanRedo(undoStack.canRedo());
     // FIX: Update full stack and current index state for HistoryModal reactivity
-    setFullStackState(undoStack.getFullStack());
-    setCurrentIndexState(undoStack.getCurrentIndex());
+    const stack = undoStack.getFullStack();
+    const pointer = undoStack.getCurrentIndex();
+
+    setFullStackState(stack);
+    setCurrentIndexState(pointer);
+
+    // Persist stack
+    try {
+      const simplifiedStack = stack.map((item) => ({
+        id: item.id,
+        timestamp: item.timestamp,
+        type: item.type,
+        description: item.description,
+        metadata: item.metadata,
+        result: item.result // Assuming result is serializable (it usually is for file ops)
+      }));
+
+      localStorage.setItem(
+        'stratosort_undo_stack',
+        JSON.stringify({
+          stack: simplifiedStack,
+          pointer
+        })
+      );
+    } catch (e) {
+      logger.error('Failed to save undo stack', e);
+    }
   }, [undoStack]);
 
   useEffect(() => {
@@ -284,49 +516,54 @@ export function UndoRedoProvider({ children }) {
 
   // Execute action with undo capability
   // FIX: Added mutex to prevent concurrent action execution
-  const executeAction = async (actionConfig) => {
-    // Prevent concurrent actions
-    if (actionMutexRef.current) {
-      showInfo('Please wait for the current action to complete');
-      return null;
-    }
-
-    actionMutexRef.current = true;
-    setIsExecuting(true);
-
-    try {
-      // Execute the action
-      const result = await actionConfig.execute();
-
-      // Add to undo stack if successful
-      undoStack.push({
-        type: actionConfig.type,
-        description: actionConfig.description,
-        undo: actionConfig.undo,
-        redo: actionConfig.redo || actionConfig.execute,
-        metadata: actionConfig.metadata || {},
-        result
-      });
-
-      showSuccess(`${actionConfig.description} completed`);
-
-      return result;
-    } catch (error) {
-      showError(
-        `Failed to ${actionConfig.description.toLowerCase()}: ${error?.message || String(error)}`
-      );
-      throw error;
-    } finally {
-      actionMutexRef.current = false;
-      if (isMountedRef.current) {
-        setIsExecuting(false);
+  // FIX: Wrapped in useCallback to prevent stale closures
+  const executeAction = useCallback(
+    async (actionConfig) => {
+      // Prevent concurrent actions
+      if (actionMutexRef.current) {
+        showInfo('Please wait for the current action to complete');
+        return null;
       }
-    }
-  };
+
+      actionMutexRef.current = true;
+      setIsExecuting(true);
+
+      try {
+        // Execute the action
+        const result = await actionConfig.execute();
+
+        // Add to undo stack if successful
+        undoStack.push({
+          type: actionConfig.type,
+          description: actionConfig.description,
+          undo: actionConfig.undo,
+          redo: actionConfig.redo || actionConfig.execute,
+          metadata: actionConfig.metadata || {},
+          result
+        });
+
+        showSuccess(`${actionConfig.description} completed`);
+
+        return result;
+      } catch (error) {
+        showError(
+          `Failed to ${actionConfig.description.toLowerCase()}: ${error?.message || String(error)}`
+        );
+        throw error;
+      } finally {
+        actionMutexRef.current = false;
+        if (isMountedRef.current) {
+          setIsExecuting(false);
+        }
+      }
+    },
+    [undoStack, showInfo, showSuccess, showError]
+  );
 
   // Undo last action with confirmation for important operations
   // FIX: Added mutex check to prevent concurrent operations
-  const undo = async () => {
+  // FIX: Wrapped in useCallback to prevent stale closures
+  const undo = useCallback(async () => {
     if (actionMutexRef.current) {
       showInfo('Please wait for the current action to complete');
       return;
@@ -372,7 +609,8 @@ export function UndoRedoProvider({ children }) {
     }
 
     try {
-      await undoAction.undo();
+      // Pass the action object to undo so it can access result/metadata
+      await undoAction.undo(undoAction);
       showSuccess(`Undid: ${undoAction.description}`);
     } catch (error) {
       // If undo fails, restore the action to the stack
@@ -382,11 +620,12 @@ export function UndoRedoProvider({ children }) {
       actionMutexRef.current = false;
       if (isMountedRef.current) setIsExecuting(false);
     }
-  };
+  }, [undoStack, showInfo, showConfirm, showSuccess, showError]);
 
   // Redo last undone action
   // FIX: Added mutex check to prevent concurrent operations
-  const redo = async () => {
+  // FIX: Wrapped in useCallback to prevent stale closures
+  const redo = useCallback(async () => {
     if (actionMutexRef.current) {
       showInfo('Please wait for the current action to complete');
       return;
@@ -403,7 +642,8 @@ export function UndoRedoProvider({ children }) {
     }
 
     try {
-      await action.redo();
+      // Pass action object to redo as well
+      await action.redo(action);
       showSuccess(`Redid: ${action.description}`);
     } catch (error) {
       // If redo fails, safely revert the pointer using the class method
@@ -413,7 +653,7 @@ export function UndoRedoProvider({ children }) {
       actionMutexRef.current = false;
       if (isMountedRef.current) setIsExecuting(false);
     }
-  };
+  }, [undoStack, showInfo, showSuccess, showError]);
 
   // Get action description for UI (text only - icons are rendered separately)
   const getActionDescription = (action) => {
@@ -425,67 +665,73 @@ export function UndoRedoProvider({ children }) {
   };
 
   // Clear history
-  const clearHistory = () => {
+  // FIX: Wrapped in useCallback to prevent stale closures
+  const clearHistory = useCallback(() => {
     undoStack.clear();
+    localStorage.removeItem('stratosort_undo_stack');
     showInfo('Undo/redo history cleared');
-  };
+  }, [undoStack, showInfo]);
 
   // FIX L-2: Jump to a specific point in history by performing sequential undos/redos
-  const jumpToPoint = async (targetIndex) => {
-    if (actionMutexRef.current) {
-      showInfo('Please wait for the current action to complete');
-      return;
-    }
-
-    const currentIndex = undoStack.getCurrentIndex();
-    if (targetIndex === currentIndex) {
-      return; // Already at this point
-    }
-
-    const fullStack = undoStack.getFullStack();
-    if (targetIndex < -1 || targetIndex >= fullStack.length) {
-      showError('Invalid history point');
-      return;
-    }
-
-    actionMutexRef.current = true;
-    setIsExecuting(true);
-
-    try {
-      if (targetIndex < currentIndex) {
-        // Need to undo: go backwards from current to target
-        const stepsToUndo = currentIndex - targetIndex;
-        showInfo(`Jumping back ${stepsToUndo} step${stepsToUndo > 1 ? 's' : ''}...`);
-
-        for (let i = 0; i < stepsToUndo; i++) {
-          const action = undoStack.undo();
-          if (action) {
-            await action.undo();
-          }
-        }
-        showSuccess(`Jumped back to step ${targetIndex + 1}`);
-      } else {
-        // Need to redo: go forwards from current to target
-        const stepsToRedo = targetIndex - currentIndex;
-        showInfo(`Jumping forward ${stepsToRedo} step${stepsToRedo > 1 ? 's' : ''}...`);
-
-        for (let i = 0; i < stepsToRedo; i++) {
-          const action = undoStack.redo();
-          if (action) {
-            await action.redo();
-          }
-        }
-        showSuccess(`Jumped forward to step ${targetIndex + 1}`);
+  // FIX: Wrapped in useCallback to prevent stale closures
+  const jumpToPoint = useCallback(
+    async (targetIndex) => {
+      if (actionMutexRef.current) {
+        showInfo('Please wait for the current action to complete');
+        return;
       }
-    } catch (error) {
-      showError(`Jump failed: ${error?.message || String(error)}`);
-      // Note: The stack pointer may be in an intermediate state here.
-      // A full refresh or manual undo/redo may be needed to recover.
-    } finally {
-      actionMutexRef.current = false;
-      if (isMountedRef.current) setIsExecuting(false);
-    }
-  };
+
+      const currentIndex = undoStack.getCurrentIndex();
+      if (targetIndex === currentIndex) {
+        return; // Already at this point
+      }
+
+      const fullStack = undoStack.getFullStack();
+      if (targetIndex < -1 || targetIndex >= fullStack.length) {
+        showError('Invalid history point');
+        return;
+      }
+
+      actionMutexRef.current = true;
+      setIsExecuting(true);
+
+      try {
+        if (targetIndex < currentIndex) {
+          // Need to undo: go backwards from current to target
+          const stepsToUndo = currentIndex - targetIndex;
+          showInfo(`Jumping back ${stepsToUndo} step${stepsToUndo > 1 ? 's' : ''}...`);
+
+          for (let i = 0; i < stepsToUndo; i++) {
+            const action = undoStack.undo();
+            if (action) {
+              await action.undo(action);
+            }
+          }
+          showSuccess(`Jumped back to step ${targetIndex + 1}`);
+        } else {
+          // Need to redo: go forwards from current to target
+          const stepsToRedo = targetIndex - currentIndex;
+          showInfo(`Jumping forward ${stepsToRedo} step${stepsToRedo > 1 ? 's' : ''}...`);
+
+          for (let i = 0; i < stepsToRedo; i++) {
+            const action = undoStack.redo();
+            if (action) {
+              await action.redo(action);
+            }
+          }
+          showSuccess(`Jumped forward to step ${targetIndex + 1}`);
+        }
+      } catch (error) {
+        showError(`Jump failed: ${error?.message || String(error)}`);
+        // Note: The stack pointer may be in an intermediate state here.
+        // A full refresh or manual undo/redo may be needed to recover.
+      } finally {
+        actionMutexRef.current = false;
+        if (isMountedRef.current) setIsExecuting(false);
+      }
+    },
+    [undoStack, showInfo, showSuccess, showError]
+  );
 
   const contextValue = {
     executeAction,
@@ -547,154 +793,133 @@ export function useUndoRedo() {
 }
 
 // History Modal Component
-// FIX L-2: Enhanced with jump-to-point functionality
+// FIX L-2: Enhanced with jump-to-point functionality and improved UI using shared Modal
 function HistoryModal() {
-  const {
-    // FIX: Use reactive state values instead of getter functions so component re-renders when stack changes
-    fullStack,
-    currentIndex,
-    jumpToPoint,
-    setIsHistoryVisible,
-    clearHistory,
-    isExecuting
-  } = useUndoRedo();
+  const { fullStack, currentIndex, jumpToPoint, setIsHistoryVisible, clearHistory, isExecuting } =
+    useUndoRedo();
 
   const handleJumpToPoint = async (targetIndex) => {
     await jumpToPoint(targetIndex);
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 2147483645
-      }}
+    <Modal
+      isOpen={true}
+      onClose={() => setIsHistoryVisible(false)}
+      title="Action History"
+      size="medium"
+      className="max-h-[85vh]"
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b">
-          <div>
-            <h2 className="text-xl font-semibold text-system-gray-900">Action History</h2>
-            <p className="text-sm text-system-gray-500 mt-1">
-              Click any action to jump to that point
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={clearHistory}
-              className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-              disabled={isExecuting}
-            >
-              Clear History
-            </button>
-            <button
-              onClick={() => setIsHistoryVisible(false)}
-              className="text-system-gray-400 hover:text-system-gray-600 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
+      <div className="flex items-center justify-between mb-6 pb-4 border-b border-border-soft/60">
+        <p className="text-sm text-system-gray-600">
+          Click any action to jump to that point in time.
+        </p>
+        <button
+          onClick={clearHistory}
+          className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-600 border border-red-100 rounded-lg hover:bg-red-100 transition-colors focus:ring-2 focus:ring-red-500/20 outline-none"
+          disabled={isExecuting}
+          title="Clear all history"
+        >
+          Clear History
+        </button>
+      </div>
 
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
-          {fullStack.length === 0 ? (
-            <div className="text-center py-8 text-system-gray-500">
-              <svg
-                className="w-12 h-12 mx-auto mb-4 text-system-gray-300"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-                />
-              </svg>
-              <p>No actions in history</p>
+      <div className="space-y-2">
+        {fullStack.length === 0 ? (
+          <div className="text-center py-12 bg-system-gray-50/50 rounded-xl border border-dashed border-border-soft">
+            <div className="w-12 h-12 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm border border-border-soft/50">
+              <FileText className="w-6 h-6 text-system-gray-300" />
             </div>
-          ) : (
-            <div className="space-y-2">
-              {fullStack
-                .slice()
-                .reverse()
-                .map((action, reversedIndex) => {
-                  const actualIndex = fullStack.length - 1 - reversedIndex;
-                  const isCurrent = actualIndex === currentIndex;
-                  const isPast = actualIndex <= currentIndex;
-                  const isFuture = actualIndex > currentIndex;
+            <p className="text-system-gray-500 font-medium">No actions recorded</p>
+            <p className="text-xs text-system-gray-400 mt-1">Actions you take will appear here</p>
+          </div>
+        ) : (
+          <div className="relative pl-2">
+            {/* Connecting line */}
+            <div className="absolute left-[35px] top-6 bottom-6 w-0.5 bg-border-soft/50 -z-10" />
 
-                  return (
-                    <button
-                      key={action.id}
-                      onClick={() => handleJumpToPoint(actualIndex)}
-                      disabled={isExecuting || isCurrent}
-                      className={`
-                        w-full flex items-center justify-between p-3 rounded-lg transition-all text-left
-                        ${isCurrent ? 'bg-stratosort-blue/10 border-2 border-stratosort-blue ring-2 ring-stratosort-blue/20' : ''}
-                        ${isPast && !isCurrent ? 'bg-system-gray-50 hover:bg-system-gray-100 border border-transparent hover:border-system-gray-200 cursor-pointer' : ''}
-                        ${isFuture ? 'bg-system-gray-50/50 hover:bg-system-gray-100 border border-dashed border-system-gray-200 opacity-60 hover:opacity-100 cursor-pointer' : ''}
-                        ${isExecuting ? 'cursor-wait opacity-50' : ''}
-                      `}
-                      title={
+            {fullStack
+              .slice()
+              .reverse()
+              .map((action, reversedIndex) => {
+                const actualIndex = fullStack.length - 1 - reversedIndex;
+                const isCurrent = actualIndex === currentIndex;
+                const isFuture = actualIndex > currentIndex;
+
+                const IconComponent = ACTION_METADATA[action.type]?.icon || FileText;
+
+                return (
+                  <button
+                    key={action.id}
+                    onClick={() => handleJumpToPoint(actualIndex)}
+                    disabled={isExecuting || isCurrent}
+                    className={`
+                      w-full flex items-center gap-4 p-3 rounded-xl transition-all text-left group relative
+                      ${
                         isCurrent
-                          ? 'Current position'
-                          : isFuture
-                            ? `Click to redo to this point (${actualIndex - currentIndex} step${actualIndex - currentIndex > 1 ? 's' : ''} forward)`
-                            : `Click to undo to this point (${currentIndex - actualIndex} step${currentIndex - actualIndex > 1 ? 's' : ''} back)`
+                          ? 'bg-stratosort-blue/5 border border-stratosort-blue/30 shadow-sm ring-1 ring-stratosort-blue/20 z-10'
+                          : 'hover:bg-system-gray-50 border border-transparent hover:border-border-soft bg-white'
                       }
+                      ${isFuture ? 'opacity-60 grayscale-[0.5]' : ''}
+                      ${isExecuting ? 'cursor-wait opacity-50' : ''}
+                    `}
+                  >
+                    {/* Status Indicator / Icon */}
+                    <div
+                      className={`
+                      relative flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center border transition-colors
+                      ${
+                        isCurrent
+                          ? 'bg-stratosort-blue text-white border-stratosort-blue shadow-md shadow-stratosort-blue/20'
+                          : isFuture
+                            ? 'bg-white text-system-gray-400 border-border-soft'
+                            : 'bg-white text-system-gray-600 border-border-soft group-hover:border-stratosort-blue/30 group-hover:text-stratosort-blue'
+                      }
+                    `}
                     >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-lg flex items-center">
-                          {(() => {
-                            const IconComponent = ACTION_METADATA[action.type]?.icon || FileText;
-                            return <IconComponent className="w-5 h-5" />;
-                          })()}
+                      <IconComponent className="w-5 h-5" />
+                      {isCurrent && (
+                        <span className="absolute -right-1 -top-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full shadow-sm" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`font-medium truncate ${isCurrent ? 'text-stratosort-blue' : 'text-system-gray-900'}`}
+                        >
+                          {action.description}
                         </span>
-                        <div>
-                          <div
-                            className={`font-medium ${isCurrent ? 'text-stratosort-blue' : isFuture ? 'text-system-gray-500' : 'text-system-gray-900'}`}
-                          >
-                            {action.description}
-                          </div>
-                          <div className="text-sm text-system-gray-500">
-                            {new Date(action.timestamp).toLocaleString()}
-                          </div>
-                        </div>
+                        <span className="text-[10px] text-system-gray-400 flex-shrink-0 font-mono">
+                          #{actualIndex + 1}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-system-gray-500">
+                          {new Date(action.timestamp).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
                         {isCurrent && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-stratosort-blue text-white rounded-full">
-                            Current
+                          <span className="text-[10px] font-semibold bg-stratosort-blue/10 text-stratosort-blue px-1.5 py-0.5 rounded-full border border-stratosort-blue/10">
+                            Current State
                           </span>
                         )}
                         {isFuture && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-system-gray-200 text-system-gray-600 rounded-full">
+                          <span className="text-[10px] font-medium bg-system-gray-100 text-system-gray-500 px-1.5 py-0.5 rounded-full border border-border-soft">
                             Undone
                           </span>
                         )}
-                        <span className="text-sm text-system-gray-400">#{actualIndex + 1}</span>
                       </div>
-                    </button>
-                  );
-                })}
-            </div>
-          )}
-        </div>
+                    </div>
+                  </button>
+                );
+              })}
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -805,92 +1030,6 @@ export function UndoRedoToolbar({ className = '' }) {
 UndoRedoToolbar.propTypes = {
   className: PropTypes.string
 };
-
-// Helper functions for common actions
-// Update createFileAction to conform to main IPC payloads
-export const createFileAction = ({ actionType, description, source, destination }) => ({
-  type: actionType,
-  description,
-  execute: async () => {
-    // Only move/copy/delete are supported here; match the main payload shape
-    if (destination) {
-      return await window.electronAPI.files.performOperation({
-        type: 'move',
-        source,
-        destination
-      });
-    }
-    throw new Error('Unsupported operation: destination required for move');
-  },
-  undo: async () => {
-    if (destination) {
-      return await window.electronAPI.files.performOperation({
-        type: 'move',
-        source: destination,
-        destination: source
-      });
-    }
-    throw new Error('Unsupported undo operation');
-  },
-  metadata: { source, destination }
-});
-
-export const createSettingsAction = (description, newSettings, oldSettings) => ({
-  type: ACTION_TYPES.SETTINGS_CHANGE,
-  description,
-  execute: async () => {
-    return await window.electronAPI.settings.save(newSettings);
-  },
-  undo: async () => {
-    return await window.electronAPI.settings.save(oldSettings);
-  },
-  metadata: { newSettings, oldSettings }
-});
-
-// Batch organize action that uses main process to perform and record undo/redo
-export const createOrganizeBatchAction = (description, operations, stateCallbacks = {}) => ({
-  type: ACTION_TYPES.BATCH_OPERATION,
-  description,
-  execute: async () => {
-    const result = await window.electronAPI.files.performOperation({
-      type: 'batch_organize',
-      operations
-    });
-    if (stateCallbacks.onExecute) {
-      try {
-        stateCallbacks.onExecute(result);
-      } catch {
-        // Non-fatal if state callback fails
-      }
-    }
-    return result;
-  },
-  undo: async () => {
-    const result = await window.electronAPI.undoRedo.undo();
-    if (stateCallbacks.onUndo) {
-      try {
-        stateCallbacks.onUndo(result);
-      } catch {
-        // Non-fatal if state callback fails
-      }
-    }
-    return result;
-  },
-  redo: async () => {
-    const result = await window.electronAPI.undoRedo.redo();
-    if (stateCallbacks.onRedo) {
-      try {
-        stateCallbacks.onRedo(result);
-      } catch {
-        // Non-fatal if state callback fails
-      }
-    }
-    return result;
-  },
-  metadata: {
-    operationCount: Array.isArray(operations) ? operations.length : 0
-  }
-});
 
 export const createBatchAction = (description, actions) => ({
   type: ACTION_TYPES.BATCH_OPERATION,

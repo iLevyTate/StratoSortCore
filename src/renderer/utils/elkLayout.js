@@ -28,10 +28,8 @@ let pendingLayoutPromise = null;
 let layoutDebounceTimer = null;
 const LAYOUT_DEBOUNCE_MS = 150;
 
-// FIX: Track pending promise resolvers to prevent memory leaks
-// When a new layout request supersedes an old one, we resolve the old promises
-// with the current nodes to prevent them from hanging indefinitely
-let pendingResolvers = [];
+// Track pending promise callbacks to prevent memory leaks and handle cancellation
+let pendingCallbacks = [];
 
 /**
  * Node size configuration for different node types
@@ -151,12 +149,12 @@ export async function elkLayout(nodes, edges, options = {}) {
 export function debouncedElkLayout(nodes, edges, options = {}) {
   const { debounceMs = LAYOUT_DEBOUNCE_MS, ...layoutOptions } = options;
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     // FIX: Resolve any previously pending promises with current nodes
     // This prevents memory leaks from promises that would never resolve
-    if (pendingResolvers.length > 0) {
-      pendingResolvers.forEach((prevResolve) => prevResolve(nodes));
-      pendingResolvers = [];
+    if (pendingCallbacks.length > 0) {
+      pendingCallbacks.forEach((cb) => cb.resolve(nodes));
+      pendingCallbacks = [];
     }
 
     // Clear any pending debounce timer
@@ -164,22 +162,22 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       clearTimeout(layoutDebounceTimer);
     }
 
-    // FIX: Track this resolver in case it gets superseded
-    pendingResolvers.push(resolve);
+    // Track this resolver
+    pendingCallbacks.push({ resolve, reject });
 
     // Set up debounced execution
     layoutDebounceTimer = setTimeout(async () => {
       layoutDebounceTimer = null;
 
-      // FIX: Clear pending resolvers since we're about to resolve them
-      const resolversToNotify = [...pendingResolvers];
-      pendingResolvers = [];
+      // Capture callbacks to notify
+      const callbacksToNotify = [...pendingCallbacks];
+      pendingCallbacks = [];
 
       // If there's already a layout in progress, wait for it
       if (pendingLayoutPromise) {
         try {
           const result = await pendingLayoutPromise;
-          resolversToNotify.forEach((r) => r(result));
+          callbacksToNotify.forEach((cb) => cb.resolve(result));
           return;
         } catch {
           // Fall through to new layout
@@ -191,10 +189,10 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
 
       try {
         const result = await pendingLayoutPromise;
-        resolversToNotify.forEach((r) => r(result));
+        callbacksToNotify.forEach((cb) => cb.resolve(result));
       } catch (error) {
         logger.error('[elkLayout] Debounced layout failed:', error);
-        resolversToNotify.forEach((r) => r(nodes)); // Return original nodes on error
+        callbacksToNotify.forEach((cb) => cb.resolve(nodes)); // Return original nodes on error
       } finally {
         pendingLayoutPromise = null;
       }
@@ -211,11 +209,12 @@ export function cancelPendingLayout() {
     clearTimeout(layoutDebounceTimer);
     layoutDebounceTimer = null;
   }
-  // FIX: Resolve pending promises with empty array to prevent memory leaks
-  // Callers should handle the case where layout returns no nodes
-  if (pendingResolvers.length > 0) {
-    pendingResolvers.forEach((r) => r([]));
-    pendingResolvers = [];
+  // Reject pending promises with AbortError to signal cancellation
+  if (pendingCallbacks.length > 0) {
+    const error = new Error('Layout cancelled');
+    error.name = 'AbortError';
+    pendingCallbacks.forEach((cb) => cb.reject(error));
+    pendingCallbacks = [];
   }
   pendingLayoutPromise = null;
 }
@@ -361,32 +360,52 @@ export function getLayoutBounds(nodes) {
 
 /**
  * Layout nodes in a radial pattern around a center node
- * Useful for expansion from a selected node
+ * Generic utility for radial distribution
  *
- * @param {Object} centerNode - The center node
- * @param {Array} childNodes - Nodes to arrange around center
+ * @param {Object} centerNode - The center node (optional if options.centerX/Y provided)
+ * @param {Array} nodes - Nodes to arrange around center
  * @param {Object} options - Layout options
  * @param {number} options.radius - Distance from center
  * @param {number} options.startAngle - Starting angle in radians
- * @returns {Array} Child nodes with updated positions
+ * @param {number} options.endAngle - Ending angle in radians
+ * @param {number} options.centerX - Center X coordinate override
+ * @param {number} options.centerY - Center Y coordinate override
+ * @returns {Array} Positioned nodes
  */
-export function radialLayout(centerNode, childNodes, options = {}) {
-  const { radius = 200, startAngle = -Math.PI / 2 } = options;
+export function radialLayout(centerNode, nodes, options = {}) {
+  const { radius = 200, startAngle = 0, endAngle = 2 * Math.PI, centerX, centerY } = options;
 
-  if (!centerNode || !childNodes || childNodes.length === 0) {
-    return childNodes;
+  if (!nodes || nodes.length === 0) {
+    return nodes;
   }
 
-  const centerPos = centerNode.position || { x: 0, y: 0 };
-  const angleStep = (2 * Math.PI) / childNodes.length;
+  // Determine center position
+  let cX = centerX;
+  let cY = centerY;
 
-  return childNodes.map((node, index) => {
+  if (centerNode && centerNode.position) {
+    cX = centerNode.position.x;
+    cY = centerNode.position.y;
+  } else if (cX === undefined || cY === undefined) {
+    cX = 0;
+    cY = 0;
+  }
+
+  // Calculate angle distribution
+  const totalAngle = endAngle - startAngle;
+  // If spanning full circle (approx), divide by N. If sector, divide by N-1 to cover range.
+  const isFullCircle = Math.abs(Math.abs(totalAngle) - 2 * Math.PI) < 0.01;
+  const count = nodes.length;
+  // For single node, place at start angle
+  const angleStep = count <= 1 ? 0 : isFullCircle ? totalAngle / count : totalAngle / (count - 1);
+
+  return nodes.map((node, index) => {
     const angle = startAngle + index * angleStep;
     return {
       ...node,
       position: {
-        x: centerPos.x + radius * Math.cos(angle),
-        y: centerPos.y + radius * Math.sin(angle)
+        x: cX + radius * Math.cos(angle),
+        y: cY + radius * Math.sin(angle)
       }
     };
   });
@@ -394,10 +413,10 @@ export function radialLayout(centerNode, childNodes, options = {}) {
 
 /**
  * Layout clusters in a circular/radial pattern
- * Good for visualizing cluster relationships
+ * Wrapper around radialLayout for cluster nodes
  *
  * @param {Array} clusterNodes - Cluster nodes
- * @param {Array} edges - Edges between clusters
+ * @param {Array} edges - Edges between clusters (unused but kept for API compat)
  * @param {Object} options - Layout options
  * @returns {Array} Nodes with radial positions
  */
@@ -416,24 +435,18 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
     }));
   }
 
-  // Multiple clusters - arrange radially
-  const angleStep = (2 * Math.PI) / clusterNodes.length;
-
-  return clusterNodes.map((node, index) => {
-    const angle = startAngle + index * angleStep;
-    return {
-      ...node,
-      position: {
-        x: centerX + radius * Math.cos(angle),
-        y: centerY + radius * Math.sin(angle)
-      }
-    };
+  return radialLayout(null, clusterNodes, {
+    radius,
+    startAngle,
+    endAngle: startAngle + 2 * Math.PI,
+    centerX,
+    centerY
   });
 }
 
 /**
  * Layout for expanding cluster members around a cluster node
- * Places files in a fan pattern to the right of the cluster
+ * Wrapper around radialLayout for fan pattern
  *
  * @param {Object} clusterNode - The parent cluster node
  * @param {Array} memberNodes - Member file nodes to layout
@@ -451,11 +464,11 @@ export function clusterExpansionLayout(clusterNode, memberNodes, options = {}) {
     return memberNodes;
   }
 
-  const clusterPos = clusterNode.position || { x: 0, y: 0 };
   const count = memberNodes.length;
 
-  // For small numbers, use simple vertical stacking
+  // For small numbers, use simple vertical stacking (legacy behavior preserved)
   if (count <= 5) {
+    const clusterPos = clusterNode.position || { x: 0, y: 0 };
     const totalHeight = (count - 1) * spacing;
     const startY = clusterPos.y - totalHeight / 2;
 
@@ -468,20 +481,12 @@ export function clusterExpansionLayout(clusterNode, memberNodes, options = {}) {
     }));
   }
 
-  // For larger numbers, use a fan layout
-  const angleStep = fanAngle / (count - 1);
-  const startAngle = -fanAngle / 2;
-  const fanRadius = offsetX;
-
-  return memberNodes.map((node, index) => {
-    const angle = startAngle + index * angleStep;
-    return {
-      ...node,
-      position: {
-        x: clusterPos.x + fanRadius * Math.cos(angle),
-        y: clusterPos.y + fanRadius * Math.sin(angle)
-      }
-    };
+  // For larger numbers, use fan layout via radialLayout
+  // Fan is centered to the right (angle 0)
+  return radialLayout(clusterNode, memberNodes, {
+    radius: offsetX,
+    startAngle: -fanAngle / 2,
+    endAngle: fanAngle / 2
   });
 }
 

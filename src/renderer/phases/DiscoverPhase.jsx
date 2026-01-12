@@ -722,7 +722,7 @@ function DiscoverPhase() {
         )}
 
         {/* Footer Navigation */}
-        <div className="mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0 pt-default gap-cozy">
+        <div className="mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0 pt-6 pb-2 gap-4">
           <Button
             onClick={() => actions.advancePhase(PHASES.SETUP)}
             variant="secondary"

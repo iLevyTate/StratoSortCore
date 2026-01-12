@@ -572,5 +572,7 @@ module.exports = {
   LOG_LEVEL_NAMES,
   // DUP-5: Factory functions
   createLogger,
-  getLogger
+  getLogger,
+  // Shared utility for sanitizing log data (used by ErrorHandler.js)
+  sanitizeLogData
 };

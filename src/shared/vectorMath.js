@@ -84,7 +84,23 @@ function squaredEuclideanDistance(a, b) {
   return sum;
 }
 
+/**
+ * Validate embedding dimensions against expected size
+ * @param {number[]} vector - The vector to validate
+ * @param {number} expectedDim - Expected dimension (pass null/undefined to skip validation)
+ * @returns {boolean} True if valid, false if invalid
+ */
+function validateEmbeddingDimensions(vector, expectedDim) {
+  if (!Array.isArray(vector)) return false;
+  // Allow explicitly skipping validation with null/undefined
+  if (expectedDim === null || expectedDim === undefined) return true;
+  // Invalid expectedDim values (0, negative, non-integer) indicate caller bug - fail validation
+  if (!Number.isInteger(expectedDim) || expectedDim <= 0) return false;
+  return vector.length === expectedDim;
+}
+
 module.exports = {
   cosineSimilarity,
-  squaredEuclideanDistance
+  squaredEuclideanDistance,
+  validateEmbeddingDimensions
 };

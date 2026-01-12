@@ -151,17 +151,17 @@ function Modal({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center p-[var(--panel-padding)]"
+      className="fixed inset-0 z-modal flex items-center justify-center p-4"
       onClick={handleOverlayClick}
     >
       {/* Unified backdrop: solid overlay (blur disabled to avoid native dropdown flicker) */}
-      <div className="absolute inset-0 bg-black/45 animate-modal-backdrop" aria-hidden="true" />
+      <div className="absolute inset-0 bg-black/40 animate-modal-backdrop" aria-hidden="true" />
 
       {/* Modal */}
       <div
         ref={modalRef}
         className={`
-          relative surface-panel w-full ${getSizeClasses()}
+          relative surface-panel !p-0 w-full ${getSizeClasses()}
           max-h-[90vh] overflow-hidden animate-modal-enter will-change-transform ${className}
         `}
         role="dialog"
@@ -172,9 +172,9 @@ function Modal({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between border-b border-border-soft/70 p-[var(--panel-padding)] bg-white/90 rounded-t-2xl">
+          <div className="flex items-center justify-between border-b border-border-soft/70 px-5 py-4 bg-white rounded-t-2xl">
             {title && (
-              <h2 id="modal-title" className="text-xl font-semibold text-system-gray-900">
+              <h2 id="modal-title" className="text-lg font-semibold text-system-gray-900">
                 {title}
               </h2>
             )}
@@ -182,7 +182,7 @@ function Modal({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-2 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-100 rounded-lg transition-colors"
+                className="p-1.5 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-100 rounded-lg transition-colors"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -194,7 +194,7 @@ function Modal({
         {/* Content */}
         <div
           ref={contentRef}
-          className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto p-[var(--panel-padding)] bg-white/85 rounded-b-2xl"
+          className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto px-5 py-4 bg-white rounded-b-2xl"
         >
           {children}
         </div>

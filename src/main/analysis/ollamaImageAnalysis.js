@@ -686,11 +686,27 @@ async function applySemanticFolderMatching(analysis, filePath, smartFolders) {
     const candidates = await folderMatcher.matchVectorToFolders(vector, 5);
 
     // Queue embedding for batch persistence
+    // FIX: Include category and confidence in metadata for search display
+    const fileName = path.basename(filePath);
+    const rawConfidence = analysis.confidence ?? 0;
+    const confidencePercent =
+      typeof rawConfidence === 'number'
+        ? rawConfidence > 1
+          ? Math.round(rawConfidence)
+          : Math.round(rawConfidence * 100)
+        : 0;
     embeddingQueue.enqueue({
       id: `image:${filePath}`,
       vector,
       model,
-      meta: { path: filePath },
+      meta: {
+        path: filePath,
+        name: fileName,
+        category: analysis.category || 'Uncategorized',
+        confidence: confidencePercent,
+        type: 'image',
+        summary: summary.substring(0, 500)
+      },
       updatedAt: new Date().toISOString()
     });
 

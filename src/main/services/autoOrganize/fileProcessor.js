@@ -8,21 +8,20 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const crypto = require('crypto');
 const { logger } = require('../../../shared/logger');
 const { sanitizeFile } = require('./fileTypeUtils');
 const { generateSuggestedNameFromAnalysis } = require('./namingUtils');
 const {
+  findDefaultFolder,
   createDefaultFolder,
   getFallbackDestination,
   buildDestinationPath
 } = require('./folderOperations');
+const { safeSuggestion } = require('./pathUtils');
+// FIX C-5: Import from shared idUtils to break circular dependency with batchProcessor
+const { generateSecureId } = require('./idUtils');
 
 logger.setContext('AutoOrganize-FileProcessor');
-
-// Helper to generate secure random IDs
-const generateSecureId = (prefix) =>
-  `${prefix}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
 
 /**
  * Process files without analysis (use default folder)
@@ -37,9 +36,7 @@ async function processFilesWithoutAnalysis(files, smartFolders, defaultLocation,
   });
 
   // Find or create default folder once for all files
-  let defaultFolder = smartFolders.find(
-    (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized'
-  );
+  let defaultFolder = findDefaultFolder(smartFolders);
 
   if (!defaultFolder) {
     defaultFolder = await createDefaultFolder(smartFolders);
@@ -147,14 +144,7 @@ async function processFilesIndividually(files, smartFolders, options, results, s
       if (confidence >= confidenceThreshold) {
         // High confidence - organize automatically
         // Ensure primary suggestion folder/path are valid strings
-        const safePrimary = {
-          ...primary,
-          folder:
-            typeof primary.folder === 'string'
-              ? primary.folder
-              : primary.folder?.name || 'Uncategorized',
-          path: typeof primary.path === 'string' ? primary.path : primary.path?.path || undefined
-        };
+        const safePrimary = safeSuggestion(primary);
         const destination = buildDestinationPath(file, safePrimary, defaultLocation, preserveNames);
 
         results.organized.push({
@@ -268,6 +258,17 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
       return null;
     }
 
+    // FIX H-4: Re-verify file still exists after analysis (could be deleted during analysis)
+    try {
+      await fs.access(filePath);
+    } catch (accessError) {
+      if (accessError.code === 'ENOENT') {
+        logger.warn('[AutoOrganize] File no longer exists after analysis:', filePath);
+        return null;
+      }
+      throw accessError;
+    }
+
     // Create file object
     const file = {
       name: path.basename(filePath),
@@ -310,14 +311,34 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     if (suggestion.success && suggestion.primary && suggestion.confidence >= confidenceThreshold) {
       // Ensure primary suggestion folder/path are valid strings
       const { primary } = suggestion;
-      const safePrimary = {
-        ...primary,
-        folder:
-          typeof primary.folder === 'string'
-            ? primary.folder
-            : primary.folder?.name || 'Uncategorized',
-        path: typeof primary.path === 'string' ? primary.path : primary.path?.path || undefined
-      };
+
+      // FIX: Check if we can resolve to an existing smart folder by name
+      // This handles cases where strategies generate a path/name that matches a smart folder
+      // but the strategy logic failed to link them (e.g. slight path mismatch)
+      const safePrimary = safeSuggestion(primary);
+      let resolvedPath = safePrimary.path;
+      let resolvedFolder = safePrimary.folder;
+
+      const matchingSmartFolder = smartFolders.find(
+        (f) =>
+          (f.name && f.name.toLowerCase() === resolvedFolder.toLowerCase()) ||
+          (f.path && resolvedPath && f.path.toLowerCase() === resolvedPath.toLowerCase())
+      );
+
+      if (matchingSmartFolder) {
+        logger.debug('[AutoOrganize] Resolved suggestion to existing smart folder:', {
+          suggestion: resolvedFolder,
+          smartFolder: matchingSmartFolder.name,
+          path: matchingSmartFolder.path
+        });
+        resolvedPath = matchingSmartFolder.path;
+        resolvedFolder = matchingSmartFolder.name;
+      }
+
+      // Re-apply resolved values to safePrimary
+      safePrimary.folder = resolvedFolder;
+      safePrimary.path = resolvedPath;
+
       const destination = buildDestinationPath(
         file,
         safePrimary,

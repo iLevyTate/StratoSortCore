@@ -528,8 +528,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }}
       role="presentation"
     >
-      <div className="surface-panel w-full max-w-5xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
-        <div className="settings-modal-header p-[var(--panel-padding)] border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-[var(--radius-panel)]">
+      <div className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
+        <div className="settings-modal-header px-5 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-[var(--radius-panel)]">
           <div className="flex items-start sm:items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -569,7 +569,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="p-[var(--panel-padding)] flex flex-col gap-[var(--spacing-default)] flex-1 min-h-0 overflow-y-auto modern-scrollbar">
+        <div className="px-5 py-4 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
           <Collapsible
             title={
               <div className="flex items-center gap-2">
@@ -701,7 +701,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="p-[var(--panel-padding)] border-t border-border-soft/70 bg-white/90 backdrop-blur-sm flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[var(--radius-panel)]">
+        <div className="px-5 py-3 border-t border-border-soft/70 bg-white flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[var(--radius-panel)]">
           <Button
             onClick={handleToggleSettings}
             variant="secondary"

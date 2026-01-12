@@ -9,6 +9,7 @@ const { get: getConfig } = require('../../shared/config/index');
 const { buildOllamaOptions } = require('./PerformanceService');
 const { getInstance: getOllamaInstance } = require('./OllamaService');
 const { enrichFolderTextForEmbedding } = require('../analysis/semanticExtensionMap');
+const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
 
 /**
  * Embedding dimension constants for different models
@@ -616,6 +617,20 @@ class FolderMatchingService {
       await this.chromaDbService.initialize();
 
       const { vector, model } = await this.embedText(contentSummary || '');
+
+      // Validate dimensions if we have a known model
+      const expectedDim = getEmbeddingDimension(model);
+      if (!validateEmbeddingDimensions(vector, expectedDim)) {
+        logger.warn('[FolderMatchingService] Vector dimension mismatch in upsert', {
+          id: fileId,
+          model,
+          expected: expectedDim,
+          actual: vector?.length
+        });
+        // Proceed anyway as it might be a custom model not in our list,
+        // but log warning. Or fail? ClusteringService fails on validation.
+        // SearchService fails. We should probably fail or at least be very loud.
+      }
 
       await this.chromaDbService.upsertFile({
         id: fileId,

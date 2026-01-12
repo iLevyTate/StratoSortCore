@@ -907,6 +907,14 @@ class SmartFolderWatcher {
       const category = analysis.category || 'Uncategorized';
       const keywords = analysis.keywords || analysis.tags || [];
       const subject = analysis.subject || '';
+      // FIX: Extract confidence score - normalize to 0-100 integer
+      const rawConfidence = analysis.confidence ?? analysisResult.confidence ?? 0;
+      const confidence =
+        typeof rawConfidence === 'number'
+          ? rawConfidence > 1
+            ? Math.round(rawConfidence)
+            : Math.round(rawConfidence * 100)
+          : 0;
 
       // Skip if no meaningful content to embed
       if (!summary && !subject) {
@@ -941,7 +949,8 @@ class SmartFolderWatcher {
           subject,
           summary: summary.substring(0, 1000), // Limit summary length
           tags: JSON.stringify(keywords.slice(0, 10)), // Limit tags
-          type: isImageFile(filePath) ? 'image' : 'document'
+          type: isImageFile(filePath) ? 'image' : 'document',
+          confidence // FIX: Include confidence score in metadata for search display
         },
         updatedAt: new Date().toISOString()
       });

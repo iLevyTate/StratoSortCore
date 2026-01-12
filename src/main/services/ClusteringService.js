@@ -8,7 +8,11 @@
  */
 
 const { logger } = require('../../shared/logger');
-const { cosineSimilarity, squaredEuclideanDistance } = require('../../shared/vectorMath');
+const {
+  cosineSimilarity,
+  squaredEuclideanDistance,
+  validateEmbeddingDimensions
+} = require('../../shared/vectorMath');
 const { getOllamaModel } = require('../ollamaUtils');
 
 logger.setContext('ClusteringService');
@@ -109,7 +113,7 @@ class ClusteringService {
           // FIX: Validate dimension consistency
           if (expectedDim === null) {
             expectedDim = embeddings[i].length;
-          } else if (embeddings[i].length !== expectedDim) {
+          } else if (!validateEmbeddingDimensions(embeddings[i], expectedDim)) {
             logger.warn('[ClusteringService] Skipping file with mismatched embedding dimension', {
               fileId: ids[i],
               expected: expectedDim,
@@ -265,6 +269,9 @@ class ClusteringService {
       }
     }
 
+    // FIX H-1: Track used points to prevent infinite loop in reinitialization
+    const usedForReinit = new Set();
+
     for (let c = 0; c < centroids.length; c++) {
       if (counts[c] > 0) {
         // Normal case: update centroid to mean of assigned points
@@ -278,6 +285,9 @@ class ClusteringService {
         let farthestIdx = -1;
 
         for (let i = 0; i < files.length; i++) {
+          // FIX H-1: Skip points already used for reinitialization to prevent cycles
+          if (usedForReinit.has(i)) continue;
+
           const assignedCentroid = centroids[assignments[i]];
           const dist = squaredEuclideanDistance(files[i].embedding, assignedCentroid);
           if (dist > maxDist) {
@@ -287,10 +297,14 @@ class ClusteringService {
         }
 
         if (farthestIdx >= 0) {
+          usedForReinit.add(farthestIdx);
           for (let d = 0; d < dim; d++) {
             centroids[c][d] = files[farthestIdx].embedding[d];
           }
           logger.debug(`[ClusteringService] Reinitialized empty cluster ${c} with farthest point`);
+        } else {
+          // FIX H-1: All points exhausted, log warning and skip
+          logger.warn(`[ClusteringService] Cannot reinitialize cluster ${c}, no available points`);
         }
       }
     }
@@ -435,9 +449,19 @@ class ClusteringService {
         };
       }
 
-      // Determine number of clusters
-      const numClusters =
-        k === 'auto' ? this.estimateOptimalK(files) : Math.max(2, Math.min(k, files.length));
+      // FIX M-2: Add upper bound on cluster count to prevent performance degradation
+      const MAX_USER_CLUSTERS = 100;
+      let numClusters;
+      if (k === 'auto') {
+        numClusters = this.estimateOptimalK(files);
+      } else {
+        numClusters = Math.max(2, Math.min(k, files.length, MAX_USER_CLUSTERS));
+        if (k > MAX_USER_CLUSTERS) {
+          logger.warn(
+            `[ClusteringService] Requested ${k} clusters, capped at ${MAX_USER_CLUSTERS}`
+          );
+        }
+      }
 
       // Run K-means
       const { assignments, centroids } = this.kmeans(files, numClusters);

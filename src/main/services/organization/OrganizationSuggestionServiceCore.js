@@ -7,15 +7,13 @@
  * @module services/organization/OrganizationSuggestionServiceCore
  */
 
-const path = require('path');
-const fs = require('fs').promises;
 const os = require('os');
-const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
-const { SUPPORTED_IMAGE_EXTENSIONS } = require('../../../shared/constants');
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { globalBatchProcessor } = require('../../utils/llmOptimization');
 const { cosineSimilarity } = require('../../../shared/vectorMath');
+const { getSemanticFileId, stripSemanticPrefix } = require('../../../shared/fileIdUtils');
+const { findDefaultFolder, createDefaultFolder } = require('../autoOrganize/folderOperations');
 
 // Extracted modules
 const {
@@ -51,17 +49,6 @@ const {
 } = require('./filePatternAnalyzer');
 
 logger.setContext('OrganizationSuggestionService');
-
-function getSemanticFileId(filePath) {
-  const safePath = typeof filePath === 'string' ? filePath : '';
-  const ext = (path.extname(safePath) || '').toLowerCase();
-  const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-  return `${isImage ? 'image' : 'file'}:${safePath}`;
-}
-
-function stripSemanticPrefix(fileId) {
-  return typeof fileId === 'string' ? fileId.replace(/^(file|image):/, '') : '';
-}
 
 /**
  * Calculate optimal concurrency based on CPU cores
@@ -279,7 +266,13 @@ class OrganizationSuggestionServiceCore {
         this.config.strategyMatchThreshold
       );
       const patternMatches = this.patternMatcher.getPatternBasedSuggestions(file);
-      const llmSuggestions = await getLLMAlternativeSuggestions(file, smartFolders, this.config);
+
+      // Optimization: Only request LLM creative suggestions if alternatives are requested
+      // This prevents "hallucinated" new folders from becoming the primary suggestion during auto-organize
+      const llmSuggestions = includeAlternatives
+        ? await getLLMAlternativeSuggestions(file, smartFolders, this.config)
+        : [];
+
       const improvementSuggestions = await this.getImprovementSuggestions(file, smartFolders);
 
       // Get cluster-based suggestions (if clustering is available)
@@ -300,7 +293,8 @@ class OrganizationSuggestionServiceCore {
         allSuggestions.push(match);
       }
       for (const suggestion of llmSuggestions) {
-        suggestion.source = 'llm';
+        // Respect existing source tag (e.g. 'llm_creative') or default to 'llm'
+        suggestion.source = suggestion.source || 'llm';
         allSuggestions.push(suggestion);
       }
       for (const suggestion of improvementSuggestions) {
@@ -357,40 +351,33 @@ class OrganizationSuggestionServiceCore {
 
   /**
    * Get default folder suggestion when no matches found
+   * Uses secure folder creation from folderOperations with proper path validation
    * @private
    */
   async _getDefaultFolderSuggestion(file, smartFolders) {
-    let defaultFolder = smartFolders.find(
-      (f) => f.isDefault || f.name.toLowerCase() === 'uncategorized'
-    );
+    // Use shared findDefaultFolder for consistent lookup
+    let defaultFolder = findDefaultFolder(smartFolders);
 
     if (!defaultFolder) {
-      logger.warn('[OrganizationSuggestionService] No default folder, creating fallback');
-      try {
-        const documentsDir = app.getPath('documents');
-        const defaultFolderPath = path.join(documentsDir, 'StratoSort', 'Uncategorized');
-        await fs.mkdir(defaultFolderPath, { recursive: true });
+      logger.warn('[OrganizationSuggestionService] No default folder, creating secure fallback');
+      // Use secure createDefaultFolder with proper path validation (UNC, symlink, traversal checks)
+      defaultFolder = await createDefaultFolder(smartFolders);
+    }
 
-        defaultFolder = {
-          id: `emergency-default-${Date.now()}`,
-          name: 'Uncategorized',
-          path: defaultFolderPath,
-          description: 'Emergency fallback folder',
-          keywords: [],
-          isDefault: true,
-          createdAt: new Date().toISOString()
-        };
-        smartFolders.push(defaultFolder);
-      } catch (error) {
-        logger.error('[OrganizationSuggestionService] Failed to create default folder:', error);
-        const documentsDir = app.getPath('documents');
-        defaultFolder = {
-          name: 'Uncategorized',
-          path: path.join(documentsDir, 'StratoSort', 'Uncategorized'),
-          description: 'Default folder for unmatched files',
-          isDefault: true
-        };
-      }
+    // Handle case where folder creation failed
+    if (!defaultFolder) {
+      logger.error('[OrganizationSuggestionService] Failed to create secure default folder');
+      return {
+        folder: 'Uncategorized',
+        path: null,
+        score: 0.1,
+        confidence: 0.1,
+        method: 'default_fallback',
+        description: 'Default folder for unmatched files (creation failed)',
+        source: 'default',
+        isSmartFolder: false,
+        creationFailed: true
+      };
     }
 
     return {

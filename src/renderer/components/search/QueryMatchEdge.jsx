@@ -1,6 +1,7 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
-import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
+import { BaseEdge, getSmoothStepPath } from 'reactflow';
 import PropTypes from 'prop-types';
+import BaseEdgeTooltip from './BaseEdgeTooltip';
 
 /**
  * Custom edge component for query-to-file match connections
@@ -22,6 +23,7 @@ const QueryMatchEdge = memo(
     const [isHovered, setIsHovered] = useState(false);
 
     // Get the edge path
+    // Position label 75% along the path (much closer to target file) to clearly associate score with file
     const [edgePath, labelX, labelY] = getSmoothStepPath({
       sourceX,
       sourceY,
@@ -29,7 +31,9 @@ const QueryMatchEdge = memo(
       targetX,
       targetY,
       targetPosition,
-      borderRadius: 8
+      borderRadius: 8,
+      centerX: (sourceX + targetX * 3) / 4,
+      centerY: (sourceY + targetY * 3) / 4
     });
 
     const score = data?.score ?? 0;
@@ -136,86 +140,46 @@ const QueryMatchEdge = memo(
         <BaseEdge id={id} path={edgePath} style={edgeStyle} markerEnd={markerEnd} />
 
         {/* Edge label and tooltip */}
-        <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan"
-            style={{
-              position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              pointerEvents: 'all',
-              zIndex: isHovered ? 1000 : 1
-            }}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-          >
-            {/* Score badge */}
-            <div
-              className={`
-                px-1.5 py-0.5 rounded text-[10px] font-medium cursor-pointer
-                transition-all duration-200
-                ${
-                  isHovered
-                    ? 'bg-indigo-500 text-white shadow-lg scale-110'
-                    : 'bg-indigo-100 text-indigo-700'
-                }
-              `}
-            >
-              {scorePercent}%
-            </div>
-
-            {/* Tooltip on hover */}
-            {isHovered && (
+        <BaseEdgeTooltip
+          isHovered={isHovered}
+          labelX={labelX}
+          labelY={labelY}
+          badgeText={`${scorePercent}%`}
+          badgeColorClass={isHovered ? 'bg-indigo-500 text-white' : 'bg-indigo-100 text-indigo-700'}
+          title="Why this matched"
+          headerColorClass="text-indigo-400"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          {/* Match score */}
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">Relevance:</span>
+            <span className="font-medium text-indigo-400">{scorePercent}%</span>
+            <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
               <div
-                className="absolute left-1/2 -translate-x-1/2 mt-2 z-50"
-                style={{ minWidth: '200px', maxWidth: '280px' }}
-              >
-                <div className="bg-gray-900 text-white text-xs rounded-lg shadow-xl p-3 space-y-2">
-                  {/* Header */}
-                  <div className="font-semibold text-indigo-400 border-b border-gray-700 pb-1.5">
-                    Why this matched
-                  </div>
-
-                  {/* Match score */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400">Relevance:</span>
-                    <span className="font-medium text-indigo-400">{scorePercent}%</span>
-                    <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-500 rounded-full"
-                        style={{ width: `${scorePercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Match reasons */}
-                  <div className="space-y-1">
-                    {reasons.map((reason) => (
-                      <div
-                        key={`${reason.type}:${reason.text}`}
-                        className="flex items-start gap-1.5"
-                      >
-                        <span className="text-gray-500 mt-0.5">•</span>
-                        <span className={typeColors[reason.type] || 'text-gray-300'}>
-                          {reason.text}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Source indicator */}
-                  {sources.length > 0 && (
-                    <div className="text-gray-500 text-[10px] pt-1 border-t border-gray-700">
-                      Match sources: {sources.join(' + ')}
-                    </div>
-                  )}
-
-                  {/* Arrow pointing up */}
-                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 rotate-45" />
-                </div>
-              </div>
-            )}
+                className="h-full bg-indigo-500 rounded-full"
+                style={{ width: `${scorePercent}%` }}
+              />
+            </div>
           </div>
-        </EdgeLabelRenderer>
+
+          {/* Match reasons */}
+          <div className="space-y-1">
+            {reasons.map((reason) => (
+              <div key={`${reason.type}:${reason.text}`} className="flex items-start gap-1.5">
+                <span className="text-gray-500 mt-0.5">•</span>
+                <span className={typeColors[reason.type] || 'text-gray-300'}>{reason.text}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Source indicator */}
+          {sources.length > 0 && (
+            <div className="text-gray-500 text-[10px] pt-1 border-t border-gray-700">
+              Match sources: {sources.join(' + ')}
+            </div>
+          )}
+        </BaseEdgeTooltip>
       </>
     );
   }

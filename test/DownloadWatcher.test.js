@@ -281,7 +281,8 @@ describe('DownloadWatcher', () => {
     });
 
     test('skips non-existent files', async () => {
-      mockFs.access.mockRejectedValueOnce({ code: 'ENOENT' });
+      // FIX: Now using fs.stat instead of fs.access for atomic existence check
+      mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
 
       const result = await watcher._validateFile('/downloads/missing.txt');
 
@@ -362,7 +363,8 @@ describe('DownloadWatcher', () => {
     });
 
     test('skips non-existent files', async () => {
-      mockFs.access.mockRejectedValueOnce({ code: 'ENOENT' });
+      // FIX: Now using fs.stat instead of fs.access for atomic existence check
+      mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
 
       await watcher._fallbackOrganize('/downloads/missing.pdf');
 

@@ -16,6 +16,18 @@ const { isUNCPath } = require('../../../shared/crossPlatformUtils');
 logger.setContext('AutoOrganize-Folders');
 
 /**
+ * Find default folder in smart folders array
+ * @param {Array} smartFolders - Array of smart folders
+ * @returns {Object|undefined} Default folder if found
+ */
+function findDefaultFolder(smartFolders) {
+  if (!Array.isArray(smartFolders)) return undefined;
+  return smartFolders.find(
+    (f) => f.isDefault || (f.name && f.name.toLowerCase() === 'uncategorized')
+  );
+}
+
+/**
  * Create default folder for unanalyzed files with security validation
  * @param {Array} smartFolders - Array of smart folders to add to
  * @returns {Promise<Object|null>} Created folder object or null
@@ -225,6 +237,25 @@ function extractStringValue(value, fallback = 'Uncategorized') {
 }
 
 /**
+ * Get a guaranteed absolute default location
+ * @param {string} defaultLocation - Provided default location
+ * @returns {string} Absolute path to use as default location
+ */
+function getAbsoluteDefaultLocation(defaultLocation) {
+  // If provided and absolute, use it
+  if (typeof defaultLocation === 'string' && path.isAbsolute(defaultLocation)) {
+    return defaultLocation;
+  }
+  // Fall back to system documents directory (always absolute)
+  try {
+    return app.getPath('documents');
+  } catch {
+    // Last resort fallback if app.getPath fails (shouldn't happen in Electron context)
+    return process.cwd();
+  }
+}
+
+/**
  * Build destination path for a file
  * @param {Object} file - File object
  * @param {Object} suggestion - Suggestion object
@@ -244,14 +275,20 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
     folderPath = extractStringValue(suggestion.path, null);
   }
 
+  // Get guaranteed absolute base location
+  const absoluteDefaultLocation = getAbsoluteDefaultLocation(defaultLocation);
+
   // If no valid path, build from defaultLocation and folder name
   if (!folderPath) {
     const folderName = extractStringValue(suggestion.folder, 'Uncategorized');
-    const location =
-      typeof defaultLocation === 'string'
-        ? defaultLocation
-        : extractStringValue(defaultLocation, 'Documents');
-    folderPath = path.join(location, folderName);
+    folderPath = path.join(absoluteDefaultLocation, folderName);
+  }
+
+  // FIX: Ensure absolute path for folderPath
+  // If we got a relative path from suggestion.path (e.g. from a strategy that didn't match an existing folder),
+  // we must anchor it to defaultLocation to avoid creating folders in the application working directory.
+  if (folderPath && !path.isAbsolute(folderPath)) {
+    folderPath = path.join(absoluteDefaultLocation, folderPath);
   }
 
   let fileName = preserveNames ? file.name : file.analysis?.suggestedName || file.name;
@@ -269,6 +306,7 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
 
 module.exports = {
   isUNCPath,
+  findDefaultFolder,
   createDefaultFolder,
   getFallbackDestination,
   buildDestinationPath

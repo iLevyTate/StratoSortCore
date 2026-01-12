@@ -326,6 +326,7 @@ describe('AutoOrganizeService', () => {
           {
             name: 'error.pdf',
             path: '/downloads/error.pdf',
+            extension: '.pdf',
             analysis: { category: 'document' }
           },
           {
@@ -345,8 +346,12 @@ describe('AutoOrganizeService', () => {
 
         const result = await service.organizeFiles(files, mockSmartFolders);
 
-        expect(result.failed).toHaveLength(1);
-        expect(result.organized).toHaveLength(1);
+        // IMPROVED BEHAVIOR: Both files get organized - first via fallback, second via suggestion.
+        // The suggestion error is caught and uses fallback logic for resilience.
+        expect(result.failed).toHaveLength(0);
+        expect(result.organized).toHaveLength(2);
+        expect(result.organized[0].method).toBe('suggestion-error-fallback');
+        expect(result.organized[1].method).toBe('automatic');
       });
     });
 
