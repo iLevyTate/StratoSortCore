@@ -114,7 +114,8 @@ describe('OllamaService Extended Tests', () => {
 
       expect(result.success).toBe(true);
       expect(result.modelDowngraded).toBe(true);
-      expect(mockOllamaUtils.setOllamaEmbeddingModel).toHaveBeenCalledWith('embeddinggemma');
+      // updateConfig now passes shouldSave parameter (true by default when skipSave is false)
+      expect(mockOllamaUtils.setOllamaEmbeddingModel).toHaveBeenCalledWith('embeddinggemma', true);
     });
 
     test('accepts allowed models without downgrade', async () => {
@@ -122,7 +123,10 @@ describe('OllamaService Extended Tests', () => {
 
       expect(result.success).toBe(true);
       expect(result.modelDowngraded).toBe(false);
-      expect(mockOllamaUtils.setOllamaEmbeddingModel).toHaveBeenCalledWith('nomic-embed-text');
+      expect(mockOllamaUtils.setOllamaEmbeddingModel).toHaveBeenCalledWith(
+        'nomic-embed-text',
+        true
+      );
     });
 
     test('updateConfigWithDowngradeInfo returns details', async () => {

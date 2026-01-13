@@ -92,7 +92,8 @@ describe('ipcRegistry', () => {
 
       ipcRegistry.registerListener(mockIpcMain, 'test-channel', listener);
 
-      expect(mockIpcMain.on).toHaveBeenCalledWith('test-channel', listener);
+      // FIX: Listener is now wrapped with shutdown gate, so check for wrapped function
+      expect(mockIpcMain.on).toHaveBeenCalledWith('test-channel', expect.any(Function));
     });
 
     test('tracks registered listener', () => {
@@ -164,7 +165,8 @@ describe('ipcRegistry', () => {
       const result = ipcRegistry.removeListener(mockIpcMain, 'test-channel', listener);
 
       expect(result).toBe(true);
-      expect(mockIpcMain.removeListener).toHaveBeenCalledWith('test-channel', listener);
+      // FIX: Listener is wrapped, so check that removeListener was called with wrapped function
+      expect(mockIpcMain.removeListener).toHaveBeenCalledWith('test-channel', expect.any(Function));
     });
 
     test('returns false for unregistered channel', () => {

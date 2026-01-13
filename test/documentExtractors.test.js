@@ -104,6 +104,8 @@ describe('documentExtractors', () => {
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('pdf data'));
 
       const mockSharp = {
+        metadata: jest.fn().mockResolvedValue({ width: 1000, height: 1000 }),
+        resize: jest.fn().mockReturnThis(),
         png: jest.fn().mockReturnThis(),
         toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data'))
       };
@@ -118,7 +120,8 @@ describe('documentExtractors', () => {
     });
 
     test('should return empty string for oversized files', async () => {
-      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 60 * 1024 * 1024 }); // 60MB
+      // OCR limit is now 30MB (reduced from 50MB for memory safety)
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 35 * 1024 * 1024 }); // 35MB exceeds 30MB limit
 
       const result = await ocrPdfIfNeeded(mockFilePath);
 

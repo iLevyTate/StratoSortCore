@@ -202,44 +202,71 @@ describe('ChromaDBServiceCore Deep Coverage', () => {
   });
 
   describe('Circuit Breaker Events', () => {
-    test('handles circuit OPEN event', () => {
+    test('handles circuit OPEN event - only emits after initialization', () => {
       // Get the 'open' handler registered in constructor
       const openHandler = mockCircuitBreaker.on.mock.calls.find((call) => call[0] === 'open')[1];
       const emitSpy = jest.spyOn(service, 'emit');
 
+      // Before initialization, events should NOT be emitted (guards prevent confusing UI state)
       openHandler({ failureCount: 5 });
 
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Circuit breaker opened'),
         expect.anything()
       );
+      // FIX: Event NOT emitted before initialization complete
+      expect(emitSpy).not.toHaveBeenCalledWith('offline', expect.anything());
+
+      // After initialization, events SHOULD be emitted
+      emitSpy.mockClear();
+      service._initializationComplete = true;
+      openHandler({ failureCount: 5 });
+
       expect(emitSpy).toHaveBeenCalledWith('offline', {
         reason: 'circuit_open',
         failureCount: 5
       });
     });
 
-    test('handles circuit HALF_OPEN event', () => {
+    test('handles circuit HALF_OPEN event - only emits after initialization', () => {
       const halfOpenHandler = mockCircuitBreaker.on.mock.calls.find(
         (call) => call[0] === 'halfOpen'
       )[1];
       const emitSpy = jest.spyOn(service, 'emit');
 
+      // Before initialization, events should NOT be emitted
       halfOpenHandler();
 
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Circuit breaker half-open')
       );
+      // FIX: Event NOT emitted before initialization complete
+      expect(emitSpy).not.toHaveBeenCalledWith('recovering', expect.anything());
+
+      // After initialization, events SHOULD be emitted
+      emitSpy.mockClear();
+      service._initializationComplete = true;
+      halfOpenHandler();
+
       expect(emitSpy).toHaveBeenCalledWith('recovering', { reason: 'circuit_half_open' });
     });
 
-    test('handles circuit CLOSE event', () => {
+    test('handles circuit CLOSE event - only emits after initialization', () => {
       const closeHandler = mockCircuitBreaker.on.mock.calls.find((call) => call[0] === 'close')[1];
       const emitSpy = jest.spyOn(service, 'emit');
 
+      // Before initialization, events should NOT be emitted
       closeHandler();
 
       expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Circuit breaker closed'));
+      // FIX: Event NOT emitted before initialization complete
+      expect(emitSpy).not.toHaveBeenCalledWith('online', expect.anything());
+
+      // After initialization, events SHOULD be emitted
+      emitSpy.mockClear();
+      service._initializationComplete = true;
+      closeHandler();
+
       expect(emitSpy).toHaveBeenCalledWith('online', { reason: 'circuit_closed' });
     });
 

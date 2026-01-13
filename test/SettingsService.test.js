@@ -248,12 +248,12 @@ describe('SettingsService', () => {
 
       const savePromise = service.save({ language: 'en' });
 
-      // First attempt schedules a retry after 100ms
-      await jest.advanceTimersByTimeAsync(110);
+      // Advance timers enough for retry logic (initial delay 200ms + mutex operations)
+      await jest.advanceTimersByTimeAsync(500);
       await expect(savePromise).resolves.toMatchObject({ backupCreated: true });
 
       jest.useRealTimers();
-    });
+    }, 15000); // Increased timeout for fake timer async operations
   });
 
   describe('invalidateCache', () => {
@@ -466,10 +466,10 @@ describe('SettingsService', () => {
     });
 
     test('rejects paths outside backup directory (path traversal protection)', async () => {
-      const result = await service.restoreFromBackup('/path/to/backup.json');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('must be within backup directory');
+      // Path traversal attempts should throw an error for security
+      await expect(service.restoreFromBackup('/path/to/backup.json')).rejects.toThrow(
+        'Backup path is outside backup directory'
+      );
     });
   });
 

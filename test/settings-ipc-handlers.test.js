@@ -65,6 +65,17 @@ jest.mock('../src/shared/atomicFileOperations', () => ({
   }
 }));
 
+// Mock OllamaService - settings.js now routes all model changes through OllamaService.updateConfig()
+const mockOllamaServiceUpdateConfig = jest
+  .fn()
+  .mockResolvedValue({ success: true, modelDowngraded: false });
+jest.mock('../src/main/services/OllamaService', () => ({
+  getInstance: () => ({
+    updateConfig: mockOllamaServiceUpdateConfig,
+    initialize: jest.fn().mockResolvedValue(undefined)
+  })
+}));
+
 // Mock settings validation
 jest.mock('../src/shared/settingsValidation', () => ({
   validateSettings: jest.fn().mockReturnValue({ valid: true, errors: [], warnings: [] }),
@@ -252,15 +263,22 @@ describe('Settings IPC Handlers', () => {
   });
 
   describe('EXPORT handler', () => {
-    test('exports settings to file when path provided', async () => {
+    test('always shows save dialog for security (ignores provided path)', async () => {
+      // SECURITY: exportPath parameter is now ignored to prevent path traversal attacks
       const exportPath = '/tmp/export-settings.json';
+      mockShowSaveDialog.mockResolvedValueOnce({
+        canceled: false,
+        filePath: '/tmp/chosen-settings.json'
+      });
       mockFs.writeFile.mockResolvedValueOnce(undefined);
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.EXPORT];
       const result = await handler({}, exportPath);
 
+      // Dialog is always shown, even when path is provided
+      expect(mockShowSaveDialog).toHaveBeenCalled();
       expect(result.success).toBe(true);
-      expect(result.path).toBe(exportPath);
+      expect(result.path).toBe('/tmp/chosen-settings.json');
       expect(mockFs.writeFile).toHaveBeenCalled();
     });
 
@@ -291,15 +309,18 @@ describe('Settings IPC Handlers', () => {
     });
 
     test('includes version and timestamp in exported data', async () => {
-      const exportPath = '/tmp/export-settings.json';
       let writtenContent;
+      mockShowSaveDialog.mockResolvedValueOnce({
+        canceled: false,
+        filePath: '/tmp/export-settings.json'
+      });
       mockFs.writeFile.mockImplementationOnce((path, content) => {
         writtenContent = content;
         return Promise.resolve();
       });
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.EXPORT];
-      await handler({}, exportPath);
+      await handler({});
 
       const parsed = JSON.parse(writtenContent);
       expect(parsed.version).toBe('1.0.0');
@@ -413,9 +434,15 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.IMPORT];
       await handler({}, importPath);
 
-      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://custom:11434', false);
-      expect(mockSetOllamaModel).toHaveBeenCalledWith('llama3', false);
-      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('llava', false);
+      // Settings are now applied via OllamaService.updateConfig() to ensure proper model change notifications
+      expect(mockOllamaServiceUpdateConfig).toHaveBeenCalledWith(
+        {
+          host: 'http://custom:11434',
+          textModel: 'llama3',
+          visionModel: 'llava'
+        },
+        { skipSave: true }
+      );
     });
   });
 
@@ -490,8 +517,14 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.RESTORE_BACKUP];
       await handler({}, backupPath);
 
-      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://restored:11434', false);
-      expect(mockSetOllamaModel).toHaveBeenCalledWith('restored-model', false);
+      // Settings are now applied via OllamaService.updateConfig() to ensure proper model change notifications
+      expect(mockOllamaServiceUpdateConfig).toHaveBeenCalledWith(
+        {
+          host: 'http://restored:11434',
+          textModel: 'restored-model'
+        },
+        { skipSave: true }
+      );
     });
 
     test('notifies settings changed on restore', async () => {
@@ -944,10 +977,18 @@ describe('Settings IPC Handlers', () => {
         }
       );
 
-      expect(mockSetOllamaHost).toHaveBeenCalledWith('http://newhost:11434', false);
-      expect(mockSetOllamaModel).toHaveBeenCalledWith('newmodel', false);
-      expect(mockSetOllamaVisionModel).toHaveBeenCalledWith('newvision', false);
-      expect(mockSetOllamaEmbeddingModel).toHaveBeenCalledWith('newembedding', false);
+      // Settings are now applied via OllamaService.updateConfig() to ensure proper model change notifications
+      // This is critical for embedding model changes - FolderMatchingService needs to be notified
+      // to clear its cache and reset ChromaDB when the embedding model changes
+      expect(mockOllamaServiceUpdateConfig).toHaveBeenCalledWith(
+        {
+          host: 'http://newhost:11434',
+          textModel: 'newmodel',
+          visionModel: 'newvision',
+          embeddingModel: 'newembedding'
+        },
+        { skipSave: true }
+      );
     });
 
     test('notifies settings changed', async () => {
@@ -1091,10 +1132,14 @@ describe('Settings IPC Handlers', () => {
 
   describe('Export error handling', () => {
     test('handles write failure during export', async () => {
+      mockShowSaveDialog.mockResolvedValueOnce({
+        canceled: false,
+        filePath: '/tmp/export.json'
+      });
       mockFs.writeFile.mockRejectedValueOnce(new Error('Disk full'));
 
       const handler = handlers[IPC_CHANNELS.SETTINGS.EXPORT];
-      const result = await handler({}, '/tmp/export.json');
+      const result = await handler({});
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Disk full');

@@ -23,6 +23,7 @@ describe('filesSlice', () => {
     selectedFiles: [],
     smartFolders: [],
     smartFoldersLoading: false,
+    smartFoldersError: null, // FIX: Added to match actual initial state
     organizedFiles: [],
     fileStates: {},
     namingConvention: {

@@ -32,6 +32,18 @@ jest.mock('chokidar', () => ({
   }))
 }));
 
+// Mock fileOperationTracker to prevent infinite loop protection from interfering with tests
+jest.mock('../src/shared/fileOperationTracker', () => ({
+  getInstance: jest.fn(() => ({
+    wasRecentlyOperated: jest.fn().mockReturnValue(false),
+    recordOperation: jest.fn(),
+    clear: jest.fn(),
+    shutdown: jest.fn()
+  })),
+  FileOperationTracker: jest.fn(),
+  DEFAULT_COOLDOWN_MS: 5000
+}));
+
 describe('SmartFolderWatcher analysis history recording', () => {
   beforeEach(() => {
     jest.clearAllMocks();

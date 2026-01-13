@@ -15,6 +15,16 @@ jest.mock('../src/shared/logger', () => ({
   }
 }));
 
+// FIX: Mock fs to prevent file validation from filtering out test results
+// The _validateFileExistence method checks if files exist on disk, but test paths don't exist
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  promises: {
+    ...jest.requireActual('fs').promises,
+    access: jest.fn().mockResolvedValue(undefined) // All files "exist" in tests
+  }
+}));
+
 describe('SearchService', () => {
   let SearchService;
   let service;
@@ -104,7 +114,11 @@ describe('SearchService', () => {
             category: 'Marketing'
           }
         }
-      ])
+      ]),
+      // FIX: Add missing mocks required for hybrid search
+      querySimilarFileChunks: jest.fn().mockResolvedValue([]),
+      fileChunkCollection: null, // Chunk search returns early when null
+      fileCollection: { count: jest.fn().mockResolvedValue(3) }
     };
 
     // Create mock analysis history service

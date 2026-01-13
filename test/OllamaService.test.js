@@ -144,10 +144,11 @@ describe('OllamaService', () => {
       const result = await OllamaServiceModule.updateConfig(newConfig);
 
       expect(result.success).toBe(true);
-      expect(setOllamaHost).toHaveBeenCalledWith('http://localhost:11435');
-      expect(setOllamaModel).toHaveBeenCalledWith('mistral');
-      expect(setOllamaVisionModel).toHaveBeenCalledWith('bakllava');
-      expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('mxbai-embed-large');
+      // updateConfig now passes shouldSave parameter (true by default when skipSave is false)
+      expect(setOllamaHost).toHaveBeenCalledWith('http://localhost:11435', true);
+      expect(setOllamaModel).toHaveBeenCalledWith('mistral', true);
+      expect(setOllamaVisionModel).toHaveBeenCalledWith('bakllava', true);
+      expect(setOllamaEmbeddingModel).toHaveBeenCalledWith('mxbai-embed-large', true);
     });
 
     test('should update partial config', async () => {
@@ -156,7 +157,7 @@ describe('OllamaService', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(setOllamaModel).toHaveBeenCalledWith('llama3');
+      expect(setOllamaModel).toHaveBeenCalledWith('llama3', true);
       expect(setOllamaHost).not.toHaveBeenCalled();
       expect(setOllamaVisionModel).not.toHaveBeenCalled();
     });

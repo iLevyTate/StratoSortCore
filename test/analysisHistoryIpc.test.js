@@ -139,13 +139,15 @@ describe('registerAnalysisHistoryIpc', () => {
     test('returns all history when requested', async () => {
       await handlers[HISTORY_CHANNELS.GET]({}, { all: true });
 
-      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(Number.MAX_SAFE_INTEGER);
+      // FIX: Safety cap prevents unlimited queries - uses MAX_HISTORY_EXPORT_LIMIT (50000)
+      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(50000);
     });
 
     test('handles limit: "all"', async () => {
       await handlers[HISTORY_CHANNELS.GET]({}, { limit: 'all' });
 
-      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(Number.MAX_SAFE_INTEGER);
+      // FIX: Safety cap prevents unlimited queries - uses MAX_HISTORY_EXPORT_LIMIT (50000)
+      expect(mockAnalysisHistory.getRecentAnalysis).toHaveBeenCalledWith(50000);
     });
 
     test('applies pagination with offset', async () => {

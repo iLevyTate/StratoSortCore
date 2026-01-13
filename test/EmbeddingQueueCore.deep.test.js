@@ -234,9 +234,9 @@ describe('EmbeddingQueueCore Deep Tests', () => {
   describe('Queue Overflow Backpressure', () => {
     test('persists queue when backpressure triggers', async () => {
       embeddingQueue.MAX_QUEUE_SIZE = 1;
-      embeddingQueue.queue = [{ id: 'existing', vector: [] }];
+      embeddingQueue.queue = [{ id: 'existing', vector: [0.1] }];
 
-      const result = await embeddingQueue.enqueue({ id: 'new', vector: [] });
+      const result = await embeddingQueue.enqueue({ id: 'new', vector: [0.2] });
 
       expect(result.success).toBe(false);
       expect(result.reason).toBe('queue_overflow');

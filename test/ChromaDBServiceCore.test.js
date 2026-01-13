@@ -149,7 +149,8 @@ jest.mock('../src/main/services/chromadb/ChromaHealthChecker', () => ({
 jest.mock('../src/main/services/chromadb/fileOperations', () => ({
   directUpsertFile: jest.fn().mockResolvedValue({ success: true }),
   directBatchUpsertFiles: jest.fn().mockResolvedValue(5),
-  deleteFileEmbedding: jest.fn().mockResolvedValue(undefined),
+  // FIX: Return proper result object with success flag
+  deleteFileEmbedding: jest.fn().mockResolvedValue({ success: true }),
   batchDeleteFileEmbeddings: jest.fn().mockResolvedValue(3),
   updateFilePaths: jest.fn().mockResolvedValue({ updated: 2 }),
   querySimilarFiles: jest.fn().mockResolvedValue([]),

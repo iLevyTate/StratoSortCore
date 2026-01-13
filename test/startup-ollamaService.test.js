@@ -182,7 +182,8 @@ describe('ollamaService', () => {
     });
 
     test('returns external: true when Ollama already running', async () => {
-      axios.get.mockResolvedValue({ status: 200 });
+      // FIX: Implementation checks for response.data.models array to verify it's actually Ollama
+      axios.get.mockResolvedValue({ status: 200, data: { models: [] } });
 
       const result = await ollamaService.startOllama({ serviceStatus });
 
@@ -532,7 +533,8 @@ describe('ollamaService', () => {
 
     test('no cleanup function returned for external Ollama', async () => {
       // Ollama already running
-      axios.get.mockResolvedValue({ status: 200 });
+      // FIX: Implementation checks for response.data.models array to verify it's actually Ollama
+      axios.get.mockResolvedValue({ status: 200, data: { models: [] } });
 
       const result = await ollamaService.startOllama({ serviceStatus });
 
