@@ -11,11 +11,18 @@ const { spawn } = require('child_process');
 const axios = require('axios');
 const { app } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { logger } = require('../../../shared/logger');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
 const { container, ServiceIds } = require('../ServiceContainer');
-const { getChromaUrl, parseChromaConfig } = require('../../../shared/config/chromaDefaults');
+const {
+  getChromaUrl,
+  getChromaDataDir,
+  parseChromaConfig,
+  CHROMA_HEALTH_ENDPOINTS,
+  CHROMA_ERROR_MESSAGES
+} = require('../../../shared/config/chromaDefaults');
 
 logger.setContext('StartupManager:ChromaDB');
 
@@ -23,7 +30,34 @@ logger.setContext('StartupManager:ChromaDB');
 // container is not yet populated during startup.
 function buildDefaultChromaConfig() {
   const config = parseChromaConfig();
-  const dbPath = path.join(app.getPath('userData'), 'chromadb');
+  // FIX: Use configurable data path for production/container deployments
+  // Falls back to userData for standard desktop installs
+  const defaultDbPath = path.join(app.getPath('userData'), 'chromadb');
+  const dbPath = getChromaDataDir(defaultDbPath);
+
+  // FIX Issue 3.3: Ensure database directory exists before spawning ChromaDB
+  // This prevents startup failures when the directory hasn't been created yet
+  if (!fs.existsSync(dbPath)) {
+    try {
+      fs.mkdirSync(dbPath, { recursive: true });
+      logger.debug('[STARTUP] Created ChromaDB data directory:', dbPath);
+    } catch (mkdirError) {
+      // FIX 2.2: Propagate directory creation errors with clear error code
+      // Instead of continuing silently, throw a clear error so caller knows why startup failed
+      const error = new Error(
+        `Failed to create ChromaDB data directory at ${dbPath}: ${mkdirError.message}`
+      );
+      error.code = 'CHROMA_DIR_CREATE_FAILED';
+      error.path = dbPath;
+      error.originalError = mkdirError;
+      logger.error('[STARTUP] ChromaDB data directory creation failed:', {
+        path: dbPath,
+        error: mkdirError.message,
+        code: mkdirError.code
+      });
+      throw error;
+    }
+  }
 
   return {
     ...config,
@@ -39,9 +73,7 @@ async function checkChromaDBHealth() {
   try {
     const baseUrl = getChromaUrl();
 
-    const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
-
-    for (const endpoint of endpoints) {
+    for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
         const response = await axios.get(`${baseUrl}${endpoint}`, {
           timeout: 2000
@@ -68,9 +100,8 @@ async function checkChromaDBHealth() {
 async function isChromaDBRunningQuick() {
   try {
     const baseUrl = getChromaUrl();
-    const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
 
-    for (const endpoint of endpoints) {
+    for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
         const response = await axios.get(`${baseUrl}${endpoint}`, { timeout: 1000 });
         if (response.status === 200) {
@@ -95,9 +126,7 @@ async function isChromaDBRunning() {
   try {
     const baseUrl = getChromaUrl();
 
-    const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
-
-    for (const endpoint of endpoints) {
+    for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
         const response = await axiosWithRetry(
           () => axios.get(`${baseUrl}${endpoint}`, { timeout: 1000 }),
@@ -180,7 +209,7 @@ async function startChromaDB({
     serviceStatus.chromadb.health = 'unhealthy';
     errors.push({
       service: 'chromadb',
-      error: `ChromaDB server not reachable at ${process.env.CHROMA_SERVER_URL}`,
+      error: CHROMA_ERROR_MESSAGES.EXTERNAL_UNREACHABLE(process.env.CHROMA_SERVER_URL),
       critical: false
     });
     logger.warn('[STARTUP] External ChromaDB server not reachable', {
@@ -218,7 +247,8 @@ async function startChromaDB({
         serverConfig = buildDefaultChromaConfig();
       }
     } catch (resolveError) {
-      logger.debug('[STARTUP] Failed to resolve ChromaDB service, using default config', {
+      // FIX Issue 3.4: Log at WARN level since this is a significant fallback scenario
+      logger.warn('[STARTUP] Failed to resolve ChromaDB service, using default config', {
         error: resolveError?.message
       });
       serverConfig = buildDefaultChromaConfig();
@@ -240,8 +270,7 @@ async function startChromaDB({
       serviceStatus.chromadb.health = 'missing_dependency';
       errors.push({
         service: 'chromadb',
-        error:
-          'ChromaDB could not be started (no CLI found and python module "chromadb" is not installed). Semantic search disabled.',
+        error: CHROMA_ERROR_MESSAGES.MISSING_DEPENDENCY,
         critical: false
       });
       logger.warn('[STARTUP] No viable ChromaDB startup plan found. Disabling ChromaDB features.', {
@@ -291,7 +320,7 @@ async function startChromaDB({
     logger.warn('[STARTUP] Port 8000 occupied by non-ChromaDB process');
     errors.push({
       service: 'chromadb',
-      error: `Port ${serverConfig.port} is in use by another process (not ChromaDB)`,
+      error: CHROMA_ERROR_MESSAGES.PORT_IN_USE(serverConfig.port),
       critical: false
     });
     return { success: false, reason: 'port_in_use' };
@@ -312,11 +341,16 @@ async function startChromaDB({
     const msg = data.toString().trim();
     logger.debug(`[ChromaDB stderr] ${msg}`);
 
-    // Detect address-in-use failures immediately
+    // FIX: Detect address-in-use failures immediately
+    // Expanded patterns for Windows/Unix compatibility
     if (
       /address.*not available/i.test(msg) ||
       /EADDRINUSE/i.test(msg) ||
-      /bind.*failed/i.test(msg)
+      /bind.*failed/i.test(msg) ||
+      /address already in use/i.test(msg) ||
+      /Only one usage of each socket address/i.test(msg) ||
+      /WinError 10048/i.test(msg) ||
+      /port.*already.*bound/i.test(msg)
     ) {
       spawnFailed = true;
       spawnFailureReason = 'address_in_use';

@@ -228,12 +228,13 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
 
 /**
  * Delete a file embedding from the database
+ * FIX: Returns structured result with error details for better caller awareness
  *
  * @param {Object} params - Parameters
  * @param {string} params.fileId - The file ID to delete
  * @param {Object} params.fileCollection - ChromaDB file collection
  * @param {Object} params.queryCache - Query cache instance
- * @returns {Promise<boolean>} True if deleted
+ * @returns {Promise<{success: boolean, notFound?: boolean, error?: string}>} Result object
  */
 async function deleteFileEmbedding({ fileId, fileCollection, queryCache }) {
   try {
@@ -245,13 +246,25 @@ async function deleteFileEmbedding({ fileId, fileCollection, queryCache }) {
     }
 
     logger.debug('[FileOps] Deleted file embedding', { fileId });
-    return true;
+    return { success: true };
   } catch (error) {
+    // Check if it's a "not found" error (acceptable - file wasn't indexed)
+    const errorMsg = error.message?.toLowerCase() || '';
+    if (errorMsg.includes('not found') || error.code === 'NOT_FOUND') {
+      logger.debug('[FileOps] File embedding not found (already deleted or never indexed)', {
+        fileId
+      });
+      return { success: true, notFound: true };
+    }
+
+    // Log and return failure for other errors
     logger.error('[FileOps] Failed to delete file embedding:', {
       fileId,
       error: error.message
     });
-    return false;
+
+    // FIX: Return structured error instead of just false
+    return { success: false, error: error.message };
   }
 }
 
@@ -312,6 +325,8 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
     for (let i = 0; i < pathUpdates.length; i += BATCH_SIZE) {
       const batch = pathUpdates.slice(i, i + BATCH_SIZE);
       const updatesToProcess = [];
+      // FIX: Track old IDs for deletion AFTER upsert to prevent data loss on crash
+      const oldIdsToDelete = [];
 
       for (const update of batch) {
         if (!update.oldId || !update.newId) {
@@ -351,19 +366,10 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
               document: update.newMeta.path || update.newId
             });
 
-            // Delete old entry if ID changed
+            // FIX: Collect old IDs for deletion AFTER upsert (prevents data loss)
+            // Only if ID actually changed
             if (update.oldId !== update.newId) {
-              try {
-                await fileCollection.delete({ ids: [update.oldId] });
-                logger.debug('[FileOps] Deleted old file entry', {
-                  oldId: update.oldId
-                });
-              } catch (deleteError) {
-                logger.debug('[FileOps] Could not delete old file entry', {
-                  oldId: update.oldId,
-                  error: deleteError.message
-                });
-              }
+              oldIdsToDelete.push(update.oldId);
             }
           } else {
             logger.warn('[FileOps] File not found for path update', {
@@ -378,7 +384,9 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
         }
       }
 
-      // Batch upsert updated files
+      // FIX: UPSERT new entries FIRST to ensure data is never lost
+      // If crash occurs after upsert but before delete, we get temporary duplicates
+      // which are harmless and will be cleaned by reconciliation
       if (updatesToProcess.length > 0) {
         await fileCollection.upsert({
           ids: updatesToProcess.map((u) => u.id),
@@ -387,17 +395,30 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
           documents: updatesToProcess.map((u) => u.document)
         });
 
+        // FIX: DELETE old entries AFTER successful upsert
+        // This order guarantees we never lose data even on crash
+        if (oldIdsToDelete.length > 0) {
+          try {
+            await fileCollection.delete({ ids: oldIdsToDelete });
+            logger.debug('[FileOps] Deleted old file entries after upsert', {
+              count: oldIdsToDelete.length
+            });
+          } catch (deleteError) {
+            // Log but don't fail - reconciliation will clean duplicates later
+            logger.warn('[FileOps] Could not delete old entries after upsert', {
+              count: oldIdsToDelete.length,
+              error: deleteError.message
+            });
+          }
+        }
+
         // Invalidate cache for all affected files
         if (queryCache) {
           updatesToProcess.forEach((u) => {
             queryCache.invalidateForFile(u.id);
-            // Also invalidate any old IDs to avoid stale entries
-            // (oldId was deleted above when different from newId)
           });
-          pathUpdates.forEach((u) => {
-            if (u.oldId && u.oldId !== u.newId) {
-              queryCache.invalidateForFile(u.oldId);
-            }
+          oldIdsToDelete.forEach((oldId) => {
+            queryCache.invalidateForFile(oldId);
           });
         }
 

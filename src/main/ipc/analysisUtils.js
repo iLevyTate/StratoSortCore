@@ -25,6 +25,8 @@ const fs = require('fs').promises;
  */
 async function withProcessingState({ filePath, processingState, logger, logPrefix, fn }) {
   let analysisStarted = false;
+  // CRITICAL FIX: Track whether we've already handled state transition to prevent race condition
+  let stateHandled = false;
 
   try {
     // Mark analysis start
@@ -44,6 +46,7 @@ async function withProcessingState({ filePath, processingState, logger, logPrefi
     if (processingState) {
       try {
         await processingState.markAnalysisComplete?.(filePath);
+        stateHandled = true; // Mark state as handled to prevent cleanup race
       } catch (completeError) {
         logger.debug(`${logPrefix} Failed to mark analysis complete:`, completeError.message);
       }
@@ -55,6 +58,7 @@ async function withProcessingState({ filePath, processingState, logger, logPrefi
     if (processingState) {
       try {
         await processingState.markAnalysisError(filePath, error.message);
+        stateHandled = true; // Mark state as handled to prevent cleanup race
       } catch (stateError) {
         logger.warn(`${logPrefix} Failed to mark analysis error:`, {
           filePath,
@@ -64,13 +68,14 @@ async function withProcessingState({ filePath, processingState, logger, logPrefi
     }
     throw error;
   } finally {
-    // Guaranteed cleanup - only if state is still in_progress
-    if (analysisStarted && processingState) {
+    // CRITICAL FIX: Only cleanup if state was NOT already handled by success/error paths
+    // This prevents the race condition where cleanup runs after markAnalysisComplete
+    if (analysisStarted && processingState && !stateHandled) {
       try {
         const currentState = processingState.getState?.(filePath);
         if (currentState === 'in_progress') {
           await processingState.clearState?.(filePath);
-          logger.debug(`${logPrefix} Cleaned up processing state for:`, filePath);
+          logger.debug(`${logPrefix} Cleaned up orphaned processing state for:`, filePath);
         }
       } catch (cleanupError) {
         logger.warn(`${logPrefix} Failed to cleanup processing state:`, cleanupError.message);

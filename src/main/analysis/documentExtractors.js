@@ -4,6 +4,18 @@ const { createReadStream } = require('fs');
 const { FileProcessingError } = require('../errors/AnalysisError');
 const { logger } = require('../../shared/logger');
 const { LIMITS } = require('../../shared/constants');
+// FIX P3-2: Import withTimeout for extraction timeout handling
+const { withTimeout } = require('../../shared/promiseUtils');
+
+// FIX P3-2: Timeout constants for extraction operations to prevent indefinite hangs
+const EXTRACTION_TIMEOUTS = {
+  PDF: 120000, // 2 minutes for PDF (can be slow for large files)
+  DOCX: 60000, // 1 minute for DOCX
+  XLSX: 90000, // 1.5 minutes for XLSX (can be slow for large spreadsheets)
+  PPTX: 90000, // 1.5 minutes for PPTX
+  OCR: 180000, // 3 minutes for OCR (very slow operation)
+  DEFAULT: 60000 // 1 minute default
+};
 
 let XMLParser;
 try {
@@ -376,6 +388,8 @@ async function extractTextFromPdf(filePath, fileName) {
         logger.debug('[PDF] Parser destroy error:', destroyError.message);
       }
     }
+    // FIX P1-7: Clear parser reference after destruction to allow GC
+    parser = null;
     // Ensure buffer is dereferenced even on error
     dataBuffer = null;
   }
@@ -386,23 +400,51 @@ async function ocrPdfIfNeeded(filePath) {
   const tesseract = require('node-tesseract-ocr');
   let pdfBuffer = null;
   let rasterPng = null;
+
+  // FIX P1-8: OCR memory constraints to prevent memory exhaustion
+  // Cap density to 150 DPI (was 200) - still good for OCR, but reduces memory 44%
+  // Add max dimensions to prevent huge images from 200+ page PDFs
+  const OCR_DENSITY = 150; // DPI for rasterization
+  const OCR_MAX_WIDTH = 2480; // ~A4 at 150 DPI
+  const OCR_MAX_HEIGHT = 3508; // ~A4 at 150 DPI
+  const OCR_MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB limit (reduced from 50MB)
+
   try {
     // Fixed: Check file size before OCR processing (OCR is very memory intensive)
     const stats = await fs.stat(filePath);
     // OCR has stricter limits due to image processing overhead
-    if (stats.size > 50 * 1024 * 1024) {
-      // 50MB limit for OCR
+    if (stats.size > OCR_MAX_FILE_SIZE) {
       // FIX: Log the skip reason instead of silently returning
-      logger.info('[OCR] Skipping OCR - file exceeds 50MB limit', {
+      logger.info('[OCR] Skipping OCR - file exceeds size limit', {
         filePath,
         fileSize: stats.size,
-        maxSize: 50 * 1024 * 1024
+        maxSize: OCR_MAX_FILE_SIZE
       });
       return '';
     }
 
     pdfBuffer = await fs.readFile(filePath);
-    rasterPng = await sharp(pdfBuffer, { density: 200 }).png().toBuffer();
+
+    // FIX P1-8: Use lower density and resize to constrain memory usage
+    // A 40MB PDF at 200 DPI could become 150MB+ PNG, causing OOM
+    let sharpPipeline = sharp(pdfBuffer, { density: OCR_DENSITY });
+
+    // Get metadata to check if resize is needed
+    const metadata = await sharpPipeline.metadata();
+    if (metadata.width > OCR_MAX_WIDTH || metadata.height > OCR_MAX_HEIGHT) {
+      logger.debug('[OCR] Resizing large image for OCR', {
+        originalWidth: metadata.width,
+        originalHeight: metadata.height,
+        maxWidth: OCR_MAX_WIDTH,
+        maxHeight: OCR_MAX_HEIGHT
+      });
+      sharpPipeline = sharpPipeline.resize(OCR_MAX_WIDTH, OCR_MAX_HEIGHT, {
+        fit: 'inside',
+        withoutEnlargement: true
+      });
+    }
+
+    rasterPng = await sharpPipeline.png({ compressionLevel: 6 }).toBuffer();
 
     // Clear PDF buffer before OCR to reduce peak memory
     pdfBuffer = null;
@@ -961,13 +1003,87 @@ function chunkTextForAnalysis(
   };
 }
 
+// FIX P3-2: Timeout-wrapped extraction functions to prevent indefinite hangs
+// These wrappers ensure extraction operations don't block the pipeline forever
+
+/**
+ * Extract text from PDF with timeout protection
+ * @param {string} filePath - Path to PDF file
+ * @param {string} fileName - Name of file for error messages
+ * @returns {Promise<string>} Extracted text
+ */
+async function extractTextFromPdfWithTimeout(filePath, fileName) {
+  return withTimeout(
+    extractTextFromPdf(filePath, fileName),
+    EXTRACTION_TIMEOUTS.PDF,
+    `PDF extraction: ${fileName || filePath}`
+  );
+}
+
+/**
+ * OCR PDF with timeout protection
+ * @param {string} filePath - Path to PDF file
+ * @returns {Promise<string>} OCR text
+ */
+async function ocrPdfWithTimeout(filePath) {
+  return withTimeout(ocrPdfIfNeeded(filePath), EXTRACTION_TIMEOUTS.OCR, `OCR: ${filePath}`);
+}
+
+/**
+ * Extract text from DOCX with timeout protection
+ * @param {string} filePath - Path to DOCX file
+ * @returns {Promise<string>} Extracted text
+ */
+async function extractTextFromDocxWithTimeout(filePath) {
+  return withTimeout(
+    extractTextFromDocx(filePath),
+    EXTRACTION_TIMEOUTS.DOCX,
+    `DOCX extraction: ${filePath}`
+  );
+}
+
+/**
+ * Extract text from XLSX with timeout protection
+ * @param {string} filePath - Path to XLSX file
+ * @returns {Promise<string>} Extracted text
+ */
+async function extractTextFromXlsxWithTimeout(filePath) {
+  return withTimeout(
+    extractTextFromXlsx(filePath),
+    EXTRACTION_TIMEOUTS.XLSX,
+    `XLSX extraction: ${filePath}`
+  );
+}
+
+/**
+ * Extract text from PPTX with timeout protection
+ * @param {string} filePath - Path to PPTX file
+ * @returns {Promise<string>} Extracted text
+ */
+async function extractTextFromPptxWithTimeout(filePath) {
+  return withTimeout(
+    extractTextFromPptx(filePath),
+    EXTRACTION_TIMEOUTS.PPTX,
+    `PPTX extraction: ${filePath}`
+  );
+}
+
 module.exports = {
-  extractTextFromPdf,
-  ocrPdfIfNeeded,
+  // FIX P3-2: Export timeout-wrapped versions as primary exports
+  // These prevent extraction operations from hanging indefinitely
+  extractTextFromPdf: extractTextFromPdfWithTimeout,
+  ocrPdfIfNeeded: ocrPdfWithTimeout,
+  extractTextFromDocx: extractTextFromDocxWithTimeout,
+  extractTextFromXlsx: extractTextFromXlsxWithTimeout,
+  extractTextFromPptx: extractTextFromPptxWithTimeout,
+  // Also export original versions for cases where caller manages timeout
+  extractTextFromPdfRaw: extractTextFromPdf,
+  ocrPdfIfNeededRaw: ocrPdfIfNeeded,
+  extractTextFromDocxRaw: extractTextFromDocx,
+  extractTextFromXlsxRaw: extractTextFromXlsx,
+  extractTextFromPptxRaw: extractTextFromPptx,
+  // Other extractors (typically faster, less prone to hanging)
   extractTextFromDoc,
-  extractTextFromDocx,
-  extractTextFromXlsx,
-  extractTextFromPptx,
   extractTextFromXls,
   extractTextFromPpt,
   extractTextFromOdfZip,
@@ -984,5 +1100,7 @@ module.exports = {
   extractContentWithSizeCheck,
   extractContentStreaming,
   extractContentBuffered,
-  chunkTextForAnalysis
+  chunkTextForAnalysis,
+  // Export timeout constants for callers who need custom timeouts
+  EXTRACTION_TIMEOUTS
 };

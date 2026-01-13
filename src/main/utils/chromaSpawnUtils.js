@@ -1,10 +1,12 @@
 const path = require('path');
 const fs = require('fs').promises;
+const { app } = require('electron');
 const { logger } = require('../../shared/logger');
 
 logger.setContext('ChromaSpawnUtils');
 const {
   findPythonLauncherAsync,
+  checkPythonVersionAsync,
   checkChromaExecutableAsync,
   asyncSpawn,
   hasPythonModuleAsync
@@ -16,11 +18,23 @@ const { getChromaDbBinName, shouldUseShell } = require('../../shared/platformUti
  * Extracted from simple-main.js to avoid circular dependencies
  */
 
+/**
+ * Get node_modules/.bin path, handling both development and packaged contexts
+ */
+function getNodeModulesBinPath() {
+  if (app.isPackaged) {
+    // In packaged app: node_modules/.bin is unpacked to app.asar.unpacked
+    return path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '.bin');
+  }
+  // Development: use relative path from __dirname
+  return path.resolve(__dirname, '../../../node_modules/.bin');
+}
+
 async function resolveChromaCliExecutable() {
   try {
     // Use cross-platform utility for chromadb binary name
     const binName = getChromaDbBinName();
-    const nodeModulesPath = path.resolve(__dirname, '../../../node_modules/.bin');
+    const nodeModulesPath = getNodeModulesBinPath();
     const cliPath = path.join(nodeModulesPath, binName);
 
     // Validate path is within node_modules (prevent traversal)
@@ -142,9 +156,17 @@ async function findPythonLauncher() {
 }
 
 async function buildChromaSpawnPlan(config) {
+  logger.info('[ChromaDB] Building spawn plan...', {
+    dbPath: config.dbPath,
+    host: config.host,
+    port: config.port
+  });
+
+  // 1. Check for custom command override
   if (process.env.CHROMA_SERVER_COMMAND) {
     const parts = splitCommandLine(process.env.CHROMA_SERVER_COMMAND);
     if (parts.length > 0) {
+      logger.info('[ChromaDB] Using custom command from CHROMA_SERVER_COMMAND env var');
       return {
         command: parts[0],
         args: parts.slice(1),
@@ -153,9 +175,12 @@ async function buildChromaSpawnPlan(config) {
       };
     }
   }
+  logger.debug('[ChromaDB] No custom CHROMA_SERVER_COMMAND set, checking other methods...');
 
+  // 2. Check for local CLI in node_modules
   const localCli = await resolveChromaCliExecutable();
   if (localCli) {
+    logger.info('[ChromaDB] Found local CLI executable in node_modules', { path: localCli });
     return {
       command: localCli,
       args: ['run', '--path', config.dbPath, '--host', config.host, '--port', String(config.port)],
@@ -163,12 +188,17 @@ async function buildChromaSpawnPlan(config) {
       options: { windowsHide: true }
     };
   }
+  logger.debug('[ChromaDB] No local CLI found in node_modules/.bin');
 
+  // 3. Check Python user scripts directory (pip --user installs)
   // If chroma was installed via pip --user, it might not be on PATH.
   // Resolve it from the Python user scripts directory.
   const pythonScriptsChroma = await resolveChromaFromPythonUserScripts();
   if (pythonScriptsChroma) {
-    logger.info('[ChromaDB] Found chroma executable in Python scripts directory');
+    logger.info('[ChromaDB] Found chroma executable in Python scripts directory', {
+      path: pythonScriptsChroma,
+      note: 'pip --user install detected'
+    });
     return {
       command: pythonScriptsChroma,
       args: ['run', '--path', config.dbPath, '--host', config.host, '--port', String(config.port)],
@@ -177,15 +207,16 @@ async function buildChromaSpawnPlan(config) {
       options: { windowsHide: true, shell: false }
     };
   }
+  logger.debug('[ChromaDB] No chroma.exe found in Python scripts directories');
 
-  // Check for system-installed chroma executable (ChromaDB 1.0.x+)
+  // 4. Check for system-installed chroma executable (ChromaDB 1.0.x+)
   // This is the preferred method for newer ChromaDB versions
   // System-installed chroma binary is just 'chroma' on all platforms
   const chromaExecutable = 'chroma';
   const hasChroma = await checkChromaExecutableAsync();
 
   if (hasChroma) {
-    logger.info('[ChromaDB] Found system chroma executable');
+    logger.info('[ChromaDB] Found system chroma executable on PATH');
     return {
       command: chromaExecutable,
       args: ['run', '--path', config.dbPath, '--host', config.host, '--port', String(config.port)],
@@ -197,33 +228,64 @@ async function buildChromaSpawnPlan(config) {
       }
     };
   }
+  logger.debug('[ChromaDB] No system chroma executable found on PATH');
 
-  // FIX: Fallback to python -m chromadb for users who have the module but no CLI
+  // 5. Fallback to python -m chromadb for users who have the module but no CLI
   // This addresses the documented behavior and supports pip --user installs
   const pythonLauncher = await findPythonLauncherAsync();
   if (pythonLauncher) {
-    const hasChromaModule = await hasPythonModuleAsync('chromadb');
-    if (hasChromaModule) {
-      logger.info('[ChromaDB] Using python -m chromadb fallback');
-      return {
-        command: pythonLauncher.command,
-        args: [
-          ...pythonLauncher.args,
-          '-m',
-          'chromadb.cli.cli',
-          'run',
-          '--path',
-          config.dbPath,
-          '--host',
-          config.host,
-          '--port',
-          String(config.port)
-        ],
-        source: 'python-module',
-        options: { windowsHide: true, shell: false }
-      };
+    logger.debug('[ChromaDB] Checking for chromadb Python module...', {
+      pythonCommand: pythonLauncher.command,
+      pythonArgs: pythonLauncher.args
+    });
+
+    // FIX: Verify Python version meets ChromaDB requirements (3.9+)
+    const versionCheck = await checkPythonVersionAsync(pythonLauncher, 3, 9);
+    if (!versionCheck.valid) {
+      logger.warn('[ChromaDB] Python version check failed:', {
+        version: versionCheck.version,
+        error: versionCheck.error
+      });
+      // Continue to fallback - user may have chroma CLI installed separately
+    } else {
+      const hasChromaModule = await hasPythonModuleAsync('chromadb');
+      if (hasChromaModule) {
+        logger.info(
+          '[ChromaDB] Using python -m chromadb fallback (module installed but CLI not in PATH)',
+          { pythonVersion: versionCheck.version }
+        );
+        return {
+          command: pythonLauncher.command,
+          args: [
+            ...pythonLauncher.args,
+            '-m',
+            'chromadb.cli.cli',
+            'run',
+            '--path',
+            config.dbPath,
+            '--host',
+            config.host,
+            '--port',
+            String(config.port)
+          ],
+          source: 'python-module',
+          options: { windowsHide: true, shell: false }
+        };
+      }
+      logger.debug('[ChromaDB] chromadb Python module not installed');
     }
+  } else {
+    logger.warn('[ChromaDB] Python launcher not found - cannot use python -m chromadb fallback');
   }
+
+  logger.warn('[ChromaDB] No viable spawn method found. ChromaDB features will be unavailable.', {
+    troubleshooting: [
+      'Install ChromaDB: pip install chromadb',
+      'Ensure Python 3 is installed and on PATH',
+      'On Windows, try: py -3 -m pip install --user chromadb',
+      'Or set CHROMA_SERVER_URL to use an external ChromaDB server'
+    ]
+  });
 
   return null;
 }

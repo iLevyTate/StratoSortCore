@@ -128,6 +128,11 @@ class ChromaDBServiceCore extends EventEmitter {
     this._isInitializing = false;
     this._recoveryAttempted = false;
 
+    // FIX: Track initialization completion for event handler guards
+    // Event handlers registered in constructor can fire before initialize() completes,
+    // causing UI events to be emitted when the service state is undefined
+    this._initializationComplete = false;
+
     // FIX: Track collection dimensions to detect embedding model changes
     this._collectionDimensions = {
       files: null,
@@ -170,23 +175,32 @@ class ChromaDBServiceCore extends EventEmitter {
     this.circuitBreaker = new CircuitBreaker('ChromaDB', circuitBreakerConfig);
 
     // Forward circuit breaker events
+    // FIX: Guard UI-facing events to only emit after initialization completes
+    // This prevents confusing UI state during startup when service state is undefined
     this.circuitBreaker.on('stateChange', (data) => {
       this._onCircuitStateChange(data);
     });
     this.circuitBreaker.on('open', (data) => {
       logger.warn('[ChromaDB] Circuit breaker opened due to failures', data);
-      this.emit('offline', {
-        reason: 'circuit_open',
-        failureCount: data.failureCount
-      });
+      // FIX: Only emit UI events after initialization to prevent confusing state
+      if (this._initializationComplete) {
+        this.emit('offline', {
+          reason: 'circuit_open',
+          failureCount: data.failureCount
+        });
+      }
     });
     this.circuitBreaker.on('close', () => {
       logger.info('[ChromaDB] Circuit breaker closed, service recovered');
-      this.emit('online', { reason: 'circuit_closed' });
+      if (this._initializationComplete) {
+        this.emit('online', { reason: 'circuit_closed' });
+      }
     });
     this.circuitBreaker.on('halfOpen', () => {
       logger.info('[ChromaDB] Circuit breaker half-open, testing recovery');
-      this.emit('recovering', { reason: 'circuit_half_open' });
+      if (this._initializationComplete) {
+        this.emit('recovering', { reason: 'circuit_half_open' });
+      }
     });
 
     // Initialize offline queue
@@ -197,14 +211,19 @@ class ChromaDBServiceCore extends EventEmitter {
     });
 
     // Forward queue events
+    // FIX: Guard UI-facing events to only emit after initialization completes
     this.offlineQueue.on('enqueued', (op) => {
-      this.emit('operationQueued', {
-        type: op.type,
-        queueSize: this.offlineQueue.size()
-      });
+      if (this._initializationComplete) {
+        this.emit('operationQueued', {
+          type: op.type,
+          queueSize: this.offlineQueue.size()
+        });
+      }
     });
     this.offlineQueue.on('flushComplete', (result) => {
-      this.emit('queueFlushed', result);
+      if (this._initializationComplete) {
+        this.emit('queueFlushed', result);
+      }
     });
 
     // Server configuration
@@ -544,8 +563,23 @@ class ChromaDBServiceCore extends EventEmitter {
       this.healthCheckInterval.unref();
     }
 
-    // FIX: Initialize stale promise cleanup interval to prevent memory leaks
-    // from promises that never settle (e.g., due to network issues)
+    // Start stale promise cleanup (extracted to separate method)
+    this._startStalePromiseCleanup();
+  }
+
+  /**
+   * Start stale promise cleanup interval
+   * FIX: Extracted to separate method so it can be started early in initialize()
+   * This prevents memory leaks from promises that never settle (e.g., due to network issues)
+   * even if later initialization steps fail
+   * @private
+   */
+  _startStalePromiseCleanup() {
+    // Clear any existing interval first (idempotent)
+    if (this._stalePromiseCleanupInterval) {
+      clearInterval(this._stalePromiseCleanupInterval);
+    }
+
     this._stalePromiseCleanupInterval = setInterval(() => {
       this._cleanupStaleInflightQueries();
     }, this.STALE_PROMISE_TIMEOUT_MS);
@@ -563,6 +597,8 @@ class ChromaDBServiceCore extends EventEmitter {
   _cleanupStaleInflightQueries() {
     const now = Date.now();
     let cleanedCount = 0;
+
+    // First pass: Remove stale entries based on timeout
     for (const [key, entry] of this.inflightQueries.entries()) {
       // Handle both old format (just promise) and new format ({ promise, addedAt })
       const addedAt = entry?.addedAt || 0;
@@ -571,8 +607,27 @@ class ChromaDBServiceCore extends EventEmitter {
         cleanedCount++;
       }
     }
+
+    // FIX: Second pass - If still over limit after stale cleanup, remove oldest entries
+    if (this.inflightQueries.size > this.MAX_INFLIGHT_QUERIES) {
+      const entries = Array.from(this.inflightQueries.entries()).sort((a, b) => {
+        const aTime = a[1]?.addedAt || 0;
+        const bTime = b[1]?.addedAt || 0;
+        return aTime - bTime; // Oldest first
+      });
+
+      const toRemove = this.inflightQueries.size - this.MAX_INFLIGHT_QUERIES;
+      for (let i = 0; i < toRemove; i++) {
+        this.inflightQueries.delete(entries[i][0]);
+        cleanedCount++;
+      }
+    }
+
     if (cleanedCount > 0) {
-      logger.debug('[ChromaDB] Cleaned up stale in-flight queries', { cleanedCount });
+      logger.debug('[ChromaDB] Cleaned up in-flight queries', {
+        cleanedCount,
+        remaining: this.inflightQueries.size
+      });
     }
   }
 
@@ -598,6 +653,14 @@ class ChromaDBServiceCore extends EventEmitter {
    * @param {Promise} promise - The query promise
    */
   _addInflightQuery(key, promise) {
+    // FIX P0-1: Check if key already exists - return existing promise to prevent memory leak
+    // This handles the case where duplicate queries arrive before the first one settles
+    const existing = this.inflightQueries.get(key);
+    if (existing) {
+      logger.debug('[ChromaDB] Returning existing in-flight query', { key });
+      return existing.promise;
+    }
+
     // Evict oldest entries if at capacity (LRU-style eviction)
     if (this.inflightQueries.size >= this.MAX_INFLIGHT_QUERIES) {
       const oldestKey = this.inflightQueries.keys().next().value;
@@ -741,7 +804,8 @@ class ChromaDBServiceCore extends EventEmitter {
           this.isOnline = true;
         }
         this.circuitBreaker.recordSuccess();
-        if (wasOffline) {
+        // FIX: Only emit UI events after initialization to prevent premature state updates
+        if (wasOffline && this._initializationComplete) {
           this.emit('online', { reason: 'health_check_success' });
         }
         return true;
@@ -757,7 +821,8 @@ class ChromaDBServiceCore extends EventEmitter {
             this.isOnline = true;
           }
           this.circuitBreaker.recordSuccess();
-          if (wasOffline) {
+          // FIX: Only emit UI events after initialization
+          if (wasOffline && this._initializationComplete) {
             this.emit('online', { reason: 'health_check_client' });
           }
           return true;
@@ -771,7 +836,8 @@ class ChromaDBServiceCore extends EventEmitter {
         this.isOnline = false;
       }
       this.circuitBreaker.recordFailure(new Error('Health check failed'));
-      if (wasOnline) {
+      // FIX: Only emit UI events after initialization
+      if (wasOnline && this._initializationComplete) {
         this.emit('offline', { reason: 'health_check_failed' });
       }
       return false;
@@ -783,7 +849,8 @@ class ChromaDBServiceCore extends EventEmitter {
         this.isOnline = false;
       }
       this.circuitBreaker.recordFailure(error);
-      if (wasOnline) {
+      // FIX: Only emit UI events after initialization
+      if (wasOnline && this._initializationComplete) {
         this.emit('offline', {
           reason: 'health_check_error',
           error: error.message
@@ -849,6 +916,10 @@ class ChromaDBServiceCore extends EventEmitter {
     // Perform actual initialization in a separate async block
     (async () => {
       try {
+        // FIX: Start stale promise cleanup early in initialization
+        // This prevents memory leaks even if later initialization steps fail
+        this._startStalePromiseCleanup();
+
         await this.ensureDbDirectory();
         await this.offlineQueue.initialize();
 
@@ -936,12 +1007,18 @@ class ChromaDBServiceCore extends EventEmitter {
           fileChunkCount
         });
 
+        // FIX: Mark initialization complete to enable event handler guards
+        // This allows UI events to be emitted now that all state is properly initialized
+        this._initializationComplete = true;
+
         // FIX: Resolve the promise to signal successful initialization
         resolveInit();
       } catch (error) {
         this._initPromise = null;
         this._isInitializing = false;
         this.initialized = false;
+        // FIX: Reset initialization complete flag on failure
+        this._initializationComplete = false;
 
         logger.error('[ChromaDB] Initialization failed:', error);
 
@@ -1291,11 +1368,22 @@ class ChromaDBServiceCore extends EventEmitter {
       chunkCollection: this.fileChunkCollection
     });
 
-    return deleteFileEmbeddingOp({
+    const result = await deleteFileEmbeddingOp({
       fileId,
       fileCollection: this.fileCollection,
       queryCache: this.queryCache
     });
+
+    // FIX: Log warnings for failed deletions to help debugging
+    if (!result.success) {
+      logger.warn('[ChromaDB] Delete file embedding failed', {
+        fileId,
+        error: result.error
+      });
+    }
+
+    // Return success boolean for backward compatibility
+    return result.success;
   }
 
   async batchDeleteFileEmbeddings(fileIds) {
@@ -1854,9 +1942,215 @@ class ChromaDBServiceCore extends EventEmitter {
     return this.queryCache.getStats();
   }
 
+  // ============== Filesystem Reconciliation ==============
+
+  /**
+   * Reconcile ChromaDB entries with the filesystem
+   * Identifies and removes embeddings for files that no longer exist
+   * FIX: Eliminates "ghost" entries caused by external file deletions
+   *
+   * @param {Object} options - Reconciliation options
+   * @param {number} [options.batchSize=100] - Number of entries to check per batch
+   * @param {boolean} [options.dryRun=false] - If true, only report without deleting
+   * @param {Function} [options.onProgress] - Progress callback (current, total, found)
+   * @returns {Promise<{checked: number, removed: number, errors: number, orphanedIds: string[]}>}
+   */
+  async reconcileWithFilesystem(options = {}) {
+    const { batchSize = 100, dryRun = false, onProgress } = options;
+
+    await this.initialize();
+
+    const result = {
+      checked: 0,
+      removed: 0,
+      errors: 0,
+      orphanedIds: []
+    };
+
+    try {
+      logger.info('[ChromaDB] Starting filesystem reconciliation', { dryRun, batchSize });
+
+      // Get total count for progress tracking
+      const totalCount = await this.fileCollection.count();
+
+      if (totalCount === 0) {
+        logger.info('[ChromaDB] No embeddings to reconcile');
+        return result;
+      }
+
+      // Process in batches to avoid memory issues
+      let offset = 0;
+      while (offset < totalCount) {
+        try {
+          // Peek at batch of entries
+          const batch = await this.fileCollection.peek({
+            limit: batchSize,
+            offset
+          });
+
+          if (!batch?.ids || batch.ids.length === 0) {
+            break;
+          }
+
+          const orphanedInBatch = [];
+
+          for (let i = 0; i < batch.ids.length; i++) {
+            const id = batch.ids[i];
+            const metadata = batch.metadatas?.[i] || {};
+            const filePath = metadata.path;
+
+            result.checked++;
+
+            if (!filePath) {
+              // No path in metadata - can't verify, skip
+              continue;
+            }
+
+            try {
+              // Check if file exists on disk
+              await fs.access(filePath);
+            } catch {
+              // File doesn't exist - this is a ghost entry
+              orphanedInBatch.push(id);
+              result.orphanedIds.push(id);
+
+              logger.debug('[ChromaDB] Found ghost entry:', {
+                id,
+                path: filePath
+              });
+            }
+          }
+
+          // Delete orphaned entries from this batch (unless dry run)
+          if (orphanedInBatch.length > 0 && !dryRun) {
+            try {
+              await this.fileCollection.delete({ ids: orphanedInBatch });
+              result.removed += orphanedInBatch.length;
+
+              // Also delete associated chunks
+              for (const orphanId of orphanedInBatch) {
+                try {
+                  await deleteFileChunks({
+                    fileId: orphanId,
+                    chunkCollection: this.fileChunkCollection
+                  });
+                } catch (chunkErr) {
+                  logger.debug('[ChromaDB] Could not delete chunks for orphan:', {
+                    id: orphanId,
+                    error: chunkErr.message
+                  });
+                }
+              }
+
+              // Invalidate cache
+              orphanedInBatch.forEach((id) => this.queryCache.invalidateForFile(id));
+            } catch (deleteError) {
+              logger.warn('[ChromaDB] Failed to delete orphaned batch:', {
+                count: orphanedInBatch.length,
+                error: deleteError.message
+              });
+              result.errors += orphanedInBatch.length;
+            }
+          }
+
+          // Report progress
+          if (onProgress) {
+            onProgress(result.checked, totalCount, result.orphanedIds.length);
+          }
+
+          offset += batch.ids.length;
+        } catch (batchError) {
+          logger.warn('[ChromaDB] Error processing reconciliation batch:', {
+            offset,
+            error: batchError.message
+          });
+          result.errors++;
+          offset += batchSize; // Skip to next batch
+        }
+      }
+
+      logger.info('[ChromaDB] Filesystem reconciliation complete', {
+        checked: result.checked,
+        removed: result.removed,
+        errors: result.errors,
+        dryRun
+      });
+
+      return result;
+    } catch (error) {
+      logger.error('[ChromaDB] Reconciliation failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Schedule periodic reconciliation (call during app startup)
+   * @param {Object} options - Options
+   * @param {number} [options.intervalMs=3600000] - Interval between reconciliations (default: 1 hour)
+   * @param {number} [options.initialDelayMs=300000] - Delay before first run (default: 5 minutes)
+   */
+  startPeriodicReconciliation(options = {}) {
+    const { intervalMs = 60 * 60 * 1000, initialDelayMs = 5 * 60 * 1000 } = options;
+
+    if (this._reconciliationInterval) {
+      clearInterval(this._reconciliationInterval);
+    }
+    if (this._reconciliationInitialTimeout) {
+      clearTimeout(this._reconciliationInitialTimeout);
+    }
+
+    // Run initial reconciliation after delay (give app time to start)
+    this._reconciliationInitialTimeout = setTimeout(() => {
+      this._reconciliationInitialTimeout = null;
+      this.reconcileWithFilesystem({ batchSize: 200 }).catch((err) =>
+        logger.warn('[ChromaDB] Initial reconciliation failed:', err.message)
+      );
+    }, initialDelayMs);
+
+    // Schedule periodic reconciliation
+    this._reconciliationInterval = setInterval(() => {
+      this.reconcileWithFilesystem({ batchSize: 200 }).catch((err) =>
+        logger.warn('[ChromaDB] Periodic reconciliation failed:', err.message)
+      );
+    }, intervalMs);
+
+    // Don't prevent process exit
+    if (this._reconciliationInterval.unref) {
+      this._reconciliationInterval.unref();
+    }
+    if (this._reconciliationInitialTimeout.unref) {
+      this._reconciliationInitialTimeout.unref();
+    }
+
+    logger.info('[ChromaDB] Periodic reconciliation scheduled', {
+      intervalMs,
+      initialDelayMs
+    });
+  }
+
+  /**
+   * Stop periodic reconciliation
+   */
+  stopPeriodicReconciliation() {
+    if (this._reconciliationInterval) {
+      clearInterval(this._reconciliationInterval);
+      this._reconciliationInterval = null;
+    }
+    if (this._reconciliationInitialTimeout) {
+      clearTimeout(this._reconciliationInitialTimeout);
+      this._reconciliationInitialTimeout = null;
+    }
+    logger.debug('[ChromaDB] Periodic reconciliation stopped');
+  }
+
   // ============== Cleanup ==============
 
   async cleanup() {
+    // Stop periodic reconciliation
+    this.stopPeriodicReconciliation();
+    // FIX: Reset initialization complete flag to prevent events during cleanup
+    this._initializationComplete = false;
+
     if (this.batchInsertTimer) {
       clearTimeout(this.batchInsertTimer);
       this.batchInsertTimer = null;

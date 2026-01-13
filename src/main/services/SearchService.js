@@ -12,6 +12,7 @@
  */
 
 const lunr = require('lunr');
+const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
@@ -440,7 +441,12 @@ class SearchService {
 
       return vector;
     } catch (e) {
-      // If dimension check fails, log and fail safe
+      // FIX C-1: Re-throw dimension mismatch errors so UI can display actionable message
+      // Other errors (like ChromaDB unavailable) can fail safely to null
+      if (e.message && e.message.includes('Embedding model changed')) {
+        throw e; // Propagate to UI with clear message
+      }
+      // If dimension check fails for other reasons, log and fail safe
       logger.warn('[SearchService] Failed to validate query vector dimension:', e.message);
       return null;
     }
@@ -849,7 +855,9 @@ class SearchService {
           score: finalScore,
           rrfScore: normalizedRrf,
           metadata: original.metadata || {},
-          sources: original.source ? [original.source] : ['fused'],
+          // FIX: Use merged sources from matchDetailsMap (tracks all contributing sources)
+          // instead of only the preferred result's single source
+          sources: matchDetailsMap.get(id)?.sources?.filter(Boolean) || ['fused'],
           matchDetails: matchDetailsMap.get(id) || {}
         };
       });
@@ -918,6 +926,72 @@ class SearchService {
       );
     }
     return filtered;
+  }
+
+  /**
+   * Validate that files in search results still exist on disk
+   * Removes ghost entries from results and optionally triggers cleanup
+   * FIX: Prevents returning search results for deleted files
+   *
+   * @param {Array} results - Search results to validate
+   * @param {Object} options - Validation options
+   * @param {boolean} [options.triggerCleanup=true] - Queue ghost entries for async cleanup
+   * @returns {Promise<{validResults: Array, ghostCount: number}>}
+   * @private
+   */
+  async _validateFileExistence(results, options = {}) {
+    const { triggerCleanup = true } = options;
+
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      return { validResults: [], ghostCount: 0 };
+    }
+
+    const validResults = [];
+    const ghostIds = [];
+
+    for (const result of results) {
+      const filePath = result.metadata?.path;
+
+      if (!filePath) {
+        // No path - can't validate, include anyway
+        validResults.push(result);
+        continue;
+      }
+
+      try {
+        await fs.access(filePath);
+        validResults.push(result);
+      } catch {
+        // File doesn't exist - ghost entry
+        ghostIds.push(result.id);
+        logger.debug('[SearchService] Ghost entry found in results:', {
+          id: result.id,
+          path: filePath
+        });
+      }
+    }
+
+    // Trigger async cleanup of ghost entries (don't block search response)
+    if (triggerCleanup && ghostIds.length > 0 && this.chromaDb) {
+      setImmediate(async () => {
+        try {
+          // Delete ghost entries from ChromaDB
+          if (typeof this.chromaDb.batchDeleteFileEmbeddings === 'function') {
+            await this.chromaDb.batchDeleteFileEmbeddings(ghostIds);
+            logger.info('[SearchService] Cleaned up ghost entries from search results', {
+              count: ghostIds.length
+            });
+          }
+        } catch (cleanupErr) {
+          logger.warn('[SearchService] Failed to cleanup ghost entries:', cleanupErr.message);
+        }
+      });
+    }
+
+    return {
+      validResults,
+      ghostCount: ghostIds.length
+    };
   }
 
   /**
@@ -1200,6 +1274,17 @@ class SearchService {
 
       // Apply minimum score filter to fused results
       let filteredResults = this._filterByScore(fusedResults.slice(0, topK), minScore);
+
+      // FIX: Validate file existence to remove ghost entries
+      try {
+        const { validResults, ghostCount } = await this._validateFileExistence(filteredResults);
+        if (ghostCount > 0) {
+          logger.info('[SearchService] Removed ghost entries from results', { ghostCount });
+          filteredResults = validResults;
+        }
+      } catch (validationErr) {
+        logger.debug('[SearchService] File validation failed:', validationErr.message);
+      }
 
       // Apply LLM re-ranking if enabled
       let reranked = false;

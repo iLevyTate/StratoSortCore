@@ -8,6 +8,10 @@ const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceConte
 const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
 const { schemas } = require('./validationSchemas');
 
+// FIX: Safety cap for "get all" requests to prevent memory exhaustion
+// This limits the maximum number of history entries that can be retrieved at once
+const MAX_HISTORY_EXPORT_LIMIT = 50000;
+
 function registerAnalysisHistoryIpc(servicesOrParams) {
   let container;
   if (servicesOrParams instanceof IpcServiceContext) {
@@ -60,11 +64,21 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
         try {
           const { all = false, limit, offset = 0 } = options || {};
 
-          // Handle "get all" request
+          // Handle "get all" request with safety cap to prevent memory exhaustion
           if (all || limit === 'all') {
-            const full = (await service.getRecentAnalysis(Number.MAX_SAFE_INTEGER)) || [];
+            // FIX: Use safety cap instead of Number.MAX_SAFE_INTEGER
+            const full = (await service.getRecentAnalysis(MAX_HISTORY_EXPORT_LIMIT)) || [];
             // FIX H1: Ensure result is always an array
             const result = Array.isArray(full) ? full : [];
+
+            // Log warning if we hit the safety cap
+            if (result.length >= MAX_HISTORY_EXPORT_LIMIT) {
+              logger.warn('[ANALYSIS-HISTORY] History retrieval hit safety cap', {
+                cap: MAX_HISTORY_EXPORT_LIMIT,
+                returned: result.length
+              });
+            }
+
             return offset > 0 ? result.slice(offset) : result;
           }
 
@@ -166,7 +180,8 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
       fallbackResponse: { success: false, error: 'Service unavailable' },
       handler: async (event, format = 'json', service) => {
         try {
-          const history = (await service.getRecentAnalysis(10000)) || [];
+          // FIX: Use safety cap for export to prevent memory exhaustion
+          const history = (await service.getRecentAnalysis(MAX_HISTORY_EXPORT_LIMIT)) || [];
 
           if (format === 'json') {
             return {

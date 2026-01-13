@@ -129,15 +129,95 @@ class BatchAnalysisService {
       this._embeddingProgressUnsubscribe = embeddingQueue.onProgress(onEmbeddingProgress);
     }
 
+    // FIX P1-5: Use try-finally to ensure event listener cleanup even on error
+    try {
+      return await this._executeAnalysis(filePaths, smartFolders, {
+        concurrency,
+        onProgress,
+        stopOnError,
+        startTime
+      });
+    } finally {
+      // FIX P1-5: Always unsubscribe from embedding progress, even on error
+      if (this._embeddingProgressUnsubscribe) {
+        this._embeddingProgressUnsubscribe();
+        this._embeddingProgressUnsubscribe = null;
+      }
+    }
+  }
+
+  /**
+   * Internal method that executes the actual analysis
+   * Separated to allow try-finally cleanup in analyzeFiles()
+   * @private
+   */
+  async _executeAnalysis(filePaths, smartFolders, options) {
+    const { concurrency, onProgress, stopOnError, startTime } = options;
+
     // FIX: Track embedding statistics for this batch
     const embeddingStats = {
       startQueueSize: embeddingQueue.getStats().queueLength,
       embeddings: 0
     };
 
+    // FIX P3-1: Backpressure control to prevent embedding queue overflow
+    // When queue is too full, wait for it to drain before adding more work
+    // FIX P1-6: Added timeout and exponential backoff to prevent infinite loops
+    const BACKPRESSURE_TIMEOUT_MS = 60000; // Max 60 seconds wait
+    const BACKPRESSURE_INITIAL_DELAY_MS = 500;
+    const BACKPRESSURE_MAX_DELAY_MS = 5000;
+
+    const checkBackpressure = async () => {
+      const stats = embeddingQueue.getStats();
+      if (stats.capacityPercent >= 75) {
+        logger.warn('[BATCH-ANALYSIS] Backpressure: embedding queue at capacity', {
+          capacityPercent: stats.capacityPercent,
+          queueLength: stats.queueLength
+        });
+
+        const backpressureStart = Date.now();
+        let delay = BACKPRESSURE_INITIAL_DELAY_MS;
+        let iterations = 0;
+
+        // Wait for queue to drain below 50% before resuming, with timeout
+        while (embeddingQueue.getStats().capacityPercent > 50) {
+          const elapsed = Date.now() - backpressureStart;
+          if (elapsed >= BACKPRESSURE_TIMEOUT_MS) {
+            logger.warn('[BATCH-ANALYSIS] Backpressure timeout reached, continuing anyway', {
+              elapsed,
+              capacityPercent: embeddingQueue.getStats().capacityPercent
+            });
+            break;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          // Exponential backoff with cap
+          delay = Math.min(delay * 1.5, BACKPRESSURE_MAX_DELAY_MS);
+          iterations++;
+
+          if (iterations % 10 === 0) {
+            logger.debug('[BATCH-ANALYSIS] Waiting for embedding queue to drain', {
+              elapsed,
+              capacityPercent: embeddingQueue.getStats().capacityPercent,
+              iterations
+            });
+          }
+        }
+
+        if (Date.now() - backpressureStart < BACKPRESSURE_TIMEOUT_MS) {
+          logger.info('[BATCH-ANALYSIS] Embedding queue drained, resuming analysis', {
+            waitTime: Date.now() - backpressureStart
+          });
+        }
+      }
+    };
+
     // Process each file
     const processFile = async (filePath, index) => {
       try {
+        // FIX P3-1: Check backpressure before starting file analysis
+        await checkBackpressure();
+
         const extension = path.extname(filePath).toLowerCase();
         const isImage = this.isImageFile(extension);
 
@@ -242,11 +322,7 @@ class BatchAnalysisService {
     }
     const flushDuration = Date.now() - flushStartTime;
 
-    // FIX: Unsubscribe from embedding progress
-    if (this._embeddingProgressUnsubscribe) {
-      this._embeddingProgressUnsubscribe();
-      this._embeddingProgressUnsubscribe = null;
-    }
+    // NOTE: Unsubscribe is now handled by try-finally in analyzeFiles() - see FIX P1-5
 
     const totalDuration = Date.now() - startTime;
     const avgTime = totalDuration / filePaths.length;
