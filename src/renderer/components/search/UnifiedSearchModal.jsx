@@ -95,6 +95,11 @@ const getErrorMessage = (error, context = 'Operation') => {
     return `${context} failed: Semantic search is initializing. Please wait a moment and try again.`;
   }
 
+  // FIX C-1: Embedding dimension mismatch (model changed)
+  if (msg.includes('Embedding model changed') || msg.includes('dimension mismatch')) {
+    return 'Embedding model changed. Please rebuild your index in Settings > Semantic Index to use the new model.';
+  }
+
   // Generic fallback with original message
   return msg || `${context} failed`;
 };
@@ -2340,7 +2345,7 @@ export default function UnifiedSearchModal({
             y: seedPos.y + idx * 80
           };
           const node = upsertFileNode(r, pos);
-          if (!node) return;
+          if (!node?.id) return; // Ensure node has valid id for edge creation
           nextNodes.push(node);
 
           // Get target node data for tooltip

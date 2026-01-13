@@ -412,7 +412,8 @@ function NavigationBar() {
   const dispatch = useAppDispatch();
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const isOrganizing = useAppSelector((state) => state.ui.isOrganizing);
-  const isAnalyzing = useAppSelector((state) => state.ui.isAnalyzing);
+  // FIX: Use analysis slice as single source of truth for isAnalyzing
+  const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
 
   const [isScrolled, setIsScrolled] = useState(false);

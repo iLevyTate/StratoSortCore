@@ -68,11 +68,12 @@ export function useFileDrop(onFilesDropped) {
       e.stopPropagation();
       setIsDragging(false);
 
+      // FIX: Use optional chaining consistently for defensive null checks
       if (!e.dataTransfer) return;
 
-      const fileList = Array.from(e.dataTransfer.files || []);
-      const uriListRaw = e.dataTransfer.getData('text/uri-list') || '';
-      const textPlainRaw = e.dataTransfer.getData('text/plain') || '';
+      const fileList = Array.from(e.dataTransfer?.files || []);
+      const uriListRaw = e.dataTransfer?.getData?.('text/uri-list') || '';
+      const textPlainRaw = e.dataTransfer?.getData?.('text/plain') || '';
 
       // Parse URIs (common on Linux/GTK)
       const parsedUris = uriListRaw

@@ -31,6 +31,12 @@ const LAYOUT_DEBOUNCE_MS = 150;
 // Track pending promise callbacks to prevent memory leaks and handle cancellation
 let pendingCallbacks = [];
 
+// Store latest layout request data to prevent stale closure issues
+let latestLayoutData = { nodes: null, edges: null, options: {} };
+
+// Track if layout was aborted to prevent resolving after cancellation
+let layoutAborted = false;
+
 /**
  * Node size configuration for different node types
  */
@@ -65,8 +71,11 @@ const DEFAULT_OPTIONS = {
  */
 export async function elkLayout(nodes, edges, options = {}) {
   if (!nodes || nodes.length === 0) {
-    return nodes;
+    return nodes || [];
   }
+
+  // Normalize edges to empty array if null/undefined to prevent TypeError on .map()
+  const safeEdges = edges || [];
 
   const {
     direction = DEFAULT_OPTIONS.direction,
@@ -98,7 +107,7 @@ export async function elkLayout(nodes, edges, options = {}) {
         height: size.height
       };
     }),
-    edges: edges.map((edge) => ({
+    edges: safeEdges.map((edge) => ({
       id: edge.id,
       sources: [edge.source],
       targets: [edge.target]
@@ -149,15 +158,13 @@ export async function elkLayout(nodes, edges, options = {}) {
 export function debouncedElkLayout(nodes, edges, options = {}) {
   const { debounceMs = LAYOUT_DEBOUNCE_MS, ...layoutOptions } = options;
 
-  return new Promise((resolve, reject) => {
-    // FIX: Resolve any previously pending promises with current nodes
-    // This prevents memory leaks from promises that would never resolve
-    if (pendingCallbacks.length > 0) {
-      pendingCallbacks.forEach((cb) => cb.resolve(nodes));
-      pendingCallbacks = [];
-    }
+  // Store latest data in module-level variable to prevent stale closure issues
+  // When the debounce timer fires, it will use the most recent data
+  latestLayoutData = { nodes: nodes || [], edges: edges || [], options: layoutOptions };
+  layoutAborted = false;
 
-    // Clear any pending debounce timer
+  return new Promise((resolve, reject) => {
+    // Clear any pending debounce timer - new request supersedes old ones
     if (layoutDebounceTimer) {
       clearTimeout(layoutDebounceTimer);
     }
@@ -169,30 +176,47 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
     layoutDebounceTimer = setTimeout(async () => {
       layoutDebounceTimer = null;
 
+      // Check if layout was aborted during debounce wait
+      if (layoutAborted) {
+        return;
+      }
+
       // Capture callbacks to notify
       const callbacksToNotify = [...pendingCallbacks];
       pendingCallbacks = [];
 
-      // If there's already a layout in progress, wait for it
+      // Get the latest data (not stale closure data)
+      const { nodes: latestNodes, edges: latestEdges, options: latestOptions } = latestLayoutData;
+
+      // If there's already a layout in progress with same data, wait for it
       if (pendingLayoutPromise) {
         try {
           const result = await pendingLayoutPromise;
-          callbacksToNotify.forEach((cb) => cb.resolve(result));
+          // Only resolve if not aborted during the wait
+          if (!layoutAborted) {
+            callbacksToNotify.forEach((cb) => cb.resolve(result));
+          }
           return;
         } catch {
           // Fall through to new layout
         }
       }
 
-      // Execute the layout
-      pendingLayoutPromise = elkLayout(nodes, edges, layoutOptions);
+      // Execute the layout with LATEST data (not stale closure data)
+      pendingLayoutPromise = elkLayout(latestNodes, latestEdges, latestOptions);
 
       try {
         const result = await pendingLayoutPromise;
-        callbacksToNotify.forEach((cb) => cb.resolve(result));
+        // Only resolve if not aborted during layout computation
+        if (!layoutAborted) {
+          callbacksToNotify.forEach((cb) => cb.resolve(result));
+        }
       } catch (error) {
         logger.error('[elkLayout] Debounced layout failed:', error);
-        callbacksToNotify.forEach((cb) => cb.resolve(nodes)); // Return original nodes on error
+        // Return original nodes on error (using latest, not stale)
+        if (!layoutAborted) {
+          callbacksToNotify.forEach((cb) => cb.resolve(latestNodes));
+        }
       } finally {
         pendingLayoutPromise = null;
       }
@@ -203,12 +227,19 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
 /**
  * Cancel any pending debounced layout
  * Useful when component unmounts or user cancels operation
+ *
+ * Note: ELK layout computation itself cannot be cancelled once started,
+ * but this prevents callbacks from being resolved after cancellation.
  */
 export function cancelPendingLayout() {
+  // Set abort flag to prevent any pending callbacks from resolving
+  layoutAborted = true;
+
   if (layoutDebounceTimer) {
     clearTimeout(layoutDebounceTimer);
     layoutDebounceTimer = null;
   }
+
   // Reject pending promises with AbortError to signal cancellation
   if (pendingCallbacks.length > 0) {
     const error = new Error('Layout cancelled');
@@ -216,7 +247,12 @@ export function cancelPendingLayout() {
     pendingCallbacks.forEach((cb) => cb.reject(error));
     pendingCallbacks = [];
   }
+
+  // Clear the promise reference (actual ELK computation may still run but results will be ignored)
   pendingLayoutPromise = null;
+
+  // Clear cached layout data
+  latestLayoutData = { nodes: null, edges: null, options: {} };
 }
 
 /**
@@ -233,9 +269,11 @@ export async function smartLayout(nodes, edges, options = {}) {
   const { progressive = true, maxInitialNodes = 50, ...layoutOptions } = options;
 
   if (!nodes || nodes.length === 0) {
-    return { nodes, isPartial: false, totalNodes: 0 };
+    return { nodes: nodes || [], isPartial: false, totalNodes: 0 };
   }
 
+  // Normalize edges to empty array if null/undefined
+  const safeEdges = edges || [];
   const totalNodes = nodes.length;
 
   // For very large graphs with progressive enabled, layout only important nodes first
@@ -254,7 +292,7 @@ export async function smartLayout(nodes, edges, options = {}) {
     const initialNodeIds = new Set(initialNodes.map((n) => n.id));
 
     // Filter edges to only include those between initial nodes
-    const initialEdges = edges.filter(
+    const initialEdges = safeEdges.filter(
       (e) => initialNodeIds.has(e.source) && initialNodeIds.has(e.target)
     );
 
@@ -285,7 +323,7 @@ export async function smartLayout(nodes, edges, options = {}) {
   }
 
   // For smaller graphs, do full layout
-  const layoutedNodes = await elkLayout(nodes, edges, layoutOptions);
+  const layoutedNodes = await elkLayout(nodes, safeEdges, layoutOptions);
   return { nodes: layoutedNodes, isPartial: false, totalNodes };
 }
 

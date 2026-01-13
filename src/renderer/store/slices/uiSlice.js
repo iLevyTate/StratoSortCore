@@ -19,15 +19,19 @@ function canTransitionTo(fromPhase, toPhase) {
 
 // Navigation state rules - determines when navigation buttons should be disabled
 // This centralizes the logic to prevent inconsistencies across components
+// FIX: isAnalyzing should be passed in context from analysisSlice for accurate state
 const NAVIGATION_RULES = {
   // Rules for when "Back" button should be disabled
-  canGoBack: (state) => {
+  // context.isAnalyzing should be passed from analysisSlice.isAnalyzing for accurate value
+  canGoBack: (state, context = {}) => {
     // Cannot go back from welcome phase
     if (state.currentPhase === PHASES.WELCOME) return false;
     // Cannot go back while loading/processing
     if (state.isLoading) return false;
     // Cannot go back during file operations
-    if (state.isOrganizing || state.isAnalyzing) return false;
+    // FIX: Prefer context.isAnalyzing (from analysisSlice) over state.isAnalyzing (deprecated)
+    const isAnalyzing = context.isAnalyzing ?? state.isAnalyzing;
+    if (state.isOrganizing || isAnalyzing) return false;
     return true;
   },
   // Rules for when "Next/Continue" button should be disabled
@@ -35,7 +39,9 @@ const NAVIGATION_RULES = {
     // Cannot advance while loading
     if (state.isLoading) return false;
     // Cannot advance during file operations
-    if (state.isOrganizing || state.isAnalyzing) return false;
+    // FIX: Prefer context.isAnalyzing (from analysisSlice) over state.isAnalyzing (deprecated)
+    const isAnalyzing = context.isAnalyzing ?? state.isAnalyzing;
+    if (state.isOrganizing || isAnalyzing) return false;
 
     // Phase-specific rules
     switch (state.currentPhase) {
@@ -83,9 +89,13 @@ const initialState = {
   activeModal: null, // 'history', 'confirm', etc.
   settings: null, // Cached settings from main process
   settingsLoading: false,
+  settingsError: null, // FIX: Track settings fetch errors
   // Navigation state tracking for consistent button states
   isOrganizing: false, // True during file organization operations
-  isAnalyzing: false, // True during analysis operations
+  // DEPRECATED: isAnalyzing is now tracked in analysisSlice only
+  // Kept here for backward compatibility with NAVIGATION_RULES
+  // Pass context.isAnalyzing from analysisSlice when calling NAVIGATION_RULES
+  isAnalyzing: false,
   navigationError: null // Last navigation error for debugging
 };
 
@@ -139,6 +149,8 @@ const uiSlice = createSlice({
     setOrganizing: (state, action) => {
       state.isOrganizing = Boolean(action.payload);
     },
+    // DEPRECATED: Use analysisSlice.startAnalysis/stopAnalysis instead
+    // Kept for backward compatibility but no longer dispatched by useDiscoverState
     setAnalyzing: (state, action) => {
       state.isAnalyzing = Boolean(action.payload);
     },
@@ -191,16 +203,21 @@ const uiSlice = createSlice({
     builder
       .addCase(fetchSettings.pending, (state) => {
         state.settingsLoading = true;
+        state.settingsError = null;
       })
       .addCase(fetchSettings.fulfilled, (state, action) => {
         state.settings = action.payload;
         state.settingsLoading = false;
+        state.settingsError = null;
       })
-      .addCase(fetchSettings.rejected, (state) => {
-        // CRITICAL FIX: Provide default empty object to prevent null reference errors
-        // Components accessing settings.someProp will get undefined instead of crashing
-        state.settings = {};
+      .addCase(fetchSettings.rejected, (state, action) => {
+        // FIX: Preserve existing settings on failure instead of wiping them
+        // Only set to empty object if no previous settings exist
+        if (!state.settings) {
+          state.settings = {};
+        }
         state.settingsLoading = false;
+        state.settingsError = action.error?.message || 'Failed to load settings';
       });
   }
 });

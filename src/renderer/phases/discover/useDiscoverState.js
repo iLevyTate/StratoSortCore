@@ -22,7 +22,7 @@ import {
   setAnalysisResults as setAnalysisResultsAction,
   resetAnalysisState as resetAnalysisStateAction
 } from '../../store/slices/analysisSlice';
-import { setPhase, setAnalyzing } from '../../store/slices/uiSlice';
+import { setPhase } from '../../store/slices/uiSlice';
 import { logger } from '../../../shared/logger';
 
 logger.setContext('DiscoverPhase:State');
@@ -95,14 +95,13 @@ export function useDiscoverState() {
     [dispatch]
   );
 
+  // FIX: Only dispatch to analysisSlice - single source of truth for isAnalyzing
   const setIsAnalyzing = useCallback(
     (val) => {
       if (val) {
         dispatch(startAnalysisAction({ total: analysisProgressRef.current.total }));
-        dispatch(setAnalyzing(true));
       } else {
         dispatch(stopAnalysisAction());
-        dispatch(setAnalyzing(false));
       }
     },
     [dispatch]

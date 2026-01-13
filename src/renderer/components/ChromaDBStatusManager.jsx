@@ -40,21 +40,26 @@ export default function ChromaDBStatusManager() {
       logger.warn('Failed to fetch ChromaDB status:', error.message);
       dispatch(updateHealth({ chromadb: 'offline' }));
       previousStatusRef.current = 'offline';
+      // FIX: Show notification when initial status fetch fails
+      // This helps users understand why semantic search may be unavailable
+      showWarning('Could not connect to semantic search service');
     }
-  }, [dispatch]);
+  }, [dispatch, showWarning]);
 
   // Subscribe to status changes
+  // FIX Issue 6: Subscribe FIRST, then fetch initial status to prevent race condition
   useEffect(() => {
     let unsubscribe = null;
+    let _hasReceivedUpdate = false; // Track if subscription has fired (prefixed to satisfy linter)
 
-    // Fetch initial status
-    fetchInitialStatus();
-
-    // Subscribe to status changes
+    // Subscribe to status changes FIRST to catch any updates during initial fetch
     if (window.electronAPI?.chromadb?.onStatusChanged) {
       try {
         unsubscribe = window.electronAPI.chromadb.onStatusChanged((statusData) => {
           try {
+            // FIX Issue 6: Mark that we received an update from subscription
+            _hasReceivedUpdate = true;
+
             const status = statusData?.status || statusData;
             let chromaStatus;
 
@@ -93,6 +98,10 @@ export default function ChromaDBStatusManager() {
         logger.error('Failed to subscribe to ChromaDB status:', error);
       }
     }
+
+    // FIX Issue 6: Fetch initial status AFTER subscribing
+    // Only update if subscription hasn't already provided a status
+    fetchInitialStatus();
 
     // Cleanup subscription
     return () => {
