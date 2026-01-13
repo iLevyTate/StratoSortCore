@@ -49,28 +49,112 @@ const { globalDeduplicator } = require('../utils/llmOptimization');
 const CACHE_CONFIG = {
   MAX_FILE_CACHE: 500, // Maximum number of files to cache in memory
   FALLBACK_CONFIDENCE: 65, // Confidence score for fallback analysis
-  DEFAULT_CONFIDENCE: 85 // Default confidence for successful analysis
+  DEFAULT_CONFIDENCE: 85, // Default confidence for successful analysis
+  CACHE_TTL_MS: 30 * 60 * 1000 // CRITICAL FIX: 30 minute TTL to prevent memory leaks
 };
 const ANALYSIS_SIGNATURE_VERSION = 'v2';
 
 // Folder match threshold now in THRESHOLDS.FOLDER_MATCH_CONFIDENCE
 
-// In-memory cache of per-file analysis results (path|size|mtimeMs -> result)
-const fileAnalysisCache = new Map();
+// CRITICAL FIX: In-memory cache with TTL support to prevent memory leaks
+// Cache entries now include timestamp for TTL-based expiration
+const fileAnalysisCache = new Map(); // signature -> { value, timestamp }
+
+/**
+ * Get cached value if exists and not expired
+ * @param {string} signature - Cache key
+ * @returns {Object|null} Cached value or null if expired/missing
+ */
+function getFileCache(signature) {
+  if (!signature) return null;
+  const entry = fileAnalysisCache.get(signature);
+  if (!entry) return null;
+
+  // Check TTL expiration
+  if (Date.now() - entry.timestamp > CACHE_CONFIG.CACHE_TTL_MS) {
+    fileAnalysisCache.delete(signature);
+    return null;
+  }
+  return entry.value;
+}
+
+/**
+ * Set cache value with timestamp for TTL tracking
+ * @param {string} signature - Cache key
+ * @param {Object} value - Value to cache
+ */
 function setFileCache(signature, value) {
   if (!signature) return;
-  fileAnalysisCache.set(signature, value);
+
+  // CRITICAL FIX: Store with timestamp for TTL-based expiration
+  fileAnalysisCache.set(signature, {
+    value,
+    timestamp: Date.now()
+  });
+
+  // Evict oldest entries if over size limit
   if (fileAnalysisCache.size > CACHE_CONFIG.MAX_FILE_CACHE) {
-    const firstKey = fileAnalysisCache.keys().next().value;
-    fileAnalysisCache.delete(firstKey);
+    // FIX P1-9: Collect keys to delete first, then delete in separate pass
+    // Deleting while iterating over Map can skip entries or cause corruption
+    const now = Date.now();
+    const keysToDelete = [];
+
+    // First pass: identify expired entries
+    for (const [key, entry] of fileAnalysisCache) {
+      if (now - entry.timestamp > CACHE_CONFIG.CACHE_TTL_MS) {
+        keysToDelete.push(key);
+      }
+      // Collect enough keys to get under limit
+      if (fileAnalysisCache.size - keysToDelete.length <= CACHE_CONFIG.MAX_FILE_CACHE) {
+        break;
+      }
+    }
+
+    // Second pass: delete collected keys
+    for (const key of keysToDelete) {
+      fileAnalysisCache.delete(key);
+    }
+
+    // If still over limit after TTL eviction, evict oldest (FIFO)
+    if (fileAnalysisCache.size > CACHE_CONFIG.MAX_FILE_CACHE) {
+      const firstKey = fileAnalysisCache.keys().next().value;
+      if (firstKey) {
+        fileAnalysisCache.delete(firstKey);
+      }
+    }
   }
 }
 
 // Import error handling system
 const { FileProcessingError } = require('../errors/AnalysisError');
 
-const chromaDbService = getChromaDB();
-const folderMatcher = new FolderMatchingService(chromaDbService);
+// CRITICAL FIX: Use lazy initialization instead of module-level singleton creation
+// This prevents startup failures when ChromaDB is not immediately available
+let chromaDbService = null;
+let folderMatcher = null;
+
+/**
+ * Lazily initialize ChromaDB service and FolderMatchingService
+ * Returns existing instances if already initialized
+ * @returns {{ chromaDb: Object|null, matcher: FolderMatchingService|null }}
+ */
+function getServicesLazy() {
+  if (!chromaDbService) {
+    try {
+      chromaDbService = getChromaDB();
+    } catch (e) {
+      logger.debug('[DocumentAnalysis] ChromaDB not available yet:', e.message);
+    }
+  }
+  if (!folderMatcher && chromaDbService) {
+    try {
+      folderMatcher = new FolderMatchingService(chromaDbService);
+    } catch (e) {
+      logger.debug('[DocumentAnalysis] FolderMatchingService creation failed:', e.message);
+    }
+  }
+  return { chromaDb: chromaDbService, matcher: folderMatcher };
+}
 
 // Set logger context for this module
 logger.setContext('DocumentAnalysis');
@@ -110,7 +194,8 @@ function createDocumentFallback(fileName, fileExtension, purpose, smartFolders, 
     keywords: intelligentKeywords || [],
     confidence,
     suggestedName: safeSuggestedName(fileName, fileExtension),
-    extractionMethod
+    extractionMethod,
+    summary: purpose || `Fallback analysis for ${fileName}`
   };
 
   if (error) {
@@ -135,23 +220,40 @@ async function applyDocumentFolderMatching(
   extractedText,
   smartFolders
 ) {
-  if (!chromaDbService) {
+  // CRITICAL FIX: Guard against null/undefined analysis to prevent crash
+  if (!analysis || typeof analysis !== 'object') {
+    logger.warn('[DocumentAnalysis] Invalid analysis object, skipping folder matching', {
+      filePath,
+      analysisType: typeof analysis
+    });
+    return;
+  }
+
+  // CRITICAL FIX: Use lazy initialization to get services
+  const { chromaDb, matcher } = getServicesLazy();
+
+  if (!chromaDb) {
     logger.warn('[DocumentAnalysis] ChromaDB service not available, skipping folder matching');
     return;
   }
 
-  await chromaDbService.initialize();
+  await chromaDb.initialize();
 
-  if (folderMatcher && !folderMatcher.embeddingCache?.initialized) {
-    await folderMatcher.initialize();
+  if (matcher && !matcher.embeddingCache?.initialized) {
+    await matcher.initialize();
     logger.debug('[DocumentAnalysis] FolderMatchingService initialized');
+  }
+
+  if (!matcher) {
+    logger.warn('[DocumentAnalysis] FolderMatchingService not available, skipping folder matching');
+    return;
   }
 
   if (smartFolders && smartFolders.length > 0) {
     logger.debug('[DocumentAnalysis] Upserting folder embeddings', {
       folderCount: smartFolders.length
     });
-    await folderMatcher.batchUpsertFolders(smartFolders);
+    await matcher.batchUpsertFolders(smartFolders);
   }
 
   const fileId = `file:${filePath}`;
@@ -169,8 +271,8 @@ async function applyDocumentFolderMatching(
     summaryLength: summaryForEmbedding.length
   });
 
-  const { vector, model } = await folderMatcher.embedText(summaryForEmbedding || '');
-  const candidates = await folderMatcher.matchVectorToFolders(vector, 5);
+  const { vector, model } = await matcher.embedText(summaryForEmbedding || '');
+  const candidates = await matcher.matchVectorToFolders(vector, 5);
 
   // FIX: Include category and confidence in metadata for search display
   const rawConfidence = analysis.confidence ?? 0;
@@ -273,8 +375,10 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
   try {
     fileStats = await fs.stat(filePath);
     fileSignature = `${ANALYSIS_SIGNATURE_VERSION}|${modelName}|${smartFolderSig}|${filePath}|${fileStats.size}|${fileStats.mtimeMs}`;
-    if (fileAnalysisCache.has(fileSignature)) {
-      return fileAnalysisCache.get(fileSignature);
+    // CRITICAL FIX: Use TTL-aware cache getter instead of direct Map access
+    const cachedResult = getFileCache(fileSignature);
+    if (cachedResult) {
+      return cachedResult;
     }
     logger.debug('Cache miss, analyzing', { path: filePath });
   } catch (statError) {
@@ -604,20 +708,30 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       );
 
       // Semantic folder refinement using embeddings (delegated to helper)
-      try {
-        await applyDocumentFolderMatching(
-          analysis,
-          filePath,
-          fileName,
-          extractedText,
-          smartFolders
-        );
-      } catch (e) {
-        logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
-          error: e.message,
-          filePath
-        });
+      // CRITICAL FIX: Guard against null/undefined analysis before folder matching
+      if (analysis && typeof analysis === 'object' && !analysis.error) {
+        try {
+          await applyDocumentFolderMatching(
+            analysis,
+            filePath,
+            fileName,
+            extractedText,
+            smartFolders
+          );
+        } catch (e) {
+          logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
+            error: e.message,
+            filePath
+          });
+        }
       }
+
+      // FIX P1-5: Capture values needed from extractedText and release it for GC
+      // Large documents can be 2MB+, holding this in memory during subsequent async
+      // operations wastes memory. Capture what we need and null the reference.
+      const extractedTextLength = extractedText?.length || 0;
+      const extractedTextPreview = extractedText?.substring(0, 500) || '';
+      extractedText = null;
 
       if (analysis && !analysis.error) {
         logger.info(`[AI-ANALYSIS-SUCCESS]`, {
@@ -628,7 +742,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
         const normalized = normalizeAnalysisResult(
           {
             ...analysis,
-            contentLength: extractedText.length,
+            contentLength: extractedTextLength,
             extractionMethod: 'content'
           },
           { category: 'document', keywords: [], confidence: 0 }
@@ -643,7 +757,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       logger.warn(`[AI-ANALYSIS-FAILED] Content extracted but AI analysis failed`, { fileName });
       return normalizeAnalysisResult(
         {
-          rawText: extractedText.substring(0, 500),
+          rawText: extractedTextPreview,
           keywords: Array.isArray(analysis.keywords)
             ? analysis.keywords
             : ['document', 'analysis_failed'],
@@ -653,7 +767,7 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
           category: 'document',
           confidence: 60,
           error: analysis?.error || 'Ollama analysis failed for document content.',
-          contentLength: extractedText.length,
+          contentLength: extractedTextLength,
           extractionMethod: 'content'
         },
         { category: 'document', keywords: [], confidence: 60 }
@@ -670,7 +784,8 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
       date: new Date().toISOString().split('T')[0],
       keywords: [],
       confidence: 50,
-      extractionMethod: 'failed'
+      extractionMethod: 'failed',
+      summary: 'Analysis failed: Could not extract text'
     };
     // Use pre-computed signature if available, otherwise skip caching
     if (fileSignature) {

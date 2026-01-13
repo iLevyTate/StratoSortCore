@@ -889,6 +889,11 @@ async function analyzeImageFile(filePath, smartFolders = []) {
     logger.debug(`Image buffer size`, { bytes: imageBuffer.length });
     const imageBase64 = imageBuffer.toString('base64');
 
+    // FIX P1-1: Release image buffer immediately after base64 conversion
+    // This prevents holding potentially large (10MB+) buffers in memory during
+    // subsequent async operations (Ollama analysis, semantic matching, etc.)
+    imageBuffer = null;
+
     // Validate base64 encoding
     if (!imageBase64 || imageBase64.length === 0) {
       logger.error(`Image base64 encoding failed`, { path: filePath });

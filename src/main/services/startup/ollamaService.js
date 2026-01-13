@@ -13,7 +13,7 @@ const { logger } = require('../../../shared/logger');
 const { axiosWithRetry, checkOllamaHealth } = require('../../utils/ollamaApiRetry');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
 const { shouldUseShell } = require('../../../shared/platformUtils');
-const { SERVICE_URLS } = require('../../../shared/configDefaults');
+const { getValidatedOllamaHost } = require('../../../shared/configDefaults');
 const { getRecommendedEnvSettings } = require('../PerformanceService');
 
 logger.setContext('StartupManager:Ollama');
@@ -26,7 +26,8 @@ logger.setContext('StartupManager:Ollama');
  */
 async function isOllamaRunning() {
   try {
-    const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
+    // FIX: Use centralized env var resolution (supports both OLLAMA_BASE_URL and OLLAMA_HOST)
+    const { url: baseUrl } = getValidatedOllamaHost();
     const response = await axiosWithRetry(
       () => axios.get(`${baseUrl}/api/tags`, { timeout: 1000 }),
       {
@@ -50,7 +51,8 @@ async function isOllamaRunning() {
  * @returns {Promise<Object>} Start result
  */
 async function startOllama({ serviceStatus }) {
-  const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
+  // FIX: Use centralized env var resolution (supports both OLLAMA_BASE_URL and OLLAMA_HOST)
+  const { url: baseUrl } = getValidatedOllamaHost();
 
   // Check if Ollama is already running
   try {
@@ -59,9 +61,17 @@ async function startOllama({ serviceStatus }) {
       validateStatus: () => true
     });
 
-    if (response.status === 200) {
+    // FIX Issue 3.6: Validate response is actually from Ollama, not another service
+    // Ollama returns { models: [...] } from /api/tags endpoint
+    if (response.status === 200 && Array.isArray(response.data?.models)) {
       logger.info('[STARTUP] Ollama is already running externally, skipping startup');
       return { process: null, external: true };
+    } else if (response.status === 200) {
+      // Port is in use but response doesn't match Ollama - warn and try to start anyway
+      logger.warn('[STARTUP] Port 11434 responds but does not appear to be Ollama', {
+        hasModelsArray: Array.isArray(response.data?.models),
+        dataType: typeof response.data
+      });
     }
   } catch (error) {
     if (error.code !== 'ECONNREFUSED') {

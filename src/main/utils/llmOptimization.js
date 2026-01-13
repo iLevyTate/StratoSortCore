@@ -10,6 +10,26 @@ logger.setContext('LLMOptimization');
  * - Request coalescing: Merge multiple pending requests for the same input
  */
 
+/**
+ * CRITICAL FIX: Recursively sort object keys for consistent hashing
+ * This ensures nested objects produce the same hash regardless of key order
+ * @param {*} obj - Value to sort (handles objects, arrays, primitives)
+ * @returns {*} Sorted value
+ */
+function sortObjectKeysDeep(obj) {
+  if (Array.isArray(obj)) {
+    return obj.map(sortObjectKeysDeep);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const sorted = {};
+    for (const key of Object.keys(obj).sort()) {
+      sorted[key] = sortObjectKeysDeep(obj[key]);
+    }
+    return sorted;
+  }
+  return obj;
+}
+
 class LLMRequestDeduplicator {
   constructor(maxPendingRequests = 100) {
     // Track in-flight requests to avoid duplicate calls
@@ -27,8 +47,8 @@ class LLMRequestDeduplicator {
     if (typeof inputs === 'string') {
       hasher.update(inputs);
     } else if (typeof inputs === 'object' && inputs !== null) {
-      // Sort keys for consistent hashing
-      const sorted = JSON.stringify(inputs, Object.keys(inputs).sort());
+      // CRITICAL FIX: Recursively sort keys for consistent hashing of nested objects
+      const sorted = JSON.stringify(sortObjectKeysDeep(inputs));
       hasher.update(sorted);
     } else {
       hasher.update(String(inputs));
@@ -56,11 +76,17 @@ class LLMRequestDeduplicator {
       return this.pendingRequests.get(key);
     }
 
-    // Check size limit and clean oldest if needed
+    // HIGH FIX: Instead of evicting pending requests (which could cause duplicates),
+    // log a warning but proceed. The promise will still complete and be cleaned up.
+    // Evicting pending requests causes race conditions where duplicate LLM calls are made.
     if (this.pendingRequests.size >= this.maxPendingRequests) {
-      const firstKey = this.pendingRequests.keys().next().value;
-      this.pendingRequests.delete(firstKey);
-      logger.debug('[LLM-DEDUP] Cleaned oldest pending request');
+      logger.warn('[LLM-DEDUP] At capacity - proceeding without eviction to prevent duplicates', {
+        pendingCount: this.pendingRequests.size,
+        maxPending: this.maxPendingRequests,
+        key: key.slice(0, 12)
+      });
+      // Note: We don't evict because that could cause duplicate requests
+      // The natural cleanup in .finally() will eventually free slots
     }
 
     // FIX: Wrap fn() call to handle synchronous throws

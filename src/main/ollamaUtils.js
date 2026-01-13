@@ -82,7 +82,12 @@ function getOllama() {
           });
         }
       });
-    } catch {
+    } catch (agentError) {
+      // FIX: Log warning instead of silent fallback for visibility
+      logger.warn('[OLLAMA] Failed to create HTTP agent, using default client', {
+        error: agentError.message,
+        host: ollamaHost
+      });
       ollamaInstance = new Ollama({ host: ollamaHost });
     }
     // MEDIUM PRIORITY FIX (MED-13): Remember the host used for this instance
@@ -140,41 +145,98 @@ function getOllamaHost() {
   return ollamaHost;
 }
 
-async function setOllamaHost(host, shouldSave = true) {
+/**
+ * Set the Ollama host with optional connection validation
+ * FIX: Validates connection BEFORE persisting settings to prevent invalid host from being saved
+ *
+ * @param {string} host - The new host URL
+ * @param {boolean} [shouldSave=true] - Whether to persist to settings
+ * @param {Object} [options={}] - Additional options
+ * @param {boolean} [options.skipValidation=false] - Skip connection test (for backward compat)
+ * @param {number} [options.validationTimeout=10000] - Timeout for connection test
+ * @returns {Promise<{success: boolean, error?: string, host?: string}>}
+ */
+async function setOllamaHost(host, shouldSave = true, options = {}) {
+  const { skipValidation = false, validationTimeout = 10000 } = options;
+  const previousHost = ollamaHost;
+
   try {
-    if (typeof host === 'string' && host.trim()) {
-      const normalizedHost = normalizeOllamaUrl(host);
-
-      ollamaHost = normalizedHost;
-      // Recreate client with new host
-      try {
-        const http = require('http');
-        const https = require('https');
-        const isHttps = ollamaHost.startsWith('https://');
-        destroyCurrentAgent(); // FIX: Destroy old agent to prevent socket leaks
-        currentHttpAgent = isHttps
-          ? new https.Agent({ keepAlive: true, maxSockets: 10 })
-          : new http.Agent({ keepAlive: true, maxSockets: 10 });
-        ollamaInstance = new Ollama({
-          host: ollamaHost,
-          fetch: (url, opts = {}) => {
-            return (global.fetch || require('node-fetch'))(url, {
-              agent: currentHttpAgent,
-              ...opts
-            });
-          }
-        });
-      } catch {
-        ollamaInstance = new Ollama({ host: ollamaHost });
-      }
-      // Track the host used to create the instance to avoid redundant recreation
-      ollamaInstanceHost = ollamaHost;
-
-      if (shouldSave) await getSettings().save({ ollamaHost });
-      logger.info(`[OLLAMA] Host set to: ${ollamaHost}`);
+    if (typeof host !== 'string' || !host.trim()) {
+      return { success: false, error: 'Invalid host format' };
     }
+
+    const normalizedHost = normalizeOllamaUrl(host);
+
+    // FIX: Validate connection BEFORE committing change (unless skipValidation)
+    if (!skipValidation) {
+      try {
+        // Create temporary client to test connection
+        const testOllama = new Ollama({ host: normalizedHost });
+        const testPromise = testOllama.list();
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Connection test timeout')), validationTimeout)
+        );
+
+        await Promise.race([testPromise, timeoutPromise]);
+        logger.info('[OLLAMA] Connection validated for host:', normalizedHost);
+      } catch (validationError) {
+        logger.warn('[OLLAMA] Connection validation failed for host:', normalizedHost, {
+          error: validationError.message
+        });
+        return {
+          success: false,
+          error: `Connection test failed: ${validationError.message}`,
+          host: normalizedHost
+        };
+      }
+    }
+
+    // Connection validated (or skipped), now commit the change
+    ollamaHost = normalizedHost;
+
+    // Recreate client with new host
+    try {
+      const http = require('http');
+      const https = require('https');
+      const isHttps = ollamaHost.startsWith('https://');
+      destroyCurrentAgent(); // FIX: Destroy old agent to prevent socket leaks
+      currentHttpAgent = isHttps
+        ? new https.Agent({ keepAlive: true, maxSockets: 10 })
+        : new http.Agent({ keepAlive: true, maxSockets: 10 });
+      ollamaInstance = new Ollama({
+        host: ollamaHost,
+        fetch: (url, opts = {}) => {
+          return (global.fetch || require('node-fetch'))(url, {
+            agent: currentHttpAgent,
+            ...opts
+          });
+        }
+      });
+    } catch (agentError) {
+      // FIX: Log warning instead of silent fallback
+      logger.warn('[OLLAMA] Failed to create HTTP agent in setOllamaHost, using default client', {
+        error: agentError.message,
+        host: ollamaHost
+      });
+      ollamaInstance = new Ollama({ host: ollamaHost });
+    }
+
+    // Track the host used to create the instance to avoid redundant recreation
+    ollamaInstanceHost = ollamaHost;
+
+    // Only save AFTER successful validation and client creation
+    if (shouldSave) await getSettings().save({ ollamaHost });
+    logger.info(`[OLLAMA] Host set to: ${ollamaHost}`);
+
+    return { success: true, host: ollamaHost };
   } catch (error) {
-    logger.error('[OLLAMA] Error setting host', { error });
+    // Rollback on unexpected error
+    ollamaHost = previousHost;
+    logger.error('[OLLAMA] Error setting host, rolled back to previous', {
+      error: error.message,
+      previousHost
+    });
+    return { success: false, error: error.message };
   }
 }
 
@@ -221,7 +283,15 @@ async function loadOllamaConfig(applySideEffects = true) {
                 });
               }
             });
-          } catch {
+          } catch (agentError) {
+            // FIX: Log warning instead of silent fallback
+            logger.warn(
+              '[OLLAMA] Failed to create HTTP agent in loadOllamaConfig, using default client',
+              {
+                error: agentError.message,
+                host: ollamaHost
+              }
+            );
             ollamaInstance = new Ollama({ host: ollamaHost });
           }
           ollamaInstanceHost = ollamaHost;
