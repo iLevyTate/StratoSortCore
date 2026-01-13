@@ -67,13 +67,31 @@ class SettingsService {
     // Start file watching
     this._startFileWatcher();
     this._migrationChecked = false;
+    // FIX 1.4: Track migration attempts to prevent infinite retries
+    this._migrationAttempts = 0;
+    this._maxMigrationAttempts = 3;
   }
 
   async load() {
     // Perform migration once per session before first load
-    if (!this._migrationChecked) {
-      await this.migrateLegacyConfig();
-      this._migrationChecked = true;
+    // FIX 1.4: Limit migration retries to prevent disk thrashing
+    if (!this._migrationChecked && this._migrationAttempts < this._maxMigrationAttempts) {
+      try {
+        await this.migrateLegacyConfig();
+        this._migrationChecked = true; // Only mark checked after successful completion
+      } catch (err) {
+        this._migrationAttempts++;
+        logger.error(
+          `[SettingsService] Migration attempt ${this._migrationAttempts}/${this._maxMigrationAttempts} failed:`,
+          err.message
+        );
+        if (this._migrationAttempts >= this._maxMigrationAttempts) {
+          this._migrationChecked = true; // Give up after max attempts
+          logger.error(
+            '[SettingsService] Migration permanently failed after max attempts - continuing with current settings'
+          );
+        }
+      }
     }
     return this._loadRaw();
   }
@@ -85,7 +103,26 @@ class SettingsService {
         return this._cache;
       }
       const raw = await fs.readFile(this.settingsPath, 'utf-8');
-      const parsed = JSON.parse(raw);
+
+      // FIX 1.3: Separate JSON parse error handling for better diagnostics
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseError) {
+        // Specific handling for JSON syntax errors
+        logger.error('[SettingsService] Settings file contains invalid JSON:', {
+          error: parseError.message,
+          position: parseError.message.match(/position (\d+)/)?.[1] || 'unknown'
+        });
+        // Mark error as JSON corruption for recovery logic
+        const jsonError = new Error(
+          `Settings file corrupted (invalid JSON): ${parseError.message}`
+        );
+        jsonError.code = 'JSON_PARSE_ERROR';
+        jsonError.originalError = parseError;
+        throw jsonError;
+      }
+
       const merged = { ...this.defaults, ...parsed };
       const sanitized = sanitizeSettings(merged);
       this._cache = sanitized;
@@ -94,8 +131,10 @@ class SettingsService {
     } catch (err) {
       // FIX: Attempt auto-recovery from backup if settings file is corrupted
       if (err && !isNotFoundError(err)) {
+        // FIX 1.3: More descriptive logging based on error type
+        const errorType = err.code === 'JSON_PARSE_ERROR' ? 'corrupted' : 'unreadable';
         logger.warn(
-          `[SettingsService] Failed to read settings: ${err.message}, attempting recovery from backup`
+          `[SettingsService] Settings file ${errorType}: ${err.message}, attempting recovery from backup`
         );
         const recovered = await this._attemptAutoRecovery();
         if (recovered) {
@@ -126,8 +165,18 @@ class SettingsService {
         return null;
       }
 
+      // FIX 1.1: Limit recovery attempts to prevent slow startup with many corrupted backups
+      const MAX_RECOVERY_ATTEMPTS = 5;
+      const backupsToTry = backups.slice(0, MAX_RECOVERY_ATTEMPTS);
+
+      if (backups.length > MAX_RECOVERY_ATTEMPTS) {
+        logger.info(
+          `[SettingsService] Limiting recovery to ${MAX_RECOVERY_ATTEMPTS} most recent backups (${backups.length} available)`
+        );
+      }
+
       // Try backups in order (most recent first)
-      for (const backup of backups) {
+      for (const backup of backupsToTry) {
         try {
           logger.info(`[SettingsService] Attempting recovery from backup: ${backup.filename}`);
           const result = await this._backupService.restoreBackup(backup.filename);
@@ -301,18 +350,20 @@ class SettingsService {
         });
       }
 
-      // Sanitize settings to remove any invalid values
-      const sanitized = sanitizeSettings({
-        ...settings,
-        confidenceThreshold: coerceConfidence(
-          settings?.confidenceThreshold,
-          DEFAULT_SETTINGS.confidenceThreshold
-        )
-      });
+      // FIX 1.2: Sanitize settings first, then apply single coercion after merge
+      // Previously coerced twice (before and after merge) - now only after merge
+      const sanitized = sanitizeSettings(settings);
+
+      // FIX Issue 1.3: Force fresh read from disk - bypass cache during critical save
+      // This prevents stale cache from causing data loss when external changes occurred
+      this._cache = null;
+      this._cacheTimestamp = 0;
 
       // Load current settings first to avoid data loss on partial updates
       // This is now safe because we're inside the mutex
-      const current = await this.load();
+      const current = await this._loadRaw();
+
+      // FIX 1.2: Single coercion point after merge - ensures final value is valid
       const merged = {
         ...current,
         ...sanitized,
@@ -375,12 +426,23 @@ class SettingsService {
       // Now safe to save settings
       // Set flag to ignore our own file change
       this._isInternalChange = true;
+
+      // FIX: Store previous cache state for atomic rollback on failure
+      const previousCache = this._cache;
+      const previousTimestamp = this._cacheTimestamp;
+
       try {
         await fs.mkdir(path.dirname(this.settingsPath), { recursive: true });
 
+        // FIX: Update cache BEFORE disk write for atomic behavior
+        // If disk write fails, we rollback to previous state
+        this._cache = merged;
+        this._cacheTimestamp = Date.now();
+
         // Bug #42: Retry logic for file lock handling with exponential backoff
-        const maxSaveRetries = 3;
-        const baseSaveDelay = 100; // Start with 100ms
+        // FIX: Increased retry count and delay for Windows antivirus/indexing
+        const maxSaveRetries = 5; // Was 3
+        const baseSaveDelay = 200; // Was 100ms - Total window: 200+400+800+1600=3000ms
 
         for (let attempt = 0; attempt < maxSaveRetries; attempt++) {
           try {
@@ -392,11 +454,7 @@ class SettingsService {
               throw new Error((result && result.error) || 'Failed to save settings');
             }
 
-            // Invalidate and update cache immediately
-            this._cache = merged;
-            this._cacheTimestamp = Date.now();
-
-            // Success - exit retry loop
+            // Success - exit retry loop (cache already updated)
             break;
           } catch (saveError) {
             // Bug #42: Check for file lock errors (EBUSY, EPERM, EACCES)
@@ -413,16 +471,30 @@ class SettingsService {
               );
               await new Promise((resolve) => setTimeout(resolve, delay));
             } else if (attempt === maxSaveRetries - 1) {
-              // Last attempt failed
+              // FIX: Rollback cache on complete failure before throwing
+              this._cache = previousCache;
+              this._cacheTimestamp = previousTimestamp;
+              logger.error('[SettingsService] Save failed, rolled back cache to previous state');
               throw new Error(
                 `Failed to save settings after ${maxSaveRetries} attempts due to file lock: ${saveError.message}`
               );
             } else {
-              // Non-lock error, fail immediately
+              // FIX: Rollback cache on non-lock error before throwing
+              this._cache = previousCache;
+              this._cacheTimestamp = previousTimestamp;
+              logger.error('[SettingsService] Save failed with non-lock error, rolled back cache');
               throw saveError;
             }
           }
         }
+      } catch (err) {
+        // FIX: Rollback cache on any outer error (e.g., mkdir failure)
+        this._cache = previousCache;
+        this._cacheTimestamp = previousTimestamp;
+        logger.error(
+          '[SettingsService] Save operation failed, rolled back cache to previous state'
+        );
+        throw err;
       } finally {
         // Reset flag after a short delay to allow file system to settle
         // FIX: Track timer for cleanup during shutdown
@@ -564,6 +636,31 @@ class SettingsService {
     this._cacheTimestamp = 0;
   }
 
+  /**
+   * Synchronously get a setting value from cache
+   * Returns the cached value, or the default if cache is empty
+   * @param {string} key - The setting key to retrieve
+   * @returns {*} The setting value or default
+   */
+  get(key) {
+    if (this._cache && key in this._cache) {
+      return this._cache[key];
+    }
+    return this.defaults[key];
+  }
+
+  /**
+   * Synchronously get all cached settings
+   * Returns cached settings merged with defaults, or just defaults if cache is empty
+   * @returns {Object} The current settings
+   */
+  getAll() {
+    if (this._cache) {
+      return { ...this._cache };
+    }
+    return { ...this.defaults };
+  }
+
   // Force reload from disk, bypassing cache
   async reload() {
     this.invalidateCache();
@@ -594,6 +691,21 @@ class SettingsService {
    * @returns {Promise<{success: boolean, settings?: Object, error?: string}>}
    */
   async restoreFromBackup(backupPath) {
+    // FIX: Validate input before calling path.resolve to avoid TypeError
+    if (!backupPath || typeof backupPath !== 'string') {
+      return { success: false, error: 'Invalid backup path provided' };
+    }
+
+    // SECURITY FIX: Validate backup path is within backup directory to prevent path traversal
+    const normalizedPath = path.normalize(path.resolve(backupPath));
+    const normalizedBackupDir = path.normalize(path.resolve(this.backupDir));
+    if (
+      !normalizedPath.startsWith(normalizedBackupDir + path.sep) &&
+      normalizedPath !== normalizedBackupDir
+    ) {
+      throw new Error('Backup path is outside backup directory - potential path traversal attack');
+    }
+
     // Use mutex to prevent race conditions during restore
     return this._withMutex(async () => {
       const result = await this._backupService.restoreFromBackup(backupPath, async (merged) => {
@@ -670,11 +782,16 @@ class SettingsService {
         logger.error('[SettingsService] File watcher error', {
           error: error.message
         });
-        // CRITICAL FIX: Check restart limit before attempting to restart
-        // FIX: Clear any existing restart timer to prevent unbounded timers
+
+        // FIX Issue 1.6: Clear ALL pending timers before restart to prevent stale callbacks
+        if (this._debounceTimer) {
+          clearTimeout(this._debounceTimer);
+          this._debounceTimer = null;
+        }
         if (this._restartTimer) {
           clearTimeout(this._restartTimer);
         }
+
         // Attempt to restart watcher after a delay
         this._restartTimer = setTimeout(() => {
           this._restartTimer = null;

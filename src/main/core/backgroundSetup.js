@@ -87,25 +87,6 @@ async function markSetupComplete() {
 }
 
 /**
- * Clean up installer marker if it exists
- */
-async function cleanupInstallerMarker() {
-  const installerMarker = path.join(app.getPath('exe'), '..', 'first-run.marker');
-
-  try {
-    await fs.access(installerMarker);
-    try {
-      await fs.unlink(installerMarker);
-      logger.debug('[BACKGROUND] Removed installer marker');
-    } catch (e) {
-      logger.debug('[BACKGROUND] Could not remove installer marker:', e.message);
-    }
-  } catch {
-    // Installer marker doesn't exist, no action needed
-  }
-}
-
-/**
  * Run Ollama setup check and install models if needed
  */
 function normalizeOllamaModelName(name) {
@@ -257,8 +238,6 @@ async function runBackgroundSetup() {
 
     if (isFirstRun) {
       logger.info('[BACKGROUND] First run detected - will run automated dependency setup');
-
-      await cleanupInstallerMarker();
 
       try {
         await runAutomatedDependencySetup();

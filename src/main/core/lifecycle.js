@@ -138,10 +138,11 @@ async function handleBeforeQuit() {
 
   // HIGH PRIORITY FIX (HIGH-2): Add hard timeout for all cleanup operations
   // Prevents hanging on shutdown and ensures app quits even if cleanup fails
-  const CLEANUP_TIMEOUT = 5000; // 5 seconds max for all cleanup
+  // FIX: Increased from 5s to 12s - ChromaDB graceful shutdown needs 5s, plus services need 5s, plus 2s buffer
+  const CLEANUP_TIMEOUT = 12000; // 12 seconds max for all cleanup
   const cleanupStartTime = Date.now();
 
-  logger.info('[SHUTDOWN] Starting cleanup with 5-second timeout...');
+  logger.info('[SHUTDOWN] Starting cleanup with 12-second timeout...');
 
   // Wrap ALL cleanup in a timeout promise
   const cleanupPromise = (async () => {
@@ -296,14 +297,21 @@ async function handleBeforeQuit() {
     }
 
     // Fixed: Clean up settings service file watcher
+    // FIX: Await shutdown - settingsService.shutdown() is async and closes file watchers
     const settingsService = lifecycleConfig.getSettingsService?.();
     if (settingsService) {
       try {
-        settingsService.shutdown?.();
+        await settingsService.shutdown?.();
         logger.info('[CLEANUP] Settings service shut down');
       } catch (error) {
         logger.error('[CLEANUP] Failed to shut down settings service:', error);
       }
+    } else {
+      // FIX 2.5: Warn when settings service wasn't available for shutdown
+      // This helps identify initialization failures that could leak file watchers
+      logger.warn(
+        '[CLEANUP] Settings service not available for shutdown - may indicate initialization failure'
+      );
     }
 
     // Clean up system analytics
@@ -313,15 +321,7 @@ async function handleBeforeQuit() {
     } catch {
       // Silently ignore destroy errors on quit
     }
-
-    // Post-shutdown verification: Verify all resources are released
-    const shutdownTimeout = 10000; // 10 seconds max for shutdown
-
-    try {
-      await withTimeout(verifyShutdownCleanup(), shutdownTimeout, 'Shutdown verification');
-    } catch (error) {
-      logger.warn('[SHUTDOWN-VERIFY] Verification failed or timed out:', error.message);
-    }
+    // FIX: Verification moved outside cleanup promise to avoid nested timeout issues
   })(); // Close cleanup promise wrapper
 
   // Race cleanup against timeout
@@ -339,6 +339,14 @@ async function handleBeforeQuit() {
     } else {
       logger.error(`[SHUTDOWN] Cleanup failed after ${elapsed}ms:`, error.message);
     }
+  }
+
+  // FIX: Post-shutdown verification runs AFTER cleanup completes (not nested inside)
+  // This avoids the previous issue where 10s verification was nested inside 12s cleanup timeout
+  try {
+    await verifyShutdownCleanup();
+  } catch (verifyError) {
+    logger.warn('[SHUTDOWN-VERIFY] Verification failed:', verifyError.message);
   }
 }
 
@@ -487,6 +495,17 @@ function getUnhandledErrorCounts() {
 function registerLifecycleHandlers(createWindow) {
   // Register before-quit handler
   app.on('before-quit', handleBeforeQuit);
+
+  // FIX: Add will-quit handler for final cleanup opportunity and forced exit detection
+  // will-quit fires after all windows closed, app WILL quit after this (no preventDefault)
+  app.on('will-quit', () => {
+    logger.info('[SHUTDOWN] will-quit event - app will terminate');
+  });
+
+  // FIX: Add quit handler to log exit code (useful for debugging forced exits)
+  app.on('quit', (event, exitCode) => {
+    logger.info(`[SHUTDOWN] App quit with exit code: ${exitCode}`);
+  });
 
   // Register window-all-closed handler
   app.on('window-all-closed', handleWindowAllClosed);

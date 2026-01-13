@@ -19,7 +19,9 @@ const registry = {
   /** Channels registered via ipcMain.handle() */
   handlers: new Set(),
   /** Channels registered via ipcMain.on() */
-  listeners: new Map() // channel -> Set of listener functions
+  listeners: new Map(), // channel -> Set of wrapped listener functions
+  /** FIX: Maps original listener to wrapped listener for removeListener lookup */
+  listenerWrappers: new WeakMap() // original -> wrapped
 };
 
 /**
@@ -108,12 +110,23 @@ function registerListener(ipcMain, channel, listener) {
     throw new Error('Listener must be a function');
   }
 
-  ipcMain.on(channel, listener);
+  // FIX: Wrap listener with shutdown gate like handlers to prevent access to destroyed services
+  const wrappedListener = (event, ...args) => {
+    if (_isShuttingDown) {
+      logger.debug(`[REGISTRY] Ignoring IPC listener during shutdown: ${channel}`);
+      return;
+    }
+    return listener(event, ...args);
+  };
+
+  ipcMain.on(channel, wrappedListener);
 
   if (!registry.listeners.has(channel)) {
     registry.listeners.set(channel, new Set());
   }
-  registry.listeners.get(channel).add(listener);
+  registry.listeners.get(channel).add(wrappedListener);
+  // FIX: Store mapping from original to wrapped for removeListener lookup
+  registry.listenerWrappers.set(listener, wrappedListener);
   logger.debug(`[REGISTRY] Listener registered: ${channel}`);
 }
 
@@ -145,18 +158,23 @@ function removeHandler(ipcMain, channel) {
  *
  * @param {Object} ipcMain - Electron ipcMain
  * @param {string} channel - Channel name
- * @param {Function} listener - Listener function to remove
+ * @param {Function} listener - Listener function to remove (original, not wrapped)
  * @returns {boolean} True if listener was removed
  */
 function removeListener(ipcMain, channel, listener) {
   const channelListeners = registry.listeners.get(channel);
-  if (!channelListeners || !channelListeners.has(listener)) {
+  // FIX: Look up the wrapped listener from the original
+  const wrappedListener = registry.listenerWrappers.get(listener);
+
+  if (!channelListeners || !wrappedListener || !channelListeners.has(wrappedListener)) {
     return false;
   }
 
   try {
-    ipcMain.removeListener(channel, listener);
-    channelListeners.delete(listener);
+    ipcMain.removeListener(channel, wrappedListener);
+    channelListeners.delete(wrappedListener);
+    // FIX: Clean up the wrapper mapping
+    registry.listenerWrappers.delete(listener);
 
     // Clean up empty channel entry
     if (channelListeners.size === 0) {

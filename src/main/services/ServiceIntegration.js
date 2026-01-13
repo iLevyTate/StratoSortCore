@@ -552,6 +552,19 @@ class ServiceIntegration {
    * @returns {Promise<void>}
    */
   async shutdown() {
+    // FIX: Wait for any in-progress initialization to complete before shutting down
+    // This prevents race conditions where shutdown runs concurrently with init
+    if (this._initPromise) {
+      logger.debug(
+        '[ServiceIntegration] Waiting for initialization to complete before shutdown...'
+      );
+      try {
+        await this._initPromise;
+      } catch {
+        // Ignore init errors - we're shutting down anyway
+      }
+    }
+
     if (!this.initialized) return;
 
     try {

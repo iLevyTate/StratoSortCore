@@ -29,17 +29,32 @@ const {
  * @param {object} context - Context containing service setters and logger
  * @returns {Promise<void>}
  */
-async function applySettingsToServices(
-  merged,
-  { setOllamaHost, setOllamaModel, setOllamaVisionModel, setOllamaEmbeddingModel, logger }
-) {
-  // FIX: Pass false to skip saving to settings file, as we are already in a save operation
-  if (merged.ollamaHost) await setOllamaHost(merged.ollamaHost, false);
-  if (merged.textModel) await setOllamaModel(merged.textModel, false);
-  if (merged.visionModel) await setOllamaVisionModel(merged.visionModel, false);
-  if (merged.embeddingModel && typeof setOllamaEmbeddingModel === 'function') {
-    await setOllamaEmbeddingModel(merged.embeddingModel, false);
+async function applySettingsToServices(merged, { logger }) {
+  // FIX: Use OllamaService.updateConfig() to ensure model change events fire properly
+  // This is critical for embedding model changes - FolderMatchingService needs to be notified
+  // to clear its cache and reset ChromaDB when the embedding model changes
+  const OllamaService = require('../services/OllamaService');
+  const ollamaService = OllamaService.getInstance();
+
+  // Build config object with all model settings
+  const ollamaConfig = {};
+  if (merged.ollamaHost) ollamaConfig.host = merged.ollamaHost;
+  if (merged.textModel) ollamaConfig.textModel = merged.textModel;
+  if (merged.visionModel) ollamaConfig.visionModel = merged.visionModel;
+  if (merged.embeddingModel) ollamaConfig.embeddingModel = merged.embeddingModel;
+
+  // Apply all Ollama config changes through OllamaService to trigger proper notifications
+  // skipSave: true because we're already in a save operation (settings are saved by the caller)
+  if (Object.keys(ollamaConfig).length > 0) {
+    const result = await ollamaService.updateConfig(ollamaConfig, { skipSave: true });
+    if (result.modelDowngraded) {
+      logger.warn('[SETTINGS] Embedding model was downgraded to default due to invalid selection');
+    }
+    if (!result.success) {
+      logger.error('[SETTINGS] Failed to apply Ollama config:', result.error);
+    }
   }
+
   if (typeof merged.launchOnStartup === 'boolean') {
     try {
       app.setLoginItemSettings({
@@ -298,10 +313,10 @@ function validateImportedSettings(settings, logger) {
 async function handleSettingsSaveCore(settings, deps) {
   const {
     settingsService,
-    setOllamaHost,
-    setOllamaModel,
-    setOllamaVisionModel,
-    setOllamaEmbeddingModel,
+    setOllamaHost: _setOllamaHost,
+    setOllamaModel: _setOllamaModel,
+    setOllamaVisionModel: _setOllamaVisionModel,
+    setOllamaEmbeddingModel: _setOllamaEmbeddingModel,
     onSettingsChanged,
     logger
   } = deps;
@@ -313,13 +328,7 @@ async function handleSettingsSaveCore(settings, deps) {
     const merged = saveResult.settings || saveResult; // Backward compatibility
     const validationWarnings = saveResult.validationWarnings || [];
 
-    await applySettingsToServices(merged, {
-      setOllamaHost,
-      setOllamaModel,
-      setOllamaVisionModel,
-      setOllamaEmbeddingModel,
-      logger
-    });
+    await applySettingsToServices(merged, { logger });
     logger.info('[SETTINGS] Saved settings');
 
     // Invalidate notification service cache to ensure new settings take effect immediately
@@ -449,6 +458,14 @@ function registerSettingsIpc(servicesOrParams) {
     withErrorLogging(logger, async (event, exportPath) => {
       void event;
       try {
+        // SECURITY: Ignore exportPath from renderer - always use dialog
+        // This prevents path traversal attacks from compromised renderer
+        if (exportPath) {
+          logger.warn(
+            '[SETTINGS] Export path provided via IPC is ignored for security. Using dialog instead.'
+          );
+        }
+
         const settings = await settingsService.load();
 
         // Create export data with metadata
@@ -459,28 +476,27 @@ function registerSettingsIpc(servicesOrParams) {
           settings
         };
 
-        // If no path provided, show save dialog
-        let filePath = exportPath;
-        if (!filePath) {
-          const result = await dialog.showSaveDialog({
-            title: 'Export Settings',
-            defaultPath: `stratosort-config-${new Date().toISOString().split('T')[0]}.json`,
-            filters: [
-              { name: 'JSON Files', extensions: ['json'] },
-              { name: 'All Files', extensions: ['*'] }
-            ]
-          });
+        // Always show save dialog for security
+        const result = await dialog.showSaveDialog({
+          title: 'Export Settings',
+          defaultPath: `stratosort-config-${new Date().toISOString().split('T')[0]}.json`,
+          filters: [
+            { name: 'JSON Files', extensions: ['json'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        });
 
-          if (result.canceled) {
-            return canceledResponse();
-          }
-
-          filePath = result.filePath;
+        if (result.canceled) {
+          return canceledResponse();
         }
+
+        const filePath = result.filePath;
 
         // Serialize export data with proper error handling
         let jsonContent;
         try {
+          // FIX: Yield to event loop before heavy serialization to prevent UI blocking
+          await new Promise((resolve) => setImmediate(resolve));
           jsonContent = JSON.stringify(exportData, null, 2);
         } catch (serializeError) {
           logger.error('[SETTINGS] Failed to serialize export data:', serializeError);
@@ -586,13 +602,7 @@ function registerSettingsIpc(servicesOrParams) {
         const validationWarnings = saveResult.validationWarnings || [];
 
         // Apply settings using shared helper
-        await applySettingsToServices(merged, {
-          setOllamaHost,
-          setOllamaModel,
-          setOllamaVisionModel,
-          setOllamaEmbeddingModel,
-          logger
-        });
+        await applySettingsToServices(merged, { logger });
 
         // Notify settings changed
         if (typeof onSettingsChanged === 'function') {
@@ -658,19 +668,18 @@ function registerSettingsIpc(servicesOrParams) {
     withErrorLogging(logger, async (event, backupPath) => {
       void event;
       try {
+        // Validate backupPath parameter
+        if (!backupPath || typeof backupPath !== 'string') {
+          return errorResponse('Invalid backup path: must be a non-empty string');
+        }
+
         const result = await settingsService.restoreFromBackup(backupPath);
 
         if (result.success) {
           // Apply restored settings using shared helper
           const merged = result.settings;
 
-          await applySettingsToServices(merged, {
-            setOllamaHost,
-            setOllamaModel,
-            setOllamaVisionModel,
-            setOllamaEmbeddingModel,
-            logger
-          });
+          await applySettingsToServices(merged, { logger });
 
           // Notify settings changed
           if (typeof onSettingsChanged === 'function') {
@@ -700,6 +709,11 @@ function registerSettingsIpc(servicesOrParams) {
     withErrorLogging(logger, async (event, backupPath) => {
       void event;
       try {
+        // Validate backupPath parameter
+        if (!backupPath || typeof backupPath !== 'string') {
+          return errorResponse('Invalid backup path: must be a non-empty string');
+        }
+
         const result = await settingsService.deleteBackup(backupPath);
         if (result.success) {
           logger.info('[SETTINGS] Deleted backup:', backupPath);
