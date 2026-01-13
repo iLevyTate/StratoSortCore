@@ -424,9 +424,11 @@ those involving:
 
 ### Verification Documents
 
-- **[Manual Test Plan](MANUAL_TEST_PLAN.md)**: Comprehensive step-by-step validation of all
-  features.
-- **[Fix Verification Checklist](FIX_VERIFICATION_CHECKLIST.md)**: Targeted checklist for verifying
-  specific bug fixes and new features.
+- **[Regression Test Plan](../REGRESSION_TEST_PLAN.md)**: Complete test case specifications for
+  regression testing.
+- **[Manual Testing Guide (Beginner)](CONTRIBUTING_TESTING_BEGINNER.md)**: Step-by-step testing
+  instructions for beginners.
+- **[Manual Testing Guide (Advanced)](CONTRIBUTING_TESTING_ADVANCED.md)**: Streamlined testing guide
+  for experienced users.
 
 These documents should be executed before any major release candidate.

@@ -16,6 +16,7 @@ concepts.
 5.  [Resilience Engineering View](#5-resilience-engineering-view) (The Safety Nets)
 6.  [Security View](#6-security-view) (The Shields)
 7.  [Glossary of Terms](#7-glossary-of-terms)
+8.  [Code Examples](#8-code-examples)
 
 ---
 
@@ -214,18 +215,330 @@ How does the software handle failure? (This distinguishes "scripts" from "system
 
 ## 7. Glossary of Terms
 
-- **IPC:** Inter-Process Communication. The phone line between backend and frontend.
-- **Singleton:** A class with only one instance (e.g., Database Connection).
-- **Context Isolation:** Security feature separating the website from the computer internals.
-- **Embedding:** A list of numbers representing the meaning of text.
-- **Vector DB:** A database optimized for searching embeddings (similarity search).
-- **Circuit Breaker:** A pattern to stop cascading failures when a service is down.
-- **RAG:** Retrieval Augmented Generation. AI that looks up info before answering.
-- **Ollama:** The local server that runs the AI models.
-- **Daemon:** A background process (like ChromaDB or Ollama) that runs independently of the main
-  app.
-- **State (Redux):** The snapshot of data at any given moment in time.
-- **Memoization:** Caching the result of a function so you don't have to calculate it again.
+### General Software Engineering
+
+- **Async/Await:** Modern JavaScript syntax for handling operations that take time (like reading a
+  file or querying a database) without freezing the application. Used extensively in the Main
+  Process (e.g., `await fs.readFile()`).
+
+- **Dependency Injection (DI):** A design pattern where a class receives its dependencies from the
+  outside rather than creating them itself. Our `ServiceContainer` injects services like
+  `ChromaDBService` into `FolderMatchingService`, making testing easier.
+
+- **Memoization:** An optimization technique where the result of a function is cached. If the
+  function is called again with the same inputs, the cached result is returned instantly. Used in
+  React (`React.memo`) and backend (`FileAnalysisService` caches results).
+
+- **Singleton:** A pattern ensuring a class has only one instance. Used for `OllamaClient` (one AI
+  connection) and `SettingsService` (one source of truth).
+
+- **Circuit Breaker:** A resilience pattern that detects failures and prevents cascading errors. If
+  ChromaDB fails repeatedly, the breaker "trips" and stops requests for a recovery period.
+
+### Electron & Architecture
+
+- **Main Process:** The entry point of an Electron app running in Node.js with full OS access.
+  Handles file I/O, spawning processes, managing windows, and IPC events.
+
+- **Renderer Process:** The web page displayed in the application window running Chromium.
+  Responsible for UI (React), user interactions, and local state (Redux). Sandboxed for security.
+
+- **IPC (Inter-Process Communication):** The communication mechanism between Main and Renderer
+  processes using named channels (e.g., `files:analyze`). Methods include `invoke` (request/reply)
+  and `send` (fire and forget).
+
+- **Preload Script:** A script that runs before the web page loads with access to both Node.js APIs
+  and the DOM. Creates a secure bridge (`contextBridge`) to expose safe methods to the Renderer.
+
+- **Context Bridge:** An Electron API that isolates the Renderer from the Main process context,
+  preventing security attacks. We expose `window.electronAPI` via the Context Bridge.
+
+### AI & Data Science
+
+- **LLM (Large Language Model):** An AI model trained on vast amounts of text to understand and
+  generate human language. We use models like `llama3` via Ollama.
+
+- **Inference:** Running live data through a trained AI model to get a prediction. When you click
+  "Analyze", the app performs local inference on your GPU.
+
+- **Embedding (Vector):** A representation of text as a list of numbers (e.g., `[0.1, -0.5, ...]`).
+  Similar concepts have mathematically similar vectors, enabling semantic search.
+
+- **RAG (Retrieval-Augmented Generation):** A technique where an AI is given relevant external data
+  (retrieved from a database) to help it answer accurately. We retrieve similar folders from
+  ChromaDB, then ask the AI where a file belongs.
+
+- **Cosine Similarity:** A metric measuring how similar two vectors are. Used by ChromaDB to rank
+  folder matches.
+
+- **Ollama:** A tool for running open-source LLMs locally. Acts as our local AI server at
+  `localhost:11434`.
+
+### Frontend & UI (React/Redux)
+
+- **Component:** A reusable, self-contained piece of UI code (e.g., `Button.jsx`, `FileList.jsx`).
+
+- **Hook:** A special React function (starting with `use`) that lets you access React features like
+  state. Examples: `useState`, `useEffect`, `useSelector`.
+
+- **Redux Store:** A centralized container for the entire application's state. Holds files,
+  settings, and analysis status.
+
+- **Slice:** A portion of the Redux store dedicated to a specific feature (e.g., `filesSlice`,
+  `uiSlice`).
+
+- **Tailwind CSS:** A utility-first CSS framework using pre-defined classes like `flex`, `p-4`,
+  `text-red-500`.
+
+### Project-Specific
+
+- **Smart Folder:** A folder configuration that includes a Vector Embedding, acting as a "magnet"
+  for semantically similar files.
+
+- **ServiceContainer:** Our custom Dependency Injection system in
+  `src/main/services/ServiceContainer.js` managing service lifecycle.
+
+- **ChromaDBService:** The service wrapper for the ChromaDB vector database, handling Circuit
+  Breaker logic and health checks.
+
+- **File Signature:** A unique string (`path + size + lastModifiedTime`) used as a cache key to
+  detect file changes.
+
+- **Zod Schema:** A data validation definition ensuring IPC data is correct before use.
+
+### Infrastructure & Tools
+
+- **Webpack:** A module bundler that takes JS, CSS, and images and bundles them into optimized
+  files.
+
+- **Jest:** JavaScript testing framework for unit tests.
+
+- **Playwright:** End-to-end testing tool that launches the app and simulates user interactions.
+
+- **ESLint / Prettier:** Code quality tools. ESLint finds bugs; Prettier formats code consistently.
+
+---
+
+## 8. Code Examples
+
+This section provides concrete code snippets for common patterns in the codebase.
+
+### 8.1 Backend Services (Main Process)
+
+#### Defining a Service
+
+```javascript
+// src/main/services/MyNewService.js
+const { logger } = require('../../shared/logger');
+
+class MyNewService {
+  constructor(dependencyA, dependencyB) {
+    this.depA = dependencyA;
+    this.depB = dependencyB;
+    this.initialized = false;
+  }
+
+  async initialize() {
+    if (this.initialized) return;
+    logger.info('[MyNewService] Initializing...');
+    // ... setup logic ...
+    this.initialized = true;
+  }
+
+  doSomething(data) {
+    if (!this.initialized) throw new Error('Service not initialized');
+    return this.depA.process(data);
+  }
+}
+
+module.exports = MyNewService;
+```
+
+#### Registering with ServiceContainer
+
+```javascript
+// src/main/services/ServiceIntegration.js
+const { container, ServiceIds } = require('./ServiceContainer');
+const MyNewService = require('./MyNewService');
+
+// Inside _registerCoreServices():
+if (!container.has('myNewService')) {
+  container.registerSingleton('myNewService', (c) => {
+    const depA = c.resolve(ServiceIds.CHROMA_DB);
+    const depB = c.resolve(ServiceIds.SETTINGS);
+    return new MyNewService(depA, depB);
+  });
+}
+```
+
+#### Accessing a Service
+
+```javascript
+const { container, ServiceIds } = require('./ServiceContainer');
+
+// Standard Resolution (throws if missing)
+const myService = container.resolve('myNewService');
+
+// Safe Resolution (returns null if missing)
+const maybeService = container.tryResolve('myNewService');
+if (maybeService) {
+  maybeService.doSomething();
+}
+```
+
+### 8.2 IPC (Inter-Process Communication)
+
+#### Creating a Handler (Backend)
+
+```javascript
+// src/main/ipc/myFeature.js
+const { createHandler } = require('./ipcWrappers');
+
+function registerMyFeatureIpc({ ipcMain, IPC_CHANNELS, logger }) {
+  // Standard Request/Response
+  createHandler(ipcMain, 'my-feature:get-data', async (event, params) => {
+    logger.info('Received request for data', params);
+    const result = await someDatabaseCall(params.id);
+    return { success: true, data: result };
+  });
+
+  // Streaming/Events (Backend -> Frontend)
+  createHandler(ipcMain, 'my-feature:start-job', async (event, params) => {
+    event.sender.send('my-feature:progress', { percent: 0 });
+    await doLongTask();
+    event.sender.send('my-feature:progress', { percent: 100 });
+    return { success: true };
+  });
+}
+
+module.exports = registerMyFeatureIpc;
+```
+
+#### Exposing to Frontend (Preload)
+
+```javascript
+// src/preload/preload.js
+contextBridge.exposeInMainWorld('electronAPI', {
+  myFeature: {
+    getData: (id) => ipcRenderer.invoke('my-feature:get-data', { id }),
+    onProgress: (callback) => {
+      const subscription = (event, data) => callback(data);
+      ipcRenderer.on('my-feature:progress', subscription);
+      return () => ipcRenderer.removeListener('my-feature:progress', subscription);
+    }
+  }
+});
+```
+
+#### Using in React (Frontend)
+
+```jsx
+// src/renderer/components/MyComponent.jsx
+import React, { useEffect, useState } from 'react';
+
+export const MyComponent = () => {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const result = await window.electronAPI.myFeature.getData(123);
+      if (result.success) setData(result.data);
+    };
+    fetchData();
+
+    const unsubscribe = window.electronAPI.myFeature.onProgress((progress) => {
+      console.log(`Job is ${progress.percent}% done`);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (!data) return <div>Loading...</div>;
+  return <div>{data.name}</div>;
+};
+```
+
+### 8.3 AI & Ollama Integration
+
+```javascript
+const { container, ServiceIds } = require('./ServiceContainer');
+
+async function summarizeText(text) {
+  const ollamaService = container.resolve(ServiceIds.OLLAMA_SERVICE);
+  const response = await ollamaService.generateCompletion({
+    model: 'llama3',
+    prompt: `Summarize this: ${text}`,
+    stream: false
+  });
+  return response.response;
+}
+
+async function getVector(text) {
+  const embeddingService = container.resolve(ServiceIds.PARALLEL_EMBEDDING);
+  return await embeddingService.generateEmbedding(text);
+}
+```
+
+### 8.4 ChromaDB Operations
+
+```javascript
+const { container, ServiceIds } = require('./ServiceContainer');
+
+async function findSimilarFolders(fileContent) {
+  const chromaService = container.resolve(ServiceIds.CHROMA_DB);
+  const embeddingService = container.resolve(ServiceIds.PARALLEL_EMBEDDING);
+
+  const queryVector = await embeddingService.generateEmbedding(fileContent);
+  const collection = await chromaService.getCollection('folders');
+
+  return await collection.query({
+    queryEmbeddings: [queryVector],
+    nResults: 5
+  });
+}
+```
+
+### 8.5 Redux State Management
+
+#### Creating a Slice
+
+```javascript
+// src/renderer/store/slices/mySlice.js
+import { createSlice } from '@reduxjs/toolkit';
+
+const mySlice = createSlice({
+  name: 'myFeature',
+  initialState: { items: [], loading: false },
+  reducers: {
+    setLoading: (state, action) => {
+      state.loading = action.payload;
+    },
+    addItems: (state, action) => {
+      state.items.push(...action.payload);
+    }
+  }
+});
+
+export const { setLoading, addItems } = mySlice.actions;
+export default mySlice.reducer;
+```
+
+#### Using in Components
+
+```jsx
+import { useDispatch, useSelector } from 'react-redux';
+import { setLoading } from '../store/slices/mySlice';
+
+const MyButton = () => {
+  const dispatch = useDispatch();
+  const isLoading = useSelector((state) => state.myFeature.loading);
+
+  return (
+    <button disabled={isLoading} onClick={() => dispatch(setLoading(true))}>
+      Work
+    </button>
+  );
+};
+```
 
 ---
 

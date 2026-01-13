@@ -22,8 +22,23 @@ retaining the same logo and identity while targeting this branch’s priorities.
 
 ## Download & Install
 
-> **Platform support note**: Releases are published for Windows/macOS/Linux, but **only the Windows
-> build is robustly tested**. macOS/Linux builds are provided on a best-effort basis.
+> **Platform Note**: El StratoSort is developed with a Windows-first approach. While releases are
+> published for all major platforms, **only the Windows build is robustly tested**. macOS and Linux
+> builds are provided on a best-effort basis.
+
+### Why Windows First?
+
+El StratoSort is designed for students and professionals who accumulate documents through work,
+school, and research—helping them navigate and organize their information more efficiently.
+
+We prioritize Windows because the majority of professional and educational institutions rely on it
+as their primary operating system. This focus ensures the most polished experience for our core user
+base.
+
+**Roadmap**: Full support for macOS and Linux is planned. Development for those platforms is ongoing
+but not yet fully optimized.
+
+---
 
 ### Windows
 
@@ -70,8 +85,8 @@ retaining the same logo and identity while targeting this branch’s priorities.
 - 12GB+ free disk space
 - GPU with 4GB+ VRAM (optional for faster processing)
 
-**Robustly tested:** Windows 11 (PowerShell, Node 18).  
-**macOS/Linux:** Supported, but not yet tested to the same depth as Windows.
+**Robustly tested:** Windows 11 (PowerShell, Node 18). See [Why Windows First?](#why-windows-first)
+for platform details.
 
 ## Privacy & Security
 
