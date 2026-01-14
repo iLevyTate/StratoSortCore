@@ -22,7 +22,7 @@ const TOUR_STEPS = [
     icon: Layers,
     title: 'Explore clusters',
     content:
-      'Click "Auto-discover clusters" to see how your files naturally group together. Double-click a cluster to expand it.',
+      'Click "Auto-discover clusters" to see how your files naturally group together. AI generates descriptive names for each cluster. High-confidence clusters appear in the inner ring, with related clusters positioned nearby. Double-click any cluster to see its files.',
     position: 'center'
   },
   {
@@ -41,14 +41,21 @@ const TOUR_STEPS = [
  * Shows a series of helpful tips when the user first opens the graph tab.
  * Stores dismissal state in localStorage so it won't show again.
  */
-const GraphTour = ({ isOpen, onComplete }) => {
+const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(true); // Default checked
 
-  // Check if user has already dismissed the tour
+  // Check if user has already dismissed the tour (or force show via help button)
   useEffect(() => {
     if (!isOpen) return;
+
+    // If forceShow is true, always show immediately
+    if (forceShow) {
+      setCurrentStep(0);
+      setIsVisible(true);
+      return;
+    }
 
     try {
       const isDismissed = localStorage.getItem(TOUR_STORAGE_KEY);
@@ -60,7 +67,7 @@ const GraphTour = ({ isOpen, onComplete }) => {
     } catch {
       // localStorage not available, skip tour
     }
-  }, [isOpen]);
+  }, [isOpen, forceShow]);
 
   const handleDismiss = useCallback(
     (rememberChoice = true) => {
@@ -211,11 +218,13 @@ const GraphTour = ({ isOpen, onComplete }) => {
 
 GraphTour.propTypes = {
   isOpen: PropTypes.bool.isRequired,
-  onComplete: PropTypes.func
+  onComplete: PropTypes.func,
+  forceShow: PropTypes.bool
 };
 
 GraphTour.defaultProps = {
-  onComplete: null
+  onComplete: null,
+  forceShow: false
 };
 
 export default GraphTour;

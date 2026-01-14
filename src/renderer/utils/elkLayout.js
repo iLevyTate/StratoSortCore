@@ -450,16 +450,16 @@ export function radialLayout(centerNode, nodes, options = {}) {
 }
 
 /**
- * Layout clusters in a circular/radial pattern
- * Wrapper around radialLayout for cluster nodes
+ * Layout clusters in an intelligent hierarchical pattern
+ * Groups related clusters together and sizes them by member count
  *
  * @param {Array} clusterNodes - Cluster nodes
- * @param {Array} edges - Edges between clusters (unused but kept for API compat)
+ * @param {Array} edges - Edges between clusters (used to determine relationships)
  * @param {Object} options - Layout options
- * @returns {Array} Nodes with radial positions
+ * @returns {Array} Nodes with calculated positions
  */
 export function clusterRadialLayout(clusterNodes, edges, options = {}) {
-  const { centerX = 400, centerY = 300, radius = 250, startAngle = -Math.PI / 2 } = options;
+  const { centerX = 400, centerY = 300, radius = 280 } = options;
 
   if (!clusterNodes || clusterNodes.length === 0) {
     return clusterNodes;
@@ -473,13 +473,134 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
     }));
   }
 
-  return radialLayout(null, clusterNodes, {
-    radius,
-    startAngle,
-    endAngle: startAngle + 2 * Math.PI,
-    centerX,
-    centerY
+  // Sort clusters by member count (largest first) for prominence
+  const sortedClusters = [...clusterNodes].sort((a, b) => {
+    const countA = a.data?.memberCount || 0;
+    const countB = b.data?.memberCount || 0;
+    return countB - countA;
   });
+
+  // Group clusters by confidence level for visual hierarchy
+  const highConfidence = sortedClusters.filter((n) => n.data?.confidence === 'high');
+  const mediumConfidence = sortedClusters.filter((n) => n.data?.confidence === 'medium');
+  const lowConfidence = sortedClusters.filter((n) => n.data?.confidence === 'low');
+
+  // Build adjacency map from edges to identify connected clusters
+  const safeEdges = edges || [];
+  const adjacency = new Map();
+  safeEdges.forEach((edge) => {
+    if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set());
+    if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set());
+    adjacency.get(edge.source).add(edge.target);
+    adjacency.get(edge.target).add(edge.source);
+  });
+
+  // Use force-directed-like placement: connected clusters stay closer
+  const positioned = new Map();
+  const result = [];
+
+  // Position high-confidence clusters in the inner ring (most prominent)
+  const innerRadius = radius * 0.5;
+  highConfidence.forEach((node, idx) => {
+    const angle = (idx / Math.max(1, highConfidence.length)) * 2 * Math.PI - Math.PI / 2;
+    const pos = {
+      x: centerX + innerRadius * Math.cos(angle),
+      y: centerY + innerRadius * Math.sin(angle)
+    };
+    positioned.set(node.id, pos);
+    result.push({ ...node, position: pos });
+  });
+
+  // Position medium-confidence clusters in the middle ring
+  const middleRadius = radius * 0.8;
+  mediumConfidence.forEach((node, idx) => {
+    // Try to position near connected high-confidence clusters
+    const neighbors = adjacency.get(node.id) || new Set();
+    let bestAngle = (idx / Math.max(1, mediumConfidence.length)) * 2 * Math.PI - Math.PI / 2;
+
+    // If connected to a positioned cluster, bias towards it
+    for (const neighborId of neighbors) {
+      if (positioned.has(neighborId)) {
+        const neighborPos = positioned.get(neighborId);
+        bestAngle = Math.atan2(neighborPos.y - centerY, neighborPos.x - centerX);
+        // Add small offset to avoid overlap
+        bestAngle += idx % 2 === 0 ? 0.3 : -0.3;
+        break;
+      }
+    }
+
+    const pos = {
+      x: centerX + middleRadius * Math.cos(bestAngle),
+      y: centerY + middleRadius * Math.sin(bestAngle)
+    };
+    positioned.set(node.id, pos);
+    result.push({ ...node, position: pos });
+  });
+
+  // Position low-confidence clusters in the outer ring
+  const outerRadius = radius;
+  lowConfidence.forEach((node, idx) => {
+    // Try to position near connected clusters
+    const neighbors = adjacency.get(node.id) || new Set();
+    let bestAngle = (idx / Math.max(1, lowConfidence.length)) * 2 * Math.PI - Math.PI / 2;
+
+    for (const neighborId of neighbors) {
+      if (positioned.has(neighborId)) {
+        const neighborPos = positioned.get(neighborId);
+        bestAngle = Math.atan2(neighborPos.y - centerY, neighborPos.x - centerX);
+        bestAngle += idx % 2 === 0 ? 0.4 : -0.4;
+        break;
+      }
+    }
+
+    const pos = {
+      x: centerX + outerRadius * Math.cos(bestAngle),
+      y: centerY + outerRadius * Math.sin(bestAngle)
+    };
+    positioned.set(node.id, pos);
+    result.push({ ...node, position: pos });
+  });
+
+  // Apply repulsion pass to avoid overlaps
+  return applyClusterRepulsion(result, { centerX, centerY, minDistance: 120 });
+}
+
+/**
+ * Apply simple repulsion to avoid cluster overlaps
+ * @private
+ */
+function applyClusterRepulsion(nodes, options = {}) {
+  const { minDistance = 120, iterations = 3 } = options;
+
+  if (nodes.length < 2) return nodes;
+
+  const positions = nodes.map((n) => ({ ...n.position }));
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const dx = positions[j].x - positions[i].x;
+        const dy = positions[j].y - positions[i].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < minDistance && dist > 0) {
+          const overlap = (minDistance - dist) / 2;
+          const nx = dx / dist;
+          const ny = dy / dist;
+
+          positions[i].x -= nx * overlap;
+          positions[i].y -= ny * overlap;
+          positions[j].x += nx * overlap;
+          positions[j].y += ny * overlap;
+        }
+      }
+    }
+  }
+
+  return nodes.map((node, idx) => ({
+    ...node,
+    position: positions[idx]
+  }));
 }
 
 /**
