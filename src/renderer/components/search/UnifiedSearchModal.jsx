@@ -168,13 +168,16 @@ function ResultRow({
   isSelected,
   isBulkSelected,
   isFocused,
+  isHighlighted: _isHighlighted,
   query,
   index = 0,
   onSelect,
   onToggleBulk,
   onOpen,
   onReveal,
-  onCopyPath
+  onCopyPath,
+  onHover: _onHover,
+  onHoverEnd: _onHoverEnd
 }) {
   const path = result?.metadata?.path || '';
   const name = result?.metadata?.name || safeBasename(path) || result?.id || 'Unknown';
@@ -543,6 +546,13 @@ export default function UnifiedSearchModal({
 
   // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Focus mode state - for local graph view
+  const [focusNodeId, setFocusNodeId] = useState(null);
+  const [focusDepth, setFocusDepth] = useState(2);
+
+  // Highlight sync state - for syncing highlights between search list and graph
+  const [_highlightedNodeId, _setHighlightedNodeId] = useState(null);
 
   const handleToggleFilter = useCallback((category, value) => {
     setActiveFilters((prev) => {
@@ -938,13 +948,31 @@ export default function UnifiedSearchModal({
       setDebouncedQuery(searchQuery);
     };
 
+    const handleFocusNode = (event) => {
+      const { nodeId } = event.detail || {};
+      if (!nodeId) return;
+      setFocusNodeId(nodeId);
+
+      // Center on the focused node
+      const currentNodes = nodesRef.current || [];
+      const node = currentNodes.find((n) => n.id === nodeId);
+      if (node && reactFlowInstance.current) {
+        reactFlowInstance.current.setCenter(node.position.x + 100, node.position.y + 50, {
+          duration: 300,
+          zoom: 1.2
+        });
+      }
+    };
+
     window.addEventListener('graph:findSimilar', handleFindSimilar);
     window.addEventListener('graph:toggleCluster', handleToggleCluster);
     window.addEventListener('graph:searchAgain', handleSearchAgain);
+    window.addEventListener('graph:focusNode', handleFocusNode);
     return () => {
       window.removeEventListener('graph:findSimilar', handleFindSimilar);
       window.removeEventListener('graph:toggleCluster', handleToggleCluster);
       window.removeEventListener('graph:searchAgain', handleSearchAgain);
+      window.removeEventListener('graph:focusNode', handleFocusNode);
     };
   }, [isOpen]); // Removed nodes - use nodesRef instead to prevent frequent re-subscription
 
@@ -1271,6 +1299,244 @@ export default function UnifiedSearchModal({
   }, []);
 
   /**
+   * Open all files in a cluster
+   */
+  const handleOpenAllFilesInCluster = useCallback(async (clusterData) => {
+    const memberIds = clusterData?.memberIds || [];
+    if (memberIds.length === 0) {
+      setError('No files in this cluster');
+      return;
+    }
+
+    // Limit to prevent opening too many files at once
+    const MAX_FILES_TO_OPEN = 10;
+    if (memberIds.length > MAX_FILES_TO_OPEN) {
+      setGraphStatus(
+        `Opening first ${MAX_FILES_TO_OPEN} of ${memberIds.length} files (limit reached)`
+      );
+    }
+
+    try {
+      // Get file metadata for members
+      const metadataResult = await window.electronAPI?.embeddings?.getFileMetadata?.(
+        memberIds.slice(0, MAX_FILES_TO_OPEN)
+      );
+      if (!metadataResult?.success) {
+        setError('Failed to retrieve file metadata');
+        return;
+      }
+
+      const metadata = metadataResult.metadata || {};
+      let openedCount = 0;
+
+      for (const id of memberIds.slice(0, MAX_FILES_TO_OPEN)) {
+        const filePath = metadata[id]?.path;
+        if (filePath) {
+          try {
+            await window.electronAPI?.shell?.openExternal?.(filePath);
+            openedCount++;
+          } catch {
+            // Silently skip files that can't be opened
+          }
+        }
+      }
+
+      if (openedCount > 0) {
+        setGraphStatus(`Opened ${openedCount} file(s)`);
+      }
+    } catch (e) {
+      logger.error('[Graph] Open all files failed', e);
+      setError(`Failed to open files: ${e?.message || 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Search within a specific cluster - focuses the within-graph search on cluster files
+   */
+  const handleSearchWithinCluster = useCallback((clusterData) => {
+    const label = clusterData?.label || 'cluster';
+    // Set the within-graph search query to help user search within this cluster
+    setWithinQuery(`in:${label}`);
+    setGraphStatus(`Searching within "${label}" - enter your query above`);
+
+    // If cluster is not expanded, expand it first
+    const clusterId = clusterData?.id || clusterData?.clusterId;
+    if (clusterId && !clusterData?.expanded) {
+      const memberIds = clusterData?.memberIds || [];
+      if (memberIds.length > 0) {
+        expandClusterRef.current?.(clusterId, memberIds);
+      }
+    }
+  }, []);
+
+  /**
+   * Rename a cluster label (user override of auto-generated label)
+   */
+  const handleRenameCluster = useCallback(
+    (clusterData) => {
+      const clusterId = clusterData?.id || clusterData?.clusterId;
+      const newLabel = clusterData?.newLabel;
+
+      if (!clusterId || !newLabel) return;
+
+      graphActions.setNodes((prev) =>
+        prev.map((n) =>
+          n.id === clusterId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  label: newLabel,
+                  isAutoGenerated: false
+                }
+              }
+            : n
+        )
+      );
+
+      setGraphStatus(`Cluster renamed to "${newLabel}"`);
+    },
+    [graphActions]
+  );
+
+  /**
+   * Expand all collapsed clusters in the graph
+   */
+  const handleExpandAllClusters = useCallback(async () => {
+    const clusterNodes = nodes.filter(
+      (n) => n.type === 'clusterNode' && n.data?.kind === 'cluster' && !n.data?.expanded
+    );
+
+    if (clusterNodes.length === 0) {
+      setGraphStatus('All clusters are already expanded');
+      return;
+    }
+
+    setGraphStatus(`Expanding ${clusterNodes.length} clusters...`);
+
+    for (const cluster of clusterNodes) {
+      const memberIds = cluster.data?.memberIds || [];
+      if (memberIds.length > 0) {
+        await expandClusterRef.current?.(cluster.id, memberIds);
+        // Small delay to prevent UI freeze
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+
+    setGraphStatus(`Expanded ${clusterNodes.length} clusters`);
+  }, [nodes]);
+
+  /**
+   * Focus on a specific node - shows only the node and its neighbors up to focusDepth
+   */
+  const _handleFocusOnNode = useCallback(
+    (nodeId) => {
+      if (!nodeId) return;
+      setFocusNodeId(nodeId);
+      setGraphStatus(`Focused on node. Showing ${focusDepth} level(s) of connections.`);
+
+      // Center view on focused node
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node && reactFlowInstance.current) {
+        reactFlowInstance.current.setCenter(node.position.x + 100, node.position.y + 50, {
+          duration: 300,
+          zoom: 1.2
+        });
+      }
+    },
+    [focusDepth, nodes]
+  );
+
+  /**
+   * Clear focus mode - show all nodes again
+   */
+  const handleClearFocus = useCallback(() => {
+    setFocusNodeId(null);
+    setGraphStatus('Focus cleared - showing all nodes');
+  }, []);
+
+  /**
+   * Get nodes visible in focus mode based on depth from focused node
+   */
+  const getNodesInFocus = useCallback(
+    (nodeId, depth) => {
+      if (!nodeId) return new Set();
+
+      const visible = new Set([nodeId]);
+      let frontier = [nodeId];
+
+      for (let d = 0; d < depth; d++) {
+        const next = [];
+        for (const id of frontier) {
+          // Find all connected nodes via edges
+          edges.forEach((e) => {
+            if (e.source === id && !visible.has(e.target)) {
+              visible.add(e.target);
+              next.push(e.target);
+            } else if (e.target === id && !visible.has(e.source)) {
+              visible.add(e.source);
+              next.push(e.source);
+            }
+          });
+
+          // Also include cluster members if this is a cluster node
+          const node = nodes.find((n) => n.id === id);
+          if (node?.data?.memberIds) {
+            node.data.memberIds.forEach((memberId) => {
+              if (!visible.has(memberId)) {
+                visible.add(memberId);
+                next.push(memberId);
+              }
+            });
+          }
+        }
+        frontier = next;
+      }
+
+      return visible;
+    },
+    [edges, nodes]
+  );
+
+  /**
+   * Collapse all expanded clusters in the graph
+   */
+  const handleCollapseAllClusters = useCallback(() => {
+    const expandedClusters = nodes.filter(
+      (n) => n.type === 'clusterNode' && n.data?.kind === 'cluster' && n.data?.expanded
+    );
+
+    if (expandedClusters.length === 0) {
+      setGraphStatus('No expanded clusters to collapse');
+      return;
+    }
+
+    // Collect all member IDs from expanded clusters
+    const allMemberIds = new Set();
+    expandedClusters.forEach((cluster) => {
+      (cluster.data?.memberIds || []).forEach((id) => allMemberIds.add(id));
+    });
+
+    // Remove member nodes and mark clusters as collapsed
+    graphActions.setNodes((prev) =>
+      prev
+        .filter((n) => !allMemberIds.has(n.id))
+        .map((n) =>
+          n.type === 'clusterNode' && n.data?.expanded
+            ? { ...n, data: { ...n.data, expanded: false } }
+            : n
+        )
+    );
+
+    // Remove edges connected to member nodes
+    graphActions.setEdges((prev) =>
+      prev.filter((e) => !allMemberIds.has(e.source) && !allMemberIds.has(e.target))
+    );
+
+    setGraphStatus(`Collapsed ${expandedClusters.length} clusters`);
+  }, [nodes, graphActions]);
+
+  /**
    * Handle cluster expand/collapse from ClusterNode component
    * Looks up the cluster node and triggers expansion with memberIds
    */
@@ -1354,9 +1620,14 @@ export default function UnifiedSearchModal({
           confidence: 'high',
           dominantCategory: 'Duplicate Group',
           commonTags: [],
+          isAutoGenerated: true,
           onCreateSmartFolder: handleCreateSmartFolderFromCluster,
           onMoveAllToFolder: handleMoveAllToFolder,
           onExportFileList: handleExportFileList,
+          // New action callbacks
+          onOpenAllFiles: handleOpenAllFilesInCluster,
+          onSearchWithinCluster: handleSearchWithinCluster,
+          onRenameCluster: handleRenameCluster,
           // Expand/collapse callback
           onExpand: handleClusterExpand
         },
@@ -1379,6 +1650,9 @@ export default function UnifiedSearchModal({
     handleCreateSmartFolderFromCluster,
     handleMoveAllToFolder,
     handleExportFileList,
+    handleOpenAllFilesInCluster,
+    handleSearchWithinCluster,
+    handleRenameCluster,
     handleClusterExpand,
     graphActions
   ]);
@@ -1880,10 +2154,15 @@ export default function UnifiedSearchModal({
           confidence: cluster.confidence || 'low',
           dominantCategory: cluster.dominantCategory || null,
           commonTags: cluster.commonTags || [],
+          isAutoGenerated: true,
           // Action callbacks for cluster context menu
           onCreateSmartFolder: handleCreateSmartFolderFromCluster,
           onMoveAllToFolder: handleMoveAllToFolder,
           onExportFileList: handleExportFileList,
+          // New action callbacks
+          onOpenAllFiles: handleOpenAllFilesInCluster,
+          onSearchWithinCluster: handleSearchWithinCluster,
+          onRenameCluster: handleRenameCluster,
           // Expand/collapse callback
           onExpand: handleClusterExpand
         },
@@ -1958,6 +2237,9 @@ export default function UnifiedSearchModal({
     handleCreateSmartFolderFromCluster,
     handleMoveAllToFolder,
     handleExportFileList,
+    handleOpenAllFilesInCluster,
+    handleSearchWithinCluster,
+    handleRenameCluster,
     handleClusterExpand,
     graphActions
   ]);
@@ -2586,7 +2868,10 @@ export default function UnifiedSearchModal({
         }
       }
 
-      // 2. Apply updates (Filters + Scores)
+      // 2. Calculate focus mode visibility
+      const focusVisibleNodes = focusNodeId ? getNodesInFocus(focusNodeId, focusDepth) : null;
+
+      // 3. Apply updates (Filters + Scores + Focus)
       graphActions.setNodes((prev) => {
         let changed = false;
         const updated = prev.map((n) => {
@@ -2608,7 +2893,10 @@ export default function UnifiedSearchModal({
             isConfidenceActive = activeFilters.confidence.includes(conf);
           }
 
-          const shouldHide = !isTypeActive || !isConfidenceActive;
+          // -- Focus Mode Logic --
+          const isInFocus = focusVisibleNodes ? focusVisibleNodes.has(n.id) : true;
+
+          const shouldHide = !isTypeActive || !isConfidenceActive || !isInFocus;
 
           // -- Score/Opacity Logic --
           let opacity = 1;
@@ -2731,7 +3019,18 @@ export default function UnifiedSearchModal({
     return () => {
       cancelled = true;
     };
-  }, [debouncedWithinQuery, fileNodeIds, isOpen, activeTab, graphActions, activeFilters, nodes]);
+  }, [
+    debouncedWithinQuery,
+    fileNodeIds,
+    isOpen,
+    activeTab,
+    graphActions,
+    activeFilters,
+    nodes,
+    focusNodeId,
+    focusDepth,
+    getNodesInFocus
+  ]);
 
   const onNodeClick = useCallback(
     (_, node) => {
@@ -3285,6 +3584,86 @@ export default function UnifiedSearchModal({
                       {isLayouting ? 'Organizing...' : 'Re-organize Layout'}
                     </Button>
 
+                    {/* Expand/Collapse All Clusters */}
+                    {showClusters && (
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleExpandAllClusters}
+                          disabled={
+                            nodes.filter(
+                              (n) =>
+                                n.type === 'clusterNode' &&
+                                n.data?.kind === 'cluster' &&
+                                !n.data?.expanded
+                            ).length === 0
+                          }
+                          className="flex-1 justify-center text-xs"
+                          title="Expand all clusters"
+                        >
+                          <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                          Expand All
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCollapseAllClusters}
+                          disabled={
+                            nodes.filter(
+                              (n) =>
+                                n.type === 'clusterNode' &&
+                                n.data?.kind === 'cluster' &&
+                                n.data?.expanded
+                            ).length === 0
+                          }
+                          className="flex-1 justify-center text-xs"
+                          title="Collapse all clusters"
+                        >
+                          <Minimize2 className="h-3.5 w-3.5 mr-1" />
+                          Collapse All
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Focus Mode Controls */}
+                    {focusNodeId && (
+                      <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-2 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-indigo-700">
+                            Focus Mode Active
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleClearFocus}
+                            className="text-xs text-indigo-600 hover:bg-indigo-100 p-1 h-auto"
+                          >
+                            Clear Focus
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-indigo-600">Depth:</span>
+                          <select
+                            value={focusDepth}
+                            onChange={(e) => setFocusDepth(Number(e.target.value))}
+                            className="flex-1 text-xs border border-indigo-200 rounded px-2 py-1 bg-white text-indigo-700"
+                            style={{ colorScheme: 'light' }}
+                          >
+                            <option value={1} className="bg-white text-indigo-700">
+                              1 level
+                            </option>
+                            <option value={2} className="bg-white text-indigo-700">
+                              2 levels
+                            </option>
+                            <option value={3} className="bg-white text-indigo-700">
+                              3 levels
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       variant="ghost"
                       size="sm"
@@ -3340,6 +3719,7 @@ export default function UnifiedSearchModal({
                             value={hopCount}
                             onChange={(e) => setHopCount(Number(e.target.value))}
                             className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1.5 bg-white text-system-gray-900"
+                            style={{ colorScheme: 'light' }}
                           >
                             <option value={1} className="bg-white text-system-gray-900">
                               1 level (Direct)
