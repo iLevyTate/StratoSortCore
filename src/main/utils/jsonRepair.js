@@ -16,6 +16,80 @@ const { logger } = require('../../shared/logger');
 logger.setContext('JSONRepair');
 
 /**
+ * HIGH FIX: Extract balanced JSON object or array using brace counting
+ * This properly handles cases where there's text before/after JSON, or
+ * multiple JSON objects in the response (extracts the first complete one).
+ *
+ * @param {string} text - Text potentially containing JSON
+ * @returns {string|null} Extracted JSON string or null if not found
+ */
+function extractBalancedJson(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  // Find the first { or [ that might start a JSON structure
+  let startIndex = -1;
+  let openChar = '';
+  let closeChar = '';
+
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      startIndex = i;
+      openChar = '{';
+      closeChar = '}';
+      break;
+    }
+    if (text[i] === '[') {
+      startIndex = i;
+      openChar = '[';
+      closeChar = ']';
+      break;
+    }
+  }
+
+  if (startIndex === -1) return null;
+
+  // Count braces/brackets to find matching close
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === openChar || char === '{' || char === '[') {
+      depth++;
+    } else if (char === closeChar || char === '}' || char === ']') {
+      depth--;
+      if (depth === 0) {
+        // Found matching close
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+
+  // No complete balanced JSON found, return everything from start (might be truncated)
+  // This allows the repair functions to attempt to fix truncated JSON
+  return text.slice(startIndex);
+}
+
+/**
  * Attempts to extract and parse JSON from potentially malformed LLM output
  * @param {string} rawResponse - The raw response from the LLM
  * @param {Object} defaultValue - Default value to return if all parsing fails
@@ -48,10 +122,12 @@ function extractAndParseJSON(rawResponse, defaultValue = null) {
     }
   }
 
-  // Step 3: Extract JSON object/array using brace matching
-  const jsonMatch = rawResponse.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (jsonMatch) {
-    cleaned = jsonMatch[1];
+  // Step 3: Extract JSON object/array using balanced brace matching
+  // HIGH FIX: Use proper brace counting instead of greedy regex to avoid matching
+  // from first '{' to last '}' which could include invalid content between JSON objects
+  const extractedJson = extractBalancedJson(rawResponse);
+  if (extractedJson) {
+    cleaned = extractedJson;
   }
 
   // Step 4: Apply common repairs
@@ -96,12 +172,26 @@ function repairJSON(json) {
 
   // Fix unescaped newlines within string values by replacing them
   // This regex finds strings and escapes any unescaped newlines within them
+  // CRITICAL FIX: Replace lookbehind regex with compatible character-by-character approach
+  // for environments that don't support ES2018 lookbehind assertions
   repaired = repaired.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, content) => {
     // Escape any actual newlines that aren't already escaped
-    const fixed = content
-      .replace(/(?<!\\)\n/g, '\\n')
-      .replace(/(?<!\\)\r/g, '\\r')
-      .replace(/(?<!\\)\t/g, '\\t');
+    // Use a compatible approach that doesn't require lookbehind
+    let fixed = '';
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+      const prevChar = i > 0 ? content[i - 1] : null;
+      // Only escape if not already preceded by a backslash
+      if (char === '\n' && prevChar !== '\\') {
+        fixed += '\\n';
+      } else if (char === '\r' && prevChar !== '\\') {
+        fixed += '\\r';
+      } else if (char === '\t' && prevChar !== '\\') {
+        fixed += '\\t';
+      } else {
+        fixed += char;
+      }
+    }
     return `"${fixed}"`;
   });
 

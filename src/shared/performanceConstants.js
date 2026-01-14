@@ -58,6 +58,8 @@ const TIMEOUTS = {
   MODEL_LOAD: 60000,
   MODEL_DISCOVERY: 5000, // Model discovery/list timeout
   EMBEDDING_REQUEST: 30000, // FIX: Per-request timeout for embedding calls to prevent indefinite hangs
+  BATCH_EMBEDDING_MAX: 5 * 60 * 1000, // 5 minutes max for batch embedding operations
+  MODEL_LIST: 15000, // Timeout for listing all models from Ollama
   DELAY_MICRO: 50, // Very short delays for race condition prevention
   DELAY_TINY: 5, // Minimal delay for inter-file processing
   DELAY_MINI: 10, // Small delay for inter-batch processing

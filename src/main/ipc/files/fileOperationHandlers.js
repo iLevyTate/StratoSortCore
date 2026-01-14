@@ -182,13 +182,29 @@ async function deleteFromDatabase(filePath, log) {
 
   // Delete from ChromaDB - try both file: and image: prefixes
   // Use normalizePathForIndex for Windows case-insensitivity consistency
+  // FIX: Use batch delete for atomicity to prevent orphaned entries
   try {
     const { getInstance: getChromaDB } = require('../../services/chromadb');
     const chromaDbService = getChromaDB();
     if (chromaDbService) {
       const normalizedPath = normalizePathForIndex(filePath);
-      await chromaDbService.deleteFileEmbedding(`file:${normalizedPath}`);
-      await chromaDbService.deleteFileEmbedding(`image:${normalizedPath}`);
+      const idsToDelete = [`file:${normalizedPath}`, `image:${normalizedPath}`];
+
+      // FIX: Use batch delete for atomicity when available
+      if (typeof chromaDbService.batchDeleteFileEmbeddings === 'function') {
+        await chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
+      } else {
+        // Fallback to individual deletes
+        for (const id of idsToDelete) {
+          await chromaDbService.deleteFileEmbedding(id);
+        }
+      }
+
+      // FIX: Also delete associated chunks to prevent orphaned chunk embeddings
+      if (typeof chromaDbService.deleteFileChunks === 'function') {
+        await chromaDbService.deleteFileChunks(`file:${normalizedPath}`);
+        await chromaDbService.deleteFileChunks(`image:${normalizedPath}`);
+      }
     }
   } catch (dbError) {
     log.warn('[FILE-OPS] Database entry delete failed', {
@@ -334,31 +350,55 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             });
           }
 
-          // FIX P1-1: Await the rebuild with timeout to ensure search consistency
+          // FIX P1-1: Await the rebuild with timeout and retry to ensure search consistency
           // This ensures search results show the new name/path immediately
           try {
             const { getSearchServiceInstance } = require('../semantic');
             const searchService = getSearchServiceInstance?.();
             if (searchService) {
-              // Use invalidateAndRebuild for immediate consistency
-              // FIX: Await with timeout to ensure search consistency without blocking too long
-              const REBUILD_TIMEOUT_MS = 5000; // 5 second max wait
-              const rebuildPromise = searchService.invalidateAndRebuild({
-                immediate: true,
-                reason: 'file-move',
-                oldPath: moveValidation.source,
-                newPath: moveValidation.destination
-              });
+              // Use invalidateAndRebuild for immediate consistency with retry
+              const REBUILD_TIMEOUT_MS = 5000; // 5 second max wait per attempt
+              const MAX_REBUILD_ATTEMPTS = 2;
 
-              // Wait for rebuild but with timeout to prevent blocking UI
-              await Promise.race([
-                rebuildPromise,
-                new Promise((resolve) => setTimeout(resolve, REBUILD_TIMEOUT_MS))
-              ]).catch((rebuildErr) => {
-                log.warn('[FILE-OPS] BM25 rebuild failed or timed out', {
-                  error: rebuildErr?.message
-                });
-              });
+              for (let attempt = 1; attempt <= MAX_REBUILD_ATTEMPTS; attempt++) {
+                try {
+                  const rebuildPromise = searchService.invalidateAndRebuild({
+                    immediate: true,
+                    reason: 'file-move',
+                    oldPath: moveValidation.source,
+                    newPath: moveValidation.destination
+                  });
+
+                  // Wait for rebuild but with timeout to prevent blocking UI
+                  const result = await Promise.race([
+                    rebuildPromise.then(() => ({ success: true })),
+                    new Promise((resolve) =>
+                      setTimeout(
+                        () => resolve({ success: false, timeout: true }),
+                        REBUILD_TIMEOUT_MS
+                      )
+                    )
+                  ]);
+
+                  if (result.success) {
+                    break; // Successfully rebuilt
+                  }
+
+                  if (attempt < MAX_REBUILD_ATTEMPTS) {
+                    log.debug('[FILE-OPS] BM25 rebuild timed out, retrying', {
+                      attempt,
+                      maxAttempts: MAX_REBUILD_ATTEMPTS
+                    });
+                  }
+                } catch (rebuildErr) {
+                  if (attempt === MAX_REBUILD_ATTEMPTS) {
+                    log.warn('[FILE-OPS] BM25 rebuild failed after retries', {
+                      error: rebuildErr?.message,
+                      attempts: attempt
+                    });
+                  }
+                }
+              }
             }
           } catch (invalidateErr) {
             log.warn('[FILE-OPS] Failed to trigger search index rebuild', {
@@ -464,6 +504,20 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             }
           } catch (invalidateErr) {
             log.warn('[FILE-OPS] Failed to trigger search index rebuild after copy', {
+              error: invalidateErr.message
+            });
+          }
+
+          // FIX: Invalidate clustering cache after file copy
+          // This ensures copied files are included in cluster analysis
+          try {
+            const { getClusteringServiceInstance } = require('../semantic');
+            const clusteringService = getClusteringServiceInstance?.();
+            if (clusteringService) {
+              clusteringService.invalidateClusters();
+            }
+          } catch (invalidateErr) {
+            log.warn('[FILE-OPS] Failed to invalidate clustering cache after copy', {
               error: invalidateErr.message
             });
           }

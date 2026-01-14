@@ -26,12 +26,133 @@ logger.setContext('IPC:Files:BatchOrganize');
 // Jest-mocked functions expose _isMockFunction; use to avoid false positives
 const isMockFn = (fn) => !!fn && typeof fn === 'function' && fn._isMockFunction;
 
+// FIX: Global batch operation lock to prevent concurrent batch operations
+// This prevents race conditions when multiple batch operations try to run simultaneously
+let batchOperationLock = null;
+const BATCH_LOCK_TIMEOUT = 5 * 60 * 1000; // 5 minutes max lock hold time
+const BATCH_LOCK_ACQUIRE_TIMEOUT = 30000; // 30 seconds to acquire lock
+
+// FIX: Promise-based mutex for atomic lock acquisition (prevents race conditions)
+// This ensures only one acquireBatchLock() call can check-and-set at a time
+let _lockMutex = Promise.resolve();
+
+// FIX: Promise-based waiters queue to avoid busy-wait polling
+const batchLockWaiters = [];
+
+/**
+ * Acquire the global batch operation lock
+ * Uses promise-based mutex for ATOMIC check-and-set to prevent race conditions
+ * @param {string} batchId - Unique identifier for the batch
+ * @param {number} timeout - Maximum time to wait for lock (ms)
+ * @returns {Promise<boolean>} True if lock acquired, false if timeout
+ */
+async function acquireBatchLock(batchId, timeout = BATCH_LOCK_ACQUIRE_TIMEOUT) {
+  // FIX: Use mutex pattern to ensure atomic lock acquisition
+  // This prevents two concurrent calls from both seeing null and both acquiring
+  let release;
+  const next = new Promise((resolve) => {
+    release = resolve;
+  });
+  const current = _lockMutex;
+  _lockMutex = next;
+
+  // Wait for previous mutex holder to release (with timeout)
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Lock acquisition mutex timeout'));
+    }, timeout);
+  });
+
+  try {
+    await Promise.race([current, timeoutPromise]);
+    clearTimeout(timeoutId);
+  } catch (e) {
+    // Mutex timeout - release our slot and return false
+    release();
+    return false;
+  }
+
+  // Now we have exclusive access to check-and-set batchOperationLock
+  try {
+    // Check and handle stale lock
+    if (batchOperationLock !== null) {
+      if (Date.now() - batchOperationLock.acquiredAt > BATCH_LOCK_TIMEOUT) {
+        logger.warn('[FILE-OPS] Force-releasing stale batch lock', {
+          staleBatchId: batchOperationLock.batchId,
+          heldFor: Date.now() - batchOperationLock.acquiredAt
+        });
+        batchOperationLock = null;
+      }
+    }
+
+    // If lock is free, acquire immediately
+    if (batchOperationLock === null) {
+      batchOperationLock = { batchId, acquiredAt: Date.now() };
+      release(); // Release mutex
+      return true;
+    }
+
+    // Lock is held by another batch - add to waiters queue
+    release(); // Release mutex before waiting
+
+    // Wait for lock to be released using promise-based approach (no polling)
+    return new Promise((resolve) => {
+      const waiter = { batchId, resolve };
+      batchLockWaiters.push(waiter);
+
+      // Set timeout for this waiter
+      const waiterTimeoutId = setTimeout(() => {
+        const index = batchLockWaiters.indexOf(waiter);
+        if (index !== -1) {
+          batchLockWaiters.splice(index, 1);
+          resolve(false); // Timeout - could not acquire lock
+        }
+      }, timeout);
+
+      // Store timeout ID for cleanup
+      waiter.timeoutId = waiterTimeoutId;
+    });
+  } catch (e) {
+    release(); // Ensure mutex is released on any error
+    throw e;
+  }
+}
+
+/**
+ * Release the global batch operation lock
+ * Notifies waiting batch operations that the lock is available
+ * @param {string} batchId - Batch ID that should hold the lock
+ */
+function releaseBatchLock(batchId) {
+  if (batchOperationLock && batchOperationLock.batchId === batchId) {
+    batchOperationLock = null;
+
+    // FIX: Notify first waiter that lock is available
+    if (batchLockWaiters.length > 0) {
+      const waiter = batchLockWaiters.shift();
+      // Clear the waiter's timeout
+      if (waiter.timeoutId) {
+        clearTimeout(waiter.timeoutId);
+      }
+      // Grant lock to waiter
+      batchOperationLock = { batchId: waiter.batchId, acquiredAt: Date.now() };
+      waiter.resolve(true);
+    }
+  }
+}
+
 // Resource limits from centralized constants (prevents config drift)
 const MAX_BATCH_SIZE = PROCESSING_LIMITS.MAX_BATCH_OPERATION_SIZE;
 const MAX_TOTAL_BATCH_TIME = PROCESSING_LIMITS.MAX_TOTAL_BATCH_TIME || 300000; // Default 5 mins if not set
 const { MAX_NUMERIC_RETRIES } = LIMITS;
 
+// FIX: Constants for chunked results and yield points to prevent UI blocking
+const MAX_RESULTS_PER_CHUNK = 100; // Max results per IPC message chunk
+const YIELD_EVERY_N_OPS = 10; // Yield to event loop every N operations
+
 // Simple p-limit implementation to avoid adding dependency
+// FIX: Properly propagate errors instead of silently swallowing them
 const pLimit = (concurrency) => {
   const queue = [];
   let activeCount = 0;
@@ -43,16 +164,16 @@ const pLimit = (concurrency) => {
     }
   };
 
-  const run = async (fn, resolve, _reject) => {
+  const run = async (fn, resolve, reject) => {
     activeCount++;
-    const result = (async () => fn())();
-    resolve(result);
     try {
-      await result;
-    } catch {
-      // ignore
+      const result = await fn();
+      resolve(result);
+    } catch (error) {
+      reject(error); // FIX: Properly propagate errors
+    } finally {
+      next();
     }
-    next();
   };
 
   return (fn) => {
@@ -76,10 +197,25 @@ async function computeFileChecksum(filePath) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
     const stream = require('fs').createReadStream(filePath);
+
+    // FIX: Cleanup function to remove listeners and destroy stream
+    const cleanup = () => {
+      // Defensive: handle mocks that might not have these methods
+      if (typeof stream.removeAllListeners === 'function') {
+        stream.removeAllListeners();
+      }
+      if (typeof stream.destroy === 'function') {
+        stream.destroy();
+      }
+    };
+
     stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('end', () => {
+      cleanup(); // FIX: Clean up on success path too
+      resolve(hash.digest('hex'));
+    });
     stream.on('error', (err) => {
-      stream.destroy();
+      cleanup();
       reject(err);
     });
   });
@@ -221,341 +357,411 @@ async function handleBatchOrganize(params) {
       return validationError;
     }
 
-    // Initialize tracking variables
-    const results = [];
-    const completedOperations = [];
-    let successCount = 0;
-    let failCount = 0;
+    // Generate batch ID early for lock acquisition
     const batchId = `batch_${Date.now()}`;
-    const batchStartTime = Date.now();
-    let shouldRollback = false;
-    let rollbackReason = null;
-    const processedKeys = new Set(); // For idempotency
+
+    // FIX: Acquire global lock to prevent concurrent batch operations
+    const lockAcquired = await acquireBatchLock(batchId);
+    if (!lockAcquired) {
+      log.warn('[FILE-OPS] Could not acquire batch lock - another batch operation is in progress');
+      return {
+        success: false,
+        error: 'Another batch operation is already in progress. Please wait for it to complete.',
+        errorCode: ERROR_CODES.BATCH_LOCK_TIMEOUT
+      };
+    }
 
     try {
-      const svc = getServiceIntegration();
-      let batch;
-      if (svc?.processingState?.createOrLoadOrganizeBatch) {
-        batch = await svc.processingState.createOrLoadOrganizeBatch(batchId, operation.operations);
-      }
+      // Initialize tracking variables
+      const results = [];
+      const completedOperations = [];
+      let successCount = 0;
+      let failCount = 0;
+      // batchId already defined above for lock acquisition
+      const batchStartTime = Date.now();
+      let shouldRollback = false;
+      let rollbackReason = null;
+      const processedKeys = new Set(); // For idempotency
 
-      if (!batch || !batch.operations) {
-        log.warn(`[FILE-OPS] Batch service unavailable, using direct operations for ${batchId}`);
-        batch = {
-          operations: operation.operations.map((op) => ({
-            ...op,
-            status: 'pending'
-          }))
-        };
-      }
+      // FIX P0-4: AbortController for task cancellation
+      // This ensures all concurrent tasks stop immediately when a critical error occurs
+      const abortController = new AbortController();
 
-      const totalOperations = batch.operations.length;
-
-      if (totalOperations > MAX_BATCH_SIZE) {
-        log.warn(
-          `[FILE-OPS] Batch size ${totalOperations} exceeds maximum ${MAX_BATCH_SIZE} after service load`
-        );
-        return {
-          success: false,
-          error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-          errorCode: ERROR_CODES.BATCH_TOO_LARGE,
-          maxAllowed: MAX_BATCH_SIZE,
-          provided: totalOperations
-        };
-      }
-
-      log.info(`[FILE-OPS] Starting batch operation ${batchId} with ${totalOperations} files`, {
-        batchId,
-        totalOperations
-      });
-
-      // Fix 8: Parallel execution with concurrency limit
-      const limit = pLimit(5); // Process 5 files concurrently
-
-      const processOperation = async (i) => {
-        // Check if we should abort due to critical error or timeout
-        if (shouldRollback) return;
-
-        if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
-          log.error(`[FILE-OPS] Batch ${batchId} exceeded maximum time limit`);
-          // We can't throw to stop other parallel tasks easily, but we can return error
-          // and let them skip via shouldRollback check or timeout check
-          return;
-        }
-
-        const op = batch.operations[i];
-
-        // Idempotency check
-        // Generate key based on source, destination, and file stats if available (or just paths)
-        // Since we don't have file stats easily here without stat(), we use paths.
-        // Ideally we would include size/mtime but paths should be unique within a batch for moves.
-        const idempotencyKey = crypto
-          .createHash('sha256')
-          .update(`${op.source}:${op.destination}`)
-          .digest('hex');
-
-        if (processedKeys.has(idempotencyKey)) {
-          log.warn('[FILE-OPS] Skipping duplicate operation', {
+      try {
+        const svc = getServiceIntegration();
+        let batch;
+        if (svc?.processingState?.createOrLoadOrganizeBatch) {
+          batch = await svc.processingState.createOrLoadOrganizeBatch(
             batchId,
-            source: op.source,
-            destination: op.destination
-          });
-          results.push({
-            success: true,
-            source: op.source,
-            destination: op.destination,
-            operation: op.type || 'move',
-            skipped: true,
-            reason: 'duplicate'
-          });
-          return;
+            operation.operations
+          );
         }
 
-        // Skip already completed operations (for resume)
-        if (op.status === 'done') {
-          processedKeys.add(idempotencyKey);
-          results.push({
-            success: true,
-            source: op.source,
-            destination: op.destination,
-            operation: op.type || 'move',
-            resumed: true
-          });
-          successCount++;
-          return;
+        if (!batch || !batch.operations) {
+          log.warn(`[FILE-OPS] Batch service unavailable, using direct operations for ${batchId}`);
+          batch = {
+            operations: operation.operations.map((op) => ({
+              ...op,
+              status: 'pending'
+            }))
+          };
         }
 
-        try {
-          const opStart = Date.now();
-          log.debug('[FILE-OPS] Operation start', {
-            batchId,
-            index: i,
-            source: op.source,
-            destination: op.destination,
-            resumed: op.status === 'done'
-          });
+        const totalOperations = batch.operations.length;
 
-          await getServiceIntegration()?.processingState?.markOrganizeOpStarted(batchId, i);
+        if (totalOperations > MAX_BATCH_SIZE) {
+          log.warn(
+            `[FILE-OPS] Batch size ${totalOperations} exceeds maximum ${MAX_BATCH_SIZE} after service load`
+          );
+          return {
+            success: false,
+            error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
+            errorCode: ERROR_CODES.BATCH_TOO_LARGE,
+            maxAllowed: MAX_BATCH_SIZE,
+            provided: totalOperations
+          };
+        }
 
-          if (!op.source || !op.destination) {
-            throw new Error(
-              `Invalid operation data: source="${op.source}", destination="${op.destination}"`
-            );
+        log.info(`[FILE-OPS] Starting batch operation ${batchId} with ${totalOperations} files`, {
+          batchId,
+          totalOperations
+        });
+
+        // Fix 8: Parallel execution with concurrency limit
+        const limit = pLimit(5); // Process 5 files concurrently
+
+        const processOperation = async (i) => {
+          // FIX P0-4: Check both shouldRollback flag AND abort signal for immediate cancellation
+          // The abort signal is set atomically when a critical error occurs, ensuring
+          // concurrent tasks don't continue processing after rollback is triggered
+          if (shouldRollback || abortController.signal.aborted) return;
+
+          if (Date.now() - batchStartTime > MAX_TOTAL_BATCH_TIME) {
+            log.error(`[FILE-OPS] Batch ${batchId} exceeded maximum time limit`);
+            // We can't throw to stop other parallel tasks easily, but we can return error
+            // and let them skip via shouldRollback check or timeout check
+            return;
           }
 
-          // SECURITY: Validate paths before any file operations
-          const sourceValidation = await validateFileOperationPath(op.source, {
-            checkSymlinks: true
-          });
-          if (!sourceValidation.valid) {
-            throw new Error(`Invalid source path: ${sourceValidation.error}`);
+          // FIX: Yield to event loop every N operations to prevent UI blocking
+          if (i > 0 && i % YIELD_EVERY_N_OPS === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
           }
-          const destValidation = await validateFileOperationPath(op.destination, {
-            checkSymlinks: false // Destination may not exist yet
-          });
-          if (!destValidation.valid) {
-            throw new Error(`Invalid destination path: ${destValidation.error}`);
+
+          const op = batch.operations[i];
+
+          // Idempotency check
+          // Generate key based on source, destination, and file stats if available (or just paths)
+          // Since we don't have file stats easily here without stat(), we use paths.
+          // Ideally we would include size/mtime but paths should be unique within a batch for moves.
+          const idempotencyKey = crypto
+            .createHash('sha256')
+            .update(`${op.source}:${op.destination}`)
+            .digest('hex');
+
+          if (processedKeys.has(idempotencyKey)) {
+            log.warn('[FILE-OPS] Skipping duplicate operation', {
+              batchId,
+              source: op.source,
+              destination: op.destination
+            });
+            results.push({
+              success: true,
+              source: op.source,
+              destination: op.destination,
+              operation: op.type || 'move',
+              skipped: true,
+              reason: 'duplicate'
+            });
+            return;
           }
-          // Use validated paths
-          op.source = sourceValidation.normalizedPath;
-          op.destination = destValidation.normalizedPath;
 
-          // Ensure destination directory exists
-          const destDir = path.dirname(op.destination);
-          await fs.mkdir(destDir, { recursive: true });
+          // Skip already completed operations (for resume)
+          if (op.status === 'done') {
+            processedKeys.add(idempotencyKey);
+            results.push({
+              success: true,
+              source: op.source,
+              destination: op.destination,
+              operation: op.type || 'move',
+              resumed: true
+            });
+            successCount++;
+            return;
+          }
 
-          // Handle file move with collision handling
-          // TOCTOU fix: removed verifySourceFile pre-check, handle ENOENT from move directly
-          let moveResult;
           try {
-            // Use timeout for file operations to prevent hangs
-            moveResult = await withTimeout(
-              performFileMove(op, log, computeFileChecksum),
-              TIMEOUTS.FILE_COPY,
-              `File move ${path.basename(op.source)}`
-            );
-          } catch (moveError) {
-            if (moveError.code === 'ENOENT') {
-              // Source file disappeared between batch start and this operation
-              log.debug('[FILE-OPS] Source file no longer exists, skipping:', op.source);
-              results.push({
-                success: false,
-                source: op.source,
-                destination: op.destination,
-                error: 'Source file no longer exists',
-                operation: op.type || 'move',
-                skipped: true
-              });
-              failCount++;
-              return;
+            const opStart = Date.now();
+            log.debug('[FILE-OPS] Operation start', {
+              batchId,
+              index: i,
+              source: op.source,
+              destination: op.destination,
+              resumed: op.status === 'done'
+            });
+
+            await getServiceIntegration()?.processingState?.markOrganizeOpStarted(batchId, i);
+
+            if (!op.source || !op.destination) {
+              throw new Error(
+                `Invalid operation data: source="${op.source}", destination="${op.destination}"`
+              );
             }
-            throw moveError;
-          }
-          op.destination = moveResult.destination;
-          processedKeys.add(idempotencyKey);
 
-          log.info('[FILE-OPS] Move completed', {
-            batchId,
-            index: i,
-            source: op.source,
-            destination: op.destination,
-            durationMs: Date.now() - opStart
-          });
+            // SECURITY: Validate paths before any file operations
+            const sourceValidation = await validateFileOperationPath(op.source, {
+              checkSymlinks: true
+            });
+            if (!sourceValidation.valid) {
+              throw new Error(`Invalid source path: ${sourceValidation.error}`);
+            }
+            const destValidation = await validateFileOperationPath(op.destination, {
+              checkSymlinks: false // Destination may not exist yet
+            });
+            if (!destValidation.valid) {
+              throw new Error(`Invalid destination path: ${destValidation.error}`);
+            }
+            // Use validated paths
+            op.source = sourceValidation.normalizedPath;
+            op.destination = destValidation.normalizedPath;
 
-          // Post-move verification: ensure destination exists and source is gone
-          await verifyMoveCompletion(op.source, op.destination, log);
+            // Ensure destination directory exists
+            const destDir = path.dirname(op.destination);
+            await fs.mkdir(destDir, { recursive: true });
 
-          await getServiceIntegration()?.processingState?.markOrganizeOpDone(batchId, i, {
-            destination: op.destination
-          });
+            // Handle file move with collision handling
+            // TOCTOU fix: removed verifySourceFile pre-check, handle ENOENT from move directly
+            let moveResult;
+            try {
+              // Use timeout for file operations to prevent hangs
+              moveResult = await withTimeout(
+                performFileMove(op, log, computeFileChecksum),
+                TIMEOUTS.FILE_COPY,
+                `File move ${path.basename(op.source)}`
+              );
+            } catch (moveError) {
+              if (moveError.code === 'ENOENT') {
+                // Source file disappeared between batch start and this operation
+                log.debug('[FILE-OPS] Source file no longer exists, skipping:', op.source);
+                results.push({
+                  success: false,
+                  source: op.source,
+                  destination: op.destination,
+                  error: 'Source file no longer exists',
+                  operation: op.type || 'move',
+                  skipped: true
+                });
+                failCount++;
+                return;
+              }
+              throw moveError;
+            }
+            op.destination = moveResult.destination;
+            processedKeys.add(idempotencyKey);
 
-          completedOperations.push({
-            index: i,
-            source: op.source,
-            destination: op.destination,
-            originalDestination: operation.operations[i].destination
-          });
+            log.info('[FILE-OPS] Move completed', {
+              batchId,
+              index: i,
+              source: op.source,
+              destination: op.destination,
+              durationMs: Date.now() - opStart
+            });
 
-          results.push({
-            success: true,
-            source: op.source,
-            destination: op.destination,
-            operation: op.type || 'move'
-          });
-          successCount++;
+            // Post-move verification: ensure destination exists and source is gone
+            await verifyMoveCompletion(op.source, op.destination, log);
 
-          log.debug('[FILE-OPS] Operation success', {
-            batchId,
-            index: i,
-            source: op.source,
-            destination: op.destination
-          });
+            await getServiceIntegration()?.processingState?.markOrganizeOpDone(batchId, i, {
+              destination: op.destination
+            });
 
-          // Send progress to renderer
-          const win = getMainWindow();
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('operation-progress', {
-              type: 'batch_organize',
-              current: successCount + failCount, // Approx progress
-              total: batch.operations.length,
-              currentFile: path.basename(op.source)
+            completedOperations.push({
+              index: i,
+              source: op.source,
+              destination: op.destination,
+              originalDestination: operation.operations[i].destination
+            });
+
+            results.push({
+              success: true,
+              source: op.source,
+              destination: op.destination,
+              operation: op.type || 'move'
+            });
+            successCount++;
+
+            log.debug('[FILE-OPS] Operation success', {
+              batchId,
+              index: i,
+              source: op.source,
+              destination: op.destination
+            });
+
+            // Send progress to renderer
+            const win = getMainWindow();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send('operation-progress', {
+                type: 'batch_organize',
+                current: successCount + failCount, // Approx progress
+                total: batch.operations.length,
+                currentFile: path.basename(op.source)
+              });
+            }
+          } catch (error) {
+            await getServiceIntegration()?.processingState?.markOrganizeOpError(
+              batchId,
+              i,
+              error.message
+            );
+
+            // Determine if critical error
+            const isCriticalError = isCriticalFileError(error);
+
+            if (isCriticalError) {
+              shouldRollback = true;
+              rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
+              // FIX P0-4: Signal abort to stop all concurrent tasks immediately
+              abortController.abort();
+              log.error(
+                `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
+                { error: error.message, errorCode: error.code, file: op.source }
+              );
+            }
+
+            results.push({
+              success: false,
+              source: op.source,
+              destination: op.destination,
+              error: error.message,
+              operation: op.type || 'move',
+              critical: isCriticalError
+            });
+            failCount++;
+
+            log.warn('[FILE-OPS] Operation failed', {
+              batchId,
+              index: i,
+              source: op.source,
+              destination: op.destination,
+              error: error.message,
+              critical: isCriticalError
             });
           }
-        } catch (error) {
-          await getServiceIntegration()?.processingState?.markOrganizeOpError(
+        };
+
+        const promises = batch.operations.map((_, i) => limit(() => processOperation(i)));
+        await Promise.allSettled(promises);
+
+        // Execute rollback if needed
+        if (shouldRollback && completedOperations.length > 0) {
+          return await executeRollback(
+            completedOperations,
+            results,
+            failCount,
+            rollbackReason,
             batchId,
-            i,
-            error.message
+            log
           );
-
-          // Determine if critical error
-          const isCriticalError = isCriticalFileError(error);
-
-          if (isCriticalError) {
-            shouldRollback = true;
-            rollbackReason = `Critical error on file ${i + 1}/${batch.operations.length}: ${error.message}`;
-            log.error(
-              `[FILE-OPS] Critical error in batch ${batchId}, will rollback ${completedOperations.length} completed operations`,
-              { error: error.message, errorCode: error.code, file: op.source }
-            );
-          }
-
-          results.push({
-            success: false,
-            source: op.source,
-            destination: op.destination,
-            error: error.message,
-            operation: op.type || 'move',
-            critical: isCriticalError
-          });
-          failCount++;
-
-          log.warn('[FILE-OPS] Operation failed', {
-            batchId,
-            index: i,
-            source: op.source,
-            destination: op.destination,
-            error: error.message,
-            critical: isCriticalError
-          });
         }
-      };
 
-      const promises = batch.operations.map((_, i) => limit(() => processOperation(i)));
-      await Promise.allSettled(promises);
+        await getServiceIntegration()?.processingState?.completeOrganizeBatch(batchId);
 
-      // Execute rollback if needed
-      if (shouldRollback && completedOperations.length > 0) {
-        return await executeRollback(
-          completedOperations,
-          results,
-          failCount,
-          rollbackReason,
+        // Record undo and update database
+        if (!shouldRollback) {
+          await recordUndoAndUpdateDatabase(
+            batch,
+            results,
+            successCount,
+            batchId,
+            getServiceIntegration,
+            log
+          );
+        }
+      } catch (error) {
+        // Log the error - don't silently swallow it
+        log.error('[FILE-OPS] Batch operation failed with error', {
           batchId,
-          log
-        );
-      }
-
-      await getServiceIntegration()?.processingState?.completeOrganizeBatch(batchId);
-
-      // Record undo and update database
-      if (!shouldRollback) {
-        await recordUndoAndUpdateDatabase(
-          batch,
-          results,
+          error: error.message,
           successCount,
-          batchId,
-          getServiceIntegration,
-          log
-        );
-      }
-    } catch (error) {
-      // Log the error - don't silently swallow it
-      log.error('[FILE-OPS] Batch operation failed with error', {
-        batchId,
-        error: error.message,
-        successCount,
-        failCount,
-        completedOperations: completedOperations.length
-      });
+          failCount,
+          completedOperations: completedOperations.length
+        });
 
-      // If we have some successful operations, return partial success
-      // Otherwise, return failure with error details
-      if (successCount > 0) {
+        // If we have some successful operations, return partial success
+        // Otherwise, return failure with error details
+        if (successCount > 0) {
+          return {
+            success: true,
+            partialFailure: true,
+            results,
+            successCount,
+            failCount,
+            completedOperations: completedOperations.length,
+            summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed (batch error: ${error.message})`,
+            batchId,
+            error: error.message
+          };
+        }
+
         return {
-          success: true,
-          partialFailure: true,
+          success: false,
+          error: error.message,
+          errorCode: ERROR_CODES.BATCH_OPERATION_FAILED,
           results,
           successCount,
           failCount,
           completedOperations: completedOperations.length,
-          summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed (batch error: ${error.message})`,
-          batchId,
-          error: error.message
+          batchId
         };
       }
 
+      // FIX: For large result sets, send results in chunks to prevent IPC message overflow
+      const win = getMainWindow();
+      if (results.length > MAX_RESULTS_PER_CHUNK && win && !win.isDestroyed()) {
+        const totalChunks = Math.ceil(results.length / MAX_RESULTS_PER_CHUNK);
+
+        for (let i = 0; i < results.length; i += MAX_RESULTS_PER_CHUNK) {
+          const chunk = results.slice(i, i + MAX_RESULTS_PER_CHUNK);
+          const chunkIndex = Math.floor(i / MAX_RESULTS_PER_CHUNK);
+
+          win.webContents.send('batch-results-chunk', {
+            batchId,
+            chunk,
+            chunkIndex,
+            totalChunks,
+            isLast: chunkIndex === totalChunks - 1
+          });
+
+          // Yield to event loop between chunks to prevent blocking
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+
+        // Return summary only (results sent via chunks)
+        return {
+          success: successCount > 0 && !shouldRollback,
+          successCount,
+          failCount,
+          completedOperations: completedOperations.length,
+          summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
+          batchId,
+          chunkedResults: true,
+          totalChunks
+        };
+      }
+
+      // For small result sets, return inline as before (backward compatible)
       return {
-        success: false,
-        error: error.message,
-        errorCode: ERROR_CODES.BATCH_OPERATION_FAILED,
+        success: successCount > 0 && !shouldRollback,
         results,
         successCount,
         failCount,
         completedOperations: completedOperations.length,
+        summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
         batchId
       };
+    } finally {
+      // FIX: Always release the batch lock when operation completes
+      releaseBatchLock(batchId);
     }
-
-    return {
-      success: successCount > 0 && !shouldRollback,
-      results,
-      successCount,
-      failCount,
-      completedOperations: completedOperations.length,
-      summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
-      batchId
-    };
   });
 }
 
@@ -577,6 +783,33 @@ function isCriticalFileError(error) {
  * Perform a single file move with collision handling
  */
 async function performFileMove(op, log, checksumFn) {
+  // FIX P2-1: Check if destination exists with identical content (deduplication)
+  // This prevents creating numbered copies of files that already exist at destination
+  try {
+    await fs.access(op.destination);
+    // Destination exists - check if content is identical
+    const [sourceHash, destHash] = await Promise.all([
+      checksumFn(op.source),
+      checksumFn(op.destination)
+    ]);
+    if (sourceHash === destHash) {
+      log.info('[FILE-OPS] Skipping move - identical file already exists at destination', {
+        source: op.source,
+        destination: op.destination,
+        checksum: sourceHash.substring(0, 16) + '...'
+      });
+      // Remove source since identical content already exists at destination
+      await fs.unlink(op.source);
+      return { destination: op.destination, skipped: true, reason: 'duplicate' };
+    }
+    // Files differ - proceed with collision handling below
+  } catch (accessError) {
+    if (accessError.code !== 'ENOENT') {
+      throw accessError; // Unexpected error
+    }
+    // Destination doesn't exist - proceed with normal move
+  }
+
   let counter = 0;
   let uniqueDestination = op.destination;
   const ext = path.extname(op.destination);

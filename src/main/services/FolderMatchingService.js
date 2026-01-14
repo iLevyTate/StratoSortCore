@@ -960,6 +960,8 @@ class FolderMatchingService {
       }
       await this.chromaDbService.initialize();
 
+      // Keep seeds separate - they should never appear in results (they're the query, not a discovery)
+      const seedSet = new Set(seedIds);
       const visited = new Set(seedIds);
       const allResults = new Map();
 
@@ -982,16 +984,36 @@ class FolderMatchingService {
             const neighbors = await this.findSimilarFiles(node.id, clampedTopK);
 
             for (const neighbor of neighbors) {
-              // Skip already visited nodes
-              if (visited.has(neighbor.id)) continue;
-              visited.add(neighbor.id);
+              // Skip invalid neighbors with missing id
+              if (!neighbor?.id) {
+                logger.debug('[FolderMatchingService] Skipping neighbor with missing id');
+                continue;
+              }
+
+              // Never include seed nodes in results (they're the query)
+              if (seedSet.has(neighbor.id)) {
+                continue;
+              }
 
               // Calculate decayed score
               // DOI formula: parentScore * neighborScore * decay^hop
-              const neighborScore = neighbor.score || 1 - (neighbor.distance || 0);
+              // FIX: Use nullish coalescing to handle score=0 correctly (0 is falsy but valid)
+              // FIX: Use /2 for cosine distance range [0,2] -> similarity [0,1]
+              const neighborScore = neighbor.score ?? 1 - (neighbor.distance ?? 0) / 2;
               const decayedScore = node.score * neighborScore * clampedDecay ** hop;
 
-              // Store result
+              // FIX: Check if already found via different path - update only if better score
+              // This ensures multi-seed queries preserve the best path to each node
+              const existing = allResults.get(neighbor.id);
+              if (existing && existing.score >= decayedScore) {
+                continue; // Existing path is better or equal, skip
+              }
+
+              // Track visited for frontier expansion (prevents infinite loops)
+              const isNewNode = !visited.has(neighbor.id);
+              visited.add(neighbor.id);
+
+              // Store/update result (always update if better score)
               const result = {
                 id: neighbor.id,
                 score: decayedScore,
@@ -1002,13 +1024,16 @@ class FolderMatchingService {
 
               allResults.set(neighbor.id, result);
 
-              // Add to next frontier for further exploration
-              nextFrontier.push({
-                id: neighbor.id,
-                score: decayedScore,
-                hop,
-                path: result.path
-              });
+              // Only add to next frontier if this is a new discovery
+              // (prevents duplicate expansion even with score updates)
+              if (isNewNode) {
+                nextFrontier.push({
+                  id: neighbor.id,
+                  score: decayedScore,
+                  hop,
+                  path: result.path
+                });
+              }
             }
           } catch (error) {
             logger.warn('[FolderMatchingService] Failed to expand node:', node.id, error.message);
@@ -1117,7 +1142,8 @@ class FolderMatchingService {
       normalizedRaw === 'document' ||
       normalizedRaw === 'documents' ||
       normalizedRaw === 'image' ||
-      normalizedRaw === 'images'
+      normalizedRaw === 'images' ||
+      normalizedRaw === 'default'
     ) {
       return uncategorized?.name || folders[0].name;
     }

@@ -539,6 +539,40 @@ class ServiceIntegration {
       registerDependencyManager(container, ServiceIds.DEPENDENCY_MANAGER);
     }
 
+    // FIX: Register SearchService with container for proper DI and lifecycle management
+    // SearchService is a core feature service that was previously manually instantiated
+    if (!container.has(ServiceIds.SEARCH_SERVICE)) {
+      container.registerSingleton(ServiceIds.SEARCH_SERVICE, (c) => {
+        const SearchService = require('./SearchService');
+        return new SearchService({
+          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
+          analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
+          parallelEmbeddingService: c.resolve(ServiceIds.PARALLEL_EMBEDDING),
+          // Optional services - use tryResolve to avoid errors if not available
+          ollamaService: c.tryResolve(ServiceIds.OLLAMA_SERVICE)
+        });
+      });
+    }
+
+    // FIX: Register DownloadWatcher with container for proper lifecycle management
+    // DownloadWatcher monitors downloads folder and needs proper shutdown handling
+    if (!container.has(ServiceIds.DOWNLOAD_WATCHER)) {
+      container.registerSingleton(ServiceIds.DOWNLOAD_WATCHER, (c) => {
+        const DownloadWatcher = require('./DownloadWatcher');
+        return new DownloadWatcher({
+          analyzeDocumentFile: null, // Set during app init via configureDownloadWatcher
+          analyzeImageFile: null, // Set during app init via configureDownloadWatcher
+          getCustomFolders: () => [], // Set during app init
+          autoOrganizeService: c.resolve(ServiceIds.AUTO_ORGANIZE),
+          settingsService: c.resolve(ServiceIds.SETTINGS),
+          notificationService: c.resolve(ServiceIds.NOTIFICATION_SERVICE),
+          analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),
+          chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
+          folderMatcher: c.resolve(ServiceIds.FOLDER_MATCHING)
+        });
+      });
+    }
+
     logger.info('[ServiceIntegration] Core services registered with container');
   }
 
@@ -552,6 +586,19 @@ class ServiceIntegration {
    * @returns {Promise<void>}
    */
   async shutdown() {
+    // FIX: Wait for any in-progress initialization to complete before shutting down
+    // This prevents race conditions where shutdown runs concurrently with init
+    if (this._initPromise) {
+      logger.debug(
+        '[ServiceIntegration] Waiting for initialization to complete before shutdown...'
+      );
+      try {
+        await this._initPromise;
+      } catch {
+        // Ignore init errors - we're shutting down anyway
+      }
+    }
+
     if (!this.initialized) return;
 
     try {
@@ -634,6 +681,35 @@ class ServiceIntegration {
     } catch (error) {
       logger.warn(
         '[ServiceIntegration] Failed to configure SmartFolderWatcher:',
+        error?.message || String(error)
+      );
+    }
+  }
+
+  /**
+   * Configure the DownloadWatcher with required dependencies
+   * This must be called after the main process has set up analysis functions
+   *
+   * @param {Object} config - Configuration object
+   * @param {Function} config.getCustomFolders - Function to get custom folders
+   * @param {Function} config.analyzeDocumentFile - Function to analyze documents
+   * @param {Function} config.analyzeImageFile - Function to analyze images
+   */
+  configureDownloadWatcher({ getCustomFolders, analyzeDocumentFile, analyzeImageFile }) {
+    try {
+      const downloadWatcher = container.resolve(ServiceIds.DOWNLOAD_WATCHER);
+
+      if (downloadWatcher) {
+        // Update the watcher's dependencies
+        downloadWatcher.getCustomFolders = getCustomFolders;
+        downloadWatcher.analyzeDocumentFile = analyzeDocumentFile;
+        downloadWatcher.analyzeImageFile = analyzeImageFile;
+
+        logger.info('[ServiceIntegration] DownloadWatcher configured');
+      }
+    } catch (error) {
+      logger.warn(
+        '[ServiceIntegration] Failed to configure DownloadWatcher:',
         error?.message || String(error)
       );
     }

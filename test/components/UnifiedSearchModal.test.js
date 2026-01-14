@@ -594,8 +594,8 @@ describe('UnifiedSearchModal', () => {
       expect(screen.queryByText(/Explore Graph/i)).toBeInTheDocument();
       // We expect the graph container or some graph-specific element to be present
       // Since we mocked reactflow, we can check if that mock is rendered or if the "Explore File Connections" empty state is shown
-      // The empty state has text "Explore File Connections"
-      expect(screen.queryByText(/Explore File Connections/i)).toBeInTheDocument();
+      // The empty state has text "Stop Searching. Start Finding."
+      expect(screen.queryByText(/Stop Searching. Start Finding./i)).toBeInTheDocument();
     });
   });
 

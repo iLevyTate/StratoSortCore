@@ -16,6 +16,7 @@ const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtil
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
 const { getSemanticFileId, isImagePath } = require('../../shared/fileIdUtils');
+const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 
 logger.setContext('DownloadWatcher');
 
@@ -165,6 +166,12 @@ class DownloadWatcher {
         this._debouncedHandleFile(filePath);
       });
 
+      // Handle deleted files (external deletion via File Explorer)
+      // FIX: Prevents ghost entries when files are deleted outside the app
+      this.watcher.on('unlink', (filePath) => {
+        this._handleFileDeletion(filePath);
+      });
+
       // Handle watcher errors with recovery
       this.watcher.on('error', (error) => {
         this._handleWatcherError(error);
@@ -222,6 +229,13 @@ class DownloadWatcher {
    * @param {string} filePath - Path to the file
    */
   _debouncedHandleFile(filePath) {
+    // FIX: Skip files recently operated on by any watcher (prevents infinite loops)
+    const tracker = getFileOperationTracker();
+    if (tracker.wasRecentlyOperated(filePath)) {
+      logger.debug('[DOWNLOAD-WATCHER] Skipping recently-operated file:', filePath);
+      return;
+    }
+
     // Clear any existing timer for this file
     if (this.debounceTimers.has(filePath)) {
       clearTimeout(this.debounceTimers.get(filePath));
@@ -231,9 +245,26 @@ class DownloadWatcher {
     const timer = setTimeout(async () => {
       this.debounceTimers.delete(filePath);
 
+      // FIX: Verify file still exists after debounce (race condition prevention)
+      try {
+        await fs.stat(filePath);
+      } catch (statError) {
+        if (isNotFoundError(statError)) {
+          logger.debug('[DOWNLOAD-WATCHER] File disappeared during debounce:', filePath);
+          return;
+        }
+        // For other errors, continue and let handleFile deal with it
+      }
+
       // Check if already processing this file
       if (this.processingFiles.has(filePath)) {
         logger.debug('[DOWNLOAD-WATCHER] File already being processed:', filePath);
+        return;
+      }
+
+      // FIX: Double-check recently-operated after debounce (another watcher may have processed it)
+      if (tracker.wasRecentlyOperated(filePath)) {
+        logger.debug('[DOWNLOAD-WATCHER] File became recently-operated during debounce:', filePath);
         return;
       }
 
@@ -665,7 +696,9 @@ class DownloadWatcher {
         }
 
         const confidencePercent = deriveWatcherConfidencePercent(result);
-        const fileName = path.basename(filePath);
+        // FIX: Use renamed filename from destination, not original filename
+        // This ensures notifications show the actual filename the user will see
+        const fileName = path.basename(result.destination);
         const destFolder = path.basename(path.dirname(result.destination));
 
         logger.info(
@@ -764,6 +797,9 @@ class DownloadWatcher {
 
     try {
       await fs.rename(source, destination);
+      // FIX: Record operation to prevent other watchers from re-processing this file
+      getFileOperationTracker().recordOperation(destination, 'move', 'downloadWatcher');
+      getFileOperationTracker().recordOperation(source, 'move', 'downloadWatcher');
     } catch (renameError) {
       // Handle cross-device move (different drives)
       if (isCrossDeviceError(renameError)) {
@@ -772,6 +808,9 @@ class DownloadWatcher {
         );
         try {
           await crossDeviceMove(source, destination, { verify: true });
+          // FIX: Record operation to prevent other watchers from re-processing this file
+          getFileOperationTracker().recordOperation(destination, 'move', 'downloadWatcher');
+          getFileOperationTracker().recordOperation(source, 'move', 'downloadWatcher');
         } catch (copyError) {
           const fsError = copyError.isFileSystemError
             ? copyError
@@ -910,6 +949,17 @@ class DownloadWatcher {
       return;
     }
 
+    // FIX: Verify file still exists before embedding (prevents ghost embeddings)
+    try {
+      await fs.stat(filePath);
+    } catch (statError) {
+      if (isNotFoundError(statError)) {
+        logger.debug('[DOWNLOAD-WATCHER] File no longer exists, skipping embedding:', filePath);
+        return;
+      }
+      // For other stat errors, continue and let embedding logic handle it
+    }
+
     try {
       // Extract analysis data - handle different result structures
       const analysis = analysisResult.analysis || analysisResult;
@@ -972,6 +1022,55 @@ class DownloadWatcher {
         filePath,
         error: embedError.message
       });
+    }
+  }
+
+  /**
+   * Handle file deletion events from the watcher
+   * Removes embeddings and analysis history for externally deleted files
+   * FIX: Prevents ghost entries when files are deleted via File Explorer
+   * @private
+   * @param {string} filePath - Path to the deleted file
+   */
+  async _handleFileDeletion(filePath) {
+    // Skip temp files
+    if (isTemporaryFile(filePath)) {
+      return;
+    }
+
+    logger.info('[DOWNLOAD-WATCHER] Detected external file deletion:', filePath);
+
+    try {
+      // Remove from ChromaDB (both file: and image: prefixes)
+      if (this.chromaDbService) {
+        // Use batch delete for atomicity when available
+        const idsToDelete = [`file:${filePath}`, `image:${filePath}`];
+
+        if (typeof this.chromaDbService.batchDeleteFileEmbeddings === 'function') {
+          await this.chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
+        } else {
+          // Fallback to individual deletes
+          for (const id of idsToDelete) {
+            await this.chromaDbService.deleteFileEmbedding(id);
+          }
+        }
+
+        // Delete associated chunks
+        if (typeof this.chromaDbService.deleteFileChunks === 'function') {
+          await this.chromaDbService.deleteFileChunks(`file:${filePath}`);
+          await this.chromaDbService.deleteFileChunks(`image:${filePath}`);
+        }
+
+        logger.debug('[DOWNLOAD-WATCHER] Removed embeddings for deleted file:', filePath);
+      }
+
+      // Remove from analysis history
+      if (this.analysisHistoryService?.removeEntriesByPath) {
+        await this.analysisHistoryService.removeEntriesByPath(filePath);
+        logger.debug('[DOWNLOAD-WATCHER] Removed history for deleted file:', filePath);
+      }
+    } catch (error) {
+      logger.warn('[DOWNLOAD-WATCHER] Error cleaning up deleted file:', filePath, error.message);
     }
   }
 

@@ -410,8 +410,13 @@ function safeSuggestedName(fileName, extension) {
     return `unnamed_file${extension}`;
   }
 
-  // Strip extension, sanitize the base name
-  let nameWithoutExt = fileName.replace(extension, '');
+  // HIGH FIX: Use proper trailing extension removal instead of string.replace()
+  // string.replace() only removes the first occurrence, which could incorrectly
+  // modify filenames like "report.pdf.backup.pdf" → "report.backup.pdf" instead of "report.pdf.backup"
+  let nameWithoutExt = fileName;
+  if (extension && fileName.toLowerCase().endsWith(extension.toLowerCase())) {
+    nameWithoutExt = fileName.slice(0, -extension.length);
+  }
 
   // Try to extract a topic from the existing filename if it's descriptive
   // Split by common separators

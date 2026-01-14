@@ -756,7 +756,16 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const chunkPayloads = [];
         const embeddingService = getParallelEmbeddingService();
 
+        // FIX: Yield every N entries to prevent UI blocking during large rebuilds
+        const YIELD_EVERY_N = 50;
+        let processedCount = 0;
+
         for (const entry of allEntries) {
+          // FIX: Yield to event loop periodically to prevent UI blocking
+          processedCount++;
+          if (processedCount % YIELD_EVERY_N === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
+          }
           try {
             const organization = entry.organization || {};
             const filePath = organization.actual || entry.originalPath;
@@ -902,6 +911,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
           } catch (e) {
             logger.warn('[EMBEDDINGS] Failed to batch upsert files:', e.message);
           }
+          // FIX: Yield between batches to prevent UI blocking
+          await new Promise((resolve) => setImmediate(resolve));
         }
 
         // Batch upsert chunk embeddings (in chunks to keep payloads bounded)
@@ -914,6 +925,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
           } catch (e) {
             logger.warn('[EMBEDDINGS] Failed to batch upsert file chunks:', e.message);
           }
+          // FIX: Yield between batches to prevent UI blocking
+          await new Promise((resolve) => setImmediate(resolve));
         }
 
         // Return detailed status
@@ -1582,6 +1595,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
           // FIX P1-7: Verify embedding model for vector/hybrid modes
           // BM25-only mode doesn't need embeddings
           let effectiveMode = mode;
+          let fallbackReason = null; // FIX C-3: Track fallback reason for UI notification
           if (mode !== 'bm25') {
             const modelCheck = await verifyEmbeddingModelAvailable(logger);
             if (!modelCheck.available) {
@@ -1603,6 +1617,10 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 }
               );
               effectiveMode = 'bm25';
+              // FIX C-3: Capture reason for UI banner
+              fallbackReason = modelCheck.error?.includes('not running')
+                ? 'Ollama offline - using keyword search only'
+                : `Embedding model unavailable: ${modelCheck.error}`;
             }
           }
 
@@ -1666,7 +1684,12 @@ function registerEmbeddingsIpc(servicesOrParams) {
             queryMeta: result.queryMeta, // Include query processing info (corrections, synonyms)
             meta: {
               ...result.meta,
-              ...(effectiveMode !== mode && { fallback: true, originalMode: mode })
+              // FIX C-3: Include fallback info for UI banner
+              ...(effectiveMode !== mode && {
+                fallback: true,
+                originalMode: mode,
+                fallbackReason: fallbackReason || 'Semantic search unavailable'
+              })
             }
           };
         } catch (e) {
@@ -1909,7 +1932,15 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return { success: false, error: 'No valid seedIds provided' };
         }
 
-        const results = await folderMatcher.findMultiHopNeighbors(validIds, options);
+        // Map UI parameters to service parameters (fixes parameter name mismatch)
+        // UI sends: { hops, decay } but service expects: { maxHops, decayFactor }
+        const mappedOptions = {
+          maxHops: options.hops ?? options.maxHops,
+          topKPerHop: options.topKPerHop,
+          decayFactor: options.decay ?? options.decayFactor
+        };
+
+        const results = await folderMatcher.findMultiHopNeighbors(validIds, mappedOptions);
         return { success: true, results };
       } catch (e) {
         logger.error('[EMBEDDINGS] Multi-hop expansion failed:', e);
@@ -1989,6 +2020,30 @@ function registerEmbeddingsIpc(servicesOrParams) {
           success: false,
           error: `Failed to retrieve clusters: ${e.message}`,
           operation: 'GET_CLUSTERS'
+        };
+      }
+    })
+  );
+
+  /**
+   * FIX: Clear cluster cache manually
+   * Allows users/admins to force cluster recalculation without waiting for staleness timeout
+   */
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS,
+    withErrorLogging(logger, async () => {
+      try {
+        const service = await getClusteringService();
+        service.clearClusters();
+        logger.info('[EMBEDDINGS] Cluster cache cleared manually');
+        return { success: true, message: 'Cluster cache cleared' };
+      } catch (e) {
+        logger.error('[EMBEDDINGS] Clear clusters failed:', e);
+        return {
+          success: false,
+          error: `Failed to clear cluster cache: ${e.message}`,
+          operation: 'CLEAR_CLUSTERS'
         };
       }
     })

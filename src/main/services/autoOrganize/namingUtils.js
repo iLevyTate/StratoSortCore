@@ -6,6 +6,11 @@
  * @module services/autoOrganize/namingUtils
  */
 
+const { LIMITS } = require('../../../shared/performanceConstants');
+
+// Maximum filename length (excluding path) - standard filesystem limit
+const MAX_FILENAME_LENGTH = LIMITS?.MAX_FILENAME_LENGTH || 255;
+
 /**
  * Format a date according to the specified format
  * @param {Date} date - Date to format
@@ -346,7 +351,58 @@ function generateSuggestedNameFromAnalysis({
     base = `${project}${separator}${subject}${separator}${formattedDate}`;
 
   const finalBase = caseConvention ? applyCaseConvention(base, caseConvention) : base;
-  return `${finalBase}${extension}`;
+  const fullName = `${finalBase}${extension}`;
+
+  // FIX: Validate filename length doesn't exceed filesystem limits
+  return enforceFileNameLength(fullName, extension);
+}
+
+/**
+ * Enforce maximum filename length by truncating the base name if necessary.
+ * Preserves the file extension and attempts to break at word boundaries.
+ *
+ * @param {string} fileName - Full filename (with extension)
+ * @param {string} [extension] - File extension (optional, will be extracted if not provided)
+ * @returns {string} Filename guaranteed to be within MAX_FILENAME_LENGTH
+ */
+function enforceFileNameLength(fileName, extension = null) {
+  if (!fileName || fileName.length <= MAX_FILENAME_LENGTH) {
+    return fileName;
+  }
+
+  // Extract extension if not provided
+  const ext = extension || (fileName.includes('.') ? `.${fileName.split('.').pop()}` : '');
+  const extLength = ext.length;
+
+  // Calculate available space for base name
+  // Reserve space for extension and potential suffix like "_truncated"
+  const maxBaseLength = MAX_FILENAME_LENGTH - extLength - 1; // -1 for safety margin
+
+  if (maxBaseLength < 10) {
+    // Extension is too long, just truncate everything
+    return fileName.slice(0, MAX_FILENAME_LENGTH);
+  }
+
+  // Get base name (without extension)
+  const baseName = ext ? fileName.slice(0, -ext.length) : fileName;
+
+  if (baseName.length <= maxBaseLength) {
+    return fileName; // Already within limits
+  }
+
+  // Truncate at word boundary if possible
+  const truncated = baseName.slice(0, maxBaseLength);
+  const lastBreak = Math.max(
+    truncated.lastIndexOf(' '),
+    truncated.lastIndexOf('-'),
+    truncated.lastIndexOf('_')
+  );
+
+  // Use word boundary if it's at least 50% of max length
+  const finalBase =
+    lastBreak > maxBaseLength * 0.5 ? truncated.slice(0, lastBreak).trim() : truncated.trim();
+
+  return `${finalBase}${ext}`;
 }
 
 /**
@@ -461,5 +517,7 @@ module.exports = {
   extractFileName,
   generateSuggestedNameFromAnalysis,
   makeUniqueFileName,
-  processTemplate
+  processTemplate,
+  enforceFileNameLength,
+  MAX_FILENAME_LENGTH
 };

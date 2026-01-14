@@ -2,7 +2,8 @@
 
 ## Overview
 
-This document establishes coding standards for consistency, readability, and maintainability across the StratoSort codebase.
+This document establishes coding standards for consistency, readability, and maintainability across
+the StratoSort codebase.
 
 ## Table of Contents
 
@@ -122,7 +123,7 @@ const folderMatchScore = calculateSimilarity();
 const {
   createErrorResponse,
   createSuccessResponse,
-  withErrorHandling,
+  withErrorHandling
 } = require('../shared/errorHandlingUtils');
 
 // Wrap IPC handlers
@@ -133,8 +134,8 @@ const handler = withErrorHandling(
   },
   {
     context: 'FileAnalysis',
-    operation: 'analyze-file',
-  },
+    operation: 'analyze-file'
+  }
 );
 ```
 
@@ -148,7 +149,7 @@ try {
 } catch (error) {
   logger.error('Operation failed', { error: error.message });
   return createErrorResponse(error.message, ERROR_CODES.OPERATION_FAILED, {
-    originalError: error.name,
+    originalError: error.name
   });
 }
 ```
@@ -162,7 +163,7 @@ logger.error('Failed to analyze file', {
   error: error.message,
   stack: error.stack,
   code: error.code,
-  context: 'additional context',
+  context: 'additional context'
 });
 ```
 
@@ -229,7 +230,7 @@ async function processInOrder() {
 async function processInParallel() {
   const [file1, file2] = await Promise.all([
     readFile('file1.txt'),
-    readFile('file2.txt'), // Runs concurrently
+    readFile('file2.txt') // Runs concurrently
   ]);
   return [file1, file2];
 }
@@ -292,7 +293,7 @@ const result = await someVeryLongFunctionName(
   parameter2,
   parameter3,
   parameter4,
-  parameter5,
+  parameter5
 );
 
 // Good: Broken for readability
@@ -301,7 +302,7 @@ const result = await someVeryLongFunctionName(
   parameter2,
   parameter3,
   parameter4,
-  parameter5,
+  parameter5
 );
 ```
 
@@ -316,7 +317,7 @@ const config = {
   timeout: 5000,
   retries: 3,
   model: 'llama3.2:1b',
-  verbose: true,
+  verbose: true
 };
 
 // Arrays: Multi-line for multiple items
@@ -341,7 +342,7 @@ function processFile(filePath) {
   return {
     filePath,
     analysis,
-    timestamp: Date.now(),
+    timestamp: Date.now()
   };
 }
 ```
@@ -507,7 +508,7 @@ function determineAction(type, status, user) {
 const ACTION_MAP = {
   'A-active-admin': 'admin-action-A',
   'A-active-user': 'user-action-A',
-  'A-inactive': 'inactive-A',
+  'A-inactive': 'inactive-A'
   // ...
 };
 
@@ -532,11 +533,13 @@ function determineAction(type, status, user) {
 **Renderer Process (ES6):**
 
 - From `src/renderer/`: `import { logger } from '../shared/logger'`
-- From `src/renderer/components/`, `src/renderer/phases/`: `import { logger } from '../../shared/logger'`
+- From `src/renderer/components/`, `src/renderer/phases/`:
+  `import { logger } from '../../shared/logger'`
 - From `src/renderer/utils/`, `src/renderer/contexts/`: `import { logger } from '../shared/logger'`
-- From `src/renderer/components/ui/`, `src/renderer/components/organize/`: `import { logger } from '../../../shared/logger'`
+- From `src/renderer/components/ui/`, `src/renderer/components/organize/`:
+  `import { logger } from '../../../shared/logger'`
 
-See `docs/IMPORT_PATH_STANDARDS.md` for complete documentation.
+The examples above demonstrate the standard import path patterns used throughout the codebase.
 
 ### Import Order
 

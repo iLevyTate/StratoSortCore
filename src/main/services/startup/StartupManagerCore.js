@@ -152,7 +152,8 @@ class StartupManager {
         );
 
         if (attempt > 0) {
-          const delayMs = Math.min(this.config.baseRetryDelay * 2 ** attempt, 10000);
+          // FIX 2.1: Increased cap from 10s to 15s for slow/overloaded systems
+          const delayMs = Math.min(this.config.baseRetryDelay * 2 ** attempt, 15000);
           logger.info(`[STARTUP] Waiting ${delayMs}ms before retry...`);
           await delay(delayMs);
         }

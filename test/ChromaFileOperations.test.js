@@ -260,12 +260,13 @@ describe('ChromaDB File Operations', () => {
         queryCache: mockQueryCache
       });
 
-      expect(result).toBe(true);
+      // FIX: deleteFileEmbedding now returns { success: boolean } object
+      expect(result.success).toBe(true);
       expect(mockFileCollection.delete).toHaveBeenCalledWith({ ids: ['file-123'] });
       expect(mockQueryCache.invalidateForFile).toHaveBeenCalledWith('file-123');
     });
 
-    test('returns false on error', async () => {
+    test('returns { success: false } on error', async () => {
       mockFileCollection.delete.mockRejectedValueOnce(new Error('Delete failed'));
 
       const result = await deleteFileEmbedding({
@@ -274,7 +275,9 @@ describe('ChromaDB File Operations', () => {
         queryCache: mockQueryCache
       });
 
-      expect(result).toBe(false);
+      // FIX: deleteFileEmbedding now returns { success: boolean, error?: string }
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
     });
 
     test('works without query cache', async () => {
@@ -284,7 +287,8 @@ describe('ChromaDB File Operations', () => {
         queryCache: null
       });
 
-      expect(result).toBe(true);
+      // FIX: deleteFileEmbedding now returns { success: boolean }
+      expect(result.success).toBe(true);
     });
   });
 

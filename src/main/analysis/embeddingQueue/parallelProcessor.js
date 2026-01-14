@@ -84,22 +84,28 @@ async function processItemsInParallel({
   let activeCount = 0;
   const waitQueue = [];
 
+  // FIX P0-3: Use increment-first pattern for atomic semaphore acquisition
+  // The previous check-then-increment pattern had a race condition where multiple
+  // async operations could check activeCount simultaneously, all see it as < concurrency,
+  // and all increment - exceeding the concurrency limit.
   const acquireSlot = () => {
-    if (activeCount < concurrency) {
-      activeCount++;
+    // Atomic: increment first, then check
+    activeCount++;
+    if (activeCount <= concurrency) {
       return Promise.resolve();
     }
+    // Exceeded limit - decrement and queue
+    activeCount--;
     return new Promise((resolve) => waitQueue.push(resolve));
   };
 
   const releaseSlot = () => {
-    // FIX: Add bounds checking to prevent activeCount from going negative
-    if (activeCount > 0) {
-      activeCount--;
-    }
-    if (waitQueue.length > 0 && activeCount < concurrency) {
+    // Use Math.max to prevent negative activeCount
+    activeCount = Math.max(0, activeCount - 1);
+    if (waitQueue.length > 0) {
       activeCount++;
-      waitQueue.shift()();
+      const next = waitQueue.shift();
+      next();
     }
   };
 

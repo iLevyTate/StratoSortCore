@@ -177,7 +177,7 @@ describe('EmbeddingQueueCore Methods', () => {
       embeddingQueue.MEMORY_WARNING_THRESHOLD = 1;
       embeddingQueue.queue = [validItem]; // 1 item is >= threshold 1
 
-      const result = await embeddingQueue.enqueue({ id: 'file:2', vector: [] });
+      const result = await embeddingQueue.enqueue({ id: 'file:2', vector: [0.2] });
 
       expect(result.warnings).toContain('high_watermark');
       expect(logger.warn).toHaveBeenCalledWith(
@@ -189,7 +189,7 @@ describe('EmbeddingQueueCore Methods', () => {
       embeddingQueue.MAX_QUEUE_SIZE = 1;
       embeddingQueue.queue = [validItem];
 
-      const result = await embeddingQueue.enqueue({ id: 'file:2', vector: [] });
+      const result = await embeddingQueue.enqueue({ id: 'file:2', vector: [0.2] });
 
       expect(result.success).toBe(false);
       expect(result.reason).toBe('queue_overflow');
@@ -206,7 +206,7 @@ describe('EmbeddingQueueCore Methods', () => {
       // Spy on flush
       const flushSpy = jest.spyOn(embeddingQueue, 'flush').mockResolvedValue();
 
-      await embeddingQueue.enqueue({ id: 'file:2', vector: [] });
+      await embeddingQueue.enqueue({ id: 'file:2', vector: [0.2] });
 
       expect(flushSpy).toHaveBeenCalled();
     });

@@ -122,6 +122,29 @@ class OllamaClient {
         data
       );
     });
+
+    // FIX: Process offline queue when circuit closes to ensure queue is processed immediately
+    // This fixes the race condition where circuit closes before health check interval
+    this.circuitBreaker.on('close', async ({ serviceName }) => {
+      logger.info(
+        `[OllamaClient] Circuit closed for ${serviceName}, triggering offline queue processing`
+      );
+      try {
+        // Mark as healthy since circuit closed successfully
+        this.isHealthy = true;
+        this.consecutiveFailures = 0;
+
+        // Process offline queue if not already processing
+        if (this.offlineQueue.length > 0 && !this.isProcessingOfflineQueue) {
+          await this._processOfflineQueue();
+        }
+      } catch (error) {
+        logger.error(
+          '[OllamaClient] Error processing offline queue on circuit close:',
+          error.message
+        );
+      }
+    });
   }
 
   /**

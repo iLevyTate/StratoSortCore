@@ -21,20 +21,24 @@ import {
 
 logger.setContext('DiscoverPhase:Analysis');
 
-// FIX: Module-level timeout ID storage for auto-advance cleanup
-// This allows showAnalysisCompletionNotification to return the timeout ID
-// for proper cleanup when components unmount
-let pendingAutoAdvanceTimeoutId = null;
+// FIX Issue 4: Removed module-level pendingAutoAdvanceTimeoutId
+// Auto-advance timeout is now stored in a ref within the hook to prevent
+// cross-component interference when hook unmounts and remounts
 
 /**
- * Clear any pending auto-advance timeout
- * Call this on component unmount to prevent state updates on unmounted components
+ * Clear auto-advance timeout from ref
+ * @param {React.MutableRefObject} autoAdvanceTimeoutRef - Ref containing timeout ID
  */
-export function clearAutoAdvanceTimeout() {
-  if (pendingAutoAdvanceTimeoutId) {
-    clearTimeout(pendingAutoAdvanceTimeoutId);
-    pendingAutoAdvanceTimeoutId = null;
+function clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef) {
+  if (autoAdvanceTimeoutRef?.current) {
+    clearTimeout(autoAdvanceTimeoutRef.current);
+    autoAdvanceTimeoutRef.current = null;
   }
+}
+
+// Legacy export for backward compatibility - now a no-op
+export function clearAutoAdvanceTimeout() {
+  // No-op: Auto-advance timeout is now managed per-hook instance via ref
 }
 
 /**
@@ -165,13 +169,15 @@ function mergeFileStates(existingStates, results) {
  * @param {Function} params.addNotification - Notification function
  * @param {Object} params.actions - Phase actions
  * @param {Function} params.getCurrentPhase - Function to get current phase (prevents race condition)
+ * @param {React.MutableRefObject} params.autoAdvanceTimeoutRef - Ref for auto-advance timeout (FIX Issue 4)
  */
 function showAnalysisCompletionNotification({
   successCount,
   failureCount,
   addNotification,
   actions,
-  getCurrentPhase
+  getCurrentPhase,
+  autoAdvanceTimeoutRef
 }) {
   if (successCount > 0 && failureCount === 0) {
     addNotification(
@@ -180,11 +186,11 @@ function showAnalysisCompletionNotification({
       4000,
       'analysis-complete'
     );
-    // FIX: Store timeout ID for cleanup on unmount
-    clearAutoAdvanceTimeout(); // Clear any previous pending timeout
-    pendingAutoAdvanceTimeoutId = setTimeout(() => {
-      pendingAutoAdvanceTimeoutId = null;
-      // FIX: Check if still in DISCOVER phase before auto-advancing
+    // FIX Issue 4: Store timeout ID in ref for proper per-hook cleanup
+    clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef); // Clear any previous pending timeout
+    autoAdvanceTimeoutRef.current = setTimeout(() => {
+      autoAdvanceTimeoutRef.current = null;
+      // Check if still in DISCOVER phase before auto-advancing
       // This prevents unexpected navigation if user moved away during the delay
       const currentPhase = getCurrentPhase?.();
       if (currentPhase === PHASES.DISCOVER) {
@@ -203,11 +209,11 @@ function showAnalysisCompletionNotification({
       4000,
       'analysis-complete'
     );
-    // FIX: Store timeout ID for cleanup on unmount
-    clearAutoAdvanceTimeout(); // Clear any previous pending timeout
-    pendingAutoAdvanceTimeoutId = setTimeout(() => {
-      pendingAutoAdvanceTimeoutId = null;
-      // FIX: Check if still in DISCOVER phase before auto-advancing
+    // FIX Issue 4: Store timeout ID in ref for proper per-hook cleanup
+    clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef); // Clear any previous pending timeout
+    autoAdvanceTimeoutRef.current = setTimeout(() => {
+      autoAdvanceTimeoutRef.current = null;
+      // Check if still in DISCOVER phase before auto-advancing
       const currentPhase = getCurrentPhase?.();
       if (currentPhase === PHASES.DISCOVER) {
         actions.advancePhase(PHASES.ORGANIZE);
@@ -274,6 +280,11 @@ export function useAnalysis(options) {
   const lockTimeoutRef = useRef(null);
   const abortControllerRef = useRef(null);
   const pendingFilesRef = useRef([]);
+  // FIX Issue 4: Auto-advance timeout stored per-hook instance
+  const autoAdvanceTimeoutRef = useRef(null);
+  // FIX: Throttle progress updates to prevent race conditions with concurrent workers
+  const lastProgressDispatchRef = useRef(0);
+  const PROGRESS_THROTTLE_MS = 50;
 
   // Refs to track current state values (prevents stale closures in callbacks)
   // PERF FIX: Update refs synchronously during render instead of using separate useEffect hooks.
@@ -505,29 +516,26 @@ export function useAnalysis(options) {
       setAnalysisProgress(initialProgress);
       setCurrentAnalysisFile('');
       actions.setPhaseData('isAnalyzing', true);
-      actions.setPhaseData('analysisProgress', initialProgress);
+      // FIX: Removed redundant setPhaseData('analysisProgress') - Redux is single source of truth
 
-      // Progress tracking refs (use different names to avoid shadowing outer refs)
-      const localProgressRef = { current: initialProgress };
+      // FIX: Use analysisProgressRef (synced from Redux) instead of local ref
+      // This ensures heartbeat and progress updates are consistent with Redux state
       const localAnalyzingRef = { current: true };
 
-      // Heartbeat interval
+      // Heartbeat interval - just updates lastActivity to keep analysis alive
+      // FIX: Read from analysisProgressRef (Redux state) instead of local ref
       heartbeatIntervalRef.current = setInterval(() => {
         if (localAnalyzingRef.current) {
+          const prev = analysisProgressRef.current;
           const currentProgress = {
-            current: localProgressRef.current.current,
-            total: localProgressRef.current.total,
-            lastActivity: localProgressRef.current.lastActivity || Date.now()
+            current: prev?.current || 0,
+            total: prev?.total || files.length,
+            lastActivity: Date.now()
           };
 
           if (validateProgressState(currentProgress)) {
-            // Use functional update to prevent race conditions with concurrent progress updates
-            const prev = analysisProgressRef.current;
-            // Only update if this progress is newer (prevents stale updates)
-            if (currentProgress.lastActivity >= (prev?.lastActivity || 0)) {
-              setAnalysisProgress(currentProgress);
-              actions.setPhaseData('analysisProgress', currentProgress);
-            }
+            // Only update lastActivity - progress counts are updated by processFile
+            setAnalysisProgress(currentProgress);
           } else {
             logger.warn('Invalid heartbeat progress, resetting');
             if (heartbeatIntervalRef.current) {
@@ -598,10 +606,6 @@ export function useAnalysis(options) {
 
           // Force a microtask yield to allow React to process the state update
           await Promise.resolve();
-          localProgressRef.current = {
-            ...localProgressRef.current,
-            lastActivity: Date.now()
-          };
 
           const fileInfo = {
             ...file,
@@ -618,17 +622,21 @@ export function useAnalysis(options) {
             if (abortSignal.aborted) return;
 
             // Increment progress AFTER analysis completes
+            completedCount++;
             const progress = {
-              current: Math.min(completedCount + 1, files.length), // Fix: Only increment on success, don't overshoot
+              current: Math.min(completedCount, files.length),
               total: files.length,
               lastActivity: Date.now()
             };
-            completedCount++;
 
-            if (validateProgressState(progress)) {
-              localProgressRef.current = progress;
+            // FIX: Throttle progress updates to prevent race conditions with concurrent workers
+            const now = Date.now();
+            if (
+              validateProgressState(progress) &&
+              now - lastProgressDispatchRef.current >= PROGRESS_THROTTLE_MS
+            ) {
+              lastProgressDispatchRef.current = now;
               setAnalysisProgress(progress);
-              actions.setPhaseData('analysisProgress', progress);
             }
 
             if (analysis && !analysis.error) {
@@ -674,14 +682,18 @@ export function useAnalysis(options) {
             // Still increment count on error so progress continues
             completedCount++;
             const progress = {
-              current: Math.min(completedCount, files.length), // Fix: Don't overshoot
+              current: Math.min(completedCount, files.length),
               total: files.length,
               lastActivity: Date.now()
             };
-            if (validateProgressState(progress)) {
-              localProgressRef.current = progress;
+            // FIX: Throttle progress updates to prevent race conditions with concurrent workers
+            const now = Date.now();
+            if (
+              validateProgressState(progress) &&
+              now - lastProgressDispatchRef.current >= PROGRESS_THROTTLE_MS
+            ) {
+              lastProgressDispatchRef.current = now;
               setAnalysisProgress(progress);
-              actions.setPhaseData('analysisProgress', progress);
             }
 
             results.push({
@@ -739,6 +751,14 @@ export function useAnalysis(options) {
 
         await runWorkerPool();
 
+        // FIX: Ensure final progress is dispatched (may have been throttled)
+        const finalProgress = {
+          current: files.length,
+          total: files.length,
+          lastActivity: Date.now()
+        };
+        setAnalysisProgress(finalProgress);
+
         // Merge results using extracted helper functions
         const mergedResults = dedupeSuggestedNames(mergeAnalysisResults(analysisResults, results));
         setAnalysisResults(mergedResults);
@@ -757,7 +777,8 @@ export function useAnalysis(options) {
           failureCount,
           addNotification,
           actions,
-          getCurrentPhase
+          getCurrentPhase,
+          autoAdvanceTimeoutRef // FIX Issue 4: Pass ref for per-hook timeout management
         });
       } catch (error) {
         if (error.message !== 'Analysis cancelled by user') {
@@ -785,9 +806,10 @@ export function useAnalysis(options) {
           actions.setPhaseData('currentAnalysisFile', '');
         }, 500);
 
-        setAnalysisProgress({ current: 0, total: 0 });
+        // FIX: Include lastActivity in reset to fully clear progress state
+        setAnalysisProgress({ current: 0, total: 0, lastActivity: 0 });
         actions.setPhaseData('isAnalyzing', false);
-        actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
+        // FIX: Removed redundant setPhaseData('analysisProgress') - already updated via setAnalysisProgress
 
         analysisLockRef.current = false;
         setGlobalAnalysisActive(false);
@@ -852,7 +874,7 @@ export function useAnalysis(options) {
     setIsAnalyzing(false);
     setAnalysisProgress({ current: 0, total: 0 });
     actions.setPhaseData('isAnalyzing', false);
-    actions.setPhaseData('analysisProgress', { current: 0, total: 0 });
+    // FIX: Removed redundant setPhaseData('analysisProgress') - already updated via setAnalysisProgress
 
     // FIX: Delay clearing the file name to allow UI to settle
     setTimeout(() => {
@@ -973,11 +995,12 @@ export function useAnalysis(options) {
     }
   }, [isAnalyzing, selectedFiles, fileStates, addNotification, resetAnalysisState]);
 
-  // FIX: Cleanup effect to clear auto-advance timeout on unmount
+  // FIX Issue 4: Cleanup effect to clear auto-advance timeout on unmount
   // This prevents "Can't perform state update on unmounted component" warnings
   useEffect(() => {
     return () => {
-      clearAutoAdvanceTimeout();
+      // FIX Issue 4: Clear per-hook auto-advance timeout
+      clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef);
       // Also clear any other pending timeouts
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);

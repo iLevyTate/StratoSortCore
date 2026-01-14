@@ -1,14 +1,84 @@
 const http = require('http');
 const https = require('https');
+const path = require('path');
+const fs = require('fs').promises;
+const os = require('os');
 const { asyncSpawn } = require('./asyncSpawnUtils');
+
+/**
+ * Get platform-specific fallback paths for Ollama binary
+ * @returns {string[]} List of potential binary paths
+ */
+function getOllamaFallbackPaths() {
+  const platform = process.platform;
+  const home = os.homedir();
+
+  if (platform === 'win32') {
+    return [
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+      path.join(process.env.PROGRAMFILES || '', 'Ollama', 'ollama.exe'),
+      path.join(home, 'AppData', 'Local', 'Programs', 'Ollama', 'ollama.exe'),
+      path.join(home, 'scoop', 'apps', 'ollama', 'current', 'ollama.exe')
+    ];
+  } else if (platform === 'darwin') {
+    return [
+      '/usr/local/bin/ollama',
+      '/opt/homebrew/bin/ollama',
+      path.join(home, '.ollama', 'bin', 'ollama'),
+      '/Applications/Ollama.app/Contents/Resources/ollama'
+    ];
+  } else {
+    // Linux
+    return [
+      '/usr/local/bin/ollama',
+      '/usr/bin/ollama',
+      path.join(home, '.ollama', 'bin', 'ollama'),
+      '/opt/ollama/bin/ollama'
+    ];
+  }
+}
+
+/**
+ * Find Ollama binary with fallback paths
+ * @returns {Promise<{found: boolean, path: string|null, source: 'path'|'fallback'|null}>}
+ */
+async function findOllamaBinary() {
+  // First try PATH
+  const pathResult = await asyncSpawn('ollama', ['--version'], {
+    timeout: 5000,
+    windowsHide: true
+  });
+  if (pathResult.status === 0) {
+    return { found: true, path: 'ollama', source: 'path' };
+  }
+
+  // Try fallback paths
+  const fallbacks = getOllamaFallbackPaths();
+  for (const binPath of fallbacks) {
+    if (!binPath) continue;
+
+    try {
+      await fs.access(binPath);
+      // Verify it's actually executable
+      const result = await asyncSpawn(binPath, ['--version'], { timeout: 5000, windowsHide: true });
+      if (result.status === 0) {
+        return { found: true, path: binPath, source: 'fallback' };
+      }
+    } catch {
+      // Continue to next fallback
+    }
+  }
+
+  return { found: false, path: null, source: null };
+}
 
 /**
  * Check if Ollama is installed and available in PATH
  * @returns {Promise<boolean>}
  */
 async function isOllamaInstalled() {
-  const result = await asyncSpawn('ollama', ['--version'], { timeout: 5000, windowsHide: true });
-  return result.status === 0;
+  const { found } = await findOllamaBinary();
+  return found;
 }
 
 /**
@@ -73,5 +143,7 @@ module.exports = {
   isOllamaInstalled,
   getOllamaVersion,
   isOllamaRunning,
-  getInstalledModels
+  getInstalledModels,
+  findOllamaBinary,
+  getOllamaFallbackPaths
 };

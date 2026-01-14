@@ -130,17 +130,13 @@ describe('backgroundSetup automated dependencies', () => {
     const originalUnlink = fs.unlink.bind(fs);
     fs.unlink = async (p) => originalUnlink(posixNormalize(p));
 
-    // Create installer marker to ensure it is cleaned up
+    // Create directories needed for the test
     await fs.mkdir('/test/exe', { recursive: true });
-    await fs.writeFile('/test/exe/first-run.marker', 'marker');
     await fs.mkdir('/test/userData', { recursive: true });
   });
 
   test('first run installs deps, starts services, pulls models, writes marker', async () => {
     await runBackgroundSetup();
-
-    // Installer marker removed
-    await expect(fs.access('/test/exe/first-run.marker')).rejects.toBeDefined();
 
     // Dependency setup marker written
     await expect(

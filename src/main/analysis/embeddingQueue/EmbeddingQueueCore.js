@@ -81,9 +81,17 @@ class EmbeddingQueue {
    * @private
    */
   async _acquireFlushMutex(timeout = TIMEOUTS.MUTEX_ACQUIRE) {
+    // FIX: Add guard flag to prevent double-release race condition
+    // Without this, timeout + normal completion could both call release()
+    let released = false;
     let release;
     const next = new Promise((resolve) => {
-      release = resolve;
+      release = () => {
+        if (!released) {
+          released = true;
+          resolve();
+        }
+      };
     });
 
     const current = this._flushMutex;
@@ -103,9 +111,10 @@ class EmbeddingQueue {
       clearTimeout(timeoutId);
       return release;
     } catch (error) {
+      clearTimeout(timeoutId);
       if (error.code === 'MUTEX_TIMEOUT') {
         logger.error('[EmbeddingQueue] Mutex timeout - forcing release to prevent deadlock');
-        // Force release to unblock future waiters, even though we timed out
+        // FIX: Safe to call - guard flag prevents double-release
         release();
       }
       throw error;
@@ -219,6 +228,31 @@ class EmbeddingQueue {
     if (!item || !item.id || !item.vector) {
       logger.warn('[EmbeddingQueue] Invalid item ignored', { id: item?.id });
       return { success: false, reason: 'invalid_item' };
+    }
+
+    // HIGH FIX: Validate vector is a non-empty array with numeric values
+    if (!Array.isArray(item.vector) || item.vector.length === 0) {
+      logger.warn('[EmbeddingQueue] Invalid vector - must be non-empty array', {
+        id: item.id,
+        vectorType: typeof item.vector,
+        isArray: Array.isArray(item.vector),
+        length: item.vector?.length
+      });
+      return { success: false, reason: 'invalid_vector_format' };
+    }
+
+    // Validate vector contains valid numeric values (sample check for performance)
+    const sampleIndices = [0, Math.floor(item.vector.length / 2), item.vector.length - 1];
+    for (const idx of sampleIndices) {
+      if (typeof item.vector[idx] !== 'number' || !Number.isFinite(item.vector[idx])) {
+        logger.warn('[EmbeddingQueue] Invalid vector - contains non-numeric values', {
+          id: item.id,
+          sampleIndex: idx,
+          sampleValue: item.vector[idx],
+          sampleType: typeof item.vector[idx]
+        });
+        return { success: false, reason: 'invalid_vector_values' };
+      }
     }
 
     if (!this.initialized) {
@@ -350,7 +384,25 @@ class EmbeddingQueue {
       try {
         logger.debug('[EmbeddingQueue] Flushing batch', { count: batch.length });
 
-        const chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
+        // HIGH FIX: Add error handling for container.resolve to prevent crash if ChromaDB is unavailable
+        let chromaDbService;
+        try {
+          chromaDbService = container.resolve(ServiceIds.CHROMA_DB);
+        } catch (resolveError) {
+          logger.error(
+            '[EmbeddingQueue] Failed to resolve ChromaDB service:',
+            resolveError.message
+          );
+          await this._handleOfflineDatabase(batch, batchSize);
+          return;
+        }
+
+        if (!chromaDbService) {
+          logger.error('[EmbeddingQueue] ChromaDB service is null');
+          await this._handleOfflineDatabase(batch, batchSize);
+          return;
+        }
+
         await chromaDbService.initialize();
 
         if (!chromaDbService.isOnline) {
@@ -390,8 +442,10 @@ class EmbeddingQueue {
         }
 
         // Process folders
+        // HIGH FIX: Capture return value to include folder count in processedCount
         if (folderItems.length > 0) {
-          await processItemsInParallel({
+          // Note: processedCount is used as input via startProcessedCount
+          void (processedCount = await processItemsInParallel({
             items: folderItems,
             type: 'folder',
             chromaDbService,
@@ -401,7 +455,7 @@ class EmbeddingQueue {
             concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
             onProgress: (p) => this._notifyProgress(p),
             onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
-          });
+          }));
         }
 
         // Remove processed items from queue
@@ -773,6 +827,7 @@ class EmbeddingQueue {
       this.flushTimer = null;
     }
 
+    // CRITICAL FIX: Check if flush is in progress and wait with proper timeout handling
     if (this.isFlushing) {
       logger.info('[EmbeddingQueue] Waiting for current flush to complete...');
       const maxWait = 30000;
@@ -780,11 +835,30 @@ class EmbeddingQueue {
       while (this.isFlushing && Date.now() - startTime < maxWait) {
         await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_BATCH));
       }
+
+      // CRITICAL FIX: If still flushing after timeout, log warning and skip additional flush
+      // This prevents deadlock when original flush is stuck
+      if (this.isFlushing) {
+        logger.warn(
+          '[EmbeddingQueue] Force flush timeout - current flush still in progress after 30s. Proceeding with persistence only.',
+          { queueLength: this.queue.length }
+        );
+        // Don't try to call flush() again as it would cause deadlock
+        await this.persistQueue();
+        await this._failedItemHandler.persistAll();
+        logger.info('[EmbeddingQueue] Force flush completed (persistence only due to timeout)');
+        return;
+      }
     }
 
     if (this.queue.length > 0) {
       logger.info(`[EmbeddingQueue] Force flushing ${this.queue.length} remaining items`);
-      await this.flush();
+      try {
+        await this.flush();
+      } catch (flushError) {
+        logger.error('[EmbeddingQueue] Force flush failed:', flushError.message);
+        // Continue with persistence even if flush fails
+      }
     }
 
     await this.persistQueue();

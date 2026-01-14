@@ -154,9 +154,11 @@ async function hasPythonModuleAsync(moduleName) {
 
   for (const { cmd, args } of pythonCommands) {
     try {
+      // FIX Issue 2.5: Use JSON.stringify to properly escape module name and prevent command injection
+      // This prevents attacks like moduleName = 'foo"); os.system("rm -rf /")#'
       const result = await asyncSpawn(
         cmd,
-        [...args, '-c', `import importlib; importlib.import_module("${moduleName}")`],
+        [...args, '-c', `import importlib; importlib.import_module(${JSON.stringify(moduleName)})`],
         {
           stdio: ['ignore', 'ignore', 'pipe'],
           timeout: 5000,
@@ -220,6 +222,67 @@ async function findPythonLauncherAsync() {
 }
 
 /**
+ * Check Python version meets minimum requirement
+ * ChromaDB requires Python 3.9+
+ * @param {Object} launcher - Python launcher {command, args}
+ * @param {number} minMajor - Minimum major version (default: 3)
+ * @param {number} minMinor - Minimum minor version (default: 9)
+ * @returns {Promise<{valid: boolean, version: string|null, error: string|null}>}
+ */
+async function checkPythonVersionAsync(launcher, minMajor = 3, minMinor = 9) {
+  if (!launcher) {
+    return { valid: false, version: null, error: 'No Python launcher provided' };
+  }
+
+  try {
+    const result = await asyncSpawn(
+      launcher.command,
+      [
+        ...launcher.args,
+        '-c',
+        'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")'
+      ],
+      {
+        stdio: 'pipe',
+        windowsHide: true,
+        timeout: 3000
+      }
+    );
+
+    if (result.status !== 0) {
+      return { valid: false, version: null, error: 'Failed to get Python version' };
+    }
+
+    const version = (result.stdout || '').trim();
+    const parts = version.split('.');
+    const major = parseInt(parts[0], 10);
+    const minor = parseInt(parts[1], 10);
+
+    if (isNaN(major) || isNaN(minor)) {
+      return { valid: false, version, error: `Could not parse version: ${version}` };
+    }
+
+    const valid = major > minMajor || (major === minMajor && minor >= minMinor);
+
+    if (!valid) {
+      logger.warn(
+        `[Python] Version ${version} does not meet minimum requirement ${minMajor}.${minMinor}`
+      );
+      return {
+        valid: false,
+        version,
+        error: `Python ${version} is below minimum ${minMajor}.${minMinor}. ChromaDB requires Python ${minMajor}.${minMinor}+`
+      };
+    }
+
+    logger.debug(`[Python] Version ${version} meets requirement ${minMajor}.${minMinor}+`);
+    return { valid: true, version, error: null };
+  } catch (error) {
+    return { valid: false, version: null, error: error.message };
+  }
+}
+
+/**
  * Check if chroma executable exists (async version)
  * @returns {Promise<boolean>}
  */
@@ -262,5 +325,6 @@ module.exports = {
   asyncSpawn,
   hasPythonModuleAsync,
   findPythonLauncherAsync,
+  checkPythonVersionAsync,
   checkChromaExecutableAsync
 };

@@ -4,7 +4,7 @@ import { logger } from '../../shared/logger';
 import { useAppDispatch } from '../store/hooks';
 import { resetUi } from '../store/slices/uiSlice';
 import { resetFilesState } from '../store/slices/filesSlice';
-import { resetAnalysisState } from '../store/slices/analysisSlice';
+import { resetAnalysisState, resetToSafeState } from '../store/slices/analysisSlice';
 import { ErrorBoundaryCore } from './ErrorBoundary';
 
 logger.setContext('PhaseErrorBoundary');
@@ -34,6 +34,13 @@ function PhaseErrorBoundary({ children, phaseName }) {
     });
   };
 
+  // FIX: Reset analysis state on error boundary recovery ("Try Again")
+  // Uses resetToSafeState to clear in-progress state but preserve results
+  const handleReset = () => {
+    dispatch(resetToSafeState());
+    logger.info('Phase error boundary reset, analysis state cleared');
+  };
+
   return (
     <ErrorBoundaryCore
       variant="phase"
@@ -42,6 +49,7 @@ function PhaseErrorBoundary({ children, phaseName }) {
       enableChunkRecovery
       onNavigateHome={handleNavigateHome}
       onError={handleError}
+      onReset={handleReset}
     >
       {children}
     </ErrorBoundaryCore>

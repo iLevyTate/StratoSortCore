@@ -86,11 +86,16 @@ function createSingletonHelpers(options) {
   // Module-level state (closure)
   let _localInstance = null;
   let _containerRegistered = false;
+  // FIX: Add pending promise for concurrent getInstance() calls to prevent race condition
+  // Two concurrent calls could both pass the if (!_localInstance) check and create duplicates
+  let _pendingInstance = null;
 
   /**
    * Get or create the singleton instance
+   * FIX: Thread-safe using promise deduplication pattern for async factories
+   * Maintains synchronous return for sync factories (backward compatible)
    * @param {Object} instanceOptions - Options passed to constructor
-   * @returns {Object} The singleton instance
+   * @returns {Object|Promise<Object>} The singleton instance or promise resolving to it
    */
   function getInstance(instanceOptions = {}) {
     // Try to get from DI container first (preferred)
@@ -104,12 +109,43 @@ function createSingletonHelpers(options) {
       // Container not available yet, use local instance
     }
 
-    // Fallback to local instance for early startup or testing
-    if (!_localInstance) {
-      _localInstance = createFactory
-        ? createFactory(instanceOptions)
-        : new ServiceClass(instanceOptions);
+    // FIX: Fast path - return existing instance immediately
+    if (_localInstance) {
+      return _localInstance;
     }
+
+    // FIX: If initialization is in progress (async factory), return pending promise
+    // This ensures all concurrent callers wait for the same instance
+    if (_pendingInstance) {
+      return _pendingInstance;
+    }
+
+    // Create the instance
+    const instance = createFactory
+      ? createFactory(instanceOptions)
+      : new ServiceClass(instanceOptions);
+
+    // FIX: Handle both sync and async factory results
+    // For sync factories, return synchronously (backward compatible)
+    // For async factories, wrap in promise deduplication to prevent race conditions
+    if (instance && typeof instance.then === 'function') {
+      // Async factory - use promise deduplication
+      _pendingInstance = Promise.resolve(instance)
+        .then((resolvedInstance) => {
+          _localInstance = resolvedInstance;
+          _pendingInstance = null;
+          return resolvedInstance;
+        })
+        .catch((error) => {
+          // On failure, clear pending so next call can retry
+          _pendingInstance = null;
+          throw error;
+        });
+      return _pendingInstance;
+    }
+
+    // Sync factory - return immediately (backward compatible)
+    _localInstance = instance;
     return _localInstance;
   }
 
@@ -124,13 +160,31 @@ function createSingletonHelpers(options) {
 
   /**
    * Register this service with the DI container
+   * FIX: Made idempotent using container.has() as authoritative source of truth
+   * This prevents race conditions where two calls both pass the _containerRegistered check
    * @param {Object} container - The DI container
    * @param {string} registrationId - The service identifier
    */
   function registerWithContainer(container, registrationId) {
+    // FIX: Use container.has() as the atomic check - it's the source of truth
+    // This handles cases where another module registered the service first
+    // Note: Check if has() exists for backward compatibility with mock containers
+    if (typeof container.has === 'function' && container.has(registrationId)) {
+      _containerRegistered = true;
+      return;
+    }
+
+    // Also check our local flag for performance (avoids redundant has() calls)
     if (_containerRegistered) return;
 
     container.registerSingleton(registrationId, () => {
+      // FIX: If there's a pending async instance being created, wait for it
+      // This prevents creating duplicate instances when registerWithContainer is called
+      // while an async factory is still initializing
+      if (_pendingInstance) {
+        return _pendingInstance;
+      }
+
       // If we have a local instance, migrate it to the container
       if (_localInstance) {
         const instance = _localInstance;
@@ -151,6 +205,9 @@ function createSingletonHelpers(options) {
   async function resetInstance() {
     // Reset container registration flag
     _containerRegistered = false;
+
+    // FIX: Clear pending instance promise to ensure clean reset
+    _pendingInstance = null;
 
     // Clear from DI container if registered
     try {

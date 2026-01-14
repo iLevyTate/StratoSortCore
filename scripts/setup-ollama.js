@@ -7,7 +7,8 @@ const os = require('os');
 const {
   isOllamaInstalled,
   isOllamaRunning,
-  getInstalledModels
+  getInstalledModels,
+  findOllamaBinary
 } = require('../src/main/utils/ollamaDetection');
 const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 
@@ -126,8 +127,21 @@ async function startOllamaServer() {
     return true;
   }
 
+  // FIX: Find Ollama binary with fallback paths
+  const { found, path: ollamaPath, source } = await findOllamaBinary();
+
+  if (!found) {
+    console.log(chalk.red('✗ Ollama binary not found in PATH or standard locations'));
+    console.log(chalk.yellow('  Please install Ollama from https://ollama.ai'));
+    return false;
+  }
+
+  if (source === 'fallback') {
+    console.log(chalk.cyan(`  Found Ollama at: ${ollamaPath}`));
+  }
+
   // Try to start Ollama
-  const ollamaProcess = spawn('ollama', ['serve'], {
+  const ollamaProcess = spawn(ollamaPath, ['serve'], {
     detached: true,
     stdio: 'ignore',
     shell: process.platform === 'win32'
@@ -157,10 +171,14 @@ async function pullModel(modelName) {
       shell: process.platform === 'win32'
     });
 
+    let lastError = '';
+    let downloadStarted = false;
+
     pullProcess.stdout.on('data', (data) => {
       const output = data.toString();
       // Only show progress updates, not every byte
       if (output.includes('%') || output.includes('success')) {
+        downloadStarted = true;
         process.stdout.write(`\r${chalk.gray(output.trim().slice(0, 80).padEnd(80))}`);
       }
     });
@@ -168,7 +186,10 @@ async function pullModel(modelName) {
     pullProcess.stderr.on('data', (data) => {
       const output = data.toString();
       if (output.includes('%') || output.includes('success')) {
+        downloadStarted = true;
         process.stdout.write(`\r${chalk.gray(output.trim().slice(0, 80).padEnd(80))}`);
+      } else {
+        lastError = output.trim();
       }
     });
 
@@ -179,12 +200,37 @@ async function pullModel(modelName) {
         resolve(true);
       } else {
         console.log(chalk.yellow(`⚠ Failed to pull ${modelName}`));
+
+        // Provide helpful error messages
+        if (lastError.includes('connection refused') || lastError.includes('ECONNREFUSED')) {
+          console.log(chalk.gray('  → Ollama server is not running. Start it with: ollama serve'));
+        } else if (lastError.includes('not found') || lastError.includes('does not exist')) {
+          console.log(chalk.gray(`  → Model "${modelName}" not found. Check the model name.`));
+        } else if (lastError.includes('timeout') || lastError.includes('deadline exceeded')) {
+          console.log(chalk.gray('  → Download timed out. Check your internet connection.'));
+        } else if (
+          lastError.includes('disk') ||
+          lastError.includes('space') ||
+          lastError.includes('ENOSPC')
+        ) {
+          console.log(chalk.gray('  → Insufficient disk space. Free up some space and try again.'));
+        } else if (!downloadStarted) {
+          console.log(chalk.gray('  → Could not connect to Ollama. Ensure the server is running.'));
+        } else if (lastError) {
+          console.log(chalk.gray(`  → ${lastError.slice(0, 100)}`));
+        }
+
         resolve(false);
       }
     });
 
     pullProcess.on('error', (err) => {
       console.log(chalk.red(`✗ Error pulling ${modelName}: ${err.message}`));
+
+      if (err.message.includes('ENOENT')) {
+        console.log(chalk.gray('  → Ollama command not found. Is Ollama installed?'));
+      }
+
       resolve(false);
     });
   });
@@ -363,36 +409,59 @@ function getInstallInstructions() {
   if (platform === 'win32') {
     return `
 ${chalk.cyan('Windows Installation:')}
-  
+
+  ${chalk.bold('Option 1: Automatic (Recommended)')}
+  Run StratoSort and use the AI Dependencies dialog to install Ollama automatically.
+
+  ${chalk.bold('Option 2: Manual Download')}
   1. Download Ollama from: ${chalk.blue('https://ollama.com/download/windows')}
   2. Run the installer (OllamaSetup.exe)
-  3. After installation, re-run this setup script
-  
-  Or use winget:
-  ${chalk.gray('winget install ollama')}
+  3. After installation, restart StratoSort
+
+  ${chalk.bold('Option 3: Package Manager')}
+  ${chalk.gray('winget install Ollama.Ollama')}
+
+  ${chalk.bold('Troubleshooting:')}
+  • If installation fails, try running as Administrator
+  • Ensure Windows Defender isn't blocking the download
+  • Check that you have at least 4GB of free disk space
 `;
   }
   if (platform === 'darwin') {
     return `
 ${chalk.cyan('macOS Installation:')}
-  
+
+  ${chalk.bold('Option 1: Homebrew (Recommended)')}
+  ${chalk.gray('brew install ollama')}
+
+  ${chalk.bold('Option 2: Manual Download')}
   1. Download Ollama from: ${chalk.blue('https://ollama.com/download/mac')}
   2. Open the downloaded .zip file
   3. Drag Ollama.app to Applications
-  4. Open Ollama from Applications
-  5. Re-run this setup script
-  
-  Or use Homebrew:
-  ${chalk.gray('brew install ollama')}
+  4. Open Ollama from Applications (allows background service)
+  5. Restart StratoSort
+
+  ${chalk.bold('Troubleshooting:')}
+  • If blocked by Gatekeeper: System Preferences → Security → Allow
+  • Ensure you have at least 4GB of free disk space
 `;
   }
   return `
 ${chalk.cyan('Linux Installation:')}
-  
-  Run this command:
+
+  ${chalk.bold('Automatic Installation:')}
   ${chalk.gray('curl -fsSL https://ollama.com/install.sh | sh')}
-  
-  Or download from: ${chalk.blue('https://ollama.com/download/linux')}
+
+  ${chalk.bold('Manual Download:')}
+  Visit: ${chalk.blue('https://ollama.com/download/linux')}
+
+  ${chalk.bold('After Installation:')}
+  • Start the service: ${chalk.gray('ollama serve')}
+  • Or enable on boot: ${chalk.gray('sudo systemctl enable ollama')}
+
+  ${chalk.bold('Troubleshooting:')}
+  • Check service status: ${chalk.gray('systemctl status ollama')}
+  • View logs: ${chalk.gray('journalctl -u ollama')}
 `;
 }
 

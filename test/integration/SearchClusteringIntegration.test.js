@@ -26,6 +26,15 @@ jest.mock('../../src/shared/logger', () => ({
   }
 }));
 
+// FIX: Mock fs to prevent file validation from filtering out test results
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  promises: {
+    ...jest.requireActual('fs').promises,
+    access: jest.fn().mockResolvedValue(undefined) // All files "exist" in tests
+  }
+}));
+
 describe('Search and Clustering Integration', () => {
   let SearchService;
   let ClusteringService;
@@ -205,7 +214,11 @@ describe('Search and Clustering Integration', () => {
           }
         }
         return result;
-      })
+      }),
+      // FIX: Add missing mocks required for hybrid search
+      querySimilarFileChunks: jest.fn().mockResolvedValue([]),
+      fileChunkCollection: null, // Chunk search returns early when null
+      fileCollection: { count: jest.fn().mockResolvedValue(Object.keys(sampleDocuments).length) }
     };
 
     // Create mock analysis history service

@@ -201,14 +201,16 @@ describe('Preflight Checks', () => {
       expect(result).toBe(false);
     });
 
-    test('returns false on unknown error', async () => {
+    test('returns true on unknown error (safer default to not block startup)', async () => {
+      // FIX 3.2: Unknown errors now return true (port available) rather than false
+      // This is safer to not block startup due to network/DNS issues
       const error = new Error('Unknown');
       error.code = 'UNKNOWN';
       axios.get.mockRejectedValueOnce(error);
 
       const result = await isPortAvailable('127.0.0.1', 8000);
 
-      expect(result).toBe(false);
+      expect(result).toBe(true);
     });
   });
 

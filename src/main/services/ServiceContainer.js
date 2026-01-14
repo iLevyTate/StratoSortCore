@@ -309,6 +309,26 @@ class ServiceContainer {
         if (this._isShuttingDown) {
           logger.warn(`[ServiceContainer] Service '${name}' resolved during shutdown, discarding`);
           this._initPromises.delete(name);
+
+          // FIX: Attempt to cleanup the discarded instance to prevent resource leaks
+          // The instance may have acquired resources (connections, timers) during creation
+          if (instance) {
+            try {
+              if (typeof instance.shutdown === 'function') {
+                await instance.shutdown();
+              } else if (typeof instance.cleanup === 'function') {
+                await instance.cleanup();
+              } else if (typeof instance.dispose === 'function') {
+                await instance.dispose();
+              }
+            } catch (cleanupError) {
+              logger.warn(
+                `[ServiceContainer] Failed to cleanup discarded instance '${name}':`,
+                cleanupError?.message || String(cleanupError)
+              );
+            }
+          }
+
           return null;
         }
 
@@ -371,14 +391,25 @@ class ServiceContainer {
   /**
    * Clear a singleton instance (for testing or reconfiguration)
    *
+   * FIX: Added check to prevent clearing while async resolution is in progress
+   * This prevents race conditions that could break the singleton guarantee
+   *
    * @param {string} name - The service identifier to clear
    * @returns {boolean} True if the instance was cleared
    */
   clearInstance(name) {
     const registration = this._registrations.get(name);
     if (registration && registration.lifetime === ServiceLifetime.SINGLETON) {
+      // FIX: Check if async resolution is in progress to prevent race condition
+      // Clearing during resolution would cause duplicate instances to be created
+      if (this._initPromises.has(name)) {
+        logger.warn(
+          `[ServiceContainer] Cannot clear instance '${name}' - async resolution in progress`
+        );
+        return false;
+      }
+
       registration.instance = null;
-      this._initPromises.delete(name);
       logger.debug(`[ServiceContainer] Cleared singleton instance: ${name}`);
       return true;
     }
@@ -515,6 +546,8 @@ const ServiceIds = {
   CHROMA_DB: 'chromaDb',
   SETTINGS: 'settings',
   DEPENDENCY_MANAGER: 'dependencyManager',
+  SEARCH_SERVICE: 'searchService',
+  DOWNLOAD_WATCHER: 'downloadWatcher',
 
   // AI/Embedding services
   OLLAMA_SERVICE: 'ollamaService',
@@ -555,7 +588,9 @@ const ServiceIds = {
 const SHUTDOWN_ORDER = [
   // First: Watcher services (must stop before other services)
   ServiceIds.SMART_FOLDER_WATCHER,
+  ServiceIds.DOWNLOAD_WATCHER,
   // High-level services that use other services
+  ServiceIds.SEARCH_SERVICE,
   ServiceIds.AUTO_ORGANIZE,
   ServiceIds.ORGANIZATION_SUGGESTION,
   ServiceIds.CLUSTERING, // FIX: HIGH - Added to shutdown order (was missing, causing improper cleanup)

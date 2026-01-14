@@ -22,7 +22,8 @@ import {
   ChevronDown,
   ChevronRight,
   Maximize2,
-  Minimize2
+  Minimize2,
+  HelpCircle
 } from 'lucide-react';
 
 import Modal, { ConfirmModal } from '../Modal';
@@ -93,6 +94,11 @@ const getErrorMessage = (error, context = 'Operation') => {
   // ChromaDB not available
   if (msg.includes('ChromaDB') || msg.includes('not available yet')) {
     return `${context} failed: Semantic search is initializing. Please wait a moment and try again.`;
+  }
+
+  // FIX C-1: Embedding dimension mismatch (model changed)
+  if (msg.includes('Embedding model changed') || msg.includes('dimension mismatch')) {
+    return 'Embedding model changed. Please rebuild your index in Settings > Semantic Index to use the new model.';
   }
 
   // Generic fallback with original message
@@ -526,6 +532,9 @@ export default function UnifiedSearchModal({
   const [showClusters, setShowClusters] = useState(false);
   const [isComputingClusters, setIsComputingClusters] = useState(false);
 
+  // Help tour state (for re-showing the tour via help button)
+  const [showTourManually, setShowTourManually] = useState(false);
+
   // Graph filtering state
   const [activeFilters, setActiveFilters] = useState({
     types: ['cluster', 'file', 'query'],
@@ -558,6 +567,11 @@ export default function UnifiedSearchModal({
   const [isGraphMaximized, setIsGraphMaximized] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Memoize nodeTypes and edgeTypes to ensure referential stability even if module reloads
+  // or if there are HMR updates. This fixes the React Flow warning about new objects.
+  const nodeTypes = useMemo(() => NODE_TYPES, []);
+  const edgeTypes = useMemo(() => EDGE_TYPES, []);
+
   // Refs
   const lastSearchRef = useRef(0);
   const withinReqRef = useRef(0);
@@ -566,6 +580,7 @@ export default function UnifiedSearchModal({
 
   // Refs for tracking auto-load state
   const hasAutoLoadedClusters = useRef(false);
+  const hasShownClusterCelebration = useRef(false);
 
   // Ref to avoid temporal dead zone with loadClusters in keyboard shortcuts
   const loadClustersRef = useRef(null);
@@ -854,6 +869,15 @@ export default function UnifiedSearchModal({
       if (e.ctrlKey && e.key === '2') {
         e.preventDefault();
         setActiveTab('graph');
+      }
+
+      // "?" key: Show graph tour/help (only on graph tab, not in input)
+      if (e.key === '?' && activeTab === 'graph') {
+        const tagName = document.activeElement?.tagName?.toLowerCase();
+        if (tagName !== 'input' && tagName !== 'textarea') {
+          e.preventDefault();
+          setShowTourManually(true);
+        }
       }
     };
 
@@ -1815,7 +1839,7 @@ export default function UnifiedSearchModal({
    */
   const loadClusters = useCallback(async () => {
     setIsComputingClusters(true);
-    setGraphStatus('Computing clusters...');
+    setGraphStatus('Analyzing file relationships...');
     setError('');
 
     try {
@@ -1835,7 +1859,7 @@ export default function UnifiedSearchModal({
       const crossClusterEdges = clustersResp.crossClusterEdges || [];
 
       if (clusters.length === 0) {
-        setGraphStatus('No clusters found');
+        setGraphStatus('No related groups found yet. Try indexing more files.');
         return;
       }
 
@@ -1888,17 +1912,38 @@ export default function UnifiedSearchModal({
       graphActions.setNodes(clusterNodes);
       graphActions.setEdges(clusterEdges);
       setShowClusters(true);
-      setGraphStatus(`${clusters.length} clusters found`);
+      setGraphStatus(`Found ${clusters.length} groups of related files`);
 
-      // Apply radial layout for better cluster visualization
+      // Apply intelligent layout for better cluster visualization
+      // Layout considers: confidence levels (inner/outer rings), relationships (connected clusters nearby)
       if (clusterNodes.length > 0) {
         try {
+          // Calculate dynamic radius based on cluster count for proper spacing
+          const baseRadius = 200;
+          const dynamicRadius = Math.min(400, baseRadius + clusterNodes.length * 25);
+
           const layoutedNodes = clusterRadialLayout(clusterNodes, clusterEdges, {
-            centerX: 400,
-            centerY: 300,
-            radius: Math.min(250, 80 + clusterNodes.length * 30)
+            centerX: 450,
+            centerY: 320,
+            radius: dynamicRadius
           });
           graphActions.setNodes(layoutedNodes);
+
+          // Update status with celebration or regular info
+          const highCount = clusters.filter((c) => c.confidence === 'high').length;
+          const firstClusterLabel = clusters[0]?.label || 'your files';
+
+          // First time celebration - explain what happened
+          if (!hasShownClusterCelebration.current) {
+            hasShownClusterCelebration.current = true;
+            setGraphStatus(
+              `Discovered ${clusters.length} groups! Try double-clicking "${firstClusterLabel}" to explore.`
+            );
+          } else if (highCount > 0) {
+            setGraphStatus(
+              `Found ${clusters.length} groups (${highCount} strong match${highCount > 1 ? 'es' : ''})`
+            );
+          }
         } catch (layoutError) {
           logger.warn('[Graph] Cluster layout failed:', layoutError);
         }
@@ -2066,7 +2111,9 @@ export default function UnifiedSearchModal({
           return [...prev, ...newEdges];
         });
 
-        setGraphStatus(`Expanded: +${layoutedMemberNodes.length} files`);
+        setGraphStatus(
+          `${layoutedMemberNodes.length} related files. Right-click cluster to organize them.`
+        );
       } catch (e) {
         setError(getErrorMessage(e, 'Cluster expansion'));
         setGraphStatus('');
@@ -2199,7 +2246,7 @@ export default function UnifiedSearchModal({
       });
 
       graphActions.selectNode(results[0]?.id || queryNodeId);
-      setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'}`);
+      setGraphStatus(`Found ${results.length} matching file${results.length === 1 ? '' : 's'}`);
 
       // Apply auto-layout if enabled (debounced to prevent rapid re-layouts)
       // Uses pre-computed finalNodes/finalEdges to avoid stale state issues
@@ -2232,7 +2279,9 @@ export default function UnifiedSearchModal({
           }
           graphActions.setNodes(layoutedNodes);
           if (finalNodes.length <= LARGE_GRAPH_THRESHOLD) {
-            setGraphStatus(`${results.length} result${results.length === 1 ? '' : 's'} (laid out)`);
+            setGraphStatus(
+              `Found ${results.length} file${results.length === 1 ? '' : 's'}, organized by relevance`
+            );
           }
         } catch (layoutError) {
           logger.warn('[Graph] Auto-layout failed:', layoutError);
@@ -2340,7 +2389,7 @@ export default function UnifiedSearchModal({
             y: seedPos.y + idx * 80
           };
           const node = upsertFileNode(r, pos);
-          if (!node) return;
+          if (!node?.id) return; // Ensure node has valid id for edge creation
           nextNodes.push(node);
 
           // Get target node data for tooltip
@@ -2631,6 +2680,41 @@ export default function UnifiedSearchModal({
         return changed ? updated : prev;
       });
 
+      // FIX: Also hide edges connected to hidden nodes to prevent orphaned edges
+      // This ensures edges don't point to non-existent visual nodes
+      // Build set of hidden node IDs based on current filter state
+      const hiddenNodeIds = new Set();
+      nodes.forEach((n) => {
+        const kind =
+          n.data?.kind ||
+          (n.type === 'clusterNode' ? 'cluster' : n.type === 'queryNode' ? 'query' : 'file');
+        const isTypeActive = activeFilters.types.includes(kind);
+        let isConfidenceActive = true;
+        if (kind === 'cluster') {
+          const conf = ['high', 'medium', 'low'].includes(n.data?.confidence)
+            ? n.data?.confidence
+            : 'low';
+          isConfidenceActive = activeFilters.confidence.includes(conf);
+        }
+        if (!isTypeActive || !isConfidenceActive) {
+          hiddenNodeIds.add(n.id);
+        }
+      });
+
+      graphActions.setEdges((prevEdges) => {
+        let edgeChanged = false;
+        const updatedEdges = prevEdges.map((e) => {
+          const shouldHideEdge = hiddenNodeIds.has(e.source) || hiddenNodeIds.has(e.target);
+          if (e.hidden !== shouldHideEdge) {
+            edgeChanged = true;
+            return { ...e, hidden: shouldHideEdge };
+          }
+          return e;
+        });
+
+        return edgeChanged ? updatedEdges : prevEdges;
+      });
+
       // 3. Zoom to matches (only if search was performed and we have matches)
       if (topMatches.length > 0 && reactFlowInstance.current) {
         reactFlowInstance.current.fitView({
@@ -2647,7 +2731,7 @@ export default function UnifiedSearchModal({
     return () => {
       cancelled = true;
     };
-  }, [debouncedWithinQuery, fileNodeIds, isOpen, activeTab, graphActions, activeFilters]);
+  }, [debouncedWithinQuery, fileNodeIds, isOpen, activeTab, graphActions, activeFilters, nodes]);
 
   const onNodeClick = useCallback(
     (_, node) => {
@@ -3255,11 +3339,17 @@ export default function UnifiedSearchModal({
                           <select
                             value={hopCount}
                             onChange={(e) => setHopCount(Number(e.target.value))}
-                            className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1.5 bg-white"
+                            className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1.5 bg-white text-system-gray-900"
                           >
-                            <option value={1}>1 level (Direct)</option>
-                            <option value={2}>2 levels</option>
-                            <option value={3}>3 levels (Deep)</option>
+                            <option value={1} className="bg-white text-system-gray-900">
+                              1 level (Direct)
+                            </option>
+                            <option value={2} className="bg-white text-system-gray-900">
+                              2 levels
+                            </option>
+                            <option value={3} className="bg-white text-system-gray-900">
+                              3 levels (Deep)
+                            </option>
                           </select>
                         </div>
                       </div>
@@ -3318,7 +3408,7 @@ export default function UnifiedSearchModal({
               onDragLeave={handleDragLeave}
               onDrop={handleFileDrop}
             >
-              {/* Maximize/Minimize Toggle */}
+              {/* Graph Controls: Help & Maximize */}
               <div className="absolute top-3 right-3 z-20 flex gap-2">
                 {isGraphMaximized && nodes.length > 0 && (
                   <div className="bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg px-3 py-1.5 text-xs font-medium text-system-gray-600 shadow-sm flex items-center gap-2">
@@ -3327,6 +3417,14 @@ export default function UnifiedSearchModal({
                     <span>{edges.length} links</span>
                   </div>
                 )}
+                {/* Help button to re-show tour */}
+                <button
+                  onClick={() => setShowTourManually(true)}
+                  className="p-1.5 bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg shadow-sm text-system-gray-600 hover:text-stratosort-blue hover:bg-white transition-all"
+                  title="Show graph tour"
+                >
+                  <HelpCircle className="w-4 h-4" />
+                </button>
                 <button
                   onClick={() => {
                     setIsGraphMaximized(!isGraphMaximized);
@@ -3368,11 +3466,11 @@ export default function UnifiedSearchModal({
                   </div>
 
                   <h3 className="text-xl font-semibold text-system-gray-900 mb-2">
-                    Explore File Connections
+                    Stop Searching. Start Finding.
                   </h3>
                   <p className="text-sm text-system-gray-500 max-w-md mb-8 leading-relaxed">
-                    Visualize relationships between your files. Search below to add files to the
-                    graph, or use the "Auto-discover" feature to see clusters.
+                    Your files are scattered across folders. Clustering reveals how they naturally
+                    belong together—even files you forgot you had.
                   </p>
 
                   {/* Inline Search for Empty State */}
@@ -3403,7 +3501,9 @@ export default function UnifiedSearchModal({
                         className="w-full justify-center bg-white border border-system-gray-200 hover:bg-system-gray-50 text-system-gray-700 shadow-sm"
                       >
                         <Layers className="h-4 w-4 mr-2 text-stratosort-blue" />
-                        {isComputingClusters ? 'Computing...' : 'Auto-discover clusters'}
+                        {isComputingClusters
+                          ? 'Analyzing relationships...'
+                          : 'Discover how your files connect'}
                       </Button>
                     </div>
                   )}
@@ -3465,8 +3565,8 @@ export default function UnifiedSearchModal({
                   <ReactFlow
                     nodes={rfNodes}
                     edges={edges}
-                    nodeTypes={NODE_TYPES}
-                    edgeTypes={EDGE_TYPES}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
                     className="bg-[var(--surface-muted)]"
@@ -3491,6 +3591,16 @@ export default function UnifiedSearchModal({
                     {zoomLevel < 0.6 && (
                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10">
                         Labels hidden at this zoom • Scroll to zoom in
+                      </div>
+                    )}
+
+                    {/* Keyboard shortcuts hint (subtle, bottom-left) */}
+                    {nodes.length > 0 && zoomLevel >= 0.6 && (
+                      <div className="absolute bottom-3 left-3 text-[10px] text-system-gray-400 pointer-events-none z-10 flex items-center gap-1.5">
+                        <kbd className="px-1 py-0.5 rounded bg-white/80 border border-system-gray-200 text-system-gray-500 font-mono shadow-sm">
+                          ?
+                        </kbd>
+                        <span>for help</span>
                       </div>
                     )}
                   </ReactFlow>
@@ -3694,8 +3804,14 @@ export default function UnifiedSearchModal({
         )}
       </div>
 
-      {/* First-time user tour */}
-      {activeTab === 'graph' && <GraphTour isOpen={isOpen && activeTab === 'graph'} />}
+      {/* First-time user tour (or re-triggered via help button) */}
+      {activeTab === 'graph' && (
+        <GraphTour
+          isOpen={isOpen && activeTab === 'graph'}
+          forceShow={showTourManually}
+          onComplete={() => setShowTourManually(false)}
+        />
+      )}
 
       {/* Clear confirmation modal */}
       <ConfirmModal

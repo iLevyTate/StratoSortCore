@@ -101,9 +101,11 @@ function createFailedItemHandler(config) {
       itemType: item.id.startsWith('folder:') ? 'folder' : 'file'
     };
 
-    // Prune oldest entries if at capacity
-    if (deadLetterQueue.length >= maxDeadLetterSize) {
-      const pruneCount = Math.floor(maxDeadLetterSize * 0.1);
+    // FIX P1-3: Ensure room exists BEFORE adding to prevent exceeding bounds
+    // Use while loop to handle case where multiple concurrent calls could fill queue
+    // The previous if-based pruning could leave queue at exactly maxDeadLetterSize
+    while (deadLetterQueue.length >= maxDeadLetterSize) {
+      const pruneCount = Math.max(1, Math.floor(maxDeadLetterSize * 0.1));
       deadLetterQueue.splice(0, pruneCount);
       logger.warn(
         `[EmbeddingQueue] Dead letter queue at capacity, pruned ${pruneCount} oldest entries`

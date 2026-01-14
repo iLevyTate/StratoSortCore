@@ -9,10 +9,14 @@
  * - Real-time status updates to renderer
  */
 
+const { app } = require('electron');
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const { withErrorLogging, safeHandle } = require('./ipcWrappers');
 const { CircuitState } = require('../utils/CircuitBreaker');
+
+// FIX: Track if cleanup listener is already registered (prevents duplicate listeners)
+let _cleanupListenerRegistered = false;
 
 /**
  * Register ChromaDB IPC handlers
@@ -113,6 +117,15 @@ function registerChromaDBIpc(servicesOrParams) {
       };
     })
   );
+
+  // FIX: Register cleanup on app shutdown to prevent memory leaks
+  if (!_cleanupListenerRegistered) {
+    app.once('before-quit', () => {
+      logger.debug('[CHROMADB-IPC] App shutting down, cleaning up event listeners');
+      cleanupEventListeners();
+    });
+    _cleanupListenerRegistered = true;
+  }
 
   logger.info('[CHROMADB-IPC] ChromaDB status handlers registered');
 }

@@ -546,7 +546,8 @@ class ClusteringService {
   }
 
   /**
-   * Generate a label for a single cluster using metadata-first approach
+   * Generate a label for a single cluster using LLM
+   * Uses metadata as context to help LLM generate better names
    * @private
    */
   async _generateSingleClusterLabel(cluster) {
@@ -560,101 +561,121 @@ class ClusteringService {
       };
     }
 
-    // 1. Extract categories from all members
+    // 1. Extract metadata for context (used to enrich LLM prompt)
     const categories = members.map((m) => m.metadata?.category).filter(Boolean);
     const dominantCategoryResult = this._getMostFrequent(categories);
     const dominantCategory = dominantCategoryResult?.item;
-    const categoryCount = dominantCategoryResult?.count || 0;
 
     // 2. Extract common tags (appear in >40% of files)
     const commonTags = this._getCommonTags(members, 0.4);
 
-    // 3. If we have strong metadata signals, use them directly (no LLM needed)
-    if (dominantCategory && commonTags.length > 0) {
-      const tagPart = commonTags.slice(0, 2).join(' ');
-      return {
-        label: `${tagPart} ${dominantCategory}`.trim(),
-        confidence: 'high',
-        reason: `${categoryCount}/${members.length} files share category`,
-        dominantCategory,
-        commonTags
-      };
-    }
-
-    // 4. If only dominant category, use it
-    if (dominantCategory && categoryCount >= members.length * 0.5) {
-      return {
-        label: dominantCategory,
-        confidence: 'medium',
-        reason: 'Based on dominant category',
-        dominantCategory,
-        commonTags
-      };
-    }
-
-    // 5. If only common tags, use them
-    if (commonTags.length >= 2) {
-      return {
-        label: commonTags.slice(0, 3).join(', '),
-        confidence: 'medium',
-        reason: 'Based on common tags',
-        dominantCategory,
-        commonTags
-      };
-    }
-
-    // 6. Fallback to LLM with enriched context (if available)
+    // 3. Always use LLM to generate cluster name (if available)
     if (this.ollama) {
       try {
         const fileNames = members
-          .slice(0, 5)
+          .slice(0, 8)
           .map((f) => f.metadata?.name || f.id)
           .filter(Boolean)
           .join(', ');
 
         const subjects = members
-          .slice(0, 3)
+          .slice(0, 5)
           .map((f) => f.metadata?.subject)
           .filter(Boolean)
           .join('; ');
 
-        const prompt = `Generate a 2-4 word category label for these files:
+        const descriptions = members
+          .slice(0, 3)
+          .map((f) => f.metadata?.description || f.metadata?.summary)
+          .filter(Boolean)
+          .join('; ');
 
-Files: ${fileNames}
-${subjects ? `Subjects: ${subjects}` : ''}
-${dominantCategory ? `Possible category: ${dominantCategory}` : ''}
-${commonTags.length > 0 ? `Related tags: ${commonTags.join(', ')}` : ''}
+        const prompt = `You are naming a cluster of similar files. Generate a concise, descriptive 2-5 word name that captures what these files have in common.
 
-Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Project Proposals", "Meeting Notes"`;
+Files in this cluster: ${fileNames}
+${subjects ? `Topics/Subjects: ${subjects}` : ''}
+${descriptions ? `Descriptions: ${descriptions}` : ''}
+${dominantCategory ? `Detected category: ${dominantCategory}` : ''}
+${commonTags.length > 0 ? `Common tags: ${commonTags.join(', ')}` : ''}
+File count: ${members.length}
+
+Requirements:
+- Be specific and descriptive (not generic like "Documents" or "Files")
+- Use title case
+- 2-5 words maximum
+- No quotes or punctuation
+
+Respond with ONLY the cluster name, nothing else.
+
+Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials", "Product Launch Assets", "Client Meeting Notes", "Marketing Campaign Images"`;
 
         const response = await this.ollama.analyzeText(prompt, {
           model: getOllamaModel() || 'qwen3:0.6b',
-          maxTokens: 20
+          maxTokens: 30
         });
 
-        const label = (response?.response || response || '').trim().replace(/["']/g, '');
-        if (label && label.length > 0 && label.length < 50) {
+        const label = (response?.response || response || '')
+          .trim()
+          .replace(/["']/g, '')
+          .replace(/^(Cluster|Group|Category|Collection):\s*/i, '')
+          .replace(/\.$/, '');
+
+        if (
+          label &&
+          label.length > 0 &&
+          label.length < 60 &&
+          !label.toLowerCase().includes('cluster')
+        ) {
           return {
             label,
-            confidence: 'medium',
+            confidence: 'high',
             reason: 'LLM generated',
             dominantCategory,
             commonTags
           };
         }
       } catch (llmError) {
-        logger.warn('[ClusteringService] LLM label generation failed for cluster', cluster.id);
+        logger.warn(
+          '[ClusteringService] LLM label generation failed for cluster',
+          cluster.id,
+          llmError.message
+        );
       }
     }
 
-    // 7. Final fallback - use any available metadata
-    if (dominantCategory) {
-      return { label: dominantCategory, confidence: 'low', dominantCategory, commonTags };
-    }
-    if (commonTags.length > 0) {
-      return { label: commonTags[0], confidence: 'low', dominantCategory, commonTags };
+    // 4. Fallback to metadata-based labels if LLM unavailable or failed
+    if (dominantCategory && commonTags.length > 0) {
+      const tagPart = commonTags.slice(0, 2).join(' ');
+      return {
+        label: `${tagPart} ${dominantCategory}`.trim(),
+        confidence: 'medium',
+        reason: 'Based on metadata (LLM unavailable)',
+        dominantCategory,
+        commonTags
+      };
     }
 
+    if (dominantCategory) {
+      return {
+        label: dominantCategory,
+        confidence: 'medium',
+        reason: 'Based on dominant category (LLM unavailable)',
+        dominantCategory,
+        commonTags
+      };
+    }
+
+    if (commonTags.length > 0) {
+      return {
+        label: commonTags.slice(0, 3).join(', '),
+        confidence: 'low',
+        reason: 'Based on common tags (LLM unavailable)',
+        dominantCategory,
+        commonTags
+      };
+    }
+
+    // 5. Final fallback
     return {
       label: `Cluster ${cluster.id + 1}`,
       confidence: 'low',
@@ -664,8 +685,9 @@ Respond with ONLY the label, nothing else. Examples: "Financial Documents", "Pro
   }
 
   /**
-   * Generate labels for clusters using metadata-first approach
-   * Falls back to LLM only when metadata is insufficient
+   * Generate labels for clusters using LLM
+   * Uses metadata as context to help LLM generate descriptive names
+   * Falls back to metadata-based labels only if LLM is unavailable
    *
    * @param {Object} options - Label generation options
    * @param {number} [options.concurrency=3] - Max concurrent LLM calls

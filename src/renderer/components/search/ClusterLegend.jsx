@@ -186,6 +186,30 @@ const ClusterLegend = memo(
             </button>
           </div>
 
+          {/* Layout explanation (Static) */}
+          <div className="space-y-1 pt-2 border-t border-system-gray-100">
+            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
+              Layout
+            </div>
+            <div className="text-[10px] text-system-gray-500 space-y-0.5 px-1">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>Inner ring: High confidence</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-blue-400" />
+                <span>Middle ring: Medium confidence</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-gray-400" />
+                <span>Outer ring: Low confidence</span>
+              </div>
+              <div className="text-system-gray-400 mt-1 italic">
+                Connected clusters are placed nearby
+              </div>
+            </div>
+          </div>
+
           {/* Size meaning (Static) */}
           <div className="space-y-1 pt-2 border-t border-system-gray-100">
             <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
@@ -194,11 +218,11 @@ const ClusterLegend = memo(
             <div className="flex items-center gap-3 text-[11px] px-1">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded bg-amber-100 border border-amber-300" />
-                <span className="text-system-gray-500">Few</span>
+                <span className="text-system-gray-500">Few files</span>
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-5 h-5 rounded bg-amber-100 border border-amber-300" />
-                <span className="text-system-gray-500">Many</span>
+                <span className="text-system-gray-500">Many files</span>
               </div>
             </div>
           </div>
@@ -209,8 +233,9 @@ const ClusterLegend = memo(
               Interactions
             </div>
             <div className="text-[10px] text-system-gray-500 space-y-0.5 px-1">
-              <div>Double-click to expand</div>
-              <div>Drag to rearrange</div>
+              <div>Double-click to expand cluster</div>
+              <div>Drag to rearrange nodes</div>
+              <div>Dashed lines show related clusters</div>
             </div>
           </div>
         </div>

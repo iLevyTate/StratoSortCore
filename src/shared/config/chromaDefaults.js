@@ -13,6 +13,74 @@ const CHROMA_DEFAULTS = {
 };
 
 /**
+ * ChromaDB health check endpoints in priority order
+ * Supports multiple ChromaDB versions:
+ * - /api/v2/heartbeat: ChromaDB 3.x+
+ * - /api/v1/heartbeat: ChromaDB 1.x-2.x
+ * - /api/v1: Fallback for older versions
+ */
+const CHROMA_HEALTH_ENDPOINTS = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
+
+/**
+ * User-friendly error messages for common ChromaDB issues
+ * Used by chromaService.js and other components for consistent messaging
+ */
+const CHROMA_ERROR_MESSAGES = {
+  PORT_IN_USE: (port) =>
+    `Port ${port} is already in use. This could mean:\n` +
+    `• Another ChromaDB instance is running (wait a few seconds and restart)\n` +
+    `• Another application is using port ${port}\n` +
+    `• Check Task Manager for python.exe or chroma.exe processes\n\n` +
+    `Solutions:\n` +
+    `• Restart StratoSort to use the existing ChromaDB instance\n` +
+    `• Set CHROMA_SERVER_PORT in .env to use a different port\n` +
+    `• Kill conflicting processes and retry`,
+
+  MISSING_DEPENDENCY:
+    'ChromaDB is not installed. Semantic search features will be unavailable.\n\n' +
+    'To install ChromaDB:\n' +
+    '• Windows: py -3 -m pip install --user chromadb\n' +
+    '• macOS/Linux: python3 -m pip install chromadb\n\n' +
+    'Or use an external ChromaDB server by setting CHROMA_SERVER_URL',
+
+  PYTHON_NOT_FOUND:
+    'Python 3 is required for ChromaDB but was not found.\n\n' +
+    'To install Python:\n' +
+    '• Windows: Download from python.org or Microsoft Store\n' +
+    '• macOS: brew install python3\n' +
+    '• Linux: sudo apt install python3 python3-pip\n\n' +
+    'After installing, restart StratoSort.',
+
+  CONNECTION_FAILED: (url) =>
+    `Cannot connect to ChromaDB server at ${url}.\n\n` +
+    'Possible causes:\n' +
+    '• ChromaDB server is not running\n' +
+    '• Firewall is blocking the connection\n' +
+    '• Wrong server URL configured\n\n' +
+    'Try restarting StratoSort or check the server status.',
+
+  EXTERNAL_UNREACHABLE: (url) =>
+    `External ChromaDB server at ${url} is not reachable.\n\n` +
+    'Please verify:\n' +
+    '• The server is running and accessible\n' +
+    '• The URL is correct (check CHROMA_SERVER_URL)\n' +
+    '• Network/firewall allows the connection'
+};
+
+/**
+ * Get ChromaDB data directory from environment or default
+ * Supports production/container deployments via CHROMA_DATA_DIR env var
+ * @param {string} [fallbackPath] - Fallback path if env var not set
+ * @returns {string} ChromaDB data directory path
+ */
+function getChromaDataDir(fallbackPath) {
+  if (process.env.CHROMA_DATA_DIR) {
+    return process.env.CHROMA_DATA_DIR;
+  }
+  return fallbackPath || '';
+}
+
+/**
  * Build ChromaDB server URL from environment variables or defaults
  * @returns {string} Full ChromaDB server URL
  */
@@ -40,7 +108,9 @@ function parseChromaConfig(url) {
     const parsed = new URL(targetUrl);
     const protocol = parsed.protocol?.replace(':', '') || CHROMA_DEFAULTS.PROTOCOL;
     const host = parsed.hostname || CHROMA_DEFAULTS.HOST;
-    const port = Number(parsed.port) || (protocol === 'https' ? 443 : 80) || CHROMA_DEFAULTS.PORT;
+    // FIX Issue 2.1: Always default to ChromaDB port (8000), not HTTP/HTTPS standard ports
+    // If user wants 80/443, they must explicitly specify it in CHROMA_SERVER_PORT
+    const port = Number(parsed.port) || CHROMA_DEFAULTS.PORT;
 
     return {
       protocol,
@@ -61,6 +131,9 @@ function parseChromaConfig(url) {
 
 module.exports = {
   CHROMA_DEFAULTS,
+  CHROMA_HEALTH_ENDPOINTS,
+  CHROMA_ERROR_MESSAGES,
   getChromaUrl,
+  getChromaDataDir,
   parseChromaConfig
 };

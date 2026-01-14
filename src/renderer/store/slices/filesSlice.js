@@ -48,6 +48,7 @@ const initialState = {
   selectedFiles: [], // Array of file objects
   smartFolders: [], // Array of configured smart folders
   smartFoldersLoading: false, // Loading state for smart folders
+  smartFoldersError: null, // FIX: Track smart folders fetch errors
   organizedFiles: [], // History of organized files
   fileStates: {}, // Map of path -> state (pending, analyzing, ready, error)
   namingConvention: {
@@ -172,13 +173,18 @@ const filesSlice = createSlice({
     builder
       .addCase(fetchSmartFolders.pending, (state) => {
         state.smartFoldersLoading = true;
+        state.smartFoldersError = null;
       })
       .addCase(fetchSmartFolders.fulfilled, (state, action) => {
         state.smartFolders = action.payload;
         state.smartFoldersLoading = false;
+        state.smartFoldersError = null;
       })
-      .addCase(fetchSmartFolders.rejected, (state) => {
+      .addCase(fetchSmartFolders.rejected, (state, action) => {
+        // FIX: Preserve existing smartFolders on failure instead of losing them
+        // Only log the error, don't clear the array
         state.smartFoldersLoading = false;
+        state.smartFoldersError = action.error?.message || 'Failed to load smart folders';
       });
   }
 });

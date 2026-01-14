@@ -762,7 +762,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_FILE_METADATA, { fileIds }),
     // Find near-duplicate files based on embedding similarity
     findDuplicates: (options) =>
-      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES, options || {})
+      secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.FIND_DUPLICATES, options || {}),
+    // FIX: Clear cluster cache manually (allows forcing recalculation)
+    clearClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS)
   },
 
   // Organization Suggestions

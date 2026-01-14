@@ -5,16 +5,19 @@ find the right documentation for your needs.
 
 ## Quick Links
 
-| Document                                                 | Description                                | Audience       |
-| -------------------------------------------------------- | ------------------------------------------ | -------------- |
-| [CONFIG.md](./CONFIG.md)                                 | Installation, dependencies & configuration | All users      |
-| [ARCHITECTURE.md](./ARCHITECTURE.md)                     | High-level system design and data flow     | All developers |
-| [CODE_QUALITY_STANDARDS.md](./CODE_QUALITY_STANDARDS.md) | Coding standards and style guide           | All developers |
-| [ERROR_HANDLING_GUIDE.md](./ERROR_HANDLING_GUIDE.md)     | Error handling patterns and best practices | All developers |
+| Document                                                               | Description                                           | Audience       |
+| ---------------------------------------------------------------------- | ----------------------------------------------------- | -------------- |
+| [CONFIG.md](./CONFIG.md)                                               | Installation, dependencies & configuration            | All users      |
+| [ARCHITECTURE.md](./ARCHITECTURE.md)                                   | High-level system design and data flow                | All developers |
+| [LEARNING_GUIDE.md](./LEARNING_GUIDE.md)                               | Codebase learning guide with glossary & code examples | New developers |
+| [CODE_QUALITY_STANDARDS.md](./CODE_QUALITY_STANDARDS.md)               | Coding standards and style guide                      | All developers |
+| [ERROR_HANDLING_GUIDE.md](./ERROR_HANDLING_GUIDE.md)                   | Error handling patterns and best practices            | All developers |
+| [CONTRIBUTING_TESTING_BEGINNER.md](./CONTRIBUTING_TESTING_BEGINNER.md) | Manual testing guide for beginners                    | Contributors   |
+| [CONTRIBUTING_TESTING_ADVANCED.md](./CONTRIBUTING_TESTING_ADVANCED.md) | Manual testing guide for advanced users               | Contributors   |
 
 ## Installation & Dependencies
 
-> **⚠️ Beta Notice**: The automatic dependency installation feature is in beta. See
+> **Beta Notice**: The automatic dependency installation feature is in beta. See
 > [CONFIG.md](./CONFIG.md#dependency-installation-beta) for manual CLI installation instructions.
 
 - **[CONFIG.md](./CONFIG.md)** - Complete dependency installation guide including:
@@ -28,6 +31,11 @@ find the right documentation for your needs.
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** - System architecture diagram showing the relationship
   between Renderer, IPC, and Main processes
 - **[DI_PATTERNS.md](./DI_PATTERNS.md)** - Dependency injection patterns and ServiceContainer usage
+- **[LEARNING_GUIDE.md](./LEARNING_GUIDE.md)** - Comprehensive developer onboarding guide covering:
+  - Architecture, design patterns, and data flow
+  - AI/ML concepts and resilience engineering
+  - Expanded glossary of terms
+  - Code examples for common patterns
 
 ## Development Standards
 
@@ -37,38 +45,29 @@ find the right documentation for your needs.
   - JSDoc documentation standards
   - Code review checklist
 
-- **[IMPORT_PATH_STANDARDS.md](./IMPORT_PATH_STANDARDS.md)** - Import path conventions for
-  main/renderer/shared modules
-
 - **[ERROR_HANDLING_GUIDE.md](./ERROR_HANDLING_GUIDE.md)** - Centralized error handling patterns and
   utilities
-
-## Performance & Optimization
-
-- **[LLM_OPTIMIZATION.md](./LLM_OPTIMIZATION.md)** - AI/LLM performance tuning strategies
-- **[OPTIMIZATION_DIAGRAM.md](./OPTIMIZATION_DIAGRAM.md)** - Visual optimization flow diagrams
-
-> Legacy/per-version performance reports have been archived locally to `docs/.legacy/archived-docs/`
-> (gitignored).
 
 ## Testing
 
 - **[TESTING_STRATEGY.md](./TESTING_STRATEGY.md)** - Test organization, patterns, and coverage goals
 
-## Utilities & Helpers
+See also: [REGRESSION_TEST_PLAN.md](../REGRESSION_TEST_PLAN.md) - Complete test case specifications
 
-- **[EDGE_CASE_UTILITIES_GUIDE.md](./EDGE_CASE_UTILITIES_GUIDE.md)** - Edge case handling utilities
-  documentation
+## Contributing (Manual Testing)
 
-> Legacy migration notes have been archived locally to `docs/.legacy/archived-docs/` (gitignored).
+Want to help test El StratoSort? No coding experience required! Choose the guide that matches your
+experience level:
 
-## Maintenance
+| Guide                                                                  | Who It's For          | Description                                                                                  |
+| ---------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| [CONTRIBUTING_TESTING_BEGINNER.md](./CONTRIBUTING_TESTING_BEGINNER.md) | Beginners             | Step-by-step instructions including how to install, test features, and report bugs on GitHub |
+| [CONTRIBUTING_TESTING_ADVANCED.md](./CONTRIBUTING_TESTING_ADVANCED.md) | Intermediate/Advanced | Streamlined guide for those comfortable with Git, CLI, and debugging                         |
 
-- **`REFACTORING_CANDIDATES.md`** - (Archived locally; gitignored)
-- **`BUGFIXES.md`** - (Archived locally; gitignored)
+## Active Development
 
-> **Note:** Legacy development reports and session logs have been archived to `docs/.legacy/` (not
-> tracked in git).
+- **[GRAPH_INTEGRATION_PLAN.md](./GRAPH_INTEGRATION_PLAN.md)** - Graph visualization feature roadmap
+  and implementation status
 
 ## Configuration
 
@@ -82,20 +81,18 @@ Environment variables and configuration are centralized in:
 
 ```
 docs/
-├── README.md                        # This index file
-├── ARCHITECTURE.md                  # System design
-├── CODE_EXAMPLES.md                 # Common patterns
-├── CODE_QUALITY_STANDARDS.md        # Style guide
-├── CONFIG.md                        # Environment variables
-├── DI_PATTERNS.md                   # Dependency injection
-├── ERROR_HANDLING_GUIDE.md          # Error patterns
-├── IMPORT_PATH_STANDARDS.md         # Import conventions
-├── LEARNING_GUIDE.md                # Developer onboarding
-├── LLM_OPTIMIZATION.md              # AI tuning
-├── OPTIMIZATION_DIAGRAM.md          # Optimization visuals
-├── REFERENCE_AND_GLOSSARY.md        # Terms and concepts
-├── TESTING_STRATEGY.md              # Test strategy
-└── .legacy/                         # Local-only archived docs/reports (gitignored)
+├── README.md                            # This index file
+├── ARCHITECTURE.md                      # System design
+├── CODE_QUALITY_STANDARDS.md            # Style guide
+├── CONFIG.md                            # Environment variables
+├── CONTRIBUTING_TESTING_BEGINNER.md     # Manual testing guide (beginners)
+├── CONTRIBUTING_TESTING_ADVANCED.md     # Manual testing guide (advanced)
+├── DI_PATTERNS.md                       # Dependency injection
+├── ERROR_HANDLING_GUIDE.md              # Error patterns
+├── GRAPH_INTEGRATION_PLAN.md            # Graph feature roadmap
+├── LEARNING_GUIDE.md                    # Developer onboarding (glossary + examples)
+├── TESTING_STRATEGY.md                  # Test strategy
+└── .legacy/                             # Local-only archived docs/reports (gitignored)
 ```
 
 ## Contributing

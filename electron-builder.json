@@ -13,13 +13,14 @@
   "asarUnpack": [
     "**/*.{node,dll}",
     "**/node_modules/sharp/**/*",
-    "**/node_modules/@img/**/*"
+    "**/node_modules/@img/**/*",
+    "**/node_modules/tesseract.js-core/**/*",
+    "**/node_modules/tesseract.js/dist/**/*"
   ],
   "files": [
     "dist/**/*",
     "src/shared/**/*",
     "package.json",
-    "scripts/setup-ollama.js",
     "!**/*.map",
     "!test/**",
     "!coverage/**",
@@ -111,7 +112,7 @@
     ]
   },
   "linux": {
-    "icon": "assets/icons/icons/png",
+    "icon": "assets/icons/icons/png/512x512.png",
     "target": [
       {
         "target": "AppImage",
@@ -142,8 +143,8 @@
       "filter": [
         "stratosort-logo.png",
         "icons/icons/win/icon.ico",
-        "icons/icons/png/16x16.png",
-        "icons/icons/png/24x24.png"
+        "icons/icons/png/*.png",
+        "entitlements.mac.plist"
       ]
     }
   ]

@@ -172,6 +172,8 @@ const IPC_CHANNELS = {
     GET_SIMILARITY_EDGES: 'embeddings-get-similarity-edges',
     GET_FILE_METADATA: 'embeddings-get-file-metadata',
     FIND_DUPLICATES: 'embeddings-find-duplicates',
+    // FIX: Add CLEAR_CLUSTERS channel for manual cluster cache reset
+    CLEAR_CLUSTERS: 'embeddings-clear-clusters',
     // Diagnostic endpoint for troubleshooting search issues
     DIAGNOSE_SEARCH: 'embeddings-diagnose-search'
   },

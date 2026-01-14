@@ -118,6 +118,8 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [analysisStats, setAnalysisStats] = useState(null);
   const didAutoHealthCheckRef = useRef(false);
   const skipAutoSaveRef = useRef(false);
+  // FIX: Ref to hold cancel function for auto-save debounce (avoids circular dep)
+  const cancelAutoSaveRef = useRef(null);
   // FIX: Ref to always hold the current settings value for debounced callbacks
   const settingsRef = useRef(null);
 
@@ -330,6 +332,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const saveSettings = useCallback(async () => {
     try {
       setIsSaving(true);
+      // Cancel any pending auto-save to prevent race condition where stale auto-save
+      // overwrites the manual save (fixes CRITICAL-3 race condition bug)
+      if (cancelAutoSaveRef.current) {
+        cancelAutoSaveRef.current();
+      }
       // Always use the latest settings via ref to avoid stale closures (e.g., save right after slider drag)
       const latest = {
         ...DEFAULT_SETTINGS,
@@ -397,6 +404,11 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, 800);
 
+  // Store cancel function in ref so saveSettings can access it without circular dependency
+  useEffect(() => {
+    cancelAutoSaveRef.current = autoSaveSettings?.cancel || null;
+  }, [autoSaveSettings]);
+
   useEffect(() => {
     // FIX: Guard against null settings to prevent auto-save before settings are loaded
     if (!isApiAvailable || !settingsLoaded || settings === null) {
@@ -421,8 +433,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [autoSaveSettings]);
 
   const testOllamaConnection = useCallback(async () => {
-    // FIX: Guard against null settings
-    if (!settings) return;
+    // FIX: Guard against null/undefined settings or missing ollamaHost
+    // Note: settings is initialized with DEFAULT_SETTINGS, so !settings check alone is insufficient
+    if (!settings?.ollamaHost) return;
     try {
       const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
       setOllamaHealth(res?.ollamaHealth || null);

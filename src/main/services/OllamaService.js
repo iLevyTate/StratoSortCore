@@ -1,5 +1,6 @@
 const { logger } = require('../../shared/logger');
 const { createOllamaRateLimiter } = require('../../shared/RateLimiter');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 
 logger.setContext('OllamaService');
 const { Ollama } = require('ollama'); // MEDIUM PRIORITY FIX (MED-10): Import Ollama for temporary instances
@@ -207,8 +208,12 @@ class OllamaService {
 
   /**
    * Update Ollama configuration
+   * @param {object} config - Configuration object with model settings
+   * @param {object} [options] - Options for the update
+   * @param {boolean} [options.skipSave=false] - Skip saving to settings file (use when already in a save operation)
    */
-  async updateConfig(config) {
+  async updateConfig(config, options = {}) {
+    const { skipSave = false } = options;
     await this.initialize();
     try {
       // Track previous models for change notification
@@ -219,16 +224,16 @@ class OllamaService {
       // FIX: Track model downgrade at method scope so it can be returned
       let modelWasDowngraded = false;
 
-      if (config.host) await setOllamaHost(config.host);
+      if (config.host) await setOllamaHost(config.host, !skipSave);
 
       if (config.textModel) {
-        await setOllamaModel(config.textModel);
+        await setOllamaModel(config.textModel, !skipSave);
         // FIX: Await async notification to ensure callbacks complete
         await this._notifyModelChange('text', previousTextModel, config.textModel);
       }
 
       if (config.visionModel) {
-        await setOllamaVisionModel(config.visionModel);
+        await setOllamaVisionModel(config.visionModel, !skipSave);
         // FIX: Await async notification to ensure callbacks complete
         await this._notifyModelChange('vision', previousVisionModel, config.visionModel);
       }
@@ -236,9 +241,15 @@ class OllamaService {
       if (config.embeddingModel) {
         // Uses module-level ALLOWED_EMBED_MODELS constant
         const normalizedModel = config.embeddingModel.toLowerCase();
+        // FIX Issue 2.2: Use exact base name matching instead of substring to prevent
+        // malicious model names like "evil-nomic-embed-text" from passing validation
         const isAllowed =
           ALLOWED_EMBED_MODELS.includes(config.embeddingModel) ||
-          ALLOWED_EMBED_MODELS.some((allowed) => normalizedModel.includes(allowed.toLowerCase()));
+          ALLOWED_EMBED_MODELS.some((allowed) => {
+            // Strip version tag (e.g., "nomic-embed-text:v1.5" -> "nomic-embed-text")
+            const base = normalizedModel.split(':')[0];
+            return base === allowed.toLowerCase();
+          });
 
         const embedModel = isAllowed ? config.embeddingModel : 'embeddinggemma';
 
@@ -252,7 +263,7 @@ class OllamaService {
           });
         }
 
-        await setOllamaEmbeddingModel(embedModel);
+        await setOllamaEmbeddingModel(embedModel, !skipSave);
         // FIX: Await async notification to ensure callbacks complete (critical for embedding model
         // changes since ChromaDB collections need to be reset before continuing)
         await this._notifyModelChange('embedding', previousEmbeddingModel, embedModel);
@@ -407,7 +418,8 @@ class OllamaService {
    * MEDIUM PRIORITY FIX (MED-10): Create temporary instance to actually test specified host
    */
   async testConnection(hostUrl) {
-    const CONNECTION_TEST_TIMEOUT = 10000; // 10 second timeout
+    // FIX: Use shared constant instead of hardcoded value
+    const CONNECTION_TEST_TIMEOUT = TIMEOUTS.API_REQUEST; // 10 second timeout
     try {
       const testHost = hostUrl || getOllamaHost();
 
@@ -452,7 +464,8 @@ class OllamaService {
    * Get available models organized by category
    */
   async getModels() {
-    const GET_MODELS_TIMEOUT = 15000; // 15 second timeout
+    // FIX: Use shared constant instead of hardcoded value
+    const GET_MODELS_TIMEOUT = TIMEOUTS.MODEL_LIST; // 15 second timeout
     try {
       const ollama = getOllama();
       // FIX: Add timeout protection to prevent hanging on unresponsive servers
@@ -663,6 +676,15 @@ class OllamaService {
    * MED-5: Rate limited to prevent overwhelming Ollama server
    */
   async analyzeText(prompt, options = {}) {
+    // FIX: Fast-fail if circuit breaker is open to avoid wasting rate limiter slot
+    if (this._ollamaClient?.circuitBreaker?.getState?.() === 'OPEN') {
+      logger.warn('[OllamaService] analyzeText fast-fail: circuit breaker is open');
+      return {
+        success: false,
+        error: 'Service temporarily unavailable (circuit breaker open)'
+      };
+    }
+
     // MED-5: Wait for rate limiter slot before making request
     await ollamaRateLimiter.waitForSlot();
     ollamaRateLimiter.recordCall();
@@ -706,6 +728,15 @@ class OllamaService {
    * MED-5: Rate limited to prevent overwhelming Ollama server
    */
   async analyzeImage(prompt, imageBase64, options = {}) {
+    // FIX: Fast-fail if circuit breaker is open to avoid wasting rate limiter slot
+    if (this._ollamaClient?.circuitBreaker?.getState?.() === 'OPEN') {
+      logger.warn('[OllamaService] analyzeImage fast-fail: circuit breaker is open');
+      return {
+        success: false,
+        error: 'Service temporarily unavailable (circuit breaker open)'
+      };
+    }
+
     // MED-5: Wait for rate limiter slot before making request
     await ollamaRateLimiter.waitForSlot();
     ollamaRateLimiter.recordCall();
@@ -752,6 +783,8 @@ class OllamaService {
    * @param {string} [options.model] - Model to use (defaults to configured embedding model)
    * @param {Function} [options.onProgress] - Progress callback
    * @param {number} [options.batchSize=10] - Batch size for processing
+   * @param {number} [options.maxBatchTimeout] - Max time for entire batch (defaults to TIMEOUTS.BATCH_EMBEDDING_MAX)
+   * @param {AbortController} [options.abortController] - Optional AbortController for cancellation
    * @returns {Promise<{results: Array, errors: Array, stats: Object}>}
    */
   async batchGenerateEmbeddings(items, options = {}) {
@@ -762,37 +795,115 @@ class OllamaService {
     const model = options.model || getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
     const startTime = Date.now();
 
+    // FIX: Add batch timeout support to prevent indefinite hangs
+    const maxBatchTimeout =
+      options.maxBatchTimeout || TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000;
+    const absoluteDeadline = startTime + maxBatchTimeout;
+    const abortController = options.abortController;
+
+    // Helper to check if we should abort the batch
+    const shouldAbort = () => {
+      if (abortController?.signal?.aborted) {
+        return { abort: true, reason: 'cancelled' };
+      }
+      if (Date.now() >= absoluteDeadline) {
+        return { abort: true, reason: 'timeout' };
+      }
+      return { abort: false };
+    };
+
     // Use OllamaClient if available for resilient batch processing
     if (this._ollamaClient) {
       try {
-        const result = await this._ollamaClient.batchEmbeddings(items, {
-          model,
-          onProgress: options.onProgress,
-          batchSize: options.batchSize || 10
+        // FIX: Wrap OllamaClient batch in timeout check
+        let checkInterval;
+        const timeoutPromise = new Promise((_, reject) => {
+          checkInterval = setInterval(() => {
+            const check = shouldAbort();
+            if (check.abort) {
+              clearInterval(checkInterval);
+              reject(new Error(`Batch operation ${check.reason}`));
+            }
+          }, 1000);
+          // Don't block process exit
+          if (checkInterval.unref) checkInterval.unref();
         });
 
-        return {
-          success: result.errors.length === 0,
-          results: result.results,
-          errors: result.errors,
-          stats: {
-            total: items.length,
-            successful: result.results.length,
-            failed: result.errors.length,
-            duration: Date.now() - startTime
-          }
-        };
+        try {
+          const result = await Promise.race([
+            this._ollamaClient.batchEmbeddings(items, {
+              model,
+              onProgress: options.onProgress,
+              batchSize: options.batchSize || 10
+            }),
+            timeoutPromise
+          ]);
+
+          return {
+            success: result.errors.length === 0,
+            results: result.results,
+            errors: result.errors,
+            stats: {
+              total: items.length,
+              successful: result.results.length,
+              failed: result.errors.length,
+              duration: Date.now() - startTime,
+              timedOut: false
+            }
+          };
+        } finally {
+          if (checkInterval) clearInterval(checkInterval);
+        }
       } catch (error) {
+        // Check if this was a timeout/cancellation
+        if (error.message.includes('cancelled') || error.message.includes('timeout')) {
+          logger.warn('[OllamaService] Batch embedding aborted:', error.message);
+          return {
+            success: false,
+            results: [],
+            errors: [{ error: error.message, aborted: true }],
+            stats: {
+              total: items.length,
+              successful: 0,
+              failed: items.length,
+              duration: Date.now() - startTime,
+              timedOut: error.message.includes('timeout')
+            }
+          };
+        }
         logger.error('[OllamaService] Batch embedding via OllamaClient failed:', error.message);
         // Fall through to basic implementation
       }
     }
 
-    // Fallback: Process sequentially with basic retry
+    // Fallback: Process sequentially with basic retry and timeout checks
     const results = [];
     const errors = [];
+    let abortedAt = null;
 
     for (let i = 0; i < items.length; i++) {
+      // FIX: Check deadline/abort before each item
+      const check = shouldAbort();
+      if (check.abort) {
+        abortedAt = i;
+        logger.warn('[OllamaService] Batch aborted', {
+          reason: check.reason,
+          processed: i,
+          remaining: items.length - i
+        });
+
+        // Mark remaining items as skipped
+        for (let j = i; j < items.length; j++) {
+          errors.push({
+            id: items[j].id,
+            error: `Skipped: batch ${check.reason}`,
+            success: false,
+            skipped: true
+          });
+        }
+        break;
+      }
+
       const item = items[i];
 
       try {
@@ -823,10 +934,13 @@ class OllamaService {
         options.onProgress({
           completed: i + 1,
           total: items.length,
-          percent: Math.round(((i + 1) / items.length) * 100)
+          percent: Math.round(((i + 1) / items.length) * 100),
+          timedOut: false
         });
       }
     }
+
+    const timedOut = abortedAt !== null && Date.now() >= absoluteDeadline;
 
     return {
       success: errors.length === 0,
@@ -836,7 +950,9 @@ class OllamaService {
         total: items.length,
         successful: results.length,
         failed: errors.length,
-        duration: Date.now() - startTime
+        duration: Date.now() - startTime,
+        timedOut,
+        abortedAt
       }
     };
   }

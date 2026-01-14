@@ -27,6 +27,7 @@ const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { chunkText } = require('../utils/textChunking');
 const { CHUNKING } = require('../../shared/performanceConstants');
 const { AI_DEFAULTS } = require('../../shared/constants');
+const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 
 logger.setContext('SmartFolderWatcher');
 
@@ -311,6 +312,12 @@ class SmartFolderWatcher {
         this._handleFileEvent('change', filePath, stats);
       });
 
+      // Handle deleted files (external deletion via File Explorer)
+      // FIX: Prevents ghost entries when files are deleted outside the app
+      this.watcher.on('unlink', (filePath) => {
+        this._handleFileDeletion(filePath);
+      });
+
       // Handle errors
       this.watcher.on('error', (error) => {
         this._handleError(error);
@@ -454,6 +461,13 @@ class SmartFolderWatcher {
    * @private
    */
   _handleFileEvent(eventType, filePath, stats) {
+    // FIX: Skip files recently operated on by any watcher (prevents infinite loops)
+    const tracker = getFileOperationTracker();
+    if (tracker.wasRecentlyOperated(filePath)) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping recently-operated file:', filePath);
+      return;
+    }
+
     // Skip unsupported files
     if (!isSupportedFile(filePath)) {
       logger.debug('[SMART-FOLDER-WATCHER] Skipping unsupported file:', filePath);
@@ -842,6 +856,9 @@ class SmartFolderWatcher {
 
         logger.info('[SMART-FOLDER-WATCHER] Analysis complete:', filePath);
 
+        // FIX: Record operation to prevent infinite loops with other watchers
+        getFileOperationTracker().recordOperation(filePath, 'analyze', 'smartFolderWatcher');
+
         // Send notification about the analyzed file
         const fileName = path.basename(filePath);
         const analysis = result.analysis || result;
@@ -900,10 +917,22 @@ class SmartFolderWatcher {
       return;
     }
 
+    // FIX: Verify file still exists before embedding (prevents ghost embeddings)
+    try {
+      await fs.stat(filePath);
+    } catch (statError) {
+      if (isNotFoundError(statError)) {
+        logger.debug('[SMART-FOLDER-WATCHER] File no longer exists, skipping embedding:', filePath);
+        return;
+      }
+      // For other stat errors, continue and let embedding logic handle it
+    }
+
     try {
       // Extract analysis data - handle different result structures
       const analysis = analysisResult.analysis || analysisResult;
-      const summary = analysis.summary || analysis.description || '';
+      // FIX: Use purpose as fallback for summary if missing (common in fallback analysis)
+      const summary = analysis.summary || analysis.description || analysis.purpose || '';
       const category = analysis.category || 'Uncategorized';
       const keywords = analysis.keywords || analysis.tags || [];
       const subject = analysis.subject || '';
@@ -1054,6 +1083,80 @@ class SmartFolderWatcher {
           )
           .catch(() => {});
       }
+    }
+  }
+
+  /**
+   * Handle file deletion events from the watcher
+   * Removes embeddings and analysis history for externally deleted files
+   * FIX: Prevents ghost entries when files are deleted via File Explorer
+   * @private
+   * @param {string} filePath - Path to the deleted file
+   */
+  async _handleFileDeletion(filePath) {
+    // Skip unsupported files
+    if (!isSupportedFile(filePath)) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping unsupported deleted file:', filePath);
+      return;
+    }
+
+    // Skip temp files
+    if (isTemporaryFile(filePath)) {
+      logger.debug('[SMART-FOLDER-WATCHER] Skipping temp file deletion:', filePath);
+      return;
+    }
+
+    logger.info('[SMART-FOLDER-WATCHER] Detected external file deletion:', filePath);
+
+    try {
+      // Remove from ChromaDB (both file: and image: prefixes)
+      if (this.chromaDbService) {
+        const filePrefix = `file:${filePath}`;
+        const imagePrefix = `image:${filePath}`;
+
+        // Use batch delete for atomicity when available
+        if (typeof this.chromaDbService.batchDeleteFileEmbeddings === 'function') {
+          await this.chromaDbService.batchDeleteFileEmbeddings([filePrefix, imagePrefix]);
+        } else {
+          // Fallback to individual deletes
+          await this.chromaDbService.deleteFileEmbedding(filePrefix);
+          await this.chromaDbService.deleteFileEmbedding(imagePrefix);
+        }
+
+        // Delete associated chunks
+        if (typeof this.chromaDbService.deleteFileChunks === 'function') {
+          await this.chromaDbService.deleteFileChunks(filePrefix);
+          await this.chromaDbService.deleteFileChunks(imagePrefix);
+        }
+
+        logger.debug('[SMART-FOLDER-WATCHER] Removed embeddings for deleted file:', filePath);
+      }
+
+      // Remove from analysis history
+      if (this.analysisHistoryService?.removeEntriesByPath) {
+        await this.analysisHistoryService.removeEntriesByPath(filePath);
+        logger.debug('[SMART-FOLDER-WATCHER] Removed history for deleted file:', filePath);
+      }
+
+      // Invalidate BM25 search index
+      try {
+        const { getSearchServiceInstance } = require('../ipc/semantic');
+        const searchService = getSearchServiceInstance?.();
+        if (searchService?.invalidateIndex) {
+          searchService.invalidateIndex({ reason: 'external-deletion', oldPath: filePath });
+        }
+      } catch (indexErr) {
+        logger.debug('[SMART-FOLDER-WATCHER] Could not invalidate search index:', indexErr.message);
+      }
+
+      this.stats.lastActivity = new Date().toISOString();
+    } catch (error) {
+      logger.warn(
+        '[SMART-FOLDER-WATCHER] Error cleaning up deleted file:',
+        filePath,
+        error.message
+      );
+      this.stats.errors++;
     }
   }
 

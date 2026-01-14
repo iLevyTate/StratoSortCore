@@ -720,6 +720,7 @@ module.exports = {
 
   // Batch & Concurrency
   batchProcess,
+  allSettledWithErrors,
 
   // Initialization
   createInitGuard

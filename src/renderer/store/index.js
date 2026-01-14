@@ -3,7 +3,7 @@ import uiReducer from './slices/uiSlice';
 import filesReducer from './slices/filesSlice';
 import analysisReducer from './slices/analysisSlice';
 import systemReducer from './slices/systemSlice';
-import ipcMiddleware from './middleware/ipcMiddleware';
+import ipcMiddleware, { markStoreReady } from './middleware/ipcMiddleware';
 import persistenceMiddleware from './middleware/persistenceMiddleware';
 import { PHASES } from '../../shared/constants';
 
@@ -189,5 +189,8 @@ const store = configureStore({
     }).concat(ipcMiddleware, persistenceMiddleware),
   preloadedState
 });
+
+// FIX Issue 3: Mark store as ready to flush any queued IPC events
+markStoreReady();
 
 export default store;

@@ -31,6 +31,12 @@ const LAYOUT_DEBOUNCE_MS = 150;
 // Track pending promise callbacks to prevent memory leaks and handle cancellation
 let pendingCallbacks = [];
 
+// Store latest layout request data to prevent stale closure issues
+let latestLayoutData = { nodes: null, edges: null, options: {} };
+
+// Track if layout was aborted to prevent resolving after cancellation
+let layoutAborted = false;
+
 /**
  * Node size configuration for different node types
  */
@@ -65,8 +71,11 @@ const DEFAULT_OPTIONS = {
  */
 export async function elkLayout(nodes, edges, options = {}) {
   if (!nodes || nodes.length === 0) {
-    return nodes;
+    return nodes || [];
   }
+
+  // Normalize edges to empty array if null/undefined to prevent TypeError on .map()
+  const safeEdges = edges || [];
 
   const {
     direction = DEFAULT_OPTIONS.direction,
@@ -98,7 +107,7 @@ export async function elkLayout(nodes, edges, options = {}) {
         height: size.height
       };
     }),
-    edges: edges.map((edge) => ({
+    edges: safeEdges.map((edge) => ({
       id: edge.id,
       sources: [edge.source],
       targets: [edge.target]
@@ -149,15 +158,13 @@ export async function elkLayout(nodes, edges, options = {}) {
 export function debouncedElkLayout(nodes, edges, options = {}) {
   const { debounceMs = LAYOUT_DEBOUNCE_MS, ...layoutOptions } = options;
 
-  return new Promise((resolve, reject) => {
-    // FIX: Resolve any previously pending promises with current nodes
-    // This prevents memory leaks from promises that would never resolve
-    if (pendingCallbacks.length > 0) {
-      pendingCallbacks.forEach((cb) => cb.resolve(nodes));
-      pendingCallbacks = [];
-    }
+  // Store latest data in module-level variable to prevent stale closure issues
+  // When the debounce timer fires, it will use the most recent data
+  latestLayoutData = { nodes: nodes || [], edges: edges || [], options: layoutOptions };
+  layoutAborted = false;
 
-    // Clear any pending debounce timer
+  return new Promise((resolve, reject) => {
+    // Clear any pending debounce timer - new request supersedes old ones
     if (layoutDebounceTimer) {
       clearTimeout(layoutDebounceTimer);
     }
@@ -169,30 +176,47 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
     layoutDebounceTimer = setTimeout(async () => {
       layoutDebounceTimer = null;
 
+      // Check if layout was aborted during debounce wait
+      if (layoutAborted) {
+        return;
+      }
+
       // Capture callbacks to notify
       const callbacksToNotify = [...pendingCallbacks];
       pendingCallbacks = [];
 
-      // If there's already a layout in progress, wait for it
+      // Get the latest data (not stale closure data)
+      const { nodes: latestNodes, edges: latestEdges, options: latestOptions } = latestLayoutData;
+
+      // If there's already a layout in progress with same data, wait for it
       if (pendingLayoutPromise) {
         try {
           const result = await pendingLayoutPromise;
-          callbacksToNotify.forEach((cb) => cb.resolve(result));
+          // Only resolve if not aborted during the wait
+          if (!layoutAborted) {
+            callbacksToNotify.forEach((cb) => cb.resolve(result));
+          }
           return;
         } catch {
           // Fall through to new layout
         }
       }
 
-      // Execute the layout
-      pendingLayoutPromise = elkLayout(nodes, edges, layoutOptions);
+      // Execute the layout with LATEST data (not stale closure data)
+      pendingLayoutPromise = elkLayout(latestNodes, latestEdges, latestOptions);
 
       try {
         const result = await pendingLayoutPromise;
-        callbacksToNotify.forEach((cb) => cb.resolve(result));
+        // Only resolve if not aborted during layout computation
+        if (!layoutAborted) {
+          callbacksToNotify.forEach((cb) => cb.resolve(result));
+        }
       } catch (error) {
         logger.error('[elkLayout] Debounced layout failed:', error);
-        callbacksToNotify.forEach((cb) => cb.resolve(nodes)); // Return original nodes on error
+        // Return original nodes on error (using latest, not stale)
+        if (!layoutAborted) {
+          callbacksToNotify.forEach((cb) => cb.resolve(latestNodes));
+        }
       } finally {
         pendingLayoutPromise = null;
       }
@@ -203,12 +227,19 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
 /**
  * Cancel any pending debounced layout
  * Useful when component unmounts or user cancels operation
+ *
+ * Note: ELK layout computation itself cannot be cancelled once started,
+ * but this prevents callbacks from being resolved after cancellation.
  */
 export function cancelPendingLayout() {
+  // Set abort flag to prevent any pending callbacks from resolving
+  layoutAborted = true;
+
   if (layoutDebounceTimer) {
     clearTimeout(layoutDebounceTimer);
     layoutDebounceTimer = null;
   }
+
   // Reject pending promises with AbortError to signal cancellation
   if (pendingCallbacks.length > 0) {
     const error = new Error('Layout cancelled');
@@ -216,7 +247,12 @@ export function cancelPendingLayout() {
     pendingCallbacks.forEach((cb) => cb.reject(error));
     pendingCallbacks = [];
   }
+
+  // Clear the promise reference (actual ELK computation may still run but results will be ignored)
   pendingLayoutPromise = null;
+
+  // Clear cached layout data
+  latestLayoutData = { nodes: null, edges: null, options: {} };
 }
 
 /**
@@ -233,9 +269,11 @@ export async function smartLayout(nodes, edges, options = {}) {
   const { progressive = true, maxInitialNodes = 50, ...layoutOptions } = options;
 
   if (!nodes || nodes.length === 0) {
-    return { nodes, isPartial: false, totalNodes: 0 };
+    return { nodes: nodes || [], isPartial: false, totalNodes: 0 };
   }
 
+  // Normalize edges to empty array if null/undefined
+  const safeEdges = edges || [];
   const totalNodes = nodes.length;
 
   // For very large graphs with progressive enabled, layout only important nodes first
@@ -254,7 +292,7 @@ export async function smartLayout(nodes, edges, options = {}) {
     const initialNodeIds = new Set(initialNodes.map((n) => n.id));
 
     // Filter edges to only include those between initial nodes
-    const initialEdges = edges.filter(
+    const initialEdges = safeEdges.filter(
       (e) => initialNodeIds.has(e.source) && initialNodeIds.has(e.target)
     );
 
@@ -285,7 +323,7 @@ export async function smartLayout(nodes, edges, options = {}) {
   }
 
   // For smaller graphs, do full layout
-  const layoutedNodes = await elkLayout(nodes, edges, layoutOptions);
+  const layoutedNodes = await elkLayout(nodes, safeEdges, layoutOptions);
   return { nodes: layoutedNodes, isPartial: false, totalNodes };
 }
 
@@ -412,16 +450,16 @@ export function radialLayout(centerNode, nodes, options = {}) {
 }
 
 /**
- * Layout clusters in a circular/radial pattern
- * Wrapper around radialLayout for cluster nodes
+ * Layout clusters in an intelligent hierarchical pattern
+ * Groups related clusters together and sizes them by member count
  *
  * @param {Array} clusterNodes - Cluster nodes
- * @param {Array} edges - Edges between clusters (unused but kept for API compat)
+ * @param {Array} edges - Edges between clusters (used to determine relationships)
  * @param {Object} options - Layout options
- * @returns {Array} Nodes with radial positions
+ * @returns {Array} Nodes with calculated positions
  */
 export function clusterRadialLayout(clusterNodes, edges, options = {}) {
-  const { centerX = 400, centerY = 300, radius = 250, startAngle = -Math.PI / 2 } = options;
+  const { centerX = 400, centerY = 300, radius = 280 } = options;
 
   if (!clusterNodes || clusterNodes.length === 0) {
     return clusterNodes;
@@ -435,13 +473,134 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
     }));
   }
 
-  return radialLayout(null, clusterNodes, {
-    radius,
-    startAngle,
-    endAngle: startAngle + 2 * Math.PI,
-    centerX,
-    centerY
+  // Sort clusters by member count (largest first) for prominence
+  const sortedClusters = [...clusterNodes].sort((a, b) => {
+    const countA = a.data?.memberCount || 0;
+    const countB = b.data?.memberCount || 0;
+    return countB - countA;
   });
+
+  // Group clusters by confidence level for visual hierarchy
+  const highConfidence = sortedClusters.filter((n) => n.data?.confidence === 'high');
+  const mediumConfidence = sortedClusters.filter((n) => n.data?.confidence === 'medium');
+  const lowConfidence = sortedClusters.filter((n) => n.data?.confidence === 'low');
+
+  // Build adjacency map from edges to identify connected clusters
+  const safeEdges = edges || [];
+  const adjacency = new Map();
+  safeEdges.forEach((edge) => {
+    if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set());
+    if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set());
+    adjacency.get(edge.source).add(edge.target);
+    adjacency.get(edge.target).add(edge.source);
+  });
+
+  // Use force-directed-like placement: connected clusters stay closer
+  const positioned = new Map();
+  const result = [];
+
+  // Position high-confidence clusters in the inner ring (most prominent)
+  const innerRadius = radius * 0.5;
+  highConfidence.forEach((node, idx) => {
+    const angle = (idx / Math.max(1, highConfidence.length)) * 2 * Math.PI - Math.PI / 2;
+    const pos = {
+      x: centerX + innerRadius * Math.cos(angle),
+      y: centerY + innerRadius * Math.sin(angle)
+    };
+    positioned.set(node.id, pos);
+    result.push({ ...node, position: pos });
+  });
+
+  // Position medium-confidence clusters in the middle ring
+  const middleRadius = radius * 0.8;
+  mediumConfidence.forEach((node, idx) => {
+    // Try to position near connected high-confidence clusters
+    const neighbors = adjacency.get(node.id) || new Set();
+    let bestAngle = (idx / Math.max(1, mediumConfidence.length)) * 2 * Math.PI - Math.PI / 2;
+
+    // If connected to a positioned cluster, bias towards it
+    for (const neighborId of neighbors) {
+      if (positioned.has(neighborId)) {
+        const neighborPos = positioned.get(neighborId);
+        bestAngle = Math.atan2(neighborPos.y - centerY, neighborPos.x - centerX);
+        // Add small offset to avoid overlap
+        bestAngle += idx % 2 === 0 ? 0.3 : -0.3;
+        break;
+      }
+    }
+
+    const pos = {
+      x: centerX + middleRadius * Math.cos(bestAngle),
+      y: centerY + middleRadius * Math.sin(bestAngle)
+    };
+    positioned.set(node.id, pos);
+    result.push({ ...node, position: pos });
+  });
+
+  // Position low-confidence clusters in the outer ring
+  const outerRadius = radius;
+  lowConfidence.forEach((node, idx) => {
+    // Try to position near connected clusters
+    const neighbors = adjacency.get(node.id) || new Set();
+    let bestAngle = (idx / Math.max(1, lowConfidence.length)) * 2 * Math.PI - Math.PI / 2;
+
+    for (const neighborId of neighbors) {
+      if (positioned.has(neighborId)) {
+        const neighborPos = positioned.get(neighborId);
+        bestAngle = Math.atan2(neighborPos.y - centerY, neighborPos.x - centerX);
+        bestAngle += idx % 2 === 0 ? 0.4 : -0.4;
+        break;
+      }
+    }
+
+    const pos = {
+      x: centerX + outerRadius * Math.cos(bestAngle),
+      y: centerY + outerRadius * Math.sin(bestAngle)
+    };
+    positioned.set(node.id, pos);
+    result.push({ ...node, position: pos });
+  });
+
+  // Apply repulsion pass to avoid overlaps
+  return applyClusterRepulsion(result, { centerX, centerY, minDistance: 120 });
+}
+
+/**
+ * Apply simple repulsion to avoid cluster overlaps
+ * @private
+ */
+function applyClusterRepulsion(nodes, options = {}) {
+  const { minDistance = 120, iterations = 3 } = options;
+
+  if (nodes.length < 2) return nodes;
+
+  const positions = nodes.map((n) => ({ ...n.position }));
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const dx = positions[j].x - positions[i].x;
+        const dy = positions[j].y - positions[i].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < minDistance && dist > 0) {
+          const overlap = (minDistance - dist) / 2;
+          const nx = dx / dist;
+          const ny = dy / dist;
+
+          positions[i].x -= nx * overlap;
+          positions[i].y -= ny * overlap;
+          positions[j].x += nx * overlap;
+          positions[j].y += ny * overlap;
+        }
+      }
+    }
+  }
+
+  return nodes.map((node, idx) => ({
+    ...node,
+    position: positions[idx]
+  }));
 }
 
 /**

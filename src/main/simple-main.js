@@ -10,6 +10,7 @@ const tesseract = require('node-tesseract-ocr');
 const fs = require('fs').promises;
 const path = require('path');
 const { logger } = require('../shared/logger');
+const { withTimeout } = require('../shared/promiseUtils');
 
 logger.setContext('Main');
 
@@ -92,7 +93,28 @@ let serviceIntegration;
 let settingsService;
 let downloadWatcher;
 let currentSettings = {};
-let isQuitting = false;
+// FIX 2.4: Consolidated shutdown state to prevent race conditions
+// Previously had separate isQuitting and _forceQuit flags that could get out of sync
+const _shutdownState = {
+  isQuitting: false, // Set by lifecycle during async cleanup
+  forceQuit: false, // Set synchronously via prependListener before async cleanup
+  get shouldClose() {
+    // Combined getter - returns true if app is in any shutdown state
+    return this.isQuitting || this.forceQuit;
+  }
+};
+// Backward compatibility aliases (prefixed with _ as they're set via helpers, not used directly)
+let _isQuitting = false;
+let _forceQuit = false;
+// Sync helper to update both the state object and legacy variables
+const setIsQuitting = (val) => {
+  _isQuitting = val;
+  _shutdownState.isQuitting = val;
+};
+const setForceQuit = (val) => {
+  _forceQuit = val;
+  _shutdownState.forceQuit = val;
+};
 let chromaDbProcess = null;
 
 // Track cleanup handlers for proper memory management
@@ -245,8 +267,9 @@ function _createWindowInternal() {
   windowEventHandlers.set('blur', blurHandler);
   mainWindow.on('blur', blurHandler);
 
+  // FIX 2.4: Use consolidated shutdown state getter for cleaner shutdown handling
   const closeHandler = (e) => {
-    if (!isQuitting && currentSettings?.backgroundMode) {
+    if (!_shutdownState.shouldClose && currentSettings?.backgroundMode) {
       e.preventDefault();
       mainWindow.hide();
     }
@@ -648,12 +671,22 @@ app.whenReady().then(async () => {
       // Use ModelManager singleton which is now the single source of truth for model verification
       const { getInstance: getModelManager } = require('./services/ModelManager');
       const modelManager = getModelManager();
-      // Ensure we have a working model selected
+      // FIX 2.3: Add timeout to model verification to prevent indefinite hangs
       try {
-        await modelManager.ensureWorkingModel();
+        await withTimeout(
+          modelManager.ensureWorkingModel(),
+          10000, // 10 second timeout for model verification
+          'Model verification'
+        );
         logger.info('[STARTUP] ✅ AI models verified and ready');
       } catch (err) {
-        logger.warn('[STARTUP] Model verification warning:', err.message);
+        // FIX 2.3: Distinguish between timeout and other errors
+        if (err.message?.includes('timed out')) {
+          logger.warn('[STARTUP] Model verification timed out - will retry on first use');
+        } else {
+          logger.warn('[STARTUP] Model verification warning:', err.message);
+        }
+        // Continue anyway - model can be verified later when needed
       }
     }
 
@@ -814,9 +847,7 @@ app.whenReady().then(async () => {
         getSettingsService: () => settingsService,
         handleSettingsChanged,
         createWindow,
-        setIsQuitting: (val) => {
-          isQuitting = val;
-        }
+        setIsQuitting // FIX 2.4: Use consolidated setter
       });
       createSystemTray();
       // Register global shortcut for quick semantic search
@@ -853,15 +884,19 @@ app.whenReady().then(async () => {
       setGlobalProcessListeners: (val) => {
         globalProcessListeners = val;
       },
-      setIsQuitting: (val) => {
-        isQuitting = val;
-      }
+      setIsQuitting // FIX 2.4: Use consolidated setter
     });
 
     // Register lifecycle handlers (replaces inline before-quit, window-all-closed, etc.)
     const lifecycleCleanup = registerLifecycleHandlers(createWindow);
     eventListeners.push(lifecycleCleanup.cleanupAppListeners);
     globalProcessListeners.push(lifecycleCleanup.cleanupProcessListeners);
+
+    // FIX 2.4: Add synchronous pre-quit listener to set forceQuit flag BEFORE async cleanup
+    // This prevents the race condition where window close handler hides window during quit
+    app.prependListener('before-quit', () => {
+      setForceQuit(true);
+    });
 
     // Handle Windows Jump List command-line tasks and setup
     // Handled by ./core/jumpList module

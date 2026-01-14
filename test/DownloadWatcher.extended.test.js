@@ -65,6 +65,18 @@ jest.mock('../src/main/services/autoOrganize/namingUtils', () => ({
   generateSuggestedNameFromAnalysis: jest.fn()
 }));
 
+// Mock fileOperationTracker to prevent infinite loop protection from interfering with tests
+jest.mock('../src/shared/fileOperationTracker', () => ({
+  getInstance: jest.fn(() => ({
+    wasRecentlyOperated: jest.fn().mockReturnValue(false),
+    recordOperation: jest.fn(),
+    clear: jest.fn(),
+    shutdown: jest.fn()
+  })),
+  FileOperationTracker: jest.fn(),
+  DEFAULT_COOLDOWN_MS: 5000
+}));
+
 jest.mock('../src/main/errors/FileSystemError', () => ({
   FileSystemError: class FileSystemError extends Error {
     constructor(code, metadata = {}) {

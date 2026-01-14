@@ -1,4 +1,4 @@
-import { updateProgress, stopAnalysis } from '../slices/analysisSlice';
+import { updateProgress, stopAnalysis, updateResultPathsAfterMove } from '../slices/analysisSlice';
 import { updateMetrics, addNotification } from '../slices/systemSlice';
 import { updateFilePathsAfterMove, removeSelectedFiles } from '../slices/filesSlice';
 import { logger } from '../../../shared/logger';
@@ -38,7 +38,54 @@ let cleanupFunctions = [];
 // FIX: Track beforeunload handler reference for proper cleanup
 let beforeUnloadHandler = null;
 
+// FIX Issue 3: Event queue for early IPC events
+// Events that arrive before store.dispatch is ready are queued and flushed later
+let isStoreReady = false;
+let eventQueue = [];
+let storeRef = null;
+
+/**
+ * Queue an event for later dispatch or dispatch immediately if store is ready
+ * @param {Function} actionCreator - The Redux action creator
+ * @param {*} data - The event payload
+ */
+function safeDispatch(actionCreator, data) {
+  if (isStoreReady && storeRef) {
+    storeRef.dispatch(actionCreator(data));
+  } else {
+    eventQueue.push({ actionCreator, data });
+    logger.debug('[IPC Middleware] Queued early event', {
+      actionType: actionCreator?.name || 'unknown',
+      queueSize: eventQueue.length
+    });
+  }
+}
+
+/**
+ * Mark the store as ready and flush any queued events
+ * Called after store configuration is complete
+ */
+export function markStoreReady() {
+  if (isStoreReady) return;
+  isStoreReady = true;
+
+  if (eventQueue.length > 0 && storeRef) {
+    logger.info('[IPC Middleware] Flushing event queue', { count: eventQueue.length });
+    eventQueue.forEach(({ actionCreator, data }) => {
+      try {
+        storeRef.dispatch(actionCreator(data));
+      } catch (e) {
+        logger.error('[IPC Middleware] Error flushing queued event:', e.message);
+      }
+    });
+    eventQueue = [];
+  }
+}
+
 const ipcMiddleware = (store) => {
+  // FIX Issue 3: Store reference for event queue flushing
+  storeRef = store;
+
   // Set up listeners once (with cleanup tracking)
   if (window.electronAPI?.events && !listenersInitialized) {
     // FIX: Clean up any existing listeners first (defensive for HMR edge cases)
@@ -49,16 +96,17 @@ const ipcMiddleware = (store) => {
     listenersInitialized = true;
 
     // Listen for operation progress from batch operations
+    // FIX: Use safeDispatch to handle early events
     const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
       const { data: validatedData } = validateIncomingEvent('operation-progress', data);
-      store.dispatch(updateProgress(validatedData));
+      safeDispatch(updateProgress, validatedData);
     });
     if (progressCleanup) cleanupFunctions.push(progressCleanup);
 
     // Listen for system metrics updates
     const metricsCleanup = window.electronAPI.events.onSystemMetrics((metrics) => {
       const { data: validatedMetrics } = validateIncomingEvent('system-metrics', metrics);
-      store.dispatch(updateMetrics(validatedMetrics));
+      safeDispatch(updateMetrics, validatedMetrics);
     });
     if (metricsCleanup) cleanupFunctions.push(metricsCleanup);
 
@@ -104,11 +152,16 @@ const ipcMiddleware = (store) => {
         );
 
         // Stop analysis if it was an analysis operation
+        // FIX: Wrap dispatch in try-catch to prevent silent failures
         if (
           validatedData.operationType === 'analyze' ||
           validatedData.operationType === 'batch_analyze'
         ) {
-          store.dispatch(stopAnalysis());
+          try {
+            store.dispatch(stopAnalysis());
+          } catch (e) {
+            logger.error('[IPC Middleware] Failed to dispatch stopAnalysis', { error: e.message });
+          }
         }
       });
       if (errorCleanup) cleanupFunctions.push(errorCleanup);
@@ -123,21 +176,30 @@ const ipcMiddleware = (store) => {
           fileCount: validatedData.files?.length
         });
 
-        if (
-          validatedData.operation === 'move' &&
-          validatedData.files &&
-          validatedData.destinations
-        ) {
-          // Update file paths in Redux state
-          store.dispatch(
-            updateFilePathsAfterMove({
+        // FIX: Wrap dispatches in try-catch to prevent silent failures
+        try {
+          if (
+            validatedData.operation === 'move' &&
+            validatedData.files &&
+            validatedData.destinations
+          ) {
+            // Update file paths in Redux state (both filesSlice and analysisSlice)
+            const pathUpdate = {
               oldPaths: validatedData.files,
               newPaths: validatedData.destinations
-            })
-          );
-        } else if (validatedData.operation === 'delete' && validatedData.files) {
-          // Remove deleted files from state using batch action
-          store.dispatch(removeSelectedFiles(validatedData.files));
+            };
+            store.dispatch(updateFilePathsAfterMove(pathUpdate));
+            // FIX: Also update analysis results to prevent path desync
+            store.dispatch(updateResultPathsAfterMove(pathUpdate));
+          } else if (validatedData.operation === 'delete' && validatedData.files) {
+            // Remove deleted files from state using batch action
+            store.dispatch(removeSelectedFiles(validatedData.files));
+          }
+        } catch (e) {
+          logger.error('[IPC Middleware] Failed to dispatch file operation update', {
+            operation: validatedData.operation,
+            error: e.message
+          });
         }
       });
       if (fileOpCleanup) cleanupFunctions.push(fileOpCleanup);
@@ -210,6 +272,11 @@ export const cleanupIpcListeners = () => {
   });
   cleanupFunctions = [];
   listenersInitialized = false;
+
+  // FIX Issue 3: Reset event queue state
+  isStoreReady = false;
+  eventQueue = [];
+  storeRef = null;
 
   // FIX: Remove the beforeunload listener to prevent accumulation during HMR
   if (beforeUnloadHandler) {

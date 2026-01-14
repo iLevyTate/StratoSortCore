@@ -14,7 +14,7 @@
 
 const http = require('http');
 const https = require('https');
-const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
+const { asyncSpawn, checkPythonVersionAsync } = require('../src/main/utils/asyncSpawnUtils');
 
 // Simple color output without external dependencies
 const colors = {
@@ -95,8 +95,12 @@ async function isChromaInstalled(python) {
   return { installed: false, version: null };
 }
 
-async function pipInstallChroma(python, { upgradePip = true, userInstall = true } = {}) {
+async function pipInstallChroma(
+  python,
+  { upgradePip = true, userInstall = true, log = console } = {}
+) {
   if (upgradePip) {
+    log.log(chalk.gray('[chromadb] Upgrading pip...'));
     await tryCmd(
       python.command,
       [...python.args, '-m', 'pip', 'install', '--upgrade', 'pip'],
@@ -114,7 +118,32 @@ async function pipInstallChroma(python, { upgradePip = true, userInstall = true 
     ...(userInstall ? ['--user'] : []),
     'chromadb'
   ];
+
+  log.log(chalk.cyan('[chromadb] Running: pip install chromadb...'));
   const res = await tryCmd(python.command, args, 10 * 60 * 1000);
+
+  // Provide helpful error messages for common failures
+  if (res.status !== 0) {
+    const stderr = (res.stderr || '').toLowerCase();
+
+    if (stderr.includes('permission denied') || stderr.includes('access is denied')) {
+      log.log(chalk.yellow('\n[chromadb] Permission denied during installation.'));
+      log.log(chalk.gray('  Try one of these solutions:'));
+      log.log(chalk.gray('  • Run as Administrator (Windows)'));
+      log.log(chalk.gray('  • Use a virtual environment: python -m venv .venv'));
+      log.log(chalk.gray('  • Install with --user flag (already attempted)'));
+    } else if (stderr.includes('no matching distribution') || stderr.includes('could not find')) {
+      log.log(chalk.yellow('\n[chromadb] Package not found or incompatible Python version.'));
+      log.log(chalk.gray('  ChromaDB requires Python 3.9 or higher.'));
+      log.log(chalk.gray('  Check your Python version: python --version'));
+    } else if (stderr.includes('network') || stderr.includes('connection')) {
+      log.log(chalk.yellow('\n[chromadb] Network error during installation.'));
+      log.log(chalk.gray('  Check your internet connection and try again.'));
+    } else if (res.stderr) {
+      log.log(chalk.yellow(`\n[chromadb] pip install failed: ${res.stderr.slice(0, 200)}`));
+    }
+  }
+
   return res.status === 0;
 }
 
@@ -237,13 +266,48 @@ async function main({
 
   const python = await deps.findPythonLauncher();
   if (!python) {
-    const msg =
-      'Python 3 not found. ChromaDB features will be unavailable.\n' +
-      'Install Python 3 and ensure `py -3` (Windows) or `python3` is available on PATH.';
-    log.log(chalk.yellow(`[chromadb] ${msg}`));
+    log.log(
+      chalk.yellow('\n[chromadb] Python 3 not found. ChromaDB features will be unavailable.')
+    );
+    log.log(chalk.gray('\nTo install Python 3:'));
+    if (process.platform === 'win32') {
+      log.log(chalk.gray('  • Download from https://python.org/downloads'));
+      log.log(chalk.gray('  • Or install from Microsoft Store: "Python 3.11"'));
+      log.log(chalk.gray('  • Ensure "Add Python to PATH" is checked during installation'));
+      log.log(chalk.gray('\nAfter installing, run: py -3 --version'));
+    } else if (process.platform === 'darwin') {
+      log.log(chalk.gray('  • Install via Homebrew: brew install python3'));
+      log.log(chalk.gray('  • Or download from https://python.org/downloads'));
+    } else {
+      log.log(chalk.gray('  • Ubuntu/Debian: sudo apt install python3 python3-pip'));
+      log.log(chalk.gray('  • Fedora: sudo dnf install python3 python3-pip'));
+      log.log(chalk.gray('  • Or download from https://python.org/downloads'));
+    }
     // Best-effort: do not fail npm install
     return check && !auto ? 1 : 0;
   }
+
+  log.log(chalk.green(`✓ Found Python: ${python.command} ${python.args.join(' ')}`));
+
+  // FIX: Verify Python version meets ChromaDB requirements (3.9+)
+  const versionCheck = await checkPythonVersionAsync(python, 3, 9);
+  if (!versionCheck.valid) {
+    log.log(chalk.yellow(`\n[chromadb] Python version check failed: ${versionCheck.error}`));
+    log.log(chalk.gray(`  Detected version: ${versionCheck.version || 'unknown'}`));
+    log.log(chalk.gray('  ChromaDB requires Python 3.9 or higher'));
+    log.log(chalk.gray('\nPlease install or update Python:'));
+    if (process.platform === 'win32') {
+      log.log(chalk.gray('  • Download Python 3.11+ from https://python.org/downloads'));
+      log.log(chalk.gray('  • Or install from Microsoft Store: "Python 3.11"'));
+    } else if (process.platform === 'darwin') {
+      log.log(chalk.gray('  • brew upgrade python3'));
+    } else {
+      log.log(chalk.gray('  • Ubuntu/Debian: sudo apt install python3.11 python3.11-venv'));
+    }
+    return check && !auto ? 1 : 0;
+  }
+
+  log.log(chalk.green(`✓ Python version ${versionCheck.version} meets requirements (3.9+)`));
 
   const pre = await deps.isChromaInstalled(python);
   if (pre.installed) {
@@ -277,11 +341,11 @@ async function main({
   }
 
   log.log(chalk.cyan('[chromadb] Installing via pip (user install)…'));
-  const ok = await deps.pipInstallChroma(python, { upgradePip: true, userInstall: true });
+  const ok = await deps.pipInstallChroma(python, { upgradePip: true, userInstall: true, log });
   if (!ok) {
     log.log(
       chalk.yellow(
-        '[chromadb] pip install failed. You may need to install Python/pip or run with elevated permissions.'
+        '\n[chromadb] Installation failed. See error messages above for troubleshooting steps.'
       )
     );
     return 0;

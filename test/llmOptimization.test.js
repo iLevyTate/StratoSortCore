@@ -126,7 +126,10 @@ describe('LLM Optimization Utilities', () => {
         expect(dedup.pendingRequests.size).toBe(0);
       });
 
-      test('evicts oldest when max size reached', async () => {
+      test('proceeds without eviction when max size reached to prevent duplicates', async () => {
+        // FIX: Implementation was changed to NOT evict entries because eviction
+        // could cause race conditions leading to duplicate LLM calls.
+        // Instead, it logs a warning and proceeds without eviction.
         const dedup = new LLMRequestDeduplicator(2);
 
         // Create pending promises that don't resolve
@@ -136,10 +139,11 @@ describe('LLM Optimization Utilities', () => {
         dedup.deduplicate('key2', neverResolve);
         dedup.deduplicate('key3', neverResolve);
 
-        // key1 should be evicted
-        expect(dedup.pendingRequests.has('key1')).toBe(false);
+        // All keys should be kept (no eviction) - natural cleanup via .finally() will free slots
+        expect(dedup.pendingRequests.has('key1')).toBe(true);
         expect(dedup.pendingRequests.has('key2')).toBe(true);
         expect(dedup.pendingRequests.has('key3')).toBe(true);
+        expect(dedup.pendingRequests.size).toBe(3);
       });
     });
 
