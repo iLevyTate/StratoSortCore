@@ -8,7 +8,6 @@
  */
 
 const crypto = require('crypto');
-const path = require('path');
 // FIX: Import canonical normalizePathForIndex instead of duplicating
 // The canonical version also converts backslashes to forward slashes for consistent IDs
 const { normalizePathForIndex } = require('../../../shared/pathSanitization');
