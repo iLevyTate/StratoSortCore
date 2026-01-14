@@ -7,7 +7,7 @@
 
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import { Layers, FileText, HelpCircle, Check } from 'lucide-react';
+import { Layers, FileText, HelpCircle, Check, Search } from 'lucide-react';
 import { CONFIDENCE_COLORS, getConfidenceColor } from '../../utils/confidenceColors';
 
 const ClusterLegend = memo(
@@ -103,6 +103,27 @@ const ClusterLegend = memo(
               </div>
               {isTypeActive('file') && (
                 <Check className="w-3 h-3 text-stratosort-blue" aria-hidden="true" />
+              )}
+            </button>
+
+            <button
+              onClick={() => toggleType('query')}
+              aria-label="Toggle query node visibility"
+              aria-pressed={isTypeActive('query')}
+              className={`w-full flex items-center justify-between gap-2 text-[11px] p-1 rounded transition-colors ${
+                isTypeActive('query')
+                  ? 'hover:bg-indigo-50'
+                  : 'opacity-50 grayscale hover:opacity-75'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-300 flex items-center justify-center">
+                  <Search className="w-2.5 h-2.5 text-indigo-600" aria-hidden="true" />
+                </div>
+                <span className="text-system-gray-600">Query</span>
+              </div>
+              {isTypeActive('query') && (
+                <Check className="w-3 h-3 text-indigo-600" aria-hidden="true" />
               )}
             </button>
           </div>

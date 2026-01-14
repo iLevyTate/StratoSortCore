@@ -4,24 +4,22 @@ import { useState, useEffect, useCallback, useRef } from 'react';
  * Hook for fetching data asynchronously with built-in state management and leak prevention
  *
  * @param {Function} fetcher - Async function to execute.
- *   **IMPORTANT**: The fetcher function MUST be memoized (wrapped in useCallback) if it
- *   references props or state that could change. If an unstable fetcher reference is passed
- *   (e.g., an inline arrow function), the execute callback will be recreated on every render,
- *   causing the auto-execute effect to re-run repeatedly and potentially causing infinite loops.
+ *   The fetcher function is stored in a ref, so it always uses the latest version
+ *   without needing to be memoized. This prevents stale closure issues.
  *
- *   Example (WRONG - causes infinite re-execution):
+ *   Example (NOW WORKS - no memoization needed):
  *     useAsyncData(() => fetchData(someId), [someId])
  *
- *   Example (CORRECT - fetcher is memoized):
+ *   Example (ALSO WORKS - memoized):
  *     const fetcher = useCallback(() => fetchData(someId), [someId]);
- *     useAsyncData(fetcher, [])
+ *     useAsyncData(fetcher, [someId])
  *
- * @param {Array} dependencies - Dependency array for useEffect (in addition to fetcher)
+ * @param {Array} dependencies - Dependency array for useEffect that triggers auto-execution
  * @param {Object} options - Configuration options
  * @param {*} options.initialData - Initial data value (default: null)
  * @param {boolean} options.skip - If true, fetcher won't run automatically (default: false)
- * @param {Function} options.onSuccess - Callback on successful fetch (should also be memoized)
- * @param {Function} options.onError - Callback on error (should also be memoized)
+ * @param {Function} options.onSuccess - Callback on successful fetch
+ * @param {Function} options.onError - Callback on error
  *
  * @returns {Object} { data, loading, error, execute, setData }
  */
@@ -35,6 +33,27 @@ export function useAsyncData(fetcher, dependencies = [], options = {}) {
   // Ref to track component mount state to prevent memory leaks
   const isMountedRef = useRef(true);
 
+  // FIX: Use refs for fetcher and callbacks to prevent stale closure issues
+  // This ensures execute() always uses the CURRENT fetcher, not the one from
+  // when execute was memoized. This fixes the bug where dependencies change
+  // but execute still references the old fetcher from its closure.
+  const fetcherRef = useRef(fetcher);
+  const onSuccessRef = useRef(onSuccess);
+  const onErrorRef = useRef(onError);
+
+  // Keep refs in sync with latest values
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -42,44 +61,44 @@ export function useAsyncData(fetcher, dependencies = [], options = {}) {
     };
   }, []);
 
-  const execute = useCallback(
-    async (...args) => {
-      if (!fetcher) return null;
+  // execute is now stable (no dependencies that change) but always uses latest fetcher
+  const execute = useCallback(async (...args) => {
+    const currentFetcher = fetcherRef.current;
+    if (!currentFetcher) return null;
 
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
-      try {
-        const result = await fetcher(...args);
+    try {
+      const result = await currentFetcher(...args);
 
-        if (isMountedRef.current) {
-          setData(result);
-          setLoading(false);
-          if (onSuccess) onSuccess(result);
-        }
-        return result;
-      } catch (err) {
-        if (isMountedRef.current) {
-          setError(err);
-          setLoading(false);
-          if (onError) onError(err);
-        }
-        // We don't re-throw here to avoid unhandled promise rejections in the UI,
-        // as the error state is available. If the caller needs to catch it,
-        // they should wrap the fetcher or use the onError callback.
-        return null;
+      if (isMountedRef.current) {
+        setData(result);
+        setLoading(false);
+        if (onSuccessRef.current) onSuccessRef.current(result);
       }
-    },
-    [fetcher, onSuccess, onError]
-  ); // fetcher should be memoized by caller if it depends on props
+      return result;
+    } catch (err) {
+      if (isMountedRef.current) {
+        setError(err);
+        setLoading(false);
+        if (onErrorRef.current) onErrorRef.current(err);
+      }
+      // We don't re-throw here to avoid unhandled promise rejections in the UI,
+      // as the error state is available. If the caller needs to catch it,
+      // they should wrap the fetcher or use the onError callback.
+      return null;
+    }
+  }, []); // Now stable - uses refs for all dynamic values
 
-  // Auto-execute effect
+  // Auto-execute effect - now only depends on skip and dependencies
+  // execute is stable so won't cause re-runs
   useEffect(() => {
     if (!skip) {
       execute();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skip, execute, ...dependencies]);
+  }, [skip, ...dependencies]);
 
   return {
     data,

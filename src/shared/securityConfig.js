@@ -250,7 +250,8 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
   'dependencies-service-changed', // Service status change notifications
   'dependencies-service-status-changed', // FIX: Missing channel for dependency status updates
-  'notification' // Toast notifications from main process
+  'notification', // Toast notifications from main process
+  'undo-redo:state-changed' // FIX: Undo/redo state change notifications
 ];
 
 /**

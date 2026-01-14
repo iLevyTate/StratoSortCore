@@ -288,6 +288,14 @@
     background-color: var(--surface-primary) !important;
   }
 
+  /* Search modal / graph view: disable blur to prevent native dropdown flicker on Windows/Electron */
+  .search-modal .surface-panel,
+  .search-modal .surface-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: #fff !important;
+  }
+
   .surface-card {
     @apply rounded-[var(--radius-card)] border border-border-soft bg-white/90 shadow-sm backdrop-blur-md transition-all;
     box-shadow: var(--shadow-soft);
