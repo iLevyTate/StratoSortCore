@@ -1,5 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { FILE_STATES } from '../../../shared/constants';
+import { logger } from '../../../shared/logger';
 
 const initialState = {
   isAnalyzing: false,
@@ -129,11 +130,11 @@ const analysisSlice = createSlice({
       if (oldPaths.length !== newPaths.length) {
         // Log warning but continue with partial update using the shorter length
         // This handles cases where a batch move operation partially fails
-        console.warn(
-          '[analysisSlice] updateResultPathsAfterMove: array length mismatch, ' +
-            `oldPaths=${oldPaths.length}, newPaths=${newPaths.length}. ` +
-            'Proceeding with partial update.'
-        );
+        logger.warn('[analysisSlice] updateResultPathsAfterMove: array length mismatch', {
+          oldPathsLength: oldPaths.length,
+          newPathsLength: newPaths.length,
+          action: 'proceeding with partial update'
+        });
       }
 
       // Create path mapping using the minimum length to avoid undefined entries

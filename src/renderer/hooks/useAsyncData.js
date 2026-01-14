@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { logger } from '../../shared/logger';
 
 /**
  * Hook for fetching data asynchronously with built-in state management and leak prevention
@@ -82,7 +83,16 @@ export function useAsyncData(fetcher, dependencies = [], options = {}) {
       if (isMountedRef.current) {
         setError(err);
         setLoading(false);
-        if (onErrorRef.current) onErrorRef.current(err);
+        // FIX: Wrap onError callback in try-catch to prevent callback errors
+        // from leaving the hook in an inconsistent state
+        if (onErrorRef.current) {
+          try {
+            onErrorRef.current(err);
+          } catch (callbackErr) {
+            // Log but don't propagate - the original error is already in state
+            logger.error('[useAsyncData] onError callback threw:', { error: callbackErr.message });
+          }
+        }
       }
       // We don't re-throw here to avoid unhandled promise rejections in the UI,
       // as the error state is available. If the caller needs to catch it,
