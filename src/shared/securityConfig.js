@@ -248,7 +248,6 @@ const ALLOWED_RECEIVE_CHANNELS = [
   'operation-failed',
   'file-operation-complete', // File move/delete notifications for search invalidation
   'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
-  'dependencies-service-changed', // Service status change notifications
   'dependencies-service-status-changed', // FIX: Missing channel for dependency status updates
   'notification', // Toast notifications from main process
   'undo-redo:state-changed' // FIX: Undo/redo state change notifications

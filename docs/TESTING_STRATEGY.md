@@ -324,15 +324,17 @@ it('should handle missing files', async () => {
 - Path sanitization (test/pathSanitization.test.js)
 - IPC handlers (test/\*-ipc.test.js)
 
-### Areas Needing Tests
+### Coverage Status (Keep In Sync)
 
-- [ ] File extraction (documentExtractors.js)
-- [ ] Image analysis (ollamaImageAnalysis.js)
-- [ ] Batch processing (BatchAnalysisService.js)
-- [ ] Folder matching (FolderMatchingService.js)
-- [ ] ChromaDB integration (ChromaDBService.js)
-- [ ] Undo/redo system (UndoRedoService.js)
-- [ ] Auto-organize (AutoOrganizeService.js)
+- [x] File extraction (documentExtractors.js)
+- [x] Image analysis (ollamaImageAnalysis.js)
+- [x] Batch processing (BatchAnalysisService.js)
+- [x] Folder matching (FolderMatchingService.js)
+- [x] ChromaDB integration (ChromaDBService.js)
+- [x] Undo/redo system (UndoRedoService.js)
+- [x] Auto-organize (AutoOrganizeService.js)
+- [ ] Expand E2E workflow coverage beyond smoke tests (discover→organize, undo/redo, dependency
+      setup)
 
 ## Test Execution
 

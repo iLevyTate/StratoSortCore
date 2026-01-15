@@ -16,6 +16,7 @@ const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtil
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
 const { getSemanticFileId, isImagePath } = require('../../shared/fileIdUtils');
+const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 
 logger.setContext('DownloadWatcher');
@@ -1044,7 +1045,16 @@ class DownloadWatcher {
       // Remove from ChromaDB (both file: and image: prefixes)
       if (this.chromaDbService) {
         // Use batch delete for atomicity when available
-        const idsToDelete = [`file:${filePath}`, `image:${filePath}`];
+        const normalizedPath = normalizePathForIndex(filePath);
+        const idsToDelete =
+          normalizedPath === filePath
+            ? [`file:${normalizedPath}`, `image:${normalizedPath}`]
+            : [
+                `file:${normalizedPath}`,
+                `image:${normalizedPath}`,
+                `file:${filePath}`,
+                `image:${filePath}`
+              ];
 
         if (typeof this.chromaDbService.batchDeleteFileEmbeddings === 'function') {
           await this.chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
@@ -1057,8 +1067,9 @@ class DownloadWatcher {
 
         // Delete associated chunks
         if (typeof this.chromaDbService.deleteFileChunks === 'function') {
-          await this.chromaDbService.deleteFileChunks(`file:${filePath}`);
-          await this.chromaDbService.deleteFileChunks(`image:${filePath}`);
+          for (const id of idsToDelete) {
+            await this.chromaDbService.deleteFileChunks(id);
+          }
         }
 
         logger.debug('[DOWNLOAD-WATCHER] Removed embeddings for deleted file:', filePath);

@@ -9,6 +9,7 @@
 
 const path = require('path');
 const { SUPPORTED_IMAGE_EXTENSIONS } = require('./constants');
+const { normalizePathForIndex } = require('./pathSanitization');
 
 /**
  * Generate a semantic file ID for ChromaDB storage
@@ -19,9 +20,10 @@ const { SUPPORTED_IMAGE_EXTENSIONS } = require('./constants');
  */
 function getSemanticFileId(filePath) {
   const safePath = typeof filePath === 'string' ? filePath : '';
+  const normalizedPath = normalizePathForIndex(safePath);
   const ext = (path.extname(safePath) || '').toLowerCase();
   const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-  return `${isImage ? 'image' : 'file'}:${safePath}`;
+  return `${isImage ? 'image' : 'file'}:${normalizedPath}`;
 }
 
 /**

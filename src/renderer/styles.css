@@ -971,9 +971,48 @@
     @apply text-center rounded-2xl border border-border-soft bg-white/80 shadow-sm py-10 px-6 space-y-3;
   }
 
-  /* GPU hint for modal entrance animation */
+  /* Modal entrance/backdrop animations */
+  .animate-modal-backdrop {
+    animation: modalBackdropFadeIn 160ms ease-out;
+  }
+
   .animate-modal-enter {
+    animation: modalPanelIn 180ms ease-out;
     will-change: transform, opacity;
+  }
+
+  @keyframes modalBackdropFadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modalPanelIn {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-modal-backdrop,
+    .animate-modal-enter {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+    }
+
+    /* Ensure animated list items remain visible when motion is reduced/disabled */
+    .search-result-item {
+      animation: none !important;
+      opacity: 1 !important;
+    }
   }
 
   /* Phase container - simple flex wrapper, no forced height or scroll */

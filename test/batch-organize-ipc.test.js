@@ -59,39 +59,46 @@ jest.mock('../src/shared/pathSanitization', () => ({
       valid: true,
       normalizedPath: filePath
     })
-  )
+  ),
+  normalizePathForIndex: jest.fn((filePath) => filePath)
 }));
 
 // Use the mocked versions for the test
 const { ipcMain, dialog, shell } = require('electron');
 
-// Mock ChromaDBService with full interface
+// Mock ChromaDB services with full interface
 const mockUpdateFilePaths = jest.fn().mockResolvedValue(0);
 const mockEventListeners = new Map();
+const mockChromaInstance = {
+  updateFilePaths: mockUpdateFilePaths,
+  // Event emitter methods
+  on: jest.fn((event, callback) => {
+    if (!mockEventListeners.has(event)) {
+      mockEventListeners.set(event, []);
+    }
+    mockEventListeners.get(event).push(callback);
+  }),
+  off: jest.fn(),
+  emit: jest.fn(),
+  // Status methods
+  isOnline: true,
+  initialized: true,
+  isServiceAvailable: jest.fn(() => true),
+  getCircuitState: jest.fn(() => 'CLOSED'),
+  getCircuitStats: jest.fn(() => ({})),
+  getQueueStats: jest.fn(() => ({ queueSize: 0 })),
+  offlineQueue: { size: () => 0 },
+  serverUrl: 'http://localhost:8000',
+  checkHealth: jest.fn().mockResolvedValue(true),
+  forceRecovery: jest.fn()
+};
+
 jest.mock('../src/main/services/ChromaDBService', () => ({
-  getInstance: () => ({
-    updateFilePaths: mockUpdateFilePaths,
-    // Event emitter methods
-    on: jest.fn((event, callback) => {
-      if (!mockEventListeners.has(event)) {
-        mockEventListeners.set(event, []);
-      }
-      mockEventListeners.get(event).push(callback);
-    }),
-    off: jest.fn(),
-    emit: jest.fn(),
-    // Status methods
-    isOnline: true,
-    initialized: true,
-    isServiceAvailable: jest.fn(() => true),
-    getCircuitState: jest.fn(() => 'CLOSED'),
-    getCircuitStats: jest.fn(() => ({})),
-    getQueueStats: jest.fn(() => ({ queueSize: 0 })),
-    offlineQueue: { size: () => 0 },
-    serverUrl: 'http://localhost:8000',
-    checkHealth: jest.fn().mockResolvedValue(true),
-    forceRecovery: jest.fn()
-  })
+  getInstance: () => mockChromaInstance
+}));
+
+jest.mock('../src/main/services/chromadb', () => ({
+  getInstance: () => mockChromaInstance
 }));
 
 describe('Files IPC - batch organize', () => {

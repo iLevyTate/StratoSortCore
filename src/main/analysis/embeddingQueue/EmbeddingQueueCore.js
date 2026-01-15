@@ -11,6 +11,7 @@ const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
 const { container, ServiceIds } = require('../../services/ServiceContainer');
 const { get: getConfig } = require('../../../shared/config/index');
+const { normalizePathForIndex } = require('../../../shared/pathSanitization');
 const {
   BATCH,
   LIMITS,
@@ -563,11 +564,17 @@ class EmbeddingQueue {
   removeByFilePath(filePath) {
     if (!filePath) return 0;
 
-    const fileIds = [`file:${filePath}`, `image:${filePath}`];
+    const normalizedPath = normalizePathForIndex(filePath);
+    const fileIds = new Set([
+      `file:${filePath}`,
+      `image:${filePath}`,
+      `file:${normalizedPath}`,
+      `image:${normalizedPath}`
+    ]);
     const initialLength = this.queue.length;
 
     // Remove from main queue
-    this.queue = this.queue.filter((item) => !fileIds.includes(item.id));
+    this.queue = this.queue.filter((item) => !fileIds.has(item.id));
 
     // Remove from failed items
     fileIds.forEach((id) => this._failedItemHandler.failedItems.delete(id));
@@ -596,7 +603,12 @@ class EmbeddingQueue {
   removeByFilePaths(filePaths) {
     if (!Array.isArray(filePaths) || filePaths.length === 0) return 0;
 
-    const fileIds = new Set(filePaths.flatMap((p) => [`file:${p}`, `image:${p}`]));
+    const fileIds = new Set(
+      filePaths.flatMap((p) => {
+        const normalized = normalizePathForIndex(p);
+        return [`file:${p}`, `image:${p}`, `file:${normalized}`, `image:${normalized}`];
+      })
+    );
     const initialLength = this.queue.length;
 
     // Remove from main queue
@@ -635,10 +647,21 @@ class EmbeddingQueue {
   _updatePath(oldPath, newPath) {
     if (!oldPath || !newPath) return { queueUpdated: 0, failedUpdated: false };
 
-    const idPairs = [
-      { oldId: `file:${oldPath}`, newId: `file:${newPath}` },
-      { oldId: `image:${oldPath}`, newId: `image:${newPath}` }
-    ];
+    const normalizedOld = normalizePathForIndex(oldPath);
+    const normalizedNew = normalizePathForIndex(newPath);
+    const idPairs = [];
+    const addPair = (oldId, newId) => {
+      if (oldId && newId) {
+        idPairs.push({ oldId, newId });
+      }
+    };
+
+    addPair(`file:${oldPath}`, `file:${newPath}`);
+    addPair(`image:${oldPath}`, `image:${newPath}`);
+    if (normalizedOld !== oldPath || normalizedNew !== newPath) {
+      addPair(`file:${normalizedOld}`, `file:${normalizedNew}`);
+      addPair(`image:${normalizedOld}`, `image:${normalizedNew}`);
+    }
 
     let queueUpdated = 0;
     let failedUpdated = false;

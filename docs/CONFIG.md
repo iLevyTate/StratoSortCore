@@ -26,10 +26,10 @@ If the automatic setup scripts fail or you prefer manual installation, follow th
 # Ensure Ollama is running
 ollama serve
 
-# Pull models (~6GB total download)
-ollama pull llama3.2:latest      # Text analysis
+# Pull models (~2.3GB total download)
+ollama pull qwen3:0.6b           # Text analysis
 ollama pull gemma3:latest        # Vision/image analysis (multimodal)
-ollama pull mxbai-embed-large    # Embedding model
+ollama pull embeddinggemma       # Embedding model
 ```
 
 #### 3. Install ChromaDB (Requires Python 3.8+)

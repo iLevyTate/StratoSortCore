@@ -226,8 +226,14 @@ function EmbeddingRebuildSection({ addNotification }) {
         } else if (errorMsg.includes('ChromaDB')) {
           addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
         } else if (errorMsg.includes('MODEL_NOT_AVAILABLE')) {
+          const modelLabel =
+            res?.modelType === 'text'
+              ? 'Text model'
+              : res?.modelType === 'vision'
+                ? 'Vision model'
+                : 'Embedding model';
           addNotification(
-            `Embedding model not available. Pull it first: ${res.model || 'nomic-embed-text'}`,
+            `${modelLabel} not available. Pull it first: ${res.model || 'nomic-embed-text'}`,
             'error'
           );
         } else {

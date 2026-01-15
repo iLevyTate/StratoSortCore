@@ -15,7 +15,10 @@ const { ACTION_TYPES, PROCESSING_LIMITS } = require('../../../shared/constants')
 const { LIMITS, TIMEOUTS } = require('../../../shared/performanceConstants');
 const { logger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
-const { validateFileOperationPath } = require('../../../shared/pathSanitization');
+const {
+  validateFileOperationPath,
+  normalizePathForIndex
+} = require('../../../shared/pathSanitization');
 const { withTimeout } = require('../../../shared/promiseUtils');
 const { withCorrelationId } = require('../../../shared/correlationId');
 // FIX: Import centralized error codes for consistent error handling
@@ -1046,6 +1049,8 @@ async function recordUndoAndUpdateDatabase(
         // Documents use file: prefix, images use image: prefix
         const pathUpdates = [];
         for (const r of successfulResults) {
+          const normalizedSource = normalizePathForIndex(r.source);
+          const normalizedDest = normalizePathForIndex(r.destination);
           const newMeta = {
             path: r.destination,
             name: path.basename(r.destination)
@@ -1053,17 +1058,30 @@ async function recordUndoAndUpdateDatabase(
 
           // Add file: prefixed update (for documents)
           pathUpdates.push({
-            oldId: `file:${r.source}`,
-            newId: `file:${r.destination}`,
+            oldId: `file:${normalizedSource}`,
+            newId: `file:${normalizedDest}`,
             newMeta
           });
 
           // Add image: prefixed update (for images)
           pathUpdates.push({
-            oldId: `image:${r.source}`,
-            newId: `image:${r.destination}`,
+            oldId: `image:${normalizedSource}`,
+            newId: `image:${normalizedDest}`,
             newMeta
           });
+
+          if (normalizedSource !== r.source || normalizedDest !== r.destination) {
+            pathUpdates.push({
+              oldId: `file:${r.source}`,
+              newId: `file:${r.destination}`,
+              newMeta
+            });
+            pathUpdates.push({
+              oldId: `image:${r.source}`,
+              newId: `image:${r.destination}`,
+              newMeta
+            });
+          }
         }
 
         if (pathUpdates.length > 0) {

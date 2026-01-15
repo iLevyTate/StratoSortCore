@@ -28,6 +28,7 @@ const { chunkText } = require('../utils/textChunking');
 const { CHUNKING } = require('../../shared/performanceConstants');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
+const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
 
 logger.setContext('SmartFolderWatcher');
 
@@ -700,6 +701,7 @@ class SmartFolderWatcher {
    */
   async _analyzeFile(item) {
     const { filePath, eventType, applyNaming } = item;
+    const isReanalyze = eventType === 'reanalyze';
 
     if (this.processingFiles.has(filePath)) {
       return;
@@ -726,9 +728,13 @@ class SmartFolderWatcher {
       // Choose analysis function based on file type
       let result;
       if (isImageFile(filePath)) {
-        result = await this.analyzeImageFile(filePath, folderCategories);
+        result = await this.analyzeImageFile(filePath, folderCategories, {
+          bypassCache: isReanalyze
+        });
       } else {
-        result = await this.analyzeDocumentFile(filePath, folderCategories);
+        result = await this.analyzeDocumentFile(filePath, folderCategories, {
+          bypassCache: isReanalyze
+        });
       }
 
       if (result) {
@@ -962,8 +968,7 @@ class SmartFolderWatcher {
 
       // Prepare metadata for ChromaDB
       // IMPORTANT: IDs must match the rest of the semantic pipeline.
-      // Do NOT normalize path separators in the ID; other producers/consumers use the native path.
-      const fileId = `${isImageFile(filePath) ? 'image' : 'file'}:${filePath}`;
+      const fileId = getCanonicalFileId(filePath, isImageFile(filePath));
       const fileName = path.basename(filePath);
 
       // Upsert to ChromaDB
@@ -1111,22 +1116,31 @@ class SmartFolderWatcher {
     try {
       // Remove from ChromaDB (both file: and image: prefixes)
       if (this.chromaDbService) {
-        const filePrefix = `file:${filePath}`;
-        const imagePrefix = `image:${filePath}`;
+        const normalizedPath = normalizePathForIndex(filePath);
+        const filePrefix = `file:${normalizedPath}`;
+        const imagePrefix = `image:${normalizedPath}`;
+        const legacyFilePrefix = `file:${filePath}`;
+        const legacyImagePrefix = `image:${filePath}`;
+        const idsToDelete =
+          normalizedPath === filePath
+            ? [filePrefix, imagePrefix]
+            : [filePrefix, imagePrefix, legacyFilePrefix, legacyImagePrefix];
 
         // Use batch delete for atomicity when available
         if (typeof this.chromaDbService.batchDeleteFileEmbeddings === 'function') {
-          await this.chromaDbService.batchDeleteFileEmbeddings([filePrefix, imagePrefix]);
+          await this.chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
         } else {
           // Fallback to individual deletes
-          await this.chromaDbService.deleteFileEmbedding(filePrefix);
-          await this.chromaDbService.deleteFileEmbedding(imagePrefix);
+          for (const id of idsToDelete) {
+            await this.chromaDbService.deleteFileEmbedding(id);
+          }
         }
 
         // Delete associated chunks
         if (typeof this.chromaDbService.deleteFileChunks === 'function') {
-          await this.chromaDbService.deleteFileChunks(filePrefix);
-          await this.chromaDbService.deleteFileChunks(imagePrefix);
+          for (const id of idsToDelete) {
+            await this.chromaDbService.deleteFileChunks(id);
+          }
         }
 
         logger.debug('[SMART-FOLDER-WATCHER] Removed embeddings for deleted file:', filePath);

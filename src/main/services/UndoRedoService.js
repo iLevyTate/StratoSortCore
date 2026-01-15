@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../shared/logger');
+const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { RETRY } = require('../../shared/performanceConstants');
 const { crossDeviceMove } = require('../../shared/atomicFileOperations');
 
@@ -658,15 +659,22 @@ class UndoRedoService {
     try {
       const chromaDb = getChromaDbService();
       if (chromaDb) {
+        const normalizedOld = normalizePathForIndex(oldPath);
+        const normalizedNew = normalizePathForIndex(newPath);
         const newMeta = {
           path: newPath,
           name: path.basename(newPath)
         };
         // Update both file: and image: prefixed entries
-        await chromaDb.updateFilePaths([
-          { oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta },
-          { oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta }
-        ]);
+        const updates = [
+          { oldId: `file:${normalizedOld}`, newId: `file:${normalizedNew}`, newMeta },
+          { oldId: `image:${normalizedOld}`, newId: `image:${normalizedNew}`, newMeta }
+        ];
+        if (normalizedOld !== oldPath || normalizedNew !== newPath) {
+          updates.push({ oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta });
+          updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
+        }
+        await chromaDb.updateFilePaths(updates);
       }
 
       // Keep pending embedding queue IDs consistent with undo/redo moves too.
@@ -699,12 +707,22 @@ class UndoRedoService {
         // Update both file: and image: prefixed entries for each path change
         const updates = [];
         for (const { oldPath, newPath } of pathChanges) {
+          const normalizedOld = normalizePathForIndex(oldPath);
+          const normalizedNew = normalizePathForIndex(newPath);
           const newMeta = {
             path: newPath,
             name: path.basename(newPath)
           };
-          updates.push({ oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta });
-          updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
+          updates.push({ oldId: `file:${normalizedOld}`, newId: `file:${normalizedNew}`, newMeta });
+          updates.push({
+            oldId: `image:${normalizedOld}`,
+            newId: `image:${normalizedNew}`,
+            newMeta
+          });
+          if (normalizedOld !== oldPath || normalizedNew !== newPath) {
+            updates.push({ oldId: `file:${oldPath}`, newId: `file:${newPath}`, newMeta });
+            updates.push({ oldId: `image:${oldPath}`, newId: `image:${newPath}`, newMeta });
+          }
         }
         await chromaDb.updateFilePaths(updates);
       }

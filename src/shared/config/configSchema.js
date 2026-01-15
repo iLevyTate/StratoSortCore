@@ -14,14 +14,14 @@ const {
   RETRY,
   CACHE,
   BATCH,
-  THRESHOLDS,
-  LIMITS
+  THRESHOLDS
 } = require('../performanceConstants');
 const {
   PROCESSING_LIMITS,
   AI_DEFAULTS,
   DEFAULT_AI_MODELS,
-  FILE_SIZE_LIMITS
+  FILE_SIZE_LIMITS,
+  LIMITS: FS_LIMITS
 } = require('../constants');
 // NOTE: Theme switching is no longer supported; no theme values are needed here.
 
@@ -398,7 +398,7 @@ const CONFIG_SCHEMA = {
     /** Maximum path length */
     maxPathLength: {
       type: 'number',
-      default: LIMITS.MAX_SEARCH_RESULTS,
+      default: FS_LIMITS.MAX_PATH_LENGTH,
       min: 100,
       max: 4096,
       description: 'Maximum file path length'

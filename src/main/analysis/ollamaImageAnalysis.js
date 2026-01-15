@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { getCanonicalFileId } = require('../../shared/pathSanitization');
 const sharp = require('sharp');
 const { getOllamaVisionModel, loadOllamaConfig, getOllama } = require('../ollamaUtils');
 const { buildOllamaOptions } = require('../services/PerformanceService');
@@ -696,7 +697,7 @@ async function applySemanticFolderMatching(analysis, filePath, smartFolders) {
           : Math.round(rawConfidence * 100)
         : 0;
     embeddingQueue.enqueue({
-      id: `image:${filePath}`,
+      id: getCanonicalFileId(filePath, true),
       vector,
       model,
       meta: {
@@ -755,8 +756,9 @@ async function applySemanticFolderMatching(analysis, filePath, smartFolders) {
 // Main Analysis Function
 // ============================================================================
 
-async function analyzeImageFile(filePath, smartFolders = []) {
+async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
   logger.info(`Analyzing image file`, { path: filePath });
+  const bypassCache = Boolean(options?.bypassCache);
   const fileExtension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
   const smartFolderSig = Array.isArray(smartFolders)
@@ -860,8 +862,11 @@ async function analyzeImageFile(filePath, smartFolders = []) {
 
     // Cache quick path: signature based on file stats
     const signature = `${IMAGE_SIGNATURE_VERSION}|${visionModelName}|${smartFolderSig}|${filePath}|${stats.size}|${stats.mtimeMs}`;
-    if (imageAnalysisCache.has(signature)) {
+    if (!bypassCache && imageAnalysisCache.has(signature)) {
       return imageAnalysisCache.get(signature);
+    }
+    if (bypassCache) {
+      logger.debug('[IMAGE] Bypassing analysis cache for reanalysis', { filePath });
     }
 
     // Extract EXIF date and preprocess image using helpers

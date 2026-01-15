@@ -3177,7 +3177,9 @@ export default function UnifiedSearchModal({
       onClose={onClose}
       title="Search Files"
       size="full"
-      className={`search-modal transition-all duration-300 ${isGraphMaximized ? 'bg-system-gray-100' : ''}`}
+      className={`search-modal transition-colors duration-300 ${
+        isGraphMaximized ? 'bg-system-gray-100' : ''
+      }`}
     >
       <div className="flex flex-col gap-4 min-h-[60vh]">
         {/* Header - simplified when graph is hidden */}

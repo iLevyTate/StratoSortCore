@@ -330,6 +330,21 @@ describe('ParallelEmbeddingService', () => {
       expect(stats.failed).toBe(2);
     });
 
+    test('stopOnError=true rejects and stops further processing', async () => {
+      mockOllamaServiceInstance.generateEmbedding.mockRejectedValueOnce(new Error('Failed'));
+
+      const service = new ParallelEmbeddingService();
+
+      const items = [
+        { id: '1', text: 'hello' },
+        { id: '2', text: 'world' }
+      ];
+
+      await expect(service.batchEmbedTexts(items, { stopOnError: true })).rejects.toThrow('Failed');
+      expect(mockOllamaServiceInstance.generateEmbedding).toHaveBeenCalledTimes(1);
+      expect(service.stats.totalRequests).toBe(1);
+    });
+
     test('includes metadata in results', async () => {
       const service = new ParallelEmbeddingService();
 

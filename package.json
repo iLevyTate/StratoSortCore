@@ -13,13 +13,13 @@
     "elstratosort",
     "document-analysis"
   ],
-  "homepage": "https://github.com/stratosort/stratosort#readme",
+  "homepage": "https://github.com/iLevyTate/elstratosort#readme",
   "bugs": {
-    "url": "https://github.com/stratosort/stratosort/issues"
+    "url": "https://github.com/iLevyTate/elstratosort/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/stratosort/stratosort.git"
+    "url": "git+https://github.com/iLevyTate/elstratosort.git"
   },
   "license": "MIT",
   "author": {

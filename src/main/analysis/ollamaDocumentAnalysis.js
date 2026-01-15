@@ -10,6 +10,7 @@ const {
 } = require('../../shared/constants');
 const { TRUNCATION, THRESHOLDS, TIMEOUTS } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
+const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getOllamaModel, loadOllamaConfig } = require('../ollamaUtils');
 const { AppConfig } = require('./documentLlm');
 
@@ -256,7 +257,8 @@ async function applyDocumentFolderMatching(
     await matcher.batchUpsertFolders(smartFolders);
   }
 
-  const fileId = `file:${filePath}`;
+  const normalizedPath = normalizePathForIndex(filePath);
+  const fileId = `file:${normalizedPath}`;
   const summaryForEmbedding = [
     analysis.project,
     analysis.purpose,
@@ -346,8 +348,9 @@ async function applyDocumentFolderMatching(
  * @param {Array} smartFolders - Array of smart folder configurations
  * @returns {Promise<Object>} Analysis result with metadata
  */
-async function analyzeDocumentFile(filePath, smartFolders = []) {
+async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
   logger.info('Analyzing document file', { path: filePath });
+  const bypassCache = Boolean(options?.bypassCache);
   const fileExtension = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath);
   const smartFolderSig = Array.isArray(smartFolders)
@@ -376,11 +379,15 @@ async function analyzeDocumentFile(filePath, smartFolders = []) {
     fileStats = await fs.stat(filePath);
     fileSignature = `${ANALYSIS_SIGNATURE_VERSION}|${modelName}|${smartFolderSig}|${filePath}|${fileStats.size}|${fileStats.mtimeMs}`;
     // CRITICAL FIX: Use TTL-aware cache getter instead of direct Map access
-    const cachedResult = getFileCache(fileSignature);
-    if (cachedResult) {
-      return cachedResult;
+    if (!bypassCache) {
+      const cachedResult = getFileCache(fileSignature);
+      if (cachedResult) {
+        return cachedResult;
+      }
+      logger.debug('Cache miss, analyzing', { path: filePath });
+    } else {
+      logger.debug('Bypassing analysis cache for reanalysis', { path: filePath });
     }
-    logger.debug('Cache miss, analyzing', { path: filePath });
   } catch (statError) {
     // Non-fatal: proceed without cache if stats fail
     logger.debug('Could not stat file for caching, proceeding with analysis', {

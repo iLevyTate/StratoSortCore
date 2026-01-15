@@ -176,10 +176,11 @@ class ParallelEmbeddingService {
   async embedText(text) {
     const startTime = Date.now();
     this.stats.totalRequests++;
-
-    await this._acquireSlot();
+    let acquiredSlot = false;
 
     try {
+      await this._acquireSlot();
+      acquiredSlot = true;
       const result = await this._embedTextWithRetry(text);
       this.stats.successfulRequests++;
       this.stats.totalLatencyMs += Date.now() - startTime;
@@ -188,7 +189,9 @@ class ParallelEmbeddingService {
       this.stats.failedRequests++;
       throw error;
     } finally {
-      this._releaseSlot();
+      if (acquiredSlot) {
+        this._releaseSlot();
+      }
       // FIX: Invoke concurrency adjustment after each request
       // This was previously defined but never called (dead code)
       this._adjustConcurrency();
@@ -388,11 +391,16 @@ class ParallelEmbeddingService {
       }
     };
 
-    // Launch all tasks - the semaphore will control actual concurrency
-    const promises = items.map((item, index) => processItem(item, index));
-
-    // Wait for all to complete (errors are caught individually unless stopOnError)
-    await Promise.allSettled(promises);
+    if (stopOnError) {
+      for (let index = 0; index < items.length; index++) {
+        await processItem(items[index], index);
+      }
+    } else {
+      // Launch all tasks - the semaphore will control actual concurrency
+      const promises = items.map((item, index) => processItem(item, index));
+      // Wait for all to complete (errors are caught individually unless stopOnError)
+      await Promise.allSettled(promises);
+    }
 
     const duration = Date.now() - startTime;
     const successCount = items.length - errors.length;
