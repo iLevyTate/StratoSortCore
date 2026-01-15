@@ -267,8 +267,10 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
               originalPath: moveValidation.source,
               newPath: moveValidation.destination
             });
-          } catch {
-            // Non-fatal
+          } catch (undoErr) {
+            // FIX: Log undo/redo record failures for debugging
+            // Non-fatal: file move succeeded, undo history may be incomplete
+            log.debug('[FILE-OPS] Failed to record undo action', { error: undoErr?.message });
           }
 
           const { getInstance: getChromaDB } = require('../../services/chromadb');
@@ -311,8 +313,14 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
                 { oldId: `image:${normalizedSource}`, newId: `image:${normalizedDest}`, newMeta }
               ]);
             }
-          } catch {
-            // non-fatal
+          } catch (chromaErr) {
+            // FIX: Log ChromaDB update failures instead of silent swallowing
+            // Non-fatal: file move succeeded, but search index may be stale
+            log.warn('[FILE-OPS] Failed to update ChromaDB paths after move', {
+              error: chromaErr?.message,
+              source: moveValidation.source,
+              destination: moveValidation.destination
+            });
           }
 
           // Keep analysis history (and therefore BM25 search) aligned with the new path/name.

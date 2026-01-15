@@ -1,5 +1,5 @@
 import { updateProgress, stopAnalysis, updateResultPathsAfterMove } from '../slices/analysisSlice';
-import { updateMetrics, addNotification } from '../slices/systemSlice';
+import { updateMetrics, updateHealth, addNotification } from '../slices/systemSlice';
 import { updateFilePathsAfterMove, removeSelectedFiles } from '../slices/filesSlice';
 import { logger } from '../../../shared/logger';
 import { validateEventPayload, hasEventSchema } from '../../../shared/ipcEventSchemas';
@@ -56,7 +56,9 @@ function safeDispatch(actionCreator, data) {
     eventQueue.push({ actionCreator, data });
     logger.debug('[IPC Middleware] Queued early event', {
       actionType: actionCreator?.name || 'unknown',
-      queueSize: eventQueue.length
+      queueSize: eventQueue.length,
+      isStoreReady,
+      hasStoreRef: !!storeRef
     });
   }
 }
@@ -66,19 +68,30 @@ function safeDispatch(actionCreator, data) {
  * Called after store configuration is complete
  */
 export function markStoreReady() {
+  logger.debug('[IPC Middleware] markStoreReady called', {
+    isStoreReady,
+    queueSize: eventQueue.length,
+    hasStoreRef: !!storeRef
+  });
+
   if (isStoreReady) return;
   isStoreReady = true;
 
   if (eventQueue.length > 0 && storeRef) {
     logger.info('[IPC Middleware] Flushing event queue', { count: eventQueue.length });
-    eventQueue.forEach(({ actionCreator, data }) => {
+    // FIX: Swap references before processing to prevent race condition
+    // If events arrive during the forEach loop, they would be added to eventQueue
+    // and then lost when eventQueue = [] runs. By swapping first, new events
+    // go into a fresh array while we process the old one.
+    const eventsToFlush = eventQueue;
+    eventQueue = [];
+    eventsToFlush.forEach(({ actionCreator, data }) => {
       try {
         storeRef.dispatch(actionCreator(data));
       } catch (e) {
         logger.error('[IPC Middleware] Error flushing queued event:', e.message);
       }
     });
-    eventQueue = [];
   }
 }
 
@@ -91,7 +104,7 @@ const ipcMiddleware = (store) => {
     // FIX: Clean up any existing listeners first (defensive for HMR edge cases)
     // This ensures no duplicate listeners accumulate even if listenersInitialized
     // was incorrectly reset or the module was partially reloaded
-    cleanupIpcListeners();
+    cleanupIpcListeners(false);
 
     listenersInitialized = true;
 
@@ -195,6 +208,19 @@ const ipcMiddleware = (store) => {
             // Remove deleted files from state using batch action
             store.dispatch(removeSelectedFiles(validatedData.files));
           }
+
+          // FIX: Dispatch DOM event for components that need to react to file operations
+          // (e.g., UnifiedSearchModal graph updates, search index invalidation)
+          try {
+            window.dispatchEvent(
+              new CustomEvent('file-operation-complete', { detail: validatedData })
+            );
+          } catch (eventErr) {
+            logger.warn(
+              '[IPC Middleware] Failed to dispatch file-operation-complete event:',
+              eventErr.message
+            );
+          }
         } catch (e) {
           logger.error('[IPC Middleware] Failed to dispatch file operation update', {
             operation: validatedData.operation,
@@ -243,17 +269,60 @@ const ipcMiddleware = (store) => {
       if (appErrorCleanup) cleanupFunctions.push(appErrorCleanup);
     }
 
+    // FIX: Subscribe to ChromaDB status changes
+    if (window.electronAPI?.chromadb?.onStatusChanged) {
+      const chromaStatusCleanup = window.electronAPI.chromadb.onStatusChanged((data) => {
+        const { data: validatedData } = validateIncomingEvent('chromadb-status-changed', data);
+        logger.debug('[IPC] ChromaDB status changed', { status: validatedData?.status });
+
+        // Update health state with new ChromaDB status
+        if (validatedData?.status) {
+          store.dispatch(updateHealth({ chromadb: validatedData.status }));
+        }
+      });
+      if (chromaStatusCleanup) cleanupFunctions.push(chromaStatusCleanup);
+    }
+
+    // FIX: Subscribe to dependency service status changes (Ollama/ChromaDB)
+    if (window.electronAPI?.dependencies?.onServiceStatusChanged) {
+      const depsStatusCleanup = window.electronAPI.dependencies.onServiceStatusChanged((data) => {
+        const { data: validatedData } = validateIncomingEvent(
+          'dependencies-service-status-changed',
+          data
+        );
+        logger.debug('[IPC] Dependency service status changed', {
+          service: validatedData?.service,
+          status: validatedData?.status
+        });
+
+        // Update health state based on which service changed
+        if (validatedData?.service && validatedData?.status) {
+          const service = validatedData.service.toLowerCase();
+          if (service === 'chromadb' || service === 'ollama') {
+            store.dispatch(updateHealth({ [service]: validatedData.status }));
+          }
+        }
+      });
+      if (depsStatusCleanup) cleanupFunctions.push(depsStatusCleanup);
+    }
+
     // Clean up listeners on window unload to prevent memory leaks
     // FIX: Store handler reference so it can be removed during cleanup
-    beforeUnloadHandler = cleanupIpcListeners;
+    beforeUnloadHandler = () => cleanupIpcListeners(true);
     window.addEventListener('beforeunload', beforeUnloadHandler);
 
     // Handle HMR cleanup if webpack hot module replacement is enabled
     if (module.hot) {
       module.hot.dispose(() => {
-        cleanupIpcListeners();
+        cleanupIpcListeners(true);
       });
     }
+  }
+
+  // FIX Issue 3: Automatically mark store as ready if this is a re-initialization
+  // but we already have a storeRef from before. This handles HMR and late-loading middleware.
+  if (storeRef && !isStoreReady) {
+    setTimeout(markStoreReady, 0);
   }
 
   return (next) => (action) => {
@@ -262,7 +331,7 @@ const ipcMiddleware = (store) => {
 };
 
 // Export cleanup function for use during hot reload or app teardown
-export const cleanupIpcListeners = () => {
+export const cleanupIpcListeners = (isTeardown = false) => {
   cleanupFunctions.forEach((cleanup) => {
     try {
       cleanup();
@@ -273,15 +342,20 @@ export const cleanupIpcListeners = () => {
   cleanupFunctions = [];
   listenersInitialized = false;
 
-  // FIX Issue 3: Reset event queue state
-  isStoreReady = false;
-  eventQueue = [];
-  storeRef = null;
-
-  // FIX: Remove the beforeunload listener to prevent accumulation during HMR
+  // FIX: ALWAYS remove the beforeunload listener to prevent accumulation during HMR
+  // This must happen BEFORE the isTeardown check, otherwise HMR calls with
+  // isTeardown=false would leave orphaned handlers in the event listener list
   if (beforeUnloadHandler) {
     window.removeEventListener('beforeunload', beforeUnloadHandler);
     beforeUnloadHandler = null;
+  }
+
+  // FIX Issue 3: Reset event queue state only on real teardown
+  // During HMR or listener refresh, we want to keep the store state
+  if (isTeardown) {
+    isStoreReady = false;
+    eventQueue = [];
+    storeRef = null;
   }
 };
 

@@ -331,7 +331,8 @@ class ProcessingStateService {
   async markOrganizeOpStarted(batchId, index) {
     await this.initialize();
     const batch = this.state.organize.batches[batchId];
-    if (!batch) return;
+    // FIX: Add bounds checking to prevent TypeError on invalid index
+    if (!batch?.operations || index < 0 || index >= batch.operations.length) return;
     batch.operations[index].status = 'in_progress';
     batch.operations[index].error = null;
     this.state.organize.lastUpdated = new Date().toISOString();
@@ -341,7 +342,8 @@ class ProcessingStateService {
   async markOrganizeOpDone(batchId, index, updatedOp = null) {
     await this.initialize();
     const batch = this.state.organize.batches[batchId];
-    if (!batch) return;
+    // FIX: Add bounds checking to prevent TypeError on invalid index
+    if (!batch?.operations || index < 0 || index >= batch.operations.length) return;
     if (updatedOp) {
       batch.operations[index] = { ...batch.operations[index], ...updatedOp };
     }
@@ -354,7 +356,8 @@ class ProcessingStateService {
   async markOrganizeOpError(batchId, index, errorMessage) {
     await this.initialize();
     const batch = this.state.organize.batches[batchId];
-    if (!batch) return;
+    // FIX: Add bounds checking to prevent TypeError on invalid index
+    if (!batch?.operations || index < 0 || index >= batch.operations.length) return;
     batch.operations[index].status = 'failed';
     batch.operations[index].error = errorMessage || 'Unknown organize error';
     this.state.organize.lastUpdated = new Date().toISOString();

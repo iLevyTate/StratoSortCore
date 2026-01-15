@@ -1,5 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { FILE_STATES } from '../../../shared/constants';
+import { logger } from '../../../shared/logger';
 
 const initialState = {
   isAnalyzing: false,
@@ -123,10 +124,24 @@ const analysisSlice = createSlice({
     updateResultPathsAfterMove: (state, action) => {
       const { oldPaths, newPaths } = action.payload;
       if (!Array.isArray(oldPaths) || !Array.isArray(newPaths)) return;
-      if (oldPaths.length !== newPaths.length) return;
 
-      // Create path mapping
-      const pathMap = Object.fromEntries(oldPaths.map((oldPath, i) => [oldPath, newPaths[i]]));
+      // FIX: Handle partial failures gracefully instead of silently skipping
+      // If arrays have different lengths, still update what we can
+      if (oldPaths.length !== newPaths.length) {
+        // Log warning but continue with partial update using the shorter length
+        // This handles cases where a batch move operation partially fails
+        logger.warn('[analysisSlice] updateResultPathsAfterMove: array length mismatch', {
+          oldPathsLength: oldPaths.length,
+          newPathsLength: newPaths.length,
+          action: 'proceeding with partial update'
+        });
+      }
+
+      // Create path mapping using the minimum length to avoid undefined entries
+      const minLength = Math.min(oldPaths.length, newPaths.length);
+      const pathMap = Object.fromEntries(
+        oldPaths.slice(0, minLength).map((oldPath, i) => [oldPath, newPaths[i]])
+      );
 
       // Update results array with new paths
       state.results = state.results.map((result) => {

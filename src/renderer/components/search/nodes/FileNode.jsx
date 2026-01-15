@@ -1,19 +1,15 @@
-import React, { memo, useState, useCallback, useRef } from 'react';
+import React, { memo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { Handle, Position } from 'reactflow';
-import { FileText, ExternalLink, FolderOpen, Copy, GitBranch } from 'lucide-react';
-import { useMenuAutoClose, useFileActions } from '../../../hooks';
+import { Handle, Position, NodeToolbar } from 'reactflow';
+import { FileText, ExternalLink, FolderOpen, Copy, GitBranch, Focus } from 'lucide-react';
+import { useFileActions } from '../../../hooks';
 import { logger } from '../../../../shared/logger';
 
 const FileNode = memo(({ data, selected }) => {
   const [showActions, setShowActions] = useState(false);
-  const [contextMenu, setContextMenu] = useState({ open: false, x: 0, y: 0 });
-  const menuRef = useRef(null);
   const filePath = data?.path || '';
 
-  // Use shared hooks for menu auto-close and file actions
-  const closeMenu = useCallback(() => setContextMenu({ open: false, x: 0, y: 0 }), []);
-  useMenuAutoClose(menuRef, contextMenu.open, closeMenu);
+  // Use shared hooks for file actions
   const { openFile, revealFile, copyPath } = useFileActions();
 
   const handleOpen = useCallback(
@@ -43,7 +39,6 @@ const FileNode = memo(({ data, selected }) => {
   const handleFindSimilar = useCallback(
     (e) => {
       e?.stopPropagation?.();
-      // Dispatch custom event that UnifiedSearchModal can listen for
       if (data?.id || filePath) {
         const event = new CustomEvent('graph:findSimilar', {
           detail: { nodeId: data?.id || filePath, path: filePath }
@@ -54,31 +49,26 @@ const FileNode = memo(({ data, selected }) => {
     [data?.id, filePath]
   );
 
-  const handleContextMenu = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Position menu relative to the node
-    const rect = e.currentTarget.getBoundingClientRect();
-    setContextMenu({
-      open: true,
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    });
-  }, []);
-
-  // Use closeMenu for context menu actions (avoid duplicate function)
-  const handleMenuAction = useCallback(
-    async (action) => {
-      closeMenu();
-      try {
-        await action?.();
-      } catch (e) {
-        // Prevent unhandled rejection if action fails
-        logger.warn('[FileNode] Menu action failed:', e?.message || e);
+  const handleFocusOnNode = useCallback(
+    (e) => {
+      e?.stopPropagation?.();
+      if (data?.id || filePath) {
+        const event = new CustomEvent('graph:focusNode', {
+          detail: { nodeId: data?.id || filePath }
+        });
+        window.dispatchEvent(event);
       }
     },
-    [closeMenu]
+    [data?.id, filePath]
   );
+
+  const handleMenuAction = useCallback(async (action) => {
+    try {
+      await action?.();
+    } catch (e) {
+      logger.warn('[FileNode] Menu action failed:', e?.message || e);
+    }
+  }, []);
 
   // Calculate display score from withinScore or score
   const displayScore = data?.withinScore ?? data?.score ?? null;
@@ -99,10 +89,49 @@ const FileNode = memo(({ data, selected }) => {
       style={{ opacity: data?.style?.opacity ?? 1 }}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
-      onContextMenu={handleContextMenu}
       onDoubleClick={handleOpen}
       title="Double-click to open file"
     >
+      <NodeToolbar isVisible={selected} position={Position.Top}>
+        <div className="flex gap-1 bg-white shadow-lg rounded-lg border border-gray-200 p-1">
+          <button
+            onClick={() => handleMenuAction(handleOpen)}
+            className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors"
+            title="Open File"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleMenuAction(handleReveal)}
+            className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors"
+            title="Reveal in Folder"
+          >
+            <FolderOpen className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleMenuAction(handleFindSimilar)}
+            className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors"
+            title="Find Similar"
+          >
+            <GitBranch className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleMenuAction(handleFocusOnNode)}
+            className="p-1.5 rounded hover:bg-indigo-50 text-indigo-600 transition-colors"
+            title="Focus on Node"
+          >
+            <Focus className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleMenuAction(handleCopyPath)}
+            className="p-1.5 rounded hover:bg-gray-50 text-gray-500 transition-colors"
+            title="Copy Path"
+          >
+            <Copy className="w-4 h-4" />
+          </button>
+        </div>
+      </NodeToolbar>
+
       <Handle
         type="target"
         position={Position.Left}
@@ -110,7 +139,7 @@ const FileNode = memo(({ data, selected }) => {
       />
 
       {/* Quick actions on hover */}
-      {showActions && filePath && !contextMenu.open && (
+      {showActions && filePath && !selected && (
         <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex gap-1 bg-white shadow-md rounded-lg px-1.5 py-1 border border-[var(--color-border-soft)] z-10">
           <button
             onClick={handleOpen}
@@ -125,63 +154,6 @@ const FileNode = memo(({ data, selected }) => {
             title="Reveal in folder"
           >
             <FolderOpen className="w-3 h-3 text-[var(--color-stratosort-blue)]" />
-          </button>
-        </div>
-      )}
-
-      {/* Context menu */}
-      {contextMenu.open && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label="File actions"
-          className="absolute bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-44 py-1 animate-in fade-in zoom-in-95 duration-100"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            role="menuitem"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMenuAction(handleOpen);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2"
-          >
-            <ExternalLink className="w-4 h-4 text-blue-600" />
-            Open File
-          </button>
-          <button
-            role="menuitem"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMenuAction(handleReveal);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2"
-          >
-            <FolderOpen className="w-4 h-4 text-amber-600" />
-            Reveal in Folder
-          </button>
-          <div className="border-t border-gray-100 my-1" />
-          <button
-            role="menuitem"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMenuAction(handleFindSimilar);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2"
-          >
-            <GitBranch className="w-4 h-4 text-emerald-600" />
-            Find Similar
-          </button>
-          <button
-            role="menuitem"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMenuAction(handleCopyPath);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2"
-          >
-            <Copy className="w-4 h-4 text-gray-500" />
-            Copy Path
           </button>
         </div>
       )}

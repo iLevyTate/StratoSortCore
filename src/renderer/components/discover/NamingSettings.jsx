@@ -2,6 +2,7 @@ import React, { memo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import Select from '../ui/Select';
 import Input from '../ui/Input';
+import { logger } from '../../../shared/logger';
 
 // Characters that could break file paths - used for separator validation
 const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
@@ -42,12 +43,18 @@ const NamingSettings = memo(function NamingSettings({
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electronAPI?.settings?.save) return;
     // Fire-and-forget; settingsService merges partials
-    window.electronAPI.settings.save({
-      namingConvention,
-      separator,
-      dateFormat,
-      caseConvention
-    });
+    // FIX: Add error handling to log failures instead of silent swallowing
+    window.electronAPI.settings
+      .save({
+        namingConvention,
+        separator,
+        dateFormat,
+        caseConvention
+      })
+      .catch((err) => {
+        // Non-fatal: settings save failure shouldn't block UI
+        logger.warn('[NamingSettings] Failed to persist naming preferences:', err?.message);
+      });
   }, [namingConvention, separator, dateFormat, caseConvention]);
 
   return (

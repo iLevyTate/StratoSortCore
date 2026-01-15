@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { logger } from '../../../shared/logger';
 
 // Thunk to fetch smart folders with optional cache bypass
 // FIX: Added forceRefresh parameter to allow cache invalidation when folders change
@@ -126,13 +127,23 @@ const filesSlice = createSlice({
     updateFilePathsAfterMove: (state, action) => {
       const { oldPaths, newPaths } = action.payload;
       if (!Array.isArray(oldPaths) || !Array.isArray(newPaths)) return;
-      if (oldPaths.length !== newPaths.length) return;
 
-      // Create path mapping
+      // FIX: Handle partial failures gracefully instead of silently returning
+      // If arrays have different lengths, still update what we can (matches analysisSlice behavior)
+      if (oldPaths.length !== newPaths.length) {
+        logger.warn('[filesSlice] updateFilePathsAfterMove: array length mismatch', {
+          oldPathsLength: oldPaths.length,
+          newPathsLength: newPaths.length,
+          action: 'proceeding with partial update'
+        });
+      }
+
+      // Create path mapping using minimum length to avoid undefined entries
+      const minLength = Math.min(oldPaths.length, newPaths.length);
       const pathMap = {};
-      oldPaths.forEach((oldPath, i) => {
-        pathMap[oldPath] = newPaths[i];
-      });
+      for (let i = 0; i < minLength; i++) {
+        pathMap[oldPaths[i]] = newPaths[i];
+      }
 
       // Update selectedFiles
       state.selectedFiles = state.selectedFiles.map((file) => {

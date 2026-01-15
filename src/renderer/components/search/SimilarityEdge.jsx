@@ -43,9 +43,10 @@ const SimilarityEdge = memo(
     const sourceData = data?.sourceData || {};
     const targetData = data?.targetData || {};
 
-    // Memoize derived values to prevent unnecessary re-renders and fix useCallback dependencies
-    const sourceTags = useMemo(() => sourceData.tags || [], [sourceData.tags]);
-    const targetTags = useMemo(() => targetData.tags || [], [targetData.tags]);
+    // Memoize derived values to prevent unnecessary re-renders
+    // Use data?.sourceData?.tags directly to ensure stable dependency references
+    const sourceTags = useMemo(() => data?.sourceData?.tags || [], [data?.sourceData?.tags]);
+    const targetTags = useMemo(() => data?.targetData?.tags || [], [data?.targetData?.tags]);
     const commonTags = useMemo(
       () => sourceTags.filter((tag) => targetTags.includes(tag)),
       [sourceTags, targetTags]
@@ -91,6 +92,23 @@ const SimilarityEdge = memo(
       return parts.join(' • ');
     }, [sameCategory, sourceCategory, commonTags, similarityPercent]);
 
+    // Generate a concise relationship label for display on the edge
+    const relationshipLabel = useMemo(() => {
+      // Priority: shared tags > same category > similarity level
+      if (commonTags.length > 0) {
+        const tag = commonTags[0];
+        return tag.length > 15 ? `${tag.slice(0, 15)}…` : tag;
+      }
+      if (sameCategory && sourceCategory) {
+        const cat = sourceCategory;
+        return cat.length > 15 ? `${cat.slice(0, 15)}…` : cat;
+      }
+      if (similarityPercent >= 85) return 'Near identical';
+      if (similarityPercent >= 70) return 'Strongly related';
+      if (similarityPercent >= 55) return 'Related';
+      return null; // Don't show weak connections
+    }, [commonTags, sameCategory, sourceCategory, similarityPercent]);
+
     const handleMouseEnter = useCallback(() => setIsHovered(true), []);
     const handleMouseLeave = useCallback(() => setIsHovered(false), []);
 
@@ -127,9 +145,15 @@ const SimilarityEdge = memo(
           isHovered={isHovered}
           labelX={labelX}
           labelY={labelY}
-          badgeText={`${similarityPercent}%`}
+          badgeText={
+            isHovered ? `${similarityPercent}%` : relationshipLabel || `${similarityPercent}%`
+          }
           badgeColorClass={
-            isHovered ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-700'
+            isHovered
+              ? 'bg-emerald-500 text-white'
+              : relationshipLabel
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-emerald-100 text-emerald-700'
           }
           title="Connection Details"
           headerColorClass="text-emerald-400"

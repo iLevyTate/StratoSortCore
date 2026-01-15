@@ -8,14 +8,9 @@
  */
 
 const crypto = require('crypto');
-const path = require('path');
-
-// Normalize a path for index keys (normalize separators, lower-case on Windows)
-function normalizePathForIndex(filePath) {
-  if (!filePath) return filePath;
-  const normalized = path.normalize(filePath);
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
-}
+// FIX: Import canonical normalizePathForIndex instead of duplicating
+// The canonical version also converts backslashes to forward slashes for consistent IDs
+const { normalizePathForIndex } = require('../../../shared/pathSanitization');
 
 /**
  * Create empty index structure

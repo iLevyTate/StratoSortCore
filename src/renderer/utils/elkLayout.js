@@ -42,9 +42,9 @@ let layoutAborted = false;
  */
 const NODE_SIZES = {
   queryNode: { width: 160, height: 50 },
-  fileNode: { width: 180, height: 60 },
-  clusterNode: { width: 180, height: 70 },
-  default: { width: 180, height: 60 }
+  fileNode: { width: 220, height: 80 },
+  clusterNode: { width: 320, height: 180 },
+  default: { width: 200, height: 80 }
 };
 
 /**
@@ -52,9 +52,16 @@ const NODE_SIZES = {
  */
 const DEFAULT_OPTIONS = {
   direction: 'RIGHT',
-  spacing: 80,
-  layerSpacing: 120,
+  spacing: 200, // Increased to reduce edge overlap with node badges
+  layerSpacing: 350, // Increased to provide room for long labels and edge routing
   algorithm: 'layered'
+};
+
+const ALGORITHM_MAP = {
+  layered: 'layered',
+  force: 'org.eclipse.elk.force',
+  stress: 'org.eclipse.elk.stress',
+  radial: 'org.eclipse.elk.radial'
 };
 
 /**
@@ -84,21 +91,33 @@ export async function elkLayout(nodes, edges, options = {}) {
     algorithm = DEFAULT_OPTIONS.algorithm
   } = options;
 
+  const elkAlgorithm = ALGORITHM_MAP[algorithm] || algorithm;
+
+  // Base layout options
+  const layoutOptions = {
+    'elk.algorithm': elkAlgorithm,
+    'elk.direction': direction,
+    'elk.spacing.nodeNode': String(spacing),
+    // Improve edge routing
+    'elk.edgeRouting': 'ORTHOGONAL'
+  };
+
+  // Add algorithm-specific options
+  if (elkAlgorithm === 'layered') {
+    layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'] = String(layerSpacing);
+    layoutOptions['elk.layered.nodePlacement.strategy'] = 'SIMPLE';
+    layoutOptions['elk.layered.crossingMinimization.strategy'] = 'LAYER_SWEEP';
+  } else if (elkAlgorithm === 'org.eclipse.elk.force') {
+    layoutOptions['elk.force.iterations'] = '100';
+    layoutOptions['elk.force.repulsion'] = String(Math.max(2.0, spacing / 50)); // Scale repulsion
+    layoutOptions['elk.force.temperature'] = '0.1'; // Low temperature for stability
+  }
+
   // Build ELK graph structure
+  const nodeIds = new Set(nodes.map((n) => n.id));
   const elkGraph = {
     id: 'root',
-    layoutOptions: {
-      'elk.algorithm': algorithm,
-      'elk.direction': direction,
-      'elk.spacing.nodeNode': String(spacing),
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(layerSpacing),
-      // Improve edge routing
-      'elk.edgeRouting': 'ORTHOGONAL',
-      // Center nodes vertically in their layer
-      'elk.layered.nodePlacement.strategy': 'SIMPLE',
-      // Reduce edge crossings
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP'
-    },
+    layoutOptions,
     children: nodes.map((node) => {
       const size = NODE_SIZES[node.type] || NODE_SIZES.default;
       return {
@@ -107,11 +126,26 @@ export async function elkLayout(nodes, edges, options = {}) {
         height: size.height
       };
     }),
-    edges: safeEdges.map((edge) => ({
-      id: edge.id,
-      sources: [edge.source],
-      targets: [edge.target]
-    }))
+    edges: safeEdges
+      .filter((edge) => {
+        const hasSource = nodeIds.has(edge.source);
+        const hasTarget = nodeIds.has(edge.target);
+        if (!hasSource || !hasTarget) {
+          logger.warn(`[elkLayout] Skipping edge ${edge.id}: missing node(s)`, {
+            source: edge.source,
+            target: edge.target,
+            hasSource,
+            hasTarget
+          });
+          return false;
+        }
+        return true;
+      })
+      .map((edge) => ({
+        id: edge.id,
+        sources: [edge.source],
+        targets: [edge.target]
+      }))
   };
 
   try {
@@ -177,7 +211,15 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       layoutDebounceTimer = null;
 
       // Check if layout was aborted during debounce wait
+      // FIX: If aborted, we need to reject callbacks, not leave them hanging
       if (layoutAborted) {
+        // Reject any pending callbacks that haven't been handled
+        if (pendingCallbacks.length > 0) {
+          const error = new Error('Layout cancelled');
+          error.name = 'AbortError';
+          pendingCallbacks.forEach((cb) => cb.reject(error));
+          pendingCallbacks = [];
+        }
         return;
       }
 
@@ -188,15 +230,15 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
       // Get the latest data (not stale closure data)
       const { nodes: latestNodes, edges: latestEdges, options: latestOptions } = latestLayoutData;
 
-      // If there's already a layout in progress with same data, wait for it
+      // FIX: If there's already a layout in progress, wait for it to complete
+      // but then ALWAYS use the latest data for the result instead of reusing
+      // the pending promise's result. This prevents stale data issues when
+      // new requests come in with different data during a running layout.
       if (pendingLayoutPromise) {
         try {
-          const result = await pendingLayoutPromise;
-          // Only resolve if not aborted during the wait
-          if (!layoutAborted) {
-            callbacksToNotify.forEach((cb) => cb.resolve(result));
-          }
-          return;
+          await pendingLayoutPromise;
+          // Don't reuse the result - fall through to compute with latest data
+          // The pending layout may have used older data
         } catch {
           // Fall through to new layout
         }
@@ -207,14 +249,22 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
 
       try {
         const result = await pendingLayoutPromise;
-        // Only resolve if not aborted during layout computation
-        if (!layoutAborted) {
+        // FIX: If aborted during layout, reject callbacks instead of leaving them hanging
+        if (layoutAborted) {
+          const error = new Error('Layout cancelled');
+          error.name = 'AbortError';
+          callbacksToNotify.forEach((cb) => cb.reject(error));
+        } else {
           callbacksToNotify.forEach((cb) => cb.resolve(result));
         }
       } catch (error) {
         logger.error('[elkLayout] Debounced layout failed:', error);
-        // Return original nodes on error (using latest, not stale)
-        if (!layoutAborted) {
+        // FIX: If aborted, reject; otherwise resolve with original nodes
+        if (layoutAborted) {
+          const abortError = new Error('Layout cancelled');
+          abortError.name = 'AbortError';
+          callbacksToNotify.forEach((cb) => cb.reject(abortError));
+        } else {
           callbacksToNotify.forEach((cb) => cb.resolve(latestNodes));
         }
       } finally {
@@ -459,7 +509,9 @@ export function radialLayout(centerNode, nodes, options = {}) {
  * @returns {Array} Nodes with calculated positions
  */
 export function clusterRadialLayout(clusterNodes, edges, options = {}) {
-  const { centerX = 400, centerY = 300, radius = 280 } = options;
+  const { centerX = 400, centerY = 300, radius = 500 } = options;
+  const clusterSize = NODE_SIZES.clusterNode || { width: 320, height: 180 };
+  const arcPadding = 140; // Extra spacing between cluster cards to avoid overlap
 
   if (!clusterNodes || clusterNodes.length === 0) {
     return clusterNodes;
@@ -499,8 +551,22 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
   const positioned = new Map();
   const result = [];
 
-  // Position high-confidence clusters in the inner ring (most prominent)
-  const innerRadius = radius * 0.5;
+  // Calculate radii that scale with node size and ring density to avoid overlap
+  const baseRadius = Math.max(radius, clusterSize.width * 1.5);
+  const calcRingRadius = (count, ringMultiplier, minPreviousRadius = 0) => {
+    const nodesInRing = Math.max(count, 1);
+    const minCircumference = nodesInRing * (clusterSize.width + arcPadding);
+    const minRadiusForSpacing = minCircumference / (2 * Math.PI);
+    const scaledRadius = Math.max(baseRadius * ringMultiplier, minRadiusForSpacing);
+    // Ensure rings never collapse into each other vertically
+    const separatedRadius =
+      minPreviousRadius > 0
+        ? Math.max(scaledRadius, minPreviousRadius + clusterSize.height + arcPadding / 2)
+        : scaledRadius;
+    return Math.max(separatedRadius, clusterSize.width + arcPadding);
+  };
+
+  const innerRadius = calcRingRadius(highConfidence.length, 0.65);
   highConfidence.forEach((node, idx) => {
     const angle = (idx / Math.max(1, highConfidence.length)) * 2 * Math.PI - Math.PI / 2;
     const pos = {
@@ -512,7 +578,7 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
   });
 
   // Position medium-confidence clusters in the middle ring
-  const middleRadius = radius * 0.8;
+  const middleRadius = calcRingRadius(mediumConfidence.length, 0.9, innerRadius);
   mediumConfidence.forEach((node, idx) => {
     // Try to position near connected high-confidence clusters
     const neighbors = adjacency.get(node.id) || new Set();
@@ -538,7 +604,7 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
   });
 
   // Position low-confidence clusters in the outer ring
-  const outerRadius = radius;
+  const outerRadius = calcRingRadius(lowConfidence.length, 1.25, middleRadius);
   lowConfidence.forEach((node, idx) => {
     // Try to position near connected clusters
     const neighbors = adjacency.get(node.id) || new Set();
@@ -562,7 +628,13 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
   });
 
   // Apply repulsion pass to avoid overlaps
-  return applyClusterRepulsion(result, { centerX, centerY, minDistance: 120 });
+  const minRepulsionDistance = Math.max(clusterSize.width + arcPadding, baseRadius * 0.35);
+  return applyClusterRepulsion(result, {
+    centerX,
+    centerY,
+    minDistance: minRepulsionDistance,
+    iterations: 5
+  });
 }
 
 /**
@@ -570,7 +642,7 @@ export function clusterRadialLayout(clusterNodes, edges, options = {}) {
  * @private
  */
 function applyClusterRepulsion(nodes, options = {}) {
-  const { minDistance = 120, iterations = 3 } = options;
+  const { minDistance = 500, iterations = 4 } = options;
 
   if (nodes.length < 2) return nodes;
 
@@ -653,3 +725,19 @@ export default elkLayout;
 
 // Also export the new functions
 export { LARGE_GRAPH_THRESHOLD, VERY_LARGE_GRAPH_THRESHOLD };
+
+// HMR disposal handler to reset module-level state during hot reload
+// This prevents stale callbacks and inconsistent state during development
+if (module.hot) {
+  module.hot.dispose(() => {
+    cancelPendingLayout();
+    if (layoutDebounceTimer) {
+      clearTimeout(layoutDebounceTimer);
+      layoutDebounceTimer = null;
+    }
+    pendingLayoutPromise = null;
+    pendingCallbacks = [];
+    latestLayoutData = { nodes: null, edges: null, options: {} };
+    layoutAborted = false;
+  });
+}

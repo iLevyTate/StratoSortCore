@@ -138,7 +138,7 @@ describe('ParallelEmbeddingService', () => {
       const concurrency = service._calculateOptimalConcurrency();
 
       expect(concurrency).toBeGreaterThanOrEqual(2);
-      expect(concurrency).toBeLessThanOrEqual(5);
+      expect(concurrency).toBeLessThanOrEqual(10); // Hard cap increased from 5 to 10 for powerful GPUs
     });
   });
 

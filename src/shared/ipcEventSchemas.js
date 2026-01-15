@@ -192,6 +192,23 @@ const schemas = z
         error: z.string().optional()
       });
 
+      /**
+       * Open Semantic Search Event
+       * Emitted from system tray or global shortcut to trigger semantic search UI
+       */
+      const openSemanticSearchSchema = z.undefined().optional();
+
+      /**
+       * Batch Results Chunk Event
+       * Emitted during batch operations to stream results progressively
+       */
+      const batchResultsChunkSchema = z.object({
+        results: z.array(z.any()).optional(),
+        chunk: z.number().optional(),
+        total: z.number().optional(),
+        operationType: z.string().optional()
+      });
+
       return {
         operationProgressSchema,
         operationCompleteSchema,
@@ -204,7 +221,9 @@ const schemas = z
         chromadbStatusChangedSchema,
         serviceStatusChangedSchema,
         menuActionSchema,
-        appUpdateSchema
+        appUpdateSchema,
+        openSemanticSearchSchema,
+        batchResultsChunkSchema
       };
     })()
   : {};
@@ -226,7 +245,9 @@ const EVENT_SCHEMAS = z
       'chromadb-status-changed': schemas.chromadbStatusChangedSchema,
       'dependencies-service-status-changed': schemas.serviceStatusChangedSchema,
       'menu-action': schemas.menuActionSchema,
-      'app:update': schemas.appUpdateSchema
+      'app:update': schemas.appUpdateSchema,
+      'open-semantic-search': schemas.openSemanticSearchSchema,
+      'batch-results-chunk': schemas.batchResultsChunkSchema
     }
   : {};
 
