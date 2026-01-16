@@ -181,7 +181,7 @@
     "csv-parse": "^6.1.0",
     "detect-port": "^2.1.0",
     "dotenv": "^17.2.3",
-    "electron": "^39.2.7",
+    "electron": "^40.0.0",
     "electron-builder": "^26.4.0",
     "electron-debug": "^4.1.0",
     "electron-devtools-installer": "^4.0.0",
