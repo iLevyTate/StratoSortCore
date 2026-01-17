@@ -18,12 +18,15 @@ function BatchOrganizationSuggestions({
   batchSuggestions,
   onAcceptStrategy,
   onCustomizeGroup,
-  onRejectAll
+  onRejectAll,
+  onMemorySaved
 }) {
-  useNotification();
+  const { addNotification } = useNotification();
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [selectedStrategy, setSelectedStrategy] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [memoryNote, setMemoryNote] = useState('');
+  const [savingMemory, setSavingMemory] = useState(false);
 
   // FIX: Memoize toggleGroup to prevent unnecessary re-renders
   const toggleGroup = useCallback((groupIndex) => {
@@ -54,8 +57,50 @@ function BatchOrganizationSuggestions({
 
   const { groups, patterns, recommendations } = batchSuggestions;
 
+  const handleSaveMemory = async () => {
+    const trimmed = memoryNote.trim();
+    if (!trimmed) return;
+    setSavingMemory(true);
+    try {
+      await window.electronAPI.suggestions.addFeedbackMemory(trimmed);
+      setMemoryNote('');
+      addNotification('Memory saved', 'success');
+      if (onMemorySaved) {
+        onMemorySaved();
+      }
+    } catch (error) {
+      addNotification('Failed to save memory', 'warning');
+    } finally {
+      setSavingMemory(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-[var(--spacing-default)]">
+      <Card className="p-4 border-system-gray-200 bg-system-gray-50">
+        <h3 className="font-medium text-system-gray-900 mb-2">Batch Feedback Note</h3>
+        <textarea
+          value={memoryNote}
+          onChange={(event) => setMemoryNote(event.target.value)}
+          placeholder='e.g., "All 3D files go to 3D Prints"'
+          className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+          rows={2}
+        />
+        <div className="mt-2">
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={handleSaveMemory}
+            disabled={savingMemory || !memoryNote.trim()}
+            className="bg-stratosort-blue hover:bg-stratosort-blue/90"
+          >
+            Save Memory
+          </Button>
+        </div>
+        <div className="mt-2 text-xs text-system-gray-500">
+          Saved notes guide future suggestions for all files.
+        </div>
+      </Card>
       {/* Pattern Analysis */}
       {patterns && (
         <Card className="p-4 bg-blue-50 border-stratosort-blue/30">
@@ -451,7 +496,8 @@ BatchOrganizationSuggestions.propTypes = {
   }),
   onAcceptStrategy: PropTypes.func,
   onCustomizeGroup: PropTypes.func,
-  onRejectAll: PropTypes.func
+  onRejectAll: PropTypes.func,
+  onMemorySaved: PropTypes.func
 };
 
 export default BatchOrganizationSuggestions;

@@ -2,6 +2,7 @@ import { updateProgress, stopAnalysis, updateResultPathsAfterMove } from '../sli
 import { updateMetrics, updateHealth, addNotification } from '../slices/systemSlice';
 import { updateFilePathsAfterMove, removeSelectedFiles } from '../slices/filesSlice';
 import { logger } from '../../../shared/logger';
+import { mapErrorToNotification } from '../../utils/errorMapping';
 import { validateEventPayload, hasEventSchema } from '../../../shared/ipcEventSchemas';
 
 /**
@@ -156,13 +157,12 @@ const ipcMiddleware = (store) => {
         });
 
         // Show error notification
-        store.dispatch(
-          addNotification({
-            message: `${validatedData.operationType || 'Operation'} failed: ${validatedData.error || 'Unknown error'}`,
-            severity: 'error',
-            duration: 5000
-          })
-        );
+        const notification = mapErrorToNotification({
+          error: validatedData.error,
+          errorType: validatedData.errorType,
+          operationType: validatedData.operationType || 'Operation'
+        });
+        store.dispatch(addNotification(notification));
 
         // Stop analysis if it was an analysis operation
         // FIX: Wrap dispatch in try-catch to prevent silent failures

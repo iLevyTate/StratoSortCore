@@ -9,8 +9,6 @@ import { useAppSelector } from '../../store/hooks';
  * Embedding rebuild section for folder and file embeddings
  */
 function EmbeddingRebuildSection({ addNotification }) {
-  const [isRebuildingFolders, setIsRebuildingFolders] = useState(false);
-  const [isRebuildingFiles, setIsRebuildingFiles] = useState(false);
   const [isFullRebuilding, setIsFullRebuilding] = useState(false);
   const [isReanalyzingAll, setIsReanalyzingAll] = useState(false);
   const [stats, setStats] = useState(null);
@@ -140,71 +138,6 @@ function EmbeddingRebuildSection({ addNotification }) {
     return `${stats.folders} folder embeddings • ${stats.files} file embeddings`;
   }, [stats, isLoadingStats]);
 
-  const handleRebuildFolders = useCallback(async () => {
-    try {
-      setIsRebuildingFolders(true);
-      const res = await window.electronAPI.embeddings.rebuildFolders();
-      if (res?.success) {
-        const count = res.folders || 0;
-        addNotification(
-          count > 0
-            ? `Rebuilt ${count} folder embeddings`
-            : 'No folders to rebuild. Add smart folders first.',
-          count > 0 ? 'success' : 'info'
-        );
-      } else {
-        // Provide actionable error message
-        const errorMsg = res?.error || '';
-        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
-          addNotification('Ollama not running. Start Ollama and try again.', 'error');
-        } else if (errorMsg.includes('ChromaDB')) {
-          addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
-        } else {
-          addNotification('Rebuild failed. Check Ollama connection in Settings.', 'error');
-        }
-      }
-    } catch (e) {
-      addNotification('Rebuild failed. Check Ollama is running.', 'error');
-    } finally {
-      setIsRebuildingFolders(false);
-      refreshStats();
-    }
-  }, [addNotification, refreshStats]);
-
-  const handleRebuildFiles = useCallback(async () => {
-    try {
-      setIsRebuildingFiles(true);
-      const res = await window.electronAPI.embeddings.rebuildFiles();
-      if (res?.success) {
-        const count = res.files || 0;
-        const totalUnique = typeof res.totalUniqueFiles === 'number' ? res.totalUniqueFiles : null;
-        addNotification(
-          count > 0
-            ? totalUnique != null && totalUnique > 0
-              ? `Indexed ${count} of ${totalUnique} files for semantic search`
-              : `Indexed ${count} files for semantic search`
-            : 'No analyzed files found. Analyze files in Discover first.',
-          count > 0 ? 'success' : 'info'
-        );
-      } else {
-        // Provide actionable error message
-        const errorMsg = res?.error || '';
-        if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
-          addNotification('Ollama not running. Start Ollama and try again.', 'error');
-        } else if (errorMsg.includes('ChromaDB')) {
-          addNotification('ChromaDB unavailable. Check Settings or restart the app.', 'error');
-        } else {
-          addNotification('Indexing failed. Check Ollama connection in Settings.', 'error');
-        }
-      }
-    } catch (e) {
-      addNotification('Indexing failed. Check Ollama is running.', 'error');
-    } finally {
-      setIsRebuildingFiles(false);
-      refreshStats();
-    }
-  }, [addNotification, refreshStats]);
-
   const handleFullRebuild = useCallback(async () => {
     try {
       setIsFullRebuilding(true);
@@ -316,9 +249,7 @@ function EmbeddingRebuildSection({ addNotification }) {
         <Button
           onClick={handleFullRebuild}
           variant="primary"
-          disabled={
-            isFullRebuilding || isRebuildingFolders || isRebuildingFiles || isReanalyzingAll
-          }
+          disabled={isFullRebuilding || isReanalyzingAll}
           isLoading={isFullRebuilding}
           type="button"
           title="Clear all embeddings and rebuild everything with current model"
@@ -352,39 +283,6 @@ function EmbeddingRebuildSection({ addNotification }) {
 
         {showAdvanced && (
           <div className="mt-4 space-y-4 pl-4 border-l-2 border-system-gray-100">
-            {/* Partial Rebuilds */}
-            <div>
-              <label className="block text-xs font-medium text-system-gray-700 mb-2">
-                Partial Updates (Use only for specific troubleshooting)
-              </label>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button
-                  onClick={handleRebuildFolders}
-                  variant="secondary"
-                  disabled={isRebuildingFolders || isFullRebuilding}
-                  isLoading={isRebuildingFolders}
-                  type="button"
-                  title="Rebuild folder embeddings"
-                  size="sm"
-                  className="shrink-0"
-                >
-                  {isRebuildingFolders ? 'Rebuilding…' : 'Rebuild Folders Only'}
-                </Button>
-                <Button
-                  onClick={handleRebuildFiles}
-                  variant="secondary"
-                  disabled={isRebuildingFiles || isFullRebuilding}
-                  isLoading={isRebuildingFiles}
-                  type="button"
-                  title="Rebuild file embeddings from analysis history"
-                  size="sm"
-                  className="shrink-0"
-                >
-                  {isRebuildingFiles ? 'Rebuilding…' : 'Rebuild Files Only'}
-                </Button>
-              </div>
-            </div>
-
             {/* Reanalyze All (Destructive) */}
             <div className="pt-2 border-t border-system-gray-100">
               <label className="block text-xs font-medium text-red-700 mb-2">Danger Zone</label>
@@ -399,13 +297,7 @@ function EmbeddingRebuildSection({ addNotification }) {
                     id="apply-naming-on-reanalyze"
                     checked={applyNamingOnReanalyze}
                     onChange={setApplyNamingOnReanalyze}
-                    disabled={
-                      isReanalyzingAll ||
-                      analysisIsActive ||
-                      isFullRebuilding ||
-                      isRebuildingFolders ||
-                      isRebuildingFiles
-                    }
+                    disabled={isReanalyzingAll || analysisIsActive || isFullRebuilding}
                   />
                   <label
                     htmlFor="apply-naming-on-reanalyze"
@@ -422,13 +314,7 @@ function EmbeddingRebuildSection({ addNotification }) {
               <Button
                 onClick={handleReanalyzeAll}
                 variant="danger"
-                disabled={
-                  isReanalyzingAll ||
-                  analysisIsActive ||
-                  isFullRebuilding ||
-                  isRebuildingFolders ||
-                  isRebuildingFiles
-                }
+                disabled={isReanalyzingAll || analysisIsActive || isFullRebuilding}
                 isLoading={isReanalyzingAll || analysisIsActive}
                 type="button"
                 title="Clear all data and reanalyze every file with current AI models"

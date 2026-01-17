@@ -299,6 +299,7 @@ export const useToast = () => {
   const addToast = (message, severity = 'info', duration = 3000, groupKey = null) => {
     const id = generateSecureId();
     const now = Date.now();
+    let resolvedId = id;
 
     setToasts((prev) => {
       // If grouping, try to merge with an existing toast
@@ -321,6 +322,7 @@ export const useToast = () => {
             duration: duration ?? existing.duration,
             createdAt: existing.createdAt || now
           };
+          resolvedId = existing.id;
           const copy = prev.slice();
           copy[idx] = updated;
           return copy;
@@ -346,7 +348,7 @@ export const useToast = () => {
       return next;
     });
 
-    return id;
+    return resolvedId;
   };
 
   const removeToast = (id) => {

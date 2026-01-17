@@ -1,9 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
+import Select from '../ui/Select';
 import SettingRow from './SettingRow';
 
 const DEFAULT_CONFIDENCE = 0.75; // 75%
+const CONFIDENCE_MIN = 0.5; // 50%
+const CONFIDENCE_MAX = 0.95; // 95%
 
 /**
  * AutoOrganizeSection - Settings for automatic file organization
@@ -13,10 +16,26 @@ const DEFAULT_CONFIDENCE = 0.75; // 75%
  * - confidenceThreshold: Minimum confidence (0-1) required to auto-move files
  */
 function AutoOrganizeSection({ settings, setSettings }) {
+  const updateSetting = useCallback(
+    (key, value) => {
+      setSettings((prev) => ({
+        ...prev,
+        [key]: value
+      }));
+    },
+    [setSettings]
+  );
+
   const confidencePercent = useMemo(
     () => Math.round((settings.confidenceThreshold ?? DEFAULT_CONFIDENCE) * 100),
     [settings.confidenceThreshold]
   );
+  const clampedConfidence = useMemo(() => {
+    const raw = settings.confidenceThreshold ?? DEFAULT_CONFIDENCE;
+    const safe = Number.isFinite(raw) ? raw : DEFAULT_CONFIDENCE;
+    return Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, safe));
+  }, [settings.confidenceThreshold]);
+  const confidenceSliderValue = Math.round(clampedConfidence * 100);
 
   return (
     <div className="space-y-6">
@@ -27,8 +46,26 @@ function AutoOrganizeSection({ settings, setSettings }) {
       >
         <Switch
           checked={settings.autoOrganize || false}
-          onChange={(checked) => setSettings((prev) => ({ ...prev, autoOrganize: checked }))}
+          onChange={(checked) => updateSetting('autoOrganize', checked)}
         />
+      </SettingRow>
+
+      <SettingRow
+        label="Smart folder routing"
+        description="Auto mode uses LLM-only when embeddings are missing, then shifts to hybrid or embedding-first as embeddings become healthy."
+      >
+        <Select
+          id="settings-smart-folder-routing"
+          value={settings.smartFolderRoutingMode || 'auto'}
+          onChange={(e) => updateSetting('smartFolderRoutingMode', e.target.value)}
+          aria-label="Smart folder routing mode"
+          className="w-full max-w-[220px]"
+        >
+          <option value="auto">Auto</option>
+          <option value="llm">LLM-only</option>
+          <option value="hybrid">Hybrid</option>
+          <option value="embedding">Embedding-first</option>
+        </Select>
       </SettingRow>
 
       {/* Confidence threshold - only shown when autoOrganize is enabled */}
@@ -42,12 +79,20 @@ function AutoOrganizeSection({ settings, setSettings }) {
             Files must meet this confidence level to be automatically organized. Lower confidence
             matches require manual review.
           </p>
-          <div className="h-2 bg-system-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-stratosort-blue rounded-full transition-all duration-300"
-              style={{ width: `${confidencePercent}%` }}
-            />
-          </div>
+          <input
+            type="range"
+            min={Math.round(CONFIDENCE_MIN * 100)}
+            max={Math.round(CONFIDENCE_MAX * 100)}
+            step="1"
+            value={confidenceSliderValue}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              const normalized = Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, next / 100));
+              updateSetting('confidenceThreshold', normalized);
+            }}
+            aria-label="Minimum confidence threshold"
+            className="w-full accent-stratosort-blue"
+          />
         </div>
       )}
     </div>

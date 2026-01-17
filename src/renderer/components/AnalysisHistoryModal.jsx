@@ -199,7 +199,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
         onClose={onClose}
         title={
           <span className="flex items-center gap-2">
-            <BarChart2 className="w-5 h-5 text-stratosort-blue" /> Analysis History & Statistics
+            <BarChart2 className="w-5 h-5 text-stratosort-blue" />
+            <span>Analysis History & Statistics</span>
           </span>
         }
         size="large"
@@ -214,7 +215,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                 : 'border-transparent text-system-gray-500 hover:text-system-gray-700'
             }`}
           >
-            <TrendingUp className="w-4 h-4" /> Statistics
+            <TrendingUp className="w-4 h-4" />
+            <span>Statistics</span>
           </button>
           <button
             onClick={() => setSelectedTab('history')}
@@ -224,7 +226,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                 : 'border-transparent text-system-gray-500 hover:text-system-gray-700'
             }`}
           >
-            <ClipboardList className="w-4 h-4" /> History
+            <ClipboardList className="w-4 h-4" />
+            <span>History</span>
           </button>
         </div>
 
@@ -267,7 +270,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                   </div>
                   <div className="bg-surface-primary rounded-xl border border-border-soft shadow-sm p-[var(--panel-padding)]">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
-                      <Download className="w-4 h-4" /> Export Options
+                      <Download className="w-4 h-4" />
+                      <span>Export Options</span>
                     </h3>
                     <div className="flex gap-4">
                       <Button
@@ -312,7 +316,8 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                       size="sm"
                       className="text-system-gray-500 hover:text-stratosort-blue h-8"
                     >
-                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Refresh</span>
                     </Button>
                   </div>
 

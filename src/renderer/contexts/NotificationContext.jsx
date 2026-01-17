@@ -1,9 +1,13 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch } from 'react-redux';
 import { logger } from '../../shared/logger';
 import { ToastContainer, useToast } from '../components/Toast';
-import { markNotificationDismissed, clearNotifications } from '../store/slices/systemSlice';
+import {
+  addNotification as addSystemNotification,
+  markNotificationDismissed,
+  clearNotifications
+} from '../store/slices/systemSlice';
 
 logger.setContext('NotificationContext');
 
@@ -21,20 +25,39 @@ export function NotificationProvider({ children }) {
     showWarning,
     showInfo
   } = useToast();
+  // Map toast IDs to notification IDs for consistent Redux dismissal
+  const toastToNotificationIdRef = useRef(new Map());
 
   const addNotification = useCallback(
     (message, severity = 'info', duration = 3000, groupKey = null) => {
-      return addToast(message, severity, duration, groupKey);
+      const toastId = addToast(message, severity, duration, groupKey);
+      const notificationId = String(toastId);
+      dispatch(
+        addSystemNotification({
+          id: notificationId,
+          message,
+          severity,
+          duration,
+          source: 'ui',
+          type: 'ui'
+        })
+      );
+      toastToNotificationIdRef.current.set(toastId, notificationId);
+      return toastId;
     },
-    [addToast]
+    [addToast, dispatch]
   );
 
   const removeNotification = useCallback(
     (id) => {
       removeToast(id);
-      // Sync dismissal to Redux to keep notification state consistent
-      // This updates unreadNotificationCount and marks the notification as dismissed
-      dispatch(markNotificationDismissed(id));
+      const notificationId = toastToNotificationIdRef.current.get(id);
+      if (notificationId) {
+        toastToNotificationIdRef.current.delete(id);
+        // Sync dismissal to Redux to keep notification state consistent
+        // This updates unreadNotificationCount and marks the notification as dismissed
+        dispatch(markNotificationDismissed(notificationId));
+      }
     },
     [removeToast, dispatch]
   );
@@ -42,6 +65,7 @@ export function NotificationProvider({ children }) {
   // Wrapper for clearAllToasts that also syncs to Redux
   const handleClearAll = useCallback(() => {
     clearAllToasts();
+    toastToNotificationIdRef.current.clear();
     // Clear notifications from Redux as well
     dispatch(clearNotifications());
   }, [clearAllToasts, dispatch]);
@@ -82,22 +106,42 @@ export function NotificationProvider({ children }) {
     const handleNotification = (event) => {
       try {
         // Uses unified schema with 'severity' field (not 'variant')
-        const { message, severity, duration = 4000 } = event.detail || {};
+        const { id: notificationId, message, severity, duration = 4000 } = event.detail || {};
         if (!message) return;
 
         // Map severity to toast function
         switch (severity) {
           case 'success':
-            if (typeof showSuccess === 'function') showSuccess(message, duration);
+            if (typeof showSuccess === 'function') {
+              const toastId = showSuccess(message, duration);
+              if (notificationId && toastId != null) {
+                toastToNotificationIdRef.current.set(toastId, notificationId);
+              }
+            }
             break;
           case 'error':
-            if (typeof showError === 'function') showError(message, duration);
+            if (typeof showError === 'function') {
+              const toastId = showError(message, duration);
+              if (notificationId && toastId != null) {
+                toastToNotificationIdRef.current.set(toastId, notificationId);
+              }
+            }
             break;
           case 'warning':
-            if (typeof showWarning === 'function') showWarning(message, duration);
+            if (typeof showWarning === 'function') {
+              const toastId = showWarning(message, duration);
+              if (notificationId && toastId != null) {
+                toastToNotificationIdRef.current.set(toastId, notificationId);
+              }
+            }
             break;
           default:
-            if (typeof showInfo === 'function') showInfo(message, duration);
+            if (typeof showInfo === 'function') {
+              const toastId = showInfo(message, duration);
+              if (notificationId && toastId != null) {
+                toastToNotificationIdRef.current.set(toastId, notificationId);
+              }
+            }
         }
       } catch (e) {
         logger.error('Failed to display notification', {

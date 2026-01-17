@@ -56,8 +56,8 @@ class GraphErrorBoundary extends React.Component {
 
           <div className="flex gap-3">
             <Button variant="secondary" size="sm" onClick={this.handleReset}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Try Again
+              <RefreshCw className="w-4 h-4" />
+              <span>Try Again</span>
             </Button>
             <Button variant="primary" size="sm" onClick={this.handleClearGraph}>
               Clear & Restart

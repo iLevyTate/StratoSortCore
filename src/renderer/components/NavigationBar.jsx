@@ -84,31 +84,47 @@ const PHASE_ORDER = [
 /**
  * Connection status indicator - subtle dot with tooltip
  */
-const ConnectionIndicator = memo(function ConnectionIndicator({ isConnected = true }) {
+const ConnectionIndicator = memo(function ConnectionIndicator({ status = 'unknown' }) {
+  const isOnline = status === 'online';
+  const isOffline = status === 'offline';
+  const isConnecting = status === 'connecting';
+  const label = isOnline
+    ? 'Connected'
+    : isOffline
+      ? 'Disconnected'
+      : isConnecting
+        ? 'Connecting'
+        : 'Status unknown';
   return (
-    <div
-      className="relative flex items-center justify-center"
-      title={isConnected ? 'Services connected' : 'Services disconnected'}
-      aria-label={isConnected ? 'Connected' : 'Disconnected'}
-    >
+    <div className="relative flex items-center justify-center" title={label} aria-label={label}>
       <span
         className={`
           h-2 w-2 rounded-full
-          ${isConnected ? 'bg-stratosort-success' : 'bg-stratosort-danger'}
+          ${
+            isOnline
+              ? 'bg-stratosort-success'
+              : isOffline
+                ? 'bg-stratosort-danger'
+                : isConnecting
+                  ? 'bg-stratosort-warning animate-pulse'
+                  : 'bg-system-gray-400'
+          }
         `}
       />
-      {isConnected && (
+      {isOnline && (
         <span className="absolute inset-0 h-2 w-2 rounded-full bg-stratosort-success animate-ping opacity-75" />
       )}
     </div>
   );
 });
-ConnectionIndicator.propTypes = { isConnected: PropTypes.bool };
+ConnectionIndicator.propTypes = {
+  status: PropTypes.oneOf(['online', 'offline', 'connecting', 'unknown'])
+};
 
 /**
  * Brand logo and name
  */
-const Brand = memo(function Brand({ isConnected }) {
+const Brand = memo(function Brand({ status }) {
   return (
     <div className="flex items-center gap-3 select-none">
       <div className="relative">
@@ -117,7 +133,7 @@ const Brand = memo(function Brand({ isConnected }) {
         </div>
         {/* Connection indicator overlaid on logo */}
         <div className="absolute -bottom-0.5 -right-0.5 p-0.5 bg-white rounded-full shadow-sm">
-          <ConnectionIndicator isConnected={isConnected} />
+          <ConnectionIndicator status={status} />
         </div>
       </div>
       <div className="hidden sm:block leading-tight">
@@ -127,7 +143,9 @@ const Brand = memo(function Brand({ isConnected }) {
     </div>
   );
 });
-Brand.propTypes = { isConnected: PropTypes.bool };
+Brand.propTypes = {
+  status: PropTypes.oneOf(['online', 'offline', 'connecting', 'unknown'])
+};
 
 /**
  * Navigation tab button
@@ -415,6 +433,15 @@ function NavigationBar() {
   // FIX: Use analysis slice as single source of truth for isAnalyzing
   const isAnalyzing = useAppSelector((state) => state.analysis.isAnalyzing);
   const isLoading = useAppSelector((state) => state.ui.isLoading);
+  const health = useAppSelector((state) => state.system.health);
+  const connectionStatus = useMemo(() => {
+    const statuses = [health?.ollama, health?.chromadb].filter(Boolean);
+    if (statuses.length === 0) return 'unknown';
+    if (statuses.every((s) => s === 'online')) return 'online';
+    if (statuses.some((s) => s === 'offline')) return 'offline';
+    if (statuses.some((s) => s === 'connecting')) return 'connecting';
+    return 'unknown';
+  }, [health]);
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [hoveredTab, setHoveredTab] = useState(null);
@@ -497,7 +524,7 @@ function NavigationBar() {
       <div className="relative flex h-14 items-center justify-between px-4 lg:px-6">
         {/* Left: Brand */}
         <div style={{ WebkitAppRegion: 'no-drag' }}>
-          <Brand isConnected />
+          <Brand status={connectionStatus} />
         </div>
 
         {/* Center: Phase Navigation - FIX: Improved responsive overflow handling */}

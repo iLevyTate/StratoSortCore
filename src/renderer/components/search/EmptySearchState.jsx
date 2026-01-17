@@ -83,7 +83,7 @@ const EmptySearchState = memo(function EmptySearchState({
         <h3 className="text-base font-medium text-system-gray-900 mb-2">No files indexed yet</h3>
         <p className="text-sm text-system-gray-500 max-w-xs">
           Add folders to your library to start searching. Files will be automatically indexed for
-          semantic search.
+          Knowledge OS.
         </p>
       </div>
     );

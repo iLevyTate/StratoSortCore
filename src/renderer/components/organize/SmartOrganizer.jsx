@@ -19,6 +19,7 @@ import { logger } from '../../../shared/logger';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button } from '../ui';
 import OrganizationSuggestions from './OrganizationSuggestions';
+import FeedbackMemoryPanel from './FeedbackMemoryPanel';
 import BatchOrganizationSuggestions from './BatchOrganizationSuggestions';
 import OrganizationPreview from './OrganizationPreview';
 // Use unified ErrorBoundary for better error handling and reporting
@@ -51,6 +52,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
   const [showImprovements, setShowImprovements] = useState(false);
   const [customizingGroup, setCustomizingGroup] = useState(null); // { index, group }
   const [customGroupFolder, setCustomGroupFolder] = useState('');
+  const [memoryRefreshToken, setMemoryRefreshToken] = useState(0);
 
   // FIX: Track mounted state to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -147,11 +149,20 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
   // Track feedback recording state - use ref since value isn't used for rendering
   const isRecordingFeedbackRef = useRef(false);
 
-  const handleAcceptSuggestion = async (file, suggestion) => {
+  const triggerMemoryRefresh = () => {
+    setMemoryRefreshToken(Date.now());
+  };
+
+  const handleAcceptSuggestion = async (file, suggestion, options = {}) => {
     // Await feedback recording before finalizing UI state
     isRecordingFeedbackRef.current = true;
     try {
-      await window.electronAPI.suggestions.recordFeedback(file, suggestion, true);
+      await window.electronAPI.suggestions.recordFeedback(
+        file,
+        suggestion,
+        true,
+        options?.feedbackNote
+      );
       // Only update UI state after successful feedback recording
       setAcceptedSuggestions((prev) => ({
         ...prev,
@@ -171,17 +182,25 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
       }));
     } finally {
       isRecordingFeedbackRef.current = false;
+      if (options?.feedbackNote) {
+        triggerMemoryRefresh();
+      }
     }
   };
 
   // Track rejected suggestions - use ref since value isn't used for rendering
   const rejectedSuggestionsRef = useRef({});
 
-  const handleRejectSuggestion = async (file, suggestion) => {
+  const handleRejectSuggestion = async (file, suggestion, options = {}) => {
     // Await feedback recording and update ref on completion
     isRecordingFeedbackRef.current = true;
     try {
-      await window.electronAPI.suggestions.recordFeedback(file, suggestion, false);
+      await window.electronAPI.suggestions.recordFeedback(
+        file,
+        suggestion,
+        false,
+        options?.feedbackNote
+      );
       // Update rejected ref
       rejectedSuggestionsRef.current = {
         ...rejectedSuggestionsRef.current,
@@ -197,6 +216,9 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
       addNotification('Rejection saved locally (sync failed)', 'warning');
     } finally {
       isRecordingFeedbackRef.current = false;
+      if (options?.feedbackNote) {
+        triggerMemoryRefresh();
+      }
     }
   };
 
@@ -309,7 +331,8 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
               }`}
               onClick={() => setMode('quick')}
             >
-              <Zap className="w-3.5 h-3.5" /> Quick
+              <Zap className="w-3.5 h-3.5" />
+              <span>Quick</span>
             </button>
             <button
               className={`px-3 py-1 text-sm rounded-md flex items-center gap-1.5 ${
@@ -319,7 +342,8 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
               }`}
               onClick={() => setMode('detailed')}
             >
-              <Search className="w-3.5 h-3.5" /> Detailed
+              <Search className="w-3.5 h-3.5" />
+              <span>Detailed</span>
             </button>
           </div>
         </div>
@@ -359,7 +383,8 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                     onClick={handleQuickOrganize}
                     className="bg-stratosort-blue hover:bg-stratosort-blue/90"
                   >
-                    <Zap className="w-4 h-4 mr-1.5" /> Quick Organize
+                    <Zap className="w-4 h-4" />
+                    <span>Quick Organize</span>
                   </Button>
                 ) : (
                   <Button
@@ -406,11 +431,13 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                     >
                       {showImprovements ? (
                         <>
-                          <ChevronUp className="w-4 h-4" /> Hide
+                          <ChevronUp className="w-4 h-4" />
+                          <span>Hide</span>
                         </>
                       ) : (
                         <>
-                          <ChevronDown className="w-4 h-4" /> View
+                          <ChevronDown className="w-4 h-4" />
+                          <span>View</span>
                         </>
                       )}
                     </Button>
@@ -487,6 +514,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                 suggestions={suggestions[files[0].path]}
                 onAccept={handleAcceptSuggestion}
                 onReject={handleRejectSuggestion}
+                onMemorySaved={triggerMemoryRefresh}
               />
             </GlobalErrorBoundary>
           ) : (
@@ -499,9 +527,12 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                 }}
                 onCustomizeGroup={handleCustomizeGroup}
                 onRejectAll={onCancel}
+                onMemorySaved={triggerMemoryRefresh}
               />
             </GlobalErrorBoundary>
           )}
+
+          <FeedbackMemoryPanel className="mt-4" refreshToken={memoryRefreshToken} />
 
           <div className="flex justify-between pt-4">
             <Button variant="ghost" onClick={() => setCurrentStep('analyze')}>
@@ -552,14 +583,16 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         <div className="flex items-center justify-between text-sm text-system-gray-600 pt-4 border-t">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
-              <BarChart3 className="w-4 h-4" /> Accuracy: {averageConfidence}%
+              <BarChart3 className="w-4 h-4" />
+              <span>Accuracy: {averageConfidence}%</span>
             </span>
             <span className="flex items-center gap-1">
-              <Folder className="w-4 h-4" /> {smartFolders.length} Smart Folders
+              <Folder className="w-4 h-4" />
+              <span>{smartFolders.length} Smart Folders</span>
             </span>
             <span className="flex items-center gap-1">
-              <CheckCircle className="w-4 h-4 text-stratosort-success" />{' '}
-              {Object.keys(acceptedSuggestions).length} Accepted
+              <CheckCircle className="w-4 h-4 text-stratosort-success" />
+              <span>{Object.keys(acceptedSuggestions).length} Accepted</span>
             </span>
           </div>
           <div className="text-xs">The system learns from your choices</div>

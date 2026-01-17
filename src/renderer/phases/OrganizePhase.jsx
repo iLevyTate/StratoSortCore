@@ -292,7 +292,7 @@ function OrganizePhase() {
           >
             <h1 className="heading-primary flex items-center gap-3">
               <FileStackIcon className="w-7 h-7 text-stratosort-blue" />
-              Review & Organize
+              <span>Review & Organize</span>
             </h1>
             <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl">
               Inspect suggestions, fine-tune smart folders, and execute the batch once you&apos;re
@@ -517,10 +517,12 @@ function OrganizePhase() {
                       'Organizing...'
                     ) : (
                       <>
-                        <SparklesIcon className="w-4 h-4 mr-1.5 inline" />
-                        {selectedFiles.size > 0
-                          ? `Organize ${selectedFiles.size} Selected`
-                          : 'Organize All Files'}
+                        <SparklesIcon className="w-4 h-4" />
+                        <span>
+                          {selectedFiles.size > 0
+                            ? `Organize ${selectedFiles.size} Selected`
+                            : 'Organize All Files'}
+                        </span>
                       </>
                     )}
                   </Button>

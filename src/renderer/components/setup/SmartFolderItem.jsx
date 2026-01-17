@@ -58,6 +58,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
         }}
         aria-expanded={false}
         aria-label={`${folder.name} - click to expand`}
+        data-testid="folder-item"
       >
         {/* Folder icon with status */}
         <div className="h-10 w-10 rounded-xl bg-stratosort-blue/10 text-stratosort-blue flex items-center justify-center shrink-0">
@@ -296,6 +297,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
     <div
       className={`bg-white/70 rounded-xl border border-border-soft/60 shadow-sm hover:shadow-md transition-all h-full flex flex-col ${cardAnimationClass}`}
       style={{ padding: 'var(--spacing-default)', animationDelay: cardAnimationDelay }}
+      data-testid="folder-item"
     >
       <div className="flex flex-col flex-1" style={{ gap: 'var(--spacing-cozy)' }}>
         {/* Header with collapse button (if in compact mode) */}

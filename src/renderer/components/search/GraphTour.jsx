@@ -169,7 +169,7 @@ const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
                 className="rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue"
               />
               <EyeOff className="w-3.5 h-3.5" />
-              Don&apos;t show this again
+              <span>Don&apos;t show this again</span>
             </label>
           </div>
 
@@ -189,8 +189,8 @@ const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
                   onClick={handlePrev}
                   className="text-system-gray-600"
                 >
-                  <ChevronLeft className="w-4 h-4 mr-1" />
-                  Back
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Back</span>
                 </Button>
               )}
               <Button
@@ -203,8 +203,8 @@ const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
                   'Get Started'
                 ) : (
                   <>
-                    Next
-                    <ChevronRight className="w-4 h-4 ml-1" />
+                    <span>Next</span>
+                    <ChevronRight className="w-4 h-4" />
                   </>
                 )}
               </Button>

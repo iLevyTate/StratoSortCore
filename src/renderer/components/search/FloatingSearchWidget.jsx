@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { Search as SearchIcon, X, GripVertical } from 'lucide-react';
+import { X, GripVertical, Network } from 'lucide-react';
 import { Button } from '../ui';
 import { isMac } from '../../utils/platform';
 
@@ -136,12 +136,13 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
               </button>
             </div>
             <p className="text-xs text-system-gray-600 mb-3">
-              Use Semantic Search to find files by meaning — describe what you are looking for in
-              natural language.
+              Use Knowledge OS to explore the semantic graph and RAG results — describe what you are
+              looking for in natural language.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" size="sm" onClick={onOpenSearch} className="text-xs">
-                <SearchIcon className="w-3.5 h-3.5" /> Try Semantic Search
+                <Network className="w-3.5 h-3.5" />
+                <span>Open Knowledge OS</span>
               </Button>
             </div>
             <div className="mt-2 text-[10px] text-system-gray-400">

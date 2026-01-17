@@ -7,10 +7,12 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
   suggestions,
   onAccept,
   onReject,
-  onStrategyChange
+  onStrategyChange,
+  onMemorySaved
 }) {
   const [selectedStrategy, setSelectedStrategy] = useState(null);
   const [expandedAlternatives, setExpandedAlternatives] = useState(false);
+  const [feedbackNote, setFeedbackNote] = useState('');
 
   // FIX: Move useCallback before early return to follow React hooks rules
   const handleStrategySelect = useCallback(
@@ -73,6 +75,37 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
     return 'Possible Match';
   };
 
+  const buildFeedbackPayload = () => {
+    const trimmed = feedbackNote.trim();
+    return trimmed ? { feedbackNote: trimmed } : undefined;
+  };
+
+  const handleAccept = (target) => {
+    const payload = buildFeedbackPayload();
+    if (onAccept) {
+      onAccept(file, target, payload);
+    }
+    if (payload) {
+      setFeedbackNote('');
+      if (onMemorySaved) {
+        onMemorySaved();
+      }
+    }
+  };
+
+  const handleReject = (target) => {
+    const payload = buildFeedbackPayload();
+    if (onReject) {
+      onReject(file, target, payload);
+    }
+    if (payload) {
+      setFeedbackNote('');
+      if (onMemorySaved) {
+        onMemorySaved();
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Primary Suggestion */}
@@ -107,22 +140,22 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                   Strategy: {primary.strategyName || primary.strategy}
                 </div>
               )}
+
+              {primary.memoryAdjustment && (
+                <div className="mt-2 text-xs text-system-gray-500">Memory boost applied</div>
+              )}
             </div>
 
             <div className="flex gap-2">
               <Button
                 size="sm"
                 variant="primary"
-                onClick={() => onAccept && onAccept(file, primary)}
+                onClick={() => handleAccept(primary)}
                 className="bg-stratosort-blue hover:bg-stratosort-blue/90"
               >
                 Accept
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onReject && onReject(file, primary)}
-              >
+              <Button size="sm" variant="secondary" onClick={() => handleReject(primary)}>
                 Reject
               </Button>
             </div>
@@ -157,6 +190,23 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
               </div>
             </div>
           </div>
+        </div>
+      </Card>
+
+      {/* Feedback Note */}
+      <Card className="p-4 bg-system-gray-50 border-system-gray-200">
+        <div className="text-sm font-medium text-system-gray-700 mb-2">
+          Feedback note (optional)
+        </div>
+        <textarea
+          value={feedbackNote}
+          onChange={(event) => setFeedbackNote(event.target.value)}
+          placeholder='e.g., "3D files go to 3D Prints"'
+          className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+          rows={2}
+        />
+        <div className="mt-2 text-xs text-system-gray-500">
+          Notes are saved as memory to improve future suggestions.
         </div>
       </Card>
 
@@ -206,11 +256,14 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                           Source: {alt.method.replace('_', ' ')}
                         </span>
                       )}
+                      {alt.memoryAdjustment && (
+                        <div className="text-xs text-system-gray-500">Memory boost applied</div>
+                      )}
                     </div>
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => onAccept(file, alt)}
+                      onClick={() => handleAccept(alt)}
                       className="text-stratosort-blue hover:bg-stratosort-blue/10"
                     >
                       Use This
@@ -291,7 +344,8 @@ OrganizationSuggestions.propTypes = {
   }).isRequired,
   onAccept: PropTypes.func,
   onReject: PropTypes.func,
-  onStrategyChange: PropTypes.func
+  onStrategyChange: PropTypes.func,
+  onMemorySaved: PropTypes.func
 };
 
 export default OrganizationSuggestions;

@@ -28,6 +28,7 @@ import BackgroundModeSection from './settings/BackgroundModeSection';
 import NotificationSettingsSection from './settings/NotificationSettingsSection';
 import OllamaConfigSection from './settings/OllamaConfigSection';
 import ModelSelectionSection from './settings/ModelSelectionSection';
+import ChatPersonaSection from './settings/ChatPersonaSection';
 import ModelManagementSection from './settings/ModelManagementSection';
 import EmbeddingRebuildSection from './settings/EmbeddingRebuildSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
@@ -44,6 +45,7 @@ const SECTION_KEYS = [
   'settings-performance',
   'settings-defaults',
   'settings-app',
+  'settings-history',
   'settings-api'
 ];
 
@@ -93,6 +95,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
   const [newModel, setNewModel] = useState('');
   const [isAddingModel, setIsAddingModel] = useState(false);
   const [pullProgress, setPullProgress] = useState(null);
@@ -264,6 +267,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     if (!isApiAvailable) return undefined;
 
     let mounted = true;
+    setIsHydrating(true);
 
     const loadSettingsIfMounted = async () => {
       if (mounted) {
@@ -280,8 +284,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     // FIX P1-7: Make loading sequential to prevent race condition
     // Both functions modify settings state, so they must run in sequence
     (async () => {
-      await loadSettingsIfMounted();
-      await loadOllamaModelsIfMounted();
+      try {
+        await loadSettingsIfMounted();
+        await loadOllamaModelsIfMounted();
+      } finally {
+        if (mounted) {
+          setIsHydrating(false);
+        }
+      }
     })();
 
     return () => {
@@ -340,15 +350,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       // Always use the latest settings via ref to avoid stale closures (e.g., save right after slider drag)
       const latest = {
         ...DEFAULT_SETTINGS,
-        ...(settingsRef.current || settings || {}),
-        confidenceThreshold: DEFAULT_SETTINGS.confidenceThreshold // Force 75% for now
+        ...(settingsRef.current || settings || {})
       };
       // Let sanitizeSettings handle normalization (including string->number conversion for confidenceThreshold)
       const sanitized = sanitizeSettings(latest);
       // Force confidenceThreshold to fixed 75% (0.75)
       const normalizedSettings = {
-        ...sanitized,
-        confidenceThreshold: DEFAULT_SETTINGS.confidenceThreshold
+        ...sanitized
       };
       // Avoid auto-save loops caused by setSettings during explicit save
       skipAutoSaveRef.current = true;
@@ -390,8 +398,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     try {
       // Let sanitizeSettings handle normalization (including string->number conversion for confidenceThreshold)
       const normalizedSettings = sanitizeSettings({
-        ...currentSettings,
-        confidenceThreshold: DEFAULT_SETTINGS.confidenceThreshold // Force 75% during auto-save
+        ...currentSettings
       });
       await window.electronAPI.settings.save(normalizedSettings);
       // Note: We intentionally don't apply res.settings here to avoid race conditions.
@@ -542,7 +549,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       role="presentation"
     >
       <div className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
-        <div className="settings-modal-header px-5 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-[var(--radius-panel)]">
+        <div className="settings-modal-header px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-[var(--radius-panel)]">
           <div className="flex items-start sm:items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -582,7 +589,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="px-5 py-4 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
+        <div className="px-[var(--panel-padding)] py-[var(--panel-padding)] flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
           <Collapsible
             title={
               <div className="flex items-center gap-2">
@@ -613,6 +620,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 visionModelOptions={visionModelOptions}
                 embeddingModelOptions={embeddingModelOptions}
               />
+              <ChatPersonaSection settings={settings} setSettings={applySettingsUpdate} />
               <ModelManagementSection
                 newModel={newModel}
                 setNewModel={setNewModel}
@@ -714,7 +722,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="px-5 py-3 border-t border-border-soft/70 bg-white flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[var(--radius-panel)]">
+        <div className="px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] border-t border-border-soft/70 bg-white flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[var(--radius-panel)]">
           <Button
             onClick={handleToggleSettings}
             variant="secondary"
@@ -743,6 +751,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           />
         </Suspense>
       )}
+      {isHydrating && <ModalLoadingOverlay message="Loading settings..." />}
     </div>
   );
 });

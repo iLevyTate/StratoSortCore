@@ -41,8 +41,8 @@ export default function ChromaDBStatusManager() {
       dispatch(updateHealth({ chromadb: 'offline' }));
       previousStatusRef.current = 'offline';
       // FIX: Show notification when initial status fetch fails
-      // This helps users understand why semantic search may be unavailable
-      showWarning('Could not connect to semantic search service');
+      // This helps users understand why Knowledge OS may be unavailable
+      showWarning('Could not connect to Knowledge OS service');
     }
   }, [dispatch, showWarning]);
 
@@ -78,11 +78,11 @@ export default function ChromaDBStatusManager() {
             const prevStatus = previousStatusRef.current;
             if (prevStatus !== null && prevStatus !== chromaStatus && hasShownInitialRef.current) {
               if (chromaStatus === 'online') {
-                showSuccess('Semantic search is now available');
+                showSuccess('Knowledge OS is now available');
               } else if (chromaStatus === 'offline') {
-                showWarning('Semantic search is temporarily unavailable');
+                showWarning('Knowledge OS is temporarily unavailable');
               } else if (chromaStatus === 'initializing') {
-                showInfo('Initializing semantic search...');
+                showInfo('Initializing Knowledge OS...');
               }
             }
 

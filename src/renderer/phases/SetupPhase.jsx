@@ -486,7 +486,10 @@ function SetupPhase() {
               }`}
             >
               {smartFolders.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div
+                  className="flex flex-col items-center justify-center py-12 text-center"
+                  data-testid="smart-folders-empty-state"
+                >
                   <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
                     <svg
                       className="w-8 h-8 text-system-gray-400"
@@ -545,7 +548,10 @@ function SetupPhase() {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div
+                  className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"
+                  data-testid="folder-list"
+                >
                   {smartFolders.map((folder, index) => (
                     <SmartFolderItem
                       key={folder.id}
@@ -580,7 +586,7 @@ function SetupPhase() {
             variant="secondary"
             className="w-full sm:w-auto text-sm"
           >
-            <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -588,7 +594,7 @@ function SetupPhase() {
                 d="M15 19l-7-7 7-7"
               />
             </svg>
-            Back
+            <span>Back</span>
           </Button>
           <Button
             onClick={async () => {
@@ -614,18 +620,13 @@ function SetupPhase() {
           >
             {isLoading ? (
               <>
-                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Loading...
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Loading...</span>
               </>
             ) : (
               <>
-                Continue to Discovery
-                <svg
-                  className="w-4 h-4 ml-1.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
+                <span>Continue to Discovery</span>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"

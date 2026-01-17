@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { AlertTriangle, Search as SearchIcon, X, Sparkles, RefreshCw } from 'lucide-react';
+import { AlertTriangle, X, Sparkles, RefreshCw, Network } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { TIMEOUTS } from '../../shared/performanceConstants';
 import { logger } from '../../shared/logger';
@@ -222,7 +222,7 @@ function DiscoverPhase() {
       const res = await window.electronAPI?.embeddings?.rebuildFiles?.();
       if (res?.success) {
         addNotification(
-          `Indexed ${res.files || 0} files for semantic search`,
+          `Indexed ${res.files || 0} files for Knowledge OS`,
           'success',
           4000,
           'embedding-rebuild'
@@ -432,9 +432,10 @@ function DiscoverPhase() {
               size="sm"
               onClick={() => openSearchModal('search')}
               className="text-sm gap-compact"
-              title="Search your library by meaning, not just filename"
+              title="Open Knowledge OS (semantic graph + RAG)"
             >
-              <SearchIcon className="w-4 h-4" /> Semantic Search
+              <Network className="w-4 h-4" />
+              <span>Knowledge OS</span>
             </Button>
           </div>
         </div>
@@ -445,7 +446,8 @@ function DiscoverPhase() {
             <div className="flex items-center justify-between flex-wrap gap-cozy">
               <div className="flex items-center gap-cozy">
                 <h3 className="heading-tertiary m-0 flex items-center gap-compact">
-                  <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" /> Select Content
+                  <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" />
+                  <span>Select Content</span>
                 </h3>
                 {/* FIX H-3: Use unorganizedSelectedCount to exclude already-organized files */}
                 {unorganizedSelectedCount > 0 && (
@@ -461,7 +463,8 @@ function DiscoverPhase() {
                 onClick={() => setShowNamingSettings(true)}
                 className="text-sm gap-compact"
               >
-                <SettingsIcon className="w-4 h-4" /> Naming Strategy
+                <SettingsIcon className="w-4 h-4" />
+                <span>Naming Strategy</span>
               </Button>
             </div>
 
@@ -610,13 +613,14 @@ function DiscoverPhase() {
               </div>
               <div className="flex-1">
                 <h4 className="heading-tertiary text-stratosort-blue mb-compact">
-                  Enable Semantic Search
+                  Enable Knowledge OS
                 </h4>
                 <p className="text-xs text-system-gray-700 mb-cozy">
-                  Semantic search uses a separate index (file embeddings). Your analysis history is
-                  present, but the search index is currently empty — this can happen after an
-                  update/reset. Building embeddings does <strong>not</strong> re-analyze files; it
-                  indexes your existing analysis so you can search by meaning.
+                  Knowledge OS uses a semantic index (file embeddings) to power the search graph and
+                  RAG responses. Your analysis history is present, but the index is currently empty
+                  — this can happen after an update/reset. Building embeddings does{' '}
+                  <strong>not</strong> re-analyze files; it indexes existing analysis so you can
+                  search by meaning.
                 </p>
                 <div className="flex flex-wrap gap-compact">
                   <Button
@@ -627,11 +631,13 @@ function DiscoverPhase() {
                   >
                     {isRebuildingEmbeddings ? (
                       <>
-                        <RefreshCw className="w-4 h-4 animate-spin" /> Building...
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Building...</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-4 h-4" /> Build Embeddings
+                        <Sparkles className="w-4 h-4" />
+                        <span>Build Embeddings</span>
                       </>
                     )}
                   </Button>
@@ -651,7 +657,8 @@ function DiscoverPhase() {
                     variant="secondary"
                     size="sm"
                   >
-                    <SearchIcon className="w-4 h-4" /> Open Search
+                    <Network className="w-4 h-4" />
+                    <span>Open Knowledge OS</span>
                   </Button>
                 </div>
               </div>

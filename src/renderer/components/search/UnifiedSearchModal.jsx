@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 
 import Modal, { ConfirmModal } from '../Modal';
+import { ModalLoadingOverlay } from '../LoadingSkeleton';
 import { Button, Input } from '../ui';
 import HighlightedText from '../ui/HighlightedText';
 import { getFileCategory } from '../ui/FileIcon';
@@ -47,8 +48,11 @@ import {
 } from '../../utils/elkLayout';
 import ClusterNode from './ClusterNode';
 import FileNode from './nodes/FileNode';
+import FolderNode from './nodes/FolderNode';
 import QueryNode from './nodes/QueryNode';
 import { useGraphState, useGraphKeyboardNav, useFileActions } from '../../hooks';
+import { useAppDispatch } from '../../store/hooks';
+import { toggleSettings } from '../../store/slices/uiSlice';
 import SimilarityEdge from './SimilarityEdge';
 import QueryMatchEdge from './QueryMatchEdge';
 import SmartStepEdge from './SmartStepEdge';
@@ -57,18 +61,20 @@ import ClusterLegend from './ClusterLegend';
 import EmptySearchState from './EmptySearchState';
 import GraphTour from './GraphTour';
 import GraphErrorBoundary from './GraphErrorBoundary';
+import ChatPanel from './ChatPanel';
 
 logger.setContext('UnifiedSearchModal');
 
 // Maximum nodes allowed in graph to prevent memory exhaustion
 const MAX_GRAPH_NODES = 300;
-const GRAPH_LAYOUT_SPACING = 140;
-const GRAPH_LAYER_SPACING = 220;
+const GRAPH_LAYOUT_SPACING = 180;
+const GRAPH_LAYER_SPACING = 280;
 
 // Define nodeTypes and edgeTypes OUTSIDE the component to prevent React Flow warnings
 // See: https://reactflow.dev/error#002
 const NODE_TYPES = {
   fileNode: FileNode,
+  folderNode: FolderNode,
   queryNode: QueryNode,
   clusterNode: ClusterNode
 };
@@ -97,12 +103,12 @@ const getErrorMessage = (error, context = 'Operation') => {
 
   // ChromaDB not available
   if (msg.includes('ChromaDB') || msg.includes('not available yet')) {
-    return `${context} failed: Semantic search is initializing. Please wait a moment and try again.`;
+    return `${context} failed: Knowledge OS is initializing. Please wait a moment and try again.`;
   }
 
   // FIX C-1: Embedding dimension mismatch (model changed)
   if (msg.includes('Embedding model changed') || msg.includes('dimension mismatch')) {
-    return 'Embedding model changed. Please rebuild your index in Settings > Semantic Index to use the new model.';
+    return 'Embedding model changed. Please rebuild your index in Settings > Embeddings maintenance to use the new model.';
   }
 
   // Generic fallback with original message
@@ -163,6 +169,70 @@ const validateSearchResponse = (response, context = 'Search') => {
   return { valid: true, results: validResults };
 };
 
+const normalizeList = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const getFileExtension = (nameOrPath) => {
+  if (!nameOrPath || typeof nameOrPath !== 'string') return '';
+  const parts = nameOrPath.split('.');
+  if (parts.length < 2) return '';
+  return parts.pop().toLowerCase();
+};
+
+const buildRecommendationGraph = (fileNodes = []) => {
+  const folderNodesMap = new Map();
+  const edges = [];
+
+  fileNodes.forEach((node) => {
+    const folder = typeof node?.data?.suggestedFolder === 'string' ? node.data.suggestedFolder : '';
+    const trimmed = folder.trim();
+    if (!trimmed) return;
+
+    const folderId = `folder:${trimmed}`;
+    if (!folderNodesMap.has(folderId)) {
+      const basePosition = node.position || { x: 0, y: 0 };
+      folderNodesMap.set(folderId, {
+        id: folderId,
+        type: 'folderNode',
+        position: { x: basePosition.x + 260, y: basePosition.y },
+        data: { kind: 'folder', label: trimmed, memberCount: 0 },
+        draggable: true
+      });
+    }
+
+    const folderNode = folderNodesMap.get(folderId);
+    folderNode.data.memberCount = (folderNode.data.memberCount || 0) + 1;
+
+    edges.push({
+      id: `e:organize:${node.id}->${folderId}`,
+      source: node.id,
+      target: folderId,
+      type: 'smartStep',
+      label: 'Organize',
+      style: {
+        stroke: '#f59e0b',
+        strokeWidth: 1.5
+      },
+      data: {
+        kind: 'organize'
+      }
+    });
+  });
+
+  return {
+    folderNodes: Array.from(folderNodesMap.values()),
+    edges
+  };
+};
+
 // ============================================================================
 // Sub-Components
 // ============================================================================
@@ -199,6 +269,9 @@ function ResultRow({
           .map((k) => k.trim())
           .filter(Boolean)
       : [];
+
+  const entities = normalizeList(result?.metadata?.keyEntities).slice(0, 3);
+  const dates = normalizeList(result?.metadata?.dates).slice(0, 2);
 
   // Calculate animation delay - stagger up to 300ms max
   const animationDelay = `${Math.min(index * 30, 300)}ms`;
@@ -275,6 +348,12 @@ function ResultRow({
             ))}
           </div>
         )}
+        {(entities.length > 0 || dates.length > 0) && (
+          <div className="mt-2 text-xs text-system-gray-500 space-y-1">
+            {entities.length > 0 && <div>Entities: {entities.join(', ')}</div>}
+            {dates.length > 0 && <div>Dates: {dates.join(', ')}</div>}
+          </div>
+        )}
       </div>
 
       {/* Quick actions - only on selected */}
@@ -342,6 +421,11 @@ function StatsDisplay({ stats, isLoadingStats, onRefresh }) {
           <span className="font-medium text-system-gray-700">{stats.files}</span>
           <span>file{stats.files !== 1 ? 's' : ''} indexed</span>
         </span>
+      ) : isLoadingStats ? (
+        <span className="flex items-center gap-2 text-xs text-system-gray-400">
+          <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-system-gray-300" />
+          Loading index...
+        </span>
       ) : (
         <span className="text-xs text-system-gray-400">No embeddings</span>
       )}
@@ -380,7 +464,7 @@ function EmptyEmbeddingsBanner({
         <div className="flex-1">
           <div className="font-semibold text-system-gray-900">No embeddings yet</div>
           <div className="text-xs text-system-gray-600 mt-1 mb-3">
-            Semantic search requires file embeddings. If you already analyzed files in the past but
+            Knowledge OS requires file embeddings. If you already analyzed files in the past but
             this number is still zero, your search index was likely reset and needs a one-time
             rebuild from analysis history.
           </div>
@@ -418,7 +502,7 @@ EmptyEmbeddingsBanner.displayName = 'EmptyEmbeddingsBanner';
 
 /**
  * Banner shown when search falls back to keyword-only mode
- * Helps users understand why semantic search isn't working
+ * Helps users understand why Knowledge OS isn't working
  */
 function SearchModeBanner({ meta }) {
   if (!meta?.fallback) return null;
@@ -429,7 +513,7 @@ function SearchModeBanner({ meta }) {
       <span className="text-system-gray-600">
         <strong>Limited search:</strong> Using keyword search only
         {meta.fallbackReason ? ` (${meta.fallbackReason})` : ' (embedding model unavailable)'}.
-        Semantic matching is disabled.
+        Knowledge OS semantic matching is disabled.
       </span>
     </div>
   );
@@ -488,7 +572,11 @@ export default function UnifiedSearchModal({
   // Tab state
   // Graph is currently feature-flagged off. If callers pass initialTab="graph",
   // ensure we still render the Search tab content instead of a blank body.
-  const effectiveInitialTab = GRAPH_FEATURE_FLAGS.SHOW_GRAPH ? initialTab : 'search';
+  const effectiveInitialTab = GRAPH_FEATURE_FLAGS.SHOW_GRAPH
+    ? initialTab
+    : initialTab === 'graph'
+      ? 'search'
+      : initialTab;
   const [activeTab, setActiveTab] = useState(effectiveInitialTab);
 
   // Shared state
@@ -496,6 +584,7 @@ export default function UnifiedSearchModal({
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [stats, setStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [hasLoadedStats, setHasLoadedStats] = useState(false);
   const [isRebuildingFolders, setIsRebuildingFolders] = useState(false);
   const [isRebuildingFiles, setIsRebuildingFiles] = useState(false);
   const [error, setError] = useState('');
@@ -512,6 +601,39 @@ export default function UnifiedSearchModal({
   const [searchRefreshTrigger, setSearchRefreshTrigger] = useState(0);
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
   const [viewMode, setViewMode] = useState('all'); // 'all' or 'grouped'
+
+  // Chat tab state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [isChatting, setIsChatting] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const [useSearchContext, setUseSearchContext] = useState(true);
+  const [responseMode, setResponseMode] = useState('fast');
+  const chatSessionRef = useRef(null);
+  const [recommendationMap, setRecommendationMap] = useState({});
+  const [_isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    const loadResponseMode = async () => {
+      try {
+        const settings = await window.electronAPI?.settings?.get?.();
+        if (!isMounted) return;
+        const savedMode = settings?.chatResponseMode;
+        if (savedMode === 'fast' || savedMode === 'deep') {
+          setResponseMode(savedMode);
+        }
+      } catch (error) {
+        logger.debug('[UnifiedSearchModal] Failed to load chat response mode', {
+          error: error?.message || String(error)
+        });
+      }
+    };
+    loadResponseMode();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
 
   // Graph tab state
   const { nodes, edges, selectedNodeId, actions: graphActions } = useGraphState();
@@ -539,9 +661,15 @@ export default function UnifiedSearchModal({
   // Help tour state (for re-showing the tour via help button)
   const [showTourManually, setShowTourManually] = useState(false);
 
+  const dispatch = useAppDispatch();
+  const handleOpenSettings = useCallback(() => {
+    dispatch(toggleSettings());
+    onClose?.();
+  }, [dispatch, onClose]);
+
   // Graph filtering state
   const [activeFilters, setActiveFilters] = useState({
-    types: ['cluster', 'file', 'query'],
+    types: ['cluster', 'file', 'query', 'folder'],
     confidence: ['high', 'medium', 'low']
   });
 
@@ -583,6 +711,7 @@ export default function UnifiedSearchModal({
   const withinReqRef = useRef(0);
   const reactFlowInstance = useRef(null);
   const resultListRef = useRef(null);
+  const wasOpenRef = useRef(false);
 
   // Refs for tracking auto-load state
   const hasAutoLoadedClusters = useRef(false);
@@ -611,6 +740,275 @@ export default function UnifiedSearchModal({
   const { openFile, revealFile, copyPath } = useFileActions(setError);
 
   // ============================================================================
+  // Chat Handlers
+  // ============================================================================
+
+  const buildSuggestionFiles = useCallback((results) => {
+    if (!Array.isArray(results)) return [];
+    return results
+      .map((result) => {
+        const metadata = result?.metadata || {};
+        const path = metadata.path || result?.id || '';
+        const name = metadata.name || safeBasename(path) || '';
+        if (!path) return null;
+
+        return {
+          path,
+          name,
+          extension: getFileExtension(name || path),
+          analysis: {
+            subject: metadata.subject,
+            summary: metadata.summary,
+            tags: metadata.tags || [],
+            category: metadata.category,
+            confidence: metadata.confidence
+          }
+        };
+      })
+      .filter(Boolean);
+  }, []);
+
+  const hydrateRecommendationMap = useCallback(async () => {
+    const files = buildSuggestionFiles(searchResults);
+    if (!files.length || !window.electronAPI?.suggestions?.getBatchSuggestions) {
+      setRecommendationMap({});
+      return;
+    }
+
+    setIsLoadingRecommendations(true);
+    try {
+      const response = await window.electronAPI.suggestions.getBatchSuggestions(files);
+      if (!response?.success || !Array.isArray(response.groups)) {
+        setRecommendationMap({});
+        return;
+      }
+
+      const nextMap = {};
+      response.groups.forEach((group) => {
+        const groupFolder = group?.folder;
+        const groupFiles = Array.isArray(group?.files) ? group.files : [];
+        groupFiles.forEach((file) => {
+          const filePath = file?.path;
+          if (!filePath) return;
+          nextMap[filePath] = file?.suggestion?.folder || groupFolder || '';
+        });
+      });
+
+      setRecommendationMap(nextMap);
+    } catch (recErr) {
+      logger.debug('[Search] Recommendation lookup failed:', recErr?.message || recErr);
+      setRecommendationMap({});
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  }, [buildSuggestionFiles, searchResults]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    hydrateRecommendationMap();
+  }, [hydrateRecommendationMap, isOpen]);
+
+  const ensureChatSession = useCallback(() => {
+    if (!chatSessionRef.current) {
+      chatSessionRef.current = crypto.randomUUID();
+    }
+    return chatSessionRef.current;
+  }, []);
+
+  const handleChatSend = useCallback(
+    async (text) => {
+      const trimmed = typeof text === 'string' ? text.trim() : '';
+      if (!trimmed) return;
+
+      setChatError('');
+      setIsChatting(true);
+      setChatMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
+
+      try {
+        const sessionId = ensureChatSession();
+        const contextFileIds = useSearchContext
+          ? Array.from(
+              new Set(
+                (searchResults || [])
+                  .map((result) => result?.id)
+                  .filter((id) => typeof id === 'string' && id.length > 0)
+              )
+            )
+              .sort((aId, bId) => {
+                const aPath = searchResults.find((r) => r?.id === aId)?.metadata?.path || '';
+                const bPath = searchResults.find((r) => r?.id === bId)?.metadata?.path || '';
+                const aRec = recommendationMap[aPath] ? 1 : 0;
+                const bRec = recommendationMap[bPath] ? 1 : 0;
+                return bRec - aRec;
+              })
+              .slice(0, 200)
+          : [];
+
+        logger.info('[KnowledgeOS] Chat query', {
+          sessionId,
+          queryLength: trimmed.length,
+          useSearchContext,
+          contextFileCount: contextFileIds.length,
+          topK: Math.min(8, defaultTopK)
+        });
+
+        const response = await window.electronAPI?.chat?.query?.({
+          sessionId,
+          query: trimmed,
+          topK: Math.min(8, defaultTopK),
+          mode: 'hybrid',
+          contextFileIds,
+          responseMode
+        });
+
+        if (!response || response.success !== true) {
+          throw new Error(response?.error || 'Chat request failed');
+        }
+
+        const assistantMessage = {
+          role: 'assistant',
+          documentAnswer: response.response?.documentAnswer || [],
+          modelAnswer: response.response?.modelAnswer || [],
+          followUps: response.response?.followUps || [],
+          sources: response.sources || []
+        };
+
+        setChatMessages((prev) => [...prev, assistantMessage]);
+      } catch (chatErr) {
+        logger.warn('[KnowledgeOS] Chat query failed', { error: chatErr?.message || chatErr });
+        setChatError(chatErr?.message || 'Chat request failed');
+      } finally {
+        setIsChatting(false);
+      }
+    },
+    [
+      defaultTopK,
+      ensureChatSession,
+      recommendationMap,
+      responseMode,
+      searchResults,
+      useSearchContext
+    ]
+  );
+
+  const handleResponseModeChange = useCallback((nextMode) => {
+    if (nextMode !== 'fast' && nextMode !== 'deep') return;
+    setResponseMode(nextMode);
+    window.electronAPI?.settings?.save?.({ chatResponseMode: nextMode }).catch((err) => {
+      logger.debug('[UnifiedSearchModal] Failed to save chat response mode', {
+        error: err?.message || String(err)
+      });
+    });
+  }, []);
+
+  const handleChatReset = useCallback(async () => {
+    setChatMessages([]);
+    setChatError('');
+    setIsChatting(false);
+    const sessionId = ensureChatSession();
+    logger.info('[KnowledgeOS] Chat session reset', { sessionId });
+    await window.electronAPI?.chat?.resetSession?.(sessionId);
+    chatSessionRef.current = crypto.randomUUID();
+  }, [ensureChatSession]);
+
+  const handleChatOpenSource = useCallback(
+    (source) => {
+      if (source?.path) {
+        openFile(source.path);
+      }
+    },
+    [openFile]
+  );
+
+  const handleUseSourcesInGraph = useCallback(
+    async (sources) => {
+      if (!GRAPH_FEATURE_FLAGS.SHOW_GRAPH || !Array.isArray(sources)) return;
+
+      logger.info('[KnowledgeOS] Open sources in graph', {
+        sourceCount: sources.length
+      });
+
+      const fileNodes = sources.map((source, idx) => ({
+        id: source.fileId,
+        type: 'fileNode',
+        position: defaultNodePosition(idx),
+        data: {
+          kind: 'file',
+          label: source.name || source.fileId,
+          path: source.path || '',
+          score: source.score || 0,
+          tags: normalizeList(source.tags).slice(0, 5),
+          entities: normalizeList(source.entities).slice(0, 5),
+          dates: normalizeList(source.dates).slice(0, 3),
+          suggestedFolder: recommendationMap[source.path] || '',
+          category: '',
+          subject: ''
+        },
+        draggable: true
+      }));
+
+      const { folderNodes, edges: organizeEdges } = buildRecommendationGraph(fileNodes);
+
+      graphActions.setNodes([...fileNodes, ...folderNodes]);
+      graphActions.setEdges(organizeEdges);
+      setActiveTab('graph');
+
+      const fileIds = sources.map((s) => s.fileId).filter(Boolean);
+      if (fileIds.length >= 2) {
+        const simEdgesResp = await window.electronAPI?.embeddings?.getSimilarityEdges?.(fileIds, {
+          threshold: 0.5,
+          maxEdgesPerNode: 2
+        });
+        if (simEdgesResp?.success && Array.isArray(simEdgesResp.edges)) {
+          const nodeDataMap = new Map();
+          fileNodes.forEach((n) => {
+            nodeDataMap.set(n.id, {
+              label: n.data?.label || '',
+              tags: [],
+              category: '',
+              subject: ''
+            });
+          });
+
+          const similarityEdges = simEdgesResp.edges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            type: 'similarity',
+            animated: false,
+            data: {
+              kind: 'similarity',
+              similarity: edge.similarity,
+              sourceData: nodeDataMap.get(edge.source) || {},
+              targetData: nodeDataMap.get(edge.target) || {}
+            }
+          }));
+          if (similarityEdges.length > 0) {
+            graphActions.setEdges(similarityEdges);
+            logger.info('[KnowledgeOS] Added similarity edges', {
+              edgeCount: similarityEdges.length
+            });
+          }
+        }
+      }
+
+      if (autoLayout && fileNodes.length > 1) {
+        try {
+          const layouted = await debouncedElkLayout(fileNodes, edgesRef.current || [], {
+            direction: 'RIGHT',
+            spacing: GRAPH_LAYOUT_SPACING,
+            layerSpacing: GRAPH_LAYER_SPACING
+          });
+          graphActions.setNodes(layouted);
+        } catch (layoutError) {
+          logger.warn('[Graph] Layout from chat sources failed:', layoutError);
+        }
+      }
+    },
+    [autoLayout, graphActions, recommendationMap]
+  );
+
+  // ============================================================================
   // Reset on open
   // ============================================================================
 
@@ -622,10 +1020,22 @@ export default function UnifiedSearchModal({
       reactFlowInstance.current = null; // Clear ref to prevent memory leak
       return () => {};
     }
+
+    if (!wasOpenRef.current) {
+      logger.info('[KnowledgeOS] Opened', {
+        initialTab,
+        effectiveInitialTab
+      });
+    }
+    wasOpenRef.current = true;
+
     setActiveTab(effectiveInitialTab);
     setQuery('');
     setDebouncedQuery('');
     setError('');
+    setStats(null);
+    setHasLoadedStats(false);
+    setIsLoadingStats(false);
     // Search state
     setSearchResults([]);
     setSelectedSearchId(null);
@@ -633,6 +1043,12 @@ export default function UnifiedSearchModal({
     setQueryMeta(null);
     setSearchMeta(null);
     setBulkSelectedIds(new Set());
+    // Chat state
+    setChatMessages([]);
+    setChatError('');
+    setIsChatting(false);
+    setUseSearchContext(true);
+    chatSessionRef.current = crypto.randomUUID();
     // Graph state
     graphActions.setNodes([]);
     graphActions.setEdges([]);
@@ -659,7 +1075,18 @@ export default function UnifiedSearchModal({
       cancelPendingLayout();
       graphActions.reset();
     };
-  }, [isOpen, effectiveInitialTab, graphActions]);
+  }, [isOpen, effectiveInitialTab, graphActions, initialTab]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      if (wasOpenRef.current) {
+        logger.info('[KnowledgeOS] Closed');
+        wasOpenRef.current = false;
+      }
+      return;
+    }
+    logger.info('[KnowledgeOS] Tab changed', { tab: activeTab });
+  }, [activeTab, isOpen]);
 
   // FIX P2-14: Reset focusedResultIndex when switching tabs
   // Prevents stale focus state when returning to search tab
@@ -708,7 +1135,10 @@ export default function UnifiedSearchModal({
           label: displayName,
           path: filePath,
           score: result.score || 0,
-          tags: Array.isArray(result?.metadata?.tags) ? result.metadata.tags : [],
+          tags: normalizeList(result?.metadata?.tags || result?.metadata?.keywords).slice(0, 5),
+          entities: normalizeList(result?.metadata?.keyEntities).slice(0, 5),
+          dates: normalizeList(result?.metadata?.dates).slice(0, 3),
+          suggestedFolder: recommendationMap[filePath] || '',
           category: result?.metadata?.category || '',
           subject: result?.metadata?.subject || ''
         },
@@ -732,18 +1162,22 @@ export default function UnifiedSearchModal({
       };
     });
 
+    const { folderNodes, edges: organizeEdges } = buildRecommendationGraph(fileNodes);
+
     // Update graph state
     graphActions.setNodes((prev) => {
-      if (!addMode) return [queryNode, ...fileNodes];
+      const incoming = [queryNode, ...fileNodes, ...folderNodes];
+      if (!addMode) return incoming;
       const existing = new Set(prev.map((n) => n.id));
-      const newNodes = [queryNode, ...fileNodes].filter((n) => !existing.has(n.id));
+      const newNodes = incoming.filter((n) => !existing.has(n.id));
       return [...prev, ...newNodes];
     });
 
     graphActions.setEdges((prev) => {
-      if (!addMode) return queryEdges;
+      const incomingEdges = [...queryEdges, ...organizeEdges];
+      if (!addMode) return incomingEdges;
       const existing = new Set(prev.map((e) => e.id));
-      const newEdges = queryEdges.filter((e) => !existing.has(e.id));
+      const newEdges = incomingEdges.filter((e) => !existing.has(e.id));
       return [...prev, ...newEdges];
     });
 
@@ -760,23 +1194,32 @@ export default function UnifiedSearchModal({
         const currentNodes = nodesRef.current || [];
         const currentEdges = edgesRef.current || [];
         const allNodes = addMode
-          ? [...currentNodes.filter((n) => n.id !== queryNodeId), queryNode, ...fileNodes]
-          : [queryNode, ...fileNodes];
+          ? [
+              ...currentNodes.filter((n) => n.id !== queryNodeId),
+              queryNode,
+              ...fileNodes,
+              ...folderNodes
+            ]
+          : [queryNode, ...fileNodes, ...folderNodes];
         const allEdges = addMode
-          ? [...currentEdges.filter((e) => !e.id.startsWith(`e:${queryNodeId}`)), ...queryEdges]
-          : queryEdges;
+          ? [
+              ...currentEdges.filter((e) => !e.id.startsWith(`e:${queryNodeId}`)),
+              ...queryEdges,
+              ...organizeEdges
+            ]
+          : [...queryEdges, ...organizeEdges];
 
         const layoutedNodes = await debouncedElkLayout(allNodes, allEdges, {
           direction: 'RIGHT',
-          spacing: 60,
-          layerSpacing: 100
+          spacing: GRAPH_LAYOUT_SPACING,
+          layerSpacing: GRAPH_LAYER_SPACING
         });
         graphActions.setNodes(layoutedNodes);
       } catch (layoutError) {
         logger.warn('[Graph] Layout after conversion failed:', layoutError);
       }
     }
-  }, [searchResults, debouncedQuery, addMode, autoLayout, graphActions]);
+  }, [searchResults, debouncedQuery, addMode, autoLayout, graphActions, recommendationMap]);
 
   // ============================================================================
   // Keyboard Shortcuts
@@ -1000,6 +1443,7 @@ export default function UnifiedSearchModal({
       setStats(null);
     } finally {
       setIsLoadingStats(false);
+      setHasLoadedStats(true);
     }
   }, []);
 
@@ -1769,6 +2213,12 @@ export default function UnifiedSearchModal({
       setError('');
 
       try {
+        logger.info('[KnowledgeOS] Search started', {
+          queryLength: q.length,
+          topK: defaultTopK,
+          mode: 'hybrid'
+        });
+
         // Use hybrid search with LLM re-ranking for top results
         const response = await window.electronAPI?.embeddings?.search?.(q, {
           topK: defaultTopK,
@@ -1801,9 +2251,17 @@ export default function UnifiedSearchModal({
           fallbackReason: response.meta?.fallbackReason || null,
           originalMode: response.meta?.originalMode || null
         });
+
+        logger.info('[KnowledgeOS] Search completed', {
+          resultCount: next.length,
+          mode: response.mode || 'hybrid',
+          fallback: Boolean(response.meta?.fallback),
+          fallbackReason: response.meta?.fallbackReason || null
+        });
       } catch (e) {
         if (cancelled) return;
         if (lastSearchRef.current !== requestId) return;
+        logger.warn('[KnowledgeOS] Search failed', { error: e?.message || e });
         setSearchResults([]);
         setSelectedSearchId(null);
         setError(getErrorMessage(e, 'Search'));
@@ -1902,48 +2360,55 @@ export default function UnifiedSearchModal({
     };
   }, [selectedNode]);
 
-  const upsertFileNode = useCallback((result, preferredPosition) => {
-    const id = result?.id;
-    if (!id) return null;
-    const metadata = result?.metadata || {};
-    const path = metadata.path || '';
-    const name = metadata.name || safeBasename(path) || id;
-    const score = typeof result?.score === 'number' ? result.score : undefined;
+  const upsertFileNode = useCallback(
+    (result, preferredPosition) => {
+      const id = result?.id;
+      if (!id) return null;
+      const metadata = result?.metadata || {};
+      const path = metadata.path || '';
+      const name = metadata.name || safeBasename(path) || id;
+      const score = typeof result?.score === 'number' ? result.score : undefined;
 
-    // Parse tags from JSON string (ChromaDB stores as string) or use array directly
-    let tags = [];
-    if (Array.isArray(metadata.tags)) {
-      tags = metadata.tags;
-    } else if (typeof metadata.tags === 'string' && metadata.tags) {
-      try {
-        tags = JSON.parse(metadata.tags);
-      } catch {
-        tags = [];
+      // Parse tags from JSON string (ChromaDB stores as string) or use array directly
+      let tags = [];
+      if (Array.isArray(metadata.tags)) {
+        tags = metadata.tags;
+      } else if (typeof metadata.tags === 'string' && metadata.tags) {
+        try {
+          tags = JSON.parse(metadata.tags);
+        } catch {
+          tags = [];
+        }
       }
-    }
-    const category = metadata.category || '';
-    const subject = metadata.subject || '';
-    const summary = metadata.summary || '';
-    const content = result?.document || '';
+      const category = metadata.category || '';
+      const subject = metadata.subject || '';
+      const summary = metadata.summary || '';
+      const content = result?.document || '';
+      const suggestedFolder = recommendationMap[path] || '';
 
-    return {
-      id,
-      type: 'fileNode', // Custom node type for card-like styling
-      position: preferredPosition || { x: 0, y: 0 },
-      data: {
-        kind: 'file',
-        label: name,
-        path,
-        score,
-        tags,
-        category,
-        subject,
-        summary,
-        content
-      },
-      draggable: true
-    };
-  }, []);
+      return {
+        id,
+        type: 'fileNode', // Custom node type for card-like styling
+        position: preferredPosition || { x: 0, y: 0 },
+        data: {
+          kind: 'file',
+          label: name,
+          path,
+          score,
+          tags: normalizeList(tags.length > 0 ? tags : metadata.keywords).slice(0, 5),
+          entities: normalizeList(metadata.keyEntities).slice(0, 5),
+          dates: normalizeList(metadata.dates).slice(0, 3),
+          suggestedFolder,
+          category,
+          subject,
+          summary,
+          content
+        },
+        draggable: true
+      };
+    },
+    [recommendationMap]
+  );
 
   /**
    * Apply ELK layout to current graph nodes and edges
@@ -2382,6 +2847,9 @@ export default function UnifiedSearchModal({
               path: metadata.path || id,
               // Include metadata for edge tooltips
               tags: Array.isArray(metadata.tags) ? metadata.tags : [],
+              entities: normalizeList(metadata.keyEntities).slice(0, 5),
+              dates: normalizeList(metadata.dates).slice(0, 3),
+              suggestedFolder: recommendationMap[metadata.path] || '',
               category: metadata.category || '',
               subject: metadata.subject || ''
             },
@@ -2407,6 +2875,8 @@ export default function UnifiedSearchModal({
           data: { kind: 'cluster_member' }
         }));
 
+        const { folderNodes, edges: organizeEdges } = buildRecommendationGraph(layoutedMemberNodes);
+
         // Add to existing graph
         graphActions.setNodes((prev) => {
           const existingIds = new Set(prev.map((n) => n.id));
@@ -2420,13 +2890,15 @@ export default function UnifiedSearchModal({
             return n;
           });
 
-          return [...updated, ...newNodes];
+          const withFolders = folderNodes.filter((n) => !existingIds.has(n.id));
+          return [...updated, ...newNodes, ...withFolders];
         });
 
         graphActions.setEdges((prev) => {
           const existingIds = new Set(prev.map((e) => e.id));
           const newEdges = memberEdges.filter((e) => !existingIds.has(e.id));
-          return [...prev, ...newEdges];
+          const newOrganizeEdges = organizeEdges.filter((e) => !existingIds.has(e.id));
+          return [...prev, ...newEdges, ...newOrganizeEdges];
         });
 
         setGraphStatus(
@@ -2437,7 +2909,7 @@ export default function UnifiedSearchModal({
         setGraphStatus('');
       }
     },
-    [graphActions]
+    [graphActions, recommendationMap]
   );
 
   // Assign to ref so handleClusterExpand can access it
@@ -2499,6 +2971,14 @@ export default function UnifiedSearchModal({
           }
         });
       });
+
+      const { folderNodes, edges: organizeEdges } = buildRecommendationGraph(
+        nextNodes.filter((node) => node.type === 'fileNode')
+      );
+      if (folderNodes.length > 0) {
+        nextNodes.push(...folderNodes);
+        nextEdges.push(...organizeEdges);
+      }
 
       // Compute final nodes and edges FIRST to avoid stale closure issues
       // These values are used for both state update and layout calculation
@@ -2664,6 +3144,46 @@ export default function UnifiedSearchModal({
           logger.debug('[Graph] Failed to fetch similarity edges:', simErr);
         }
       }
+
+      if (expandedFileIds.length >= 2) {
+        try {
+          const relEdgesResp = await window.electronAPI?.knowledge?.getRelationshipEdges?.(
+            expandedFileIds,
+            { minWeight: 2, maxEdges: 200 }
+          );
+
+          if (relEdgesResp?.success && Array.isArray(relEdgesResp.edges)) {
+            const relationshipEdges = relEdgesResp.edges.map((edge) => ({
+              id: edge.id,
+              source: edge.source,
+              target: edge.target,
+              type: 'smartStep',
+              label: 'Knowledge',
+              style: {
+                stroke: '#22c55e',
+                strokeDasharray: '4,4',
+                strokeWidth: 1.5
+              },
+              data: {
+                kind: 'knowledge',
+                weight: edge.weight
+              }
+            }));
+
+            if (relationshipEdges.length > 0) {
+              graphActions.setEdges((prev) => {
+                const existingIds = new Set(prev.map((e) => e.id));
+                const newEdges = relationshipEdges.filter((e) => !existingIds.has(e.id));
+                if (newEdges.length === 0) return prev;
+                return [...prev, ...newEdges];
+              });
+              setGraphStatus((prev) => `${prev} • ${relationshipEdges.length} knowledge links`);
+            }
+          }
+        } catch (relErr) {
+          logger.debug('[Graph] Failed to fetch knowledge edges:', relErr);
+        }
+      }
     } catch (e) {
       setGraphStatus('');
       setError(getErrorMessage(e, 'Graph search'));
@@ -2739,10 +3259,14 @@ export default function UnifiedSearchModal({
           });
         });
 
+        const { folderNodes, edges: organizeEdges } = buildRecommendationGraph(nextNodes);
+        const nextNodesWithFolders = [...nextNodes, ...folderNodes];
+        const nextEdgesWithFolders = [...nextEdges, ...organizeEdges];
+
         graphActions.setNodes((prev) => {
           // Check if any new nodes need to be added
           const existingIds = new Set(prev.map((n) => n.id));
-          const hasNewNodes = nextNodes.some((n) => !existingIds.has(n.id));
+          const hasNewNodes = nextNodesWithFolders.some((n) => !existingIds.has(n.id));
 
           if (!hasNewNodes) {
             // No new nodes to add, preserve reference to prevent unnecessary updates
@@ -2751,7 +3275,7 @@ export default function UnifiedSearchModal({
 
           // Merge new nodes with existing ones
           const map = new Map(prev.map((n) => [n.id, n]));
-          nextNodes.forEach((n) => {
+          nextNodesWithFolders.forEach((n) => {
             if (!map.has(n.id)) map.set(n.id, n);
           });
           return Array.from(map.values());
@@ -2759,7 +3283,7 @@ export default function UnifiedSearchModal({
         graphActions.setEdges((prev) => {
           // Check if any new edges need to be added
           const existingEdgeIds = new Set(prev.map((e) => e.id));
-          const hasNewEdges = nextEdges.some((e) => !existingEdgeIds.has(e.id));
+          const hasNewEdges = nextEdgesWithFolders.some((e) => !existingEdgeIds.has(e.id));
 
           if (!hasNewEdges) {
             // No new edges to add, preserve reference to prevent unnecessary updates
@@ -2768,7 +3292,7 @@ export default function UnifiedSearchModal({
 
           // Merge new edges with existing ones
           const map = new Map(prev.map((e) => [e.id, e]));
-          nextEdges.forEach((e) => map.set(e.id, e));
+          nextEdgesWithFolders.forEach((e) => map.set(e.id, e));
           return Array.from(map.values());
         });
 
@@ -2920,7 +3444,13 @@ export default function UnifiedSearchModal({
           // Normalize kind from node type or data
           const kind =
             n.data?.kind ||
-            (n.type === 'clusterNode' ? 'cluster' : n.type === 'queryNode' ? 'query' : 'file');
+            (n.type === 'clusterNode'
+              ? 'cluster'
+              : n.type === 'queryNode'
+                ? 'query'
+                : n.type === 'folderNode'
+                  ? 'folder'
+                  : 'file');
 
           // -- Filter Logic --
           const isTypeActive = activeFilters.types.includes(kind);
@@ -3017,7 +3547,13 @@ export default function UnifiedSearchModal({
       nodes.forEach((n) => {
         const kind =
           n.data?.kind ||
-          (n.type === 'clusterNode' ? 'cluster' : n.type === 'queryNode' ? 'query' : 'file');
+          (n.type === 'clusterNode'
+            ? 'cluster'
+            : n.type === 'queryNode'
+              ? 'query'
+              : n.type === 'folderNode'
+                ? 'folder'
+                : 'file');
         const isTypeActive = activeFilters.types.includes(kind);
         let isConfidenceActive = true;
         if (kind === 'cluster') {
@@ -3161,7 +3697,8 @@ export default function UnifiedSearchModal({
     return '#3b82f6'; // Blue for files
   }, []);
 
-  const showEmptyBanner = stats && typeof stats.files === 'number' && stats.files === 0 && !error;
+  const showEmptyBanner =
+    hasLoadedStats && stats && typeof stats.files === 'number' && stats.files === 0 && !error;
   // Use fresh metadata from ChromaDB when available (for current file paths after moves)
   const selectedPath = freshMetadata?.path || selectedNode?.data?.path || '';
   const selectedLabel = freshMetadata?.name || selectedNode?.data?.label || selectedNode?.id || '';
@@ -3175,13 +3712,16 @@ export default function UnifiedSearchModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Search Files"
+      title="KnowledgeOS"
       size="full"
       className={`search-modal transition-colors duration-300 ${
         isGraphMaximized ? 'bg-system-gray-100' : ''
       }`}
     >
       <div className="flex flex-col gap-4 min-h-[60vh]">
+        {isOpen && isLoadingStats && !hasLoadedStats && (
+          <ModalLoadingOverlay message="Loading Knowledge OS..." />
+        )}
         {/* Header - simplified when graph is hidden */}
         {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && !isGraphMaximized ? (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-system-gray-200">
@@ -3190,20 +3730,28 @@ export default function UnifiedSearchModal({
                 active={activeTab === 'search'}
                 onClick={() => setActiveTab('search')}
                 icon={List}
-                label="Search Results"
+                label="Discover"
+              />
+              <TabButton
+                active={activeTab === 'chat'}
+                onClick={() => setActiveTab('chat')}
+                icon={MessageSquare}
+                label="Understand"
               />
               <TabButton
                 active={activeTab === 'graph'}
                 onClick={() => setActiveTab('graph')}
                 icon={Network}
-                label="Explore Graph"
+                label="Relate"
               />
             </div>
             <StatsDisplay stats={stats} isLoadingStats={isLoadingStats} onRefresh={refreshStats} />
           </div>
         ) : (
           <div className="flex items-center justify-between text-xs text-system-gray-400">
-            <span>{stats?.files || 0} files indexed</span>
+            <span>
+              {hasLoadedStats ? `${stats?.files || 0} files indexed` : 'Loading index...'}
+            </span>
             <button
               onClick={refreshStats}
               disabled={isLoadingStats}
@@ -3272,7 +3820,7 @@ export default function UnifiedSearchModal({
                       title="Visualize search results as a graph"
                     >
                       <Network className="h-3.5 w-3.5" />
-                      View in Graph
+                      <span>View in Graph</span>
                     </Button>
                   )}
                   <div
@@ -3285,28 +3833,28 @@ export default function UnifiedSearchModal({
                       onClick={() => setViewMode('all')}
                       aria-label="View all results"
                       aria-pressed={viewMode === 'all'}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
                         viewMode === 'all'
                           ? 'bg-white text-system-gray-900 shadow-sm'
                           : 'text-system-gray-500 hover:text-system-gray-700'
                       }`}
                     >
-                      <List className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                      All
+                      <List className="w-3.5 h-3.5 -mt-0.5" />
+                      <span>All</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setViewMode('grouped')}
                       aria-label="Group results by type"
                       aria-pressed={viewMode === 'grouped'}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
                         viewMode === 'grouped'
                           ? 'bg-white text-system-gray-900 shadow-sm'
                           : 'text-system-gray-500 hover:text-system-gray-700'
                       }`}
                     >
-                      <LayoutGrid className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                      By Type
+                      <LayoutGrid className="w-3.5 h-3.5 -mt-0.5" />
+                      <span>By Type</span>
                     </button>
                   </div>
                 </div>
@@ -3320,7 +3868,8 @@ export default function UnifiedSearchModal({
                   {bulkSelectedIds.size} selected
                 </span>
                 <Button variant="secondary" size="sm" onClick={moveSelectedToFolder}>
-                  <FolderInput className="h-3.5 w-3.5" /> Move
+                  <FolderInput className="h-3.5 w-3.5" />
+                  <span>Move</span>
                 </Button>
                 <Button variant="ghost" size="sm" onClick={clearBulkSelection}>
                   Clear
@@ -3520,7 +4069,8 @@ export default function UnifiedSearchModal({
                         className="flex-1"
                         onClick={() => openFile(selectedSearchResult?.metadata?.path)}
                       >
-                        <ExternalLink className="h-4 w-4" /> Open File
+                        <ExternalLink className="h-4 w-4" />
+                        <span>Open File</span>
                       </Button>
                       <Button
                         variant="secondary"
@@ -3546,6 +4096,38 @@ export default function UnifiedSearchModal({
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Chat Tab Content */}
+        {activeTab === 'chat' && (
+          <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
+            {hasLoadedStats && (!stats || stats.files === 0) && (
+              <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 text-xs text-system-gray-700 flex items-center justify-between gap-3">
+                <span>
+                  Embeddings are not ready yet. Build your embeddings in Settings to enable document
+                  citations and sources.
+                </span>
+                <Button variant="secondary" size="sm" onClick={handleOpenSettings}>
+                  Open Settings
+                </Button>
+              </div>
+            )}
+            <ChatPanel
+              messages={chatMessages}
+              onSend={handleChatSend}
+              onReset={handleChatReset}
+              isSending={isChatting}
+              error={chatError}
+              useSearchContext={useSearchContext}
+              onToggleSearchContext={(next) => setUseSearchContext(next)}
+              onOpenSource={handleChatOpenSource}
+              onUseSourcesInGraph={handleUseSourcesInGraph}
+              isSearching={isSearching}
+              isLoadingStats={isLoadingStats}
+              responseMode={responseMode}
+              onResponseModeChange={handleResponseModeChange}
+            />
           </div>
         )}
 
@@ -3596,7 +4178,7 @@ export default function UnifiedSearchModal({
                 <div className="pt-3 border-t border-system-gray-200">
                   <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <Network className="w-3.5 h-3.5" />
-                    Explore
+                    <span>Explore</span>
                   </div>
 
                   <div className="space-y-2">
@@ -3608,12 +4190,14 @@ export default function UnifiedSearchModal({
                       className="w-full justify-center"
                       title="Group similar files into clusters"
                     >
-                      <Layers className="h-4 w-4 mr-2" />
-                      {isComputingClusters
-                        ? 'Computing...'
-                        : showClusters
-                          ? 'Refresh Clusters'
-                          : 'Auto-discover Clusters'}
+                      <Layers className="h-4 w-4" />
+                      <span>
+                        {isComputingClusters
+                          ? 'Computing...'
+                          : showClusters
+                            ? 'Refresh Clusters'
+                            : 'Auto-discover Clusters'}
+                      </span>
                     </Button>
 
                     <Button
@@ -3624,8 +4208,8 @@ export default function UnifiedSearchModal({
                       className="w-full justify-center"
                       title="Organize nodes automatically"
                     >
-                      <LayoutGrid className="h-4 w-4 mr-2" />
-                      {isLayouting ? 'Organizing...' : 'Re-organize Layout'}
+                      <LayoutGrid className="h-4 w-4" />
+                      <span>{isLayouting ? 'Organizing...' : 'Re-organize Layout'}</span>
                     </Button>
 
                     {/* Expand/Collapse All Clusters */}
@@ -3646,8 +4230,8 @@ export default function UnifiedSearchModal({
                           className="flex-1 justify-center text-xs"
                           title="Expand all clusters"
                         >
-                          <Maximize2 className="h-3.5 w-3.5 mr-1" />
-                          Expand All
+                          <Maximize2 className="h-3.5 w-3.5" />
+                          <span>Expand All</span>
                         </Button>
                         <Button
                           variant="ghost"
@@ -3664,8 +4248,8 @@ export default function UnifiedSearchModal({
                           className="flex-1 justify-center text-xs"
                           title="Collapse all clusters"
                         >
-                          <Minimize2 className="h-3.5 w-3.5 mr-1" />
-                          Collapse All
+                          <Minimize2 className="h-3.5 w-3.5" />
+                          <span>Collapse All</span>
                         </Button>
                       </div>
                     )}
@@ -3731,11 +4315,11 @@ export default function UnifiedSearchModal({
                     className="flex items-center w-full text-left text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 hover:text-system-gray-800 transition-colors"
                   >
                     {showAdvancedControls ? (
-                      <ChevronDown className="w-3.5 h-3.5 mr-1" />
+                      <ChevronDown className="w-3.5 h-3.5" />
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5 mr-1" />
+                      <ChevronRight className="w-3.5 h-3.5" />
                     )}
-                    Advanced Options
+                    <span>Advanced Options</span>
                   </button>
 
                   {showAdvancedControls && (
@@ -3796,8 +4380,8 @@ export default function UnifiedSearchModal({
                         disabled={isFindingDuplicates}
                         className="w-full justify-center text-xs"
                       >
-                        <Copy className="h-3.5 w-3.5 mr-1.5" />
-                        Find Duplicates
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Find Duplicates</span>
                       </Button>
                     </div>
                   )}
@@ -3924,10 +4508,12 @@ export default function UnifiedSearchModal({
                         disabled={isComputingClusters}
                         className="w-full justify-center bg-white border border-system-gray-200 hover:bg-system-gray-50 text-system-gray-700 shadow-sm"
                       >
-                        <Layers className="h-4 w-4 mr-2 text-stratosort-blue" />
-                        {isComputingClusters
-                          ? 'Analyzing relationships...'
-                          : 'Discover how your files connect'}
+                        <Layers className="h-4 w-4 text-stratosort-blue" />
+                        <span>
+                          {isComputingClusters
+                            ? 'Analyzing relationships...'
+                            : 'Discover how your files connect'}
+                        </span>
                       </Button>
                     </div>
                   )}
@@ -4292,7 +4878,8 @@ export default function UnifiedSearchModal({
                                 disabled={!selectedPath}
                                 className="w-full justify-center"
                               >
-                                <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Open
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                <span>Open</span>
                               </Button>
                               <Button
                                 variant="secondary"
@@ -4301,7 +4888,8 @@ export default function UnifiedSearchModal({
                                 disabled={!selectedPath}
                                 className="w-full justify-center"
                               >
-                                <FolderOpen className="h-3.5 w-3.5 mr-1.5" /> Reveal
+                                <FolderOpen className="h-3.5 w-3.5" />
+                                <span>Reveal</span>
                               </Button>
                             </div>
 
@@ -4316,7 +4904,8 @@ export default function UnifiedSearchModal({
                                 }}
                                 className="w-full justify-center"
                               >
-                                <SearchIcon className="h-3.5 w-3.5 mr-1.5" /> Find Similar
+                                <SearchIcon className="h-3.5 w-3.5" />
+                                <span>Find Similar</span>
                               </Button>
                             )}
                           </div>

@@ -8,6 +8,11 @@ import { logger } from '../../../../shared/logger';
 const FileNode = memo(({ data, selected }) => {
   const [showActions, setShowActions] = useState(false);
   const filePath = data?.path || '';
+  const tags = Array.isArray(data?.tags) ? data.tags.slice(0, 3) : [];
+  const entities = Array.isArray(data?.entities) ? data.entities.slice(0, 3) : [];
+  const dates = Array.isArray(data?.dates) ? data.dates.slice(0, 2) : [];
+  const suggestedFolder =
+    typeof data?.suggestedFolder === 'string' ? data.suggestedFolder.trim() : '';
 
   // Use shared hooks for file actions
   const { openFile, revealFile, copyPath } = useFileActions();
@@ -180,6 +185,14 @@ const FileNode = memo(({ data, selected }) => {
           >
             {data?.label}
           </div>
+          {(tags.length > 0 || entities.length > 0 || dates.length > 0 || suggestedFolder) && (
+            <div className="mt-1 text-[10px] text-[var(--color-system-gray-500)] space-y-0.5">
+              {suggestedFolder && <div>Suggested: {suggestedFolder}</div>}
+              {tags.length > 0 && <div>Tags: {tags.join(', ')}</div>}
+              {entities.length > 0 && <div>Entities: {entities.join(', ')}</div>}
+              {dates.length > 0 && <div>Dates: {dates.join(', ')}</div>}
+            </div>
+          )}
         </div>
       </div>
       <Handle

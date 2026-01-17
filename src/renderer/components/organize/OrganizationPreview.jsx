@@ -237,7 +237,8 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
         <h4 className="font-medium text-system-gray-900 mb-3">Folder Structure Visualization</h4>
         <div className="font-mono text-sm">
           <div className="text-system-gray-700 flex items-center gap-1">
-            <Folder className="w-4 h-4 inline" /> Documents
+            <Folder className="w-4 h-4 inline" />
+            <span>Documents</span>
           </div>
           {Object.entries(previewTree).map(([folderPath, folder]) => {
             const depth = folderPath.split('/').length - 1;
@@ -262,7 +263,8 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
             <h5 className="text-sm font-medium text-system-gray-700 mb-2">Current State</h5>
             <div className="bg-stratosort-danger/5 border border-stratosort-danger/20 rounded-md p-3 text-sm">
               <div className="text-stratosort-danger font-medium mb-2 flex items-center gap-1">
-                <XCircle className="w-4 h-4" /> Disorganized
+                <XCircle className="w-4 h-4" />
+                <span>Disorganized</span>
               </div>
               <ul className="space-y-1 text-stratosort-danger/80">
                 <li>• All files in one location</li>
@@ -276,7 +278,8 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
             <h5 className="text-sm font-medium text-system-gray-700 mb-2">After Organization</h5>
             <div className="bg-stratosort-success/5 border border-stratosort-success/20 rounded-md p-3 text-sm">
               <div className="text-stratosort-success font-medium mb-2 flex items-center gap-1">
-                <CheckCircle className="w-4 h-4" /> Well-Organized
+                <CheckCircle className="w-4 h-4" />
+                <span>Well-Organized</span>
               </div>
               <ul className="space-y-1 text-stratosort-success/80">
                 <li>• Files sorted into {stats.totalFolders} folders</li>

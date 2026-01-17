@@ -381,8 +381,9 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               <div>
                 <h3 className="font-medium text-gray-900">Get Started with AI Features</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  Install Ollama for AI-powered file analysis and ChromaDB for semantic search.
-                  These are optional but unlock powerful organization features.
+                  Install Ollama for AI-powered file analysis and ChromaDB for Knowledge OS
+                  (semantic search + RAG). These are optional but unlock powerful organization
+                  features.
                 </p>
               </div>
             </div>
@@ -573,7 +574,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                     </div>
                     <div>
                       <h4 className="font-semibold text-gray-900">ChromaDB</h4>
-                      <p className="text-xs text-gray-500">Vector database for semantic search</p>
+                      <p className="text-xs text-gray-500">Vector database for Knowledge OS</p>
                     </div>
                   </div>
                   <StatusBadge {...getChromaStatus()} />

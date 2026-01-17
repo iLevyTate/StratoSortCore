@@ -12,8 +12,37 @@ import { RENDERER_LIMITS } from '../../../shared/constants';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { extractExtension, extractFileName } from './namingUtils';
+import { normalizeText } from '../../../shared/normalization';
 
 logger.setContext('DiscoverPhase:FileHandlers');
+
+const ensureFileApi = (addNotification, actionLabel) => {
+  if (!window?.electronAPI?.files) {
+    logger.warn('[DiscoverPhase] File API unavailable', { actionLabel });
+    addNotification?.(
+      'File system API not ready. Please wait for the app to finish loading.',
+      'warning',
+      3000,
+      'file-api-unavailable'
+    );
+    return false;
+  }
+  return true;
+};
+
+const ensureSmartFolderApi = (addNotification, actionLabel) => {
+  if (!window?.electronAPI?.smartFolders) {
+    logger.warn('[DiscoverPhase] Smart folder API unavailable', { actionLabel });
+    addNotification?.(
+      'Smart folder API not ready. Please wait for the app to finish loading.',
+      'warning',
+      3000,
+      'smart-folder-api-unavailable'
+    );
+    return false;
+  }
+  return true;
+};
 
 /**
  * Supported file extensions for analysis
@@ -55,11 +84,11 @@ const SUPPORTED_EXTENSIONS = [
   '.kmz'
 ];
 
-const SCAN_TIMEOUT = 30000;
+const SCAN_TIMEOUT = TIMEOUTS.DIRECTORY_SCAN || 30000;
 
 const normalizePathValue = (value) => {
   if (typeof value !== 'string') return '';
-  const trimmed = value.trim().replace(/^['"](.*)['"]$/, '$1');
+  const trimmed = normalizeText(value, { maxLength: 2048 }).replace(/^['"](.*)['"]$/, '$1');
 
   if (trimmed.toLowerCase().startsWith('file://')) {
     try {
@@ -112,6 +141,9 @@ export function useFileHandlers({
    */
   const getBatchFileStats = useCallback(
     async (filePaths, batchSize = RENDERER_LIMITS.FILE_STATS_BATCH_SIZE) => {
+      if (!ensureFileApi(addNotification, 'getBatchFileStats')) {
+        return [];
+      }
       const results = [];
 
       for (let i = 0; i < filePaths.length; i += batchSize) {
@@ -177,7 +209,7 @@ export function useFileHandlers({
 
       return results;
     },
-    []
+    [addNotification]
   );
 
   /**
@@ -212,6 +244,9 @@ export function useFileHandlers({
   const expandDroppedDirectories = useCallback(
     async (directories) => {
       if (!directories.length) return [];
+      if (!ensureSmartFolderApi(addNotification, 'expandDroppedDirectories')) {
+        return [];
+      }
 
       const expanded = [];
       for (const dir of directories) {
@@ -286,6 +321,9 @@ export function useFileHandlers({
   const handleFileSelection = useCallback(async () => {
     try {
       setIsScanning(true);
+      if (!ensureFileApi(addNotification, 'handleFileSelection')) {
+        return;
+      }
       const result = await window.electronAPI.files.select();
 
       if (result?.success && result?.files?.length > 0) {
@@ -387,6 +425,9 @@ export function useFileHandlers({
   const handleFolderSelection = useCallback(async () => {
     try {
       setIsScanning(true);
+      if (!ensureFileApi(addNotification, 'handleFolderSelection')) {
+        return;
+      }
       const result = await window.electronAPI.files.selectDirectory();
 
       // FIX: Handler returns 'path' not 'folder'
@@ -394,7 +435,9 @@ export function useFileHandlers({
         let scanTimeoutId;
 
         const scanResult = await Promise.race([
-          window.electronAPI.smartFolders.scanStructure(result.path),
+          ensureSmartFolderApi(addNotification, 'scanStructure')
+            ? window.electronAPI.smartFolders.scanStructure(result.path)
+            : Promise.resolve({ files: [] }),
           new Promise((_, reject) => {
             scanTimeoutId = setTimeout(
               () =>

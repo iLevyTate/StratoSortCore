@@ -238,7 +238,8 @@ function CompletePhase() {
                 className="heading-tertiary m-0 flex items-center"
                 style={{ gap: 'var(--spacing-compact)' }}
               >
-                <ClipboardListIcon className="w-5 h-5 text-stratosort-blue" /> What changed
+                <ClipboardListIcon className="w-5 h-5 text-stratosort-blue" />
+                <span>What changed</span>
               </h3>
               <span className="status-chip success">
                 {totalFiles} file{totalFiles !== 1 ? 's' : ''}
@@ -295,7 +296,8 @@ function CompletePhase() {
                   className="heading-tertiary m-0 flex items-center"
                   style={{ gap: 'var(--spacing-compact)' }}
                 >
-                  <TargetIcon className="w-5 h-5 text-stratosort-blue" /> Next Steps
+                  <TargetIcon className="w-5 h-5 text-stratosort-blue" />
+                  <span>Next Steps</span>
                 </h3>
                 <span className="text-xs text-system-gray-500">All set</span>
               </div>

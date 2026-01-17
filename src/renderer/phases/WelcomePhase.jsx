@@ -153,8 +153,8 @@ function WelcomePhase() {
                   style={{ padding: 'var(--button-padding-lg)' }}
                   aria-describedby="organize-help"
                 >
-                  <FolderOpenIcon className="w-5 h-5 mr-2" />
-                  Organize files now
+                  <FolderOpenIcon className="w-5 h-5" />
+                  <span>Organize files now</span>
                 </Button>
                 <p id="organize-help" className="text-xs text-system-gray-500 text-center">
                   Start scanning with smart defaults
@@ -171,8 +171,8 @@ function WelcomePhase() {
                   className="w-full justify-center"
                   aria-describedby="ai-setup-help"
                 >
-                  <SparklesIcon className="w-4 h-4 mr-2" />
-                  Set up AI components (Ollama + ChromaDB)
+                  <SparklesIcon className="w-4 h-4" />
+                  <span>Set up AI components (Ollama + ChromaDB)</span>
                 </Button>
                 <p id="ai-setup-help" className="text-xs text-system-gray-500 text-center">
                   Optional, runs in the background
@@ -189,8 +189,8 @@ function WelcomePhase() {
                   className="w-full justify-center"
                   aria-describedby="setup-help"
                 >
-                  <SettingsIcon className="w-4 h-4 mr-2" />
-                  Configure smart folders
+                  <SettingsIcon className="w-4 h-4" />
+                  <span>Configure smart folders</span>
                 </Button>
                 <p id="setup-help" className="text-xs text-system-gray-500 text-center">
                   Set up destinations first
