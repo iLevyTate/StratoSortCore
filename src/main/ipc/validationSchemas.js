@@ -6,6 +6,7 @@
  */
 
 const { URL_PATTERN } = require('../../shared/settingsValidation');
+const { CHAT_PERSONAS } = require('../../shared/chatPersonas');
 const { LOGGING_LEVELS, NUMERIC_LIMITS } = require('../../shared/validationConstants');
 const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
 const { logger } = require('../../shared/logger');
@@ -230,6 +231,8 @@ if (!z) {
     .max(100, 'Model name too long (max 100 chars)')
     .nullish();
 
+  const chatPersonaSchema = z.enum(CHAT_PERSONAS.map((persona) => persona.id)).nullish();
+
   // ===== Settings Schemas =====
 
   /**
@@ -243,6 +246,7 @@ if (!z) {
       textModel: modelNameSchema,
       visionModel: modelNameSchema,
       embeddingModel: modelNameSchema,
+      chatPersona: chatPersonaSchema,
       autoUpdateOllama: z.boolean().nullish(),
       autoUpdateChromaDb: z.boolean().nullish(),
 
@@ -399,6 +403,7 @@ if (!z) {
   const analysisFileSchema = z.object({
     path: z.string().min(1),
     name: z.string().optional(),
+    extension: z.string().optional(),
     size: z.number().optional(),
     type: z.string().optional(),
     analysis: z.object({}).passthrough().optional()
@@ -490,7 +495,32 @@ if (!z) {
       folder: z.string().optional(),
       confidence: z.number().optional()
     }),
-    accepted: z.boolean()
+    accepted: z.boolean(),
+    note: z.string().max(500).optional()
+  });
+
+  /**
+   * Feedback memory add input
+   */
+  const feedbackMemoryAddSchema = z.object({
+    text: z.string().min(2).max(500),
+    metadata: z.object({}).passthrough().optional()
+  });
+
+  /**
+   * Feedback memory delete input
+   */
+  const feedbackMemoryDeleteSchema = z.object({
+    id: z.string().min(1)
+  });
+
+  /**
+   * Feedback memory update input
+   */
+  const feedbackMemoryUpdateSchema = z.object({
+    id: z.string().min(1),
+    text: z.string().min(2).max(500),
+    metadata: z.object({}).passthrough().optional()
   });
 
   /**
@@ -582,6 +612,42 @@ if (!z) {
   });
 
   /**
+   * Knowledge relationship edges parameters
+   */
+  const relationshipEdgesSchema = z.object({
+    fileIds: z
+      .array(z.string().min(1).max(2048))
+      .min(2, 'At least 2 file IDs required')
+      .max(500, 'Maximum 500 file IDs for performance'),
+    minWeight: z.number().int().min(1).max(20).optional().default(2),
+    maxEdges: z.number().int().min(1).max(2000).optional().default(500)
+  });
+
+  /**
+   * Chat query parameters
+   */
+  const chatQuerySchema = z.object({
+    sessionId: z.string().min(1).max(128).optional(),
+    query: z
+      .string()
+      .min(2, 'Query must be at least 2 characters')
+      .max(2000, 'Query too long (max 2000)'),
+    topK: z.number().int().min(1).max(20).optional().default(6),
+    mode: z.enum(['hybrid', 'vector', 'bm25']).optional().default('hybrid'),
+    chunkTopK: z.number().int().min(1).max(2000).optional(),
+    chunkWeight: z.number().min(0).max(1).optional(),
+    contextFileIds: z.array(z.string().min(1).max(2048)).max(1000).optional(),
+    responseMode: z.enum(['fast', 'deep']).optional().default('fast')
+  });
+
+  /**
+   * Chat session reset parameters
+   */
+  const chatResetSchema = z.object({
+    sessionId: z.string().min(1).max(128).optional()
+  });
+
+  /**
    * Find duplicates parameters
    * FIX P1-5: Add Zod schema for FIND_DUPLICATES handler validation
    */
@@ -657,6 +723,9 @@ if (!z) {
     fileSuggestion: fileSuggestionSchema,
     batchSuggestion: batchSuggestionSchema,
     feedback: feedbackSchema,
+    feedbackMemoryAdd: feedbackMemoryAddSchema,
+    feedbackMemoryDelete: feedbackMemoryDeleteSchema,
+    feedbackMemoryUpdate: feedbackMemoryUpdateSchema,
     strategyApplication: strategyApplicationSchema,
 
     // Embeddings
@@ -668,6 +737,11 @@ if (!z) {
     similarityEdges: similarityEdgesSchema,
     getFileMetadata: getFileMetadataSchema,
     findDuplicates: findDuplicatesSchema,
+    relationshipEdges: relationshipEdgesSchema,
+
+    // Chat
+    chatQuery: chatQuerySchema,
+    chatReset: chatResetSchema,
 
     // Ollama
     ollamaHost: ollamaHostSchema,

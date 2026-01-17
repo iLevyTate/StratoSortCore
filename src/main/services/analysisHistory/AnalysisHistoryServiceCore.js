@@ -11,6 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
+const { analysisResultSchema, validateSchema } = require('../../../shared/normalization/schemas');
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { CircuitBreaker } = require('../../utils/CircuitBreaker');
 
@@ -319,6 +320,14 @@ class AnalysisHistoryServiceCore {
       for (const { fileInfo, analysisResults, resolve, reject } of batch) {
         try {
           const fileHash = generateFileHash(fileInfo.path, fileInfo.size, fileInfo.lastModified);
+          const analysisValidation = validateSchema(analysisResultSchema, analysisResults || {});
+          if (!analysisValidation.valid) {
+            logger.warn('[AnalysisHistoryService] Invalid analysis result shape', {
+              filePath: fileInfo.path,
+              error: analysisValidation.error?.message
+            });
+          }
+          const safeResults = analysisValidation.data || analysisResults || {};
 
           const analysisEntry = {
             id: crypto.randomUUID(),
@@ -335,35 +344,35 @@ class AnalysisHistoryServiceCore {
 
             // Analysis results
             analysis: {
-              subject: analysisResults.subject || null,
-              category: analysisResults.category || null,
-              tags: analysisResults.tags || [],
-              confidence: analysisResults.confidence || 0,
-              summary: analysisResults.summary || null,
-              extractedText: analysisResults.extractedText || null,
-              keyEntities: analysisResults.keyEntities || [],
-              dates: analysisResults.dates || [],
-              amounts: analysisResults.amounts || [],
-              language: analysisResults.language || null,
-              sentiment: analysisResults.sentiment || null
+              subject: safeResults.subject || null,
+              category: safeResults.category || null,
+              tags: safeResults.tags || [],
+              confidence: safeResults.confidence || 0,
+              summary: safeResults.summary || null,
+              extractedText: safeResults.extractedText || null,
+              keyEntities: safeResults.keyEntities || [],
+              dates: safeResults.dates || [],
+              amounts: safeResults.amounts || [],
+              language: safeResults.language || null,
+              sentiment: safeResults.sentiment || null
             },
 
             // Processing metadata
             processing: {
-              model: analysisResults.model || 'unknown',
-              processingTimeMs: analysisResults.processingTime || 0,
+              model: safeResults.model || 'unknown',
+              processingTimeMs: safeResults.processingTime || 0,
               version: this.SCHEMA_VERSION,
-              errorCount: analysisResults.errorCount || 0,
-              warnings: analysisResults.warnings || []
+              errorCount: safeResults.errorCount || 0,
+              warnings: safeResults.warnings || []
             },
 
             // Organization results (if file was moved/renamed)
             organization: {
-              suggested: analysisResults.suggestedPath || null,
-              actual: analysisResults.actualPath || null,
-              renamed: analysisResults.renamed || false,
-              newName: analysisResults.newName || null,
-              smartFolder: analysisResults.smartFolder || null
+              suggested: safeResults.suggestedPath || null,
+              actual: safeResults.actualPath || null,
+              renamed: safeResults.renamed || false,
+              newName: safeResults.newName || null,
+              smartFolder: safeResults.smartFolder || null
             },
 
             // Future expansion fields

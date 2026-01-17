@@ -9,7 +9,11 @@
 const path = require('path');
 const { logger } = require('../../../shared/logger');
 const { sanitizeFile } = require('./fileTypeUtils');
-const { getFallbackDestination, buildDestinationPath } = require('./folderOperations');
+const {
+  getFallbackDestination,
+  buildDestinationPath,
+  findDefaultFolder
+} = require('./folderOperations');
 const { safeSuggestion } = require('./pathUtils');
 // FIX C-5: Import from idUtils to break circular dependency with fileProcessor
 const { generateSecureId } = require('./idUtils');
@@ -23,9 +27,22 @@ logger.setContext('AutoOrganize-Batch');
  * @param {Object} options - Processing options (includes confidenceThreshold)
  * @param {Object} results - Results object to populate
  * @param {Object} suggestionService - Suggestion service for feedback
+ * @param {Array} smartFolders - Smart folders
  */
-async function processBatchResults(batchSuggestions, files, options, results, suggestionService) {
+async function processBatchResults(
+  batchSuggestions,
+  files,
+  options,
+  results,
+  suggestionService,
+  smartFolders
+) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
+  const baseThreshold = 0.75;
+  const effectiveThreshold = Math.max(
+    Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0,
+    baseThreshold
+  );
 
   // Create a map of files keyed by path (more stable than name)
   const fileMap = new Map(files.map((f) => [f.path || f.name, f]));
@@ -45,7 +62,7 @@ async function processBatchResults(batchSuggestions, files, options, results, su
     for (const fileWithSuggestion of group.files) {
       const lookupKey = fileWithSuggestion.path || fileWithSuggestion.name;
       const file = fileMap.get(lookupKey) || fileWithSuggestion;
-      const { suggestion } = fileWithSuggestion;
+      let { suggestion } = fileWithSuggestion;
       const confidence = group.confidence || 0;
 
       // Ensure we have a valid source path
@@ -55,27 +72,57 @@ async function processBatchResults(batchSuggestions, files, options, results, su
         continue;
       }
 
+      if (suggestion && smartFolders && smartFolders.length > 0) {
+        const resolvedSmartFolder = smartFolders.find(
+          (folder) =>
+            (folder.name &&
+              suggestion.folder &&
+              folder.name.toLowerCase() === String(suggestion.folder).toLowerCase()) ||
+            (folder.path &&
+              suggestion.path &&
+              folder.path.toLowerCase() === String(suggestion.path).toLowerCase())
+        );
+        if (resolvedSmartFolder) {
+          suggestion = {
+            ...suggestion,
+            folder: resolvedSmartFolder.name,
+            path: resolvedSmartFolder.path,
+            isSmartFolder: true
+          };
+        }
+      }
+
       if (!suggestion) {
         // Use fallback if no suggestion
-        const fallbackDestination = getFallbackDestination(file, [], defaultLocation);
+        const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
-        results.organized.push({
-          file,
-          destination: fallbackDestination,
-          confidence: 0.3,
-          method: 'batch-fallback'
-        });
+        if (fallbackDestination) {
+          results.organized.push({
+            file,
+            destination: fallbackDestination,
+            confidence: 0.3,
+            method: 'batch-fallback'
+          });
 
-        results.operations.push({
-          type: 'move',
-          source: sourcePath,
-          destination: fallbackDestination
-        });
+          results.operations.push({
+            type: 'move',
+            source: sourcePath,
+            destination: fallbackDestination
+          });
+        } else {
+          results.needsReview.push({
+            file: sanitizeFile(file),
+            suggestion: null,
+            alternatives: [],
+            confidence: 0,
+            explanation: 'No smart folder fallback available'
+          });
+        }
         continue;
       }
 
       // Determine action based on confidence
-      if (confidence >= confidenceThreshold) {
+      if (confidence >= effectiveThreshold && suggestion.isSmartFolder) {
         // High confidence - organize automatically
         // Ensure suggestion folder/path are valid strings
         const safeSuggestionObj = safeSuggestion(suggestion);
@@ -108,14 +155,36 @@ async function processBatchResults(batchSuggestions, files, options, results, su
           });
         });
       } else {
-        // Below threshold - needs user review
-        results.needsReview.push({
-          file: sanitizeFile(file),
-          suggestion,
-          alternatives: fileWithSuggestion.alternatives,
-          confidence,
-          explanation: `Batch suggestion with ${Math.round(confidence * 100)}% confidence`
-        });
+        const defaultFolder = findDefaultFolder(smartFolders);
+        if (defaultFolder?.path && confidence < effectiveThreshold) {
+          const destination = path.join(defaultFolder.path, file.name);
+          const uncategorizedSuggestion = {
+            ...defaultFolder,
+            isSmartFolder: true
+          };
+          results.organized.push({
+            file: sanitizeFile(file),
+            suggestion: uncategorizedSuggestion,
+            destination,
+            confidence,
+            method: 'low-confidence-default'
+          });
+
+          results.operations.push({
+            type: 'move',
+            source: sourcePath,
+            destination
+          });
+        } else {
+          // Below threshold - needs user review
+          results.needsReview.push({
+            file: sanitizeFile(file),
+            suggestion,
+            alternatives: fileWithSuggestion.alternatives,
+            confidence,
+            explanation: `Batch suggestion with ${Math.round(confidence * 100)}% confidence`
+          });
+        }
       }
     }
   }
@@ -163,6 +232,16 @@ async function batchOrganize(
   // Process groups with error handling
   const groups = Array.isArray(batchSuggestions.groups) ? batchSuggestions.groups : [];
   for (const group of groups) {
+    if (!Array.isArray(smartFolders) || smartFolders.length === 0) {
+      results.skipped.push({
+        folder: group.folder,
+        files: group.files,
+        confidence: group.confidence,
+        reason: 'No smart folders configured'
+      });
+      continue;
+    }
+
     // Validate group.files is an array before iterating
     if (!Array.isArray(group?.files)) {
       logger.warn('[AutoOrganize] Skipping group with invalid files array in batchOrganize', {
@@ -181,8 +260,27 @@ async function batchOrganize(
           try {
             // Ensure folder and path are valid strings
             const safeGroup = safeSuggestion(group);
-            const folderName = safeGroup.folder;
-            const folderPath = safeGroup.path;
+            let folderName = safeGroup.folder;
+            let folderPath = safeGroup.path;
+
+            const resolvedSmartFolder = smartFolders.find(
+              (folder) =>
+                (folder.name &&
+                  folderName &&
+                  folder.name.toLowerCase() === String(folderName).toLowerCase()) ||
+                (folder.path &&
+                  folderPath &&
+                  folder.path.toLowerCase() === String(folderPath).toLowerCase())
+            );
+
+            if (resolvedSmartFolder) {
+              folderName = resolvedSmartFolder.name;
+              folderPath = resolvedSmartFolder.path;
+            }
+
+            if (!folderPath) {
+              throw new Error('Batch suggestion does not map to a smart folder path');
+            }
 
             const destination = buildDestFn(
               file,

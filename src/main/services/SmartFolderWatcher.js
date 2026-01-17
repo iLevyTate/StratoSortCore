@@ -813,13 +813,19 @@ class SmartFolderWatcher {
               ? analysis.tags
               : [];
 
+          const derivedConfidence = deriveWatcherConfidencePercent(analysis);
+          const historyConfidence =
+            typeof analysis.confidence === 'number' && (analysis.confidence !== 0 || analysis.error)
+              ? analysis.confidence
+              : derivedConfidence;
+
           const historyPayload = {
             // The history utility uses suggestedName as the subject fallback.
             // Prefer any naming-convention output; otherwise keep the original basename.
             suggestedName: analysis.suggestedName || path.basename(filePath),
             category: analysis.category || analysis.folder || 'uncategorized',
             keywords,
-            confidence: typeof analysis.confidence === 'number' ? analysis.confidence : 0,
+            confidence: historyConfidence,
             summary: analysis.summary || analysis.description || analysis.purpose || '',
             extractedText: analysis.extractedText || null,
             smartFolder: analysis.smartFolder || analysis.folder || null,

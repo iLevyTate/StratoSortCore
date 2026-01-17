@@ -198,12 +198,31 @@ class ModelManager {
    * Ensure we have a working model selected
    */
   async ensureWorkingModel() {
-    // If we have a selected model, verify it still exists
+    // Ensure settings are loaded so selectedModel isn't null during early startup
+    if (!this.selectedModel) {
+      await this.loadConfig();
+    }
+
+    // If we have a selected model, verify it still works
     if (this.selectedModel) {
-      const modelExists = this.availableModels.some((m) => m.name === this.selectedModel);
+      const modelListed = this.availableModels.some((m) => m.name === this.selectedModel);
+      // If we don't have a model list yet, still allow a direct test
+      const modelExists = modelListed || this.availableModels.length === 0;
       if (modelExists && (await this.testModel(this.selectedModel))) {
         logger.info(`[ModelManager] Using existing model: ${this.selectedModel}`);
         return this.selectedModel;
+      }
+    }
+
+    // If no models discovered yet, try to discover them now
+    if (this.availableModels.length === 0) {
+      try {
+        const { withTimeout } = require('../../shared/promiseUtils');
+        await withTimeout(this.discoverModels(), TIMEOUTS.MODEL_DISCOVERY, 'Model list');
+      } catch (error) {
+        logger.warn('[ModelManager] Model discovery unavailable during ensureWorkingModel', {
+          error: error.message
+        });
       }
     }
 

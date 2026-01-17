@@ -300,7 +300,9 @@ class SearchService {
             summary: analysis.summary,
             tags: analysis.tags || [],
             category: analysis.category,
-            confidence: analysis.confidence
+            confidence: analysis.confidence,
+            keyEntities: analysis.keyEntities || [],
+            dates: analysis.dates || []
           });
         }
       });
@@ -1023,6 +1025,10 @@ class SearchService {
       rerank = DEFAULT_OPTIONS.rerank,
       rerankTopN = DEFAULT_OPTIONS.rerankTopN
     } = options;
+    const safeChunkWeight = Number.isFinite(chunkWeight)
+      ? chunkWeight
+      : DEFAULT_OPTIONS.chunkWeight;
+    const resolvedChunkTopK = Number.isInteger(chunkTopK) ? chunkTopK : topK * 6;
 
     if (!query || typeof query !== 'string' || query.trim().length < 2) {
       return { success: false, results: [], error: 'Query too short' };
@@ -1075,7 +1081,8 @@ class SearchService {
           topK,
           minScore,
           mode,
-          chunkTopK: Number.isInteger(chunkTopK) ? chunkTopK : topK * 6,
+          chunkTopK: resolvedChunkTopK,
+          chunkWeight: safeChunkWeight,
           queryExpanded: processedQuery !== query
         });
       } catch (statusErr) {
@@ -1112,11 +1119,10 @@ class SearchService {
         normalizedQuery,
         topK * 2
       );
-      const chunkResults = await this.chunkSearch(
-        normalizedQuery,
-        topK * 2,
-        Number.isInteger(chunkTopK) ? chunkTopK : topK * 6
-      );
+      const chunkResults =
+        safeChunkWeight > 0 && resolvedChunkTopK > 0
+          ? await this.chunkSearch(normalizedQuery, topK * 2, resolvedChunkTopK)
+          : [];
 
       // If vector search timed out, use BM25-only with degraded mode indicator
       if (timedOut) {
@@ -1184,7 +1190,7 @@ class SearchService {
       // Keep BM25 weight as configured; split remaining weight between file-vector and chunk-vector.
       const beta = SEARCH.BM25_WEIGHT;
       const remaining = Math.max(0, 1 - beta);
-      const chunkShare = Math.min(1, Math.max(0, Number(chunkWeight)));
+      const chunkShare = Math.min(1, Math.max(0, Number(safeChunkWeight)));
       const gamma = remaining * chunkShare;
       const alpha = remaining - gamma;
       const combined = new Map();
@@ -1817,6 +1823,10 @@ class SearchService {
         const historyEntries = this.history.analysisHistory?.entries || {};
         const historyCount = Object.keys(historyEntries).length;
         diagnostics.details.historyCount = historyCount;
+
+        if (historyCount > 0 && fileCount > 0) {
+          diagnostics.details.embeddingCoverage = Number((fileCount / historyCount).toFixed(3));
+        }
 
         if (historyCount > 0 && fileCount === 0) {
           diagnostics.issues.push({

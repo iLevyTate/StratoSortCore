@@ -348,6 +348,7 @@ function withServiceCheck({
  * @param {Object} [options.fallbackResponse] - Response when service unavailable
  * @param {string} [options.context] - Context string for logging (default: 'IPC')
  * @param {boolean} [options.wrapResponse] - Whether to wrap successful results in success response (default: false)
+ * @param {Function} [options.normalize] - Optional normalization for validated payloads
  * @returns {Function} Fully wrapped IPC handler
  *
  * @example
@@ -389,7 +390,8 @@ function createHandler({
   getService = null,
   fallbackResponse = null,
   context = 'IPC',
-  wrapResponse = false
+  wrapResponse = false,
+  normalize = null
 }) {
   if (!logger) {
     throw new Error('createHandler requires a logger');
@@ -445,8 +447,39 @@ function createHandler({
         );
       }
 
-      const normalized = parsed.data;
+      let normalized = parsed.data;
+      if (typeof normalize === 'function') {
+        try {
+          normalized = normalize(normalized);
+        } catch (normalizeError) {
+          logger?.warn?.(`[${context}] Normalization failed:`, normalizeError?.message);
+          return createErrorResponse(
+            { message: 'Invalid input', name: 'NormalizationError' },
+            { error: normalizeError?.message }
+          );
+        }
+      }
       // Reconstruct the args: keep event as first, then validated payload
+      const nextArgs = [args[0], ...(Array.isArray(normalized) ? normalized : [normalized])];
+      return await innerHandler(...nextArgs);
+    };
+  }
+
+  // Add normalization without schema (raw payload passthrough)
+  if (!schema && typeof normalize === 'function') {
+    const innerHandler = wrappedHandler;
+    wrappedHandler = async (...args) => {
+      const payload = args.slice(1);
+      let normalized;
+      try {
+        normalized = normalize(payload.length <= 1 ? payload[0] : payload);
+      } catch (normalizeError) {
+        logger?.warn?.(`[${context}] Normalization failed:`, normalizeError?.message);
+        return createErrorResponse(
+          { message: 'Invalid input', name: 'NormalizationError' },
+          { error: normalizeError?.message }
+        );
+      }
       const nextArgs = [args[0], ...(Array.isArray(normalized) ? normalized : [normalized])];
       return await innerHandler(...nextArgs);
     };

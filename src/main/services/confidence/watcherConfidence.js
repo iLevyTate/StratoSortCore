@@ -39,11 +39,17 @@ function mapSimilarityToPercent(value) {
 function deriveWatcherConfidencePercent(analysis = {}) {
   // 1) Prefer explicit confidence if provided by analysis model
   const explicit = analysis.confidence;
+  const hasError = Boolean(analysis.error);
   if (typeof explicit === 'number' && !Number.isNaN(explicit)) {
-    if (explicit >= 0 && explicit <= 1) {
-      return clampPercent(explicit * 100, FALLBACK_CONFIDENCE_PERCENT);
+    // Treat a zero confidence without an error as "missing" to avoid 0% spam.
+    if (explicit === 0 && !hasError) {
+      // fall through to derived confidence
+    } else {
+      if (explicit >= 0 && explicit <= 1) {
+        return clampPercent(explicit * 100, FALLBACK_CONFIDENCE_PERCENT);
+      }
+      return clampPercent(explicit, FALLBACK_CONFIDENCE_PERCENT);
     }
-    return clampPercent(explicit, FALLBACK_CONFIDENCE_PERCENT);
   }
 
   // 2) Similarity/score are not true \"confidence\"; keep conservative to avoid misleading 90% values

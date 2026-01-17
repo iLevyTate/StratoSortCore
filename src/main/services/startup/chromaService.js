@@ -17,7 +17,6 @@ const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { hasPythonModuleAsync } = require('../../utils/asyncSpawnUtils');
 const { container, ServiceIds } = require('../ServiceContainer');
 const {
-  getChromaUrl,
   getChromaDataDir,
   parseChromaConfig,
   CHROMA_HEALTH_ENDPOINTS,
@@ -71,7 +70,7 @@ function buildDefaultChromaConfig() {
  */
 async function checkChromaDBHealth() {
   try {
-    const baseUrl = getChromaUrl();
+    const { url: baseUrl } = parseChromaConfig();
 
     for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
@@ -99,7 +98,7 @@ async function checkChromaDBHealth() {
  */
 async function isChromaDBRunningQuick() {
   try {
-    const baseUrl = getChromaUrl();
+    const { url: baseUrl } = parseChromaConfig();
 
     for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
@@ -124,7 +123,7 @@ async function isChromaDBRunningQuick() {
  */
 async function isChromaDBRunning() {
   try {
-    const baseUrl = getChromaUrl();
+    const { url: baseUrl } = parseChromaConfig();
 
     for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
@@ -302,7 +301,9 @@ async function startChromaDB({
   const portAvailable = await isPortAvailable(serverConfig.host, serverConfig.port);
 
   if (!portAvailable) {
-    logger.info('[STARTUP] Port 8000 is occupied, checking if ChromaDB is responding...');
+    logger.info(
+      `[STARTUP] Port ${serverConfig.port} is occupied, checking if ChromaDB is responding...`
+    );
 
     // Wait a moment for any starting ChromaDB to become responsive
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -312,7 +313,9 @@ async function startChromaDB({
     if (existingRunning) {
       serviceStatus.chromadb.status = 'running';
       serviceStatus.chromadb.health = 'healthy';
-      logger.info('[STARTUP] Existing ChromaDB instance detected on port 8000, using it');
+      logger.info(
+        `[STARTUP] Existing ChromaDB instance detected on port ${serverConfig.port}, using it`
+      );
       return { success: true, alreadyRunning: true, portInUse: true };
     }
 

@@ -214,7 +214,8 @@ class AutoOrganizeServiceCore {
             batch,
             { confidenceThreshold: effectiveThreshold, defaultLocation, preserveNames },
             results,
-            this.suggestionService
+            this.suggestionService,
+            smartFolders
           );
 
           // Check if any files from the batch weren't processed

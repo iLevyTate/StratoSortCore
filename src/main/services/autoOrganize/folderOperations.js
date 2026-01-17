@@ -173,50 +173,41 @@ async function createDefaultFolder(smartFolders) {
  * @param {string} defaultLocation - Default location
  * @returns {string} Fallback destination path
  */
-function getFallbackDestination(file, smartFolders, defaultLocation) {
-  // Ensure defaultLocation is a valid string
-  const safeDefaultLocation = typeof defaultLocation === 'string' ? defaultLocation : 'Documents';
-
+function getFallbackDestination(file, smartFolders, _defaultLocation) {
+  const safeSmartFolders = Array.isArray(smartFolders) ? smartFolders : [];
+  const defaultFolder = findDefaultFolder(safeSmartFolders);
   // Try to match based on file type
   const fileType = getFileTypeCategory(file.extension);
 
   // Look for a smart folder that matches the file type
-  const typeFolder = smartFolders.find(
+  const typeFolder = safeSmartFolders.find(
     (f) =>
       f.name && typeof f.name === 'string' && f.name.toLowerCase().includes(fileType.toLowerCase())
   );
 
-  if (typeFolder) {
-    const folderPath =
-      typeof typeFolder.path === 'string'
-        ? typeFolder.path
-        : `${safeDefaultLocation}/${typeFolder.name}`;
-    return path.join(folderPath, file.name);
+  if (typeFolder?.path && typeof typeFolder.path === 'string') {
+    return path.join(typeFolder.path, file.name);
   }
 
   // Use category from analysis if available
   if (file.analysis?.category && typeof file.analysis.category === 'string') {
-    const categoryFolder = smartFolders.find(
+    const categoryFolder = safeSmartFolders.find(
       (f) =>
         f.name &&
         typeof f.name === 'string' &&
         f.name.toLowerCase() === file.analysis.category.toLowerCase()
     );
 
-    if (categoryFolder) {
-      const folderPath =
-        typeof categoryFolder.path === 'string'
-          ? categoryFolder.path
-          : `${safeDefaultLocation}/${categoryFolder.name}`;
-      return path.join(folderPath, file.name);
+    if (categoryFolder?.path && typeof categoryFolder.path === 'string') {
+      return path.join(categoryFolder.path, file.name);
     }
-
-    // Create new folder based on category
-    return path.join(safeDefaultLocation, file.analysis.category, file.name);
   }
 
-  // Ultimate fallback - organize by file type
-  return path.join(safeDefaultLocation, fileType, file.name);
+  if (defaultFolder?.path && typeof defaultFolder.path === 'string') {
+    return path.join(defaultFolder.path, file.name);
+  }
+
+  return null;
 }
 
 /**

@@ -12,6 +12,8 @@ const { registerSuggestionsIpc } = require('./suggestions');
 const { registerOrganizeIpc } = require('./organize');
 const { registerChromaDBIpc } = require('./chromadb');
 const { registerDependenciesIpc } = require('./dependencies');
+const registerChatIpc = require('./chat');
+const registerKnowledgeIpc = require('./knowledge');
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 
 // Export IPC utilities for handler creation
@@ -94,6 +96,8 @@ function registerAllIpc(servicesOrParams) {
   registerWindowIpc(container);
   registerChromaDBIpc(container);
   registerDependenciesIpc(container);
+  registerChatIpc(container);
+  registerKnowledgeIpc(container);
 
   // Register suggestions and organize handlers
   // These handlers manage their own service availability checks

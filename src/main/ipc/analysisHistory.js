@@ -7,6 +7,8 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const { createHandler, createErrorResponse, safeHandle } = require('./ipcWrappers');
 const { schemas } = require('./validationSchemas');
+const { normalizeText } = require('../../shared/normalization');
+const { getSemanticFileId } = require('../../shared/fileIdUtils');
 
 // FIX: Safety cap for "get all" requests to prevent memory exhaustion
 // This limits the maximum number of history entries that can be retrieved at once
@@ -27,6 +29,7 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
 
   // Helper to get analysis history service
   const getHistoryService = () => getServiceIntegration()?.analysisHistory;
+  const getChromaDbService = () => getServiceIntegration()?.chromaDbService;
 
   // Get analysis statistics
   safeHandle(
@@ -113,6 +116,13 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
       serviceName: 'analysisHistory',
       getService: getHistoryService,
       fallbackResponse: [],
+      normalize: (payload) => {
+        if (Array.isArray(payload)) {
+          const [query, options] = payload;
+          return [normalizeText(query, { maxLength: 2000 }), options];
+        }
+        return normalizeText(payload, { maxLength: 2000 });
+      },
       handler: async (event, query = '', options = {}, service) => {
         try {
           return (await service.searchAnalysis(query, options)) || [];
@@ -158,6 +168,23 @@ function registerAnalysisHistoryIpc(servicesOrParams) {
       fallbackResponse: { success: false, error: 'Service unavailable' },
       handler: async (event, service) => {
         try {
+          // Mark embeddings as orphaned before clearing history to keep search/embeddings in sync.
+          const chromaDb = getChromaDbService();
+          if (chromaDb && typeof chromaDb.markEmbeddingsOrphaned === 'function') {
+            await service.initialize();
+            const entries = Object.values(service.analysisHistory?.entries || {});
+            const fileIds = Array.from(
+              new Set(
+                entries
+                  .map((entry) => entry?.organization?.actual || entry?.originalPath)
+                  .filter((p) => typeof p === 'string' && p.length > 0)
+                  .map((p) => getSemanticFileId(p))
+              )
+            );
+            if (fileIds.length > 0) {
+              await chromaDb.markEmbeddingsOrphaned(fileIds);
+            }
+          }
           await service.createDefaultStructures();
           return { success: true };
         } catch (error) {

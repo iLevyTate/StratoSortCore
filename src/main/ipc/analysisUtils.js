@@ -10,6 +10,12 @@
 
 const path = require('path');
 const fs = require('fs').promises;
+const {
+  normalizeError,
+  normalizeText,
+  normalizeOptionalText,
+  normalizeKeywords
+} = require('../../shared/normalization');
 
 /**
  * Wrapper for processing state lifecycle management.
@@ -120,56 +126,24 @@ function buildErrorContext({ operation, filePath, error }) {
  * @returns {Object} Fallback analysis result with error context
  */
 function createAnalysisFallback(filePath, category, errorMessage, errorContext = {}) {
-  // FIX: Classify error type based on message if not provided
-  const errorType = errorContext.errorType || _classifyAnalysisError(errorMessage);
-  const isRetryable = errorContext.isRetryable ?? _isRetryableAnalysisError(errorType);
+  const normalized = normalizeError(
+    { message: errorMessage, code: errorContext.code },
+    {
+      errorType: errorContext.errorType,
+      isRetryable: errorContext.isRetryable
+    }
+  );
 
   return {
-    error: errorMessage,
-    errorType,
-    isRetryable,
-    errorCode: errorContext.code,
+    error: normalized.message,
+    errorType: normalized.errorType,
+    isRetryable: normalized.isRetryable,
+    errorCode: normalized.code,
     suggestedName: path.basename(filePath), // Keep extension to prevent unopenable files
     category,
     keywords: [],
     confidence: 0
   };
-}
-
-/**
- * Classify analysis error type
- * @param {string} message - Error message
- * @returns {string} Error type classification
- * @private
- */
-function _classifyAnalysisError(message) {
-  if (!message) return 'UNKNOWN';
-  const msg = message.toLowerCase();
-
-  if (msg.includes('timeout') || msg.includes('timed out')) return 'TIMEOUT';
-  if (msg.includes('network') || msg.includes('connection') || msg.includes('econnrefused'))
-    return 'NETWORK';
-  if (msg.includes('not found') || msg.includes('enoent')) return 'FILE_NOT_FOUND';
-  if (msg.includes('model') && (msg.includes('not found') || msg.includes('unknown')))
-    return 'MODEL_NOT_FOUND';
-  if (msg.includes('ollama')) return 'OLLAMA_ERROR';
-  if (msg.includes('memory') || msg.includes('oom')) return 'OUT_OF_MEMORY';
-  if (msg.includes('too large') || msg.includes('size limit')) return 'FILE_TOO_LARGE';
-  if (msg.includes('permission') || msg.includes('access denied')) return 'PERMISSION_DENIED';
-  if (msg.includes('unsupported') || msg.includes('invalid format')) return 'UNSUPPORTED_FORMAT';
-
-  return 'UNKNOWN';
-}
-
-/**
- * Determine if an analysis error is retryable
- * @param {string} errorType - Error type from _classifyAnalysisError
- * @returns {boolean} True if error is retryable
- * @private
- */
-function _isRetryableAnalysisError(errorType) {
-  const retryableTypes = ['TIMEOUT', 'NETWORK', 'OLLAMA_ERROR'];
-  return retryableTypes.includes(errorType);
 }
 
 /**
@@ -204,16 +178,16 @@ async function recordAnalysisResult({
     };
 
     const normalized = {
-      subject: result.suggestedName || path.basename(filePath),
-      category: result.category || 'uncategorized',
-      tags: Array.isArray(result.keywords) ? result.keywords : [],
+      subject: normalizeText(result.suggestedName || path.basename(filePath), { maxLength: 255 }),
+      category: normalizeText(result.category || 'uncategorized', { maxLength: 100 }),
+      tags: normalizeKeywords(Array.isArray(result.keywords) ? result.keywords : []),
       confidence: typeof result.confidence === 'number' ? result.confidence : 0,
-      summary: result.purpose || result.summary || '',
-      extractedText: result.extractedText || null,
-      model: result.model || modelType,
+      summary: normalizeOptionalText(result.purpose || result.summary || '', { maxLength: 2000 }),
+      extractedText: normalizeOptionalText(result.extractedText || '', { maxLength: 20000 }),
+      model: normalizeText(result.model || modelType, { maxLength: 100 }),
       processingTime,
-      smartFolder: result.smartFolder || null,
-      newName: result.suggestedName || null,
+      smartFolder: normalizeOptionalText(result.smartFolder || null, { maxLength: 255 }),
+      newName: normalizeOptionalText(result.suggestedName || null, { maxLength: 255 }),
       renamed: Boolean(result.suggestedName)
     };
 

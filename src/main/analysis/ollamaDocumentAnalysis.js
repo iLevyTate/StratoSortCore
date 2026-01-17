@@ -37,6 +37,7 @@ const {
 } = require('./documentExtractors');
 const { analyzeTextWithOllama, normalizeCategoryToSmartFolders } = require('./documentLlm');
 const { normalizeAnalysisResult } = require('./utils');
+const { normalizeExtractedTextForStorage } = require('./analysisTextUtils');
 const {
   getIntelligentCategory,
   getIntelligentKeywords,
@@ -219,7 +220,9 @@ async function applyDocumentFolderMatching(
   filePath,
   fileName,
   extractedText,
-  smartFolders
+  smartFolders,
+  fileExtension,
+  fileSize
 ) {
   // CRITICAL FIX: Guard against null/undefined analysis to prevent crash
   if (!analysis || typeof analysis !== 'object') {
@@ -291,10 +294,22 @@ async function applyDocumentFolderMatching(
     meta: {
       path: filePath,
       name: fileName,
+      fileExtension,
+      fileSize,
       category: analysis.category || 'Uncategorized',
       confidence: confidencePercent,
       type: 'document',
-      summary: (summaryForEmbedding || '').substring(0, 500)
+      summary: (summaryForEmbedding || analysis.summary || analysis.purpose || '').substring(
+        0,
+        500
+      ),
+      tags: Array.isArray(analysis.keywords) ? analysis.keywords : analysis.tags || [],
+      keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
+      entity: analysis.entity,
+      project: analysis.project,
+      date: analysis.date,
+      suggestedName: analysis.suggestedName,
+      purpose: analysis.purpose
     },
     updatedAt: new Date().toISOString()
   });
@@ -723,7 +738,9 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
             filePath,
             fileName,
             extractedText,
-            smartFolders
+            smartFolders,
+            fileExtension,
+            fileStats?.size
           );
         } catch (e) {
           logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
@@ -738,6 +755,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       // operations wastes memory. Capture what we need and null the reference.
       const extractedTextLength = extractedText?.length || 0;
       const extractedTextPreview = extractedText?.substring(0, 500) || '';
+      const extractedTextForStorage = normalizeExtractedTextForStorage(extractedText);
       extractedText = null;
 
       if (analysis && !analysis.error) {
@@ -750,7 +768,8 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
           {
             ...analysis,
             contentLength: extractedTextLength,
-            extractionMethod: 'content'
+            extractionMethod: 'content',
+            extractedText: extractedTextForStorage
           },
           { category: 'document', keywords: [], confidence: 0 }
         );
@@ -765,6 +784,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       return normalizeAnalysisResult(
         {
           rawText: extractedTextPreview,
+          extractedText: extractedTextForStorage,
           keywords: Array.isArray(analysis.keywords)
             ? analysis.keywords
             : ['document', 'analysis_failed'],

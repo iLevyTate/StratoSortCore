@@ -13,7 +13,6 @@ const { sanitizeFile } = require('./fileTypeUtils');
 const { generateSuggestedNameFromAnalysis } = require('./namingUtils');
 const {
   findDefaultFolder,
-  createDefaultFolder,
   getFallbackDestination,
   buildDestinationPath
 } = require('./folderOperations');
@@ -30,35 +29,31 @@ logger.setContext('AutoOrganize-FileProcessor');
  * @param {string} defaultLocation - Default location
  * @param {Object} results - Results object to populate
  */
-async function processFilesWithoutAnalysis(files, smartFolders, defaultLocation, results) {
+async function processFilesWithoutAnalysis(files, smartFolders, _defaultLocation, results) {
   logger.info('[AutoOrganize] Processing files without analysis', {
     count: files.length
   });
 
-  // Find or create default folder once for all files
-  let defaultFolder = findDefaultFolder(smartFolders);
+  // Find default smart folder once for all files
+  const defaultFolder = findDefaultFolder(smartFolders);
 
-  if (!defaultFolder) {
-    defaultFolder = await createDefaultFolder(smartFolders);
-
-    if (!defaultFolder) {
-      // Could not create default folder, mark all files as failed
-      for (const file of files) {
-        results.failed.push({
-          file: sanitizeFile(file),
-          reason: 'No analysis available and failed to create default folder'
-        });
-      }
-      return;
+  if (!defaultFolder || !defaultFolder.path) {
+    // No default smart folder configured, send to review
+    for (const file of files) {
+      results.needsReview.push({
+        file: sanitizeFile(file),
+        suggestion: null,
+        alternatives: [],
+        confidence: 0,
+        explanation: 'No analysis available and no default smart folder configured'
+      });
     }
+    return;
   }
 
   // Process all files without analysis in batch
   for (const file of files) {
-    const destination = path.join(
-      defaultFolder.path || `${defaultLocation}/${defaultFolder.name}`,
-      file.name
-    );
+    const destination = path.join(defaultFolder.path, file.name);
 
     results.organized.push({
       file: sanitizeFile(file),
@@ -85,6 +80,11 @@ async function processFilesWithoutAnalysis(files, smartFolders, defaultLocation,
  */
 async function processFilesIndividually(files, smartFolders, options, results, suggestionService) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
+  const baseThreshold = 0.75;
+  const effectiveThreshold = Math.max(
+    Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0,
+    baseThreshold
+  );
 
   for (const file of files) {
     try {
@@ -103,18 +103,28 @@ async function processFilesIndividually(files, smartFolders, options, results, s
         // Use fallback logic on suggestion failure
         const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
-        results.organized.push({
-          file: sanitizeFile(file),
-          destination: fallbackDestination,
-          confidence: 0.2,
-          method: 'suggestion-error-fallback'
-        });
+        if (fallbackDestination) {
+          results.organized.push({
+            file: sanitizeFile(file),
+            destination: fallbackDestination,
+            confidence: 0.2,
+            method: 'suggestion-error-fallback'
+          });
 
-        results.operations.push({
-          type: 'move',
-          source: file.path,
-          destination: fallbackDestination
-        });
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination: fallbackDestination
+          });
+        } else {
+          results.needsReview.push({
+            file: sanitizeFile(file),
+            suggestion: null,
+            alternatives: [],
+            confidence: 0,
+            explanation: 'No smart folder fallback available'
+          });
+        }
         continue;
       }
 
@@ -122,18 +132,28 @@ async function processFilesIndividually(files, smartFolders, options, results, s
         // Use fallback logic
         const fallbackDestination = getFallbackDestination(file, smartFolders, defaultLocation);
 
-        results.organized.push({
-          file: sanitizeFile(file),
-          destination: fallbackDestination,
-          confidence: 0.3,
-          method: 'fallback'
-        });
+        if (fallbackDestination) {
+          results.organized.push({
+            file: sanitizeFile(file),
+            destination: fallbackDestination,
+            confidence: 0.3,
+            method: 'fallback'
+          });
 
-        results.operations.push({
-          type: 'move',
-          source: file.path,
-          destination: fallbackDestination
-        });
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination: fallbackDestination
+          });
+        } else {
+          results.needsReview.push({
+            file: sanitizeFile(file),
+            suggestion: null,
+            alternatives: [],
+            confidence: 0,
+            explanation: 'No smart folder fallback available'
+          });
+        }
         continue;
       }
 
@@ -141,7 +161,7 @@ async function processFilesIndividually(files, smartFolders, options, results, s
       const confidence = suggestion.confidence || 0;
 
       // Determine action based on confidence
-      if (confidence >= confidenceThreshold) {
+      if (confidence >= effectiveThreshold && primary.isSmartFolder) {
         // High confidence - organize automatically
         // Ensure primary suggestion folder/path are valid strings
         const safePrimary = safeSuggestion(primary);
@@ -171,14 +191,40 @@ async function processFilesIndividually(files, smartFolders, options, results, s
           });
         }
       } else {
-        // Below threshold - needs user review
-        results.needsReview.push({
-          file: sanitizeFile(file),
-          suggestion: primary,
-          alternatives: suggestion.alternatives,
-          confidence,
-          explanation: suggestion.explanation
-        });
+        const defaultFolder = findDefaultFolder(smartFolders);
+        if (
+          defaultFolder &&
+          typeof defaultFolder.path === 'string' &&
+          confidence < effectiveThreshold
+        ) {
+          const destination = path.join(defaultFolder.path, file.name);
+          const uncategorizedSuggestion = {
+            ...defaultFolder,
+            isSmartFolder: true
+          };
+          results.organized.push({
+            file: sanitizeFile(file),
+            suggestion: uncategorizedSuggestion,
+            destination,
+            confidence,
+            method: 'low-confidence-default'
+          });
+
+          results.operations.push({
+            type: 'move',
+            source: file.path,
+            destination
+          });
+        } else {
+          // Below threshold or not a smart folder - needs user review
+          results.needsReview.push({
+            file: sanitizeFile(file),
+            suggestion: primary,
+            alternatives: suggestion.alternatives,
+            confidence,
+            explanation: suggestion.explanation
+          });
+        }
       }
     } catch (error) {
       const fileErrorDetails = {
@@ -219,6 +265,11 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     // FIX: Use same default as settings (0.75) for consistency - actual value comes from options
     confidenceThreshold = 0.75
   } = options;
+  const baseThreshold = 0.75;
+  const effectiveThreshold = Math.max(
+    Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0,
+    baseThreshold
+  );
 
   if (!autoOrganizeEnabled) {
     logger.info('[AutoOrganize] Auto-organize disabled, skipping file:', filePath);
@@ -308,7 +359,12 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     });
 
     // Only auto-organize if confidence is very high
-    if (suggestion.success && suggestion.primary && suggestion.confidence >= confidenceThreshold) {
+    if (
+      suggestion.success &&
+      suggestion.primary &&
+      suggestion.primary.isSmartFolder &&
+      suggestion.confidence >= effectiveThreshold
+    ) {
       // Ensure primary suggestion folder/path are valid strings
       const { primary } = suggestion;
 
@@ -339,12 +395,7 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
       safePrimary.folder = resolvedFolder;
       safePrimary.path = resolvedPath;
 
-      const destination = buildDestinationPath(
-        file,
-        safePrimary,
-        options.defaultLocation || 'Documents',
-        false
-      );
+      const destination = buildDestinationPath(file, safePrimary, options.defaultLocation, false);
 
       logger.info('[AutoOrganize] Auto-organizing new file', {
         file: filePath,
@@ -378,7 +429,7 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
     logger.info('[AutoOrganize] File confidence too low for auto-organization', {
       file: filePath,
       confidence: suggestion.confidence || 0,
-      threshold: confidenceThreshold
+      threshold: effectiveThreshold
     });
 
     return null;

@@ -53,7 +53,9 @@ const ALLOWED_CHANNELS = {
   SUGGESTIONS: Object.values(IPC_CHANNELS.SUGGESTIONS || {}),
   ORGANIZE: Object.values(IPC_CHANNELS.ORGANIZE || {}),
   CHROMADB: Object.values(IPC_CHANNELS.CHROMADB || {}),
-  DEPENDENCIES: Object.values(IPC_CHANNELS.DEPENDENCIES || {})
+  DEPENDENCIES: Object.values(IPC_CHANNELS.DEPENDENCIES || {}),
+  CHAT: Object.values(IPC_CHANNELS.CHAT || {}),
+  KNOWLEDGE: Object.values(IPC_CHANNELS.KNOWLEDGE || {})
 };
 
 // FIX: Use centralized security config to prevent drift between preload and main process
@@ -767,6 +769,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     clearClusters: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.CLEAR_CLUSTERS)
   },
 
+  // Chat / Document QA
+  chat: {
+    query: (payload) => secureIPC.safeInvoke(IPC_CHANNELS.CHAT.QUERY, payload),
+    resetSession: (sessionId) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.CHAT.RESET_SESSION, { sessionId })
+  },
+
+  // Knowledge relationships
+  knowledge: {
+    getRelationshipEdges: (fileIds, options = {}) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.KNOWLEDGE.GET_RELATIONSHIP_EDGES, {
+        fileIds,
+        minWeight: options.minWeight,
+        maxEdges: options.maxEdges
+      })
+  },
+
   // Organization Suggestions
   suggestions: {
     getFileSuggestions: (file, options) =>
@@ -779,11 +798,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         files,
         options
       }),
-    recordFeedback: (file, suggestion, accepted) =>
+    recordFeedback: (file, suggestion, accepted, note) =>
       secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.RECORD_FEEDBACK, {
         file,
         suggestion,
-        accepted
+        accepted,
+        note
       }),
     getStrategies: () => secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_STRATEGIES),
     applyStrategy: (files, strategyId) =>
@@ -800,6 +820,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     suggestNewFolder: (file) =>
       secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.SUGGEST_NEW_FOLDER, {
         file
+      }),
+    addFeedbackMemory: (text, metadata) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.ADD_FEEDBACK_MEMORY, {
+        text,
+        metadata
+      }),
+    getFeedbackMemory: () => secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.GET_FEEDBACK_MEMORY),
+    updateFeedbackMemory: (id, text, metadata) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.UPDATE_FEEDBACK_MEMORY, {
+        id,
+        text,
+        metadata
+      }),
+    deleteFeedbackMemory: (id) =>
+      secureIPC.safeInvoke(IPC_CHANNELS.SUGGESTIONS.DELETE_FEEDBACK_MEMORY, {
+        id
       })
   },
 

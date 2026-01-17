@@ -157,7 +157,7 @@ function registerSuggestionsIpc(servicesOrParams) {
         success: false,
         error: 'Suggestion service unavailable'
       },
-      handler: async (event, { file, suggestion, accepted }, service) => {
+      handler: async (event, { file, suggestion, accepted, note }, service) => {
         try {
           logger.info('[SUGGESTIONS] Recording feedback:', {
             file: file.name,
@@ -166,10 +166,117 @@ function registerSuggestionsIpc(servicesOrParams) {
           });
 
           service.recordFeedback(file, suggestion, accepted);
+          if (note) {
+            await service.recordFeedbackNote(file, suggestion, accepted, note);
+          }
 
           return { success: true };
         } catch (error) {
           logger.error('[SUGGESTIONS] Failed to record feedback:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
+
+  // Add feedback memory
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SUGGESTIONS.ADD_FEEDBACK_MEMORY,
+    createHandler({
+      logger,
+      context,
+      schema: schemas?.feedbackMemoryAdd,
+      serviceName: 'suggestionService',
+      getService: getSuggestionService,
+      fallbackResponse: {
+        success: false,
+        error: 'Suggestion service unavailable'
+      },
+      handler: async (event, { text, metadata }, service) => {
+        try {
+          const item = await service.addFeedbackMemory(text, metadata);
+          return { success: true, item };
+        } catch (error) {
+          logger.error('[SUGGESTIONS] Failed to add feedback memory:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
+
+  // Get feedback memory list
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SUGGESTIONS.GET_FEEDBACK_MEMORY,
+    createHandler({
+      logger,
+      context,
+      serviceName: 'suggestionService',
+      getService: getSuggestionService,
+      fallbackResponse: {
+        success: false,
+        error: 'Suggestion service unavailable',
+        items: []
+      },
+      handler: async (event, service) => {
+        try {
+          const items = await service.listFeedbackMemory();
+          return { success: true, items };
+        } catch (error) {
+          logger.error('[SUGGESTIONS] Failed to get feedback memory:', error);
+          return createErrorResponse(error, { items: [] });
+        }
+      }
+    })
+  );
+
+  // Delete feedback memory
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SUGGESTIONS.DELETE_FEEDBACK_MEMORY,
+    createHandler({
+      logger,
+      context,
+      schema: schemas?.feedbackMemoryDelete,
+      serviceName: 'suggestionService',
+      getService: getSuggestionService,
+      fallbackResponse: {
+        success: false,
+        error: 'Suggestion service unavailable'
+      },
+      handler: async (event, { id }, service) => {
+        try {
+          const removed = await service.deleteFeedbackMemory(id);
+          return { success: true, removed };
+        } catch (error) {
+          logger.error('[SUGGESTIONS] Failed to delete feedback memory:', error);
+          return createErrorResponse(error);
+        }
+      }
+    })
+  );
+
+  // Update feedback memory
+  safeHandle(
+    ipcMain,
+    IPC_CHANNELS.SUGGESTIONS.UPDATE_FEEDBACK_MEMORY,
+    createHandler({
+      logger,
+      context,
+      schema: schemas?.feedbackMemoryUpdate,
+      serviceName: 'suggestionService',
+      getService: getSuggestionService,
+      fallbackResponse: {
+        success: false,
+        error: 'Suggestion service unavailable'
+      },
+      handler: async (event, { id, text, metadata }, service) => {
+        try {
+          const item = await service.updateFeedbackMemory(id, text, metadata);
+          return { success: true, item };
+        } catch (error) {
+          logger.error('[SUGGESTIONS] Failed to update feedback memory:', error);
           return createErrorResponse(error);
         }
       }

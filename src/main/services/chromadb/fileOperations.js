@@ -8,8 +8,11 @@
  */
 
 const { logger } = require('../../../shared/logger');
+const { buildLogMeta } = require('../../../shared/loggingStandards');
 const { withRetry } = require('../../../shared/errorHandlingUtils');
 const { prepareFileMetadata, sanitizeMetadata } = require('../../../shared/pathSanitization');
+const { normalizeEmbeddingMetadata } = require('../../../shared/normalization');
+const { embeddingMetaSchema, validateSchema } = require('../../../shared/normalization/schemas');
 const { OperationType } = require('../../utils/OfflineQueue');
 
 logger.setContext('ChromaDB:FileOps');
@@ -64,8 +67,23 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
           );
         }
 
-        // Use shared helper to prepare and sanitize metadata
-        const sanitized = prepareFileMetadata(file);
+        const metaCandidate = {
+          ...(file.meta || {}),
+          model: file.model,
+          updatedAt: file.updatedAt
+        };
+        const normalizedMeta = normalizeEmbeddingMetadata(metaCandidate);
+        const metaValidation = validateSchema(embeddingMetaSchema, normalizedMeta);
+        if (!metaValidation.valid) {
+          logger.warn('[FileOps] Invalid metadata shape in upsertFile', {
+            fileId: file.id,
+            error: metaValidation.error?.message
+          });
+        }
+        const sanitized = prepareFileMetadata({
+          ...file,
+          meta: metaValidation.data || normalizedMeta
+        });
 
         // ChromaDB expects embeddings as arrays
         await fileCollection.upsert({
@@ -85,15 +103,18 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
           path: sanitized.path
         });
       } catch (error) {
-        logger.error('[FileOps] Failed to upsert file with context:', {
-          operation: 'upsert-file',
-          fileId: file.id,
-          filePath: file.meta?.path,
-          fileName: file.meta?.name,
-          timestamp: new Date().toISOString(),
-          error: error.message,
-          errorStack: error.stack
-        });
+        logger.error(
+          '[FileOps] Failed to upsert file with context:',
+          buildLogMeta({
+            component: 'ChromaDB:FileOps',
+            operation: 'upsert-file',
+            fileId: file.id,
+            filePath: file.meta?.path,
+            fileName: file.meta?.name,
+            error: error.message,
+            errorStack: error.stack
+          })
+        );
         throw error;
       }
     },
@@ -154,27 +175,20 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
             continue;
           }
 
-          const baseMetadata = {
-            path: file.meta?.path || '',
-            name: file.meta?.name || '',
+          const metaCandidate = {
+            ...(file.meta || {}),
             model: file.model || '',
-            updatedAt: file.updatedAt || new Date().toISOString(),
-            // Extended schema fields for filtering and retrieval
-            date: file.meta?.date || '',
-            entity: file.meta?.entity || '',
-            type: file.meta?.type || '',
-            category: file.meta?.category || '',
-            project: file.meta?.project || '',
-            summary: file.meta?.summary || '',
-            keywords: Array.isArray(file.meta?.keywords)
-              ? file.meta.keywords.join(',')
-              : file.meta?.keywords || ''
+            updatedAt: file.updatedAt || new Date().toISOString()
           };
-
-          const sanitized = sanitizeMetadata({
-            ...baseMetadata,
-            ...file.meta
-          });
+          const normalizedMeta = normalizeEmbeddingMetadata(metaCandidate);
+          const metaValidation = validateSchema(embeddingMetaSchema, normalizedMeta);
+          if (!metaValidation.valid) {
+            logger.warn('[FileOps] Invalid metadata shape in batch upsert', {
+              id: file.id,
+              error: metaValidation.error?.message
+            });
+          }
+          const sanitized = sanitizeMetadata(metaValidation.data || normalizedMeta);
 
           ids.push(file.id);
           embeddings.push(file.vector);

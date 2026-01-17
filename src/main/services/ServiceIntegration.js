@@ -543,7 +543,7 @@ class ServiceIntegration {
     // SearchService is a core feature service that was previously manually instantiated
     if (!container.has(ServiceIds.SEARCH_SERVICE)) {
       container.registerSingleton(ServiceIds.SEARCH_SERVICE, (c) => {
-        const SearchService = require('./SearchService');
+        const { SearchService } = require('./SearchService');
         return new SearchService({
           chromaDbService: c.resolve(ServiceIds.CHROMA_DB),
           analysisHistoryService: c.resolve(ServiceIds.ANALYSIS_HISTORY),

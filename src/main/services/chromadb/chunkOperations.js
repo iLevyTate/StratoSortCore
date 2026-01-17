@@ -10,6 +10,8 @@
 const { logger } = require('../../../shared/logger');
 const { withRetry } = require('../../../shared/errorHandlingUtils');
 const { sanitizeMetadata } = require('../../../shared/pathSanitization');
+const { normalizeChunkMetadata } = require('../../../shared/normalization');
+const { chunkMetaSchema, validateSchema } = require('../../../shared/normalization/schemas');
 
 logger.setContext('ChromaDB:ChunkOps');
 
@@ -81,18 +83,33 @@ async function batchUpsertFileChunks({ chunks, chunkCollection }) {
         const validation = validateEmbeddingVector(chunk.vector, chunk.id);
         if (!validation.valid) continue;
 
-        const metaValidation = validateChunkMetadata(chunk.meta);
+        const rawMeta = chunk.meta || {};
+        const rawValidation = validateChunkMetadata(rawMeta);
+        if (!rawValidation.valid) continue;
+
+        const normalizedMeta = normalizeChunkMetadata(rawMeta);
+        const schemaValidation = validateSchema(chunkMetaSchema, normalizedMeta);
+        if (!schemaValidation.valid) {
+          logger.warn('[ChunkOps] Invalid chunk metadata shape', {
+            chunkId: chunk.id,
+            error: schemaValidation.error?.message
+          });
+        }
+
+        const metaValidation = validateChunkMetadata(schemaValidation.data || normalizedMeta);
         if (!metaValidation.valid) continue;
 
         const sanitized = sanitizeMetadata({
-          ...(chunk.meta || {}),
+          ...(schemaValidation.data || normalizedMeta),
           updatedAt: chunk.updatedAt || new Date().toISOString()
         });
 
         ids.push(chunk.id);
         embeddings.push(chunk.vector);
         metadatas.push(sanitized);
-        documents.push(String(chunk.document || sanitized.snippet || sanitized.path || chunk.id));
+        const fallbackDocument =
+          chunk.document || sanitized.snippet || sanitized.path || rawMeta.path || chunk.id;
+        documents.push(String(fallbackDocument));
       }
 
       if (ids.length === 0) return 0;

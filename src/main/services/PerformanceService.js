@@ -337,9 +337,10 @@ async function buildOllamaOptions(task = 'text') {
 
   // Memory mapping helps on desktop; mlock can cause permission issues on some systems
   // On Linux with sufficient RAM, mlock can improve performance by preventing swapping
+  const shouldUseMlock = process.platform === 'linux' && os.totalmem() / 1024 / 1024 / 1024 > 16;
   const memoryHints = {
     use_mmap: true,
-    use_mlock: process.platform === 'linux' && os.totalmem() / 1024 / 1024 / 1024 > 16
+    use_mlock: shouldUseMlock
   };
 
   const options = {
@@ -347,12 +348,11 @@ async function buildOllamaOptions(task = 'text') {
     num_thread: numThread,
     num_ctx: numCtx,
     num_batch: numBatch,
+    keep_alive: envKeepAlive,
     // GPU configuration
     ...gpuHints,
     // Memory hints
-    ...memoryHints,
-    // CRITICAL: Keep model loaded in memory to avoid reload latency (5-30 seconds per load)
-    keep_alive: envKeepAlive
+    ...memoryHints
   };
 
   logger.debug('[PerformanceService] Ollama options built', {

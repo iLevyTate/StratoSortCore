@@ -15,6 +15,7 @@ const {
 const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
 const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
 const { normalizeAnalysisResult } = require('./utils');
+const { normalizeExtractedTextForStorage } = require('./analysisTextUtils');
 const {
   getIntelligentCategory: getIntelligentImageCategory,
   getIntelligentKeywords: getIntelligentImageKeywords,
@@ -518,13 +519,24 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
  * @param {number} confidence - Confidence score (default: 60)
  * @returns {Object} Fallback analysis result
  */
-function createFallbackResult(fileName, fileExtension, reason, confidence = 60) {
+function normalizeCategoryToSmartFolder(category, smartFolders) {
+  if (typeof FolderMatchingService?.matchCategoryToFolder === 'function') {
+    return FolderMatchingService.matchCategoryToFolder(category, smartFolders);
+  }
+  return category;
+}
+
+function createFallbackResult(fileName, fileExtension, reason, confidence = 60, smartFolders = []) {
   const intelligentCategory = getIntelligentImageCategory(fileName, fileExtension);
   const intelligentKeywords = getIntelligentImageKeywords(fileName, fileExtension);
+  const normalizedCategory =
+    typeof intelligentCategory === 'string' && intelligentCategory.trim().length > 0
+      ? normalizeCategoryToSmartFolder(intelligentCategory, smartFolders)
+      : intelligentCategory;
   return {
     purpose: `Image (fallback - ${reason})`,
     project: fileName.replace(fileExtension, ''),
-    category: intelligentCategory,
+    category: normalizedCategory,
     date: new Date().toISOString().split('T')[0],
     keywords: intelligentKeywords,
     confidence,
@@ -610,7 +622,7 @@ async function preprocessImageBuffer(imageBuffer, fileExtension) {
  * @param {Array} smartFolders - Available smart folders
  * @returns {Promise<Object>} Analysis with folder matching applied
  */
-async function applySemanticFolderMatching(analysis, filePath, smartFolders) {
+async function applySemanticFolderMatching(analysis, filePath, smartFolders, fileSize) {
   const chromaDb = container.tryResolve(ServiceIds.CHROMA_DB);
   if (chromaDb !== chromaDbSingleton) {
     chromaDbSingleton = chromaDb;
@@ -703,10 +715,19 @@ async function applySemanticFolderMatching(analysis, filePath, smartFolders) {
       meta: {
         path: filePath,
         name: fileName,
+        fileExtension: path.extname(fileName).toLowerCase(),
+        fileSize,
         category: analysis.category || 'Uncategorized',
         confidence: confidencePercent,
         type: 'image',
-        summary: summary.substring(0, 500)
+        summary: summary.substring(0, 500),
+        tags: Array.isArray(analysis.keywords) ? analysis.keywords : [],
+        keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
+        date: analysis.date,
+        suggestedName: analysis.suggestedName,
+        content_type: analysis.content_type,
+        colors: Array.isArray(analysis.colors) ? analysis.colors : [],
+        has_text: analysis.has_text === true
       },
       updatedAt: new Date().toISOString()
     });
@@ -790,13 +811,13 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     const isRunning = await isOllamaRunning();
     if (!isRunning) {
       logger.warn('[ANALYSIS-FALLBACK] Ollama unavailable, using filename-based analysis');
-      return createFallbackResult(fileName, fileExtension, 'Ollama unavailable', 60);
+      return createFallbackResult(fileName, fileExtension, 'Ollama unavailable', 60, smartFolders);
     }
   } catch (error) {
     logger.error('[IMAGE] Pre-flight verification failed', {
       error: error.message
     });
-    return createFallbackResult(fileName, fileExtension, error.message, 55);
+    return createFallbackResult(fileName, fileExtension, error.message, 55, smartFolders);
   }
 
   try {
@@ -968,14 +989,51 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         error: error.message,
         filePath
       });
-      const fallback = createFallbackResult(fileName, fileExtension, 'analysis error', 55);
+      const fallback = createFallbackResult(
+        fileName,
+        fileExtension,
+        'analysis error',
+        55,
+        smartFolders
+      );
+      const extractedTextForStorage = normalizeExtractedTextForStorage(extractedText);
+      if (extractedTextForStorage) {
+        fallback.extractedText = extractedTextForStorage;
+      }
       fallback.error = error.message;
       return fallback;
     }
 
+    // If OCR not performed earlier, attempt it now when the analysis indicates text content.
+    if ((!extractedText || extractedText.length < 20) && analysis && !analysis.error) {
+      const contentType = String(analysis.content_type || '').toLowerCase();
+      const wantsOcr =
+        analysis.has_text === true ||
+        contentType.includes('text') ||
+        contentType.includes('document') ||
+        contentType.includes('screenshot');
+      if (wantsOcr) {
+        try {
+          logger.debug('[IMAGE] Analysis indicates text content, attempting OCR post-extraction');
+          extractedText = await extractTextFromImage(filePath);
+          if (extractedText && extractedText.length > 20) {
+            logger.info('[IMAGE] OCR post-extraction successful', {
+              textLength: extractedText.length,
+              preview: extractedText.slice(0, 100)
+            });
+            analysis = validateAnalysisConsistency(analysis, fileName, extractedText);
+          }
+        } catch (ocrError) {
+          logger.debug('[IMAGE] OCR post-extraction failed (non-fatal):', ocrError.message);
+        }
+      }
+    }
+
+    const extractedTextForStorage = normalizeExtractedTextForStorage(extractedText);
+
     // Semantic folder refinement using embeddings (delegated to helper)
     try {
-      await applySemanticFolderMatching(analysis, filePath, smartFolders);
+      await applySemanticFolderMatching(analysis, filePath, smartFolders, stats?.size);
     } catch (error) {
       logger.warn('[IMAGE] Unexpected error in semantic folder refinement:', {
         error: error?.message,
@@ -988,8 +1046,17 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       logger.warn('[IMAGE] analyzeImageWithOllama returned undefined', {
         filePath
       });
-      const result = createFallbackResult(fileName, fileExtension, 'undefined result');
+      const result = createFallbackResult(
+        fileName,
+        fileExtension,
+        'undefined result',
+        60,
+        smartFolders
+      );
       result.error = 'Ollama image analysis returned undefined';
+      if (extractedTextForStorage) {
+        result.extractedText = extractedTextForStorage;
+      }
       try {
         setImageCache(signature, result);
       } catch {
@@ -1007,11 +1074,17 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
           finalSuggestedName += fileExtension;
         }
       }
+      const normalizedCategory =
+        typeof analysis.category === 'string' && analysis.category.trim().length > 0
+          ? normalizeCategoryToSmartFolder(analysis.category, smartFolders)
+          : analysis.category;
       const normalized = normalizeAnalysisResult(
         {
           ...analysis,
+          category: normalizedCategory || analysis.category,
           content_type: analysis.content_type || 'unknown',
-          suggestedName: finalSuggestedName || safeSuggestedName(fileName, fileExtension)
+          suggestedName: finalSuggestedName || safeSuggestedName(fileName, fileExtension),
+          extractedText: extractedTextForStorage
         },
         { category: 'image', keywords: [] }
       );
@@ -1024,10 +1097,13 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     }
 
     // Fallback analysis if Ollama fails
-    const result = createFallbackResult(fileName, fileExtension, 'Ollama failed');
+    const result = createFallbackResult(fileName, fileExtension, 'Ollama failed', 60, smartFolders);
     // Preserve keywords from partial analysis if available
     if (Array.isArray(analysis.keywords)) {
       result.keywords = analysis.keywords;
+    }
+    if (extractedTextForStorage) {
+      result.extractedText = extractedTextForStorage;
     }
     result.error = analysis?.error || 'Ollama image analysis failed.';
     try {

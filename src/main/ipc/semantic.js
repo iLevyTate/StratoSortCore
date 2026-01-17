@@ -26,6 +26,7 @@ const {
   getOllama
 } = require('../ollamaUtils');
 const { chunkText } = require('../utils/textChunking');
+const { normalizeText } = require('../../shared/normalization');
 const {
   readEmbeddingIndexMetadata,
   writeEmbeddingIndexMetadata
@@ -1655,7 +1656,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         const { MAX_TOP_K } = LIMITS;
 
         try {
-          const cleanQuery = typeof query === 'string' ? query.trim() : '';
+          const cleanQuery = normalizeText(query, { maxLength: 2000 });
           if (!cleanQuery) {
             return { success: false, error: 'Query is required' };
           }
@@ -1839,7 +1840,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
       };
 
       try {
-        const cleanQuery = typeof query === 'string' ? query.trim() : '';
+        const cleanQuery = normalizeText(query, { maxLength: 2000 });
         if (!cleanQuery) {
           return { success: false, error: 'Query is required' };
         }
@@ -1857,9 +1858,15 @@ function registerEmbeddingsIpc(servicesOrParams) {
           return { success: false, error: `fileIds must contain at most ${MAX_IDS} ids` };
         }
 
-        const normalizedIds = fileIds
-          .filter((id) => typeof id === 'string' && id.length > 0 && id.length < 2048)
-          .slice(0, MAX_IDS);
+        const normalizedIds = [];
+        const seenIds = new Set();
+        for (const id of fileIds) {
+          if (typeof id !== 'string' || id.length === 0 || id.length >= 2048) continue;
+          if (seenIds.has(id)) continue;
+          seenIds.add(id);
+          normalizedIds.push(id);
+          if (normalizedIds.length >= MAX_IDS) break;
+        }
 
         if (normalizedIds.length === 0) {
           return { success: false, error: 'No valid fileIds provided' };

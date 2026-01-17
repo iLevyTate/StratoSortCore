@@ -11,6 +11,15 @@
  */
 
 const WordPOS = require('wordpos');
+const fs = require('fs');
+const path = require('path');
+
+let wordnetDbPath = null;
+try {
+  wordnetDbPath = require('wordnet-db');
+} catch {
+  wordnetDbPath = null;
+}
 const { distance } = require('fastest-levenshtein');
 const { logger } = require('../../shared/logger');
 
@@ -23,6 +32,7 @@ class QueryProcessor {
   constructor(options = {}) {
     this.wordpos = null; // Lazy loaded
     this._wordposPromise = null;
+    this.wordposUnavailable = false;
 
     // Common English stop words that should NEVER be spell-corrected
     // These are function words that provide grammatical structure
@@ -250,6 +260,26 @@ class QueryProcessor {
     );
   }
 
+  _resolveWordNetDictPath() {
+    const candidates = [];
+    if (wordnetDbPath) candidates.push(wordnetDbPath);
+    candidates.push(path.join(process.cwd(), 'node_modules', 'wordnet-db', 'dict'));
+    if (process.resourcesPath) {
+      candidates.push(
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'wordnet-db', 'dict')
+      );
+      candidates.push(path.join(process.resourcesPath, 'node_modules', 'wordnet-db', 'dict'));
+    }
+
+    for (const candidate of candidates) {
+      if (candidate && fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Lazy load WordPOS to avoid startup delay
    * @returns {Promise<WordPOS>}
@@ -257,17 +287,35 @@ class QueryProcessor {
   async _getWordPOS() {
     if (this.wordpos) return this.wordpos;
 
+    if (this.wordposUnavailable) return null;
+
     if (this._wordposPromise) return this._wordposPromise;
 
     this._wordposPromise = (async () => {
       try {
         logger.debug('[QueryProcessor] Loading WordNet dictionary...');
         const startTime = Date.now();
-        this.wordpos = new WordPOS();
+        if (typeof WordPOS !== 'function') {
+          throw new Error('WordPOS constructor is unavailable');
+        }
+        const dictPath = this._resolveWordNetDictPath();
+        if (!dictPath) {
+          throw new Error('WordNet dictionary not found');
+        }
+        logger.debug('[QueryProcessor] Using WordNet dictionary path:', dictPath);
+        const instance = new WordPOS({ dictPath });
+        if (!instance || typeof instance.lookup !== 'function') {
+          throw new Error('WordPOS instance missing lookup()');
+        }
+        this.wordpos = instance;
         logger.info(`[QueryProcessor] WordNet loaded in ${Date.now() - startTime}ms`);
         return this.wordpos;
       } catch (error) {
-        logger.error('[QueryProcessor] Failed to load WordNet:', error.message);
+        this.wordposUnavailable = true;
+        logger.warn(
+          '[QueryProcessor] WordNet unavailable; synonym expansion disabled:',
+          error.message
+        );
         // Return null - synonyms will be skipped but spell correction still works
         return null;
       } finally {
@@ -437,9 +485,21 @@ class QueryProcessor {
       return this.synonymCache.get(word);
     }
 
+    const cacheSynonyms = (synonymArray) => {
+      if (this.synonymCache.size >= this.synonymCacheMaxSize) {
+        const firstKey = this.synonymCache.keys().next().value;
+        this.synonymCache.delete(firstKey);
+      }
+      this.synonymCache.set(word, synonymArray);
+    };
+
     try {
       const wordpos = await this._getWordPOS();
-      if (!wordpos) return [];
+      if (!wordpos) {
+        const emptySynonyms = [];
+        cacheSynonyms(emptySynonyms);
+        return emptySynonyms;
+      }
 
       // WordNet lookup (works offline)
       const results = await wordpos.lookup(word);
@@ -461,16 +521,13 @@ class QueryProcessor {
       const synonymArray = Array.from(synonyms);
 
       // Cache the result (with size limit)
-      if (this.synonymCache.size >= this.synonymCacheMaxSize) {
-        // Remove oldest entry (first key)
-        const firstKey = this.synonymCache.keys().next().value;
-        this.synonymCache.delete(firstKey);
-      }
-      this.synonymCache.set(word, synonymArray);
+      cacheSynonyms(synonymArray);
 
       return synonymArray;
     } catch (error) {
       logger.debug('[QueryProcessor] Synonym lookup failed for:', word, error.message);
+      const emptySynonyms = [];
+      cacheSynonyms(emptySynonyms);
       return [];
     }
   }
