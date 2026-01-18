@@ -40,36 +40,6 @@ but not yet fully optimized.
 
 ---
 
-### Windows
-
-1. Go to [Releases](https://github.com/iLevyTate/elstratosort/releases/latest) and download the
-   latest `.exe` installer (produced at `release/build/` after building).
-2. Run the installer and follow the wizard.
-3. On first launch, the app will verify AI components (Ollama, ChromaDB) and guide you through any
-   required setup (one-time, ~6GB for models).
-
-### macOS
-
-- Download the latest `.dmg` from
-  [Releases](https://github.com/iLevyTate/elstratosort/releases/latest).
-- Open the DMG, drag StratoSort to Applications, then launch to complete AI setup.
-
-### Linux
-
-- Download the latest `.AppImage` from
-  [Releases](https://github.com/iLevyTate/elstratosort/releases/latest).
-- Make it executable: `chmod +x StratoSort-*.AppImage`
-- Run it: `./StratoSort-*.AppImage`
-
-## Getting Started
-
-1. **Install**: Follow platform instructions above.
-2. **Launch**: StratoSort runs a preflight check for Ollama and ChromaDB.
-3. **Discover**: Add files or folders — **analysis starts automatically** as soon as items are
-   loaded.
-4. **Review**: Check AI suggestions and confidence scores.
-5. **Organize**: Apply changes. Undo/redo is always available.
-
 ## System Requirements
 
 ### Minimum
