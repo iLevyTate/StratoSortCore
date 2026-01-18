@@ -38,9 +38,11 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
     smartFolders,
     defaultLocation,
     onViewDetails
-  } = data;
+  } = data || {};
   const startIndex = index * columnsPerRow;
   const rowItems = [];
+
+  if (!files) return null;
 
   for (let col = 0; col < columnsPerRow; col++) {
     const fileIndex = startIndex + col;
