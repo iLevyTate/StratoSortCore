@@ -36,8 +36,8 @@ const formatDate = (dateString) => {
 };
 
 const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) {
-  const { files } = data;
-  const file = files[index];
+  const { files } = data || {};
+  const file = files && files[index];
 
   if (!file) return null;
 

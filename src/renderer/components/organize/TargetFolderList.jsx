@@ -61,8 +61,8 @@ FolderItem.propTypes = {
  * Virtualized row component for rendering folder items
  */
 const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, data }) {
-  const { folders, defaultLocation } = data;
-  const folder = folders[index];
+  const { folders, defaultLocation } = data || {};
+  const folder = folders && folders[index];
 
   if (!folder) return null;
 
