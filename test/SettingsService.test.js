@@ -307,9 +307,12 @@ describe('SettingsService', () => {
 
       electron.BrowserWindow.getAllWindows.mockReturnValueOnce([badWin]);
 
-      await service._notifySettingsChanged({ language: 'en' });
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to send settings-changed event:')
+      // Should not throw even when send fails - safeSend handles errors internally
+      await expect(service._notifySettingsChanged({ language: 'en' })).resolves.not.toThrow();
+      // safeSend logs errors via logger.error, not logger.warn
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[IPC Event] Failed to send 'settings-changed-external':"),
+        expect.any(Error)
       );
     });
 

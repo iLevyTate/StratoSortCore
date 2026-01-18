@@ -1,4 +1,3 @@
-const { logger } = require('../src/shared/logger');
 const {
   getEnvOrDefault,
   getEnvBool,
@@ -17,6 +16,7 @@ describe('configDefaults', () => {
   beforeEach(() => {
     jest.resetModules();
     Object.assign(process.env, originalEnv);
+    const { logger } = require('../src/shared/logger');
     warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
   });
 
@@ -88,6 +88,7 @@ describe('configDefaults', () => {
 
   describe('validated URLs with defaults', () => {
     test('getValidatedChromaServerUrl falls back on invalid env and logs warning', () => {
+      process.env.NODE_ENV = 'development';
       process.env.CHROMA_SERVER_URL = 'ftp://bad-host';
       const result = getValidatedChromaServerUrl();
       expect(result.valid).toBe(false);

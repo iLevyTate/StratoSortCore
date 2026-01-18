@@ -425,7 +425,7 @@ describe('AutoOrganizeService', () => {
           defaultLocation: '/custom/location'
         });
 
-        // Without a default smart folder, unmatched files should remain in review
+        // Without a matching smart folder, file should go to needsReview
         expect(result.organized.length).toBe(0);
         expect(result.needsReview.length).toBe(1);
       });

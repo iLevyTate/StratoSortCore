@@ -809,7 +809,7 @@ describe('ChromaDBServiceCore', () => {
 
       await expect(testService.initialize()).rejects.toThrow();
 
-      // Should rename the DB directory when auto-reset is enabled
+      // Should rename the DB directory when auto-reset is explicitly enabled
       expect(renameSpy).toHaveBeenCalled();
       expect(renameSpy.mock.calls[0][1]).toMatch(/\.bak\.\d+$/);
 

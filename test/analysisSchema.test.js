@@ -24,7 +24,8 @@ describe('Extended Analysis Schema', () => {
       summary: '',
       keywords: [],
       confidence: 0,
-      suggestedName: null
+      suggestedName: null,
+      reasoning: null
     });
   });
 });

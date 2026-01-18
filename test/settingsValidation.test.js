@@ -530,9 +530,9 @@ describe('Settings Validation', () => {
 
     test('returns correct default for all standard settings', () => {
       expect(getDefaultValue('ollamaHost')).toBe('http://127.0.0.1:11434');
-      expect(getDefaultValue('textModel')).toBe('qwen3:0.6b');
-      expect(getDefaultValue('visionModel')).toBe('gemma3:latest');
-      expect(getDefaultValue('embeddingModel')).toBe('embeddinggemma');
+      expect(getDefaultValue('textModel')).toBe('llama3.2:latest');
+      expect(getDefaultValue('visionModel')).toBe('llava:latest');
+      expect(getDefaultValue('embeddingModel')).toBe('mxbai-embed-large');
       expect(getDefaultValue('autoOrganize')).toBe(false);
       expect(getDefaultValue('backgroundMode')).toBe(false);
     });

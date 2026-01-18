@@ -3,6 +3,13 @@
  * Tests the service status event emitter functionality
  */
 
+// FIX: Mock ipcWrappers to pass through safeSend calls to webContents.send
+jest.mock('../src/main/ipc/ipcWrappers', () => ({
+  safeSend: (webContents, channel, data) => {
+    webContents.send(channel, data);
+  }
+}));
+
 const {
   configureServiceStatusEmitter,
   emitServiceStatusChange

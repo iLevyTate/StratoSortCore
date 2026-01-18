@@ -111,11 +111,15 @@ describe('SettingsService migration + recovery', () => {
     mockBackupService.listBackups.mockResolvedValueOnce([
       { filename: 'settings-2026-01-01.json', path: '/tmp/settings-2026-01-01.json' }
     ]);
-    mockBackupService.restoreBackup.mockResolvedValueOnce({ success: true });
+    // Ensure restoreFromBackup invokes the callback to simulate save
+    mockBackupService.restoreFromBackup.mockImplementation(async (path, callback) => {
+      if (callback) await callback({ language: 'en' });
+      return { success: true };
+    });
 
     const settings = await svc.load();
     expect(settings.language).toBe('en');
-    expect(mockBackupService.restoreBackup).toHaveBeenCalled();
+    expect(mockBackupService.restoreFromBackup).toHaveBeenCalled();
   });
 
   test('migrateLegacyConfig imports legacy configs, saves settings, and archives legacy files', async () => {
@@ -130,7 +134,7 @@ describe('SettingsService migration + recovery', () => {
     // Legacy file contents
     mockFs.readFile.mockImplementation((p) => {
       const s = String(p);
-      if (s.endsWith('ollama-config.json')) {
+      if (s.includes('ollama-config.json')) {
         return Promise.resolve(
           JSON.stringify({
             host: 'http://localhost:11434',
@@ -140,11 +144,14 @@ describe('SettingsService migration + recovery', () => {
           })
         );
       }
-      if (s.endsWith('model-config.json')) {
+      if (s.includes('model-config.json')) {
         return Promise.resolve(JSON.stringify({ selectedModel: 'llama3' }));
       }
       // settings.json doesn't exist yet
-      return Promise.reject({ code: 'ENOENT' });
+      if (String(p).includes('settings.json')) {
+        return Promise.reject({ code: 'ENOENT' });
+      }
+      return Promise.reject({ code: 'ENOENT', path: p });
     });
 
     await svc.migrateLegacyConfig();

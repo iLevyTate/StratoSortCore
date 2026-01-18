@@ -924,7 +924,11 @@ describe('Settings IPC Handlers', () => {
       const handler = handlers[IPC_CHANNELS.SETTINGS.GET];
       const result = await handler({});
 
-      expect(result).toEqual({});
+      expect(result).toEqual({
+        success: false,
+        error: 'Load failed',
+        settings: {}
+      });
     });
   });
 

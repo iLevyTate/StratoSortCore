@@ -128,9 +128,9 @@ describe('Settings Backup, Export, and Import', () => {
 
     describe('backup retention', () => {
       test('enforces maximum backup limit', async () => {
-        // Mock 10 existing backups (using settings- prefix) with proper timestamps
+        // Mock existing backups at the service max to ensure cleanup triggers
         const existingBackups = Array.from(
-          { length: 10 },
+          { length: settingsService.maxBackups },
           (_, i) => `settings-2024-01-${String(i + 1).padStart(2, '0')}T10-00-00-000Z.json`
         );
 
@@ -167,9 +167,10 @@ describe('Settings Backup, Export, and Import', () => {
               });
             }
           }
-          // For new backups created during test
+          // For new backups created during test, use a safe timestamp
+          // that won't be filtered out by cleanupStart.
           return JSON.stringify({
-            timestamp: new Date().toISOString(),
+            timestamp: '2024-02-01T10:00:00.000Z',
             appVersion: '1.0.0',
             settings: DEFAULT_SETTINGS
           });

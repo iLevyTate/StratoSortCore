@@ -35,8 +35,11 @@ describe('IPC registration', () => {
       scanDirectory: async () => []
     });
 
-    // Channels that are events (main -> renderer via send), not handlers
-    const eventOnlyChannels = [IPC_CHANNELS.UNDO_REDO.STATE_CHANGED];
+    // Channels that are events (main -> renderer via send) or use ipcMain.on() instead of handle()
+    const eventOnlyChannels = [
+      IPC_CHANNELS.UNDO_REDO.STATE_CHANGED,
+      IPC_CHANNELS.SYSTEM.RENDERER_ERROR_REPORT // Uses ipcMain.on(), not handle()
+    ];
 
     const expectedChannels = [
       // Files (all implemented)
@@ -49,8 +52,8 @@ describe('IPC registration', () => {
       ...Object.values(IPC_CHANNELS.ANALYSIS),
       // Settings
       ...Object.values(IPC_CHANNELS.SETTINGS),
-      // System
-      ...Object.values(IPC_CHANNELS.SYSTEM),
+      // System (excluding event-only channels)
+      ...Object.values(IPC_CHANNELS.SYSTEM).filter((ch) => !eventOnlyChannels.includes(ch)),
       // Analysis history
       ...Object.values(IPC_CHANNELS.ANALYSIS_HISTORY),
       // Ollama

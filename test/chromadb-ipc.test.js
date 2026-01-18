@@ -6,6 +6,10 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
   withErrorLogging: (_logger, handler) => handler,
   safeHandle: (ipcMain, channel, handler) => {
     ipcMain.handle(channel, handler);
+  },
+  // FIX: Add safeSend mock - pass through to webContents.send
+  safeSend: (webContents, channel, data) => {
+    webContents.send(channel, data);
   }
 }));
 

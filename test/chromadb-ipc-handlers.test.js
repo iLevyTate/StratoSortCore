@@ -1,7 +1,11 @@
 // Mock dependencies
 const mockIpcWrappers = {
   withErrorLogging: jest.fn((logger, handler) => handler),
-  safeHandle: jest.fn()
+  safeHandle: jest.fn(),
+  // FIX: Add safeSend mock - pass through to webContents.send
+  safeSend: jest.fn((webContents, channel, data) => {
+    webContents.send(channel, data);
+  })
 };
 jest.mock('../src/main/ipc/ipcWrappers', () => mockIpcWrappers);
 

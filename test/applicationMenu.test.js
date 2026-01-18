@@ -9,7 +9,8 @@ const mockWebContents = {
 };
 
 const mockMainWindow = {
-  webContents: mockWebContents
+  webContents: mockWebContents,
+  isDestroyed: jest.fn().mockReturnValue(false)
 };
 
 const mockGetMainWindow = jest.fn().mockReturnValue(mockMainWindow);

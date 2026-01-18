@@ -60,15 +60,15 @@ describe('defaultSettings', () => {
     });
 
     test('has textModel', () => {
-      expect(DEFAULT_SETTINGS.textModel).toBe('qwen3:0.6b');
+      expect(DEFAULT_SETTINGS.textModel).toBe('llama3.2:latest');
     });
 
     test('has visionModel', () => {
-      expect(DEFAULT_SETTINGS.visionModel).toBe('gemma3:latest');
+      expect(DEFAULT_SETTINGS.visionModel).toBe('llava:latest');
     });
 
     test('has embeddingModel', () => {
-      expect(DEFAULT_SETTINGS.embeddingModel).toBe('embeddinggemma');
+      expect(DEFAULT_SETTINGS.embeddingModel).toBe('mxbai-embed-large');
     });
   });
 

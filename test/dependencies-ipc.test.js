@@ -42,6 +42,13 @@ jest.mock('../src/main/ipc/ipcWrappers', () => ({
   createHandler: ({ handler }) => handler,
   safeHandle: (ipcMain, channel, handler) => {
     ipcMain.handle(channel, handler);
+  },
+  // FIX: Add safeSend mock to forward to webContents.send
+  safeSend: (webContents, channel, data) => {
+    if (webContents && typeof webContents.send === 'function') {
+      webContents.send(channel, data);
+    }
+    return true;
   }
 }));
 
