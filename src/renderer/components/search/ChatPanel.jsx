@@ -373,7 +373,10 @@ export default function ChatPanel({
                 ) : (
                   <div className="space-y-3">
                     <div className="chat-message-text whitespace-pre-wrap">
-                      {assistantText || 'No answer returned.'}
+                      {assistantText ||
+                        (isSending
+                          ? 'Thinking...'
+                          : 'I could not find an answer in the selected documents.')}
                     </div>
                     {(hasDocumentAnswer || hasModelAnswer) && (
                       <div className="space-y-2">
