@@ -44,7 +44,8 @@ const NODE_SIZES = {
   queryNode: { width: 180, height: 60 },
   fileNode: { width: 240, height: 120 },
   folderNode: { width: 220, height: 90 },
-  clusterNode: { width: 360, height: 220 },
+  // FIX: Make cluster nodes compact circles/hubs instead of large cards
+  clusterNode: { width: 180, height: 180 },
   default: { width: 220, height: 100 }
 };
 
@@ -519,8 +520,8 @@ export function radialLayout(centerNode, nodes, options = {}) {
  */
 export function clusterRadialLayout(clusterNodes, edges, options = {}) {
   const { centerX = 400, centerY = 300, radius = 500 } = options;
-  const clusterSize = NODE_SIZES.clusterNode || { width: 320, height: 180 };
-  const arcPadding = 140; // Extra spacing between cluster cards to avoid overlap
+  const clusterSize = NODE_SIZES.clusterNode || { width: 180, height: 180 };
+  const arcPadding = 80; // Reduced padding for compact hubs
 
   if (!clusterNodes || clusterNodes.length === 0) {
     return clusterNodes;

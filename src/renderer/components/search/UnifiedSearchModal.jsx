@@ -2866,14 +2866,18 @@ export default function UnifiedSearchModal({
           fanAngle: Math.PI / 2.5
         });
 
-        // Create edges from cluster to members
+        // Create edges from cluster to members (Distinct visual style)
         const memberEdges = memberIds.map((id) => ({
           id: `cluster:${clusterId}->${id}`,
           source: clusterId,
           target: id,
           type: 'default',
           animated: false,
-          style: { stroke: '#f59e0b', strokeWidth: 1.5 },
+          style: {
+            stroke: '#fbbf24', // Amber-400
+            strokeWidth: 2,
+            opacity: 0.6
+          },
           data: { kind: 'cluster_member' }
         }));
 
