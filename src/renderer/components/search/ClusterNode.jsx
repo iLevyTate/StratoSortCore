@@ -18,7 +18,6 @@ import {
   Search,
   Sparkles
 } from 'lucide-react';
-import { getConfidenceColor, CONFIDENCE_COLORS } from '../../utils/confidenceColors';
 
 // Hub sizing constants
 const HUB_SIZE = {
