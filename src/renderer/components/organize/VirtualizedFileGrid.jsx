@@ -3,13 +3,13 @@ import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import ReadyFileItem from './ReadyFileItem';
 import { joinPath } from '../../utils/platform';
+import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
-// FIX: Implement virtualization for large file lists to prevent UI lag
-// Height calculations for responsive grid layout
-// Slightly taller default rows to prevent cutting off multi-line text in review cards
-const DEFAULT_ROW_HEIGHT = 400;
-const MEASUREMENT_PADDING = 24; // breathing room so measured height has slack
-const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
+// FIX L-2: Use centralized constants for virtualization
+const DEFAULT_ROW_HEIGHT = UI_VIRTUALIZATION.FILE_GRID_ROW_HEIGHT;
+const MEASUREMENT_PADDING = UI_VIRTUALIZATION.MEASUREMENT_PADDING;
+const ROW_HEIGHT_TOLERANCE = 12; // avoid reflows for small delta (component-specific)
+const VIRTUALIZATION_THRESHOLD = UI_VIRTUALIZATION.THRESHOLD;
 
 /**
  * Calculate how many columns to render based on container width
@@ -24,22 +24,21 @@ const getColumnCount = (containerWidth) => {
 /**
  * Virtualized row component that renders multiple file items per row
  */
-const VirtualizedFileRow = memo(function VirtualizedFileRow({
-  index,
-  style,
-  files,
-  columnsPerRow,
-  selectedFiles,
-  toggleFileSelection,
-  getFileWithEdits,
-  editingFiles,
-  findSmartFolderForCategory,
-  getFileStateDisplay,
-  handleEditFile,
-  smartFolders,
-  defaultLocation,
-  onViewDetails
-}) {
+const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data }) {
+  const {
+    files,
+    columnsPerRow,
+    selectedFiles,
+    toggleFileSelection,
+    getFileWithEdits,
+    editingFiles,
+    findSmartFolderForCategory,
+    getFileStateDisplay,
+    handleEditFile,
+    smartFolders,
+    defaultLocation,
+    onViewDetails
+  } = data;
   const startIndex = index * columnsPerRow;
   const rowItems = [];
 
@@ -96,18 +95,20 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({
 VirtualizedFileRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  files: PropTypes.array.isRequired,
-  columnsPerRow: PropTypes.number.isRequired,
-  selectedFiles: PropTypes.instanceOf(Set).isRequired,
-  toggleFileSelection: PropTypes.func.isRequired,
-  getFileWithEdits: PropTypes.func.isRequired,
-  editingFiles: PropTypes.object.isRequired,
-  findSmartFolderForCategory: PropTypes.func.isRequired,
-  getFileStateDisplay: PropTypes.func.isRequired,
-  handleEditFile: PropTypes.func.isRequired,
-  smartFolders: PropTypes.array.isRequired,
-  defaultLocation: PropTypes.string.isRequired,
-  onViewDetails: PropTypes.func.isRequired
+  data: PropTypes.shape({
+    files: PropTypes.array.isRequired,
+    columnsPerRow: PropTypes.number.isRequired,
+    selectedFiles: PropTypes.instanceOf(Set).isRequired,
+    toggleFileSelection: PropTypes.func.isRequired,
+    getFileWithEdits: PropTypes.func.isRequired,
+    editingFiles: PropTypes.object.isRequired,
+    findSmartFolderForCategory: PropTypes.func.isRequired,
+    getFileStateDisplay: PropTypes.func.isRequired,
+    handleEditFile: PropTypes.func.isRequired,
+    smartFolders: PropTypes.array.isRequired,
+    defaultLocation: PropTypes.string.isRequired,
+    onViewDetails: PropTypes.func.isRequired
+  }).isRequired
 };
 
 /**
@@ -156,9 +157,14 @@ function VirtualizedFileGrid({
         const entry = entries[0];
         if (entry) {
           const { width, height } = entry.contentRect;
-          setDimensions({
-            width: width || containerWidth,
-            height: height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
+          const nextWidth = width || containerWidth;
+          const nextHeight =
+            height || (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600);
+          setDimensions((prev) => {
+            if (Math.abs(prev.width - nextWidth) < 1 && Math.abs(prev.height - nextHeight) < 1) {
+              return prev;
+            }
+            return { width: nextWidth, height: nextHeight };
           });
         }
       });
@@ -186,8 +192,11 @@ function VirtualizedFileGrid({
     if (!node) return;
     const measured = Math.ceil(node.getBoundingClientRect().height);
     const paddedHeight = Math.max(DEFAULT_ROW_HEIGHT, measured + MEASUREMENT_PADDING);
-    setRowHeight((prev) => (Math.abs(prev - paddedHeight) > 4 ? paddedHeight : prev));
+    setRowHeight((prev) =>
+      Math.abs(prev - paddedHeight) > ROW_HEIGHT_TOLERANCE ? paddedHeight : prev
+    );
   }, []);
+  const shouldMeasure = shouldVirtualize && files.length > 0 && rowHeight === DEFAULT_ROW_HEIGHT;
 
   const sampleItem = useMemo(() => {
     if (!shouldVirtualize || files.length === 0) return null;
@@ -253,6 +262,7 @@ function VirtualizedFileGrid({
       onViewDetails
     ]
   );
+  const safeRowProps = rowProps ?? {};
 
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
@@ -289,7 +299,7 @@ function VirtualizedFileGrid({
           }}
         />
 
-        {sampleItem && (
+        {sampleItem && shouldMeasure && (
           <div
             aria-hidden
             ref={measureRef}
@@ -318,13 +328,12 @@ function VirtualizedFileGrid({
           key={`list-${rowHeight}-${columnsPerRow}`}
           itemCount={rowCount}
           itemSize={rowHeight}
-          itemData={rowProps}
+          itemData={safeRowProps}
           overscanCount={2}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-          height={listHeight}
-          width={dimensions.width}
+          style={{ height: listHeight, width: dimensions.width }}
         >
-          {({ index, style, data }) => <VirtualizedFileRow index={index} style={style} {...data} />}
+          {VirtualizedFileRow}
         </List>
       </div>
     );

@@ -456,7 +456,12 @@ export default function ChatPanel({
         )}
       </div>
 
-      {error ? <div className="px-4 text-sm text-red-600">{error}</div> : null}
+      {error ? (
+        <div className="px-4 py-2 bg-red-50 border-t border-b border-red-100 text-sm text-red-600 flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+          {error}
+        </div>
+      ) : null}
 
       <div className="border-t border-system-gray-200 px-4 py-3 chat-input">
         <Textarea

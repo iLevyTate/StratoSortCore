@@ -2,10 +2,11 @@ import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import { StatusBadge } from '../ui';
+import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
-// FIX: Implement virtualization for large processed file lists to prevent UI lag
-const ITEM_HEIGHT = 72; // Compact height for processed file items
-const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 files
+// FIX L-2: Use centralized constants for virtualization
+const ITEM_HEIGHT = UI_VIRTUALIZATION.PROCESSED_FILES_ITEM_HEIGHT;
+const VIRTUALIZATION_THRESHOLD = UI_VIRTUALIZATION.THRESHOLD;
 
 /**
  * Calculate optimal list height based on file count and viewport
@@ -22,10 +23,29 @@ const getListHeight = (itemCount, viewportHeight) => {
 /**
  * Individual processed file row component
  */
-const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, files }) {
+/**
+ * Format date safely with fallback
+ */
+const formatDate = (dateString) => {
+  if (!dateString) return 'Unknown date';
+  try {
+    return new Date(dateString).toLocaleDateString();
+  } catch {
+    return 'Unknown date';
+  }
+};
+
+const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) {
+  const { files } = data;
   const file = files[index];
 
   if (!file) return null;
+
+  // FIX L-1: Add null checks for optional file properties
+  const originalName = file.originalName || 'Unknown';
+  const newName = file.newName || 'Unknown';
+  const smartFolder = file.smartFolder || 'Unknown folder';
+  const organizedDate = formatDate(file.organizedAt);
 
   return (
     <div style={style} className="px-2 py-1">
@@ -34,10 +54,10 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, files })
           <StatusBadge variant="success">OK</StatusBadge>
           <div>
             <div className="text-sm font-medium text-system-gray-900">
-              {file.originalName} -&gt; {file.newName}
+              {originalName} -&gt; {newName}
             </div>
             <div className="text-xs text-system-gray-500">
-              Moved to {file.smartFolder} | {new Date(file.organizedAt).toLocaleDateString()}
+              Moved to {smartFolder} | {organizedDate}
             </div>
           </div>
         </div>
@@ -50,7 +70,9 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, files })
 ProcessedFileRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  files: PropTypes.array.isRequired
+  data: PropTypes.shape({
+    files: PropTypes.array.isRequired
+  }).isRequired
 };
 
 /**
@@ -60,13 +82,13 @@ ProcessedFileRow.propTypes = {
 function VirtualizedProcessedFiles({ files, isLoading = false }) {
   const shouldVirtualize = files.length > VIRTUALIZATION_THRESHOLD;
 
-  // react-window v2 uses rowProps instead of itemData
-  const rowProps = useMemo(
+  const itemData = useMemo(
     () => ({
       files
     }),
     [files]
   );
+  const safeItemData = itemData ?? {};
 
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
@@ -94,14 +116,15 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
           Showing {files.length} organized files (virtualized for performance)
         </div>
         <List
-          rowComponent={ProcessedFileRow}
-          rowCount={files.length}
-          rowHeight={ITEM_HEIGHT}
-          rowProps={rowProps}
+          itemCount={files.length}
+          itemSize={ITEM_HEIGHT}
+          itemData={safeItemData}
           overscanCount={5}
           style={{ height: listHeight, width: '100%' }}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        />
+        >
+          {ProcessedFileRow}
+        </List>
       </div>
     );
   }
@@ -110,25 +133,33 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
   // Add max-height constraint to prevent unbounded growth
   return (
     <div className="space-y-3 max-h-viewport-sm overflow-y-auto modern-scrollbar">
-      {files.map((file) => (
-        <div
-          key={file.originalPath || `${file.originalName}-${file.organizedAt}`}
-          className="list-row flex items-center justify-between p-4"
-        >
-          <div className="flex items-center gap-4">
-            <StatusBadge variant="success">OK</StatusBadge>
-            <div>
-              <div className="text-sm font-medium text-system-gray-900">
-                {file.originalName} -&gt; {file.newName}
-              </div>
-              <div className="text-xs text-system-gray-500">
-                Moved to {file.smartFolder} | {new Date(file.organizedAt).toLocaleDateString()}
+      {files.map((file) => {
+        // FIX L-1: Add null checks for optional file properties
+        const originalName = file.originalName || 'Unknown';
+        const newName = file.newName || 'Unknown';
+        const smartFolder = file.smartFolder || 'Unknown folder';
+        const organizedDate = formatDate(file.organizedAt);
+
+        return (
+          <div
+            key={file.originalPath || `${originalName}-${file.organizedAt}`}
+            className="list-row flex items-center justify-between p-4"
+          >
+            <div className="flex items-center gap-4">
+              <StatusBadge variant="success">OK</StatusBadge>
+              <div>
+                <div className="text-sm font-medium text-system-gray-900">
+                  {originalName} -&gt; {newName}
+                </div>
+                <div className="text-xs text-system-gray-500">
+                  Moved to {smartFolder} | {organizedDate}
+                </div>
               </div>
             </div>
+            <div className="text-xs text-stratosort-success font-semibold">Organized</div>
           </div>
-          <div className="text-xs text-stratosort-success font-semibold">Organized</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -12,6 +12,8 @@ import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
 import { Button, Card } from '../components/ui';
+// FIX M-3: Import ErrorBoundaryCore for virtualized component protection
+import { ErrorBoundaryCore } from '../components/ErrorBoundary';
 import {
   FolderOpenIcon,
   BarChart3Icon,
@@ -103,8 +105,14 @@ function OrganizePhase() {
     if (!organizedFiles || organizedFiles.length === 0) {
       setProcessedFileIds(new Set());
     } else {
+      // FIX HIGH-3: Filter out entries without valid paths to prevent normalizePath(undefined)
+      // which would produce empty string "" and cause incorrect filtering behavior
       setProcessedFileIds(
-        new Set(organizedFiles.map((f) => normalizePath(f?.originalPath || f?.path)))
+        new Set(
+          organizedFiles
+            .filter((f) => f?.originalPath || f?.path)
+            .map((f) => normalizePath(f?.originalPath || f?.path))
+        )
       );
     }
   }, [organizedFiles, setProcessedFileIds, normalizePath]);
@@ -317,21 +325,28 @@ function OrganizePhase() {
         </div>
 
         {/* Quick Access Toolbar - Open modals for secondary info */}
-        <div className="flex items-center flex-wrap gap-2 flex-shrink-0">
+        {/* FIX M-5: Added aria-labels to toolbar buttons for accessibility */}
+        <div
+          className="flex items-center flex-wrap gap-2 flex-shrink-0"
+          role="toolbar"
+          aria-label="Organization tools"
+        >
           {smartFolders.length > 0 && (
             <button
               onClick={() => setShowFoldersModal(true)}
               className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
+              aria-label={`View ${smartFolders.length} smart folders`}
             >
-              <FolderOpenIcon className="w-4 h-4" />
+              <FolderOpenIcon className="w-4 h-4" aria-hidden="true" />
               <span>{smartFolders.length} Smart Folders</span>
             </button>
           )}
           <button
             onClick={() => setShowStatusModal(true)}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
+            aria-label={`View file status: ${unprocessedFiles.length} ready, ${processedFiles.length} done, ${failedCount} failed`}
           >
-            <BarChart3Icon className="w-4 h-4" />
+            <BarChart3Icon className="w-4 h-4" aria-hidden="true" />
             <span>{unprocessedFiles.length} Ready</span>
             {processedFiles.length > 0 && (
               <span className="text-stratosort-success">• {processedFiles.length} Done</span>
@@ -344,8 +359,9 @@ function OrganizePhase() {
             <button
               onClick={() => setShowHistoryModal(true)}
               className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-stratosort-success bg-stratosort-success/5 border border-stratosort-success/20 rounded-xl hover:bg-stratosort-success/10 hover:border-stratosort-success/40 transition-colors"
+              aria-label={`View ${processedFiles.length} organized files history`}
             >
-              <CheckCircle2Icon className="w-4 h-4" />
+              <CheckCircle2Icon className="w-4 h-4" aria-hidden="true" />
               <span>{processedFiles.length} Organized</span>
             </button>
           )}
@@ -426,19 +442,22 @@ function OrganizePhase() {
                   </div>
                 </div>
               ) : (
-                <VirtualizedFileGrid
-                  files={unprocessedFiles}
-                  selectedFiles={selectedFiles}
-                  toggleFileSelection={toggleFileSelection}
-                  getFileWithEdits={getFileWithEdits}
-                  editingFiles={editingFiles}
-                  findSmartFolderForCategory={findSmartFolderForCategory}
-                  getFileStateDisplay={getFileStateDisplay}
-                  handleEditFile={handleEditFile}
-                  smartFolders={smartFolders}
-                  defaultLocation={defaultLocation}
-                  onViewDetails={setViewingFileDetails}
-                />
+                // FIX M-3: Wrap virtualized grid in error boundary to prevent crashes
+                <ErrorBoundaryCore variant="simple" contextName="File Grid">
+                  <VirtualizedFileGrid
+                    files={unprocessedFiles}
+                    selectedFiles={selectedFiles}
+                    toggleFileSelection={toggleFileSelection}
+                    getFileWithEdits={getFileWithEdits}
+                    editingFiles={editingFiles}
+                    findSmartFolderForCategory={findSmartFolderForCategory}
+                    getFileStateDisplay={getFileStateDisplay}
+                    handleEditFile={handleEditFile}
+                    smartFolders={smartFolders}
+                    defaultLocation={defaultLocation}
+                    onViewDetails={setViewingFileDetails}
+                  />
+                </ErrorBoundaryCore>
               )}
             </div>
           </div>
@@ -652,7 +671,10 @@ function OrganizePhase() {
             {processedFiles.length !== 1 ? 's have' : ' has'} been successfully organized.
           </p>
           <div className="max-h-[60vh] overflow-y-auto modern-scrollbar">
-            <VirtualizedProcessedFiles files={processedFiles} />
+            {/* FIX M-3: Wrap virtualized list in error boundary */}
+            <ErrorBoundaryCore variant="simple" contextName="Processed Files">
+              <VirtualizedProcessedFiles files={processedFiles} />
+            </ErrorBoundaryCore>
           </div>
           <div className="flex justify-end pt-[var(--spacing-default)] border-t border-border-soft">
             <Button onClick={() => setShowHistoryModal(false)} variant="secondary">

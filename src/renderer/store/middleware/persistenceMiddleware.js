@@ -4,6 +4,7 @@ import { logger } from '../../../shared/logger';
 const SAVE_DEBOUNCE_MS = 1000;
 // FIX #24: Add max wait time to prevent infinite debounce delay
 const MAX_DEBOUNCE_WAIT_MS = 5000;
+const MAX_LOCALSTORAGE_BYTES = 4 * 1024 * 1024;
 let saveTimeout = null;
 let lastSaveAttempt = 0; // Track when we last tried to save
 let lastSavedPhase = null;
@@ -22,9 +23,42 @@ let isSaving = false;
  * @returns {boolean} - Whether save succeeded
  */
 function saveWithQuotaHandling(key, stateToSave) {
+  const estimateSize = (value) => {
+    try {
+      const json = JSON.stringify(value);
+      if (typeof TextEncoder !== 'undefined') {
+        return new TextEncoder().encode(json).length;
+      }
+      return json.length;
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
+  };
+
+  let candidate = stateToSave;
+  const estimatedBytes = estimateSize(candidate);
+  if (estimatedBytes > MAX_LOCALSTORAGE_BYTES) {
+    candidate = {
+      ...stateToSave,
+      files: {
+        ...stateToSave.files,
+        selectedFiles: stateToSave.files.selectedFiles?.slice(0, 100) || [],
+        organizedFiles: stateToSave.files.organizedFiles?.slice(0, 100) || [],
+        fileStates: Object.fromEntries(
+          Object.entries(stateToSave.files.fileStates || {}).slice(-50)
+        )
+      },
+      analysis: {
+        ...stateToSave.analysis,
+        results: stateToSave.analysis.results?.slice(0, 100) || []
+      },
+      _partial: true
+    };
+  }
+
   // Try full save first
   try {
-    localStorage.setItem(key, JSON.stringify(stateToSave));
+    localStorage.setItem(key, JSON.stringify(candidate));
     return true;
   } catch (error) {
     if (error.name !== 'QuotaExceededError') {
@@ -165,15 +199,6 @@ const persistenceMiddleware = (store) => (next) => (action) => {
       isSaving = true;
 
       try {
-        // Update tracking variables
-        lastSavedPhase = currentPhase;
-        lastSavedFilesCount = currentFilesCount;
-        lastSavedResultsCount = currentResultsCount;
-        // FIX: Update fileStates tracking variables
-        lastSavedFileStatesCount = currentFileStatesCount;
-        lastSavedFileStatesHash = currentFileStatesHash;
-        lastSaveAttempt = Date.now();
-
         const stateToSave = {
           ui: {
             currentPhase: state.ui.currentPhase,
@@ -240,7 +265,18 @@ const persistenceMiddleware = (store) => (next) => (action) => {
         }
 
         // FIX #1: Use graceful quota handling instead of silent data loss
-        saveWithQuotaHandling('stratosort_redux_state', stateToSave);
+        const saveSuccess = saveWithQuotaHandling('stratosort_redux_state', stateToSave);
+
+        // FIX CRIT-18: Only update tracking variables if save succeeded
+        // This prevents state staleness where we think we saved but actually failed
+        if (saveSuccess) {
+          lastSavedPhase = currentPhase;
+          lastSavedFilesCount = currentFilesCount;
+          lastSavedResultsCount = currentResultsCount;
+          lastSavedFileStatesCount = currentFileStatesCount;
+          lastSavedFileStatesHash = currentFileStatesHash;
+          lastSaveAttempt = Date.now();
+        }
       } finally {
         // FIX: Clear re-entry guard
         isSaving = false;

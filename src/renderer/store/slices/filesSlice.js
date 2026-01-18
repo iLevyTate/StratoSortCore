@@ -94,10 +94,11 @@ const filesSlice = createSlice({
     },
     updateFileState: (state, action) => {
       const { path, state: fileState, metadata } = action.payload;
+      const safeMetadata = serializeFile(metadata);
       state.fileStates[path] = {
         state: fileState,
         timestamp: new Date().toISOString(),
-        ...metadata
+        ...safeMetadata
       };
     },
     setFileStates: (state, action) => {
@@ -159,10 +160,25 @@ const filesSlice = createSlice({
       });
 
       // Update fileStates (rename keys)
-      const newFileStates = {};
-      Object.entries(state.fileStates).forEach(([path, fileState]) => {
+      // FIX HIGH-43: Inconsistent state updates after move
+      // Ensure we clean up old keys and only set new ones
+      const newFileStates = { ...state.fileStates };
+
+      // First pass: identify moves
+      const moves = [];
+      Object.keys(state.fileStates).forEach((path) => {
         const newPath = pathMap[path];
-        newFileStates[newPath || path] = fileState;
+        if (newPath && newPath !== path) {
+          moves.push({ old: path, new: newPath });
+        }
+      });
+
+      // Second pass: apply moves
+      moves.forEach(({ old, new: newPath }) => {
+        if (newFileStates[old]) {
+          newFileStates[newPath] = { ...newFileStates[old], path: newPath };
+          delete newFileStates[old];
+        }
       });
       state.fileStates = newFileStates;
 

@@ -25,6 +25,16 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
   const displayProject = analysis.project;
   const displayPurpose = analysis.purpose;
   const displayContentType = analysis.content_type || analysis.contentType;
+  const summaryText =
+    analysis.summary && typeof analysis.summary === 'string' ? analysis.summary : null;
+  const extractionMethod =
+    analysis.extractionMethod && typeof analysis.extractionMethod === 'string'
+      ? analysis.extractionMethod
+      : null;
+  const contentLength =
+    typeof analysis.contentLength === 'number' && Number.isFinite(analysis.contentLength)
+      ? analysis.contentLength
+      : null;
   const displayHasText =
     typeof analysis.has_text === 'boolean'
       ? analysis.has_text
@@ -51,6 +61,11 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
   const transcriptText =
     analysis.transcript && typeof analysis.transcript === 'string' ? analysis.transcript : null;
   const isTranscriptTruncated = !!transcriptText && transcriptText.length > 300;
+  const extractedText =
+    analysis.extractedText && typeof analysis.extractedText === 'string'
+      ? analysis.extractedText
+      : null;
+  const isExtractedTextTruncated = !!extractedText && extractedText.length > 300;
 
   return (
     <div className="space-y-3">
@@ -77,6 +92,12 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
       {displayProject && (
         <div className="text-sm text-system-gray-600">
           <strong>Project:</strong> {displayProject}
+        </div>
+      )}
+
+      {summaryText && (
+        <div className="text-sm text-system-gray-600 line-clamp-4">
+          <strong>Summary:</strong> {summaryText}
         </div>
       )}
 
@@ -110,6 +131,18 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
         </div>
       )}
 
+      {extractionMethod && (
+        <div className="text-xs text-system-gray-500">
+          <strong>Extraction Method:</strong> {extractionMethod}
+        </div>
+      )}
+
+      {contentLength !== null && (
+        <div className="text-xs text-system-gray-500">
+          <strong>Content Length:</strong> {contentLength.toLocaleString()} chars
+        </div>
+      )}
+
       {typeof displayHasText !== 'undefined' && (
         <div className="text-xs text-system-gray-500">
           <strong>Has Text:</strong> {displayHasText ? 'Yes' : 'No'}
@@ -135,6 +168,13 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
           {isTranscriptTruncated ? '… (truncated)' : ''}
         </div>
       )}
+
+      {extractedText && (
+        <div className="text-xs text-system-gray-500 line-clamp-6">
+          <strong>Extracted Text:</strong> {extractedText.slice(0, 300)}
+          {isExtractedTextTruncated ? '… (truncated)' : ''}
+        </div>
+      )}
     </div>
   );
 });
@@ -153,8 +193,12 @@ AnalysisDetails.propTypes = {
     has_text: PropTypes.bool,
     hasText: PropTypes.bool,
     colors: PropTypes.arrayOf(PropTypes.string),
+    summary: PropTypes.string,
+    extractionMethod: PropTypes.string,
+    contentLength: PropTypes.number,
     ocrText: PropTypes.string,
-    transcript: PropTypes.string
+    transcript: PropTypes.string,
+    extractedText: PropTypes.string
   }),
   options: PropTypes.shape({
     showName: PropTypes.bool,

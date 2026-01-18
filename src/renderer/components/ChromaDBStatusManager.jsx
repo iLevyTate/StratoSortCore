@@ -23,14 +23,25 @@ export default function ChromaDBStatusManager() {
   // Track previous status to detect changes and avoid duplicate notifications
   const previousStatusRef = useRef(null);
   const hasShownInitialRef = useRef(false);
+  const hasReceivedUpdateRef = useRef(false);
 
   // Fetch initial status on mount
   const fetchInitialStatus = useCallback(async () => {
     try {
       if (window.electronAPI?.chromadb?.getStatus) {
+        if (hasReceivedUpdateRef.current) {
+          return;
+        }
         const status = await window.electronAPI.chromadb.getStatus();
-        if (status && status.success !== undefined) {
-          const chromaStatus = status.status || (status.success ? 'online' : 'offline');
+        if (status) {
+          const chromaStatus =
+            status.status ||
+            (typeof status.isOnline === 'boolean'
+              ? status.isOnline
+                ? 'online'
+                : 'offline'
+              : null);
+          if (!chromaStatus) return;
           dispatch(updateHealth({ chromadb: chromaStatus }));
           previousStatusRef.current = chromaStatus;
           logger.info('ChromaDB initial status:', chromaStatus);
@@ -50,7 +61,6 @@ export default function ChromaDBStatusManager() {
   // FIX Issue 6: Subscribe FIRST, then fetch initial status to prevent race condition
   useEffect(() => {
     let unsubscribe = null;
-    let _hasReceivedUpdate = false; // Track if subscription has fired (prefixed to satisfy linter)
 
     // Subscribe to status changes FIRST to catch any updates during initial fetch
     if (window.electronAPI?.chromadb?.onStatusChanged) {
@@ -58,7 +68,7 @@ export default function ChromaDBStatusManager() {
         unsubscribe = window.electronAPI.chromadb.onStatusChanged((statusData) => {
           try {
             // FIX Issue 6: Mark that we received an update from subscription
-            _hasReceivedUpdate = true;
+            hasReceivedUpdateRef.current = true;
 
             const status = statusData?.status || statusData;
             let chromaStatus;

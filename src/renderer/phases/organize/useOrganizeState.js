@@ -53,24 +53,38 @@ export function useOrganizeState() {
     dispatchRef.current = dispatch;
   }, [dispatch]);
 
+  // Ref for avoiding stale closures in functional updates
+  const organizedFilesRef = useRef(organizedFiles);
+  useEffect(() => {
+    organizedFilesRef.current = organizedFiles;
+  }, [organizedFiles]);
+
   // Action dispatchers
+  // FIX H-1: Use ref to avoid stale closure when functional update is called rapidly
   const setOrganizedFiles = useCallback(
     (value) => {
-      const nextValue = typeof value === 'function' ? value(organizedFiles) : value;
+      const nextValue = typeof value === 'function' ? value(organizedFilesRef.current) : value;
       dispatch(setOrganizedFilesAction(nextValue));
     },
-    [dispatch, organizedFiles]
+    [dispatch]
   );
 
+  // Ref for avoiding stale closures in functional updates
+  const fileStatesRef = useRef(fileStates);
+  useEffect(() => {
+    fileStatesRef.current = fileStates;
+  }, [fileStates]);
+
+  // FIX H-1: Use ref to avoid stale closure when functional update is called rapidly
   const setFileStates = useCallback(
     (states) => {
       if (typeof states === 'function') {
-        dispatch(setFileStatesAction(states(fileStates)));
+        dispatch(setFileStatesAction(states(fileStatesRef.current)));
       } else {
         dispatch(setFileStatesAction(states));
       }
     },
-    [dispatch, fileStates]
+    [dispatch]
   );
 
   const setSmartFolders = useCallback(

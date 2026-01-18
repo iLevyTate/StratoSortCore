@@ -145,50 +145,105 @@ export function useFileHandlers({
         return [];
       }
       const results = [];
+      const totalFiles = Array.isArray(filePaths) ? filePaths.length : 0;
+      const isLargeBatch = totalFiles > 500;
+      const effectiveBatchSize = isLargeBatch
+        ? Math.min(batchSize, 10)
+        : Math.min(batchSize, RENDERER_LIMITS.FILE_STATS_BATCH_SIZE);
+      const maxConcurrency = isLargeBatch ? 2 : Math.max(1, Math.min(5, effectiveBatchSize));
 
-      for (let i = 0; i < filePaths.length; i += batchSize) {
-        const batch = filePaths.slice(i, i + batchSize);
-        const batchResults = await Promise.allSettled(
-          batch.map(async (filePath) => {
-            try {
-              if (i > 0) await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_TINY));
-              const stats = await window.electronAPI.files.getStats(filePath);
-              const fileName = extractFileName(filePath);
-              const extension = extractExtension(fileName);
+      const getStatsWithRetry = async (filePath) => {
+        try {
+          const stats = await window.electronAPI.files.getStats(filePath);
+          return stats;
+        } catch (error) {
+          if (String(error?.message || '').includes('Rate limit exceeded')) {
+            await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_SHORT));
+            return window.electronAPI.files.getStats(filePath);
+          }
+          throw error;
+        }
+      };
 
-              return {
-                name: fileName,
-                path: filePath,
-                extension,
-                size: stats?.size || 0,
-                isDirectory: stats?.isDirectory || false,
-                type: 'file',
-                created: stats?.created,
-                modified: stats?.modified,
-                success: true
-              };
-            } catch (error) {
-              const fileName = extractFileName(filePath);
-              return {
-                name: fileName,
-                path: filePath,
-                extension: extractExtension(fileName),
-                size: 0,
-                isDirectory: false,
-                type: 'file',
-                success: false,
-                error: error.message
-              };
+      const mapWithConcurrency = async (items, limit, worker) => {
+        const pending = new Set();
+        const output = new Array(items.length);
+        let index = 0;
+
+        const runNext = async () => {
+          if (index >= items.length) return;
+          const currentIndex = index++;
+          const promise = (async () => {
+            output[currentIndex] = await worker(items[currentIndex], currentIndex);
+          })()
+            .catch((error) => {
+              output[currentIndex] = { error };
+            })
+            .finally(() => {
+              pending.delete(promise);
+            });
+          pending.add(promise);
+        };
+
+        while (index < items.length || pending.size > 0) {
+          while (pending.size < limit && index < items.length) {
+            // Spread out IPC calls slightly to avoid rate limiter bursts.
+            if (pending.size > 0) {
+              await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_TINY));
             }
-          })
-        );
+            await runNext();
+          }
+          if (pending.size > 0) {
+            await Promise.race(pending);
+          }
+        }
+
+        return output;
+      };
+
+      for (let i = 0; i < filePaths.length; i += effectiveBatchSize) {
+        const batch = filePaths.slice(i, i + effectiveBatchSize);
+        const batchResults = await mapWithConcurrency(batch, maxConcurrency, async (filePath) => {
+          try {
+            const stats = await getStatsWithRetry(filePath);
+            const fileName = extractFileName(filePath);
+            const extension = extractExtension(fileName);
+
+            return {
+              name: fileName,
+              path: filePath,
+              extension,
+              size: stats?.size || 0,
+              isDirectory: stats?.isDirectory || false,
+              type: 'file',
+              created: stats?.created,
+              modified: stats?.modified,
+              success: true
+            };
+          } catch (error) {
+            const fileName = extractFileName(filePath);
+            return {
+              name: fileName,
+              path: filePath,
+              extension: extractExtension(fileName),
+              size: 0,
+              isDirectory: false,
+              type: 'file',
+              success: false,
+              error: error.message
+            };
+          }
+        });
 
         batchResults.forEach((result, index) => {
-          if (result.status === 'fulfilled') {
-            results.push(result.value);
-          } else {
+          if (result?.error) {
             const filePath = batch[index];
             const fileName = extractFileName(filePath);
+            // FIX: Handle both string errors (from worker catch) and Error objects (from mapWithConcurrency catch)
+            const errorMessage =
+              typeof result.error === 'string'
+                ? result.error
+                : result.error?.message || 'Unknown error';
             results.push({
               name: fileName,
               path: filePath,
@@ -197,13 +252,17 @@ export function useFileHandlers({
               isDirectory: false,
               type: 'file',
               success: false,
-              error: result.reason?.message || 'Unknown error'
+              error: errorMessage
             });
+            return;
           }
+
+          results.push(result);
         });
 
-        if (i + batchSize < filePaths.length) {
-          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_MINI));
+        if (i + effectiveBatchSize < filePaths.length) {
+          const batchDelay = isLargeBatch ? TIMEOUTS.DELAY_SHORT : TIMEOUTS.DELAY_BATCH;
+          await new Promise((resolve) => setTimeout(resolve, batchDelay));
         }
       }
 
@@ -529,102 +588,117 @@ export function useFileHandlers({
 
   /**
    * Handle file drop
+   * FIX H-2: Added try/catch for consistent error handling with other handlers
    */
   const handleFileDrop = useCallback(
     async (files) => {
       if (!files || files.length === 0) return;
 
-      // Normalize paths and require absolute paths for dropped items
-      const normalizedFiles = files.map((file) => {
-        if (typeof file === 'string') return normalizePathValue(file);
-        const normalizedPath = normalizePathValue(file.path || '');
-        return { ...file, path: normalizedPath };
-      });
+      try {
+        // Normalize paths and require absolute paths for dropped items
+        const normalizedFiles = files.map((file) => {
+          if (typeof file === 'string') return normalizePathValue(file);
+          const normalizedPath = normalizePathValue(file.path || '');
+          return { ...file, path: normalizedPath };
+        });
 
-      const usableFiles = normalizedFiles.filter((file) => {
-        const pathValue = typeof file === 'string' ? file : file.path;
-        return isAbsolutePath(pathValue);
-      });
+        const usableFiles = normalizedFiles.filter((file) => {
+          const pathValue = typeof file === 'string' ? file : file.path;
+          return isAbsolutePath(pathValue);
+        });
 
-      const skippedCount = files.length - usableFiles.length;
-      if (skippedCount > 0) {
-        addNotification(
-          `Skipped ${skippedCount} item${skippedCount > 1 ? 's' : ''} without a usable absolute path`,
-          'warning',
-          2500,
-          'drop-missing-path'
-        );
-      }
+        const skippedCount = files.length - usableFiles.length;
+        if (skippedCount > 0) {
+          addNotification(
+            `Skipped ${skippedCount} item${skippedCount > 1 ? 's' : ''} without a usable absolute path`,
+            'warning',
+            2500,
+            'drop-missing-path'
+          );
+        }
 
-      const newFiles = filterNewFiles(normalizedFiles, selectedFiles);
-      if (newFiles.length === 0) return;
+        const newFiles = filterNewFiles(normalizedFiles, selectedFiles);
+        if (newFiles.length === 0) return;
 
-      const withPath = newFiles; // Already filtered for absolute paths
+        const withPath = newFiles; // Already filtered for absolute paths
 
-      // Fetch file stats for dropped items (aligns behavior with file picker)
-      const paths = withPath.map((file) => (typeof file === 'string' ? file : file.path));
-      const statsResults = await getBatchFileStats(paths);
+        // Fetch file stats for dropped items (aligns behavior with file picker)
+        const paths = withPath.map((file) => (typeof file === 'string' ? file : file.path));
+        const statsResults = await getBatchFileStats(paths);
 
-      // Split directories and files
-      const droppedDirectories = [];
-      const droppedFiles = [];
+        // Split directories and files
+        const droppedDirectories = [];
+        const droppedFiles = [];
 
-      withPath.forEach((file, idx) => {
-        const pathValue = typeof file === 'string' ? file : file.path;
-        const stat = statsResults[idx] || {};
-        const fileName = file.name || extractFileName(pathValue || '');
+        withPath.forEach((file, idx) => {
+          const pathValue = typeof file === 'string' ? file : file.path;
+          const stat = statsResults[idx] || {};
+          const fileName = file.name || extractFileName(pathValue || '');
 
-        if (stat?.isDirectory) {
-          droppedDirectories.push({ path: pathValue, name: fileName });
+          if (stat?.isDirectory) {
+            droppedDirectories.push({ path: pathValue, name: fileName });
+            return;
+          }
+
+          let { extension } = file;
+          if (!extension) {
+            extension = extractExtension(fileName);
+          }
+
+          droppedFiles.push({
+            ...file,
+            path: pathValue,
+            name: fileName,
+            extension,
+            size: stat?.size ?? file.size ?? 0,
+            created: stat?.created,
+            modified: stat?.modified,
+            type: 'file',
+            source: 'drag_drop',
+            droppedAt: new Date().toISOString()
+          });
+        });
+
+        const expandedFromFolders = await expandDroppedDirectories(droppedDirectories);
+        const enhancedFiles = [...droppedFiles, ...expandedFromFolders];
+        if (enhancedFiles.length === 0) {
+          addNotification('No supported files found in drop', 'warning', 2000, 'drop-empty');
           return;
         }
 
-        let { extension } = file;
-        if (!extension) {
-          extension = extractExtension(fileName);
+        // Update file states
+        enhancedFiles.forEach((file) => updateFileState(file.path, 'pending'));
+
+        // Merge files
+        const allFiles = [...selectedFiles, ...enhancedFiles];
+        const uniqueFiles = allFiles.filter(
+          (file, index, self) => index === self.findIndex((f) => f.path === file.path)
+        );
+
+        setSelectedFiles(uniqueFiles);
+
+        addNotification(
+          `Added ${enhancedFiles.length} new file${enhancedFiles.length !== 1 ? 's' : ''} for analysis`,
+          'success',
+          2500,
+          'files-added'
+        );
+
+        if (analyzeFiles) {
+          await analyzeFiles(enhancedFiles);
         }
-
-        droppedFiles.push({
-          ...file,
-          path: pathValue,
-          name: fileName,
-          extension,
-          size: stat?.size ?? file.size ?? 0,
-          created: stat?.created,
-          modified: stat?.modified,
-          type: 'file',
-          source: 'drag_drop',
-          droppedAt: new Date().toISOString()
+      } catch (error) {
+        // FIX H-2: Consistent error handling with handleFileSelection and handleFolderSelection
+        logger.error('[DiscoverPhase] Error handling file drop', {
+          error: error.message,
+          stack: error.stack
         });
-      });
-
-      const expandedFromFolders = await expandDroppedDirectories(droppedDirectories);
-      const enhancedFiles = [...droppedFiles, ...expandedFromFolders];
-      if (enhancedFiles.length === 0) {
-        addNotification('No supported files found in drop', 'warning', 2000, 'drop-empty');
-        return;
-      }
-
-      // Update file states
-      enhancedFiles.forEach((file) => updateFileState(file.path, 'pending'));
-
-      // Merge files
-      const allFiles = [...selectedFiles, ...enhancedFiles];
-      const uniqueFiles = allFiles.filter(
-        (file, index, self) => index === self.findIndex((f) => f.path === file.path)
-      );
-
-      setSelectedFiles(uniqueFiles);
-
-      addNotification(
-        `Added ${enhancedFiles.length} new file${enhancedFiles.length !== 1 ? 's' : ''} for analysis`,
-        'success',
-        2500,
-        'files-added'
-      );
-
-      if (analyzeFiles) {
-        await analyzeFiles(enhancedFiles);
+        addNotification(
+          `Error processing dropped files: ${error.message}`,
+          'error',
+          4000,
+          'drop-error'
+        );
       }
     },
     [

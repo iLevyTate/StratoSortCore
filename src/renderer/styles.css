@@ -717,10 +717,14 @@
   .splash-background {
     position: absolute;
     inset: 0;
-    background:
-      radial-gradient(ellipse at 20% 20%, rgba(79, 139, 255, 0.15) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 80%, rgba(108, 127, 251, 0.1) 0%, transparent 50%),
-      linear-gradient(180deg, #f8fafc 0%, #ffffff 50%, #f1f5f9 100%);
+    /* Match index.html inline styles to prevent FOUC/visual jump */
+    background: linear-gradient(
+      135deg,
+      rgba(79, 139, 255, 0.03) 0%,
+      rgba(108, 127, 251, 0.05) 50%,
+      rgba(79, 139, 255, 0.03) 100%
+    );
+    pointer-events: none;
   }
 
   .splash-content {

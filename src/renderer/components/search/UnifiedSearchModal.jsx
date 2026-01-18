@@ -4574,6 +4574,14 @@ export default function UnifiedSearchModal({
                     setError('');
                   }}
                 >
+                  <style>
+                    {`
+                      .graph-zoomed-out .file-node-label {
+                        opacity: 0;
+                        transition: opacity 0.2s;
+                      }
+                    `}
+                  </style>
                   <ReactFlow
                     nodes={rfNodes}
                     edges={edges}
@@ -4581,7 +4589,7 @@ export default function UnifiedSearchModal({
                     edgeTypes={edgeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
-                    className="bg-[var(--surface-muted)]"
+                    className={`bg-[var(--surface-muted)] ${zoomLevel < 0.6 ? 'graph-zoomed-out' : ''}`}
                     onNodeClick={onNodeClick}
                     onNodeDoubleClick={onNodeDoubleClick}
                     onInit={(instance) => {
@@ -4599,12 +4607,12 @@ export default function UnifiedSearchModal({
                     <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
                     <Controls showInteractive={false} />
 
-                    {/* Zoom Level Indicator - Hidden for now to improve UI clarity as per request */}
-                    {/* {zoomLevel < 0.6 && (
+                    {/* Zoom Level Indicator */}
+                    {zoomLevel < 0.6 && (
                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10">
                         Labels hidden at this zoom • Scroll to zoom in
                       </div>
-                    )} */}
+                    )}
 
                     {/* Keyboard shortcuts hint (subtle, bottom-left) */}
                     {nodes.length > 0 && zoomLevel >= 0.6 && (

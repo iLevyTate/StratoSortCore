@@ -28,8 +28,14 @@ export function useProgressTracking() {
   // FIX M-4: Track destination conflicts
   const [organizeConflicts, setOrganizeConflicts] = useState([]);
 
+  // FIX CRIT-2: Track chunked results for large batches (>100 files)
+  const [chunkedResults, setChunkedResults] = useState([]);
+  const chunkedResultsRef = useRef([]);
+
   // Ref for cleanup
   const progressUnsubscribeRef = useRef(null);
+  // FIX CRIT-2: Ref for chunk listener cleanup
+  const chunkUnsubscribeRef = useRef(null);
 
   // Progress listener setup
   useEffect(() => {
@@ -62,9 +68,23 @@ export function useProgressTracking() {
                 return;
               }
 
+              // FIX HIGH-5: Add bounds check to prevent malformed progress data from causing UI issues
+              // Reasonable bounds: current >= 0, total >= 0, current <= total, total < 100000
+              const MAX_REASONABLE_TOTAL = 100000;
+              if (current < 0 || total < 0 || current > total || total > MAX_REASONABLE_TOTAL) {
+                logger.warn('Progress data out of bounds, clamping values', {
+                  original: { current, total },
+                  maxReasonable: MAX_REASONABLE_TOTAL
+                });
+              }
+
+              // Clamp values to reasonable bounds
+              const safeCurrent = Math.max(0, Math.min(current, total, MAX_REASONABLE_TOTAL));
+              const safeTotal = Math.max(0, Math.min(total, MAX_REASONABLE_TOTAL));
+
               setBatchProgress({
-                current,
-                total,
+                current: safeCurrent,
+                total: safeTotal,
                 currentFile: payload.currentFile || ''
               });
             } catch (error) {
@@ -90,6 +110,59 @@ export function useProgressTracking() {
 
     setupProgressListener();
 
+    // FIX CRIT-2: Setup chunk listener for large batch results (>100 files)
+    const setupChunkListener = () => {
+      if (abortController.signal.aborted) return;
+
+      if (!window.electronAPI?.events?.on) {
+        logger.warn('Events API not available for chunk listener');
+        return;
+      }
+
+      try {
+        chunkUnsubscribeRef.current = window.electronAPI.events.on(
+          'batch-results-chunk',
+          (payload) => {
+            if (abortController.signal.aborted) return;
+
+            try {
+              if (!payload || !payload.chunk) return;
+
+              logger.debug('[ORGANIZE] Received batch results chunk', {
+                batchId: payload.batchId,
+                chunkIndex: payload.chunkIndex,
+                totalChunks: payload.totalChunks,
+                chunkSize: payload.chunk?.length
+              });
+
+              // Accumulate chunks
+              chunkedResultsRef.current = [...chunkedResultsRef.current, ...payload.chunk];
+              setChunkedResults([...chunkedResultsRef.current]);
+
+              // Update progress based on chunks received
+              if (payload.totalChunks > 0) {
+                const progress = Math.round(((payload.chunkIndex + 1) / payload.totalChunks) * 100);
+                logger.debug('[ORGANIZE] Chunk progress', {
+                  progress,
+                  chunkIndex: payload.chunkIndex
+                });
+              }
+            } catch (error) {
+              logger.error('Error processing batch results chunk', {
+                error: error.message
+              });
+            }
+          }
+        );
+      } catch (error) {
+        logger.error('Failed to subscribe to batch-results-chunk events', {
+          error: error.message
+        });
+      }
+    };
+
+    setupChunkListener();
+
     return () => {
       abortController.abort();
 
@@ -104,7 +177,25 @@ export function useProgressTracking() {
           });
         }
       }
+
+      // FIX CRIT-2: Cleanup chunk listener
+      if (typeof chunkUnsubscribeRef.current === 'function') {
+        try {
+          chunkUnsubscribeRef.current();
+          chunkUnsubscribeRef.current = null;
+        } catch (error) {
+          logger.error('Error unsubscribing from chunk events', {
+            error: error.message
+          });
+        }
+      }
     };
+  }, []);
+
+  // FIX CRIT-2: Helper to reset chunked results for new batch
+  const resetChunkedResults = useCallback(() => {
+    chunkedResultsRef.current = [];
+    setChunkedResults([]);
   }, []);
 
   return {
@@ -116,7 +207,11 @@ export function useProgressTracking() {
     setIsOrganizing,
     // FIX M-4: Expose conflict tracking
     organizeConflicts,
-    setOrganizeConflicts
+    setOrganizeConflicts,
+    // FIX CRIT-2: Expose chunked results handling
+    chunkedResults,
+    chunkedResultsRef,
+    resetChunkedResults
   };
 }
 
@@ -333,12 +428,18 @@ export function useOrganization({
     setIsOrganizing,
     // FIX M-4: Get conflict tracking from progress hook
     organizeConflicts,
-    setOrganizeConflicts
+    setOrganizeConflicts,
+    // FIX CRIT-2: Get chunked results handling from progress hook
+    chunkedResultsRef,
+    resetChunkedResults
   } = useProgressTracking();
 
-  // FIX: Use ref to track latest organizedFiles to avoid stale closure in async callbacks
+  // FIX H-3: Use ref to track latest organizedFiles to avoid stale closure in async callbacks
+  // Sync ref in useEffect instead of during render to prevent race conditions
   const organizedFilesRef = useRef(phaseData?.organizedFiles || []);
-  organizedFilesRef.current = phaseData?.organizedFiles || [];
+  useEffect(() => {
+    organizedFilesRef.current = phaseData?.organizedFiles || [];
+  }, [phaseData?.organizedFiles]);
 
   const handleOrganizeFiles = useCallback(
     async (filesToOrganize = null) => {
@@ -355,6 +456,8 @@ export function useOrganization({
         setOrganizingState(true);
         // FIX M-4: Clear previous conflicts at start of organize attempt
         setOrganizeConflicts([]);
+        // FIX CRIT-2: Reset chunked results for new batch operation
+        resetChunkedResults();
 
         const filesToProcess = actualFilesToOrganize || unprocessedFiles.filter((f) => f.analysis);
 
@@ -470,7 +573,20 @@ export function useOrganization({
         const stateCallbacks = {
           onExecute: (result) => {
             try {
-              const resArray = Array.isArray(result?.results) ? result.results : [];
+              // FIX CRIT-2: Handle chunked results for large batches (>100 files)
+              // When chunkedResults is true, the actual results were sent via IPC events
+              // and accumulated in chunkedResultsRef, not in result.results
+              let resArray;
+              if (result?.chunkedResults && chunkedResultsRef.current.length > 0) {
+                logger.info('[ORGANIZE] Using chunked results', {
+                  chunkedCount: chunkedResultsRef.current.length,
+                  totalChunks: result.totalChunks
+                });
+                resArray = chunkedResultsRef.current;
+              } else {
+                resArray = Array.isArray(result?.results) ? result.results : [];
+              }
+
               const uiResults = resArray
                 .filter((r) => r.success)
                 .map((r) => {
@@ -507,7 +623,25 @@ export function useOrganization({
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
                 // Update phaseData for persistence
                 actions.setPhaseData('organizedFiles', organizedFilesRef.current);
-                addNotification(`Organized ${uiResults.length} files`, 'success');
+
+                // FIX HIGH-4: Surface partialFailure to user instead of silently showing success
+                // When some files fail during batch operation, warn user about partial completion
+                const failedCount = resArray.filter((r) => !r.success).length;
+                if (result?.partialFailure || failedCount > 0) {
+                  addNotification(
+                    `Organized ${uiResults.length} files with ${failedCount} failures. Check logs for details.`,
+                    'warning',
+                    6000
+                  );
+                  logger.warn('[ORGANIZE] Partial failure in batch operation', {
+                    successCount: uiResults.length,
+                    failCount: failedCount,
+                    error: result?.error
+                  });
+                } else {
+                  addNotification(`Organized ${uiResults.length} files`, 'success');
+                }
+
                 setBatchProgress({
                   current: filesToProcess.length,
                   total: filesToProcess.length,
@@ -759,7 +893,10 @@ export function useOrganization({
       setBatchProgress,
       setIsOrganizing,
       setOrganizePreview,
-      setOrganizeConflicts
+      setOrganizeConflicts,
+      // FIX CRIT-2: Add chunked results reset to deps
+      resetChunkedResults,
+      chunkedResultsRef
     ]
   );
 

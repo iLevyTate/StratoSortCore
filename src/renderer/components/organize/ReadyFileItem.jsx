@@ -22,12 +22,18 @@ function ReadyFileItem({
   const suggestedName = editing?.suggestedName ?? analysis?.suggestedName;
   const category = categoryProp ?? editing?.category ?? analysis?.category;
   const hasCategoryOption = smartFolders?.some((folder) => folder.name === category);
-  const computedConfidence =
-    typeof analysis?.confidence === 'number'
-      ? analysis.confidence > 1
-        ? Math.round(analysis.confidence)
-        : Math.round(analysis.confidence * 100)
+  const confidenceValue =
+    typeof analysis?.confidence === 'number' &&
+    Number.isFinite(analysis.confidence) &&
+    analysis.confidence >= 0
+      ? analysis.confidence
       : null;
+  const computedConfidence =
+    confidenceValue === null
+      ? null
+      : confidenceValue > 1
+        ? Math.round(confidenceValue)
+        : Math.round(confidenceValue * 100);
   const handleToggle = useCallback(() => onToggleSelected(index), [onToggleSelected, index]);
   const handleEditName = useCallback(
     (e) => onEdit(index, 'suggestedName', e.target.value),
@@ -135,8 +141,9 @@ function ReadyFileItem({
                   type="button"
                   onClick={() => onViewDetails && onViewDetails(file)}
                   className="text-xs text-system-gray-500 hover:text-system-gray-700 flex items-center gap-1 mb-2 w-full"
+                  aria-label={`View analysis details for ${file.name}`}
                 >
-                  <Play className="w-3 h-3" />
+                  <Play className="w-3 h-3" aria-hidden="true" />
                   View Analysis Details
                 </button>
               </div>
@@ -195,6 +202,16 @@ ReadyFileItem.propTypes = {
   destination: PropTypes.string,
   category: PropTypes.string,
   onViewDetails: PropTypes.func
+};
+
+// FIX L-3: Add defaultProps for optional props to prevent undefined errors
+ReadyFileItem.defaultProps = {
+  isSelected: false,
+  smartFolders: [],
+  editing: null,
+  destination: '',
+  category: null,
+  onViewDetails: null
 };
 
 function areReadyFileItemPropsEqual(prev, next) {

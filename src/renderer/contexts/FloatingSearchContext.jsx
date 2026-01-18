@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo
+} from 'react';
 import PropTypes from 'prop-types';
 import FloatingSearchWidget from '../components/search/FloatingSearchWidget';
 import UnifiedSearchModal from '../components/search/UnifiedSearchModal';
@@ -118,13 +126,17 @@ export function FloatingSearchProvider({ children }) {
     setIsModalOpen(false);
   }, []);
 
-  const contextValue = {
-    isWidgetOpen,
-    openWidget,
-    closeWidget,
-    openSearchModal,
-    closeSearchModal
-  };
+  // FIX M-2: Memoize context value to prevent unnecessary re-renders in consumers
+  const contextValue = useMemo(
+    () => ({
+      isWidgetOpen,
+      openWidget,
+      closeWidget,
+      openSearchModal,
+      closeSearchModal
+    }),
+    [isWidgetOpen, openWidget, closeWidget, openSearchModal, closeSearchModal]
+  );
 
   // FIX: Handle errors from the search modal to prevent crashes
   const handleSearchError = useCallback((error, errorInfo) => {

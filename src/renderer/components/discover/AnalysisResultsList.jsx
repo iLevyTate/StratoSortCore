@@ -4,6 +4,7 @@ import { List } from 'react-window';
 import { FileText, Compass, AlertTriangle } from 'lucide-react';
 import { Button, StatusBadge } from '../ui';
 import { logger } from '../../../shared/logger';
+import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
 // FIX: Add error boundary to prevent single bad file from crashing entire list
 class AnalysisResultsErrorBoundary extends Component {
@@ -53,15 +54,19 @@ AnalysisResultsErrorBoundary.propTypes = {
   children: PropTypes.node.isRequired
 };
 
-// FIX: Implement virtualization for large file lists to prevent UI lag
-// Each item is approximately 176px in height (fits 2-line titles without overlap)
-const ITEM_HEIGHT = 176;
-const VIRTUALIZATION_THRESHOLD = 30; // Only virtualize when > 30 items
+// FIX L-2: Use centralized constants for virtualization
+const ITEM_HEIGHT = UI_VIRTUALIZATION.ANALYSIS_RESULTS_ITEM_HEIGHT;
+const VIRTUALIZATION_THRESHOLD = UI_VIRTUALIZATION.THRESHOLD;
 
-// Normalize confidence values that may arrive as either 0-1 or 0-100 and clamp to 0-100
+// FIX M-3: Normalize confidence values with explicit scale detection
+// Values in 0-1 range (exclusive of 1) are treated as decimal percentages
+// Values >= 1 are treated as already being in 0-100 scale
+// Edge case: 1.0 is treated as 100% (0-100 scale) for better UX
 const formatConfidence = (value) => {
   if (typeof value !== 'number' || Number.isNaN(value)) return null;
-  const normalized = value > 1 ? value : value * 100;
+  // Detect scale: values < 1 are assumed to be 0-1 scale
+  // Values >= 1 are assumed to be 0-100 scale (including 1.0 = 1%)
+  const normalized = value < 1 ? value * 100 : value;
   const clamped = Math.min(100, Math.max(0, normalized));
   return Math.round(clamped);
 };
@@ -69,13 +74,8 @@ const formatConfidence = (value) => {
 /**
  * Individual row component for virtualized list
  */
-const AnalysisResultRow = memo(function AnalysisResultRow({
-  index,
-  style,
-  items,
-  handleAction,
-  getFileStateDisplay
-}) {
+const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }) {
+  const { items, handleAction, getFileStateDisplay } = data;
   const file = items[index];
 
   if (!file) return null;
@@ -173,9 +173,11 @@ const AnalysisResultRow = memo(function AnalysisResultRow({
 AnalysisResultRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  items: PropTypes.array.isRequired,
-  handleAction: PropTypes.func.isRequired,
-  getFileStateDisplay: PropTypes.func.isRequired
+  data: PropTypes.shape({
+    items: PropTypes.array.isRequired,
+    handleAction: PropTypes.func.isRequired,
+    getFileStateDisplay: PropTypes.func.isRequired
+  }).isRequired
 };
 
 /**
@@ -202,12 +204,21 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
     // Feature detection for environments without ResizeObserver
     if (typeof ResizeObserver === 'undefined') {
       // Fallback: use window dimensions
-      setDimensions({
-        width: containerNode.offsetWidth || 0,
-        height:
-          containerNode.offsetHeight ||
-          (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
-      });
+      const updateDimensions = () => {
+        setDimensions({
+          width: containerNode.offsetWidth || 0,
+          height:
+            containerNode.offsetHeight ||
+            (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 600)
+        });
+      };
+      updateDimensions();
+      if (typeof window !== 'undefined') {
+        window.addEventListener('resize', updateDimensions);
+        return () => {
+          window.removeEventListener('resize', updateDimensions);
+        };
+      }
       return undefined;
     }
 
@@ -226,9 +237,8 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
     return () => observer.disconnect();
   }, [containerNode]);
 
-  // react-window v2 expects rowProps (not itemData).
   // Keep a stable object so the list can memoize rows efficiently.
-  const rowProps = useMemo(
+  const itemData = useMemo(
     () => ({
       items,
       handleAction,
@@ -236,6 +246,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
     }),
     [items, handleAction, getFileStateDisplay]
   );
+  const safeItemData = itemData ?? {};
 
   // FIX: Use virtualization only for large lists to avoid overhead on small lists
   const shouldVirtualize = items.length > VIRTUALIZATION_THRESHOLD;
@@ -267,14 +278,15 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
           Showing {items.length} files (virtualized)
         </div>
         <List
-          rowComponent={AnalysisResultRow}
-          rowCount={items.length}
-          rowHeight={ITEM_HEIGHT}
-          rowProps={rowProps}
+          itemCount={items.length}
+          itemSize={ITEM_HEIGHT}
+          itemData={safeItemData}
           overscanCount={5}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
           style={{ height: dimensions.height, width: '100%' }}
-        />
+        >
+          {AnalysisResultRow}
+        </List>
       </div>
     );
   }

@@ -36,37 +36,53 @@ const createStableSelector = (dependencies, combiner) => {
 
     // For object cache keys, use WeakMap
     if (cacheKey && typeof cacheKey === 'object') {
-      const prevResult = cacheMap.get(cacheKey);
+      // FIX HIGH-45: Use lastResult strategy for unstable object keys (like arrays)
+      // WeakMap fails when input reference changes but content is same
+      // So we fallback to comparing current result with last result
 
-      // For arrays, check if contents are the same
-      if (Array.isArray(result) && Array.isArray(prevResult)) {
+      // First try WeakMap for stable references (fast path)
+      if (cacheMap.has(cacheKey)) {
+        return cacheMap.get(cacheKey);
+      }
+
+      // Fallback: compare with lastResult regardless of key
+      // This handles case where cacheKey is a new object/array but content implies same result
+      if (lastPrimitiveResult !== null) {
+        // Compare result vs lastPrimitiveResult (which holds the last output)
+        if (Array.isArray(result) && Array.isArray(lastPrimitiveResult)) {
+          if (
+            result.length === lastPrimitiveResult.length &&
+            result.every((item, i) => item === lastPrimitiveResult[i])
+          ) {
+            // Update WeakMap for this new key to point to old result (fast path next time)
+            cacheMap.set(cacheKey, lastPrimitiveResult);
+            return lastPrimitiveResult;
+          }
+        }
+
         if (
-          result.length === prevResult.length &&
-          result.every((item, i) => item === prevResult[i])
+          result &&
+          typeof result === 'object' &&
+          !Array.isArray(result) &&
+          lastPrimitiveResult &&
+          typeof lastPrimitiveResult === 'object'
         ) {
-          return prevResult; // Return cached reference
+          const keys = Object.keys(result);
+          const prevKeys = Object.keys(lastPrimitiveResult);
+          if (
+            keys.length === prevKeys.length &&
+            keys.every((key) => result[key] === lastPrimitiveResult[key])
+          ) {
+            cacheMap.set(cacheKey, lastPrimitiveResult);
+            return lastPrimitiveResult;
+          }
         }
       }
 
-      // For objects, check shallow equality
-      if (
-        result &&
-        typeof result === 'object' &&
-        !Array.isArray(result) &&
-        prevResult &&
-        typeof prevResult === 'object'
-      ) {
-        const keys = Object.keys(result);
-        const prevKeys = Object.keys(prevResult);
-        if (
-          keys.length === prevKeys.length &&
-          keys.every((key) => result[key] === prevResult[key])
-        ) {
-          return prevResult; // Return cached reference
-        }
-      }
-
+      // Cache the new result
       cacheMap.set(cacheKey, result);
+      // Also update lastPrimitiveResult for next comparison
+      lastPrimitiveResult = result;
       return result;
     }
 

@@ -151,7 +151,14 @@ const uiSlice = createSlice({
     },
     // DEPRECATED: Use analysisSlice.startAnalysis/stopAnalysis instead
     // Kept for backward compatibility but no longer dispatched by useDiscoverState
+    // FIX L-5: Add deprecation warning to help migration
     setAnalyzing: (state, action) => {
+      if (process.env.NODE_ENV === 'development') {
+        logger.warn(
+          '[uiSlice] setAnalyzing is DEPRECATED. Use analysisSlice.startAnalysis/stopAnalysis instead.',
+          { calledWith: action.payload }
+        );
+      }
       state.isAnalyzing = Boolean(action.payload);
     },
     toggleSidebar: (state) => {

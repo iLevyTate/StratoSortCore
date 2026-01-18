@@ -436,11 +436,29 @@ function NavigationBar() {
   const isLoading = useAppSelector((state) => state.ui.isLoading);
   const health = useAppSelector((state) => state.system.health);
   const connectionStatus = useMemo(() => {
-    const statuses = [health?.ollama, health?.chromadb].filter(Boolean);
-    if (statuses.length === 0) return 'unknown';
+    const normalizeStatus = (value) => {
+      if (!value) return 'unknown';
+      const normalized = String(value).toLowerCase();
+      if (['online', 'healthy', 'ready', 'ok', 'running', 'available'].includes(normalized)) {
+        return 'online';
+      }
+      if (['offline', 'unhealthy', 'down', 'error', 'stopped'].includes(normalized)) {
+        return 'offline';
+      }
+      if (
+        ['connecting', 'initializing', 'starting', 'booting', 'unknown', 'pending'].includes(
+          normalized
+        )
+      ) {
+        return 'connecting';
+      }
+      return 'unknown';
+    };
+
+    const statuses = [health?.ollama, health?.chromadb].map(normalizeStatus);
     if (statuses.every((s) => s === 'online')) return 'online';
     if (statuses.some((s) => s === 'offline')) return 'offline';
-    if (statuses.some((s) => s === 'connecting')) return 'connecting';
+    if (statuses.some((s) => s === 'connecting' || s === 'unknown')) return 'connecting';
     return 'unknown';
   }, [health]);
 

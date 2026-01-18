@@ -45,6 +45,18 @@ let isStoreReady = false;
 let eventQueue = [];
 let storeRef = null;
 
+// FIX: Maximum event queue size to prevent unbounded memory growth during startup
+const MAX_EVENT_QUEUE_SIZE = 300;
+const CRITICAL_ACTION_CREATORS = new Set([
+  updateProgress,
+  stopAnalysis,
+  updateMetrics,
+  updateHealth,
+  updateResultPathsAfterMove,
+  updateFilePathsAfterMove,
+  addNotification
+]);
+
 /**
  * Queue an event for later dispatch or dispatch immediately if store is ready
  * @param {Function} actionCreator - The Redux action creator
@@ -54,6 +66,21 @@ function safeDispatch(actionCreator, data) {
   if (isStoreReady && storeRef) {
     storeRef.dispatch(actionCreator(data));
   } else {
+    // FIX: Enforce queue size limit to prevent unbounded memory growth
+    if (eventQueue.length >= MAX_EVENT_QUEUE_SIZE) {
+      logger.warn('[IPC Middleware] Event queue full, dropping oldest event', {
+        queueSize: eventQueue.length,
+        maxSize: MAX_EVENT_QUEUE_SIZE
+      });
+      const dropIndex = eventQueue.findIndex(
+        (entry) => !CRITICAL_ACTION_CREATORS.has(entry.actionCreator)
+      );
+      if (dropIndex >= 0) {
+        eventQueue.splice(dropIndex, 1);
+      } else {
+        eventQueue.shift(); // Remove oldest event
+      }
+    }
     eventQueue.push({ actionCreator, data });
     logger.debug('[IPC Middleware] Queued early event', {
       actionType: actionCreator?.name || 'unknown',
@@ -87,6 +114,7 @@ export function markStoreReady() {
     const eventsToFlush = eventQueue;
     eventQueue = [];
     eventsToFlush.forEach(({ actionCreator, data }) => {
+      // FIX HIGH-44: Wrap dispatch in try-catch to prevent one error stopping the queue
       try {
         storeRef.dispatch(actionCreator(data));
       } catch (e) {
@@ -252,6 +280,26 @@ const ipcMiddleware = (store) => {
       if (notificationCleanup) cleanupFunctions.push(notificationCleanup);
     }
 
+    // FIX: Subscribe to batch results chunk events for progressive streaming
+    if (window.electronAPI.events.onBatchResultsChunk) {
+      const batchChunkCleanup = window.electronAPI.events.onBatchResultsChunk((data) => {
+        const { data: validatedData } = validateIncomingEvent('batch-results-chunk', data);
+        logger.debug('[IPC] Batch results chunk received', {
+          chunk: validatedData?.chunk,
+          total: validatedData?.total,
+          resultCount: validatedData?.results?.length
+        });
+
+        // Emit custom event for components that need progressive batch updates
+        try {
+          window.dispatchEvent(new CustomEvent('batch-results-chunk', { detail: validatedData }));
+        } catch (e) {
+          logger.warn('[IPC Middleware] Failed to dispatch batch-results-chunk event:', e.message);
+        }
+      });
+      if (batchChunkCleanup) cleanupFunctions.push(batchChunkCleanup);
+    }
+
     // FIX: Subscribe to app error events
     if (window.electronAPI.events.onAppError) {
       const appErrorCleanup = window.electronAPI.events.onAppError((data) => {
@@ -269,6 +317,35 @@ const ipcMiddleware = (store) => {
       if (appErrorCleanup) cleanupFunctions.push(appErrorCleanup);
     }
 
+    const normalizeServiceHealth = (status, health) => {
+      const normalizedStatus = status ? String(status).toLowerCase() : '';
+      const normalizedHealth = health ? String(health).toLowerCase() : '';
+
+      if (['healthy', 'ok', 'online'].includes(normalizedHealth)) return 'online';
+      if (['unhealthy', 'permanently_failed', 'offline', 'error'].includes(normalizedHealth)) {
+        return 'offline';
+      }
+
+      if (['online', 'connected', 'running', 'available'].includes(normalizedStatus)) {
+        return 'online';
+      }
+      if (
+        ['connecting', 'starting', 'initializing', 'recovering', 'booting'].includes(
+          normalizedStatus
+        )
+      ) {
+        return 'connecting';
+      }
+      if (
+        ['offline', 'disconnected', 'stopped', 'failed', 'disabled', 'error'].includes(
+          normalizedStatus
+        )
+      ) {
+        return 'offline';
+      }
+      return 'unknown';
+    };
+
     // FIX: Subscribe to ChromaDB status changes
     if (window.electronAPI?.chromadb?.onStatusChanged) {
       const chromaStatusCleanup = window.electronAPI.chromadb.onStatusChanged((data) => {
@@ -277,7 +354,8 @@ const ipcMiddleware = (store) => {
 
         // Update health state with new ChromaDB status
         if (validatedData?.status) {
-          store.dispatch(updateHealth({ chromadb: validatedData.status }));
+          const mapped = normalizeServiceHealth(validatedData.status);
+          store.dispatch(updateHealth({ chromadb: mapped }));
         }
       });
       if (chromaStatusCleanup) cleanupFunctions.push(chromaStatusCleanup);
@@ -296,14 +374,38 @@ const ipcMiddleware = (store) => {
         });
 
         // Update health state based on which service changed
-        if (validatedData?.service && validatedData?.status) {
+        if (validatedData?.service && (validatedData?.status || validatedData?.health)) {
           const service = validatedData.service.toLowerCase();
           if (service === 'chromadb' || service === 'ollama') {
-            store.dispatch(updateHealth({ [service]: validatedData.status }));
+            const mapped = normalizeServiceHealth(validatedData.status, validatedData.health);
+            store.dispatch(updateHealth({ [service]: mapped }));
           }
         }
       });
       if (depsStatusCleanup) cleanupFunctions.push(depsStatusCleanup);
+    }
+
+    // Fetch initial dependency status once on startup (best-effort)
+    if (window.electronAPI?.dependencies?.getStatus) {
+      window.electronAPI.dependencies
+        .getStatus()
+        .then((result) => {
+          const status = result?.status || result;
+          const chromaStatus = normalizeServiceHealth(
+            status?.chromadb?.status || (status?.chromadb?.running ? 'running' : 'stopped'),
+            status?.chromadb?.health
+          );
+          const ollamaStatus = normalizeServiceHealth(
+            status?.ollama?.status || (status?.ollama?.running ? 'running' : 'stopped'),
+            status?.ollama?.health
+          );
+          store.dispatch(updateHealth({ chromadb: chromaStatus, ollama: ollamaStatus }));
+        })
+        .catch((error) => {
+          logger.debug('[IPC] Failed to fetch dependency status', { error: error?.message });
+          // FIX: Set services to 'unknown' on fetch failure so UI can show appropriate state
+          store.dispatch(updateHealth({ chromadb: 'unknown', ollama: 'unknown' }));
+        });
     }
 
     // Clean up listeners on window unload to prevent memory leaks

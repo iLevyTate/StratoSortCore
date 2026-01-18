@@ -180,7 +180,7 @@ const FileNode = memo(({ data, selected }) => {
         <FileText className="w-4 h-4 text-[var(--color-stratosort-blue)] shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <div
-            className="text-xs font-medium text-[var(--color-system-gray-900)] truncate"
+            className="file-node-label text-xs font-medium text-[var(--color-system-gray-900)] truncate"
             title={data?.label}
           >
             {data?.label}

@@ -2,10 +2,12 @@ import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import { Folder } from 'lucide-react';
+import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
-// FIX: Implement virtualization for large folder lists to prevent UI lag
-const ITEM_HEIGHT = 100; // Compact folder cards for better space utilization
-const VIRTUALIZATION_THRESHOLD = 20; // Only virtualize when > 20 folders
+// FIX L-2: Use centralized constants for virtualization
+const ITEM_HEIGHT = UI_VIRTUALIZATION.TARGET_FOLDER_ITEM_HEIGHT;
+// Folders have lower threshold since they're typically fewer
+const VIRTUALIZATION_THRESHOLD = 20;
 
 /**
  * Calculate optimal list height based on folder count and viewport
@@ -58,12 +60,8 @@ FolderItem.propTypes = {
 /**
  * Virtualized row component for rendering folder items
  */
-const VirtualizedFolderRow = memo(function VirtualizedFolderRow({
-  index,
-  style,
-  folders,
-  defaultLocation
-}) {
+const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, data }) {
+  const { folders, defaultLocation } = data;
   const folder = folders[index];
 
   if (!folder) return null;
@@ -74,8 +72,10 @@ const VirtualizedFolderRow = memo(function VirtualizedFolderRow({
 VirtualizedFolderRow.propTypes = {
   index: PropTypes.number.isRequired,
   style: PropTypes.object.isRequired,
-  folders: PropTypes.array.isRequired,
-  defaultLocation: PropTypes.string.isRequired
+  data: PropTypes.shape({
+    folders: PropTypes.array.isRequired,
+    defaultLocation: PropTypes.string.isRequired
+  }).isRequired
 };
 
 const TargetFolderList = memo(function TargetFolderList({
@@ -85,14 +85,14 @@ const TargetFolderList = memo(function TargetFolderList({
 }) {
   const shouldVirtualize = folders.length > VIRTUALIZATION_THRESHOLD;
 
-  // react-window v2 uses rowProps instead of itemData
-  const rowProps = useMemo(
+  const itemData = useMemo(
     () => ({
       folders,
       defaultLocation
     }),
     [folders, defaultLocation]
   );
+  const safeItemData = itemData ?? {};
 
   // Calculate optimal list height based on folder count (data-aware sizing)
   const listHeight = useMemo(() => {
@@ -120,14 +120,15 @@ const TargetFolderList = memo(function TargetFolderList({
           Showing {folders.length} folders (virtualized for performance)
         </div>
         <List
-          rowComponent={VirtualizedFolderRow}
-          rowCount={folders.length}
-          rowHeight={ITEM_HEIGHT}
-          rowProps={rowProps}
+          itemCount={folders.length}
+          itemSize={ITEM_HEIGHT}
+          itemData={safeItemData}
           overscanCount={4}
           style={{ height: listHeight, width: '100%' }}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        />
+        >
+          {VirtualizedFolderRow}
+        </List>
       </div>
     );
   }

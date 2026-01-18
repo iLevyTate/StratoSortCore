@@ -114,7 +114,7 @@ const QueryNode = memo(({ data, selected }) => {
             Query
           </div>
           <div
-            className="text-xs font-medium text-[var(--color-system-gray-900)] truncate"
+            className="file-node-label text-xs font-medium text-[var(--color-system-gray-900)] truncate"
             title={queryText}
           >
             {queryText}

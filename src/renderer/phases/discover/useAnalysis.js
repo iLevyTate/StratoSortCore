@@ -450,13 +450,6 @@ export function useAnalysis(options) {
     async (files) => {
       if (!files || files.length === 0) return;
 
-      // FIX Issue-4: Mark as "resumed" IMMEDIATELY at function entry
-      // This prevents the resume useEffect from showing "Resuming..." notification
-      // for a brand new analysis. The resume logic should only trigger when isAnalyzing
-      // was already true on component mount (e.g., from persisted state after page refresh).
-      // Moving this before the lock check ensures it's set before any async operations.
-      hasResumedRef.current = true;
-
       // Atomic lock acquisition (use refs to avoid stale closures)
       const lockAcquired = (() => {
         if (analysisLockRef.current || globalAnalysisActiveRef.current || isAnalyzingRef.current) {
@@ -477,6 +470,14 @@ export function useAnalysis(options) {
         ];
         return;
       }
+
+      // FIX Issue-4: Mark as "resumed" ONLY after lock is acquired
+      // This prevents the resume useEffect from showing "Resuming..." notification
+      // for a brand new analysis. The resume logic should only trigger when isAnalyzing
+      // was already true on component mount (e.g., from persisted state after page refresh).
+      // Setting this after lock acquisition ensures we don't permanently disable resume
+      // logic when the lock wasn't acquired and we returned early.
+      hasResumedRef.current = true;
 
       setGlobalAnalysisActive(true);
       abortControllerRef.current = new AbortController();
@@ -942,13 +943,17 @@ export function useAnalysis(options) {
     }
   }, [analysisResults, fileStates, setFileStates, addNotification]);
 
-  // Cleanup on unmount
+  // FIX M-1: Consolidated cleanup on unmount (removed duplicate effect below)
   useEffect(() => {
     return () => {
+      // Clear auto-advance timeout
+      clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef);
+      // Clear abort controller
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
+      // Clear all intervals and timeouts
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
@@ -995,27 +1000,7 @@ export function useAnalysis(options) {
     }
   }, [isAnalyzing, selectedFiles, fileStates, addNotification, resetAnalysisState]);
 
-  // FIX Issue 4: Cleanup effect to clear auto-advance timeout on unmount
-  // This prevents "Can't perform state update on unmounted component" warnings
-  useEffect(() => {
-    return () => {
-      // FIX Issue 4: Clear per-hook auto-advance timeout
-      clearAutoAdvanceTimeoutRef(autoAdvanceTimeoutRef);
-      // Also clear any other pending timeouts
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
-      }
-      if (analysisTimeoutRef.current) {
-        clearTimeout(analysisTimeoutRef.current);
-        analysisTimeoutRef.current = null;
-      }
-      if (lockTimeoutRef.current) {
-        clearTimeout(lockTimeoutRef.current);
-        lockTimeoutRef.current = null;
-      }
-    };
-  }, []);
+  // FIX M-1: Duplicate cleanup effect removed - consolidated above in single cleanup useEffect
 
   return {
     analyzeFiles,
