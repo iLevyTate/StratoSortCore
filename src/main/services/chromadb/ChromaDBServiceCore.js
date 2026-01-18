@@ -953,6 +953,7 @@ class ChromaDBServiceCore extends EventEmitter {
     (async () => {
       // FIX: Suppress annoying ChromaDB warning about missing embedding configuration
       // We provide embeddings explicitly, so this warning is a false positive
+      // eslint-disable-next-line no-console
       const originalWarn = console.warn;
       // eslint-disable-next-line no-console
       console.warn = (...args) => {
