@@ -67,8 +67,8 @@ logger.setContext('UnifiedSearchModal');
 
 // Maximum nodes allowed in graph to prevent memory exhaustion
 const MAX_GRAPH_NODES = 300;
-const GRAPH_LAYOUT_SPACING = 180;
-const GRAPH_LAYER_SPACING = 280;
+const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
+const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 
 // Define nodeTypes and edgeTypes OUTSIDE the component to prevent React Flow warnings
 // See: https://reactflow.dev/error#002
@@ -4491,7 +4491,7 @@ export default function UnifiedSearchModal({
                         onChange={setQuery}
                         onSearch={runGraphSearch}
                         placeholder="Search for files to start..."
-                        className="shadow-lg border-system-gray-200 focus-within:border-stratosort-blue focus-within:ring-4 focus-within:ring-stratosort-blue/10 transition-all"
+                        className="shadow-md border-transparent bg-white/80 backdrop-blur-sm rounded-2xl focus-within:border-stratosort-blue/50 focus-within:shadow-lg focus-within:ring-0 transition-all duration-300"
                         autoFocus
                       />
                     </div>

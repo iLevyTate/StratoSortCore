@@ -145,7 +145,7 @@ const ClusterNode = memo(({ data, selected }) => {
     <div
       className={`
         ${paddingClass} rounded-xl border-2 shadow-sm
-        transition-all duration-200 cursor-pointer h-full
+        transition-colors duration-200 cursor-pointer h-full
         ${
           selected
             ? 'border-amber-500 bg-amber-50 shadow-md ring-2 ring-amber-200'

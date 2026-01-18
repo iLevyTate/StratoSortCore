@@ -83,10 +83,10 @@ const FileNode = memo(({ data, selected }) => {
     <div
       className={`
         relative px-3 py-2 rounded-lg border-2 shadow-sm min-w-[140px] max-w-[200px]
-        transition-all duration-200 cursor-pointer group
+        transition-colors duration-200 cursor-pointer group backface-hidden transform-gpu
         ${
           selected
-            ? 'border-[var(--color-stratosort-blue)] bg-[var(--color-stratosort-blue)]/10 shadow-md ring-2 ring-[var(--color-stratosort-blue)]/30'
+            ? 'border-[var(--color-stratosort-blue)] bg-[var(--color-stratosort-blue)]/10 shadow-md'
             : 'border-[var(--color-border-soft)] bg-white hover:border-[var(--color-stratosort-blue)]/50 hover:shadow-md'
         }
         ${hasHighScore ? 'ring-1 ring-blue-400' : ''}
