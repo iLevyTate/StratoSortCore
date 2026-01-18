@@ -3672,7 +3672,11 @@ export default function UnifiedSearchModal({
   // Avoid recreating ReactFlow props on every render; unstable refs can trigger StoreUpdater loops.
   // CRITICAL: Only create new objects when selection or node data actually changes
   const rfNodes = useMemo(() => {
-    return nodes.map((n) => {
+    // FIX: Progressive disclosure - hide clusters if not enabled
+    // This allows toggling visibility without losing data
+    const visibleNodes = showClusters ? nodes : nodes.filter((n) => n.data?.kind !== 'cluster');
+
+    return visibleNodes.map((n) => {
       const isSelected = n.id === selectedNodeId;
       // Only create new object if selection state actually changed
       // Preserve node reference when possible to prevent unnecessary ReactFlow updates
@@ -3688,7 +3692,15 @@ export default function UnifiedSearchModal({
         selected: isSelected
       };
     });
-  }, [nodes, selectedNodeId]);
+  }, [nodes, selectedNodeId, showClusters]);
+
+  // FIX: Filter edges based on visible nodes to prevent "dangling" edges
+  const rfEdges = useMemo(() => {
+    if (showClusters) return edges;
+
+    const visibleNodeIds = new Set(rfNodes.map((n) => n.id));
+    return edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+  }, [edges, rfNodes, showClusters]);
 
   const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
@@ -4427,6 +4439,28 @@ export default function UnifiedSearchModal({
                     <span>{edges.length} links</span>
                   </div>
                 )}
+                {/* Toggle Clusters Button - Progressive Disclosure */}
+                {nodes.some((n) => n.data?.kind === 'cluster') && (
+                  <button
+                    onClick={() => setShowClusters(!showClusters)}
+                    className={`p-1.5 backdrop-blur-sm border rounded-lg shadow-sm transition-all flex items-center gap-1.5 px-2 ${
+                      showClusters
+                        ? 'bg-amber-50 border-amber-200 text-amber-700'
+                        : 'bg-white/90 border-system-gray-200 text-system-gray-600 hover:text-system-gray-800 hover:bg-white'
+                    }`}
+                    title={
+                      showClusters
+                        ? 'Hide clusters (simplify view)'
+                        : 'Show clusters (reveal structure)'
+                    }
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span className="text-xs font-medium hidden sm:inline">
+                      {showClusters ? 'Clusters On' : 'Clusters Off'}
+                    </span>
+                  </button>
+                )}
+
                 {/* Help button to re-show tour */}
                 <button
                   onClick={() => setShowTourManually(true)}
@@ -4584,7 +4618,7 @@ export default function UnifiedSearchModal({
                   </style>
                   <ReactFlow
                     nodes={rfNodes}
-                    edges={edges}
+                    edges={rfEdges}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     onNodesChange={onNodesChange}

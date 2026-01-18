@@ -319,10 +319,10 @@ const SearchAutocomplete = memo(
             disabled={disabled}
             className={`
             w-full pl-9 pr-4 py-2 text-sm
-            border border-system-gray-200 rounded-lg
-            bg-white focus:bg-white
-            focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30 focus:border-stratosort-blue
-            placeholder:text-system-gray-400
+            border-none rounded-xl
+            bg-transparent focus:bg-transparent
+            focus:outline-none focus:ring-0
+            placeholder:text-system-gray-500
             disabled:opacity-50 disabled:cursor-not-allowed
             transition-colors
           `}
