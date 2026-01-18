@@ -142,7 +142,24 @@ class ChatService {
 
     const parsed = this._parseResponse(ollamaResult.response, retrieval.sources);
     const assistantForMemory = this._formatForMemory(parsed);
-    await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
+
+    // FIX: Smart fallback if model returns nothing (improves UX)
+    if (parsed.documentAnswer.length === 0 && parsed.modelAnswer.length === 0) {
+      if (retrieval.sources.length === 0) {
+        parsed.modelAnswer.push({
+          text: "I couldn't find any documents matching your query. You might try:\n• Checking for typos\n• Using broader keywords\n• Asking about a topic present in your indexed files"
+        });
+      } else {
+        parsed.modelAnswer.push({
+          text: `I found ${retrieval.sources.length} potentially relevant documents, but I couldn't find a specific answer to your question in them. You can check the sources list below to explore them directly.`
+        });
+      }
+      // Re-format for memory since we added a fallback response
+      const updatedMemory = this._formatForMemory(parsed);
+      await this._saveMemoryTurn(memory, cleanQuery, updatedMemory);
+    } else {
+      await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
+    }
 
     return {
       success: true,
@@ -401,7 +418,7 @@ class ChatService {
       : '(no persona guidance)';
 
     return `
-You are StratoSort, a local document assistant.
+You are StratoSort, an intelligent and helpful local document assistant.
 You may use your general training knowledge, but you must clearly distinguish it from document-sourced information.
 
 Persona guidance:
@@ -431,6 +448,7 @@ Rules:
 - Put document-grounded statements only in documentAnswer, with citations to the source ids above.
 - Put training-knowledge statements only in modelAnswer, with no citations.
 - If no document support exists, documentAnswer should be empty.
+- If the question is conversational (e.g., "hello", "who are you"), respond in modelAnswer.
 - Keep responses concise and conversational.
 `.trim();
   }
