@@ -116,8 +116,18 @@ async function analyzeTextWithOllama(
 
     const fileDateContext = fileDate ? `\nDocument File Date: ${fileDate}` : '';
 
+    // Build naming context string if available
+    let namingContextStr = '';
+    if (namingContext && namingContext.length > 0) {
+      const examples = namingContext
+        .slice(0, 3)
+        .map((n) => `"${n}"`)
+        .join(', ');
+      namingContextStr = `\n\nNAMING PATTERNS FOUND IN SIMILAR FILES:\nThe following filenames are from semantically similar files in the system. If they follow a clear convention (e.g. "Invoice_YYYY-MM", "Project_Name_Type"), TRY to adapt the 'suggestedName' to match their style, but use the current document's date/entity/project:\n${examples}`;
+    }
+
     const prompt = `You are an expert document analyzer. Analyze the TEXT CONTENT below and extract structured information.
-${fileDateContext}${folderCategoriesStr}
+${fileDateContext}${folderCategoriesStr}${namingContextStr}
 
 FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a HINT for the document's purpose, but verify against the actual content.
 

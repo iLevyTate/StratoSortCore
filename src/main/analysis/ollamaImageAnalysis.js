@@ -115,6 +115,7 @@ The original filename is "${originalFileName}". Use it as a context hint, but pr
 - If the filename suggests a specific topic, verify it against the image content.
 ${folderCategoriesStr}
 ${ocrGroundingStr}
+${namingContextStr}
 
 Your response MUST be a valid JSON object matching this schema exactly:
 ${JSON.stringify(

@@ -183,7 +183,7 @@ async function createDefaultFolder(smartFolders) {
 function getFallbackDestination(file, smartFolders, defaultLocation) {
   const safeSmartFolders = Array.isArray(smartFolders) ? smartFolders : [];
   const defaultFolder = findDefaultFolder(safeSmartFolders);
-  const absoluteDefaultLocation = getAbsoluteDefaultLocation(defaultLocation);
+  const _absoluteDefaultLocation = getAbsoluteDefaultLocation(defaultLocation);
   // Try to match based on file type
   const fileType = getFileTypeCategory(file.extension);
 

@@ -954,6 +954,7 @@ class ChromaDBServiceCore extends EventEmitter {
       // FIX: Suppress annoying ChromaDB warning about missing embedding configuration
       // We provide embeddings explicitly, so this warning is a false positive
       const originalWarn = console.warn;
+      // eslint-disable-next-line no-console
       console.warn = (...args) => {
         if (
           args.length > 0 &&
@@ -964,6 +965,7 @@ class ChromaDBServiceCore extends EventEmitter {
         ) {
           return; // Suppress
         }
+        // eslint-disable-next-line no-console
         originalWarn.apply(console, args);
       };
 
@@ -1175,6 +1177,7 @@ class ChromaDBServiceCore extends EventEmitter {
         rejectInit(new Error(`Failed to initialize ChromaDB: ${errorMsg}`));
       } finally {
         // Restore console.warn
+        // eslint-disable-next-line no-console
         console.warn = originalWarn;
       }
     })();
