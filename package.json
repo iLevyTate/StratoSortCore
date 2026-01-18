@@ -40,6 +40,7 @@
   },
   "scripts": {
     "dev": "npm run build:dev && npm run build:main:dev && cross-env NODE_ENV=development USE_DEV_SERVER=true electron . --enable-logging",
+    "dev:fast": "cross-env NODE_ENV=development USE_DEV_SERVER=false electron . --enable-logging",
     "build": "rimraf dist && npm run build:main && cross-env NODE_ENV=production webpack --mode=production",
     "build:dev": "webpack --mode=development",
     "build:analyze": "cross-env ANALYZE=true npm run build",

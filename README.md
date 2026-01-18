@@ -161,6 +161,8 @@ npm run setup:deps     # Install Ollama + ChromaDB (beta)
 3. Make changes and verify with `npm test`.
 4. Submit a Pull Request.
 
+See `CONTRIBUTING.md` for full setup, standards, and testing guidance.
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
