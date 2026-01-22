@@ -14,6 +14,10 @@ let lastSavedResultsCount = -1;
 // FIX: Track fileStates changes to ensure file state updates trigger persistence
 let lastSavedFileStatesCount = -1;
 let lastSavedFileStatesHash = '';
+// FIX: Track UI state changes
+let lastSavedSidebarOpen = null;
+let lastSavedShowSettings = null;
+
 // FIX: Re-entry guard to prevent infinite loops if save triggers actions
 let isSaving = false;
 
@@ -188,7 +192,7 @@ const persistenceMiddleware = (store) => (next) => (action) => {
     action.type.indexOf('setLoading') === -1
   ) {
     // Performance: Skip save if key state hasn't changed
-    const { currentPhase } = state.ui;
+    const { currentPhase, sidebarOpen, showSettings } = state.ui;
     const currentFilesCount = state.files.selectedFiles.length;
     const currentResultsCount = state.analysis.results.length;
     // FIX: Track fileStates changes
@@ -201,7 +205,10 @@ const persistenceMiddleware = (store) => (next) => (action) => {
       currentResultsCount !== lastSavedResultsCount ||
       // FIX: Check fileStates changes by count and hash
       currentFileStatesCount !== lastSavedFileStatesCount ||
-      currentFileStatesHash !== lastSavedFileStatesHash;
+      currentFileStatesHash !== lastSavedFileStatesHash ||
+      // FIX: Check UI state changes
+      sidebarOpen !== lastSavedSidebarOpen ||
+      showSettings !== lastSavedShowSettings;
 
     if (!hasRelevantChange) {
       return result;
@@ -318,6 +325,8 @@ const persistenceMiddleware = (store) => (next) => (action) => {
           lastSavedResultsCount = currentResultsCount;
           lastSavedFileStatesCount = currentFileStatesCount;
           lastSavedFileStatesHash = currentFileStatesHash;
+          lastSavedSidebarOpen = sidebarOpen;
+          lastSavedShowSettings = showSettings;
           lastSaveAttempt = Date.now();
         }
       } finally {
@@ -342,6 +351,8 @@ export const cleanupPersistence = () => {
   // FIX: Reset fileStates tracking variables
   lastSavedFileStatesCount = -1;
   lastSavedFileStatesHash = '';
+  lastSavedSidebarOpen = null;
+  lastSavedShowSettings = null;
 };
 
 export default persistenceMiddleware;

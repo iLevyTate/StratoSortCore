@@ -27,6 +27,7 @@ const normalizePathValue = (value, fallback = 'Documents') => {
 function SetupPhase() {
   const dispatch = useAppDispatch();
   const documentsPathFromStore = useAppSelector((state) => state.system.documentsPath);
+  const smartFoldersFromStore = useAppSelector((state) => state.files.smartFolders);
 
   const actions = useMemo(
     () => ({
@@ -166,6 +167,12 @@ function SetupPhase() {
       setSmartFolders([]);
     }
   }, [actions]);
+
+  useEffect(() => {
+    if (Array.isArray(smartFoldersFromStore) && smartFoldersFromStore.length > 0) {
+      setSmartFolders((prev) => (prev !== smartFoldersFromStore ? smartFoldersFromStore : prev));
+    }
+  }, [smartFoldersFromStore]);
 
   useEffect(() => {
     isMountedRef.current = true;

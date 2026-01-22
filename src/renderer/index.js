@@ -13,8 +13,10 @@ import './styles.css';
 
 // Fetch commonly-used data early so it's cached before components need it
 store.dispatch(fetchDocumentsPath());
-store.dispatch(fetchSmartFolders());
-store.dispatch(fetchSettings());
+// FIX: Force refresh on startup to ensure we have latest data from disk
+// This overrides potentially stale data from localStorage
+store.dispatch(fetchSmartFolders(true));
+store.dispatch(fetchSettings(true));
 
 // Add platform class to body for OS-specific styling hooks
 applyPlatformClass();

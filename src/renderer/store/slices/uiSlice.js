@@ -75,15 +75,19 @@ const NAVIGATION_RULES = {
 };
 
 // Thunk to fetch settings (only once, then cached)
-export const fetchSettings = createAsyncThunk('ui/fetchSettings', async (_, { getState }) => {
-  const { ui } = getState();
-  // Return cached value if already fetched
-  if (ui.settings) {
-    return ui.settings;
+// FIX: Added forceRefresh parameter to allow cache invalidation
+export const fetchSettings = createAsyncThunk(
+  'ui/fetchSettings',
+  async (forceRefresh = false, { getState }) => {
+    const { ui } = getState();
+    // Return cached value if already fetched and not forcing refresh
+    if (!forceRefresh && ui.settings) {
+      return ui.settings;
+    }
+    const settings = await window.electronAPI?.settings?.get?.();
+    return settings || {};
   }
-  const settings = await window.electronAPI?.settings?.get?.();
-  return settings || {};
-});
+);
 
 const initialState = {
   // FIX: Add null check for PHASES to prevent crash during module initialization

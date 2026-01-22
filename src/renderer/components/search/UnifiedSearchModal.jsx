@@ -70,19 +70,7 @@ const MAX_GRAPH_NODES = 300;
 const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
 const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 
-// Define nodeTypes and edgeTypes outside component to prevent React Flow warnings
-const nodeTypes = {
-  fileNode: FileNode,
-  folderNode: FolderNode,
-  queryNode: QueryNode,
-  clusterNode: ClusterNode
-};
-
-const edgeTypes = {
-  similarity: SimilarityEdge,
-  queryMatch: QueryMatchEdge,
-  smartStep: SmartStepEdge
-};
+// React Flow node/edge types are memoized in the component to keep stable references.
 
 /**
  * Format error messages to be more user-friendly and actionable
@@ -601,6 +589,25 @@ export default function UnifiedSearchModal({
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
   const [viewMode, setViewMode] = useState('all'); // 'all' or 'grouped'
 
+  const nodeTypes = useMemo(
+    () => ({
+      fileNode: FileNode,
+      folderNode: FolderNode,
+      queryNode: QueryNode,
+      clusterNode: ClusterNode
+    }),
+    []
+  );
+
+  const edgeTypes = useMemo(
+    () => ({
+      similarity: SimilarityEdge,
+      queryMatch: QueryMatchEdge,
+      smartStep: SmartStepEdge
+    }),
+    []
+  );
+
   // Chat tab state
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatting, setIsChatting] = useState(false);
@@ -1025,54 +1032,55 @@ export default function UnifiedSearchModal({
       return () => {};
     }
 
-    if (!wasOpenRef.current) {
+    const isOpening = !wasOpenRef.current;
+    if (isOpening) {
       logger.info('[KnowledgeOS] Opened', {
         initialTab,
         effectiveInitialTab
       });
-    }
-    wasOpenRef.current = true;
+      wasOpenRef.current = true;
 
-    setActiveTab(effectiveInitialTab);
-    setQuery('');
-    setDebouncedQuery('');
-    setError('');
-    setStats(null);
-    setHasLoadedStats(false);
-    setIsLoadingStats(false);
-    // Search state
-    setSearchResults([]);
-    setSelectedSearchId(null);
-    setIsSearching(false);
-    setQueryMeta(null);
-    setSearchMeta(null);
-    setBulkSelectedIds(new Set());
-    // Chat state
-    setChatMessages([]);
-    setChatError('');
-    setIsChatting(false);
-    setUseSearchContext(true);
-    chatSessionRef.current = crypto.randomUUID();
-    // Graph state
-    graphActions.setNodes([]);
-    graphActions.setEdges([]);
-    graphActions.selectNode(null);
-    setAddMode(true);
-    setWithinQuery('');
-    setDebouncedWithinQuery('');
-    setGraphStatus('');
-    // Layout state
-    setAutoLayout(true);
-    setIsLayouting(false);
-    // Multi-hop state
-    setHopCount(1);
-    setDecayFactor(0.7);
-    // Clustering state
-    setShowClusters(false);
-    setIsComputingClusters(false);
-    // Duplicates state
-    setDuplicateGroups([]);
-    setIsFindingDuplicates(false);
+      setActiveTab(effectiveInitialTab);
+      setQuery('');
+      setDebouncedQuery('');
+      setError('');
+      setStats(null);
+      setHasLoadedStats(false);
+      setIsLoadingStats(false);
+      // Search state
+      setSearchResults([]);
+      setSelectedSearchId(null);
+      setIsSearching(false);
+      setQueryMeta(null);
+      setSearchMeta(null);
+      setBulkSelectedIds(new Set());
+      // Chat state
+      setChatMessages([]);
+      setChatError('');
+      setIsChatting(false);
+      setUseSearchContext(true);
+      chatSessionRef.current = crypto.randomUUID();
+      // Graph state
+      graphActions.setNodes([]);
+      graphActions.setEdges([]);
+      graphActions.selectNode(null);
+      setAddMode(true);
+      setWithinQuery('');
+      setDebouncedWithinQuery('');
+      setGraphStatus('');
+      // Layout state
+      setAutoLayout(true);
+      setIsLayouting(false);
+      // Multi-hop state
+      setHopCount(1);
+      setDecayFactor(0.7);
+      // Clustering state
+      setShowClusters(false);
+      setIsComputingClusters(false);
+      // Duplicates state
+      setDuplicateGroups([]);
+      setIsFindingDuplicates(false);
+    }
 
     // Cleanup pending layouts on unmount
     return () => {

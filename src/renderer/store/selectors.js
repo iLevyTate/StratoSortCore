@@ -126,14 +126,19 @@ export const selectFilesWithAnalysis = createSelector(
     const mergedFiles = files.map((file) => {
       const analysisResult = analysisMap.get(file.path);
       const fileState = safeFileStates?.[file.path];
+      const nextStatus = analysisResult?.status || fileState?.state || file.status || 'pending';
+      const nextError = analysisResult?.error || file.error || null;
+      const nextAnalyzedAt = analysisResult?.analyzedAt || file.analyzedAt || null;
 
       // Check if this file needs modification
       const needsAnalysis = analysisResult && file.analysis !== analysisResult.analysis;
       const needsExtension = !file.extension && file.path;
-      const needsState = fileState?.state && file.status !== fileState.state;
+      const needsStatus = nextStatus !== file.status;
+      const needsError = nextError !== file.error;
+      const needsAnalyzedAt = nextAnalyzedAt !== file.analyzedAt;
 
       // If no changes needed, return original file object
-      if (!needsAnalysis && !needsExtension && !needsState && !analysisResult?.error) {
+      if (!needsAnalysis && !needsExtension && !needsStatus && !needsError && !needsAnalyzedAt) {
         return file;
       }
 
@@ -152,9 +157,9 @@ export const selectFilesWithAnalysis = createSelector(
         // Merge analysis from results
         analysis: analysisResult?.analysis || file.analysis || null,
         // Keep error info if present
-        error: analysisResult?.error || file.error || null,
-        status: analysisResult?.status || file.status || fileState?.state || 'pending',
-        analyzedAt: analysisResult?.analyzedAt || file.analyzedAt || null
+        error: nextError,
+        status: nextStatus,
+        analyzedAt: nextAnalyzedAt
       };
     });
 
