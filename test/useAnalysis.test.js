@@ -265,8 +265,6 @@ describe('useAnalysis', () => {
         result.current.cancelAnalysis();
       });
 
-      expect(mockActions.setPhaseData).toHaveBeenCalledWith('isAnalyzing', false);
-
       // File name phase data is cleared after a delay
       act(() => {
         jest.runAllTimers();

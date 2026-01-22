@@ -5,6 +5,7 @@
  */
 
 const FolderMatchingService = require('../src/main/services/FolderMatchingService');
+const { capEmbeddingInput } = require('../src/main/utils/embeddingInput');
 
 // Mock ollama utils
 jest.mock('../src/main/ollamaUtils', () => ({
@@ -561,13 +562,15 @@ describe('FolderMatchingService', () => {
 
     test('should handle very long text', async () => {
       const longText = 'word '.repeat(10000);
+      const capped = capEmbeddingInput(longText);
       const result = await service.embedText(longText);
 
       expect(result).toBeDefined();
-      expect(mockOllama.embed).toHaveBeenCalledWith({
-        model: 'mxbai-embed-large',
-        input: longText,
-        options: { num_gpu: -1, main_gpu: 0 }
+      expect(mockOllama.embed).toHaveBeenCalled();
+      mockOllama.embed.mock.calls.forEach(([args]) => {
+        expect(args.model).toBe('mxbai-embed-large');
+        expect(args.options).toEqual({ num_gpu: -1, main_gpu: 0 });
+        expect(args.input.length).toBeLessThanOrEqual(capped.maxChars);
       });
     });
 
