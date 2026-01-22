@@ -50,7 +50,8 @@ const {
   resetFileChunks: resetFileChunksOp,
   markChunksOrphaned: markChunksOrphanedOp,
   getOrphanedChunks: getOrphanedChunksOp,
-  updateFileChunkPaths: updateFileChunkPathsOp
+  updateFileChunkPaths: updateFileChunkPathsOp,
+  cloneFileChunks: cloneFileChunksOp
 } = chunkOps;
 // Provide safe fallbacks to avoid undefined functions in tests/mocks
 const deleteFileChunks = chunkOps.deleteFileChunks || (async () => 0);
@@ -1686,6 +1687,30 @@ class ChromaDBServiceCore extends EventEmitter {
     }
   }
 
+  async cloneFileChunks(sourceId, destId, newMeta = {}) {
+    if (!sourceId || !destId) {
+      return { success: false, error: 'Source and destination IDs required' };
+    }
+
+    // Check circuit breaker
+    if (!this.circuitBreaker.isAllowed()) {
+      logger.debug('[ChromaDB] Circuit open, cannot clone chunks', {
+        sourceId,
+        destId
+      });
+      return { success: false, error: 'Service unavailable' };
+    }
+
+    await this.initialize();
+    const clonedCount = await cloneFileChunksOp({
+      sourceId,
+      destId,
+      newMeta,
+      chunkCollection: this.fileChunkCollection
+    });
+    return { success: true, cloned: clonedCount > 0, count: clonedCount };
+  }
+
   /**
    * Delete a folder embedding with offline queue support
    */
@@ -2074,6 +2099,21 @@ class ChromaDBServiceCore extends EventEmitter {
     await this.initialize();
 
     try {
+      // FIX: Safely handle uninitialized collections (e.g. if circuit breaker prevented init)
+      if (!this.fileCollection || !this.folderCollection || !this.fileChunkCollection) {
+        return {
+          files: 0,
+          folders: 0,
+          fileChunks: 0,
+          dbPath: this.dbPath,
+          serverUrl: this.serverUrl,
+          initialized: false,
+          queryCache: this.queryCache.getStats(),
+          inflightQueries: this.inflightQueries.size,
+          status: 'uninitialized'
+        };
+      }
+
       const fileCount = await this.fileCollection.count();
       const folderCount = await this.folderCollection.count();
       const fileChunkCount = await this.fileChunkCollection.count();

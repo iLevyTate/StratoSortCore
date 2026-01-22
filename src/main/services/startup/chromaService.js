@@ -75,7 +75,7 @@ async function checkChromaDBHealth() {
     for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
         const response = await axios.get(`${baseUrl}${endpoint}`, {
-          timeout: 2000
+          timeout: 5000 // Increased from 2000ms to 5000ms for robustness
         });
         if (response.status === 200) {
           return true;
@@ -102,7 +102,7 @@ async function isChromaDBRunningQuick() {
 
     for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
-        const response = await axios.get(`${baseUrl}${endpoint}`, { timeout: 1000 });
+        const response = await axios.get(`${baseUrl}${endpoint}`, { timeout: 3000 }); // Increased from 1000ms
         if (response.status === 200) {
           logger.debug(`[STARTUP] ChromaDB quick check successful on ${baseUrl}${endpoint}`);
           return true;
@@ -128,12 +128,12 @@ async function isChromaDBRunning() {
     for (const endpoint of CHROMA_HEALTH_ENDPOINTS) {
       try {
         const response = await axiosWithRetry(
-          () => axios.get(`${baseUrl}${endpoint}`, { timeout: 1000 }),
+          () => axios.get(`${baseUrl}${endpoint}`, { timeout: 5000 }), // Increased from 1000ms
           {
             operation: `ChromaDB health check ${endpoint}`,
-            maxRetries: 2,
-            initialDelay: 500,
-            maxDelay: 2000
+            maxRetries: 3, // Increased from 2
+            initialDelay: 1000, // Increased from 500
+            maxDelay: 3000
           }
         );
         if (response.status === 200) {
