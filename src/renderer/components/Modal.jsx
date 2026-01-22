@@ -12,6 +12,7 @@ function Modal({
   size = 'medium',
   closeOnOverlayClick = true,
   showCloseButton = true,
+  footer = null,
   className = ''
 }) {
   const modalRef = useRef(null);
@@ -165,7 +166,7 @@ function Modal({
         ref={modalRef}
         className={`
           relative surface-panel !p-0 w-full ${getSizeClasses()}
-          max-h-[90vh] overflow-hidden animate-modal-enter gpu-accelerate ${className}
+          max-h-[90vh] flex flex-col animate-modal-enter gpu-accelerate ${className}
         `}
         role="dialog"
         aria-modal="true"
@@ -175,7 +176,7 @@ function Modal({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between border-b border-border-soft/70 px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] bg-white rounded-t-2xl">
+          <div className="flex-shrink-0 flex items-center justify-between border-b border-border-soft/70 px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] bg-white rounded-t-2xl">
             {title && (
               <h2 id="modal-title" className="text-lg font-semibold text-system-gray-900">
                 {title}
@@ -197,10 +198,19 @@ function Modal({
         {/* Content */}
         <div
           ref={contentRef}
-          className="modern-scrollbar max-h-[calc(90vh-8rem)] overflow-y-auto px-[var(--panel-padding)] py-[var(--panel-padding)] bg-white rounded-b-2xl"
+          className={`flex-1 min-h-0 modern-scrollbar overflow-y-auto px-[var(--panel-padding)] py-[var(--panel-padding)] bg-white ${
+            footer ? '' : 'rounded-b-2xl'
+          }`}
         >
           {children}
         </div>
+
+        {/* Footer */}
+        {footer && (
+          <div className="flex-shrink-0 border-t border-border-soft/70 px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] bg-white rounded-b-2xl">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -371,6 +381,7 @@ Modal.propTypes = {
   size: PropTypes.oneOf(['small', 'medium', 'large', 'full']),
   closeOnOverlayClick: PropTypes.bool,
   showCloseButton: PropTypes.bool,
+  footer: PropTypes.node,
   className: PropTypes.string
 };
 

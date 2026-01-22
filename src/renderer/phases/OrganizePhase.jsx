@@ -591,6 +591,13 @@ function OrganizePhase() {
         onClose={() => setViewingFileDetails(null)}
         title="File Analysis Details"
         size="medium"
+        footer={
+          <div className="flex justify-end">
+            <Button onClick={() => setViewingFileDetails(null)} variant="secondary">
+              Close
+            </Button>
+          </div>
+        }
       >
         {viewingFileDetails && viewingFileDetails.analysis && (
           <div className="flex flex-col gap-default">
@@ -605,11 +612,6 @@ function OrganizePhase() {
                 <AnalysisDetails analysis={viewingFileDetails.analysis} />
               </div>
             </Card>
-            <div className="flex justify-end pt-default">
-              <Button onClick={() => setViewingFileDetails(null)} variant="secondary">
-                Close
-              </Button>
-            </div>
           </div>
         )}
       </Modal>
@@ -647,19 +649,19 @@ function OrganizePhase() {
           </span>
         }
         size="medium"
-      >
-        <div className="flex flex-col gap-default">
-          <StatusOverview
-            unprocessedCount={unprocessedFiles.length}
-            processedCount={processedFiles.length}
-            failedCount={failedCount}
-          />
-          <div className="flex justify-end pt-default border-t border-border-soft">
+        footer={
+          <div className="flex justify-end">
             <Button onClick={() => setShowStatusModal(false)} variant="secondary">
               Close
             </Button>
           </div>
-        </div>
+        }
+      >
+        <StatusOverview
+          unprocessedCount={unprocessedFiles.length}
+          processedCount={processedFiles.length}
+          failedCount={failedCount}
+        />
       </Modal>
 
       {/* Previously Organized Files Modal */}
@@ -668,6 +670,13 @@ function OrganizePhase() {
         onClose={() => setShowHistoryModal(false)}
         title="Previously Organized Files"
         size="large"
+        footer={
+          <div className="flex justify-end">
+            <Button onClick={() => setShowHistoryModal(false)} variant="secondary">
+              Close
+            </Button>
+          </div>
+        }
       >
         <div className="flex flex-col gap-default">
           <p className="text-sm text-system-gray-600">
@@ -679,11 +688,6 @@ function OrganizePhase() {
             <ErrorBoundaryCore variant="simple" contextName="Processed Files">
               <VirtualizedProcessedFiles files={processedFiles} />
             </ErrorBoundaryCore>
-          </div>
-          <div className="flex justify-end pt-default border-t border-border-soft">
-            <Button onClick={() => setShowHistoryModal(false)} variant="secondary">
-              Close
-            </Button>
           </div>
         </div>
       </Modal>
