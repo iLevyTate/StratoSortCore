@@ -10,6 +10,8 @@ const { buildOllamaOptions } = require('./PerformanceService');
 const { getInstance: getOllamaInstance } = require('./OllamaService');
 const { enrichFolderTextForEmbedding } = require('../analysis/semanticExtensionMap');
 const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
+const { capEmbeddingInput } = require('../utils/embeddingInput');
+const { chunkText } = require('../utils/textChunking');
 
 /**
  * Embedding dimension constants for different models
@@ -26,6 +28,20 @@ const EMBEDDING_DIMENSIONS = {
   gte: 768, // FIX: Added Alibaba GTE models (default to 768)
   default: 768 // Updated fallback for new default model
 };
+
+function meanPoolVectors(vectors, expectedDim) {
+  if (!Array.isArray(vectors) || vectors.length === 0) return [];
+  const dim =
+    typeof expectedDim === 'number' && expectedDim > 0 ? expectedDim : vectors[0].length || 0;
+  if (!dim) return [];
+  const sums = new Array(dim).fill(0);
+  for (const vector of vectors) {
+    for (let i = 0; i < dim; i += 1) {
+      sums[i] += vector[i] || 0;
+    }
+  }
+  return sums.map((value) => value / vectors.length);
+}
 
 /**
  * Get the embedding dimension for a model
@@ -255,20 +271,49 @@ class FolderMatchingService {
       const { AI_DEFAULTS } = require('../../shared/constants');
       const model = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
       const perfOptions = await buildOllamaOptions('embeddings');
+      const originalText = String(text || '');
+      const capped = capEmbeddingInput(originalText);
+      const embeddingInput = capped.text;
+
+      if (capped.wasTruncated) {
+        logger.warn('[FolderMatchingService] Embedding input truncated to token limit', {
+          model,
+          originalLength: String(text || '').length,
+          truncatedLength: embeddingInput.length,
+          estimatedTokens: capped.estimatedTokens,
+          maxTokens: capped.maxTokens
+        });
+      }
 
       // Check cache first
-      const cachedResult = this.embeddingCache.get(text, model);
+      const cachedResult = this.embeddingCache.get(embeddingInput, model);
       if (cachedResult) {
         const duration = Date.now() - startTime;
         logger.debug(`[FolderMatchingService] Embedding retrieved in ${duration}ms (cache: HIT)`);
         return cachedResult;
       }
 
+      if (capped.wasTruncated) {
+        const pooledResult = await this._embedWithChunkPooling(
+          originalText,
+          model,
+          capped.maxChars
+        );
+        if (pooledResult && pooledResult.vector?.length) {
+          this.embeddingCache.set(embeddingInput, pooledResult.model, pooledResult.vector);
+          const duration = Date.now() - startTime;
+          logger.debug(
+            `[FolderMatchingService] Pooled embedding generated in ${duration}ms (chunked)`
+          );
+          return pooledResult;
+        }
+      }
+
       // Cache miss - generate embedding via API
       // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
       const response = await ollama.embed({
         model,
-        input: text || '',
+        input: embeddingInput || '',
         options: { ...perfOptions }
       });
 
@@ -299,7 +344,7 @@ class FolderMatchingService {
       const result = { vector, model };
 
       // Store in cache for future use
-      this.embeddingCache.set(text, model, vector);
+      this.embeddingCache.set(embeddingInput, model, vector);
 
       const duration = Date.now() - startTime;
       logger.debug(`[FolderMatchingService] Embedding generated in ${duration}ms (cache: MISS)`);
@@ -315,6 +360,45 @@ class FolderMatchingService {
       embeddingError.code = 'EMBEDDING_FAILED';
       embeddingError.originalError = error;
       throw embeddingError;
+    }
+  }
+
+  async _embedWithChunkPooling(text, model, chunkSize) {
+    try {
+      const overlap = Math.max(50, Math.floor(chunkSize * 0.1));
+      const chunks = chunkText(text || '', {
+        chunkSize,
+        overlap,
+        maxChunks: 3
+      });
+      if (chunks.length <= 1) return null;
+
+      const items = chunks.map((chunk, index) => ({
+        id: `chunk-${index}`,
+        text: chunk.text
+      }));
+      const batch = await this.parallelEmbeddingService.batchEmbedTexts(items, {
+        stopOnError: false
+      });
+      const vectors = batch.results
+        .filter((result) => result?.success && Array.isArray(result.vector) && result.vector.length)
+        .map((result) => ({
+          vector: result.vector,
+          model: result.model
+        }));
+      if (vectors.length === 0) return null;
+
+      const pooled = meanPoolVectors(
+        vectors.map((entry) => entry.vector),
+        getEmbeddingDimension(model)
+      );
+      const pooledModel = vectors[0].model || model;
+      return { vector: pooled, model: pooledModel };
+    } catch (error) {
+      logger.warn('[FolderMatchingService] Chunk pooling failed, falling back to truncation', {
+        error: error.message
+      });
+      return null;
     }
   }
 

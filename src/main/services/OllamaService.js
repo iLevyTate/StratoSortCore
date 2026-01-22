@@ -24,6 +24,7 @@ const { withOllamaRetry } = require('../utils/ollamaApiRetry');
 const { getInstance: getOllamaClient } = require('./OllamaClient');
 const { buildOllamaOptions } = require('./PerformanceService');
 const { categorizeModels } = require('../../shared/modelCategorization');
+const { capEmbeddingInput } = require('../utils/embeddingInput');
 
 // FIX: Module-level constant for allowed embedding models (used by all updateConfig methods)
 const ALLOWED_EMBED_MODELS = [
@@ -638,11 +639,23 @@ class OllamaService {
         const ollama = getOllama();
         const perfOptions = await buildOllamaOptions('embeddings');
         const mergedOptions = { ...perfOptions, ...(options.ollamaOptions || {}) };
+        const capped = capEmbeddingInput(text || '');
+        const embeddingInput = capped.text;
+
+        if (capped.wasTruncated) {
+          logger.warn('[OllamaService] Embedding input truncated to token limit', {
+            model,
+            originalLength: String(text || '').length,
+            truncatedLength: embeddingInput.length,
+            estimatedTokens: capped.estimatedTokens,
+            maxTokens: capped.maxTokens
+          });
+        }
 
         // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
         const response = await ollama.embed({
           model,
-          input: text,
+          input: embeddingInput,
           options: mergedOptions
         });
 

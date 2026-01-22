@@ -465,6 +465,88 @@ async function updateFileChunkPaths({ pathUpdates, chunkCollection }) {
 }
 
 /**
+ * Clone chunk embeddings for a copied file.
+ *
+ * @param {Object} params
+ * @param {string} params.sourceId
+ * @param {string} params.destId
+ * @param {Object} params.newMeta
+ * @param {Object} params.chunkCollection
+ * @returns {Promise<number>} cloned count
+ */
+async function cloneFileChunks({ sourceId, destId, newMeta, chunkCollection }) {
+  if (!sourceId || !destId) return 0;
+
+  try {
+    const chunks = await chunkCollection.get({
+      where: { fileId: sourceId },
+      include: ['embeddings', 'metadatas', 'documents']
+    });
+
+    const ids = Array.isArray(chunks?.ids) ? chunks.ids : [];
+    const embeddings = Array.isArray(chunks?.embeddings) ? chunks.embeddings : [];
+    const metadatas = Array.isArray(chunks?.metadatas) ? chunks.metadatas : [];
+    const documents = Array.isArray(chunks?.documents) ? chunks.documents : [];
+
+    if (ids.length === 0) return 0;
+
+    const newIds = [];
+    const newEmbeddings = [];
+    const newMetadatas = [];
+    const newDocuments = [];
+
+    for (let i = 0; i < ids.length; i++) {
+      const existingId = ids[i];
+      const vec = embeddings[i];
+      const meta = metadatas[i] || {};
+      const doc = documents[i];
+
+      if (!Array.isArray(vec) || vec.length === 0) continue;
+
+      const chunkIndex = Number.isInteger(meta.chunkIndex)
+        ? meta.chunkIndex
+        : Number(existingId.split(':').pop());
+
+      if (!Number.isInteger(chunkIndex)) continue;
+
+      const newId = `chunk:${destId}:${chunkIndex}`;
+
+      newIds.push(newId);
+      newEmbeddings.push(vec);
+      newMetadatas.push(
+        sanitizeMetadata({
+          ...meta,
+          ...newMeta,
+          fileId: destId,
+          path: newMeta?.path || meta.path,
+          updatedAt: new Date().toISOString()
+        })
+      );
+      newDocuments.push(doc || meta.snippet || newMeta?.path || newId);
+    }
+
+    if (newIds.length === 0) return 0;
+
+    await chunkCollection.upsert({
+      ids: newIds,
+      embeddings: newEmbeddings,
+      metadatas: newMetadatas,
+      documents: newDocuments
+    });
+
+    logger.debug('[ChunkOps] Cloned file chunk embeddings', { count: newIds.length });
+    return newIds.length;
+  } catch (error) {
+    logger.warn('[ChunkOps] Failed to clone file chunks', {
+      sourceId,
+      destId,
+      error: error.message
+    });
+    return 0;
+  }
+}
+
+/**
  * Delete all chunks belonging to a specific file
  * FIX P0-1: Prevents orphaned chunks when files are deleted
  *
@@ -558,6 +640,7 @@ module.exports = {
   markChunksOrphaned,
   getOrphanedChunks,
   updateFileChunkPaths,
+  cloneFileChunks,
   deleteFileChunks,
   batchDeleteFileChunks
 };

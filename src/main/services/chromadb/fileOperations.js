@@ -338,9 +338,9 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
     const BATCH_SIZE = 50;
     for (let i = 0; i < pathUpdates.length; i += BATCH_SIZE) {
       const batch = pathUpdates.slice(i, i + BATCH_SIZE);
-      const updatesToProcess = [];
+      const updatesByNewId = new Map();
       // FIX: Track old IDs for deletion AFTER upsert to prevent data loss on crash
-      const oldIdsToDelete = [];
+      const oldIdsToDelete = new Set();
 
       for (const update of batch) {
         if (!update.oldId || !update.newId) {
@@ -373,17 +373,19 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
               updatedAt: new Date().toISOString()
             });
 
-            updatesToProcess.push({
-              id: update.newId,
-              embedding: existingFile.embeddings[0],
-              metadata: updatedMeta,
-              document: update.newMeta.path || update.newId
-            });
+            if (!updatesByNewId.has(update.newId)) {
+              updatesByNewId.set(update.newId, {
+                id: update.newId,
+                embedding: existingFile.embeddings[0],
+                metadata: updatedMeta,
+                document: update.newMeta.path || update.newId
+              });
+            }
 
             // FIX: Collect old IDs for deletion AFTER upsert (prevents data loss)
             // Only if ID actually changed
             if (update.oldId !== update.newId) {
-              oldIdsToDelete.push(update.oldId);
+              oldIdsToDelete.add(update.oldId);
             }
           } else {
             logger.warn('[FileOps] File not found for path update', {
@@ -401,6 +403,7 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
       // FIX: UPSERT new entries FIRST to ensure data is never lost
       // If crash occurs after upsert but before delete, we get temporary duplicates
       // which are harmless and will be cleaned by reconciliation
+      const updatesToProcess = Array.from(updatesByNewId.values());
       if (updatesToProcess.length > 0) {
         await fileCollection.upsert({
           ids: updatesToProcess.map((u) => u.id),
@@ -411,16 +414,17 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
 
         // FIX: DELETE old entries AFTER successful upsert
         // This order guarantees we never lose data even on crash
-        if (oldIdsToDelete.length > 0) {
+        const oldIds = Array.from(oldIdsToDelete);
+        if (oldIds.length > 0) {
           try {
-            await fileCollection.delete({ ids: oldIdsToDelete });
+            await fileCollection.delete({ ids: oldIds });
             logger.debug('[FileOps] Deleted old file entries after upsert', {
-              count: oldIdsToDelete.length
+              count: oldIds.length
             });
           } catch (deleteError) {
             // Log but don't fail - reconciliation will clean duplicates later
             logger.warn('[FileOps] Could not delete old entries after upsert', {
-              count: oldIdsToDelete.length,
+              count: oldIds.length,
               error: deleteError.message
             });
           }

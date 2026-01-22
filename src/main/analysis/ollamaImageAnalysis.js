@@ -21,6 +21,7 @@ const {
   getIntelligentKeywords: getIntelligentImageKeywords,
   safeSuggestedName
 } = require('./fallbackUtils');
+const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
 const { container, ServiceIds } = require('../services/ServiceContainer');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
@@ -60,6 +61,79 @@ const AppConfig = {
     }
   }
 };
+
+const JSON_REPAIR_MAX_CHARS = 4000;
+const JSON_REPAIR_MAX_TOKENS = 400;
+const IMAGE_ANALYSIS_SCHEMA = {
+  ...ANALYSIS_SCHEMA_PROMPT,
+  colors: ['#hex1', '#hex2'],
+  has_text: true,
+  content_type: 'text_document OR photograph OR screenshot OR other'
+};
+const IMAGE_ANALYSIS_TOOL = {
+  type: 'function',
+  function: {
+    name: 'image_analysis',
+    description: 'Extract structured image analysis JSON.',
+    parameters: {
+      type: 'object',
+      properties: {
+        date: { type: ['string', 'null'] },
+        entity: { type: ['string', 'null'] },
+        type: { type: ['string', 'null'] },
+        category: { type: ['string', 'null'] },
+        project: { type: ['string', 'null'] },
+        summary: { type: ['string', 'null'] },
+        keywords: { type: 'array', items: { type: 'string' } },
+        confidence: { type: 'number' },
+        suggestedName: { type: ['string', 'null'] },
+        reasoning: { type: ['string', 'null'] },
+        colors: { type: 'array', items: { type: 'string' } },
+        has_text: { type: 'boolean' },
+        content_type: { type: ['string', 'null'] }
+      },
+      required: ['category', 'keywords', 'confidence']
+    }
+  }
+};
+
+async function attemptJsonRepairWithOllama(client, model, rawResponse) {
+  if (!rawResponse || !client) return null;
+  const trimmed =
+    rawResponse.length > JSON_REPAIR_MAX_CHARS
+      ? rawResponse.slice(0, JSON_REPAIR_MAX_CHARS)
+      : rawResponse;
+  const repairPrompt = `You are a JSON repair assistant. Fix the JSON below and output ONLY valid JSON.
+Do NOT include any commentary, markdown, or extra text.
+Schema (for structure reference only):
+${JSON.stringify(IMAGE_ANALYSIS_SCHEMA, null, 2)}
+
+JSON to repair:
+${trimmed}`;
+
+  const perfOptions = await buildOllamaOptions('text');
+  const response = await generateWithRetry(
+    client,
+    {
+      model,
+      prompt: repairPrompt,
+      options: {
+        temperature: 0,
+        num_predict: Math.min(AppConfig.ai.imageAnalysis.maxTokens, JSON_REPAIR_MAX_TOKENS),
+        ...perfOptions
+      },
+      format: 'json'
+    },
+    {
+      operation: 'Image analysis JSON repair',
+      maxRetries: 1,
+      initialDelay: 500,
+      maxDelay: 1000
+    }
+  );
+
+  return response?.response || null;
+}
 
 async function analyzeImageWithOllama(
   imageBase64,
@@ -117,17 +191,9 @@ ${folderCategoriesStr}
 ${ocrGroundingStr}
 ${namingContextStr}
 
-Your response MUST be a valid JSON object matching this schema exactly:
-${JSON.stringify(
-  {
-    ...ANALYSIS_SCHEMA_PROMPT,
-    colors: ['#hex1', '#hex2'],
-    has_text: true,
-    content_type: 'text_document OR photograph OR screenshot OR other'
-  },
-  null,
-  2
-)}
+Your response MUST be a valid JSON object matching this schema exactly.
+Output ONLY raw JSON. Do NOT include markdown, code fences, or any extra text:
+${JSON.stringify(IMAGE_ANALYSIS_SCHEMA, null, 2)}
 
 IMPORTANT FOR category:
 - Verify that your selected 'category' matches the folder description provided above.
@@ -166,6 +232,7 @@ Analyze this image:`;
 
     const client = await getOllama();
     const perfOptions = await buildOllamaOptions('vision');
+    const useToolCalling = Boolean(cfg?.useToolCalling);
 
     // IMPORTANT: Vision model calls can hang indefinitely if the model/server gets stuck.
     // Enforce a hard timeout and abort the underlying request (supported by Ollama client).
@@ -192,30 +259,34 @@ Analyze this image:`;
         }
       });
 
+      const generateRequest = {
+        model: modelToUse,
+        prompt,
+        images: [imageBase64],
+        options: {
+          temperature: AppConfig.ai.imageAnalysis.temperature,
+          num_predict: AppConfig.ai.imageAnalysis.maxTokens,
+          ...perfOptions
+        },
+        format: 'json',
+        signal: abortController.signal
+      };
+      if (useToolCalling) {
+        generateRequest.tools = [IMAGE_ANALYSIS_TOOL];
+        generateRequest.tool_choice = {
+          type: 'function',
+          function: { name: IMAGE_ANALYSIS_TOOL.function.name }
+        };
+      }
       const generatePromise = globalDeduplicator.deduplicate(
         deduplicationKey,
         () =>
-          generateWithRetry(
-            client,
-            {
-              model: modelToUse,
-              prompt,
-              images: [imageBase64],
-              options: {
-                temperature: AppConfig.ai.imageAnalysis.temperature,
-                num_predict: AppConfig.ai.imageAnalysis.maxTokens,
-                ...perfOptions
-              },
-              format: 'json',
-              signal: abortController.signal
-            },
-            {
-              operation: `Image analysis for ${originalFileName}`,
-              maxRetries: 3,
-              initialDelay: 1000,
-              maxDelay: 4000
-            }
-          ),
+          generateWithRetry(client, generateRequest, {
+            operation: `Image analysis for ${originalFileName}`,
+            maxRetries: 3,
+            initialDelay: 1000,
+            maxDelay: 4000
+          }),
         { type: 'image', fileName: originalFileName } // Metadata for debugging cache hits
       );
 
@@ -235,12 +306,31 @@ Analyze this image:`;
     if (response.response) {
       try {
         // Use robust JSON extraction with repair for malformed LLM responses
-        const parsedJson = extractAndParseJSON(response.response, null);
+        let parsedJson = extractAndParseJSON(response.response, null, {
+          source: 'ollamaImageAnalysis',
+          fileName: originalFileName,
+          model: modelToUse
+        });
+
+        if (!parsedJson) {
+          const repairedResponse = await attemptJsonRepairWithOllama(
+            client,
+            modelToUse,
+            response.response
+          );
+          if (repairedResponse) {
+            parsedJson = extractAndParseJSON(repairedResponse, null, {
+              source: 'ollamaImageAnalysis.repair',
+              fileName: originalFileName,
+              model: modelToUse
+            });
+          }
+        }
 
         if (!parsedJson || typeof parsedJson !== 'object') {
-          logger.warn('[IMAGE-ANALYSIS] JSON extraction failed', {
-            responseLength: response.response.length,
-            responsePreview: response.response.substring(0, 500)
+          logger.warn('[IMAGE-ANALYSIS] JSON repair failed, using fallback', {
+            fileName: originalFileName,
+            model: modelToUse
           });
           throw new Error('Failed to parse image analysis JSON from Ollama');
         }
@@ -707,11 +797,22 @@ async function applySemanticFolderMatching(
   }
 
   // Build summary for matching
-  const summary = [
+  const summaryBase = [
     analysis.project,
     analysis.purpose,
     (analysis.keywords || []).join(' '),
-    analysis.content_type || '',
+    analysis.content_type || ''
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  // FIX: Enrich with semantic keywords based on file extension (e.g. .svg -> "vector graphic")
+  // This ensures embedding matching works even if LLM missed the semantic connection
+  const fileExtension = path.extname(filePath).toLowerCase();
+  const summaryEnriched = enrichFileTextForEmbedding(summaryBase, fileExtension);
+
+  const summary = [
+    summaryEnriched,
     (extractedText || '').slice(0, 500) // Include OCR text for better matching
   ]
     .filter(Boolean)
@@ -938,6 +1039,15 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         path: filePath,
         error: preErr.message
       });
+      const fallback = createFallbackResult(
+        fileName,
+        fileExtension,
+        'image preprocessing failed',
+        40,
+        smartFolders
+      );
+      fallback.error = preErr.message;
+      return fallback;
     }
 
     // Validate buffer is not empty

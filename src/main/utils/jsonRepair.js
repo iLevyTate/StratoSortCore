@@ -15,6 +15,26 @@ const { logger } = require('../../shared/logger');
 
 logger.setContext('JSONRepair');
 
+const DEFAULT_PREVIEW_HEAD = 500;
+const DEFAULT_PREVIEW_TAIL = 200;
+
+function buildResponsePreview(rawResponse, options = {}) {
+  const safe = typeof rawResponse === 'string' ? rawResponse : String(rawResponse || '');
+  const head =
+    typeof options.previewHead === 'number' && options.previewHead >= 0
+      ? options.previewHead
+      : DEFAULT_PREVIEW_HEAD;
+  const tail =
+    typeof options.previewTail === 'number' && options.previewTail >= 0
+      ? options.previewTail
+      : DEFAULT_PREVIEW_TAIL;
+  return {
+    responseLength: safe.length,
+    responsePreview: safe.substring(0, head),
+    responseEnd: safe.substring(Math.max(0, safe.length - tail))
+  };
+}
+
 /**
  * HIGH FIX: Extract balanced JSON object or array using brace counting
  * This properly handles cases where there's text before/after JSON, or
@@ -95,7 +115,7 @@ function extractBalancedJson(text) {
  * @param {Object} defaultValue - Default value to return if all parsing fails
  * @returns {Object} Parsed JSON object or default value
  */
-function extractAndParseJSON(rawResponse, defaultValue = null) {
+function extractAndParseJSON(rawResponse, defaultValue = null, options = {}) {
   if (!rawResponse || typeof rawResponse !== 'string') {
     return defaultValue;
   }
@@ -137,12 +157,20 @@ function extractAndParseJSON(rawResponse, defaultValue = null) {
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    logger.warn('[JSONRepair] All repair attempts failed', {
-      error: e.message,
-      originalLength: rawResponse.length,
-      cleanedLength: cleaned.length,
-      cleanedPreview: cleaned.substring(0, 300)
-    });
+    const shouldLog = options.logOnFailure !== false;
+    if (shouldLog) {
+      const preview = buildResponsePreview(rawResponse, options);
+      logger.warn('[JSONRepair] All repair attempts failed', {
+        error: e.message,
+        originalLength: rawResponse.length,
+        cleanedLength: cleaned.length,
+        cleanedPreview: cleaned.substring(0, 300),
+        source: options.source,
+        fileName: options.fileName,
+        model: options.model,
+        ...preview
+      });
+    }
     return defaultValue;
   }
 }
@@ -256,6 +284,7 @@ function validateDocumentAnalysis(parsed) {
 
 module.exports = {
   extractAndParseJSON,
+  buildResponsePreview,
   repairJSON,
   validateDocumentAnalysis
 };

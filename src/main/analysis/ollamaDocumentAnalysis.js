@@ -43,10 +43,12 @@ const {
   getIntelligentKeywords,
   safeSuggestedName
 } = require('./fallbackUtils');
+const { capEmbeddingInput } = require('../utils/embeddingInput');
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const { globalDeduplicator } = require('../utils/llmOptimization');
+const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
 // Cache configuration constants
 const CACHE_CONFIG = {
   MAX_FILE_CACHE: 500, // Maximum number of files to cache in memory
@@ -207,6 +209,32 @@ function createDocumentFallback(fileName, fileExtension, purpose, smartFolders, 
   return result;
 }
 
+function buildEmbeddingSummary(analysis, extractedText, fileExtension) {
+  const baseParts = [
+    analysis.summary,
+    analysis.purpose,
+    analysis.project,
+    Array.isArray(analysis.keywords) ? analysis.keywords.join(' ') : ''
+  ].filter(Boolean);
+
+  // FIX: Enrich with semantic keywords based on file extension (e.g. .stl -> "3d printing")
+  // This ensures embedding matching works even if LLM missed the semantic connection
+  const enrichedBase = enrichFileTextForEmbedding(baseParts.join('\n'), fileExtension);
+
+  const textSnippet = extractedText ? extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX) : '';
+  const combined = [enrichedBase, textSnippet].filter(Boolean).join('\n');
+  const cappedCombined = capEmbeddingInput(combined);
+
+  if (cappedCombined.wasTruncated && baseParts.length > 0) {
+    const summaryOnly = capEmbeddingInput(enrichedBase);
+    if (summaryOnly.text) {
+      return { ...summaryOnly, usedSummaryOnly: true };
+    }
+  }
+
+  return { ...cappedCombined, usedSummaryOnly: false };
+}
+
 /**
  * Apply semantic folder matching using ChromaDB embeddings
  * @param {Object} analysis - Current analysis result
@@ -262,15 +290,18 @@ async function applyDocumentFolderMatching(
 
   const normalizedPath = normalizePathForIndex(filePath);
   const fileId = `file:${normalizedPath}`;
-  const summaryForEmbedding = [
-    analysis.project,
-    analysis.purpose,
-    (analysis.keywords || []).join(' '),
-    extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX)
-  ]
-    .filter(Boolean)
-    .join('\n');
+  const embeddingSummary = buildEmbeddingSummary(analysis, extractedText, fileExtension);
+  const summaryForEmbedding = embeddingSummary.text;
 
+  if (embeddingSummary.wasTruncated || embeddingSummary.usedSummaryOnly) {
+    logger.warn('[DocumentAnalysis] Embedding summary truncated to token limit', {
+      fileId,
+      summaryLength: summaryForEmbedding.length,
+      estimatedTokens: embeddingSummary.estimatedTokens,
+      maxTokens: embeddingSummary.maxTokens,
+      usedSummaryOnly: embeddingSummary.usedSummaryOnly
+    });
+  }
   logger.debug('[DocumentAnalysis] Generating embedding for folder matching', {
     fileId,
     summaryLength: summaryForEmbedding.length

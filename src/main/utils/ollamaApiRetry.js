@@ -75,7 +75,8 @@ function isRetryableError(error) {
   if (
     message.includes('model is loading') ||
     message.includes('server busy') ||
-    message.includes('temporarily unavailable')
+    message.includes('temporarily unavailable') ||
+    message.includes('model runner has unexpectedly stopped')
   ) {
     return true;
   }
