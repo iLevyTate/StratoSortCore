@@ -557,11 +557,64 @@ async function extractTextFromDocx(filePath) {
     throw invalidDocx;
   }
 
-  const result = await mammoth.extractRawText({ path: filePath });
-  if (!result.value || result.value.trim().length === 0) throw new Error('No text content in DOCX');
+  try {
+    try {
+      const result = await mammoth.extractRawText({ path: filePath });
+      if (!result.value || result.value.trim().length === 0)
+        throw new Error('No text content in DOCX');
 
-  // Fixed: Truncate result to prevent memory issues
-  return truncateText(result.value);
+      // Fixed: Truncate result to prevent memory issues
+      return truncateText(result.value);
+    } catch (error) {
+      logger.warn('[DOCX] Mammoth extraction failed, trying officeparser fallback', {
+        error: error.message,
+        filePath
+      });
+
+      try {
+        // Fallback: officeparser
+        const officeParser = require('officeparser');
+        const result = await parseOfficeFile(officeParser, filePath);
+        const text = typeof result === 'string' ? result : (result && result.text) || '';
+
+        if (!text || text.trim().length === 0) {
+          throw new Error('No text content in DOCX (fallback)');
+        }
+        return truncateText(text);
+      } catch (fallbackError) {
+        logger.error('[DOCX] All extraction methods failed', {
+          mammothError: error.message,
+          fallbackError: fallbackError.message
+        });
+        // Throw the original error to preserve context
+        throw error;
+      }
+    }
+  } catch (error) {
+    logger.warn('[DOCX] Mammoth extraction failed, trying officeparser fallback', {
+      error: error.message,
+      filePath
+    });
+
+    try {
+      // Fallback: officeparser
+      const officeParser = require('officeparser');
+      const result = await parseOfficeFile(officeParser, filePath);
+      const text = typeof result === 'string' ? result : (result && result.text) || '';
+
+      if (!text || text.trim().length === 0) {
+        throw new Error('No text content in DOCX (fallback)');
+      }
+      return truncateText(text);
+    } catch (fallbackError) {
+      logger.error('[DOCX] All extraction methods failed', {
+        mammothError: error.message,
+        fallbackError: fallbackError.message
+      });
+      // Throw the original error to preserve context
+      throw error;
+    }
+  }
 }
 
 async function extractTextFromXlsx(filePath) {
@@ -571,6 +624,9 @@ async function extractTextFromXlsx(filePath) {
   await checkFileSize(filePath, filePath);
 
   let workbook = null;
+  let allText = '';
+  let primaryMethodFailed = false;
+
   try {
     workbook = await XLSX.fromFileAsync(filePath);
 
@@ -584,7 +640,6 @@ async function extractTextFromXlsx(filePath) {
       throw new Error('No sheets found in XLSX file');
     }
 
-    let allText = '';
     let totalRows = 0;
 
     for (const sheet of sheets) {
@@ -710,49 +765,50 @@ async function extractTextFromXlsx(filePath) {
         continue;
       }
     }
-
-    allText = allText.trim();
-    if (!allText) {
-      // CRITICAL FIX: Try fallback extraction using officeParser before giving up
-      try {
-        logger.info('[XLSX] Primary extraction failed, trying officeParser fallback');
-        const fallbackResult = await parseOfficeFile(officeParser, filePath);
-        const fallbackText =
-          typeof fallbackResult === 'string'
-            ? fallbackResult
-            : (fallbackResult && fallbackResult.text) || '';
-        if (fallbackText && fallbackText.trim()) {
-          return truncateText(fallbackText);
-        }
-      } catch (fallbackError) {
-        logger.warn('[XLSX] Fallback extraction also failed', {
-          error: fallbackError.message
-        });
-      }
-      throw new Error('No text content in XLSX');
-    }
-
-    // Fixed: Truncate final result and clean up workbook
-    const result = truncateText(allText);
-    workbook = null;
-    return result;
-  } catch (error) {
-    // CRITICAL FIX: Provide detailed error information
-    const errorMessage = error.message || 'Unknown XLSX extraction error';
-    logger.error('[XLSX] Extraction failed', {
-      filePath,
-      error: errorMessage,
-      errorStack: error.stack
-    });
-    throw new FileProcessingError('XLSX_EXTRACTION_FAILURE', filePath, {
-      originalError: errorMessage,
-      suggestion: 'XLSX file may be corrupted, password-protected, or in an unsupported format',
-      cause: error
-    });
+  } catch (primaryError) {
+    logger.warn('[XLSX] Primary extraction failed', { error: primaryError.message });
+    primaryMethodFailed = true;
   } finally {
     // Explicit cleanup
     workbook = null;
   }
+
+  allText = allText.trim();
+  if (!allText) {
+    // CRITICAL FIX: Try fallback extraction using officeParser before giving up
+    try {
+      logger.info(
+        primaryMethodFailed
+          ? '[XLSX] Trying fallback after primary failure'
+          : '[XLSX] Primary extraction returned no text, trying officeParser fallback'
+      );
+      const fallbackResult = await parseOfficeFile(officeParser, filePath);
+      const fallbackText =
+        typeof fallbackResult === 'string'
+          ? fallbackResult
+          : (fallbackResult && fallbackResult.text) || '';
+      if (fallbackText && fallbackText.trim()) {
+        return truncateText(fallbackText);
+      }
+    } catch (fallbackError) {
+      logger.warn('[XLSX] Fallback extraction also failed', {
+        error: fallbackError.message
+      });
+    }
+
+    const errorMsg = primaryMethodFailed ? 'XLSX extraction failed' : 'No text content in XLSX';
+    if (primaryMethodFailed) {
+      logger.error('[XLSX] Extraction failed', { filePath, error: errorMsg });
+    }
+
+    throw new FileProcessingError('XLSX_EXTRACTION_FAILURE', filePath, {
+      originalError: errorMsg,
+      suggestion: 'XLSX file may be corrupted, password-protected, or in an unsupported format'
+    });
+  }
+
+  // Fixed: Truncate final result
+  return truncateText(allText);
 }
 
 async function extractTextFromPptx(filePath) {
@@ -760,6 +816,9 @@ async function extractTextFromPptx(filePath) {
   const AdmZip = require('adm-zip');
   // Fixed: Check file size before reading
   await checkFileSize(filePath, filePath);
+
+  let text = '';
+  let primaryMethodFailed = false;
 
   try {
     // CRITICAL FIX: Add better error handling for officeParser
@@ -771,7 +830,6 @@ async function extractTextFromPptx(filePath) {
     }
 
     // Extract text from various possible result structures
-    let text = '';
     if (typeof result === 'string') {
       text = result;
     } else if (result && typeof result === 'object') {
@@ -795,71 +853,78 @@ async function extractTextFromPptx(filePath) {
         }
       }
     }
+  } catch (primaryError) {
+    logger.warn('[PPTX] Primary extraction failed, trying fallback', {
+      error: primaryError.message,
+      filePath
+    });
+    primaryMethodFailed = true;
+  }
 
-    if (!text || text.trim().length === 0) {
-      // CRITICAL FIX: Try alternative extraction method before giving up
-      logger.warn('[PPTX] Primary extraction returned no text, trying ZIP-based extraction');
-      try {
-        const zip = new AdmZip(filePath);
-        const entries = zip.getEntries();
-        let extractedText = '';
+  if (!text || text.trim().length === 0) {
+    // CRITICAL FIX: Try alternative extraction method before giving up
+    logger.warn(
+      primaryMethodFailed
+        ? '[PPTX] Trying ZIP-based extraction after primary failure'
+        : '[PPTX] Primary extraction returned no text, trying ZIP-based extraction'
+    );
+    try {
+      const zip = new AdmZip(filePath);
+      const entries = zip.getEntries();
+      let extractedText = '';
 
-        // Extract text from slide XML files
-        for (const entry of entries) {
-          const name = entry.entryName.toLowerCase();
-          if (name.startsWith('ppt/slides/slide') && name.endsWith('.xml')) {
-            try {
-              const xmlContent = entry.getData().toString('utf8');
-              // Extract text from XML (simple tag stripping)
-              const slideText = extractPlainTextFromHtml(xmlContent);
-              if (slideText && slideText.trim()) {
-                extractedText += `${slideText}\n`;
-              }
-
-              // Limit processing to prevent memory issues
-              if (extractedText.length > MAX_TEXT_LENGTH) {
-                break;
-              }
-            } catch (entryError) {
-              // Skip individual entry errors
-              logger.debug('[PPTX] Error processing slide entry', {
-                entry: name,
-                error: entryError.message
-              });
+      // Extract text from slide XML files
+      for (const entry of entries) {
+        const name = entry.entryName.toLowerCase();
+        if (name.startsWith('ppt/slides/slide') && name.endsWith('.xml')) {
+          try {
+            const xmlContent = entry.getData().toString('utf8');
+            // Extract text from XML (simple tag stripping)
+            const slideText = extractPlainTextFromHtml(xmlContent);
+            if (slideText && slideText.trim()) {
+              extractedText += `${slideText}\n`;
             }
+
+            // Limit processing to prevent memory issues
+            if (extractedText.length > MAX_TEXT_LENGTH) {
+              break;
+            }
+          } catch (entryError) {
+            // Skip individual entry errors
+            logger.debug('[PPTX] Error processing slide entry', {
+              entry: name,
+              error: entryError.message
+            });
           }
         }
-
-        if (extractedText && extractedText.trim()) {
-          return truncateText(extractedText);
-        }
-      } catch (zipError) {
-        logger.warn('[PPTX] ZIP-based extraction failed', {
-          error: zipError.message
-        });
       }
 
-      throw new Error('No text content in PPTX');
+      if (extractedText && extractedText.trim()) {
+        return truncateText(extractedText);
+      }
+    } catch (zipError) {
+      logger.warn('[PPTX] ZIP-based extraction failed', {
+        error: zipError.message
+      });
     }
 
-    // Fixed: Truncate result to prevent memory issues
-    return truncateText(text);
-  } catch (error) {
-    // CRITICAL FIX: Provide detailed error information
-    const errorMessage = error.message || 'Unknown PPTX extraction error';
-    logger.error('[PPTX] Extraction failed', {
-      filePath,
-      error: errorMessage,
-      errorStack: error.stack
-    });
+    // If we reach here, both methods failed or returned empty
+    const errorMsg = primaryMethodFailed ? 'PPTX extraction failed' : 'No text content in PPTX';
+
+    // Only log error if primary failed too, otherwise it's just empty content
+    if (primaryMethodFailed) {
+      logger.error('[PPTX] Extraction failed', { filePath, error: errorMsg });
+    }
 
     // Re-throw as FileProcessingError for consistent error handling
     throw new FileProcessingError('PPTX_EXTRACTION_FAILURE', filePath, {
-      originalError: errorMessage,
-      suggestion: 'PPTX file may be corrupted, password-protected, or in an unsupported format',
-      cause: error
+      originalError: errorMsg,
+      suggestion: 'PPTX file may be corrupted, password-protected, or in an unsupported format'
     });
   }
+
+  // Fixed: Truncate result to prevent memory issues
+  return truncateText(text);
 }
 
 function extractPlainTextFromRtf(rtf) {

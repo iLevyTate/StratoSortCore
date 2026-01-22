@@ -557,10 +557,16 @@ export function useAnalysis(options = {}) {
         lockTimeoutRef.current = null;
       }, TIMEOUTS.ANALYSIS_LOCK);
 
+      // FIX: Filter duplicates upfront to ensure progress tracking matches total
+      // This prevents "stuck" progress bars where processed count < total due to internal skipping
+      const uniqueFiles = files.filter(
+        (file, index, self) => index === self.findIndex((f) => f.path === file.path)
+      );
+
       setIsAnalyzing(true);
       const initialProgress = {
         current: 0,
-        total: files.length,
+        total: uniqueFiles.length,
         lastActivity: Date.now()
       };
       setAnalysisProgress(initialProgress);
@@ -580,7 +586,7 @@ export function useAnalysis(options = {}) {
           const prev = analysisProgressRef.current;
           const currentProgress = {
             current: prev?.current || 0,
-            total: prev?.total || files.length,
+            total: prev?.total || uniqueFiles.length,
             lastActivity: Date.now()
           };
 
@@ -634,14 +640,14 @@ export function useAnalysis(options = {}) {
 
       try {
         addNotification(
-          `Starting AI analysis of ${files.length} files...`,
+          `Starting AI analysis of ${uniqueFiles.length} files...`,
           'info',
           3000,
           'analysis-start'
         );
 
         const processedFiles = new Set();
-        const fileQueue = [...files];
+        const fileQueue = [...uniqueFiles];
         // FIX CRIT-2: Reset atomic counter at start of new batch
         completedCountRef.current = 0;
 
@@ -662,7 +668,7 @@ export function useAnalysis(options = {}) {
           // This provides visual feedback during long-running analysis (18-40s per image)
           const progressBeforeAnalysis = {
             current: completedCountRef.current,
-            total: files.length,
+            total: uniqueFiles.length,
             currentFile: fileName,
             lastActivity: Date.now()
           };
@@ -689,8 +695,8 @@ export function useAnalysis(options = {}) {
             // This prevents race conditions where multiple workers read same value
             const newCompletedCount = ++completedCountRef.current;
             const progress = {
-              current: Math.min(newCompletedCount, files.length),
-              total: files.length,
+              current: Math.min(newCompletedCount, uniqueFiles.length),
+              total: uniqueFiles.length,
               lastActivity: Date.now()
             };
 
@@ -748,8 +754,8 @@ export function useAnalysis(options = {}) {
             // FIX CRIT-2: Atomically increment and capture counter on error path too
             const newCompletedCount = ++completedCountRef.current;
             const progress = {
-              current: Math.min(newCompletedCount, files.length),
-              total: files.length,
+              current: Math.min(newCompletedCount, uniqueFiles.length),
+              total: uniqueFiles.length,
               lastActivity: Date.now()
             };
             // Throttle progress updates to prevent excessive re-renders
@@ -819,8 +825,8 @@ export function useAnalysis(options = {}) {
 
         // FIX: Ensure final progress is dispatched (may have been throttled)
         const finalProgress = {
-          current: Math.min(completedCountRef.current, files.length),
-          total: files.length,
+          current: Math.min(completedCountRef.current, uniqueFiles.length),
+          total: uniqueFiles.length,
           lastActivity: Date.now()
         };
         setAnalysisProgress(finalProgress);
