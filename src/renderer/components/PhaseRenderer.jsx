@@ -14,6 +14,19 @@ const OrganizePhase = lazy(() => import('../phases/OrganizePhase'));
 const CompletePhase = lazy(() => import('../phases/CompletePhase'));
 const SettingsPanel = lazy(() => import('./SettingsPanel'));
 
+// Preload all phases to avoid loading delays during navigation
+const preloadPhases = () => {
+  const load = (fn) => {
+    fn();
+  };
+  load(() => import('../phases/WelcomePhase'));
+  load(() => import('../phases/SetupPhase'));
+  load(() => import('../phases/DiscoverPhase'));
+  load(() => import('../phases/OrganizePhase'));
+  load(() => import('../phases/CompletePhase'));
+  load(() => import('./SettingsPanel'));
+};
+
 // Optimized page transitions with GPU acceleration
 // Using simpler opacity-only transitions for smoother performance
 const pageVariants = {
@@ -21,23 +34,40 @@ const pageVariants = {
     opacity: 0
   },
   in: {
-    opacity: 1
+    opacity: 1,
+    transition: {
+      duration: 0.15, // Snappy entry
+      ease: 'easeOut'
+    }
   },
   out: {
-    opacity: 0
+    opacity: 0,
+    transition: {
+      duration: 0.05, // Almost instant exit to reduce "dead time" between tabs
+      ease: 'easeIn'
+    }
   }
 };
 
 const pageTransition = {
   type: 'tween',
-  ease: 'easeInOut',
-  duration: 0.2 // Fast, smooth fade
+  ease: 'easeOut',
+  duration: 0.15
 };
 
 function PhaseRenderer() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
   const showSettings = useAppSelector((state) => state.ui.showSettings);
   useKeyboardShortcuts();
+
+  // Preload phases on mount
+  React.useEffect(() => {
+    // Small delay to let initial render complete first
+    const timer = setTimeout(() => {
+      preloadPhases();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Debug logging to track phase rendering
   React.useEffect(() => {
