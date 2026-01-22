@@ -11,7 +11,7 @@ jest.mock('pdf-parse', () => jest.fn());
 jest.mock('sharp');
 jest.mock('node-tesseract-ocr');
 jest.mock('mammoth');
-jest.mock('officeparser');
+// jest.mock('officeparser');
 jest.mock('xlsx-populate');
 jest.mock('adm-zip');
 
@@ -175,7 +175,12 @@ describe('documentExtractors', () => {
 
     test('should throw error for empty DOCX', async () => {
       const mammoth = require('mammoth');
+      const officeParser = require('officeparser');
+
       mammoth.extractRawText.mockResolvedValue({ value: '' });
+      // Ensure fallback also returns empty so the error is propagated
+      officeParser.parseOfficeAsync.mockResolvedValue('');
+
       jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
       await mockFileSignature(ZIP_SIGNATURE);
 
@@ -313,6 +318,18 @@ describe('documentExtractors', () => {
       expect(result).toContain('Object');
       expect(result).toContain('Scalar');
     });
+
+    test('should attempt fallback if primary extraction throws error', async () => {
+      const XLSX = require('xlsx-populate');
+      const officeParser = require('officeparser');
+
+      XLSX.fromFileAsync.mockRejectedValue(new Error('Corrupt XLSX'));
+      officeParser.parseOfficeAsync.mockResolvedValue('Fallback content');
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromXlsx(mockFilePath);
+      expect(result).toBe('Fallback content');
+    });
   });
 
   describe('extractTextFromPptx', () => {
@@ -383,6 +400,30 @@ describe('documentExtractors', () => {
 
       const result = await extractTextFromPptx(mockFilePath);
       expect(result).toBe('12345');
+    });
+
+    test('should attempt ZIP fallback if primary extraction throws error', async () => {
+      const officeParser = require('officeparser');
+      const AdmZip = require('adm-zip');
+
+      officeParser.parseOfficeAsync.mockRejectedValue(new Error('Corrupt PPTX'));
+
+      const mockEntries = [
+        {
+          entryName: 'ppt/slides/slide1.xml',
+          getData: jest.fn().mockReturnValue(Buffer.from('<p>Slide content</p>'))
+        }
+      ];
+
+      const mockZip = {
+        getEntries: jest.fn().mockReturnValue(mockEntries)
+      };
+
+      AdmZip.mockImplementation(() => mockZip);
+      jest.spyOn(fs, 'stat').mockResolvedValue({ size: 1000 });
+
+      const result = await extractTextFromPptx(mockFilePath);
+      expect(result).toContain('Slide content');
     });
   });
 

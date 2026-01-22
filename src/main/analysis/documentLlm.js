@@ -2,6 +2,7 @@ const path = require('path');
 const { getOllamaModel, loadOllamaConfig, getOllama } = require('../ollamaUtils');
 const { buildOllamaOptions } = require('../services/PerformanceService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
+// const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
 const { AI_DEFAULTS } = require('../../shared/constants');
@@ -21,6 +22,30 @@ const AppConfig = {
       maxContentLength: AI_DEFAULTS.TEXT.MAX_CONTENT_LENGTH,
       temperature: AI_DEFAULTS.TEXT.TEMPERATURE,
       maxTokens: AI_DEFAULTS.TEXT.MAX_TOKENS
+    }
+  }
+};
+
+const DOCUMENT_ANALYSIS_TOOL = {
+  type: 'function',
+  function: {
+    name: 'document_analysis',
+    description: 'Extract structured document analysis JSON.',
+    parameters: {
+      type: 'object',
+      properties: {
+        date: { type: ['string', 'null'] },
+        entity: { type: ['string', 'null'] },
+        type: { type: ['string', 'null'] },
+        category: { type: ['string', 'null'] },
+        project: { type: ['string', 'null'] },
+        summary: { type: ['string', 'null'] },
+        keywords: { type: 'array', items: { type: 'string' } },
+        confidence: { type: 'number' },
+        suggestedName: { type: ['string', 'null'] },
+        reasoning: { type: ['string', 'null'] }
+      },
+      required: ['category', 'keywords', 'confidence']
     }
   }
 };
@@ -46,6 +71,47 @@ function normalizeTextForModel(input, maxLen) {
   text = text.replace(/[\t\x0B\f\r]+/g, ' ');
   text = text.replace(/\s{2,}/g, ' ').trim();
   return text;
+}
+
+const JSON_REPAIR_MAX_CHARS = 4000;
+const JSON_REPAIR_MAX_TOKENS = 400;
+
+async function attemptJsonRepairWithOllama(client, model, rawResponse) {
+  if (!rawResponse || !client) return null;
+  const trimmed =
+    rawResponse.length > JSON_REPAIR_MAX_CHARS
+      ? rawResponse.slice(0, JSON_REPAIR_MAX_CHARS)
+      : rawResponse;
+  const repairPrompt = `You are a JSON repair assistant. Fix the JSON below and output ONLY valid JSON.
+Do NOT include any commentary, markdown, or extra text.
+Schema (for structure reference only):
+${JSON.stringify(ANALYSIS_SCHEMA_PROMPT, null, 2)}
+
+JSON to repair:
+${trimmed}`;
+
+  const perfOptions = await buildOllamaOptions('text');
+  const response = await generateWithRetry(
+    client,
+    {
+      model,
+      prompt: repairPrompt,
+      options: {
+        temperature: 0,
+        num_predict: Math.min(AppConfig.ai.textAnalysis.maxTokens, JSON_REPAIR_MAX_TOKENS),
+        ...perfOptions
+      },
+      format: 'json'
+    },
+    {
+      operation: 'Document analysis JSON repair',
+      maxRetries: 1,
+      initialDelay: 500,
+      maxDelay: 1000
+    }
+  );
+
+  return response?.response || null;
 }
 
 const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
@@ -131,7 +197,8 @@ ${fileDateContext}${folderCategoriesStr}${namingContextStr}
 
 FILENAME CONTEXT: The original filename is "${originalFileName}". Use this as a HINT for the document's purpose, but verify against the actual content.
 
-Your response MUST be a valid JSON object matching this schema exactly:
+Your response MUST be a valid JSON object matching this schema exactly.
+Output ONLY raw JSON. Do NOT include markdown, code fences, or any extra text:
 ${JSON.stringify(ANALYSIS_SCHEMA_PROMPT, null, 2)}
 
 IMPORTANT FOR keywords:
@@ -168,28 +235,33 @@ ${truncated}`;
 
     const client = await getOllama();
     const perfOptions = await buildOllamaOptions('text');
+    const useToolCalling = Boolean(cfg?.useToolCalling);
+    const generateRequest = {
+      model: modelToUse,
+      prompt,
+      options: {
+        temperature: AppConfig.ai.textAnalysis.temperature,
+        num_predict: AppConfig.ai.textAnalysis.maxTokens,
+        ...perfOptions
+      },
+      format: 'json'
+    };
+    if (useToolCalling) {
+      generateRequest.tools = [DOCUMENT_ANALYSIS_TOOL];
+      generateRequest.tool_choice = {
+        type: 'function',
+        function: { name: DOCUMENT_ANALYSIS_TOOL.function.name }
+      };
+    }
     const generatePromise = globalDeduplicator.deduplicate(
       deduplicationKey,
       () =>
-        generateWithRetry(
-          client,
-          {
-            model: modelToUse,
-            prompt,
-            options: {
-              temperature: AppConfig.ai.textAnalysis.temperature,
-              num_predict: AppConfig.ai.textAnalysis.maxTokens,
-              ...perfOptions
-            },
-            format: 'json'
-          },
-          {
-            operation: `Document analysis for ${originalFileName}`,
-            maxRetries: 3,
-            initialDelay: 1000,
-            maxDelay: 4000
-          }
-        ),
+        generateWithRetry(client, generateRequest, {
+          operation: `Document analysis for ${originalFileName}`,
+          maxRetries: 3,
+          initialDelay: 1000,
+          maxDelay: 4000
+        }),
       { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
     );
     // FIX: Store timeout ID outside Promise.race to ensure cleanup
@@ -213,13 +285,31 @@ ${truncated}`;
       if (response.response) {
         try {
           // CRITICAL FIX: Use robust JSON extraction with repair for malformed LLM responses
-          const parsedJson = extractAndParseJSON(response.response, null);
+          let parsedJson = extractAndParseJSON(response.response, null, {
+            source: 'documentLlm',
+            fileName: originalFileName,
+            model: modelToUse
+          });
 
           if (!parsedJson) {
-            logger.warn('[documentLlm] JSON extraction failed', {
-              responseLength: response.response.length,
-              responsePreview: response.response.substring(0, 500),
-              responseEnd: response.response.substring(Math.max(0, response.response.length - 200))
+            const repairedResponse = await attemptJsonRepairWithOllama(
+              client,
+              modelToUse,
+              response.response
+            );
+            if (repairedResponse) {
+              parsedJson = extractAndParseJSON(repairedResponse, null, {
+                source: 'documentLlm.repair',
+                fileName: originalFileName,
+                model: modelToUse
+              });
+            }
+          }
+
+          if (!parsedJson) {
+            logger.warn('[documentLlm] JSON repair failed, using fallback', {
+              fileName: originalFileName,
+              model: modelToUse
             });
             return {
               error: 'Failed to parse document analysis JSON from Ollama.',

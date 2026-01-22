@@ -5,8 +5,14 @@ const { getOllama } = require('../ollamaUtils');
 const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMService');
 const { withErrorLogging, safeHandle } = require('./ipcWrappers');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
+// const { capEmbeddingInput } = require('../utils/embeddingInput');
 const { cosineSimilarity } = require('../../shared/vectorMath');
 const { isNotFoundError } = require('../../shared/errorClassifier');
+const FolderMatchingService = require('../services/FolderMatchingService');
+const {
+  enrichFolderTextForEmbedding,
+  enrichFileTextForEmbedding
+} = require('../analysis/semanticExtensionMap');
 
 // Import centralized security configuration
 const { getDangerousPaths, ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
@@ -105,7 +111,7 @@ function registerSmartFoldersIpc(servicesOrParams) {
   const { ipcMain, IPC_CHANNELS, logger } = container.core;
   const { getCustomFolders, setCustomFolders, saveCustomFolders, scanDirectory } =
     container.folders;
-  const { getOllamaModel, getOllamaEmbeddingModel, buildOllamaOptions } = container.ollama;
+  const { getOllamaModel, buildOllamaOptions } = container.ollama;
   const { getServiceIntegration } = container;
 
   // Derive getSmartFolderWatcher from serviceIntegration if not provided
@@ -203,34 +209,69 @@ function registerSmartFoldersIpc(servicesOrParams) {
         }
 
         try {
-          const ollama = await getOllama();
-          const perfOptions = await buildOllamaOptions('embeddings');
-          // Use configured embedding model instead of hardcoded value
-          const embeddingModel = getOllamaEmbeddingModel() || 'embeddinggemma';
-          // Use the newer embed() API with 'input' parameter (embeddings() with 'prompt' is deprecated)
-          const queryEmbedding = await ollama.embed({
-            model: embeddingModel,
-            input: text,
-            options: { ...perfOptions }
+          // Use FolderMatchingService for efficient embedding generation with caching
+          const folderMatchingService = FolderMatchingService.getInstance();
+
+          // Ensure service is initialized (handled internally, but good practice)
+          await folderMatchingService.initialize().catch((err) => {
+            logger.warn('[SMART_FOLDERS.MATCH] FolderMatchingService init warning:', err.message);
           });
-          const queryVector = queryEmbedding.embeddings?.[0] || [];
-          const scored = [];
-          for (const folder of smartFolders) {
-            const folderText = [folder.name, folder.description].filter(Boolean).join(' - ');
-            const folderEmbedding = await ollama.embed({
-              model: embeddingModel,
-              input: folderText,
-              options: { ...perfOptions }
+
+          // Embed the query text
+          // embedText handles capping, model selection, and caching automatically
+
+          // FIX: Enrich input text if it looks like a filename (has extension)
+          // This ensures preview matches align with background analysis
+          let queryText = text;
+          // Simple extension check: dot followed by 1-5 alphanumeric chars at end of string
+          const extMatch = text.match(/\.([a-zA-Z0-9]{1,5})$/);
+          if (extMatch) {
+            queryText = enrichFileTextForEmbedding(text, extMatch[0]);
+            logger.debug('[SMART_FOLDERS.MATCH] Enriched query text with semantic keywords', {
+              original: text,
+              enriched: queryText
             });
-            const folderVector = folderEmbedding.embeddings?.[0] || [];
-            const score = cosineSimilarity(queryVector, folderVector);
-            scored.push({ folder, score });
           }
+
+          const queryResult = await folderMatchingService.embedText(queryText);
+          const queryVector = queryResult.vector;
+
+          if (!queryVector || queryVector.length === 0) {
+            throw new Error('Failed to generate query embedding');
+          }
+
+          const scored = [];
+
+          // Parallelize folder embedding generation with concurrency limit handled by service
+          // or just sequential here since we use the service's cache which is fast
+          for (const folder of smartFolders) {
+            // Use same enrichment logic as upsertFolderEmbedding for consistent cache keys
+            const folderText = enrichFolderTextForEmbedding(folder.name, folder.description);
+
+            try {
+              const folderResult = await folderMatchingService.embedText(folderText);
+              const folderVector = folderResult.vector;
+
+              if (folderVector && folderVector.length > 0) {
+                const score = cosineSimilarity(queryVector, folderVector);
+                scored.push({ folder, score });
+              }
+            } catch (embedErr) {
+              logger.warn(
+                `[SMART_FOLDERS.MATCH] Failed to embed folder "${folder.name}":`,
+                embedErr.message
+              );
+              // Continue with other folders
+            }
+          }
+
           scored.sort((a, b) => b.score - a.score);
+
           // Bounds check: ensure scored array is not empty
           if (scored.length === 0) {
             throw new Error('No folder scores computed');
           }
+
           const best = scored[0];
           return {
             success: true,
