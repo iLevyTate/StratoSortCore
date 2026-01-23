@@ -117,6 +117,7 @@ Where to focus your testing efforts.
 | Symptom                  | Probable Cause               | Fix                                               |
 | ------------------------ | ---------------------------- | ------------------------------------------------- |
 | **Analysis Stuck**       | Ollama service down          | Run `ollama serve` in terminal. Check port 11434. |
+| **No Text in Images**    | Tesseract missing            | Install Tesseract (see README).                   |
 | **Search Empty**         | ChromaDB issue               | Check logs. Verify python/pip dependencies.       |
 | **Graph "Congested"**    | Similarity threshold too low | Adjust `threshold` in `UnifiedSearchModal.jsx`.   |
 | **"Cannot find module"** | Stale Webpack cache          | Run `npm run clean`.                              |

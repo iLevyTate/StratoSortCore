@@ -2,7 +2,9 @@
 
 ## High-Level Information Flow
 
-This diagram illustrates the flow of data and control through the application. It emphasizes the separation between the Renderer (UI), the IPC Bridge, and the Main Process (Backend), with a focus on the file organization pipeline.
+This diagram illustrates the flow of data and control through the application. It emphasizes the
+separation between the Renderer (UI), the IPC Bridge, and the Main Process (Backend), with a focus
+on the file organization pipeline.
 
 ```mermaid
 graph LR
@@ -39,7 +41,7 @@ graph LR
 
         %% Lifecycle Management (Top)
         subgraph Lifecycle ["Lifecycle & DI"]
-            direction TB
+        direction TB
             Main([Main Entry])
             Services{Service Container}
             Main ==> Services
@@ -108,3 +110,39 @@ graph LR
     class Ollama,Embeddings ai
     class ChromaDB,Settings data
 ```
+
+## Code Consolidation & Architecture Decisions
+
+### In-flight Deduplication
+
+We maintain three separate in-flight deduplication mechanisms because they serve distinct domains
+with different lifecycles:
+
+1. **`LLMRequestDeduplicator`**: Handles global LLM call deduplication (expensive, long-running).
+2. **`ChromaDBServiceCore.inflightQueries`**: Handles DB query deduplication with stale cleanup
+   (IO-bound).
+3. **`ReRankerService._inFlightRequests`**: Handles scoring request deduplication (CPU-bound).
+
+Separation allows for tailored cleanup strategies and prevents cross-domain contention.
+
+### Analysis Caching Strategy
+
+- **`AnalysisCacheService`**: Uses `LRUCache` (via shared singleton) for text/image analysis
+  results.
+- **`AnalysisHistoryCache`**: Uses manual `Map` management instead of `LRUCache`. This is
+  intentional because:
+  - It handles multiple cache types with different semantics (single-value vs LRU).
+  - It requires fine-grained invalidation specific to analysis history UI needs.
+  - It tracks incremental statistics that don't map well to a simple LRU eviction policy.
+
+### Folder Matching Harmonization
+
+Two systems exist for categorization, serving complementary purposes:
+
+- **`FolderMatchingService.matchCategoryToFolder()`**: Normalizes LLM output to match existing
+  folder names exactly.
+- **`fallbackUtils.getIntelligentCategory()`**: Infers category from filename/extension when no AI
+  is available.
+
+These are kept separate to ensure a clear fallback chain:
+`LLM -> Folder Matcher -> Fallback Heuristics`.

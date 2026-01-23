@@ -15,6 +15,9 @@
 const { app, BrowserWindow } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+
 const { logger } = require('../../shared/logger');
 // FIX: Import safeSend for validated IPC event sending
 const { safeSend } = require('../ipc/ipcWrappers');
@@ -24,6 +27,127 @@ const { getOllama } = require('../ollamaUtils');
 const { getService: getSettingsService } = require('../services/SettingsService');
 
 logger.setContext('BackgroundSetup');
+
+const execFileAsync = promisify(execFile);
+const COMMAND_TIMEOUT_MS = 5000;
+
+function parseBool(value) {
+  return String(value).toLowerCase() === 'true';
+}
+
+async function commandExists(command) {
+  const isWindows = process.platform === 'win32';
+  const lookupCmd = isWindows ? 'where' : 'which';
+  try {
+    await execFileAsync(lookupCmd, [command], {
+      timeout: COMMAND_TIMEOUT_MS,
+      windowsHide: true
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isTesseractInstalled() {
+  const tesseractPath = process.env.TESSERACT_PATH || 'tesseract';
+  try {
+    await execFileAsync(tesseractPath, ['--version'], {
+      timeout: COMMAND_TIMEOUT_MS,
+      windowsHide: true
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      ...options
+    });
+    child.on('close', (code) => resolve(code ?? 1));
+    child.on('error', () => resolve(1));
+  });
+}
+
+async function installTesseractIfMissing() {
+  const isCI = parseBool(process.env.CI);
+  const skipSetup =
+    parseBool(process.env.SKIP_TESSERACT_SETUP) || parseBool(process.env.SKIP_APP_DEPS);
+
+  if (isCI || skipSetup) {
+    logger.debug('[BACKGROUND] Skipping tesseract setup (CI or SKIP_TESSERACT_SETUP)');
+    return;
+  }
+
+  if (process.env.TESSERACT_PATH && process.env.TESSERACT_PATH.trim()) {
+    logger.debug('[BACKGROUND] TESSERACT_PATH set, skipping auto-install');
+    return;
+  }
+
+  if (await isTesseractInstalled()) {
+    emitDependencyProgress({ message: 'Tesseract is installed.', dependency: 'tesseract' });
+    return;
+  }
+
+  emitDependencyProgress({
+    message: 'Tesseract missing. Installing…',
+    dependency: 'tesseract',
+    stage: 'install'
+  });
+
+  let status = 1;
+  if (process.platform === 'win32') {
+    if (await commandExists('winget')) {
+      status = await runCommand(
+        'winget',
+        [
+          'install',
+          '--id',
+          'Tesseract-OCR.Tesseract',
+          '-e',
+          '--accept-source-agreements',
+          '--accept-package-agreements'
+        ],
+        { shell: true }
+      );
+    } else if (await commandExists('choco')) {
+      status = await runCommand('choco', ['install', 'tesseract', '-y'], { shell: true });
+    }
+  } else if (process.platform === 'darwin') {
+    if (await commandExists('brew')) {
+      status = await runCommand('brew', ['install', 'tesseract']);
+    }
+  } else {
+    if (await commandExists('apt-get')) {
+      const updated = await runCommand('sudo', ['apt-get', 'update']);
+      if (updated === 0) {
+        status = await runCommand('sudo', ['apt-get', 'install', '-y', 'tesseract-ocr']);
+      } else {
+        status = updated;
+      }
+    }
+  }
+
+  if (status === 0) {
+    emitDependencyProgress({
+      message: 'Tesseract installed.',
+      dependency: 'tesseract',
+      stage: 'installed'
+    });
+    logger.info('[BACKGROUND] Tesseract installation complete');
+  } else {
+    emitDependencyProgress({
+      message: 'Tesseract install failed or skipped. OCR will use tesseract.js.',
+      dependency: 'tesseract',
+      stage: 'error'
+    });
+    logger.warn('[BACKGROUND] Tesseract install failed or skipped');
+  }
+}
 
 // Track background setup status for visibility
 const backgroundSetupStatus = {
@@ -174,6 +298,9 @@ async function runAutomatedDependencySetup() {
   } else {
     emitDependencyProgress({ message: 'ChromaDB module is installed.', dependency: 'chromadb' });
   }
+
+  // 2.5) Install Tesseract OCR if missing (best-effort)
+  await installTesseractIfMissing();
 
   // 3) Best-effort start services (StartupManager already has robust logic)
   const startupManager = getStartupManager();

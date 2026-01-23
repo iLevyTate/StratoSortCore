@@ -33,7 +33,11 @@ function main(
   }
 
   // Run setup scripts (best effort)
-  const setupScripts = ['scripts/setup-ollama.js', 'scripts/setup-chromadb.js'];
+  const setupScripts = [
+    'scripts/setup-ollama.js',
+    'scripts/setup-chromadb.js',
+    'scripts/setup-tesseract.js'
+  ];
   for (const script of setupScripts) {
     try {
       // Use node to run the script

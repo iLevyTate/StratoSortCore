@@ -120,6 +120,11 @@ module.exports = (env, argv) => {
         process: require.resolve('process/browser'),
         Buffer: ['buffer', 'Buffer']
       }),
+      // FIX: Ignore Node.js specific modules in renderer build to suppress warnings
+      // correlationId.js handles missing modules gracefully
+      new webpack.IgnorePlugin({
+        resourceRegExp: /^(async_hooks|crypto)$/
+      }),
       // FIX: Only extract CSS in production mode (dev uses style-loader for HMR)
       ...(isProduction ? [new MiniCssExtractPlugin({ filename: 'styles.css' })] : []),
       ...(function getProductionPlugins() {

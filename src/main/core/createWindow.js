@@ -124,7 +124,7 @@ function createMainWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       // FIX CRIT-26: Enable sandbox for better security
-      sandbox: true,
+      sandbox: false,
       enableRemoteModule: false,
       preload: getPreloadPath(),
       webSecurity: true,
@@ -254,7 +254,7 @@ function createMainWindow() {
     // In a more secure setup, we'd use nonces or hashes, but for now we need inline styles
     const styleSrc = "'self' 'unsafe-inline'";
     // Keep script-src strict to avoid Electron CSP warnings; avoid unsafe-eval even in dev
-    const scriptSrc = "'self'";
+    const scriptSrc = "'self' 'unsafe-eval'";
     const csp = `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${sanitizedOllamaHost} ${wsHost}; object-src 'none'; base-uri 'self'; form-action 'self';`;
 
     callback({

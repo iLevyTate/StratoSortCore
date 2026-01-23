@@ -40,24 +40,30 @@ but not yet fully optimized.
 
 ---
 
-## System Requirements
+## Getting Started
 
-### Minimum
+For detailed installation instructions, system requirements, and dependency setup (including Python,
+ChromaDB, and Tesseract), please see our **[Getting Started Guide](docs/GETTING_STARTED.md)**.
 
-- Windows 10/11, macOS 10.15+, or Linux
-- 6GB RAM
-- 6GB free disk space (for AI models)
-- Any modern CPU
-- **Python 3.9+** (required for local ChromaDB)
+### Quick Start
 
-### Recommended
+```bash
+git clone https://github.com/iLevyTate/elstratosort.git
+cd elstratosort
+npm ci            # Install dependencies
+npm run dev       # Start the app
+```
 
-- 8GB+ RAM
-- 12GB+ free disk space
-- GPU with 4GB+ VRAM (optional for faster processing)
+**First Launch:** The app will guide you through installing Ollama and downloading AI models. It
+will also attempt to install ChromaDB and Tesseract OCR automatically.
 
-**Robustly tested:** Windows 11 (PowerShell, Node 18). See [Why Windows First?](#why-windows-first)
-for platform details.
+## System Requirements (Summary)
+
+- **OS**: Windows 10/11 (Recommended), macOS 10.15+, or Linux
+- **RAM**: 8GB+ Recommended
+- **Disk**: 12GB+ free space
+- **Dependencies**: Python 3.9+, Tesseract OCR (See [Getting Started](docs/GETTING_STARTED.md) for
+  details)
 
 ## Privacy & Security
 
@@ -86,6 +92,7 @@ Select multiple files/folders, analyze, and apply suggestions in bulk with full 
 
 Detailed documentation is available in the `docs/` directory:
 
+- [Getting Started Guide](docs/GETTING_STARTED.md)
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Learning Guide](docs/LEARNING_GUIDE.md)
 - [Testing Guide](TESTING.md)
@@ -104,17 +111,6 @@ Detailed documentation is available in the `docs/` directory:
 - **ChromaDB**: Vector database for semantic search
 - **Tailwind CSS**: Styling
 
-### Quick Start
-
-```bash
-git clone https://github.com/iLevyTate/elstratosort.git
-cd elstratosort
-npm ci            # Install dependencies
-npm run dev       # Start the app
-```
-
-**First Launch:** The app will guide you through installing Ollama and downloading AI models.
-
 ### Key Scripts
 
 ```bash
@@ -125,7 +121,7 @@ npm run build          # Production webpack build
 npm run dist:win       # Create Windows installer (run on Windows)
 npm run dist:mac       # Create macOS installer (run on macOS)
 npm run dist:linux     # Create Linux packages (run on Linux/WSL)
-npm run setup:deps     # Install Ollama + ChromaDB (beta)
+npm run setup:deps     # Install Ollama + ChromaDB + Tesseract (beta)
 ```
 
 ### Building installers

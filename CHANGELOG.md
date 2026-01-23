@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-01-23
+
 ### Added
 
 - **Smart Folder Watcher**: Automatically analyzes new and modified files in configured smart
@@ -163,5 +165,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
 
-[Unreleased]: https://github.com/stratosort/stratosort/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/stratosort/stratosort/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/stratosort/stratosort/releases/tag/v1.1.0
 [1.0.0]: https://github.com/stratosort/stratosort/releases/tag/v1.0.0

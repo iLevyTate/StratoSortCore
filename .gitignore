@@ -97,6 +97,7 @@ docs/.doctrees/
 # Project data and local artifacts
 Documents/
 tmpUserData/
+*.traineddata
 
 # Cursor/IDE workspace image artifacts (occasionally end up under assets/ via copy/paste)
 assets/c__Users_*_workspaceStorage_*_images_*.png
