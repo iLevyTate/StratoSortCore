@@ -25,6 +25,18 @@ function getChromaDbService() {
   }
 }
 
+// Use FilePathCoordinator when available for atomic updates
+function getFilePathCoordinator() {
+  try {
+    if (container.has(ServiceIds.FILE_PATH_COORDINATOR)) {
+      return container.resolve(ServiceIds.FILE_PATH_COORDINATOR);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 // Helper to generate secure random IDs
 const generateSecureId = () =>
   `${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}`;
@@ -657,6 +669,15 @@ class UndoRedoService {
    */
   async updateChromaDbPath(oldPath, newPath) {
     try {
+      const coordinator = getFilePathCoordinator();
+      if (coordinator) {
+        await coordinator.atomicPathUpdate(oldPath, newPath, {
+          type: 'undo_redo',
+          skipProcessingState: true
+        });
+        return;
+      }
+
       const chromaDb = getChromaDbService();
       if (chromaDb) {
         const normalizedOld = normalizePathForIndex(oldPath);
@@ -702,6 +723,12 @@ class UndoRedoService {
     if (!pathChanges || pathChanges.length === 0) return;
 
     try {
+      const coordinator = getFilePathCoordinator();
+      if (coordinator) {
+        await coordinator.batchPathUpdate(pathChanges, { type: 'undo_redo' });
+        return;
+      }
+
       const chromaDb = getChromaDbService();
       if (chromaDb) {
         // Update both file: and image: prefixed entries for each path change

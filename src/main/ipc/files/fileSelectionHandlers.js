@@ -93,6 +93,8 @@ function buildFileFilters() {
 /**
  * Recursively scan folder for supported files
  */
+// Unused but kept for potential future recursive scanning needs
+// eslint-disable-next-line no-unused-vars
 async function scanFolder(folderPath, supportedExts, log, depth = 0, maxDepth = 3) {
   if (depth > maxDepth) return [];
 
@@ -325,20 +327,23 @@ function registerFileSelectionHandlers(servicesOrParams) {
         const allFiles = [];
 
         for (const selectedPath of result.filePaths) {
-          try {
-            const stats = await fs.stat(selectedPath);
-
-            if (stats.isFile()) {
-              const ext = path.extname(selectedPath).toLowerCase();
-              if (supportedExts.includes(ext)) {
+          const ext = path.extname(selectedPath).toLowerCase();
+          if (!ext) {
+            log.warn('[FILE-SELECTION] Skipping path without extension', selectedPath);
+            continue;
+          }
+          if (supportedExts.includes(ext)) {
+            try {
+              const stats = await fs.stat(selectedPath);
+              if (stats.isFile()) {
                 allFiles.push(selectedPath);
               }
-            } else if (stats.isDirectory()) {
-              const folderFiles = await scanFolder(selectedPath, supportedExts, log);
-              allFiles.push(...folderFiles);
+            } catch (statError) {
+              log.warn('[FILE-SELECTION] Skipping path with stat error', {
+                path: selectedPath,
+                error: statError.message
+              });
             }
-          } catch (err) {
-            log.warn(`[FILE-SELECTION] Error checking path ${selectedPath}:`, err.message);
           }
         }
 

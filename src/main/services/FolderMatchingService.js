@@ -135,6 +135,41 @@ class FolderMatchingService {
     // This prevents stale embeddings with wrong dimensions after model switch
     this._modelChangeUnsubscribe = null;
     this._subscribeToModelChanges();
+
+    // FIX: Subscribe to cache invalidation bus for coordinated cleanup
+    this._invalidationUnsubscribe = null;
+    this._subscribeToInvalidationBus();
+  }
+
+  /**
+   * Subscribe to the cache invalidation bus
+   * @private
+   */
+  _subscribeToInvalidationBus() {
+    try {
+      const bus = require('../../shared/cacheInvalidation').getInstance();
+      this._invalidationUnsubscribe = bus.subscribe('FolderMatchingService', {
+        onInvalidate: (event) => {
+          if (event.type === 'full-invalidate') {
+            this.embeddingCache.clear();
+            this._upsertedFolderIds.clear();
+            logger.info('[FolderMatchingService] Cache cleared via invalidation bus');
+          }
+        },
+        onPathChange: (_oldPath, _newPath) => {
+          this._upsertedFolderIds.clear();
+        },
+        onDeletion: (_filePath) => {
+          this._upsertedFolderIds.clear();
+        }
+      });
+      logger.debug('[FolderMatchingService] Subscribed to cache invalidation bus');
+    } catch (error) {
+      logger.warn(
+        '[FolderMatchingService] Failed to subscribe to invalidation bus:',
+        error.message
+      );
+    }
   }
 
   /**
@@ -1267,6 +1302,12 @@ class FolderMatchingService {
       this._modelChangeUnsubscribe();
       this._modelChangeUnsubscribe = null;
       logger.debug('[FolderMatchingService] Unsubscribed from model changes');
+    }
+
+    // FIX: Unsubscribe from invalidation bus
+    if (this._invalidationUnsubscribe) {
+      this._invalidationUnsubscribe();
+      this._invalidationUnsubscribe = null;
     }
 
     if (this.embeddingCache) {

@@ -9,22 +9,19 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const { app } = require('electron');
 const crypto = require('crypto');
 const { ACTION_TYPES, PROCESSING_LIMITS } = require('../../../shared/constants');
 const { LIMITS, TIMEOUTS } = require('../../../shared/performanceConstants');
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
 const { crossDeviceMove } = require('../../../shared/atomicFileOperations');
-const {
-  validateFileOperationPath,
-  normalizePathForIndex
-} = require('../../../shared/pathSanitization');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 const { withTimeout } = require('../../../shared/promiseUtils');
 const { withCorrelationId } = require('../../../shared/correlationId');
-// FIX: Import centralized error codes for consistent error handling
 const { ERROR_CODES } = require('../../../shared/errorHandlingUtils');
-// FIX: Import safeSend for validated IPC event sending
-const { safeSend } = require('../ipcWrappers');
+const { acquireBatchLock, releaseBatchLock } = require('./batchLockManager');
+const { validateBatchOperation, MAX_BATCH_SIZE } = require('./batchValidator');
+const { executeRollback } = require('./batchRollback');
+const { sendOperationProgress, sendChunkedResults } = require('./batchProgressReporter');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:BatchOrganize') : baseLogger;
@@ -35,150 +32,7 @@ if (typeof createLogger !== 'function' && logger?.setContext) {
 // Jest-mocked functions expose _isMockFunction; use to avoid false positives
 const isMockFn = (fn) => !!fn && typeof fn === 'function' && fn._isMockFunction;
 
-// FIX: Global batch operation lock to prevent concurrent batch operations
-// This prevents race conditions when multiple batch operations try to run simultaneously
-let batchOperationLock = null;
-const BATCH_LOCK_TIMEOUT = 5 * 60 * 1000; // 5 minutes max lock hold time
-const BATCH_LOCK_ACQUIRE_TIMEOUT = 15000; // 15 seconds per attempt
-const BATCH_LOCK_ACQUIRE_MAX_WAIT = 5 * 60 * 1000; // 5 minutes total wait
-const BATCH_LOCK_RETRY_BASE_MS = 1000;
-const BATCH_LOCK_RETRY_MAX_MS = 10000;
-
-// FIX: Promise-based mutex for atomic lock acquisition (prevents race conditions)
-// This ensures only one acquireBatchLock() call can check-and-set at a time
-let _lockMutex = Promise.resolve();
-
-// FIX: Promise-based waiters queue to avoid busy-wait polling
-const batchLockWaiters = [];
-
-/**
- * Acquire the global batch operation lock
- * Uses promise-based mutex for ATOMIC check-and-set to prevent race conditions
- * @param {string} batchId - Unique identifier for the batch
- * @param {number} timeout - Maximum time to wait for lock (ms)
- * @returns {Promise<boolean>} True if lock acquired, false if timeout
- */
-async function acquireBatchLockOnce(batchId, timeout = BATCH_LOCK_ACQUIRE_TIMEOUT) {
-  // FIX: Use mutex pattern to ensure atomic lock acquisition
-  // This prevents two concurrent calls from both seeing null and both acquiring
-  let release;
-  const next = new Promise((resolve) => {
-    release = resolve;
-  });
-  const current = _lockMutex;
-  _lockMutex = next;
-
-  // Wait for previous mutex holder to release (with timeout)
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error('Lock acquisition mutex timeout'));
-    }, timeout);
-  });
-
-  try {
-    await Promise.race([current, timeoutPromise]);
-    clearTimeout(timeoutId);
-  } catch (e) {
-    // Mutex timeout - release our slot and return false
-    release();
-    return false;
-  }
-
-  // Now we have exclusive access to check-and-set batchOperationLock
-  try {
-    // Check and handle stale lock
-    if (batchOperationLock !== null) {
-      if (Date.now() - batchOperationLock.acquiredAt > BATCH_LOCK_TIMEOUT) {
-        logger.warn('[FILE-OPS] Force-releasing stale batch lock', {
-          staleBatchId: batchOperationLock.batchId,
-          heldFor: Date.now() - batchOperationLock.acquiredAt
-        });
-        batchOperationLock = null;
-      }
-    }
-
-    // If lock is free, acquire immediately
-    if (batchOperationLock === null) {
-      batchOperationLock = { batchId, acquiredAt: Date.now() };
-      release(); // Release mutex
-      return true;
-    }
-
-    // Lock is held by another batch - add to waiters queue
-    release(); // Release mutex before waiting
-
-    // Wait for lock to be released using promise-based approach (no polling)
-    return new Promise((resolve) => {
-      // FIX CRIT-36: Safe timeout cleanup using closure
-      let timeoutId;
-      const waiter = {
-        batchId,
-        resolve,
-        // Helper to clear timeout even if ID not yet attached to object
-        clearTimeout: () => clearTimeout(timeoutId)
-      };
-
-      batchLockWaiters.push(waiter);
-
-      // Set timeout for this waiter
-      timeoutId = setTimeout(() => {
-        const index = batchLockWaiters.indexOf(waiter);
-        if (index !== -1) {
-          batchLockWaiters.splice(index, 1);
-          resolve(false); // Timeout - could not acquire lock
-        }
-      }, timeout);
-
-      // Store timeout ID for direct access if needed
-      waiter.timeoutId = timeoutId;
-    });
-  } catch (e) {
-    release(); // Ensure mutex is released on any error
-    throw e;
-  }
-}
-
-async function acquireBatchLock(batchId, timeout = BATCH_LOCK_ACQUIRE_TIMEOUT) {
-  const start = Date.now();
-  let attempt = 0;
-  while (Date.now() - start < BATCH_LOCK_ACQUIRE_MAX_WAIT) {
-    const acquired = await acquireBatchLockOnce(batchId, timeout);
-    if (acquired) return true;
-    attempt += 1;
-    const backoff = Math.min(BATCH_LOCK_RETRY_BASE_MS * 2 ** attempt, BATCH_LOCK_RETRY_MAX_MS);
-    await new Promise((resolve) => setTimeout(resolve, backoff));
-  }
-  return false;
-}
-
-/**
- * Release the global batch operation lock
- * Notifies waiting batch operations that the lock is available
- * @param {string} batchId - Batch ID that should hold the lock
- */
-function releaseBatchLock(batchId) {
-  if (batchOperationLock && batchOperationLock.batchId === batchId) {
-    batchOperationLock = null;
-
-    // FIX: Notify first waiter that lock is available
-    if (batchLockWaiters.length > 0) {
-      const waiter = batchLockWaiters.shift();
-      // Clear the waiter's timeout using the safe helper
-      if (waiter.clearTimeout) {
-        waiter.clearTimeout();
-      } else if (waiter.timeoutId) {
-        clearTimeout(waiter.timeoutId);
-      }
-      // Grant lock to waiter
-      batchOperationLock = { batchId: waiter.batchId, acquiredAt: Date.now() };
-      waiter.resolve(true);
-    }
-  }
-}
-
 // Resource limits from centralized constants (prevents config drift)
-const MAX_BATCH_SIZE = PROCESSING_LIMITS.MAX_BATCH_OPERATION_SIZE;
 const MAX_TOTAL_BATCH_TIME = PROCESSING_LIMITS.MAX_TOTAL_BATCH_TIME || 300000; // Default 5 mins if not set
 const { MAX_NUMERIC_RETRIES } = LIMITS;
 
@@ -301,73 +155,6 @@ async function verifyMoveCompletion(source, destination, log) {
   } else if (source !== destination) {
     log.debug('[FILE-OPS] Skipping source existence verification (mocked fs)');
   }
-}
-
-/**
- * Validate batch operation input.
- * Returns an error object if validation fails, null if valid.
- *
- * @param {Object} operation - Batch operation configuration
- * @param {Object} log - Logger instance
- * @returns {Object|null} Error object or null if valid
- */
-function validateBatchOperation(operation, log) {
-  if (!operation.operations || !Array.isArray(operation.operations)) {
-    return {
-      success: false,
-      error: 'Invalid batch: operations must be an array',
-      errorCode: ERROR_CODES.INVALID_BATCH
-    };
-  }
-
-  if (operation.operations.length === 0) {
-    return {
-      success: false,
-      error: 'Invalid batch: no operations provided',
-      errorCode: ERROR_CODES.EMPTY_BATCH
-    };
-  }
-
-  if (operation.operations.length > MAX_BATCH_SIZE) {
-    log.warn(
-      `[FILE-OPS] Batch size ${operation.operations.length} exceeds maximum ${MAX_BATCH_SIZE}`
-    );
-    return {
-      success: false,
-      error: `Batch size exceeds maximum of ${MAX_BATCH_SIZE} operations`,
-      errorCode: ERROR_CODES.BATCH_TOO_LARGE,
-      maxAllowed: MAX_BATCH_SIZE,
-      provided: operation.operations.length
-    };
-  }
-
-  // Validate individual operation objects have required fields
-  for (let i = 0; i < operation.operations.length; i++) {
-    const op = operation.operations[i];
-    if (!op || typeof op !== 'object') {
-      return {
-        success: false,
-        error: `Invalid operation at index ${i}: must be an object`,
-        errorCode: ERROR_CODES.INVALID_OPERATION
-      };
-    }
-    if (!op.source || typeof op.source !== 'string') {
-      return {
-        success: false,
-        error: `Invalid operation at index ${i}: missing or invalid source path`,
-        errorCode: ERROR_CODES.INVALID_OPERATION
-      };
-    }
-    if (!op.destination || typeof op.destination !== 'string') {
-      return {
-        success: false,
-        error: `Invalid operation at index ${i}: missing or invalid destination path`,
-        errorCode: ERROR_CODES.INVALID_OPERATION
-      };
-    }
-  }
-
-  return null; // Valid
 }
 
 /**
@@ -640,15 +427,12 @@ async function handleBatchOrganize(params) {
 
             // Send progress to renderer
             // FIX: Use safeSend for validated IPC event sending
-            const win = getMainWindow();
-            if (win && !win.isDestroyed()) {
-              safeSend(win.webContents, 'operation-progress', {
-                type: 'batch_organize',
-                current: successCount + failCount + skippedCount, // Approx progress
-                total: batch.operations.length,
-                currentFile: path.basename(op.source)
-              });
-            }
+            sendOperationProgress(getMainWindow, {
+              type: 'batch_organize',
+              current: successCount + failCount + skippedCount,
+              total: batch.operations.length,
+              currentFile: path.basename(op.source)
+            });
           } catch (error) {
             await getServiceIntegration()?.processingState?.markOrganizeOpError(
               batchId,
@@ -758,25 +542,24 @@ async function handleBatchOrganize(params) {
       }
 
       // FIX: For large result sets, send results in chunks to prevent IPC message overflow
-      const win = getMainWindow();
-      if (results.length > MAX_RESULTS_PER_CHUNK && win && !win.isDestroyed()) {
-        const totalChunks = Math.ceil(results.length / MAX_RESULTS_PER_CHUNK);
+      if (results.length > MAX_RESULTS_PER_CHUNK) {
+        const { sent, totalChunks } = await sendChunkedResults(
+          getMainWindow,
+          batchId,
+          results,
+          MAX_RESULTS_PER_CHUNK
+        );
 
-        for (let i = 0; i < results.length; i += MAX_RESULTS_PER_CHUNK) {
-          const chunk = results.slice(i, i + MAX_RESULTS_PER_CHUNK);
-          const chunkIndex = Math.floor(i / MAX_RESULTS_PER_CHUNK);
-
-          // FIX: Use safeSend for validated IPC event sending
-          safeSend(win.webContents, 'batch-results-chunk', {
-            batchId,
-            chunk,
-            chunkIndex,
-            totalChunks,
-            isLast: chunkIndex === totalChunks - 1
-          });
-
-          // Yield to event loop between chunks to prevent blocking
-          await new Promise((resolve) => setImmediate(resolve));
+        if (!sent) {
+          return {
+            success: successCount > 0 && !shouldRollback,
+            results,
+            successCount,
+            failCount,
+            completedOperations: completedOperations.length,
+            summary: `Processed ${operation.operations.length} files: ${successCount} successful, ${failCount} failed`,
+            batchId
+          };
         }
 
         // Return summary only (results sent via chunks)
@@ -803,7 +586,7 @@ async function handleBatchOrganize(params) {
         batchId
       };
     } finally {
-      // FIX: Always release the batch lock when operation completes
+      // Always release the batch lock when operation completes
       releaseBatchLock(batchId);
     }
   });
@@ -927,128 +710,25 @@ async function performUUIDFallback(op, baseName, ext, log, checksumFn) {
 }
 
 /**
- * Execute rollback of completed operations
+ * Get FilePathCoordinator from ServiceContainer if available
+ * @returns {Object|null} FilePathCoordinator instance or null
  */
-async function executeRollback(
-  completedOperations,
-  results,
-  failCount,
-  rollbackReason,
-  batchId,
-  log
-) {
-  log.warn(`[FILE-OPS] Executing rollback for batch ${batchId}`, {
-    batchId,
-    completedCount: completedOperations.length,
-    failCount,
-    reason: rollbackReason
-  });
-
-  // FIX P0-1: Persist recovery manifest before starting rollback
-  // This allows recovery if the app crashes during rollback
-  let recoveryPath = null;
+function getFilePathCoordinator() {
   try {
-    const userDataPath = app.getPath('userData');
-    const recoveryDir = path.join(userDataPath, 'recovery');
-    await fs.mkdir(recoveryDir, { recursive: true });
-
-    recoveryPath = path.join(recoveryDir, `rollback_${batchId}.json`);
-    const recoveryManifest = {
-      batchId,
-      timestamp: new Date().toISOString(),
-      reason: rollbackReason,
-      status: 'pending',
-      operations: completedOperations, // These need to be reversed (dest -> source)
-      results: []
-    };
-
-    await fs.writeFile(recoveryPath, JSON.stringify(recoveryManifest, null, 2));
-    log.info(`[FILE-OPS] Recovery manifest saved to ${recoveryPath}`);
-  } catch (err) {
-    log.error(`[FILE-OPS] Failed to save recovery manifest: ${err.message}`);
-    // Continue with rollback even if persistence fails
-  }
-
-  const rollbackResults = [];
-  let rollbackSuccessCount = 0;
-  let rollbackFailCount = 0;
-
-  for (const completedOp of [...completedOperations].reverse()) {
-    try {
-      try {
-        await fs.rename(completedOp.destination, completedOp.source);
-      } catch (renameError) {
-        if (renameError.code === 'EXDEV') {
-          const sourceDir = path.dirname(completedOp.source);
-          await fs.mkdir(sourceDir, { recursive: true });
-          await crossDeviceMove(completedOp.destination, completedOp.source, {
-            verify: true
-          });
-        } else {
-          throw renameError;
-        }
-      }
-      rollbackSuccessCount++;
-      rollbackResults.push({ success: true, file: completedOp.source });
-
-      // Update manifest with progress (optional, maybe too slow to do every file?
-      // Doing it every file is safest but slow. Let's do it on failure or end.)
-    } catch (rollbackError) {
-      rollbackFailCount++;
-      rollbackResults.push({
-        success: false,
-        file: completedOp.source,
-        error: rollbackError.message
-      });
+    const { container, ServiceIds } = require('../../services/ServiceContainer');
+    if (container.has(ServiceIds.FILE_PATH_COORDINATOR)) {
+      return container.resolve(ServiceIds.FILE_PATH_COORDINATOR);
     }
+  } catch {
+    // Service not available
   }
-
-  // Update recovery manifest status
-  if (recoveryPath) {
-    try {
-      if (rollbackFailCount === 0) {
-        // success, delete manifest
-        await fs.unlink(recoveryPath);
-        log.info(`[FILE-OPS] Rollback successful, recovery manifest deleted`);
-      } else {
-        // update manifest with results so we know what failed
-        const recoveryManifest = JSON.parse(await fs.readFile(recoveryPath, 'utf8'));
-        recoveryManifest.status = 'partial_failure';
-        recoveryManifest.results = rollbackResults;
-        await fs.writeFile(recoveryPath, JSON.stringify(recoveryManifest, null, 2));
-        log.warn(`[FILE-OPS] Rollback had failures, manifest updated at ${recoveryPath}`);
-      }
-    } catch (err) {
-      log.warn(`[FILE-OPS] Failed to update recovery manifest: ${err.message}`);
-    }
-  }
-
-  log.warn('[FILE-OPS] Rollback summary', {
-    batchId,
-    rollbackSuccessCount,
-    rollbackFailCount,
-    completed: completedOperations.length
-  });
-
-  return {
-    success: false,
-    rolledBack: true,
-    rollbackReason,
-    results,
-    rollbackResults,
-    successCount: 0,
-    failCount,
-    rollbackSuccessCount,
-    rollbackFailCount,
-    summary: `Batch rolled back. ${rollbackSuccessCount}/${completedOperations.length} operations restored.`,
-    batchId,
-    recoveryPath,
-    criticalError: true
-  };
+  return null;
 }
 
 /**
  * Record undo action and update database paths
+ * Uses FilePathCoordinator when available for atomic batch updates.
+ * Falls back to direct service calls if coordinator is unavailable.
  */
 async function recordUndoAndUpdateDatabase(
   batch,
@@ -1078,119 +758,47 @@ async function recordUndoAndUpdateDatabase(
     // Non-fatal
   }
 
-  // Update ChromaDB paths for both file: and image: prefixed entries
+  // Update path-dependent systems for batch moves
   if (successCount > 0) {
-    try {
-      const { getInstance: getChromaDB } = require('../../services/chromadb');
-      const chromaDbService = getChromaDB();
+    const successfulResults = results.filter((r) => r.success && r.source && r.destination);
+    const pathChanges = successfulResults.map((r) => ({
+      oldPath: r.source,
+      newPath: r.destination
+    }));
 
-      if (chromaDbService) {
-        const successfulResults = results.filter((r) => r.success && r.source && r.destination);
-
-        // Create path updates for both file: and image: prefixes
-        // Documents use file: prefix, images use image: prefix
-        const pathUpdates = [];
-        const seenUpdates = new Set();
-        const buildIdVariants = (filePath) => {
-          const normalized = normalizePathForIndex(filePath);
-          const normalizedCase = path.normalize(filePath).replace(/\\/g, '/');
-          const platformNormalized = path.normalize(filePath);
-          const variants = new Set([normalized, normalizedCase, platformNormalized, filePath]);
-          return Array.from(variants).filter(Boolean);
-        };
-        for (const r of successfulResults) {
-          const normalizedDest = normalizePathForIndex(r.destination);
-          const newMeta = {
-            path: r.destination,
-            name: path.basename(r.destination)
-          };
-
-          const sourceVariants = buildIdVariants(r.source);
-          sourceVariants.forEach((variant) => {
-            const fileOldId = `file:${variant}`;
-            const imageOldId = `image:${variant}`;
-            const fileNewId = `file:${normalizedDest}`;
-            const imageNewId = `image:${normalizedDest}`;
-
-            const fileKey = `${fileOldId}->${fileNewId}`;
-            if (fileOldId !== fileNewId && !seenUpdates.has(fileKey)) {
-              pathUpdates.push({ oldId: fileOldId, newId: fileNewId, newMeta });
-              seenUpdates.add(fileKey);
-            }
-
-            const imageKey = `${imageOldId}->${imageNewId}`;
-            if (imageOldId !== imageNewId && !seenUpdates.has(imageKey)) {
-              pathUpdates.push({ oldId: imageOldId, newId: imageNewId, newMeta });
-              seenUpdates.add(imageKey);
-            }
-          });
-        }
-
-        if (pathUpdates.length > 0) {
-          await chromaDbService.updateFilePaths(pathUpdates);
-        }
-      }
-    } catch (error) {
-      log.warn('[FILE-OPS] Error updating database paths', {
-        error: error.message,
-        batchId
+    // Try to use FilePathCoordinator for atomic batch updates
+    const coordinator = getFilePathCoordinator();
+    if (coordinator && pathChanges.length > 0) {
+      log.debug('[FILE-OPS] Using FilePathCoordinator for batch path updates', {
+        batchId,
+        count: pathChanges.length
       });
-    }
 
-    // Update any queued embeddings to avoid flushing stale IDs after batch moves.
-    try {
-      const embeddingQueue = require('../../analysis/embeddingQueue');
-      const successfulResults = results.filter((r) => r.success && r.source && r.destination);
-      const changes = successfulResults.map((r) => ({ oldPath: r.source, newPath: r.destination }));
-      if (changes.length > 0) {
-        embeddingQueue.updateByFilePaths?.(changes);
-        log.debug('[FILE-OPS] Embedding queue paths updated', {
-          batchId,
-          count: changes.length
-        });
-      } else {
-        log.debug('[FILE-OPS] Embedding queue update skipped (no changes)', { batchId });
-      }
-    } catch (error) {
-      log.debug('[FILE-OPS] Embedding queue path update skipped', {
-        error: error.message,
-        batchId
-      });
-    }
+      try {
+        const result = await coordinator.batchPathUpdate(pathChanges, { type: 'move' });
 
-    // Update analysis history entries with new paths for BM25 search
-    try {
-      // FIX: analysisHistory module exports the class directly, not getInstance.
-      // Use service integration to access the singleton instance.
-      const analysisHistoryService = getServiceIntegration()?.analysisHistory;
-
-      if (analysisHistoryService?.updateEntryPaths) {
-        const successfulResults = results.filter((r) => r.success && r.source && r.destination);
-
-        const historyUpdates = successfulResults.map((r) => ({
-          oldPath: r.source,
-          newPath: r.destination,
-          newName: path.basename(r.destination)
-        }));
-
-        if (historyUpdates.length > 0) {
-          const updateResult = await analysisHistoryService.updateEntryPaths(historyUpdates);
-          log.debug('[FILE-OPS] Updated analysis history paths', {
+        if (!result.success) {
+          log.warn('[FILE-OPS] FilePathCoordinator batch update had errors', {
             batchId,
-            updated: updateResult.updated,
-            notFound: updateResult.notFound
+            errors: result.errors.map((e) => e.system).join(', ')
           });
         } else {
-          log.debug('[FILE-OPS] Analysis history path update skipped (no successes)', { batchId });
+          log.debug('[FILE-OPS] FilePathCoordinator batch update complete', {
+            batchId,
+            summary: result.summary
+          });
         }
-      } else {
-        log.debug('[FILE-OPS] Analysis history service not available for path updates', {
-          batchId
+      } catch (coordError) {
+        log.warn('[FILE-OPS] FilePathCoordinator batch update failed', {
+          batchId,
+          error: coordError.message
         });
+        // Fallback removed: FilePathCoordinator is the single source of truth.
+        // If it fails, we log the error but do not attempt divergent updates.
       }
-    } catch (error) {
-      log.warn('[FILE-OPS] Error updating analysis history paths', {
-        error: error.message,
+    } else if (pathChanges.length > 0) {
+      // Coordinator unavailable
+      log.warn('[FILE-OPS] FilePathCoordinator unavailable for batch path updates', {
         batchId
       });
     }
@@ -1235,6 +843,7 @@ async function recordUndoAndUpdateDatabase(
     updatedPaths: results.filter((r) => r.success && r.source && r.destination).length
   });
 }
+
 module.exports = {
   handleBatchOrganize,
   computeFileChecksum,

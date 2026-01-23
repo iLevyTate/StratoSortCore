@@ -4,6 +4,7 @@ const { withErrorLogging, withValidation, safeHandle } = require('./ipcWrappers'
 const { safeFilePath } = require('../utils/safeAccess');
 const { mapFoldersToCategories, getFolderNamesString } = require('../../shared/folderUtils');
 const { logger: moduleLogger } = require('../../shared/logger');
+const { recognizeIfAvailable } = require('../utils/tesseractUtils');
 const {
   withProcessingState,
   buildErrorContext,
@@ -168,19 +169,29 @@ function registerAnalysisIpc(servicesOrParams) {
 
   safeHandle(ipcMain, IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, analyzeImageHandler);
 
+  async function runOcr(filePath) {
+    const start = performance.now();
+    const ocrResult = await recognizeIfAvailable(tesseract, filePath, {
+      lang: 'eng',
+      oem: 1,
+      psm: 3
+    });
+    if (!ocrResult.success) {
+      const error = ocrResult.cause || new Error(ocrResult.error || 'OCR failed');
+      logger.error('OCR failed:', error);
+      systemAnalytics.recordFailure(error);
+      return { success: false, error: ocrResult.error || error.message };
+    }
+    const duration = performance.now() - start;
+    systemAnalytics.recordProcessingTime(duration);
+    return { success: true, text: ocrResult.text };
+  }
+
   const extractImageTextHandler =
     z && stringSchema
       ? withValidation(logger, stringSchema, async (event, filePath) => {
           try {
-            const start = performance.now();
-            const text = await tesseract.recognize(filePath, {
-              lang: 'eng',
-              oem: 1,
-              psm: 3
-            });
-            const duration = performance.now() - start;
-            systemAnalytics.recordProcessingTime(duration);
-            return { success: true, text };
+            return await runOcr(filePath);
           } catch (error) {
             logger.error('OCR failed:', error);
             systemAnalytics.recordFailure(error);
@@ -189,15 +200,7 @@ function registerAnalysisIpc(servicesOrParams) {
         })
       : withErrorLogging(logger, async (event, filePath) => {
           try {
-            const start = performance.now();
-            const text = await tesseract.recognize(filePath, {
-              lang: 'eng',
-              oem: 1,
-              psm: 3
-            });
-            const duration = performance.now() - start;
-            systemAnalytics.recordProcessingTime(duration);
-            return { success: true, text };
+            return await runOcr(filePath);
           } catch (error) {
             logger.error('OCR failed:', error);
             systemAnalytics.recordFailure(error);

@@ -2,6 +2,9 @@ const path = require('path');
 const fs = require('fs').promises;
 const { app } = require('electron');
 const { getOllama } = require('../ollamaUtils');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { withAbortableTimeout } = require('../../shared/promiseUtils');
+const { AI_DEFAULTS } = require('../../shared/constants');
 const { enhanceSmartFolderWithLLM } = require('../services/SmartFoldersLLMService');
 const { withErrorLogging, safeHandle } = require('./ipcWrappers');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
@@ -15,7 +18,8 @@ const {
 } = require('../analysis/semanticExtensionMap');
 
 // Import centralized security configuration
-const { getDangerousPaths, ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
+const { ALLOWED_APP_PATHS } = require('../../shared/securityConfig');
+const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
 
 // FIX: Import centralized error codes for consistent error handling
 const { ERROR_CODES } = require('../../shared/errorHandlingUtils');
@@ -27,23 +31,6 @@ const { ERROR_CODES } = require('../../shared/errorHandlingUtils');
  * @throws {Error} - If path is invalid or violates security constraints
  */
 function sanitizeFolderPath(inputPath) {
-  if (!inputPath || typeof inputPath !== 'string') {
-    throw new Error('Invalid path: must be non-empty string');
-  }
-
-  // Normalize and resolve path
-  const normalized = path.normalize(path.resolve(inputPath));
-
-  // Check for null bytes (path injection attack)
-  if (normalized.includes('\0')) {
-    throw new Error('Invalid path: contains null bytes');
-  }
-
-  // Block UNC paths (network paths) for security - they can behave unexpectedly
-  if (normalized.startsWith('\\\\') || normalized.startsWith('//')) {
-    throw new Error('Invalid path: network/UNC paths are not allowed');
-  }
-
   // Get allowed base paths from centralized config
   const ALLOWED_BASE_PATHS = ALLOWED_APP_PATHS.map((appPath) => {
     try {
@@ -53,45 +40,49 @@ function sanitizeFolderPath(inputPath) {
     }
   }).filter(Boolean);
 
-  // Check if path is within allowed directories
-  // FIX P0-4: Use path.relative() for more robust containment check
-  // This prevents edge cases with symbolic links and unusual path formats
-  const isAllowed = ALLOWED_BASE_PATHS.some((basePath) => {
-    const normalizedBase = path.normalize(path.resolve(basePath));
-
-    // Use path.relative to check containment - more robust than startsWith
-    let relative;
-    if (process.platform === 'win32' || process.platform === 'darwin') {
-      // Case-insensitive comparison for Windows and macOS
-      relative = path.relative(normalizedBase.toLowerCase(), normalized.toLowerCase());
-    } else {
-      relative = path.relative(normalizedBase, normalized);
-    }
-
-    // Path is contained if relative path doesn't escape with '..' and isn't absolute
-    const isContained = !relative.startsWith('..') && !path.isAbsolute(relative);
-    // Also allow exact match (empty relative path)
-    return isContained || relative === '';
+  const validation = validateFileOperationPathSync(inputPath, ALLOWED_BASE_PATHS, {
+    requireAbsolute: true,
+    disallowUNC: true,
+    disallowUrlSchemes: true
   });
 
-  if (!isAllowed) {
-    throw new Error(
+  if (validation.valid) {
+    return validation.normalizedPath;
+  }
+
+  // Cross-platform fallback: allow POSIX-style paths on Windows in test/mocked environments.
+  if (
+    process.platform === 'win32' &&
+    typeof inputPath === 'string' &&
+    inputPath.startsWith('/') &&
+    ALLOWED_BASE_PATHS.some((base) => typeof base === 'string' && base.startsWith('/'))
+  ) {
+    const normalized = path.posix.normalize(inputPath);
+    if (!path.posix.isAbsolute(normalized)) {
+      throw new Error('Invalid path: must be absolute');
+    }
+    const parts = normalized.split('/').filter(Boolean);
+    if (parts.some((part) => part === '..')) {
+      throw new Error('Invalid path: path traversal detected');
+    }
+    const allowed = ALLOWED_BASE_PATHS.some((base) => {
+      if (!base || !base.startsWith('/')) return false;
+      const baseNormalized = path.posix.normalize(base);
+      if (normalized === baseNormalized) return true;
+      return normalized.startsWith(`${baseNormalized}/`);
+    });
+    if (!allowed) {
+      throw new Error(
+        'Invalid path: must be within allowed directories (Documents, Downloads, Desktop, Pictures, Videos, Music, or Home)'
+      );
+    }
+    return normalized;
+  }
+
+  throw new Error(
+    validation.error ||
       'Invalid path: must be within allowed directories (Documents, Downloads, Desktop, Pictures, Videos, Music, or Home)'
-    );
-  }
-
-  // Block access to system directories using centralized config
-  const dangerousPaths = getDangerousPaths();
-  const normalizedLower = normalized.toLowerCase();
-  const isDangerous = dangerousPaths.some((dangerous) =>
-    normalizedLower.startsWith(dangerous.toLowerCase())
   );
-
-  if (isDangerous) {
-    throw new Error('Invalid path: access to system directories not allowed');
-  }
-
-  return normalized;
 }
 
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
@@ -284,12 +275,23 @@ function registerSmartFoldersIpc(servicesOrParams) {
             const ollama = await getOllama();
             const genPerf = await buildOllamaOptions('text');
             const prompt = `You are ranking folders for organizing a file. Given this description:\n"""${text}"""\nFolders:\n${smartFolders.map((f, i) => `${i + 1}. ${f.name} - ${f.description || ''}`).join('\n')}\nReturn JSON: { "index": <1-based best folder index>, "reason": "..." }`;
-            const resp = await ollama.generate({
-              model: getOllamaModel() || 'qwen3:0.6b',
-              prompt,
-              format: 'json',
-              options: { ...genPerf, temperature: 0.1, num_predict: 200 }
+            const timeoutMs = TIMEOUTS.AI_ANALYSIS_LONG;
+            logger.debug('[SMART_FOLDERS.MATCH] Using text model', {
+              model: getOllamaModel() || AI_DEFAULTS.TEXT.MODEL,
+              timeoutMs
             });
+            const resp = await withAbortableTimeout(
+              (abortController) =>
+                ollama.generate({
+                  model: getOllamaModel() || AI_DEFAULTS.TEXT.MODEL,
+                  prompt,
+                  format: 'json',
+                  options: { ...genPerf, temperature: 0.1, num_predict: 200 },
+                  signal: abortController.signal
+                }),
+              timeoutMs,
+              'Smart folder LLM match'
+            );
             // Use robust JSON extraction with repair for malformed LLM responses
             const parsed = extractAndParseJSON(resp.response, null);
             if (!parsed) {

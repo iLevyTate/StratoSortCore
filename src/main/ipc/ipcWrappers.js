@@ -19,8 +19,31 @@
 
 const {
   createSuccessResponse: createStandardSuccessResponse,
+  createErrorResponse: importedCreateErrorResponse,
   ERROR_CODES
 } = require('../../shared/errorHandlingUtils');
+
+const createErrorResponse =
+  typeof importedCreateErrorResponse === 'function'
+    ? importedCreateErrorResponse
+    : (error, context = {}) => {
+        const errorMessage = error?.message || String(error || 'Unknown error');
+        const errorCode = error?.code || error?.errorCode || ERROR_CODES.UNKNOWN_ERROR;
+        const details = {
+          ...context,
+          ...(error?.validationErrors && {
+            validationErrors: error.validationErrors
+          })
+        };
+        return {
+          success: false,
+          error: {
+            code: errorCode,
+            message: errorMessage,
+            details: Object.keys(details).length > 0 ? details : undefined
+          }
+        };
+      };
 const { logger } = require('../../shared/logger');
 const { validateEventPayload, hasEventSchema } = require('../../shared/ipcEventSchemas');
 
@@ -51,39 +74,6 @@ try {
  * @property {boolean} success - Always true for success
  * @property {*} [data] - Response data (spread into response for backwards compatibility)
  */
-
-/**
- * Create standardized error response from error object (IPC-specific wrapper)
- * @param {Error|Object} error - Error object or error-like object
- * @param {Object} context - Additional context to include
- * @returns {IPCErrorResponse} Standardized error response
- */
-function createErrorResponse(error, context = {}) {
-  const errorMessage = error?.message || String(error || 'Unknown error');
-  const errorName = error?.name || 'Error';
-  const errorCode = error?.code || error?.errorCode || ERROR_CODES.UNKNOWN_ERROR;
-
-  const details = {
-    errorType: errorName,
-    ...context,
-    // Include validation errors/warnings if present
-    ...(error?.validationErrors && {
-      validationErrors: error.validationErrors
-    }),
-    ...(error?.validationWarnings && {
-      validationWarnings: error.validationWarnings
-    })
-  };
-
-  return {
-    success: false,
-    error: {
-      code: errorCode,
-      message: errorMessage,
-      details: Object.keys(details).length > 1 ? details : undefined
-    }
-  };
-}
 
 /**
  * Create success response (IPC-specific wrapper)

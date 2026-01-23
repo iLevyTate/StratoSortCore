@@ -14,10 +14,7 @@ const { withErrorLogging, withValidation, safeHandle, safeSend } = require('../i
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
 const { handleBatchOrganize } = require('./batchOrganizeHandler');
 const { z, schemas } = require('../validationSchemas');
-const {
-  validateFileOperationPath,
-  normalizePathForIndex
-} = require('../../../shared/pathSanitization');
+const { validateFileOperationPath } = require('../../../shared/pathSanitization');
 const {
   isNotFoundError,
   isPermissionError,
@@ -25,6 +22,16 @@ const {
   ErrorCategory,
   getErrorCategory
 } = require('../../../shared/errorClassifier');
+const {
+  traceMoveStart,
+  traceMoveComplete,
+  traceCopyStart,
+  traceCopyComplete,
+  traceDeleteStart,
+  traceDeleteComplete,
+  traceDbUpdate,
+  PathChangeReason
+} = require('../../../shared/pathTraceLogger');
 
 // Alias for backward compatibility
 const operationSchema = schemas?.fileOperation || null;
@@ -88,10 +95,29 @@ async function validateOperationPaths(source, destination, log) {
 }
 
 /**
- * Update database path after file move
- * Updates both file: and image: prefixes to handle all file types
+ * Get FilePathCoordinator from ServiceContainer if available
+ * @returns {Object|null} FilePathCoordinator instance or null
  */
-async function updateDatabasePath(source, destination, log, chromaDbServiceOverride = null) {
+function getFilePathCoordinator() {
+  try {
+    const { container, ServiceIds } = require('../../services/ServiceContainer');
+    if (container.has(ServiceIds.FILE_PATH_COORDINATOR)) {
+      return container.resolve(ServiceIds.FILE_PATH_COORDINATOR);
+    }
+  } catch (error) {
+    // FIX #14: Log error instead of silent swallowing for debugging purposes
+    logger.debug('[FILE-OPS] FilePathCoordinator unavailable:', error?.message);
+  }
+  return null;
+}
+
+/**
+ * Update database path after file move
+ * Uses FilePathCoordinator when available for atomic updates across all systems.
+ * Falls back to direct service calls if coordinator is unavailable.
+ * Updates both file: and image: prefixes to handle all file types.
+ */
+async function updateDatabasePath(source, destination, log) {
   let dbSyncWarning = null;
   try {
     // Re-validate paths before database update to prevent path traversal
@@ -113,68 +139,32 @@ async function updateDatabasePath(source, destination, log, chromaDbServiceOverr
       return `Database sync skipped: Invalid destination path`;
     }
 
-    let chromaDbService = chromaDbServiceOverride;
-    if (!chromaDbService) {
-      try {
-        const chromaModule = require('../../services/chromadb');
-        const getChromaDB = chromaModule?.getInstance;
-        chromaDbService = getChromaDB?.mock?.results?.[0]?.value || getChromaDB?.() || null;
-      } catch (modErr) {
-        log.debug('[FILE-OPS] ChromaDB service unavailable for path update', {
-          error: modErr?.message
-        });
-      }
-    }
-    if (chromaDbService) {
-      const safeSource = sourceValidation.normalizedPath;
-      const safeDest = destValidation.normalizedPath;
-      // Use normalizePathForIndex for Windows case-insensitivity consistency
-      // This ensures ChromaDB IDs match SearchService BM25 index keys
-      const normalizedDest = normalizePathForIndex(safeDest);
-      const newMeta = {
-        path: safeDest,
-        name: path.basename(safeDest)
-      };
+    const safeSource = sourceValidation.normalizedPath;
+    const safeDest = destValidation.normalizedPath;
 
-      const buildIdVariants = (filePath) => {
-        const normalized = normalizePathForIndex(filePath);
-        const normalizedCase = path.normalize(filePath).replace(/\\/g, '/');
-        const platformNormalized = path.normalize(filePath);
-        const variants = new Set([normalized, normalizedCase, platformNormalized, filePath]);
-        return Array.from(variants).filter(Boolean);
-      };
+    // Use FilePathCoordinator for atomic updates across all systems
+    const coordinator = getFilePathCoordinator();
+    if (coordinator) {
+      log.debug('[FILE-OPS] Using FilePathCoordinator for atomic path update');
 
-      const sourceVariants = buildIdVariants(safeSource);
-      const pathUpdates = [];
-      sourceVariants.forEach((variant) => {
-        const fileOldId = `file:${variant}`;
-        const imageOldId = `image:${variant}`;
-        const fileNewId = `file:${normalizedDest}`;
-        const imageNewId = `image:${normalizedDest}`;
+      // PATH-TRACE: Log coordinator path update start
+      traceDbUpdate('coordinator', safeSource, safeDest, true);
 
-        if (fileOldId !== fileNewId) {
-          pathUpdates.push({ oldId: fileOldId, newId: fileNewId, newMeta });
-        }
-        if (imageOldId !== imageNewId) {
-          pathUpdates.push({ oldId: imageOldId, newId: imageNewId, newMeta });
-        }
+      const result = await coordinator.atomicPathUpdate(safeSource, safeDest, {
+        type: 'move',
+        skipProcessingState: true // Processing state is managed by the caller
       });
 
-      if (pathUpdates.length > 0) {
-        await chromaDbService.updateFilePaths(pathUpdates);
+      if (!result.success && result.errors.length > 0) {
+        dbSyncWarning = `Some systems failed to update: ${result.errors.map((e) => e.system).join(', ')}`;
+        // PATH-TRACE: Log coordinator path update with errors
+        traceDbUpdate('coordinator', safeSource, safeDest, false, dbSyncWarning);
       }
-
-      // Keep pending embedding queue IDs in sync with moves/renames too.
-      // Otherwise a queued embedding may flush later under a stale oldId.
-      try {
-        const embeddingQueue = require('../../analysis/embeddingQueue');
-        embeddingQueue.updateByFilePath?.(safeSource, safeDest);
-      } catch (queueErr) {
-        log.debug('[FILE-OPS] Embedding queue path update skipped', {
-          error: queueErr.message
-        });
-      }
+      return dbSyncWarning;
     }
+
+    log.warn('[FILE-OPS] FilePathCoordinator unavailable, skipping database update');
+    return 'Database sync skipped: Coordinator unavailable';
   } catch (dbError) {
     log.warn('[FILE-OPS] Database path update failed after move', {
       error: dbError.message
@@ -186,59 +176,32 @@ async function updateDatabasePath(source, destination, log, chromaDbServiceOverr
 
 /**
  * Delete file from database and clean up pending embeddings
- * Deletes both file: and image: prefixes to handle all file types
+ * Uses FilePathCoordinator when available for atomic cleanup across all systems.
+ * Falls back to direct service calls if coordinator is unavailable.
+ * Deletes both file: and image: prefixes to handle all file types.
  */
 async function deleteFromDatabase(filePath, log) {
   let dbDeleteWarning = null;
 
-  // Clean up pending embeddings from the queue to prevent orphaned embeddings
-  try {
-    const embeddingQueue = require('../../analysis/embeddingQueue');
-    const removedCount = embeddingQueue.removeByFilePath(filePath);
-    if (removedCount > 0) {
-      log.debug('[FILE-OPS] Removed pending embeddings for deleted file', {
-        filePath,
-        removedCount
+  // Use FilePathCoordinator for atomic cleanup across all systems
+  const coordinator = getFilePathCoordinator();
+  if (coordinator) {
+    log.debug('[FILE-OPS] Using FilePathCoordinator for atomic file deletion cleanup');
+    try {
+      const result = await coordinator.handleFileDeletion(filePath);
+      if (!result.success && result.errors.length > 0) {
+        dbDeleteWarning = `Some systems failed to cleanup: ${result.errors.map((e) => e.system).join(', ')}`;
+      }
+      return dbDeleteWarning;
+    } catch (coordError) {
+      log.warn('[FILE-OPS] FilePathCoordinator deletion failed', {
+        error: coordError.message
       });
     }
-  } catch (queueError) {
-    log.warn('[FILE-OPS] Failed to clean embedding queue', {
-      error: queueError.message
-    });
+  } else {
+    log.warn('[FILE-OPS] FilePathCoordinator unavailable, skipping atomic deletion cleanup');
   }
 
-  // Delete from ChromaDB - try both file: and image: prefixes
-  // Use normalizePathForIndex for Windows case-insensitivity consistency
-  // FIX: Use batch delete for atomicity to prevent orphaned entries
-  try {
-    const { getInstance: getChromaDB } = require('../../services/chromadb');
-    const chromaDbService = getChromaDB();
-    if (chromaDbService) {
-      const normalizedPath = normalizePathForIndex(filePath);
-      const idsToDelete = [`file:${normalizedPath}`, `image:${normalizedPath}`];
-
-      // FIX: Use batch delete for atomicity when available
-      if (typeof chromaDbService.batchDeleteFileEmbeddings === 'function') {
-        await chromaDbService.batchDeleteFileEmbeddings(idsToDelete);
-      } else {
-        // Fallback to individual deletes
-        for (const id of idsToDelete) {
-          await chromaDbService.deleteFileEmbedding(id);
-        }
-      }
-
-      // FIX: Also delete associated chunks to prevent orphaned chunk embeddings
-      if (typeof chromaDbService.deleteFileChunks === 'function') {
-        await chromaDbService.deleteFileChunks(`file:${normalizedPath}`);
-        await chromaDbService.deleteFileChunks(`image:${normalizedPath}`);
-      }
-    }
-  } catch (dbError) {
-    log.warn('[FILE-OPS] Database entry delete failed', {
-      error: dbError.message
-    });
-    dbDeleteWarning = `File deleted but database sync failed: ${dbError.message}`;
-  }
   return dbDeleteWarning;
 }
 
@@ -287,7 +250,23 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             };
           }
 
+          // PATH-TRACE: Log move start
+          traceMoveStart(
+            moveValidation.source,
+            moveValidation.destination,
+            'fileOperationHandlers',
+            PathChangeReason.USER_MOVE
+          );
+
           await fs.rename(moveValidation.source, moveValidation.destination);
+
+          // PATH-TRACE: Log move complete (fs operation)
+          traceMoveComplete(
+            moveValidation.source,
+            moveValidation.destination,
+            'fileOperationHandlers',
+            true
+          );
 
           try {
             await getServiceIntegration()?.undoRedo?.recordAction?.(ACTION_TYPES.FILE_MOVE, {
@@ -300,21 +279,16 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             log.debug('[FILE-OPS] Failed to record undo action', { error: undoErr?.message });
           }
 
-          let chromaDbService = null;
-          let getChromaDB;
-          try {
-            const { getInstance: getChromaDBInstance } = require('../../services/chromadb');
-            getChromaDB = getChromaDBInstance;
-            chromaDbService = getChromaDB?.mock?.results?.[0]?.value || getChromaDB?.() || null;
-          } catch (chromaErr) {
-            log.warn('[FILE-OPS] Failed to resolve ChromaDB service', {
-              error: chromaErr?.message
-            });
-          }
-
           // In test environments, also trigger the first mock instance explicitly so
           // Jest spies observe the call even if a separate instance is resolved.
           if (process.env.NODE_ENV === 'test') {
+            let getChromaDB;
+            try {
+              const { getInstance: getChromaDBInstance } = require('../../services/chromadb');
+              getChromaDB = getChromaDBInstance;
+            } catch {
+              // ignore
+            }
             const testMockInstance = getChromaDB?.mock?.results?.[0]?.value;
             if (testMockInstance?.updateFilePaths) {
               try {
@@ -328,31 +302,16 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           const dbSyncWarning = await updateDatabasePath(
             moveValidation.source,
             moveValidation.destination,
-            log,
-            chromaDbService
+            log
           );
 
           // FIX HIGH-75: Removed duplicate ChromaDB path update block
           // updateDatabasePath already handles this, including both file: and image: prefixes
 
-          // Keep analysis history (and therefore BM25 search) aligned with the new path/name.
-          // Batch operations already do this; single-file moves must too.
-          try {
-            const historyService = getServiceIntegration()?.analysisHistory;
-            if (historyService?.updateEntryPaths) {
-              await historyService.updateEntryPaths([
-                {
-                  oldPath: moveValidation.source,
-                  newPath: moveValidation.destination,
-                  newName: path.basename(moveValidation.destination)
-                }
-              ]);
-            }
-          } catch (historyErr) {
-            log.warn('[FILE-OPS] Failed to update analysis history paths after move', {
-              error: historyErr.message
-            });
-          }
+          // NOTE: Analysis history updates are now handled by FilePathCoordinator
+          // via updateDatabasePath() above. Removed duplicate direct call to prevent
+          // double-updates when coordinator is available. This is part of the
+          // "single truth" migration to consolidate all path updates through the coordinator.
 
           // Notify renderer of file operation for search index invalidation
           try {
@@ -462,58 +421,41 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             };
           }
 
+          // PATH-TRACE: Log copy start
+          traceCopyStart(
+            copyValidation.source,
+            copyValidation.destination,
+            'fileOperationHandlers'
+          );
+
           await fs.copyFile(copyValidation.source, copyValidation.destination);
 
-          // Clone analysis history entry for the copied file (if source has one)
-          // This ensures the copy is searchable with the same metadata
-          try {
-            const historyService = getServiceIntegration()?.analysisHistory;
-            if (historyService?.cloneEntryForCopy) {
-              await historyService.cloneEntryForCopy(
-                copyValidation.source,
-                copyValidation.destination
-              );
-              log.debug('[FILE-OPS] Cloned analysis history for copy', {
-                source: copyValidation.source,
-                destination: copyValidation.destination
+          // PATH-TRACE: Log copy complete (fs operation)
+          traceCopyComplete(
+            copyValidation.source,
+            copyValidation.destination,
+            'fileOperationHandlers',
+            true
+          );
+
+          // Use FilePathCoordinator for atomic copy handling across all systems
+          // This ensures analysis history and ChromaDB entries are cloned atomically
+          const coordinator = getFilePathCoordinator();
+          if (coordinator) {
+            log.debug('[FILE-OPS] Using FilePathCoordinator for atomic copy handling');
+            const copyResult = await coordinator.handleFileCopy(
+              copyValidation.source,
+              copyValidation.destination
+            );
+            if (!copyResult.success && copyResult.errors.length > 0) {
+              log.warn('[FILE-OPS] Some systems failed during copy', {
+                errors: copyResult.errors.map((e) => e.system)
               });
             }
-          } catch (historyErr) {
-            log.warn('[FILE-OPS] Failed to clone analysis history for copy', {
-              error: historyErr.message
-            });
-          }
-
-          // Clone ChromaDB embedding for the copied file
-          try {
-            const { getInstance: getChromaDB } = require('../../services/chromadb');
-            const chromaDbService = getChromaDB();
-            if (chromaDbService?.cloneFileEmbedding) {
-              const normalizedSource = normalizePathForIndex(copyValidation.source);
-              const normalizedDest = normalizePathForIndex(copyValidation.destination);
-              await chromaDbService.cloneFileEmbedding(
-                `file:${normalizedSource}`,
-                `file:${normalizedDest}`,
-                {
-                  path: copyValidation.destination,
-                  name: path.basename(copyValidation.destination)
-                }
-              );
-              if (typeof chromaDbService.cloneFileChunks === 'function') {
-                await chromaDbService.cloneFileChunks(
-                  `file:${normalizedSource}`,
-                  `file:${normalizedDest}`,
-                  {
-                    path: copyValidation.destination,
-                    name: path.basename(copyValidation.destination)
-                  }
-                );
-              }
-            }
-          } catch (chromaErr) {
-            log.warn('[FILE-OPS] Failed to clone ChromaDB embedding for copy', {
-              error: chromaErr.message
-            });
+          } else {
+            log.warn(
+              '[FILE-OPS] FilePathCoordinator unavailable, copy operations skipped for database/history'
+            );
           }
 
           // Invalidate and rebuild search index to include the copy
@@ -570,20 +512,20 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
             };
           }
 
+          // PATH-TRACE: Log delete start
+          traceDeleteStart(deleteValidation.source, 'fileOperationHandlers');
+
           await fs.unlink(deleteValidation.source);
+
+          // PATH-TRACE: Log delete complete (fs operation)
+          traceDeleteComplete(deleteValidation.source, 'fileOperationHandlers', true);
+
           const dbDeleteWarning = await deleteFromDatabase(deleteValidation.source, log);
 
-          // Remove analysis-history entries for this path so BM25-backed search doesn't surface deleted files.
-          try {
-            const historyService = getServiceIntegration()?.analysisHistory;
-            if (historyService?.removeEntriesByPath) {
-              await historyService.removeEntriesByPath(deleteValidation.source);
-            }
-          } catch (historyErr) {
-            log.warn('[FILE-OPS] Failed to remove analysis history entries after delete', {
-              error: historyErr.message
-            });
-          }
+          // NOTE: Analysis history removal is now handled by FilePathCoordinator
+          // via deleteFromDatabase() above. Removed duplicate direct call to prevent
+          // double-deletions when coordinator is available. This is part of the
+          // "single truth" migration to consolidate all path updates through the coordinator.
 
           // Notify renderer of file operation for search index invalidation
           try {

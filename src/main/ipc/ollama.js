@@ -222,14 +222,22 @@ function registerOllamaIpc(servicesOrParams) {
         const ollama = getOllama();
         const results = [];
         for (const model of Array.isArray(models) ? models : []) {
+          // FIX HIGH #5: Use AbortController to properly cancel stalled/timed out pulls
+          // This ensures orphaned HTTP requests are terminated, not just ignored
+          const abortController = new AbortController();
+          let checkProgress;
+          let pullTimeout;
+          let pullAborted = false;
+
           try {
             // Send progress events if supported by client
             const win = typeof getMainWindow === 'function' ? getMainWindow() : null;
             let lastProgressTime = Date.now();
 
-            // FIX: Wrap pull with timeout to prevent indefinite blocking
+            // FIX: Wrap pull with AbortController for proper cancellation
             const pullPromise = ollama.pull({
               model,
+              signal: abortController.signal,
               stream: (progress) => {
                 lastProgressTime = Date.now(); // Update activity timestamp
                 try {
@@ -249,9 +257,6 @@ function registerOllamaIpc(servicesOrParams) {
             });
 
             // Race against timeout
-            // FIX: Store timer references outside Promise to ensure cleanup on success
-            let checkProgress;
-            let pullTimeout;
             const STALL_TIMEOUT_MS = 5 * 60 * 1000;
             const timeoutPromise = new Promise((_, reject) => {
               checkProgress = setInterval(() => {
@@ -260,6 +265,9 @@ function registerOllamaIpc(servicesOrParams) {
                 if (timeSinceProgress > STALL_TIMEOUT_MS) {
                   clearInterval(checkProgress);
                   clearTimeout(pullTimeout);
+                  // FIX HIGH #5: Abort the underlying request to stop orphaned process
+                  pullAborted = true;
+                  abortController.abort();
                   reject(
                     new Error(
                       `Model pull stalled (no progress for ${STALL_TIMEOUT_MS / 60000} minutes)`
@@ -268,9 +276,11 @@ function registerOllamaIpc(servicesOrParams) {
                 }
               }, 30000); // Check every 30 seconds
 
-              // FIX: Store timeout reference to clear on success
               pullTimeout = setTimeout(() => {
                 clearInterval(checkProgress);
+                // FIX HIGH #5: Abort the underlying request on timeout
+                pullAborted = true;
+                abortController.abort();
                 reject(
                   new Error(`Model pull timeout after ${MODEL_PULL_TIMEOUT_MS / 60000} minutes`)
                 );
@@ -286,6 +296,10 @@ function registerOllamaIpc(servicesOrParams) {
               clearTimeout(pullTimeout);
             }
           } catch (e) {
+            // FIX HIGH #5: Log if we aborted to help with debugging
+            if (pullAborted) {
+              logger.warn(`[IPC] Model pull for ${model} was aborted due to timeout/stall`);
+            }
             results.push({ model, success: false, error: e.message });
           }
         }

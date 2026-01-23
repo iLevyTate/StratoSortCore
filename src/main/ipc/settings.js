@@ -11,7 +11,8 @@ const {
 const { getConfigurableLimits, sanitizeSettings } = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
 const path = require('path');
-const { settingsSchema, z } = require('./validationSchemas');
+const { settingsSchema, backupPathSchema, z } = require('./validationSchemas');
+const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
 
 // Import centralized security configuration
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
@@ -21,6 +22,32 @@ const {
   isValidLoggingLevel,
   isValidNumericSetting
 } = require('../../shared/validationConstants');
+
+/**
+ * SECURITY FIX (CRIT-15): Sanitize URL for safe logging
+ * Removes credentials (username/password) from URL before logging to prevent credential leakage
+ * @param {string} url - The URL to sanitize
+ * @returns {string} URL with credentials redacted
+ */
+function sanitizeUrlForLogging(url) {
+  if (!url || typeof url !== 'string') return '[invalid-url]';
+  try {
+    const parsed = new URL(url);
+    // Redact credentials if present
+    if (parsed.username || parsed.password) {
+      parsed.username = parsed.username ? '[REDACTED]' : '';
+      parsed.password = parsed.password ? '[REDACTED]' : '';
+    }
+    return parsed.toString();
+  } catch {
+    // If URL parsing fails, redact the middle portion to be safe
+    // This handles malformed URLs that might still contain credentials
+    if (url.includes('@')) {
+      return url.replace(/\/\/[^@]+@/, '//[REDACTED]@');
+    }
+    return url.substring(0, 20) + (url.length > 20 ? '...[truncated]' : '');
+  }
+}
 
 /**
  * Apply settings to Ollama services and system configuration
@@ -102,15 +129,15 @@ function validateImportedSettings(settings, logger) {
     if (typeof p !== 'string') return false;
     const trimmed = p.trim();
     if (!trimmed) return false;
-    // Disallow control characters / null bytes.
-    // eslint-disable-next-line no-control-regex
-    if (/[\u0000-\u001F]/.test(trimmed)) return false;
-    // Disallow URL-style inputs (e.g. file://, http://).
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) return false;
-    // Disallow Windows device/extended-length prefixes which can bypass normal path handling.
-    if (trimmed.startsWith('\\\\?\\') || trimmed.startsWith('\\\\.\\')) return false;
-    const normalized = path.normalize(trimmed);
-    return path.isAbsolute(normalized);
+
+    const validation = validateFileOperationPathSync(trimmed, null, {
+      requireAbsolute: true,
+      disallowUNC: true,
+      disallowUrlSchemes: true,
+      allowFileUrl: false
+    });
+
+    return validation.valid;
   };
 
   for (const [key, value] of Object.entries(settings)) {
@@ -131,14 +158,20 @@ function validateImportedSettings(settings, logger) {
         // Note: localhost/127.0.0.1 are allowed since Ollama legitimately runs there
         const lowerValue = value.toLowerCase();
         if (lowerValue.includes('0.0.0.0') || lowerValue.includes('[::]')) {
-          logger.warn(`[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${value}`);
+          // SECURITY FIX (CRIT-15): Sanitize URL before logging to prevent credential leakage
+          logger.warn(
+            `[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${sanitizeUrlForLogging(value)}`
+          );
           throw new Error(`Invalid ${key}: potentially unsafe URL pattern detected`);
         }
         // Block URL credential attacks (e.g., http://attacker@127.0.0.1)
         try {
           const parsed = new URL(value);
           if (parsed.username || parsed.password) {
-            logger.warn(`[SETTINGS-IMPORT] Blocking URL with credentials: ${value}`);
+            // SECURITY FIX (CRIT-15): Sanitize URL before logging to prevent credential leakage
+            logger.warn(
+              `[SETTINGS-IMPORT] Blocking URL with credentials: ${sanitizeUrlForLogging(value)}`
+            );
             throw new Error(`Invalid ${key}: URLs with credentials are not allowed`);
           }
         } catch (urlError) {
@@ -147,9 +180,13 @@ function validateImportedSettings(settings, logger) {
           }
           // FIX: Reject URLs that fail parsing - don't allow potentially malformed URLs
           // even if they pass the regex, as they could cause issues downstream
-          logger.warn(`[SETTINGS-IMPORT] Rejecting malformed URL: ${value}`, {
-            error: urlError.message
-          });
+          // SECURITY FIX (CRIT-15): Sanitize URL before logging to prevent credential leakage
+          logger.warn(
+            `[SETTINGS-IMPORT] Rejecting malformed URL: ${sanitizeUrlForLogging(value)}`,
+            {
+              error: urlError.message
+            }
+          );
           throw new Error(`Invalid ${key}: URL is malformed and cannot be parsed`);
         }
         break;
@@ -553,6 +590,10 @@ function registerSettingsIpc(servicesOrParams) {
             return canceledResponse();
           }
 
+          // FIX MED-9: Add bounds check before accessing filePaths[0]
+          if (!result.filePaths || result.filePaths.length === 0) {
+            return canceledResponse();
+          }
           filePath = result.filePaths[0];
         }
 
@@ -665,69 +706,118 @@ function registerSettingsIpc(servicesOrParams) {
     })
   );
 
+  // FIX: Apply consistent Zod validation to backup endpoints
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.RESTORE_BACKUP,
-    withErrorLogging(logger, async (event, backupPath) => {
-      void event;
-      try {
-        // Validate backupPath parameter
-        if (!backupPath || typeof backupPath !== 'string') {
-          return errorResponse('Invalid backup path: must be a non-empty string');
-        }
+    z && backupPathSchema
+      ? withValidation(logger, backupPathSchema, async (event, backupPath) => {
+          void event;
+          try {
+            const result = await settingsService.restoreFromBackup(backupPath);
 
-        const result = await settingsService.restoreFromBackup(backupPath);
+            if (result.success) {
+              // Apply restored settings using shared helper
+              const merged = result.settings;
 
-        if (result.success) {
-          // Apply restored settings using shared helper
-          const merged = result.settings;
+              await applySettingsToServices(merged, { logger });
 
-          await applySettingsToServices(merged, { logger });
+              // Notify settings changed
+              if (typeof onSettingsChanged === 'function') {
+                await onSettingsChanged(merged);
+              }
 
-          // Notify settings changed
-          if (typeof onSettingsChanged === 'function') {
-            await onSettingsChanged(merged);
+              logger.info('[SETTINGS] Restored from backup:', backupPath);
+              return successResponse(
+                { settings: merged, restoredFrom: result.restoredFrom },
+                result.validationWarnings
+              );
+            }
+
+            return errorResponse(result.error || 'Unknown restore error', {
+              validationErrors: result.validationErrors
+            });
+          } catch (error) {
+            logger.error('[SETTINGS] Failed to restore backup:', error);
+            return errorResponse(error.message);
           }
+        })
+      : withErrorLogging(logger, async (event, backupPath) => {
+          void event;
+          try {
+            // Fallback manual validation when Zod not available
+            if (!backupPath || typeof backupPath !== 'string') {
+              return errorResponse('Invalid backup path: must be a non-empty string');
+            }
 
-          logger.info('[SETTINGS] Restored from backup:', backupPath);
-          return successResponse(
-            { settings: merged, restoredFrom: result.restoredFrom },
-            result.validationWarnings
-          );
-        }
+            const result = await settingsService.restoreFromBackup(backupPath);
 
-        return errorResponse(result.error || 'Unknown restore error', {
-          validationErrors: result.validationErrors
-        });
-      } catch (error) {
-        logger.error('[SETTINGS] Failed to restore backup:', error);
-        return errorResponse(error.message);
-      }
-    })
+            if (result.success) {
+              // Apply restored settings using shared helper
+              const merged = result.settings;
+
+              await applySettingsToServices(merged, { logger });
+
+              // Notify settings changed
+              if (typeof onSettingsChanged === 'function') {
+                await onSettingsChanged(merged);
+              }
+
+              logger.info('[SETTINGS] Restored from backup:', backupPath);
+              return successResponse(
+                { settings: merged, restoredFrom: result.restoredFrom },
+                result.validationWarnings
+              );
+            }
+
+            return errorResponse(result.error || 'Unknown restore error', {
+              validationErrors: result.validationErrors
+            });
+          } catch (error) {
+            logger.error('[SETTINGS] Failed to restore backup:', error);
+            return errorResponse(error.message);
+          }
+        })
   );
 
+  // FIX: Apply consistent Zod validation to backup endpoints
   safeHandle(
     ipcMain,
     IPC_CHANNELS.SETTINGS.DELETE_BACKUP,
-    withErrorLogging(logger, async (event, backupPath) => {
-      void event;
-      try {
-        // Validate backupPath parameter
-        if (!backupPath || typeof backupPath !== 'string') {
-          return errorResponse('Invalid backup path: must be a non-empty string');
-        }
+    z && backupPathSchema
+      ? withValidation(logger, backupPathSchema, async (event, backupPath) => {
+          void event;
+          try {
+            const result = await settingsService.deleteBackup(backupPath);
+            if (result.success) {
+              logger.info('[SETTINGS] Deleted backup:', backupPath);
+              return successResponse();
+            }
+            return errorResponse(result.error || 'Unknown delete error');
+          } catch (error) {
+            logger.error('[SETTINGS] Failed to delete backup:', error);
+            return errorResponse(error.message);
+          }
+        })
+      : withErrorLogging(logger, async (event, backupPath) => {
+          void event;
+          try {
+            // Fallback manual validation when Zod not available
+            if (!backupPath || typeof backupPath !== 'string') {
+              return errorResponse('Invalid backup path: must be a non-empty string');
+            }
 
-        const result = await settingsService.deleteBackup(backupPath);
-        if (result.success) {
-          logger.info('[SETTINGS] Deleted backup:', backupPath);
-          return successResponse();
-        }
-        return errorResponse(result.error || 'Unknown delete error');
-      } catch (error) {
-        logger.error('[SETTINGS] Failed to delete backup:', error);
-        return errorResponse(error.message);
-      }
-    })
+            const result = await settingsService.deleteBackup(backupPath);
+            if (result.success) {
+              logger.info('[SETTINGS] Deleted backup:', backupPath);
+              return successResponse();
+            }
+            return errorResponse(result.error || 'Unknown delete error');
+          } catch (error) {
+            logger.error('[SETTINGS] Failed to delete backup:', error);
+            return errorResponse(error.message);
+          }
+        })
   );
 
   // ---- Troubleshooting helpers ----

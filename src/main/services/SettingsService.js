@@ -79,6 +79,12 @@ class SettingsService {
   }
 
   async load() {
+    // FIX CRIT-33: Don't attempt load during shutdown
+    if (this._isShuttingDown) {
+      logger.debug('[SettingsService] Ignoring load() during shutdown');
+      return this._cache || { ...this.defaults };
+    }
+
     // Perform migration once per session before first load
     // FIX 1.4: Limit migration retries to prevent disk thrashing
     if (!this._migrationChecked && this._migrationAttempts < this._maxMigrationAttempts) {
@@ -345,6 +351,16 @@ class SettingsService {
 
   // Fixed: Proper cache invalidation, settings merging, and validation
   async save(settings) {
+    // FIX CRIT-33: Don't attempt save during shutdown
+    if (this._isShuttingDown) {
+      logger.debug('[SettingsService] Ignoring save() during shutdown');
+      return {
+        settings: this._cache || { ...this.defaults },
+        validationWarnings: [],
+        backupCreated: false
+      };
+    }
+
     // Fixed: Use mutex to prevent race conditions from concurrent saves
     return this._withMutex(async () => {
       // Force confidenceThreshold to a sane number before validation/merge
