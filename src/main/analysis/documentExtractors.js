@@ -84,6 +84,24 @@ const xmlParser = new XMLParser({
 });
 
 /**
+ * Clean and normalize whitespace in extracted text
+ * Preserves paragraph structure but removes excessive whitespace
+ * @param {string} text - Text to clean
+ * @returns {string} Cleaned text
+ */
+function cleanWhitespace(text) {
+  if (!text) return '';
+  // 1. Normalize line endings
+  let cleaned = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // 2. Remove trailing whitespace on lines
+  cleaned = cleaned.replace(/[ \t]+$/gm, '');
+  // 3. Collapse multiple empty lines (3 or more newlines) into 2 newlines (one empty line)
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  // 4. Trim start/end
+  return cleaned.trim();
+}
+
+/**
  * Check file size and enforce memory limits
  * @param {string} filePath - Path to file
  * @param {string} fileName - Name of file for error messages
@@ -420,7 +438,7 @@ async function extractTextFromPdf(filePath, fileName) {
     }
 
     // Fixed: Truncate text to prevent memory issues and clean up buffer
-    const result = truncateText(pdfText);
+    const result = truncateText(cleanWhitespace(pdfText));
     dataBuffer = null; // Explicit cleanup to help GC
     return result;
   } finally {
@@ -713,7 +731,7 @@ async function extractTextFromDocx(filePath) {
         throw new Error('No text content in DOCX');
 
       // Fixed: Truncate result to prevent memory issues
-      return truncateText(result.value);
+      return truncateText(cleanWhitespace(result.value));
     } catch (error) {
       logger.warn('[DOCX] Mammoth extraction failed, trying officeparser fallback', {
         error: error.message,
@@ -730,30 +748,30 @@ async function extractTextFromDocx(filePath) {
           // Fallback 2: XML extraction from docx archive
           const xmlText = await extractTextFromDocxXml(filePath);
           if (xmlText && xmlText.length > 0) {
-            return truncateText(xmlText);
+            return truncateText(cleanWhitespace(xmlText));
           }
 
           // Fallback 3: OCR for image-heavy documents
           logger.info('[DOCX] Text extraction failed, attempting OCR for embedded images');
           const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
           if (ocrText && ocrText.length > 0) {
-            return truncateText(ocrText);
+            return truncateText(cleanWhitespace(ocrText));
           }
           throw new Error('No text content in DOCX (fallback)');
         }
-        return truncateText(text);
+        return truncateText(cleanWhitespace(text));
       } catch (fallbackError) {
         // If we haven't tried OCR yet (because officeparser threw before checking text length), try it now
         if (fallbackError.message !== 'No text content in DOCX (fallback)') {
           const xmlText = await extractTextFromDocxXml(filePath);
           if (xmlText && xmlText.length > 0) {
-            return truncateText(xmlText);
+            return truncateText(cleanWhitespace(xmlText));
           }
 
           logger.info('[DOCX] Officeparser failed, attempting OCR for embedded images');
           const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
           if (ocrText && ocrText.length > 0) {
-            return truncateText(ocrText);
+            return truncateText(cleanWhitespace(ocrText));
           }
         }
 
@@ -771,12 +789,12 @@ async function extractTextFromDocx(filePath) {
     try {
       const xmlText = await extractTextFromDocxXml(filePath);
       if (xmlText && xmlText.length > 0) {
-        return truncateText(xmlText);
+        return truncateText(cleanWhitespace(xmlText));
       }
 
       const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
       if (ocrText && ocrText.length > 0) {
-        return truncateText(ocrText);
+        return truncateText(cleanWhitespace(ocrText));
       }
     } catch (ocrErr) {
       // Ignore OCR error and throw original
@@ -797,11 +815,11 @@ async function extractTextFromDocx(filePath) {
         // Fallback 2: OCR
         const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
         if (ocrText && ocrText.length > 0) {
-          return truncateText(ocrText);
+          return truncateText(cleanWhitespace(ocrText));
         }
         throw new Error('No text content in DOCX (fallback)');
       }
-      return truncateText(text);
+      return truncateText(cleanWhitespace(text));
     } catch (fallbackError) {
       logger.error('[DOCX] All extraction methods failed', {
         mammothError: error.message,
@@ -1004,7 +1022,7 @@ async function extractTextFromXlsx(filePath) {
   }
 
   // Fixed: Truncate final result
-  return truncateText(allText);
+  return truncateText(cleanWhitespace(allText));
 }
 
 async function extractTextFromPptx(filePath) {
@@ -1137,7 +1155,7 @@ async function extractTextFromPptx(filePath) {
   }
 
   // Fixed: Truncate result to prevent memory issues
-  return truncateText(text);
+  return truncateText(cleanWhitespace(text));
 }
 
 function extractPlainTextFromRtf(rtf) {
@@ -1445,6 +1463,7 @@ module.exports = {
   extractContentStreaming,
   extractContentBuffered,
   chunkTextForAnalysis,
+  cleanWhitespace,
   // Export timeout constants for callers who need custom timeouts
   EXTRACTION_TIMEOUTS
 };
