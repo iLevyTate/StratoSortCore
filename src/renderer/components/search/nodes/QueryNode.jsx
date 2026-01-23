@@ -79,7 +79,7 @@ const QueryNode = memo(({ data, selected }) => {
           ref={menuRef}
           role="menu"
           aria-label="Query actions"
-          className="absolute bg-white shadow-lg rounded-lg border border-gray-200 z-50 w-40 py-1 animate-in fade-in zoom-in-95 duration-100"
+          className="absolute bg-white shadow-lg rounded-lg border border-system-gray-200 z-50 w-40 py-1 animate-in fade-in zoom-in-95 duration-100"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
@@ -88,9 +88,9 @@ const QueryNode = memo(({ data, selected }) => {
               e.stopPropagation();
               handleMenuAction(handleCopyQuery);
             }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2"
+            className="w-full text-left px-3 py-2 text-sm text-system-gray-700 hover:bg-stratosort-indigo-50 flex items-center gap-2"
           >
-            <Copy className="w-4 h-4 text-gray-500" />
+            <Copy className="w-4 h-4 text-system-gray-500" />
             Copy Query
           </button>
           <button
@@ -99,7 +99,7 @@ const QueryNode = memo(({ data, selected }) => {
               e.stopPropagation();
               handleMenuAction(handleSearchAgain);
             }}
-            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2"
+            className="w-full text-left px-3 py-2 text-sm text-system-gray-700 hover:bg-stratosort-indigo-50 flex items-center gap-2"
           >
             <Search className="w-4 h-4 text-indigo-600" />
             Search Again

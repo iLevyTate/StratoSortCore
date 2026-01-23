@@ -120,7 +120,7 @@ const QueryMatchEdge = memo(
       category: 'text-purple-600',
       field: 'text-cyan-600',
       semantic: 'text-emerald-600',
-      default: 'text-slate-500'
+      default: 'text-system-gray-500'
     };
 
     return (
@@ -153,9 +153,9 @@ const QueryMatchEdge = memo(
         >
           {/* Match score */}
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">Relevance:</span>
+            <span className="text-system-gray-500">Relevance:</span>
             <span className="font-medium text-indigo-600">{scorePercent}%</span>
-            <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 bg-system-gray-200 rounded-full overflow-hidden">
               <div
                 className="h-full bg-indigo-500 rounded-full"
                 style={{ width: `${scorePercent}%` }}
@@ -167,15 +167,17 @@ const QueryMatchEdge = memo(
           <div className="space-y-1">
             {reasons.map((reason) => (
               <div key={`${reason.type}:${reason.text}`} className="flex items-start gap-1.5">
-                <span className="text-slate-400 mt-0.5">•</span>
-                <span className={typeColors[reason.type] || 'text-slate-500'}>{reason.text}</span>
+                <span className="text-system-gray-400 mt-0.5">•</span>
+                <span className={typeColors[reason.type] || 'text-system-gray-500'}>
+                  {reason.text}
+                </span>
               </div>
             ))}
           </div>
 
           {/* Source indicator */}
           {sources.length > 0 && (
-            <div className="text-slate-400 text-[10px] pt-1 border-t border-slate-200">
+            <div className="text-system-gray-400 text-[10px] pt-1 border-t border-system-gray-200">
               Match sources: {sources.join(' + ')}
             </div>
           )}

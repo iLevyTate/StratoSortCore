@@ -53,7 +53,7 @@ class SearchErrorBoundary extends React.Component {
     if (this.state.hasError) {
       return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+          <div className="bg-white dark:bg-system-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
             <div className="flex flex-col items-center text-center">
               {/* Error icon */}
               <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
@@ -73,18 +73,16 @@ class SearchErrorBoundary extends React.Component {
                 </svg>
               </div>
 
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                Search encountered an error
-              </h2>
+              <h2 className="heading-tertiary dark:text-white mb-2">Search encountered an error</h2>
 
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              <p className="text-sm text-system-gray-600 dark:text-system-gray-300 mb-4">
                 Something went wrong while loading the search. You can try again or close the search
                 modal.
               </p>
 
               {/* Show error details in development */}
               {process.env.NODE_ENV === 'development' && this.state.error && (
-                <div className="w-full mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded text-left">
+                <div className="w-full mb-4 p-3 bg-system-gray-100 dark:bg-system-gray-700 rounded text-left">
                   <p className="text-xs font-mono text-red-600 dark:text-red-400 break-all">
                     {this.state.error.message || 'Unknown error'}
                   </p>

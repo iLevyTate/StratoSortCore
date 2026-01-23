@@ -2393,10 +2393,10 @@ export default function UnifiedSearchModal({
         }
       }
       const category = metadata.category || getFileCategory(path);
+      const suggestedFolder = recommendationMap[path] || '';
       const subject = metadata.subject || (suggestedFolder ? `Folder: ${suggestedFolder}` : '');
       const summary = metadata.summary || '';
       const content = result?.document || '';
-      const suggestedFolder = recommendationMap[path] || '';
 
       return {
         id,
@@ -4128,7 +4128,7 @@ export default function UnifiedSearchModal({
                   <div className="flex flex-col gap-4 flex-1">
                     {/* File info header */}
                     <div>
-                      <h3 className="text-base font-semibold text-system-gray-900 break-words">
+                      <h3 className="heading-tertiary break-words">
                         {selectedSearchResult?.metadata?.name ||
                           safeBasename(selectedSearchResult?.metadata?.path) ||
                           'File'}
@@ -4650,9 +4650,7 @@ export default function UnifiedSearchModal({
                     <Network className="w-10 h-10 text-stratosort-blue opacity-50" />
                   </div>
 
-                  <h3 className="text-xl font-semibold text-system-gray-900 mb-2">
-                    Stop Searching. Start Finding.
-                  </h3>
+                  <h3 className="heading-secondary mb-2">Stop Searching. Start Finding.</h3>
                   <p className="text-sm text-system-gray-500 max-w-md mb-8 leading-relaxed">
                     Your files are scattered across folders. Clustering reveals how they naturally
                     belong together—even files you forgot you had.

@@ -405,7 +405,7 @@ const SearchAutocomplete = memo(
                         item.rank === 0
                           ? 'bg-amber-100 text-amber-700'
                           : item.rank === 1
-                            ? 'bg-slate-100 text-slate-600'
+                            ? 'bg-system-gray-100 text-system-gray-600'
                             : 'bg-orange-50 text-orange-600'
                       }`}
                     >

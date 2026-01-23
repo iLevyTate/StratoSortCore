@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { X, GripVertical, Network } from 'lucide-react';
-import { Button } from '../ui';
+import { Button, IconButton } from '../ui';
 import { isMac } from '../../utils/platform';
 
 /**
@@ -114,7 +114,7 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
       }}
       onMouseDown={handleMouseDown}
     >
-      <div className="glass-panel border border-stratosort-blue/20 bg-gradient-to-br from-stratosort-blue/5 to-stratosort-indigo/5 p-4 rounded-xl shadow-lg w-[320px]">
+      <div className="glass-panel border border-stratosort-blue/20 bg-gradient-to-br from-stratosort-blue/5 to-stratosort-indigo/5 p-4 rounded-xl shadow-lg w-80 max-w-[90vw]">
         {/* Header with drag handle */}
         <div data-widget-header className="flex items-start gap-3 mb-3 cursor-move select-none">
           <div
@@ -126,14 +126,13 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
               <h4 className="text-sm font-semibold text-system-gray-900">Looking for a file?</h4>
-              <button
+              <IconButton
                 onClick={onClose}
-                className="p-1 hover:bg-white/50 rounded transition-colors"
+                variant="ghost"
+                size="sm"
                 aria-label="Close widget"
-                title="Close widget"
-              >
-                <X className="w-3.5 h-3.5 text-system-gray-500" />
-              </button>
+                icon={<X className="w-3.5 h-3.5" />}
+              />
             </div>
             <p className="text-xs text-system-gray-600 mb-3">
               Use Knowledge OS to explore the semantic graph and RAG results — describe what you are

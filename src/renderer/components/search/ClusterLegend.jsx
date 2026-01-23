@@ -49,7 +49,7 @@ const ClusterLegend = memo(
             <span>Medium</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full bg-gray-400`} />
+            <span className={`w-2 h-2 rounded-full bg-system-gray-400`} />
             <span>Low</span>
           </div>
         </div>
@@ -212,7 +212,7 @@ const ClusterLegend = memo(
               aria-pressed={isConfidenceActive('low')}
               className={`w-full flex items-center justify-between gap-2 text-[11px] p-1 rounded transition-colors ${
                 isConfidenceActive('low')
-                  ? 'hover:bg-gray-50'
+                  ? 'hover:bg-system-gray-50'
                   : 'opacity-50 grayscale hover:opacity-75'
               }`}
             >
@@ -226,7 +226,7 @@ const ClusterLegend = memo(
                 <span className="text-system-gray-500">{CONFIDENCE_COLORS.low.desc}</span>
               </div>
               {isConfidenceActive('low') && (
-                <Check className="w-3 h-3 text-gray-500" aria-hidden="true" />
+                <Check className="w-3 h-3 text-system-gray-500" aria-hidden="true" />
               )}
             </button>
           </div>

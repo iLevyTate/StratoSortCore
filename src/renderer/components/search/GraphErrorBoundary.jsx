@@ -45,9 +45,7 @@ class GraphErrorBoundary extends React.Component {
             <AlertTriangle className="w-8 h-8 text-amber-600" />
           </div>
 
-          <h3 className="text-lg font-semibold text-system-gray-900 mb-2">
-            Graph Visualization Error
-          </h3>
+          <h3 className="heading-tertiary mb-2">Graph Visualization Error</h3>
 
           <p className="text-sm text-system-gray-500 max-w-md mb-6">
             Something went wrong while rendering the graph. This might be caused by invalid data or

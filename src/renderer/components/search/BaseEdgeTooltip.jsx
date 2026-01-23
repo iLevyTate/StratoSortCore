@@ -50,10 +50,10 @@ const BaseEdgeTooltip = memo(
               className="absolute left-1/2 -translate-x-1/2 mt-2 z-50"
               style={{ minWidth: '200px', maxWidth: '280px' }}
             >
-              <div className="bg-white/95 backdrop-blur-md text-slate-700 text-xs rounded-xl shadow-xl border border-slate-200 p-3 space-y-2 animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-white/95 backdrop-blur-md text-system-gray-700 text-xs rounded-xl shadow-xl border border-system-gray-200 p-3 space-y-2 animate-in fade-in zoom-in-95 duration-150">
                 {/* Header */}
                 <div
-                  className={`font-semibold border-b border-slate-100 pb-1.5 ${headerColorClass}`}
+                  className={`font-semibold border-b border-system-gray-100 pb-1.5 ${headerColorClass}`}
                 >
                   {title}
                 </div>
@@ -62,7 +62,7 @@ const BaseEdgeTooltip = memo(
                 {children}
 
                 {/* Arrow pointing up */}
-                <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-t border-l border-slate-200 rotate-45" />
+                <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-t border-l border-system-gray-200 rotate-45" />
               </div>
             </div>
           )}
@@ -88,7 +88,7 @@ BaseEdgeTooltip.propTypes = {
 };
 
 BaseEdgeTooltip.defaultProps = {
-  headerColorClass: 'text-slate-900',
+  headerColorClass: 'text-system-gray-900',
   onMouseEnter: null,
   onMouseLeave: null,
   children: null

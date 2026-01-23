@@ -162,9 +162,9 @@ const SimilarityEdge = memo(
         >
           {/* Similarity score */}
           <div className="flex items-center gap-2">
-            <span className="text-slate-500">Similarity:</span>
+            <span className="text-system-gray-500">Similarity:</span>
             <span className="font-medium text-emerald-600">{similarityPercent}%</span>
-            <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div className="flex-1 h-1.5 bg-system-gray-200 rounded-full overflow-hidden">
               <div
                 className="h-full bg-emerald-500 rounded-full"
                 style={{ width: `${similarityPercent}%` }}
@@ -175,7 +175,7 @@ const SimilarityEdge = memo(
           {/* Common tags */}
           {commonTags.length > 0 && (
             <div>
-              <span className="text-slate-500">Common tags: </span>
+              <span className="text-system-gray-500">Common tags: </span>
               <span className="text-blue-600">
                 {commonTags.slice(0, 4).join(', ')}
                 {commonTags.length > 4 && ` +${commonTags.length - 4} more`}
@@ -186,7 +186,7 @@ const SimilarityEdge = memo(
           {/* Category match */}
           {sameCategory && (
             <div>
-              <span className="text-slate-500">Category: </span>
+              <span className="text-system-gray-500">Category: </span>
               <span className="text-purple-600">{sourceCategory}</span>
             </div>
           )}
@@ -196,13 +196,13 @@ const SimilarityEdge = memo(
             <div className="space-y-0.5">
               {sourceSubject && (
                 <div className="text-[11px]">
-                  <span className="text-slate-500">A: </span>
+                  <span className="text-system-gray-500">A: </span>
                   <span className="text-amber-600 truncate">{sourceSubject.slice(0, 40)}</span>
                 </div>
               )}
               {targetSubject && (
                 <div className="text-[11px]">
-                  <span className="text-slate-500">B: </span>
+                  <span className="text-system-gray-500">B: </span>
                   <span className="text-amber-600 truncate">{targetSubject.slice(0, 40)}</span>
                 </div>
               )}
@@ -210,7 +210,7 @@ const SimilarityEdge = memo(
           )}
 
           {/* Explanation */}
-          <div className="text-slate-500 italic text-[11px] pt-1 border-t border-slate-200">
+          <div className="text-system-gray-500 italic text-[11px] pt-1 border-t border-system-gray-200">
             {explanation}
           </div>
         </BaseEdgeTooltip>

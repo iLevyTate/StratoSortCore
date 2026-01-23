@@ -62,9 +62,9 @@ const CATEGORY_STYLES = {
     ring: 'ring-stone-100'
   },
   Other: {
-    bg: 'bg-gray-50',
-    border: 'border-gray-200',
-    text: 'text-gray-700',
+    bg: 'bg-system-gray-50',
+    border: 'border-system-gray-200',
+    text: 'text-system-gray-700',
     ring: 'ring-gray-100'
   }
 };
@@ -163,7 +163,7 @@ const FileNode = memo(({ data, selected }) => {
       title="Double-click to open file"
     >
       <NodeToolbar isVisible={selected} position={Position.Top}>
-        <div className="flex gap-1 bg-white shadow-lg rounded-lg border border-gray-200 p-1">
+        <div className="flex gap-1 bg-white shadow-lg rounded-lg border border-system-gray-200 p-1">
           <button
             onClick={() => handleMenuAction(handleOpen)}
             className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors"
@@ -194,7 +194,7 @@ const FileNode = memo(({ data, selected }) => {
           </button>
           <button
             onClick={() => handleMenuAction(handleCopyPath)}
-            className="p-1.5 rounded hover:bg-gray-50 text-gray-500 transition-colors"
+            className="p-1.5 rounded hover:bg-system-gray-50 text-system-gray-500 transition-colors"
             title="Copy Path"
           >
             <Copy className="w-4 h-4" />
@@ -233,7 +233,7 @@ const FileNode = memo(({ data, selected }) => {
         <div
           className={`
             absolute -top-2 -right-2 text-[9px] font-bold rounded-full px-1.5 h-5 min-w-[28px] flex items-center justify-center shadow-md border border-white z-10
-            ${hasHighScore ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 border-gray-200'}
+            ${hasHighScore ? 'bg-stratosort-blue-600 text-white' : 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'}
           `}
           title={`Relevance: ${Math.round(displayScore * 100)}%`}
         >

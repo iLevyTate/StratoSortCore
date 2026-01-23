@@ -115,11 +115,11 @@ const ClusterNode = memo(({ data, selected }) => {
       onDoubleClick={handleExpandClick}
     >
       <NodeToolbar isVisible={selected} position={Position.Top} offset={20}>
-        <div className="flex gap-1 bg-white shadow-xl rounded-lg border border-gray-200 p-1.5 animate-in fade-in slide-in-from-bottom-2">
+        <div className="flex gap-1 bg-white shadow-xl rounded-lg border border-system-gray-200 p-1.5 animate-in fade-in slide-in-from-bottom-2">
           {onOpenAllFiles && (
             <button
               onClick={() => handleMenuAction(onOpenAllFiles)}
-              className="p-1.5 rounded hover:bg-amber-50 text-gray-700"
+              className="p-1.5 rounded hover:bg-stratosort-warning-50 text-system-gray-700"
               title="Open All Files"
             >
               <ExternalLink className="w-4 h-4 text-blue-600" />
@@ -128,7 +128,7 @@ const ClusterNode = memo(({ data, selected }) => {
           {onSearchWithinCluster && (
             <button
               onClick={() => handleMenuAction(onSearchWithinCluster)}
-              className="p-1.5 rounded hover:bg-amber-50 text-gray-700"
+              className="p-1.5 rounded hover:bg-stratosort-warning-50 text-system-gray-700"
               title="Search Within"
             >
               <Search className="w-4 h-4 text-indigo-600" />
@@ -137,7 +137,7 @@ const ClusterNode = memo(({ data, selected }) => {
           {onCreateSmartFolder && (
             <button
               onClick={() => handleMenuAction(onCreateSmartFolder)}
-              className="p-1.5 rounded hover:bg-amber-50 text-gray-700"
+              className="p-1.5 rounded hover:bg-stratosort-warning-50 text-system-gray-700"
               title="Create Smart Folder"
             >
               <FolderPlus className="w-4 h-4 text-amber-600" />
@@ -146,7 +146,7 @@ const ClusterNode = memo(({ data, selected }) => {
           {onMoveAllToFolder && (
             <button
               onClick={() => handleMenuAction(onMoveAllToFolder)}
-              className="p-1.5 rounded hover:bg-amber-50 text-gray-700"
+              className="p-1.5 rounded hover:bg-stratosort-warning-50 text-system-gray-700"
               title="Move All"
             >
               <FolderInput className="w-4 h-4 text-blue-600" />
@@ -155,7 +155,7 @@ const ClusterNode = memo(({ data, selected }) => {
           {onExportFileList && (
             <button
               onClick={() => handleMenuAction(onExportFileList)}
-              className="p-1.5 rounded hover:bg-amber-50 text-gray-700"
+              className="p-1.5 rounded hover:bg-stratosort-warning-50 text-system-gray-700"
               title="Export List"
             >
               <Download className="w-4 h-4 text-green-600" />
@@ -164,10 +164,10 @@ const ClusterNode = memo(({ data, selected }) => {
           {onRenameCluster && (
             <button
               onClick={handleStartEditLabel}
-              className="p-1.5 rounded hover:bg-amber-50 text-gray-700"
+              className="p-1.5 rounded hover:bg-stratosort-warning-50 text-system-gray-700"
               title="Rename"
             >
-              <Pencil className="w-4 h-4 text-gray-500" />
+              <Pencil className="w-4 h-4 text-system-gray-500" />
             </button>
           )}
         </div>
@@ -212,13 +212,13 @@ const ClusterNode = memo(({ data, selected }) => {
           />
         ) : (
           <div
-            className="text-xs font-bold text-gray-800 line-clamp-2 leading-tight group/label"
+            className="text-xs font-bold text-system-gray-800 line-clamp-2 leading-tight group/label"
             title={label}
           >
             {label}
             {onRenameCluster && selected && (
               <Pencil
-                className="w-3 h-3 text-gray-400 absolute -right-2 top-0 opacity-0 group-hover/label:opacity-100 cursor-pointer"
+                className="w-3 h-3 text-system-gray-400 absolute -right-2 top-0 opacity-0 group-hover/label:opacity-100 cursor-pointer"
                 onClick={handleStartEditLabel}
               />
             )}
@@ -239,7 +239,7 @@ const ClusterNode = memo(({ data, selected }) => {
             ? 'border-emerald-500'
             : confidence === 'medium'
               ? 'border-blue-500'
-              : 'border-gray-300'
+              : 'border-system-gray-300'
         }`}
         style={{ margin: '-6px' }}
       />
