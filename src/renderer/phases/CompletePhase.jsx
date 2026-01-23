@@ -32,22 +32,28 @@ function FileRow({ file, index }) {
   }
 
   const originalName = file.originalName || file.name || `File ${index + 1}`;
-  const destination = file.path || file.newLocation || file.destination || 'Organized';
+  // FIX: Prefer smartFolder for display if available, otherwise fallback to path
+  const displayLocation =
+    file.smartFolder || file.path || file.newLocation || file.destination || 'Organized';
+  const fullPath = file.path || file.newLocation || file.destination || '';
 
   return (
-    <div className="text-sm flex items-center bg-white/70 rounded-lg border border-border-soft/60 shadow-sm p-cozy gap-compact">
-      <div className="h-8 w-8 rounded-lg bg-stratosort-success/10 text-stratosort-success flex items-center justify-center font-semibold">
+    <div className="text-sm flex items-center bg-white/70 rounded-lg border border-border-soft/60 shadow-sm p-4 gap-3">
+      <div className="h-10 w-10 rounded-lg bg-stratosort-success/10 text-stratosort-success flex items-center justify-center font-semibold text-base flex-shrink-0">
         {index + 1}
       </div>
-      <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-        <span className="truncate text-system-gray-800" title={`${originalName} → ${destination}`}>
+      <div className="flex flex-col flex-1 min-w-0 gap-1 mx-1">
+        <span
+          className="truncate text-system-gray-900 font-medium"
+          title={`${originalName} → ${fullPath}`}
+        >
           {originalName}
         </span>
-        <span className="truncate text-system-gray-500 text-xs" title={destination}>
-          {destination}
+        <span className="truncate text-system-gray-500 text-xs" title={fullPath}>
+          {displayLocation}
         </span>
       </div>
-      <Check className="w-4 h-4 text-stratosort-success flex-shrink-0" />
+      <Check className="w-5 h-5 text-stratosort-success flex-shrink-0 ml-2" />
     </div>
   );
 }
@@ -97,58 +103,42 @@ function CompletePhase() {
 
   return (
     <div className="phase-container bg-system-gray-50/30 pb-spacious">
-      <div className="container-responsive flex flex-col flex-1 min-h-0 py-default gap-6">
-        {/* Hero Summary */}
-        <section
-          className="surface-panel relative overflow-hidden p-default"
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(16, 185, 129, 0.04))'
-          }}
-        >
-          <div className="absolute inset-0 pointer-events-none">
-            <div
-              className="absolute -top-16 -right-10 h-44 w-44 rounded-full bg-stratosort-blue/10 blur-3xl opacity-70"
-              aria-hidden="true"
-            />
-            <div
-              className="absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-stratosort-success/10 blur-3xl opacity-70"
-              aria-hidden="true"
-            />
-          </div>
-          <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="h-12 w-12 rounded-2xl bg-white/90 border border-border-soft/80 shadow-sm flex items-center justify-center text-stratosort-success">
-                <CheckCircle2 className="w-7 h-7" />
-              </div>
-              <div className="flex flex-col gap-compact">
-                <p className="text-xs uppercase tracking-wide text-system-gray-500 font-semibold">
-                  Session complete
-                </p>
-                <h1 className="heading-primary m-0">Organization Complete</h1>
-                <p className="text-base text-system-gray-600 max-w-2xl">
-                  Successfully organized {totalFiles} file{totalFiles !== 1 ? 's' : ''} using
-                  AI-powered analysis.
-                </p>
-                <div className="flex flex-wrap items-center gap-cozy">
-                  <StatPill label="Files organized" value={totalFiles} tone="success" />
-                  <StatPill label="Destinations" value={destinationCount || 1} />
-                  <StatPill label="Undo/Redo" value="Available" />
-                </div>
-              </div>
+      <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
+        {/* Header */}
+        <div className="text-center flex flex-col flex-shrink-0 gap-compact">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <div className="h-8 w-8 rounded-xl bg-stratosort-success/10 text-stratosort-success flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5" />
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <UndoRedoToolbar className="flex-shrink-0" />
-            </div>
+            <p className="text-xs uppercase tracking-wide text-system-gray-500 font-semibold">
+              Session complete
+            </p>
           </div>
-        </section>
+          <h1 className="heading-primary text-xl md:text-2xl">
+            Organization <span className="text-gradient">Complete</span>
+          </h1>
+          <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
+            Successfully organized {totalFiles} file{totalFiles !== 1 ? 's' : ''} using AI-powered
+            analysis.
+          </p>
+        </div>
+
+        {/* Toolbar / Summary Stats */}
+        <div className="flex items-center justify-between gap-cozy mb-2">
+          <div className="flex flex-wrap items-center gap-cozy">
+            <StatPill label="Files organized" value={totalFiles} tone="success" />
+            <StatPill label="Destinations" value={destinationCount || 1} />
+            <StatPill label="Undo/Redo" value="Available" />
+          </div>
+          <UndoRedoToolbar className="flex-shrink-0" />
+        </div>
 
         {/* Main Grid Layout */}
         <div className="grid grid-cols-1 xl:grid-cols-3 flex-1 min-h-0 gap-6">
           {/* Organization Summary Card */}
           <section className="surface-panel flex flex-col xl:col-span-2 gap-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-cozy">
-              <h3 className="heading-tertiary m-0 flex items-center gap-compact">
+              <h3 className="heading-tertiary m-0 flex items-center gap-cozy">
                 <ClipboardList className="w-5 h-5 text-stratosort-blue" />
                 <span>What changed</span>
               </h3>
@@ -194,7 +184,7 @@ function CompletePhase() {
           <div className="flex flex-col gap-default">
             <section className="surface-panel flex flex-col justify-between gap-6">
               <div className="flex items-center justify-between">
-                <h3 className="heading-tertiary m-0 flex items-center gap-compact">
+                <h3 className="heading-tertiary m-0 flex items-center gap-cozy">
                   <Target className="w-5 h-5 text-stratosort-blue" />
                   <span>Next Steps</span>
                 </h3>

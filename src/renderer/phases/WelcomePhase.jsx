@@ -50,7 +50,7 @@ function WelcomePhase() {
 
   return (
     <div className="phase-container bg-system-gray-50/40">
-      <section className="container-responsive flex flex-col flex-1 min-h-0 justify-center py-6 md:py-8">
+      <section className="container-responsive flex flex-col flex-1 min-h-0 justify-center py-8 md:py-10">
         {/* Main content wrapper - centers vertically and limits max width */}
         <div className="flex flex-col gap-6 md:gap-8 max-w-2xl mx-auto w-full">
           {/* Header - compact and centered */}
@@ -60,7 +60,7 @@ function WelcomePhase() {
             </p>
             <h1 id="welcome-heading" className="heading-primary" aria-level="1">
               <Rocket
-                className="inline-block animate-float text-stratosort-blue w-7 h-7 md:w-8 md:h-8 mr-2 align-middle"
+                className="inline-block animate-float text-stratosort-blue w-7 h-7 md:w-8 md:h-8 mr-3 align-middle"
                 aria-label="rocket"
               />
               Welcome to <span className="text-gradient">StratoSort</span>

@@ -470,16 +470,32 @@ function DiscoverPhase() {
 
   return (
     <div className="phase-container bg-system-gray-50/30 pb-spacious">
-      <div className="container-responsive flex flex-col flex-1 min-h-0 py-default gap-default">
+      <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
         {/* Header Section */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between flex-shrink-0 gap-cozy">
-          <div className="flex flex-col gap-compact">
-            <h1 className="heading-primary">Discover & Analyze</h1>
-            <p className="text-base text-system-gray-600 max-w-2xl">
-              Add your files and configure how StratoSort should name them.
-            </p>
+        <div className="text-center flex flex-col flex-shrink-0 gap-compact">
+          <h1 className="heading-primary text-xl md:text-2xl">
+            Discover & <span className="text-gradient">Analyze</span>
+          </h1>
+          <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
+            Add your files and configure how StratoSort should name them.
+          </p>
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between gap-cozy mb-2">
+          <div className="flex items-center gap-compact">
+            {/* Left side toolbar items if any */}
           </div>
           <div className="flex items-center gap-compact">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowNamingSettings(true)}
+              className="text-sm gap-compact"
+            >
+              <SettingsIcon className="w-4 h-4" />
+              <span>Naming Strategy</span>
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -498,7 +514,7 @@ function DiscoverPhase() {
           <section className="surface-panel flex flex-col flex-shrink-0 gap-default">
             <div className="flex items-center justify-between flex-wrap gap-cozy">
               <div className="flex items-center gap-cozy">
-                <h3 className="heading-tertiary m-0 flex items-center gap-2">
+                <h3 className="heading-tertiary m-0 flex items-center gap-cozy">
                   <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" />
                   <span>Select Content</span>
                 </h3>
@@ -510,15 +526,6 @@ function DiscoverPhase() {
                   </span>
                 )}
               </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowNamingSettings(true)}
-                className="text-sm gap-compact"
-              >
-                <SettingsIcon className="w-4 h-4" />
-                <span>Naming Strategy</span>
-              </Button>
             </div>
 
             <div
@@ -601,7 +608,7 @@ function DiscoverPhase() {
                       )}
                   </>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-cozy">
                     {pendingAnalysisCount > 0 && (
                       <Button
                         onClick={() => analyzeFiles?.(pendingAnalysisFiles)}
@@ -794,7 +801,7 @@ function DiscoverPhase() {
         )}
 
         {/* Footer Navigation */}
-        <div className="mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0 pt-6 pb-2 gap-4">
+        <div className="page-action-bar">
           <Button
             onClick={() => actions.advancePhase(PHASES?.SETUP ?? 'setup')}
             variant="secondary"

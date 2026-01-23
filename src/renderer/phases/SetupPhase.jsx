@@ -152,10 +152,11 @@ function SetupPhase() {
 
       if (!Array.isArray(folders)) {
         logger.warn('Received non-array response', { folders });
-        setSmartFolders([]);
+        notifyRef.current.showError?.('Failed to load smart folders. Please try again.');
         return;
       }
 
+      // Only overwrite when we have a valid array response (including empty when truly none)
       setSmartFolders(folders);
       actions.setPhaseData('smartFolders', folders);
     } catch (error) {
@@ -164,7 +165,6 @@ function SetupPhase() {
         stack: error.stack
       });
       notifyRef.current.showError?.(`Failed to load smart folders: ${error.message}`);
-      setSmartFolders([]);
     }
   }, [actions]);
 
@@ -405,7 +405,7 @@ function SetupPhase() {
 
   return (
     <div className="phase-container">
-      <div className="container-responsive flex flex-col flex-1 min-h-0 p-default md:p-relaxed lg:p-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
+      <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
         {/* Header */}
         <div className="text-center flex flex-col flex-shrink-0 gap-compact">
           <h1 className="heading-primary text-xl md:text-2xl">
@@ -419,7 +419,7 @@ function SetupPhase() {
         {/* Main content */}
         <div className="flex-1 min-h-0 flex flex-col">
           {/* Toolbar */}
-          <div className="flex items-center justify-between gap-cozy mb-default">
+          <div className="flex items-center justify-between gap-cozy mb-8">
             <div className="flex items-center gap-compact">
               <span className="text-sm font-medium text-system-gray-600">
                 {isLoading
@@ -544,7 +544,7 @@ function SetupPhase() {
         </div>
 
         {/* Footer navigation */}
-        <div className="mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0 pt-6 pb-2 gap-cozy">
+        <div className="page-action-bar">
           <Button
             onClick={() => actions.advancePhase(PHASES?.WELCOME ?? 'welcome')}
             variant="secondary"
