@@ -12,6 +12,8 @@ import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import {
   setSmartFolders as setSmartFoldersAction,
   setOrganizedFiles as setOrganizedFilesAction,
+  addOrganizedFiles as addOrganizedFilesAction,
+  removeOrganizedFiles as removeOrganizedFilesAction,
   setFileStates as setFileStatesAction
 } from '../../store/slices/filesSlice';
 import { selectFilesWithAnalysis, selectFileStats } from '../../store/selectors';
@@ -20,7 +22,6 @@ import { fetchDocumentsPath } from '../../store/slices/systemSlice';
 import { logger } from '../../../shared/logger';
 
 logger.setContext('OrganizePhase-State');
-
 /**
  * Hook for managing OrganizePhase Redux state
  * @returns {Object} State and actions for organize phase
@@ -66,6 +67,16 @@ export function useOrganizeState() {
       const nextValue = typeof value === 'function' ? value(organizedFilesRef.current) : value;
       dispatch(setOrganizedFilesAction(nextValue));
     },
+    [dispatch]
+  );
+
+  const addOrganizedFiles = useCallback(
+    (files) => dispatch(addOrganizedFilesAction(files)),
+    [dispatch]
+  );
+
+  const removeOrganizedFiles = useCallback(
+    (paths) => dispatch(removeOrganizedFilesAction(paths)),
     [dispatch]
   );
 
@@ -149,6 +160,8 @@ export function useOrganizeState() {
     // Action dispatchers
     dispatch,
     setOrganizedFiles,
+    addOrganizedFiles,
+    removeOrganizedFiles,
     setFileStates,
     setSmartFolders,
     setOrganizingState,

@@ -5,15 +5,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { Button, Card } from '../components/ui';
 // FIX M-3: Import ErrorBoundaryCore for virtualized component protection
 import { ErrorBoundaryCore } from '../components/ErrorBoundary';
-import {
-  FolderOpen,
-  BarChart3,
-  CheckCircle2,
-  Inbox,
-  Files,
-  Sparkles,
-  AlertTriangle
-} from 'lucide-react';
+import { FolderOpen, BarChart3, CheckCircle2, Inbox, Sparkles, AlertTriangle } from 'lucide-react';
 import {
   StatusOverview,
   TargetFolderList,
@@ -66,6 +58,8 @@ function OrganizePhase() {
     dispatchRef,
     dispatch,
     setOrganizedFiles,
+    addOrganizedFiles,
+    removeOrganizedFiles,
     setOrganizingState,
     phaseData,
     actions
@@ -174,6 +168,8 @@ function OrganizePhase() {
       addNotification,
       executeAction,
       setOrganizedFiles,
+      addOrganizedFiles,
+      removeOrganizedFiles,
       setOrganizingState
     });
 
@@ -309,70 +305,72 @@ function OrganizePhase() {
 
   return (
     <div className="organize-page phase-container bg-white pb-spacious">
-      <div className="container-responsive flex flex-col flex-1 min-h-0 pt-default pb-default gap-6">
+      <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0 gap-cozy">
-          <div className="flex flex-col gap-compact">
-            <h1 className="heading-primary flex items-center gap-3">
-              <Files className="w-7 h-7 text-stratosort-blue" />
-              <span>Review & Organize</span>
-            </h1>
-            <p className="text-base text-system-gray-600 leading-relaxed max-w-2xl">
-              Inspect suggestions, fine-tune smart folders, and execute the batch once you&apos;re
-              ready.
-            </p>
-            {isAnalysisRunning && (
+        <div className="text-center flex flex-col flex-shrink-0 gap-compact">
+          <h1 className="heading-primary text-xl md:text-2xl">
+            Review & <span className="text-gradient">Organize</span>
+          </h1>
+          <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
+            Inspect suggestions, fine-tune smart folders, and execute the batch once you&apos;re
+            ready.
+          </p>
+          {isAnalysisRunning && (
+            <div className="flex items-center justify-center gap-cozy mt-2">
               <div className="flex items-center border border-stratosort-blue/30 bg-stratosort-blue/5 text-sm text-stratosort-blue gap-cozy rounded-lg px-default py-cozy">
                 <span className="loading-spinner h-5 w-5 border-t-transparent" />
                 Analysis continuing in background: {analysisProgressFromDiscover.current}/
                 {analysisProgressFromDiscover.total} files
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-cozy mb-2">
+          {/* Quick Access Toolbar - Open modals for secondary info */}
+          {/* FIX M-5: Added aria-labels to toolbar buttons for accessibility */}
+          <div
+            className="flex items-center flex-wrap gap-cozy flex-shrink-0"
+            role="toolbar"
+            aria-label="Organization tools"
+          >
+            {safeSmartFolders.length > 0 && (
+              <button
+                onClick={() => setShowFoldersModal(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
+                aria-label={`View ${safeSmartFolders.length} smart folders`}
+              >
+                <FolderOpen className="w-4 h-4" aria-hidden="true" />
+                <span>{safeSmartFolders.length} Smart Folders</span>
+              </button>
+            )}
+            <button
+              onClick={() => setShowStatusModal(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
+              aria-label={`View file status: ${unprocessedFiles.length} ready, ${processedFiles.length} done, ${failedCount} failed`}
+            >
+              <BarChart3 className="w-4 h-4" aria-hidden="true" />
+              <span>{unprocessedFiles.length} Ready</span>
+              {processedFiles.length > 0 && (
+                <span className="text-stratosort-success">• {processedFiles.length} Done</span>
+              )}
+              {failedCount > 0 && (
+                <span className="text-stratosort-danger">• {failedCount} Failed</span>
+              )}
+            </button>
+            {processedFiles.length > 0 && (
+              <button
+                onClick={() => setShowHistoryModal(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-stratosort-success bg-stratosort-success/5 border border-stratosort-success/20 rounded-xl hover:bg-stratosort-success/10 hover:border-stratosort-success/40 transition-colors"
+                aria-label={`View ${processedFiles.length} organized files history`}
+              >
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                <span>{processedFiles.length} Organized</span>
+              </button>
             )}
           </div>
           <UndoRedoToolbar className="flex-shrink-0" />
-        </div>
-
-        {/* Quick Access Toolbar - Open modals for secondary info */}
-        {/* FIX M-5: Added aria-labels to toolbar buttons for accessibility */}
-        <div
-          className="flex items-center flex-wrap gap-2 flex-shrink-0"
-          role="toolbar"
-          aria-label="Organization tools"
-        >
-          {safeSmartFolders.length > 0 && (
-            <button
-              onClick={() => setShowFoldersModal(true)}
-              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
-              aria-label={`View ${safeSmartFolders.length} smart folders`}
-            >
-              <FolderOpen className="w-4 h-4" aria-hidden="true" />
-              <span>{safeSmartFolders.length} Smart Folders</span>
-            </button>
-          )}
-          <button
-            onClick={() => setShowStatusModal(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-system-gray-700 bg-white/80 border border-border-soft rounded-xl hover:bg-white hover:border-stratosort-blue/30 hover:text-stratosort-blue transition-colors"
-            aria-label={`View file status: ${unprocessedFiles.length} ready, ${processedFiles.length} done, ${failedCount} failed`}
-          >
-            <BarChart3 className="w-4 h-4" aria-hidden="true" />
-            <span>{unprocessedFiles.length} Ready</span>
-            {processedFiles.length > 0 && (
-              <span className="text-stratosort-success">• {processedFiles.length} Done</span>
-            )}
-            {failedCount > 0 && (
-              <span className="text-stratosort-danger">• {failedCount} Failed</span>
-            )}
-          </button>
-          {processedFiles.length > 0 && (
-            <button
-              onClick={() => setShowHistoryModal(true)}
-              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-stratosort-success bg-stratosort-success/5 border border-stratosort-success/20 rounded-xl hover:bg-stratosort-success/10 hover:border-stratosort-success/40 transition-colors"
-              aria-label={`View ${processedFiles.length} organized files history`}
-            >
-              <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-              <span>{processedFiles.length} Organized</span>
-            </button>
-          )}
         </div>
 
         {/* Main Content - Files Ready for Organization takes primary focus */}
@@ -557,7 +555,7 @@ function OrganizePhase() {
         </div>
 
         {/* Footer Buttons */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between flex-shrink-0 mt-auto border-t border-system-gray-200/50 gap-cozy pt-default">
+        <div className="page-action-bar">
           <Button
             onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
             variant="secondary"

@@ -420,7 +420,8 @@ export function useOrganization({
   phaseData = {},
   addNotification = () => {},
   executeAction = () => {},
-  setOrganizedFiles = () => {},
+  addOrganizedFiles = () => {},
+  removeOrganizedFiles = () => {},
   setOrganizingState = () => {}
 } = {}) {
   const {
@@ -617,16 +618,13 @@ export function useOrganization({
                   };
                 });
               if (uiResults.length > 0) {
-                // FIX H-3: Use functional update and sync ref immediately
-                setOrganizedFiles((prev) => {
-                  const updated = [...prev, ...uiResults];
-                  // Sync ref immediately for undo/redo consistency
-                  organizedFilesRef.current = updated;
-                  return updated;
-                });
+                // FIX H-3: Use addOrganizedFiles to append to current state safely (avoids stale closures)
+                addOrganizedFiles(uiResults);
+
+                // Keep ref in sync for other local logic if needed (though Redux is source of truth)
+                organizedFilesRef.current = [...organizedFilesRef.current, ...uiResults];
+
                 markFilesAsProcessed(uiResults.map((r) => r.originalPath));
-                // Update phaseData for persistence
-                actions.setPhaseData('organizedFiles', organizedFilesRef.current);
 
                 // FIX HIGH-4: Surface partialFailure to user instead of silently showing success
                 // When some files fail during batch operation, warn user about partial completion
@@ -679,24 +677,16 @@ export function useOrganization({
 
               const undoPathsSet = new Set(successfulUndos.map(normalizeForComparison));
 
-              // FIX H-3: Use functional update and sync ref immediately to prevent stale data in onRedo
-              setOrganizedFiles((prev) => {
-                const filtered = prev.filter(
-                  (of) => !undoPathsSet.has(normalizeForComparison(of.originalPath))
-                );
-                // Sync ref immediately so onRedo sees correct data
-                organizedFilesRef.current = filtered;
-                logger.info('[ORGANIZE] onUndo: ref synced', {
-                  prevCount: prev.length,
-                  filteredCount: filtered.length,
-                  refCount: organizedFilesRef.current.length
-                });
-                return filtered;
-              });
-              unmarkFilesAsProcessed(successfulUndos);
+              // FIX H-3: Use removeOrganizedFiles to update current state safely
+              removeOrganizedFiles(successfulUndos);
 
-              // Also update phaseData for persistence
-              actions.setPhaseData('organizedFiles', organizedFilesRef.current);
+              // Sync ref locally
+              const filtered = organizedFilesRef.current.filter(
+                (of) => !undoPathsSet.has(normalizeForComparison(of.originalPath))
+              );
+              organizedFilesRef.current = filtered;
+
+              unmarkFilesAsProcessed(successfulUndos);
 
               const successCount = result?.successCount ?? successfulUndos.length;
               const failCount = result?.failCount ?? 0;
@@ -793,16 +783,13 @@ export function useOrganization({
                     uniqueResultsCount: uniqueResults.length
                   });
 
-                  // FIX H-3: Use functional update and sync ref immediately
-                  setOrganizedFiles((prev) => {
-                    const updated = [...prev, ...uniqueResults];
-                    // Sync ref immediately for consistency
-                    organizedFilesRef.current = updated;
-                    return updated;
-                  });
+                  // FIX H-3: Use addOrganizedFiles to update current state safely
+                  addOrganizedFiles(uniqueResults);
+
+                  // Sync ref locally
+                  organizedFilesRef.current = [...organizedFilesRef.current, ...uniqueResults];
+
                   markFilesAsProcessed(pathsToMark);
-                  // Update phaseData for persistence
-                  actions.setPhaseData('organizedFiles', organizedFilesRef.current);
                 } else {
                   logger.warn('[ORGANIZE] onRedo: No unique results to process', {
                     existingPathsCount: existingPaths.size,
@@ -893,7 +880,8 @@ export function useOrganization({
       // FIX: Removed phaseData from deps - using organizedFilesRef instead to avoid stale closure
       addNotification,
       executeAction,
-      setOrganizedFiles,
+      addOrganizedFiles,
+      removeOrganizedFiles,
       setOrganizingState,
       setBatchProgress,
       setIsOrganizing,
