@@ -10,6 +10,7 @@
  */
 
 const path = require('path');
+const fs = require('fs').promises;
 const { logger } = require('./logger');
 
 logger.setContext('FileOperationTracker');
@@ -25,16 +26,128 @@ const DEFAULT_COOLDOWN_MS = 5000;
  */
 const CLEANUP_INTERVAL_MS = 10000;
 
+/**
+ * Persistence debounce time - don't save more often than this
+ */
+const PERSISTENCE_DEBOUNCE_MS = 1000;
+
 class FileOperationTracker {
   /**
-   * @param {number} cooldownMs - Cooldown period in milliseconds
+   * @param {Object|number} optionsOrCooldownMs - Options object or cooldown period
+   * @param {number} [optionsOrCooldownMs.cooldownMs=5000] - Cooldown period in milliseconds
+   * @param {string} [optionsOrCooldownMs.persistencePath] - Path to persist operations (optional)
    */
-  constructor(cooldownMs = DEFAULT_COOLDOWN_MS) {
+  constructor(optionsOrCooldownMs = DEFAULT_COOLDOWN_MS) {
+    // Support both old (number) and new (object) constructor signatures
+    const options =
+      typeof optionsOrCooldownMs === 'number'
+        ? { cooldownMs: optionsOrCooldownMs }
+        : optionsOrCooldownMs || {};
+
     /** @type {Map<string, {timestamp: number, operationType: string, source: string}>} */
     this.recentOperations = new Map();
-    this.cooldownMs = cooldownMs;
+    this.cooldownMs = options.cooldownMs || DEFAULT_COOLDOWN_MS;
+    this._persistencePath = options.persistencePath || null;
     this._cleanupTimer = null;
+    this._persistenceTimer = null;
     this._isShutdown = false;
+    this._initialized = false;
+    this._initPromise = null;
+  }
+
+  /**
+   * Initialize the tracker by loading persisted operations
+   * Call this before using if persistence is enabled
+   * @returns {Promise<void>}
+   */
+  async initialize() {
+    if (this._initialized) return;
+    if (this._initPromise) return this._initPromise;
+
+    this._initPromise = this._loadPersistedOperations();
+    await this._initPromise;
+    this._initialized = true;
+  }
+
+  /**
+   * Load persisted operations from disk
+   * @private
+   */
+  async _loadPersistedOperations() {
+    if (!this._persistencePath) return;
+
+    try {
+      const data = await fs.readFile(this._persistencePath, 'utf8');
+      const parsed = JSON.parse(data);
+
+      if (Array.isArray(parsed)) {
+        const now = Date.now();
+        let loaded = 0;
+
+        for (const entry of parsed) {
+          // Only load non-expired entries
+          if (entry && entry.path && entry.timestamp && now - entry.timestamp <= this.cooldownMs) {
+            this.recentOperations.set(entry.path, {
+              timestamp: entry.timestamp,
+              operationType: entry.operationType || 'unknown',
+              source: entry.source || 'persisted'
+            });
+            loaded++;
+          }
+        }
+
+        if (loaded > 0) {
+          logger.info('[FILE-OP-TRACKER] Loaded persisted operations:', loaded);
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        logger.warn('[FILE-OP-TRACKER] Error loading persisted operations:', error.message);
+      }
+    }
+  }
+
+  /**
+   * Persist operations to disk (debounced)
+   * @private
+   */
+  _schedulePersistence() {
+    if (!this._persistencePath || this._isShutdown) return;
+
+    if (this._persistenceTimer) {
+      clearTimeout(this._persistenceTimer);
+    }
+
+    this._persistenceTimer = setTimeout(async () => {
+      this._persistenceTimer = null;
+      await this._persistOperations();
+    }, PERSISTENCE_DEBOUNCE_MS);
+
+    if (this._persistenceTimer.unref) {
+      this._persistenceTimer.unref();
+    }
+  }
+
+  /**
+   * Persist current operations to disk
+   * @private
+   */
+  async _persistOperations() {
+    if (!this._persistencePath || this._isShutdown) return;
+
+    try {
+      const data = Array.from(this.recentOperations.entries()).map(([filePath, entry]) => ({
+        path: filePath,
+        timestamp: entry.timestamp,
+        operationType: entry.operationType,
+        source: entry.source
+      }));
+
+      await fs.mkdir(path.dirname(this._persistencePath), { recursive: true });
+      await fs.writeFile(this._persistencePath, JSON.stringify(data), 'utf8');
+    } catch (error) {
+      logger.warn('[FILE-OP-TRACKER] Error persisting operations:', error.message);
+    }
   }
 
   /**
@@ -77,6 +190,7 @@ class FileOperationTracker {
     });
 
     this._scheduleCleanup();
+    this._schedulePersistence();
   }
 
   /**
@@ -206,13 +320,24 @@ class FileOperationTracker {
       clearTimeout(this._cleanupTimer);
       this._cleanupTimer = null;
     }
+    if (this._persistenceTimer) {
+      clearTimeout(this._persistenceTimer);
+      this._persistenceTimer = null;
+    }
   }
 
   /**
    * Shutdown the tracker and release resources
+   * Persists remaining operations before shutdown
    */
-  shutdown() {
+  async shutdown() {
     this._isShutdown = true;
+
+    // Persist any remaining operations before clearing
+    if (this._persistencePath && this.recentOperations.size > 0) {
+      await this._persistOperations();
+    }
+
     this.clear();
     logger.debug('[FILE-OP-TRACKER] Shutdown complete');
   }
@@ -220,31 +345,29 @@ class FileOperationTracker {
   /**
    * Reset for testing - allows creating fresh instance
    */
-  static resetInstance() {
-    if (_instance) {
-      _instance.shutdown();
-      _instance = null;
-    }
-  }
+  // static resetInstance() {
+  //   if (_instance) {
+  //     _instance.shutdown();
+  //     _instance = null;
+  //   }
+  // }
 }
 
-// Singleton instance for cross-watcher coordination
-let _instance = null;
+// Use singleton factory to prevent race conditions in getInstance()
+const { createSingletonHelpers } = require('./singletonFactory');
 
-/**
- * Get the singleton FileOperationTracker instance
- * @param {number} [cooldownMs] - Optional cooldown override (only used on first call)
- * @returns {FileOperationTracker}
- */
-function getInstance(cooldownMs) {
-  if (!_instance) {
-    _instance = new FileOperationTracker(cooldownMs);
-  }
-  return _instance;
-}
+const { getInstance, resetInstance, registerWithContainer } = createSingletonHelpers({
+  ServiceClass: FileOperationTracker,
+  serviceId: 'FILE_OPERATION_TRACKER',
+  serviceName: 'FileOperationTracker',
+  containerPath: '../main/services/ServiceContainer',
+  shutdownMethod: 'shutdown'
+});
 
 module.exports = {
   FileOperationTracker,
   getInstance,
+  resetInstance,
+  registerWithContainer,
   DEFAULT_COOLDOWN_MS
 };

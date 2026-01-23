@@ -46,7 +46,7 @@ const TIMEOUTS = {
   DIRECTORY_SCAN: 60000,
   AI_ANALYSIS_SHORT: 30000,
   AI_ANALYSIS_MEDIUM: 60000,
-  AI_ANALYSIS_LONG: 120000,
+  AI_ANALYSIS_LONG: 180000, // Increased from 120s to 180s to handle complex image analysis
   AI_ANALYSIS_BATCH: 300000,
   API_REQUEST: 10000,
   API_REQUEST_SLOW: 30000,
@@ -264,7 +264,9 @@ const LIMITS = {
   PATTERN_STALE_DAYS: 180,
   MEMORY_CHECK_INTERVAL: 100,
   MAX_OVERLAP_ITERATIONS: 10000,
-  MAX_OVERLAPS_REPORT: 100
+  MAX_OVERLAPS_REPORT: 100,
+  BATCH_ORGANIZE_SIZE: 100, // Maximum files in a single batch organize operation
+  ANALYSIS_QUEUE_SIZE: 500 // Maximum size of analysis queue in SmartFolderWatcher
 };
 
 const IMAGE = { MAX_DIMENSION: 1536 };
@@ -398,6 +400,41 @@ const VIEWPORT = {
   FOUR_K: 2560
 };
 
+/**
+ * Temp file patterns to ignore during file watching
+ * Shared between DownloadWatcher and SmartFolderWatcher
+ * @readonly
+ * @type {Array<RegExp>}
+ */
+const TEMP_FILE_PATTERNS = [
+  /\.tmp$/i,
+  /\.crdownload$/i,
+  /\.part$/i,
+  /\.partial$/i,
+  /^~\$/,
+  /\.swp$/i,
+  /\.swx$/i,
+  /\.swo$/i,
+  /^\.#/,
+  /^#.*#$/,
+  /~$/,
+  /\.bak$/i,
+  /\.temp$/i,
+  /\.download$/i,
+  /^\.DS_Store$/,
+  /^Thumbs\.db$/i,
+  /^desktop\.ini$/i
+];
+
+/**
+ * Check if a filename matches temp file patterns
+ * @param {string} filename - Filename to check
+ * @returns {boolean} True if file is a temp file
+ */
+function isTempFile(filename) {
+  return TEMP_FILE_PATTERNS.some((pattern) => pattern.test(filename));
+}
+
 module.exports = {
   TIMEOUTS,
   RETRY,
@@ -419,5 +456,7 @@ module.exports = {
   WINDOW,
   PROCESS,
   TRUNCATION,
-  VIEWPORT
+  VIEWPORT,
+  TEMP_FILE_PATTERNS,
+  isTempFile
 };

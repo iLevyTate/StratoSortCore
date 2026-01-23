@@ -60,6 +60,7 @@ class CircuitBreaker extends EventEmitter {
     this.lastSuccessTime = null;
     this.lastStateChange = Date.now();
     this.halfOpenInFlight = 0;
+    this.halfOpenFailureCount = 0; // Track consecutive HALF_OPEN failures for exponential backoff
 
     // Timers
     this.recoveryTimer = null;
@@ -176,6 +177,10 @@ class CircuitBreaker extends EventEmitter {
           error: errorMessage
         });
 
+        // FIX Bug 4: Restart reset timer on failures to extend the window
+        // This ensures failures near end of reset window don't get "forgotten"
+        this._scheduleResetTimer();
+
         // Open circuit after threshold failures
         if (this.failureCount >= this.config.failureThreshold) {
           this._transitionTo(CircuitState.OPEN);
@@ -184,11 +189,16 @@ class CircuitBreaker extends EventEmitter {
 
       case CircuitState.HALF_OPEN:
         // NOTE: halfOpenInFlight is decremented in execute()'s finally block to avoid double-decrement
+        // FIX Bug 1: Track consecutive HALF_OPEN failures for exponential backoff
+        this.halfOpenFailureCount++;
+
         logger.debug(`[CircuitBreaker:${this.serviceName}] Failure in HALF_OPEN`, {
-          error: errorMessage
+          error: errorMessage,
+          halfOpenFailureCount: this.halfOpenFailureCount
         });
 
         // Immediately reopen circuit on failure in HALF_OPEN
+        // The transition will use halfOpenFailureCount to calculate backoff
         this._transitionTo(CircuitState.OPEN);
         break;
 
@@ -272,6 +282,7 @@ class CircuitBreaker extends EventEmitter {
     this.failureCount = 0;
     this.successCount = 0;
     this.halfOpenInFlight = 0;
+    this.halfOpenFailureCount = 0; // Reset backoff counter on manual reset
     this._transitionTo(CircuitState.CLOSED, true);
     logger.info(`[CircuitBreaker:${this.serviceName}] Reset to initial state`);
   }
@@ -344,14 +355,24 @@ class CircuitBreaker extends EventEmitter {
 
     // Set up state-specific behavior
     switch (newState) {
-      case CircuitState.OPEN:
+      case CircuitState.OPEN: {
         this.successCount = 0;
-        this._scheduleRecoveryTimer();
+        // FIX Bug 1: Calculate exponential backoff based on consecutive HALF_OPEN failures
+        // Backoff: baseTimeout * 2^halfOpenFailureCount, capped at 8x (2^3)
+        const backoffMultiplier = Math.min(
+          2 ** this.halfOpenFailureCount,
+          8 // Cap at 8x the base timeout
+        );
+        const backoffTimeout = this.config.timeout * backoffMultiplier;
+        this._scheduleRecoveryTimer(backoffTimeout);
         this.emit('open', {
           serviceName: this.serviceName,
-          failureCount: this.failureCount
+          failureCount: this.failureCount,
+          halfOpenFailureCount: this.halfOpenFailureCount,
+          recoveryTimeout: backoffTimeout
         });
         break;
+      }
 
       case CircuitState.HALF_OPEN:
         this.successCount = 0;
@@ -359,28 +380,34 @@ class CircuitBreaker extends EventEmitter {
         this.emit('halfOpen', { serviceName: this.serviceName });
         break;
 
-      case CircuitState.CLOSED:
+      case CircuitState.CLOSED: {
         this.failureCount = 0;
         this.successCount = 0;
+        // FIX Bug 1: Reset HALF_OPEN failure count when circuit closes successfully
+        this.halfOpenFailureCount = 0;
         this._scheduleResetTimer();
         this.emit('close', { serviceName: this.serviceName });
         break;
+      }
     }
   }
 
   /**
    * Schedule recovery timer for OPEN -> HALF_OPEN transition
+   * FIX Bug 1: Accept optional timeout parameter for exponential backoff
    * @private
+   * @param {number} [timeout] - Optional timeout override (defaults to config.timeout)
    */
-  _scheduleRecoveryTimer() {
+  _scheduleRecoveryTimer(timeout) {
     this._clearTimers();
 
+    const recoveryTimeout = timeout || this.config.timeout;
     this.recoveryTimer = setTimeout(() => {
       logger.info(
-        `[CircuitBreaker:${this.serviceName}] Recovery timeout elapsed, transitioning to HALF_OPEN`
+        `[CircuitBreaker:${this.serviceName}] Recovery timeout elapsed (${recoveryTimeout}ms), transitioning to HALF_OPEN`
       );
       this._transitionTo(CircuitState.HALF_OPEN);
-    }, this.config.timeout);
+    }, recoveryTimeout);
 
     // Allow process to exit even if timer is pending
     if (this.recoveryTimer.unref) {

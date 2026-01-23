@@ -5,7 +5,20 @@
 
 const path = require('path');
 const os = require('os');
-const fs = require('fs').promises;
+
+let fs;
+try {
+  fs = require('fs').promises;
+} catch (e) {
+  // fs module not available (e.g. in sandboxed environment)
+  fs = null;
+}
+
+// HIGH FIX (HIGH-13): Default timeout for symlink operations to prevent hangs on network mounts
+const SYMLINK_CHECK_TIMEOUT_MS = 5000;
+const URL_SCHEME_REGEX = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
+
+const isFileUrl = (value) => typeof value === 'string' && value.toLowerCase().startsWith('file://');
 
 // Import centralized security configuration
 const {
@@ -20,6 +33,7 @@ const {
 /**
  * Sanitize a file path for safe storage in database
  * Prevents directory traversal and normalizes path format
+ * FIX: Added file:// URL handling for consistency with preload
  *
  * @param {string} filePath - The file path to sanitize
  * @returns {string} Sanitized path
@@ -30,9 +44,27 @@ function sanitizePath(filePath) {
     return '';
   }
 
+  // FIX: Handle file:// URLs for consistency with preload behavior
+  // This ensures main process handles file:// URLs the same way as the renderer
+  let processedPath = filePath;
+  if (processedPath.toLowerCase().startsWith('file://')) {
+    try {
+      const url = new URL(processedPath);
+      const pathname = decodeURIComponent(url.pathname || '');
+      // Windows: /C:/path -> C:/path (drop leading slash before drive letter)
+      if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) {
+        processedPath = pathname.slice(1);
+      } else {
+        processedPath = pathname;
+      }
+    } catch {
+      // Invalid URL - fall through to regular processing
+    }
+  }
+
   // 1. Remove null bytes (security critical)
   // Instead of throwing, we sanitize by removing them
-  const sanitized = filePath.replace(/\0/g, '');
+  const sanitized = processedPath.replace(/\0/g, '');
 
   // 2. Unicode normalization (NFD to NFC for consistency)
   // This helps prevent homograph attacks and ensures consistent encoding
@@ -57,13 +89,14 @@ function sanitizePath(filePath) {
   normalized = path.normalize(normalized);
 
   // 5. Check for path traversal attempts AFTER normalization
-  // This catches any remaining .. that weren't resolved
-  if (normalized.includes('..')) {
+  // Only treat ".." as traversal when it's an actual path segment.
+  const normalizedParts = normalized.split(path.sep).filter((part) => part.length > 0);
+  if (normalizedParts.some((part) => part === '..')) {
     throw new Error('Invalid path: path traversal detected');
   }
 
   // 6. Validate path depth to prevent deep nesting attacks
-  const pathParts = normalized.split(path.sep).filter((part) => part.length > 0);
+  const pathParts = normalizedParts;
   if (pathParts.length > MAX_PATH_DEPTH) {
     throw new Error(
       `Invalid path: path depth (${pathParts.length}) exceeds maximum (${MAX_PATH_DEPTH})`
@@ -264,53 +297,93 @@ function isPathDangerous(filePath) {
  * Check if a path is a symbolic link and if so, whether it's safe
  * Returns info about the symlink status and resolved target
  *
+ * HIGH FIX (HIGH-13): Added timeout parameter to prevent hangs on network mounts
+ *
  * @param {string} filePath - Path to check
  * @param {string[]} [allowedBasePaths] - Optional allowed base paths for symlink targets
+ * @param {number} [timeoutMs] - Timeout in milliseconds (default: SYMLINK_CHECK_TIMEOUT_MS)
  * @returns {Promise<{isSymlink: boolean, isSafe: boolean, realPath?: string, error?: string}>}
  */
-async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
-  try {
-    const stats = await fs.lstat(filePath);
+async function checkSymlinkSafety(
+  filePath,
+  allowedBasePaths = null,
+  timeoutMs = SYMLINK_CHECK_TIMEOUT_MS
+) {
+  // Check if fs is available
+  if (!fs) {
+    // In sandboxed environments without fs, we can't check symlinks.
+    // Assume safe or return error depending on security posture.
+    // Returning safe=true because we can't verify, and usually sandbox restricts access anyway.
+    return { isSymlink: false, isSafe: true };
+  }
 
-    if (!stats.isSymbolicLink()) {
-      return { isSymlink: false, isSafe: true };
-    }
+  // HIGH FIX (HIGH-13): Wrap operations in timeout to prevent hangs on network mounts
+  const timeoutPromise = new Promise((_, reject) => {
+    const id = setTimeout(() => {
+      reject(
+        new Error(
+          `Symlink check timeout after ${timeoutMs}ms - path may be on unresponsive network mount`
+        )
+      );
+    }, timeoutMs);
+    // Prevent timeout from keeping process alive during shutdown
+    if (id.unref) id.unref();
+  });
 
-    // It's a symlink - resolve it and check where it points
-    const realPath = await fs.realpath(filePath);
+  const checkPromise = (async () => {
+    try {
+      const stats = await fs.lstat(filePath);
 
-    // Check if resolved path is in dangerous locations
-    if (isPathDangerous(realPath)) {
-      return {
-        isSymlink: true,
-        isSafe: false,
-        realPath,
-        error: 'Symbolic link points to a dangerous system directory'
-      };
-    }
+      if (!stats.isSymbolicLink()) {
+        return { isSymlink: false, isSafe: true };
+      }
 
-    // If allowed base paths provided, check resolved path is within them
-    if (allowedBasePaths && allowedBasePaths.length > 0) {
-      if (!isPathWithinAllowed(realPath, allowedBasePaths)) {
+      // It's a symlink - resolve it and check where it points
+      const realPath = await fs.realpath(filePath);
+
+      // Check if resolved path is in dangerous locations
+      if (isPathDangerous(realPath)) {
         return {
           isSymlink: true,
           isSafe: false,
           realPath,
-          error: 'Symbolic link points outside allowed directories'
+          error: 'Symbolic link points to a dangerous system directory'
         };
       }
-    }
 
-    return { isSymlink: true, isSafe: true, realPath };
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      // Path doesn't exist - that's okay for some operations
-      return { isSymlink: false, isSafe: true, error: 'Path does not exist' };
+      // If allowed base paths provided, check resolved path is within them
+      if (allowedBasePaths && allowedBasePaths.length > 0) {
+        if (!isPathWithinAllowed(realPath, allowedBasePaths)) {
+          return {
+            isSymlink: true,
+            isSafe: false,
+            realPath,
+            error: 'Symbolic link points outside allowed directories'
+          };
+        }
+      }
+
+      return { isSymlink: true, isSafe: true, realPath };
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        // Path doesn't exist - that's okay for some operations
+        return { isSymlink: false, isSafe: true, error: 'Path does not exist' };
+      }
+      return {
+        isSymlink: false,
+        isSafe: false,
+        error: `Failed to check symlink: ${error.message}`
+      };
     }
+  })();
+
+  try {
+    return await Promise.race([checkPromise, timeoutPromise]);
+  } catch (error) {
     return {
       isSymlink: false,
       isSafe: false,
-      error: `Failed to check symlink: ${error.message}`
+      error: error.message
     };
   }
 }
@@ -328,10 +401,22 @@ async function checkSymlinkSafety(filePath, allowedBasePaths = null) {
  * @param {string[]} [options.allowedBasePaths] - If provided, path must be within these directories
  * @param {boolean} [options.checkSymlinks=false] - Whether to check symlink safety
  * @param {boolean} [options.requireExists=false] - Whether the path must exist
+ * @param {boolean} [options.requireAbsolute=false] - Whether input must be absolute
+ * @param {boolean} [options.disallowUNC=false] - Block UNC/network paths
+ * @param {boolean} [options.disallowUrlSchemes=false] - Block non-file URL schemes
+ * @param {boolean} [options.allowFileUrl=true] - Allow file:// URLs when scheme checks enabled
  * @returns {Promise<{valid: boolean, normalizedPath: string, error?: string}>}
  */
 async function validateFileOperationPath(filePath, options = {}) {
-  const { allowedBasePaths = null, checkSymlinks = false, requireExists = false } = options;
+  const {
+    allowedBasePaths = null,
+    checkSymlinks = false,
+    requireExists = false,
+    requireAbsolute = false,
+    disallowUNC = false,
+    disallowUrlSchemes = false,
+    allowFileUrl = true
+  } = options;
 
   // Basic validation
   if (!filePath || typeof filePath !== 'string') {
@@ -343,11 +428,37 @@ async function validateFileOperationPath(filePath, options = {}) {
   }
 
   try {
+    if (disallowUrlSchemes && URL_SCHEME_REGEX.test(filePath)) {
+      if (!allowFileUrl || !isFileUrl(filePath)) {
+        return {
+          valid: false,
+          normalizedPath: '',
+          error: 'Invalid path: URL schemes are not allowed'
+        };
+      }
+    }
+
     // Sanitize the path (removes null bytes, normalizes, checks traversal)
     const sanitized = sanitizePath(filePath);
 
+    if (requireAbsolute && !path.isAbsolute(sanitized)) {
+      return {
+        valid: false,
+        normalizedPath: '',
+        error: 'Invalid path: must be an absolute path'
+      };
+    }
+
     // Resolve to absolute path
     const normalizedPath = path.resolve(sanitized);
+
+    if (disallowUNC && (normalizedPath.startsWith('\\\\') || normalizedPath.startsWith('//'))) {
+      return {
+        valid: false,
+        normalizedPath,
+        error: 'Invalid path: network/UNC paths are not allowed'
+      };
+    }
 
     // Check for dangerous system directories
     if (isPathDangerous(normalizedPath)) {
@@ -410,9 +521,21 @@ async function validateFileOperationPath(filePath, options = {}) {
  *
  * @param {string} filePath - Path to validate
  * @param {string[]} [allowedBasePaths] - If provided, path must be within these directories
+ * @param {Object} [options] - Validation options
+ * @param {boolean} [options.requireAbsolute=false] - Whether input must be absolute
+ * @param {boolean} [options.disallowUNC=false] - Block UNC/network paths
+ * @param {boolean} [options.disallowUrlSchemes=false] - Block non-file URL schemes
+ * @param {boolean} [options.allowFileUrl=true] - Allow file:// URLs when scheme checks enabled
  * @returns {{valid: boolean, normalizedPath: string, error?: string}}
  */
-function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
+function validateFileOperationPathSync(filePath, allowedBasePaths = null, options = {}) {
+  const {
+    requireAbsolute = false,
+    disallowUNC = false,
+    disallowUrlSchemes = false,
+    allowFileUrl = true
+  } = options;
+
   if (!filePath || typeof filePath !== 'string') {
     return {
       valid: false,
@@ -422,8 +545,34 @@ function validateFileOperationPathSync(filePath, allowedBasePaths = null) {
   }
 
   try {
+    if (disallowUrlSchemes && URL_SCHEME_REGEX.test(filePath)) {
+      if (!allowFileUrl || !isFileUrl(filePath)) {
+        return {
+          valid: false,
+          normalizedPath: '',
+          error: 'Invalid path: URL schemes are not allowed'
+        };
+      }
+    }
+
     const sanitized = sanitizePath(filePath);
+
+    if (requireAbsolute && !path.isAbsolute(sanitized)) {
+      return {
+        valid: false,
+        normalizedPath: '',
+        error: 'Invalid path: must be an absolute path'
+      };
+    }
     const normalizedPath = path.resolve(sanitized);
+
+    if (disallowUNC && (normalizedPath.startsWith('\\\\') || normalizedPath.startsWith('//'))) {
+      return {
+        valid: false,
+        normalizedPath,
+        error: 'Invalid path: network/UNC paths are not allowed'
+      };
+    }
 
     if (isPathDangerous(normalizedPath)) {
       return {

@@ -63,21 +63,41 @@ class SlidingWindowRateLimiter {
 
   /**
    * Wait until a slot is available
-   * FIX: HIGH - Add maximum wait time to prevent indefinite blocking
-   * @param {number} pollIntervalMs - Polling interval (default: TIMEOUTS.DELAY_BATCH)
+   * FIX Bug 7: Smart waiting - calculate when oldest call expires instead of blind polling
+   * @param {number} initialPollMs - Initial polling interval for fallback (default: TIMEOUTS.DELAY_BATCH)
    * @param {number} maxWaitMs - Maximum time to wait (default: 30 seconds)
    * @returns {Promise<void>}
    * @throws {Error} If max wait time is exceeded
    */
-  async waitForSlot(pollIntervalMs = TIMEOUTS?.DELAY_BATCH || 100, maxWaitMs = 30000) {
+  async waitForSlot(initialPollMs = TIMEOUTS?.DELAY_BATCH || 100, maxWaitMs = 30000) {
     const startTime = Date.now();
+    let pollInterval = initialPollMs;
+    const MAX_POLL_INTERVAL = 1000; // Cap polling interval at 1 second
+    const EXPIRY_BUFFER_MS = 10; // Small buffer after calculated expiry
 
     while (!this.canCall()) {
-      // FIX: Check if max wait time exceeded
+      // Check if max wait time exceeded
       if (Date.now() - startTime > maxWaitMs) {
         throw new Error(`Rate limiter wait timeout exceeded (${maxWaitMs}ms)`);
       }
-      await new Promise((r) => setTimeout(r, pollIntervalMs));
+
+      // FIX Bug 7: Smart waiting - calculate when oldest call will expire
+      this._cleanup();
+      if (this.calls.length > 0) {
+        const oldestCall = Math.min(...this.calls);
+        const oldestExpiry = oldestCall + this.windowMs;
+        const waitTime = oldestExpiry - Date.now() + EXPIRY_BUFFER_MS;
+
+        if (waitTime > 0 && waitTime < MAX_POLL_INTERVAL) {
+          // Wait directly for the calculated expiry time (more efficient)
+          await new Promise((r) => setTimeout(r, waitTime));
+          continue;
+        }
+      }
+
+      // Fallback to polling with exponential backoff when we can't calculate expiry
+      await new Promise((r) => setTimeout(r, pollInterval));
+      pollInterval = Math.min(pollInterval * 1.5, MAX_POLL_INTERVAL);
     }
   }
 
@@ -132,18 +152,60 @@ class Semaphore {
   }
 
   /**
-   * Acquire a slot (blocks if at capacity)
-   * @returns {Promise<void>}
-   * @throws {Error} If queue is full or timeout reached
+   * FIX Bug 8: Check if a slot can be acquired without blocking
+   * @returns {boolean} True if acquire() would succeed immediately or queue has space
    */
-  async acquire() {
+  canAcquire() {
+    return this.activeCount < this.maxConcurrent || this.waitQueue.length < this.maxQueueSize;
+  }
+
+  /**
+   * FIX Bug 8: Check if a slot is immediately available (no queueing)
+   * @returns {boolean} True if acquire() would succeed without waiting
+   */
+  hasImmediateSlot() {
+    return this.activeCount < this.maxConcurrent;
+  }
+
+  /**
+   * Acquire a slot (blocks if at capacity)
+   * FIX Bug 8: Added optional backpressure retry mechanism
+   * @param {Object} [options] - Optional configuration
+   * @param {boolean} [options.retry=false] - Whether to retry on queue full
+   * @param {number} [options.maxRetries=3] - Maximum retry attempts
+   * @param {number} [options.retryDelayMs=1000] - Initial retry delay (uses exponential backoff)
+   * @returns {Promise<void>}
+   * @throws {Error} If queue is full (and retry disabled/exhausted) or timeout reached
+   */
+  async acquire(options = {}) {
+    const { retry = false, maxRetries = 3, retryDelayMs = 1000 } = options;
+
+    // Fast path: slot available
     if (this.activeCount < this.maxConcurrent) {
       this.activeCount++;
       return;
     }
 
-    if (this.waitQueue.length >= this.maxQueueSize) {
-      throw new Error('Request queue full, try again later');
+    // FIX Bug 8: Backpressure with retry mechanism
+    let retryAttempt = 0;
+    while (this.waitQueue.length >= this.maxQueueSize) {
+      if (!retry || retryAttempt >= maxRetries) {
+        const error = new Error('Request queue full, try again later');
+        error.code = 'QUEUE_FULL';
+        error.retryAttempts = retryAttempt;
+        throw error;
+      }
+
+      // Wait with exponential backoff before retrying
+      const delay = retryDelayMs * 2 ** retryAttempt;
+      await new Promise((r) => setTimeout(r, delay));
+      retryAttempt++;
+
+      // Check again if slot became available during wait
+      if (this.activeCount < this.maxConcurrent) {
+        this.activeCount++;
+        return;
+      }
     }
 
     await new Promise((resolve, reject) => {
@@ -161,15 +223,29 @@ class Semaphore {
 
   /**
    * Release a slot (must be called after acquire)
+   * SECURITY FIX (CRIT-11): Guard against misuse where release() is called without matching acquire()
+   * FIX: Improved guard to prevent activeCount underflow in all edge cases
    */
   release() {
-    this.activeCount--;
-
+    // FIX: Check for waiters first - if there are waiters, pass the slot directly
+    // This ordering prevents race conditions where activeCount could underflow
     if (this.waitQueue.length > 0) {
+      // Pass the slot directly to the next waiter (no net change to activeCount)
       const next = this.waitQueue.shift();
       clearTimeout(next.timeout);
-      this.activeCount++;
       next.resolve();
+    } else if (this.activeCount > 0) {
+      // Only decrement if activeCount is positive - this is the normal case
+      this.activeCount--;
+    } else {
+      // FIX (CRIT-11): Guard against activeCount going negative
+      // Already at 0 with no waiters - this is a misuse (release without acquire)
+      // Log warning but don't throw to maintain backwards compatibility
+      // eslint-disable-next-line no-console
+      if (typeof console !== 'undefined' && console.warn) {
+        // eslint-disable-next-line no-console
+        console.warn('[Semaphore] release() called without matching acquire() - ignoring');
+      }
     }
   }
 

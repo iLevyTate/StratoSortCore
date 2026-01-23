@@ -196,7 +196,7 @@ const CONFIG_SCHEMA = {
     /** Analysis timeout in milliseconds */
     timeout: {
       type: 'number',
-      default: PROCESSING_LIMITS.ANALYSIS_TIMEOUT,
+      default: PERF_TIMEOUTS.AI_ANALYSIS_LONG,
       min: 5000,
       max: 600000,
       description: 'Analysis operation timeout (ms)'

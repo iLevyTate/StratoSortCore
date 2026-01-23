@@ -54,6 +54,7 @@ const OperationPriority = {
 // Default configuration
 const DEFAULT_CONFIG = {
   maxQueueSize: 1000, // Maximum operations to queue
+  maxDiskSizeBytes: 10 * 1024 * 1024, // CRIT-18: 10MB max disk file size to prevent disk exhaustion
   persistPath: null, // Will be set to userData/chromadb-queue.json
   flushBatchSize: 50, // Number of operations to process per flush batch
   flushDelayMs: 1000, // Delay between flush batches
@@ -547,7 +548,11 @@ class OfflineQueue extends EventEmitter {
   _rebuildOperationMap() {
     this.operationMap.clear();
     for (let i = 0; i < this.queue.length; i++) {
-      this.operationMap.set(this.queue[i].key, i);
+      // FIX LOW-3: Add null check to prevent TypeError on undefined item or missing key
+      const item = this.queue[i];
+      if (item && item.key) {
+        this.operationMap.set(item.key, i);
+      }
     }
   }
 
@@ -575,6 +580,7 @@ class OfflineQueue extends EventEmitter {
 
   /**
    * Persist queue to disk
+   * CRIT-18: Added disk size limit enforcement to prevent disk exhaustion
    * @private
    * @returns {Promise<void>}
    */
@@ -593,11 +599,45 @@ class OfflineQueue extends EventEmitter {
         stats: this.stats
       };
 
+      // CRIT-18: Check serialized size before writing to prevent disk exhaustion
+      let jsonString = JSON.stringify(data, null, 2);
+      let serializedSize = Buffer.byteLength(jsonString, 'utf8');
+      const maxSize = this.config.maxDiskSizeBytes;
+
+      // If the data exceeds the disk size limit, drop lowest-priority items until it fits
+      while (serializedSize > maxSize && this.queue.length > 0) {
+        const dropped = this._dropLowestPriority();
+        if (!dropped) {
+          // If we can't drop any more items, log a warning and break
+          logger.warn(
+            '[OfflineQueue] Cannot reduce queue size further, disk limit may be exceeded',
+            {
+              currentSize: serializedSize,
+              maxSize,
+              queueLength: this.queue.length
+            }
+          );
+          break;
+        }
+
+        // Recompute serialized data
+        data.queue = this.queue;
+        jsonString = JSON.stringify(data, null, 2);
+        serializedSize = Buffer.byteLength(jsonString, 'utf8');
+
+        logger.warn('[OfflineQueue] Dropped item due to disk size limit', {
+          currentSize: serializedSize,
+          maxSize,
+          queueLength: this.queue.length
+        });
+      }
+
       await atomicWriteFile(this.config.persistPath, data, { pretty: true });
 
       this.lastPersistTime = Date.now();
       logger.debug('[OfflineQueue] Queue persisted to disk', {
-        queueSize: this.queue.length
+        queueSize: this.queue.length,
+        diskSize: serializedSize
       });
     } catch (error) {
       logger.error('[OfflineQueue] Failed to persist queue', {
@@ -609,6 +649,7 @@ class OfflineQueue extends EventEmitter {
 
   /**
    * Load queue from disk
+   * FIX: Added validation to filter out malformed entries during load
    * @private
    * @returns {Promise<void>}
    */
@@ -629,7 +670,28 @@ class OfflineQueue extends EventEmitter {
       return;
     }
 
-    this.queue = data.queue || [];
+    // FIX: Filter out malformed entries to prevent errors in _rebuildOperationMap
+    // This handles corrupted queue entries with undefined/null keys from disk load
+    const rawQueue = data.queue || [];
+    this.queue = rawQueue.filter((item) => {
+      // Check that item exists and is an object
+      if (!item || typeof item !== 'object') return false;
+      // Check that key exists and is a string (required for operationMap)
+      if (!item.key || typeof item.key !== 'string') return false;
+      // Check that type is valid
+      if (!item.type || !Object.values(OperationType).includes(item.type)) return false;
+      return true;
+    });
+
+    const filtered = rawQueue.length - this.queue.length;
+    if (filtered > 0) {
+      logger.warn('[OfflineQueue] Filtered malformed entries on load', {
+        filtered,
+        originalCount: rawQueue.length,
+        remainingCount: this.queue.length
+      });
+    }
+
     this._rebuildOperationMap();
 
     // Restore stats but reset session-specific counters
@@ -659,8 +721,9 @@ class OfflineQueue extends EventEmitter {
   }
 
   /**
-   * FIX: Execute a function with mutex lock to prevent concurrent operations
-   * FIX: Added timeout to prevent deadlock if previous operation hangs
+   * FIX Bug 2: Execute a function with mutex lock to prevent concurrent operations
+   * Uses acquired flag to prevent race condition where timeout fires after mutex acquired
+   * but before clearTimeout executes.
    * @private
    * @param {Function} fn - Async function to execute
    * @param {number} timeoutMs - Maximum time to wait for mutex acquisition
@@ -670,30 +733,54 @@ class OfflineQueue extends EventEmitter {
   async _withMutex(fn, timeoutMs = TIMEOUTS.MUTEX_ACQUIRE) {
     const previousMutex = this._mutex;
     let release;
+    // FIX Bug 2: Use acquired flag set synchronously after Promise.race resolves
+    // to prevent timeout from firing in the window between resolution and clearTimeout
+    let acquired = false;
+    let timeoutFired = false;
+
     this._mutex = new Promise((resolve) => {
       release = resolve;
     });
 
     let timeoutId;
     try {
-      // FIX: Add timeout to mutex acquisition to prevent deadlock
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
-          reject(new Error(`Mutex acquisition timeout after ${timeoutMs}ms - possible deadlock`));
+          // FIX Bug 2: Only set timeoutFired if we haven't acquired the mutex yet
+          // This prevents the race where timeout callback runs after Promise.race
+          // resolves but before clearTimeout
+          if (!acquired) {
+            timeoutFired = true;
+            reject(new Error(`Mutex acquisition timeout after ${timeoutMs}ms - possible deadlock`));
+          }
         }, timeoutMs);
-        // FIX: Prevent timer from keeping process alive during shutdown
         if (timeoutId.unref) {
           timeoutId.unref();
         }
       });
 
       await Promise.race([previousMutex, timeoutPromise]);
-      clearTimeout(timeoutId); // FIX: Clear timeout on success
+
+      // FIX Bug 2: Set acquired flag IMMEDIATELY after Promise.race resolves
+      // This must happen BEFORE clearTimeout to close the race window
+      acquired = true;
+
+      // Now safe to clear timeout - if it fires after this, acquired flag blocks it
+      clearTimeout(timeoutId);
+
+      // Double-check: if timeoutFired was set before we set acquired (very tight race)
+      if (timeoutFired) {
+        throw new Error('Mutex acquired after timeout - aborting to prevent race');
+      }
+
       return await fn();
     } catch (error) {
-      clearTimeout(timeoutId); // FIX: Clear timeout on error
-      // If we timed out waiting for the mutex, log the error
-      if (error.message.includes('Mutex acquisition timeout')) {
+      // Always clear timeout on any error path
+      clearTimeout(timeoutId);
+      if (
+        error.message.includes('Mutex acquisition timeout') ||
+        error.message.includes('after timeout')
+      ) {
         logger.error('[OfflineQueue] Mutex deadlock detected', {
           error: error.message,
           timeoutMs

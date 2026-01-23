@@ -2,6 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 const { Logger, LOG_LEVELS } = require('../shared/logger');
 // Import IPC_CHANNELS from shared constants to avoid duplication
 const { IPC_CHANNELS } = require('../shared/constants');
+const { IpcRateLimiter } = require('./ipcRateLimiter');
+const { createIpcSanitizer } = require('./ipcSanitizer');
+const { createIpcValidator } = require('./ipcValidator');
+const { sanitizePath } = require('../shared/pathSanitization');
 // Import performance constants for configuration values
 const { LIMITS: PERF_LIMITS, TIMEOUTS } = require('../shared/performanceConstants');
 // Import centralized security config to avoid channel definition drift
@@ -84,11 +88,13 @@ const THROTTLED_CHANNELS = new Map([
 class SecureIPCManager {
   constructor() {
     this.activeListeners = new Map();
-    this.rateLimiter = new Map();
+    this.rateLimiter = new IpcRateLimiter({
+      maxRequestsPerSecond: PERF_LIMITS.MAX_IPC_REQUESTS_PER_SECOND,
+      perfLimits: PERF_LIMITS
+    });
     this.channelQueues = new Map();
-    this.maxRequestsPerSecond = PERF_LIMITS.MAX_IPC_REQUESTS_PER_SECOND; // From centralized config
-    // FIX: Debounce rate limiter cleanup to prevent race conditions during rapid calls
-    this._cleanupScheduled = false;
+    this.sanitizer = createIpcSanitizer({ log });
+    this.validator = createIpcValidator({ log });
   }
 
   /**
@@ -96,58 +102,66 @@ class SecureIPCManager {
    * Fixed: Add cleanup to prevent memory leaks
    */
   checkRateLimit(channel) {
-    const now = Date.now();
-    const channelData = this.rateLimiter.get(channel) || {
-      count: 0,
-      resetTime: now + 1000
-    };
-
-    if (now > channelData.resetTime) {
-      channelData.count = 1;
-      channelData.resetTime = now + 1000;
-    } else {
-      channelData.count++;
-    }
-
-    this.rateLimiter.set(channel, channelData);
-
-    // FIX: Schedule cleanup asynchronously to prevent race conditions
-    // during rapid concurrent calls. Debounce to avoid repeated scheduling.
-    if (
-      this.rateLimiter.size > PERF_LIMITS.RATE_LIMIT_CLEANUP_THRESHOLD &&
-      !this._cleanupScheduled
-    ) {
-      this._cleanupScheduled = true;
-      setTimeout(() => {
-        this._cleanupRateLimiter();
-        this._cleanupScheduled = false;
-      }, 0);
-    }
-
-    if (channelData.count > this.maxRequestsPerSecond) {
-      const resetIn = Math.ceil((channelData.resetTime - now) / 1000);
-      throw new Error(
-        `Rate limit exceeded for channel: ${channel}. Please wait ${resetIn}s before retrying. Consider reducing concurrent requests.`
-      );
-    }
-
-    return true;
+    return this.rateLimiter.checkRateLimit(channel);
   }
 
-  /**
-   * FIX: Separate cleanup method to avoid inline iteration during rate limit checks
-   * Runs asynchronously via setTimeout to prevent race conditions
-   */
-  _cleanupRateLimiter() {
-    const now = Date.now();
-    const staleEntries = [];
-    for (const [ch, data] of this.rateLimiter.entries()) {
-      // Remove entries that are more than 1 minute old
-      if (now > data.resetTime + PERF_LIMITS.RATE_LIMIT_STALE_MS) {
-        staleEntries.push(ch);
+  _getInvokeTimeout(channel) {
+    let timeout = PERF_LIMITS.IPC_INVOKE_TIMEOUT || 30000;
+    if (
+      channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
+      channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
+      channel === IPC_CHANNELS.FILES.PERFORM_OPERATION ||
+      channel === IPC_CHANNELS.ORGANIZE.BATCH
+    ) {
+      timeout = TIMEOUTS.AI_ANALYSIS_LONG || 120000;
+    }
+    return timeout;
+  }
+
+  async _invokeWithTimeout(channel, sanitizedArgs, timeout) {
+    let completed = false;
+    let timeoutId;
+
+    try {
+      const invokePromise = ipcRenderer.invoke(channel, ...sanitizedArgs);
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          if (!completed) {
+            reject(new Error(`IPC timeout after ${timeout}ms for channel: ${channel}`));
+          }
+        }, timeout);
+      });
+      const result = await Promise.race([invokePromise, timeoutPromise]);
+      completed = true;
+      clearTimeout(timeoutId);
+      return this.validator.validateResult(result, channel);
+    } catch (error) {
+      completed = true;
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
+
+  async _invokeWithRetries(channel, sanitizedArgs, timeout) {
+    const MAX_RETRIES = 5;
+    let lastError;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        return await this._invokeWithTimeout(channel, sanitizedArgs, timeout);
+      } catch (error) {
+        lastError = error;
+        if (error.message && error.message.includes('No handler registered')) {
+          log.warn(`Handler not ready for ${channel}, attempt ${attempt + 1}/${MAX_RETRIES}`);
+          const RETRY_BASE_DELAY_MS = 100;
+          await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * 2 ** attempt));
+          continue;
+        }
+        throw error;
       }
     }
-    staleEntries.forEach((ch) => this.rateLimiter.delete(ch));
+
+    throw lastError;
   }
 
   /**
@@ -236,7 +250,7 @@ class SecureIPCManager {
       this.checkRateLimit(channel);
 
       // Argument sanitization
-      const sanitizedArgs = this.sanitizeArguments(args);
+      const sanitizedArgs = this.sanitizer.sanitizeArguments(args);
 
       // Reduce log noise for high-frequency polling channels
       if (channel === IPC_CHANNELS.EMBEDDINGS.GET_STATS) {
@@ -248,57 +262,8 @@ class SecureIPCManager {
         log.info(`Secure invoke: ${channel}${sanitizedArgs.length > 0 ? ' [with args]' : ''}`);
       }
 
-      // FIX: Add overall timeout to prevent renderer hangs from stuck main process
-      // Use extended timeout for heavy AI/File operations to prevent premature failures on slow hardware
-      let timeout = PERF_LIMITS.IPC_INVOKE_TIMEOUT || 30000;
-      if (
-        channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
-        channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
-        channel === IPC_CHANNELS.FILES.PERFORM_OPERATION ||
-        channel === IPC_CHANNELS.ORGANIZE.BATCH
-      ) {
-        timeout = TIMEOUTS.AI_ANALYSIS_LONG || 120000;
-      }
-
-      // Add retry logic for handler not registered errors
-      // 5 attempts with exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms (total ~3.1s)
-      const MAX_RETRIES = 5;
-      let lastError;
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        try {
-          // FIX: Wrap invoke in Promise.race with timeout
-          const invokePromise = ipcRenderer.invoke(channel, ...sanitizedArgs);
-          // FIX HIGH-40: Store timeout ID for cleanup
-          let timeoutId;
-          const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(
-              () => reject(new Error(`IPC timeout after ${timeout}ms for channel: ${channel}`)),
-              timeout
-            );
-          });
-          const result = await Promise.race([invokePromise, timeoutPromise]);
-          // Clear timeout on success
-          clearTimeout(timeoutId);
-          // Result validation
-          return this.validateResult(result, channel);
-        } catch (error) {
-          lastError = error;
-          // Check if it's a "No handler registered" error
-          if (error.message && error.message.includes('No handler registered')) {
-            log.warn(`Handler not ready for ${channel}, attempt ${attempt + 1}/${MAX_RETRIES}`);
-            // Wait before retrying (exponential backoff)
-            // Base delay: 100ms, doubles with each attempt
-            const RETRY_BASE_DELAY_MS = 100;
-            await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * 2 ** attempt));
-            continue;
-          }
-          // For other errors, throw immediately
-          throw error;
-        }
-      }
-
-      // If we exhausted retries, throw the last error
-      throw lastError;
+      const timeout = this._getInvokeTimeout(channel);
+      return await this._invokeWithRetries(channel, sanitizedArgs, timeout);
     } catch (error) {
       log.error(`IPC invoke error for ${channel}: ${error.message}`);
       throw new Error(`IPC Error: ${error.message}`);
@@ -317,18 +282,18 @@ class SecureIPCManager {
     const wrappedCallback = (event, ...args) => {
       try {
         // Validate event source
-        if (!this.validateEventSource(event)) {
+        if (!this.validator.validateEventSource(event)) {
           log.warn(`Rejected event from invalid source on channel: ${channel}`);
           return;
         }
 
         // Sanitize incoming data
-        const sanitizedArgs = this.sanitizeArguments(args);
+        const sanitizedArgs = this.sanitizer.sanitizeArguments(args);
 
         // Special handling for different event types
         if (channel === 'system-metrics' && sanitizedArgs.length === 1) {
           const data = sanitizedArgs[0];
-          if (this.isValidSystemMetrics(data)) {
+          if (this.validator.isValidSystemMetrics(data)) {
             callback(data);
           } else {
             log.warn('Invalid system-metrics data rejected');
@@ -355,241 +320,6 @@ class SecureIPCManager {
       ipcRenderer.removeListener(channel, wrappedCallback);
       this.activeListeners.delete(listenerKey);
     };
-  }
-
-  /**
-   * Validate event source to prevent spoofing
-   */
-  validateEventSource(event) {
-    // Basic validation - in production, implement more sophisticated checks
-    return event && event.sender && typeof event.sender === 'object';
-  }
-
-  /**
-   * Sanitize arguments to prevent injection attacks
-   * Fixed: Detect file path arguments and skip HTML sanitization for them
-   */
-  sanitizeArguments(args) {
-    return args.map((arg) => {
-      // Check if this argument looks like a file path
-      const isFilePath = typeof arg === 'string' && this.looksLikeFilePath(arg);
-      return this.sanitizeObject(arg, isFilePath);
-    });
-  }
-
-  /**
-   * Deep sanitization for objects
-   * Fixed: Added prototype pollution protection
-   * Fixed: File paths should NOT be HTML sanitized (breaks file system operations)
-   */
-  sanitizeObject(obj, isFilePath = false) {
-    if (typeof obj === 'string') {
-      // File paths should NOT be HTML sanitized - they need to remain valid file system paths
-      if (isFilePath || this.looksLikeFilePath(obj)) {
-        // Only remove null bytes and dangerous characters, but preserve path structure
-        return this.stripControlChars(obj).replace(/[<>"|?*]/g, '');
-      }
-      // URLs should NOT be HTML sanitized - encoding slashes breaks URL validation
-      if (this.looksLikeUrl(obj)) {
-        // Only remove null bytes and dangerous characters, preserve URL structure
-        return this.stripControlChars(obj).replace(/[<>"|*]/g, '');
-      }
-      // Basic HTML sanitization for non-file-path, non-URL strings
-      return this.basicSanitizeHtml(obj);
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.sanitizeObject(item, isFilePath));
-    }
-
-    if (obj && typeof obj === 'object') {
-      const sanitized = {};
-      // Dangerous keys that could lead to prototype pollution
-      const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
-
-      for (const [key, value] of Object.entries(obj)) {
-        // Skip dangerous keys
-        if (dangerousKeys.includes(key)) {
-          log.warn(`Blocked dangerous object key: ${key}`);
-          continue;
-        }
-
-        // Check if this key/value pair represents a file path
-        const isPathKey = key.toLowerCase().includes('path') || key.toLowerCase().includes('file');
-        const cleanKey = isPathKey ? key : this.basicSanitizeHtml(key);
-
-        // Double-check the cleaned key isn't dangerous
-        if (dangerousKeys.includes(cleanKey)) {
-          log.warn(`Blocked dangerous sanitized key: ${cleanKey}`);
-          continue;
-        }
-
-        sanitized[cleanKey] = this.sanitizeObject(value, isPathKey);
-      }
-      return sanitized;
-    }
-
-    return obj;
-  }
-
-  /**
-   * Remove ASCII control characters from a string without using control-char regexes
-   */
-  stripControlChars(str) {
-    if (typeof str !== 'string') return str;
-    let output = '';
-    for (let i = 0; i < str.length; i += 1) {
-      const code = str.charCodeAt(i);
-      if (code >= 32) {
-        output += str[i];
-      }
-    }
-    return output;
-  }
-
-  /**
-   * Check if a string looks like a file path
-   * File paths typically contain drive letters (Windows) or start with / (Unix)
-   */
-  looksLikeFilePath(str) {
-    if (typeof str !== 'string' || str.length === 0) return false;
-
-    // Check for HTML tags first - if it contains < or >, it's likely HTML, not a file path
-    if (str.includes('<') || str.includes('>')) {
-      return false;
-    }
-
-    // MEDIUM PRIORITY FIX (MED-6): Enhanced Unicode and space support for path detection
-    // Windows path: C:\ or C:/ (drive letter can be any letter)
-    if (/^[A-Za-z]:[\\/]/.test(str)) return true;
-
-    // Unix absolute path: starts with /
-    // Support Unicode characters and spaces in path names
-    // Match any non-null character after the slash (Unicode-safe)
-    // eslint-disable-next-line no-useless-escape
-    if (/^\/[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
-
-    // UNC paths: \\server\share or //server/share
-    if (/^[\\/]{2}[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
-
-    // Relative path with typical file extensions
-    // Support Unicode letters, numbers, combining marks, spaces
-    if (/^[\p{L}\p{N}\p{M}\s_.-]+\/[\p{L}\p{N}\p{M}\s_./-]+\.[\p{L}\p{N}]+$/u.test(str)) {
-      return true;
-    }
-
-    // If it contains backslash (Windows path separator), it's likely a path
-    if (str.includes('\\')) {
-      // But not if it also contains HTML-like content
-      if (!str.includes('=') && !str.includes('"')) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if a string looks like a URL
-   * Used to skip HTML sanitization which would break URL structure
-   */
-  looksLikeUrl(str) {
-    if (typeof str !== 'string' || str.length === 0) return false;
-
-    // Check for HTML tags first - if it contains < or >, it's likely HTML, not a URL
-    if (str.includes('<') || str.includes('>')) {
-      return false;
-    }
-
-    // HTTP/HTTPS URLs
-    if (/^https?:\/\//i.test(str)) return true;
-
-    // Common localhost patterns (with port)
-    if (/^localhost(:\d+)?/i.test(str)) return true;
-
-    // IP address with optional port
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?/.test(str)) return true;
-
-    // IPv6 URLs
-    if (/^\[[\da-fA-F:]+\](:\d+)?/.test(str)) return true;
-
-    return false;
-  }
-
-  /**
-   * Basic HTML sanitization without external library
-   * Removes HTML tags and dangerous characters
-   */
-  basicSanitizeHtml(str) {
-    if (typeof str !== 'string') return str;
-
-    // Strategy: Remove all HTML content including tags and their contents for dangerous elements
-    let cleaned = str;
-
-    // First, remove script tags and their contents entirely
-    cleaned = cleaned.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-    // Handle unclosed script tags
-    cleaned = cleaned.replace(/<script\b[^>]*>[\s\S]*$/gi, '');
-
-    // Remove style tags and their contents
-    cleaned = cleaned.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-    // Handle unclosed style tags
-    cleaned = cleaned.replace(/<style\b[^>]*>[\s\S]*$/gi, '');
-
-    // Remove iframe tags and their contents
-    cleaned = cleaned.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
-
-    // Now remove all remaining HTML tags (but keep the text content between them)
-    // This regex matches from < to the next > or to the end of string
-    cleaned = cleaned.replace(/<[^>]*>?/g, '');
-
-    // FIX: More efficient handling of remaining < characters
-    // Replace while loop with a single indexOf + substring operation
-    // This handles malformed tags that don't close properly
-    const openTagIndex = cleaned.indexOf('<');
-    if (openTagIndex !== -1) {
-      cleaned = cleaned.substring(0, openTagIndex);
-    }
-
-    // FIX: Removed excessive HTML entity encoding that caused &#x27; to appear
-    // React already escapes content automatically when rendering, so double-encoding
-    // characters like apostrophes, quotes, and slashes causes them to display as
-    // literal HTML entities (e.g., "don&#x27;t" instead of "don't")
-    // Only escape < and > which could be used for tag injection
-    cleaned = cleaned.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    return cleaned;
-  }
-
-  /**
-   * Validate system metrics data structure
-   */
-  isValidSystemMetrics(data) {
-    // Accept flexible shapes produced by main: ensure object with some expected keys
-    if (!data || typeof data !== 'object') return false;
-    const hasUptime = typeof data.uptime === 'number' || typeof data.uptime === 'string';
-    const hasMemory = typeof data.memory === 'object' || typeof data.memory?.used === 'number';
-    return hasUptime || hasMemory;
-  }
-
-  /**
-   * Validate IPC results
-   */
-  validateResult(result, channel) {
-    // Channel-specific validation
-    switch (channel) {
-      case 'get-system-metrics':
-        return this.isValidSystemMetrics(result) ? result : null;
-      case 'select-directory':
-        // FIX H-8: Main returns { success, path } - fixed comment and fallback
-        return result && typeof result === 'object' && result.success !== undefined
-          ? result
-          : { success: false, path: null };
-      case 'get-custom-folders':
-        return Array.isArray(result) ? result : [];
-      default:
-        return result;
-    }
   }
 
   /**
@@ -730,13 +460,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         // Normalize file:// URIs to filesystem paths (handles Windows drive prefix)
         if (typeof filePath === 'string' && filePath.toLowerCase().startsWith('file://')) {
           try {
-            const url = new URL(filePath);
-            const pathname = decodeURIComponent(url.pathname || '');
-            if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) {
-              filePath = pathname.slice(1); // drop leading slash before drive letter
-            } else {
-              filePath = pathname;
-            }
+            filePath = sanitizePath(filePath);
           } catch {
             // fall through to validation
           }

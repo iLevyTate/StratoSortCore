@@ -114,8 +114,25 @@ function validateEmbeddingDimensions(vector, expectedDim) {
   return vector.length === expectedDim;
 }
 
+/**
+ * Validate embedding vector for NaN, Infinity, and type issues
+ * @param {Array<number>} vector - Embedding vector to validate
+ * @returns {{ valid: boolean, error?: string, index?: number }}
+ */
+function validateEmbeddingVector(vector) {
+  if (!Array.isArray(vector)) return { valid: false, error: 'not_array' };
+  if (vector.length === 0) return { valid: false, error: 'empty_vector' };
+  for (let i = 0; i < vector.length; i++) {
+    if (!Number.isFinite(vector[i])) {
+      return { valid: false, error: 'invalid_value', index: i };
+    }
+  }
+  return { valid: true };
+}
+
 module.exports = {
   cosineSimilarity,
   squaredEuclideanDistance,
-  validateEmbeddingDimensions
+  validateEmbeddingDimensions,
+  validateEmbeddingVector
 };

@@ -18,6 +18,7 @@
 
 const axios = require('axios');
 const { logger } = require('../../shared/logger');
+const { calculateRetryDelay } = require('../../shared/promiseUtils');
 
 logger.setContext('OllamaApiRetry');
 const { withRetry } = require('../../shared/errorHandlingUtils');
@@ -71,26 +72,50 @@ function isRetryableError(error) {
     }
   }
 
-  // Ollama-specific temporary errors
+  // Ollama-specific temporary errors (retryable)
   if (
     message.includes('model is loading') ||
     message.includes('server busy') ||
     message.includes('temporarily unavailable') ||
-    message.includes('model runner has unexpectedly stopped')
+    message.includes('model runner has unexpectedly stopped') ||
+    message.includes('resource exhausted') ||
+    message.includes('rate limit') ||
+    message.includes('quota exceeded')
   ) {
     return true;
   }
 
-  // Non-retryable errors
+  // FIX LOW #24: Additional non-retryable Ollama error cases
+  // These are permanent failures that won't resolve with retry
+  // FIX #11: Made patterns more specific to avoid false positives
+  // "invalid" was too broad - "invalid JSON response" could be transient
   if (
-    message.includes('invalid') ||
-    message.includes('validation') ||
+    // Specific invalid error patterns (not just "invalid")
+    message.includes('invalid model') ||
+    message.includes('invalid request') ||
+    message.includes('invalid input') ||
+    message.includes('invalid parameter') ||
+    message.includes('invalid format') ||
+    message.includes('validation failed') ||
+    message.includes('validation error') ||
     message.includes('not found') ||
     message.includes('unauthorized') ||
     message.includes('forbidden') ||
     message.includes('bad request') ||
     message.includes('zero length image') ||
-    message.includes('unsupported')
+    message.includes('unsupported format') ||
+    message.includes('unsupported image') ||
+    // Memory/resource errors - permanent until manual intervention
+    message.includes('out of memory') ||
+    message.includes('oom') ||
+    message.includes('cuda') ||
+    message.includes('no space left') ||
+    message.includes('disk full') ||
+    // Model errors - need to pull/configure model
+    message.includes('pull model manifest') ||
+    message.includes('model does not exist') ||
+    message.includes('context length exceeded') ||
+    message.includes('token limit')
   ) {
     return false;
   }
@@ -101,6 +126,8 @@ function isRetryableError(error) {
 
 /**
  * Calculate delay with exponential backoff and jitter
+ * Thin wrapper around shared calculateRetryDelay with Ollama-specific defaults
+ *
  * @param {number} attempt - Current attempt number (0-based)
  * @param {number} initialDelay - Initial delay in ms
  * @param {number} maxDelay - Maximum delay in ms
@@ -113,15 +140,8 @@ function calculateDelayWithJitter(
   maxDelay,
   jitterFactor = DEFAULT_JITTER_FACTOR
 ) {
-  // Exponential backoff
-  const exponentialDelay = initialDelay * 2 ** attempt;
-  const baseDelay = Math.min(exponentialDelay, maxDelay);
-
-  // Add jitter to prevent thundering herd
-  // Jitter is +/- jitterFactor of the delay
-  const jitter = baseDelay * jitterFactor * (Math.random() - 0.5) * 2;
-
-  return Math.max(0, Math.floor(baseDelay + jitter));
+  // Use shared calculateRetryDelay with backoff factor of 2 (exponential)
+  return calculateRetryDelay(attempt, initialDelay, maxDelay, 2, jitterFactor);
 }
 
 /**
@@ -244,14 +264,30 @@ async function withOllamaRetry(apiCall, options = {}) {
       totalTime: `${totalTime}ms`
     });
 
-    // Add retry context to the error for debugging
-    error.retryContext = {
+    // FIX Bug 9: Handle frozen/sealed error objects safely
+    const retryContext = {
       operation,
       attempts: attemptNumber,
       maxRetries,
       wasRetryable: isRetryableError(error),
       totalTimeMs: totalTime
     };
+
+    // Try to add retry context to the error for debugging
+    try {
+      if (Object.isExtensible(error)) {
+        error.retryContext = retryContext;
+      } else {
+        // Error is frozen/sealed - log that we couldn't attach context
+        // Still throw original error to preserve stack trace and type
+        logger.debug(`[${operation}] Could not attach retryContext to frozen error object`, {
+          retryContext
+        });
+      }
+    } catch (enrichError) {
+      // Catch any other edge cases (getters that throw, proxies, etc.)
+      logger.debug(`[${operation}] Error enrichment failed:`, enrichError.message);
+    }
 
     // Optionally queue for later retry via OllamaClient
     if (useOfflineQueue && isRetryableError(error)) {

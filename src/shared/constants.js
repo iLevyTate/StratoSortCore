@@ -1,13 +1,376 @@
-/**
- * Shared Constants
- * Constants used across main and renderer processes
- */
+// Shared Constants
+// Central source of truth for constants used across main and renderer processes
 
 const { SERVICE_URLS } = require('./configDefaults');
+const { LIMITS: PERFORMANCE_LIMITS = {} } = require('./performanceConstants');
 
-// ===== STRATOSORT SHARED CONSTANTS =====
+/**
+ * IPC Channel Definitions
+ */
+const IPC_CHANNELS = {
+  FILES: {
+    SELECT: 'files:select',
+    SELECT_DIRECTORY: 'files:select-directory',
+    GET_DOCUMENTS_PATH: 'files:get-documents-path',
+    CREATE_FOLDER_DIRECT: 'files:create-folder-direct',
+    GET_FILE_STATS: 'files:get-stats',
+    GET_FILES_IN_DIRECTORY: 'files:get-in-directory',
+    PERFORM_OPERATION: 'files:perform-operation',
+    DELETE_FILE: 'files:delete',
+    OPEN_FILE: 'files:open',
+    REVEAL_FILE: 'files:reveal',
+    COPY_FILE: 'files:copy',
+    OPEN_FOLDER: 'files:open-folder',
+    DELETE_FOLDER: 'files:delete-folder'
+  },
+  SMART_FOLDERS: {
+    GET: 'smart-folders:get',
+    SAVE: 'smart-folders:save',
+    UPDATE_CUSTOM: 'smart-folders:update-custom',
+    GET_CUSTOM: 'smart-folders:get-custom',
+    SCAN_STRUCTURE: 'smart-folders:scan-structure',
+    ADD: 'smart-folders:add',
+    EDIT: 'smart-folders:edit',
+    DELETE: 'smart-folders:delete',
+    MATCH: 'smart-folders:match',
+    RESET_TO_DEFAULTS: 'smart-folders:reset-defaults',
+    GENERATE_DESCRIPTION: 'smart-folders:generate-description',
+    WATCHER_START: 'smart-folders:watcher-start',
+    WATCHER_STOP: 'smart-folders:watcher-stop',
+    WATCHER_STATUS: 'smart-folders:watcher-status',
+    WATCHER_SCAN: 'smart-folders:watcher-scan'
+  },
+  ANALYSIS: {
+    ANALYZE_DOCUMENT: 'analysis:analyze-document',
+    ANALYZE_IMAGE: 'analysis:analyze-image',
+    EXTRACT_IMAGE_TEXT: 'analysis:extract-image-text'
+  },
+  SETTINGS: {
+    GET: 'settings:get',
+    SAVE: 'settings:save',
+    GET_CONFIGURABLE_LIMITS: 'settings:get-limits',
+    GET_LOGS_INFO: 'settings:get-logs-info',
+    OPEN_LOGS_FOLDER: 'settings:open-logs-folder',
+    EXPORT: 'settings:export',
+    IMPORT: 'settings:import',
+    CREATE_BACKUP: 'settings:create-backup',
+    LIST_BACKUPS: 'settings:list-backups',
+    RESTORE_BACKUP: 'settings:restore-backup',
+    DELETE_BACKUP: 'settings:delete-backup'
+  },
+  OLLAMA: {
+    GET_MODELS: 'ollama:get-models',
+    TEST_CONNECTION: 'ollama:test-connection',
+    PULL_MODELS: 'ollama:pull-models',
+    DELETE_MODEL: 'ollama:delete-model'
+  },
+  UNDO_REDO: {
+    UNDO: 'undo-redo:undo',
+    REDO: 'undo-redo:redo',
+    GET_HISTORY: 'undo-redo:get-history',
+    CLEAR_HISTORY: 'undo-redo:clear',
+    CAN_UNDO: 'undo-redo:can-undo',
+    CAN_REDO: 'undo-redo:can-redo',
+    STATE_CHANGED: 'undo-redo:state-changed'
+  },
+  ANALYSIS_HISTORY: {
+    GET: 'analysis-history:get',
+    SEARCH: 'analysis-history:search',
+    GET_STATISTICS: 'analysis-history:get-statistics',
+    GET_FILE_HISTORY: 'analysis-history:get-file-history',
+    CLEAR: 'analysis-history:clear',
+    EXPORT: 'analysis-history:export'
+  },
+  EMBEDDINGS: {
+    REBUILD_FOLDERS: 'embeddings:rebuild-folders',
+    REBUILD_FILES: 'embeddings:rebuild-files',
+    FULL_REBUILD: 'embeddings:full-rebuild',
+    REANALYZE_ALL: 'embeddings:reanalyze-all',
+    CLEAR_STORE: 'embeddings:clear-store',
+    GET_STATS: 'embeddings:get-stats',
+    SEARCH: 'embeddings:search',
+    SCORE_FILES: 'embeddings:score-files',
+    FIND_SIMILAR: 'embeddings:find-similar',
+    REBUILD_BM25_INDEX: 'embeddings:rebuild-bm25',
+    GET_SEARCH_STATUS: 'embeddings:get-search-status',
+    DIAGNOSE_SEARCH: 'embeddings:diagnose-search',
+    FIND_MULTI_HOP: 'embeddings:find-multi-hop',
+    COMPUTE_CLUSTERS: 'embeddings:compute-clusters',
+    GET_CLUSTERS: 'embeddings:get-clusters',
+    GET_CLUSTER_MEMBERS: 'embeddings:get-cluster-members',
+    GET_SIMILARITY_EDGES: 'embeddings:get-similarity-edges',
+    GET_FILE_METADATA: 'embeddings:get-file-metadata',
+    FIND_DUPLICATES: 'embeddings:find-duplicates',
+    CLEAR_CLUSTERS: 'embeddings:clear-clusters'
+  },
+  SYSTEM: {
+    GET_METRICS: 'system:get-metrics',
+    GET_APPLICATION_STATISTICS: 'system:get-app-stats',
+    APPLY_UPDATE: 'system:apply-update',
+    GET_CONFIG: 'system:get-config',
+    GET_CONFIG_VALUE: 'system:get-config-value',
+    RENDERER_ERROR_REPORT: 'system:renderer-error'
+  },
+  WINDOW: {
+    MINIMIZE: 'window:minimize',
+    MAXIMIZE: 'window:maximize',
+    UNMAXIMIZE: 'window:unmaximize',
+    TOGGLE_MAXIMIZE: 'window:toggle-maximize',
+    IS_MAXIMIZED: 'window:is-maximized',
+    CLOSE: 'window:close'
+  },
+  SUGGESTIONS: {
+    GET_FILE_SUGGESTIONS: 'suggestions:get-file',
+    GET_BATCH_SUGGESTIONS: 'suggestions:get-batch',
+    RECORD_FEEDBACK: 'suggestions:record-feedback',
+    GET_STRATEGIES: 'suggestions:get-strategies',
+    APPLY_STRATEGY: 'suggestions:apply-strategy',
+    GET_USER_PATTERNS: 'suggestions:get-user-patterns',
+    CLEAR_PATTERNS: 'suggestions:clear-patterns',
+    ANALYZE_FOLDER_STRUCTURE: 'suggestions:analyze-folder-structure',
+    SUGGEST_NEW_FOLDER: 'suggestions:suggest-new-folder',
+    ADD_FEEDBACK_MEMORY: 'suggestions:add-feedback-memory',
+    GET_FEEDBACK_MEMORY: 'suggestions:get-feedback-memory',
+    UPDATE_FEEDBACK_MEMORY: 'suggestions:update-feedback-memory',
+    DELETE_FEEDBACK_MEMORY: 'suggestions:delete-feedback-memory'
+  },
+  ORGANIZE: {
+    AUTO: 'organize:auto',
+    BATCH: 'organize:batch',
+    PROCESS_NEW: 'organize:process-new',
+    GET_STATS: 'organize:get-stats',
+    UPDATE_THRESHOLDS: 'organize:update-thresholds',
+    CLUSTER_BATCH: 'organize:cluster-batch',
+    IDENTIFY_OUTLIERS: 'organize:identify-outliers',
+    GET_CLUSTER_SUGGESTIONS: 'organize:get-cluster-suggestions'
+  },
+  CHROMADB: {
+    GET_STATUS: 'chromadb:get-status',
+    GET_CIRCUIT_STATS: 'chromadb:get-circuit-stats',
+    GET_QUEUE_STATS: 'chromadb:get-queue-stats',
+    FORCE_RECOVERY: 'chromadb:force-recovery',
+    HEALTH_CHECK: 'chromadb:health-check',
+    STATUS_CHANGED: 'chromadb:status-changed'
+  },
+  DEPENDENCIES: {
+    GET_STATUS: 'dependencies:get-status',
+    INSTALL_OLLAMA: 'dependencies:install-ollama',
+    INSTALL_CHROMADB: 'dependencies:install-chromadb',
+    UPDATE_OLLAMA: 'dependencies:update-ollama',
+    UPDATE_CHROMADB: 'dependencies:update-chromadb',
+    SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed'
+  },
+  CHAT: {
+    QUERY: 'chat:query',
+    RESET_SESSION: 'chat:reset-session'
+  },
+  KNOWLEDGE: {
+    GET_RELATIONSHIP_EDGES: 'knowledge:get-relationship-edges'
+  }
+};
 
-// Application phases - centralized for consistency
+/**
+ * Action Types for Undo/Redo
+ */
+const ACTION_TYPES = {
+  FILE_MOVE: 'FILE_MOVE',
+  FILE_DELETE: 'FILE_DELETE',
+  FILE_RENAME: 'FILE_RENAME',
+  FOLDER_CREATE: 'FOLDER_CREATE',
+  FOLDER_DELETE: 'FOLDER_DELETE',
+  FOLDER_RENAME: 'FOLDER_RENAME',
+  SETTINGS_CHANGE: 'SETTINGS_CHANGE',
+  ANALYSIS_RESULT: 'ANALYSIS_RESULT',
+  BATCH_OPERATION: 'BATCH_OPERATION'
+};
+
+/**
+ * Default AI Models
+ */
+const DEFAULT_AI_MODELS = {
+  TEXT_ANALYSIS: 'llama3.2:latest',
+  IMAGE_ANALYSIS: 'llava:latest',
+  EMBEDDING: 'mxbai-embed-large',
+  FALLBACK_MODELS: ['llama3.2:latest', 'mistral:latest', 'gemma:7b']
+};
+
+/**
+ * AI Processing Defaults
+ */
+const AI_DEFAULTS = {
+  TEXT: {
+    MODEL: DEFAULT_AI_MODELS.TEXT_ANALYSIS,
+    HOST: SERVICE_URLS.OLLAMA_HOST,
+    TEMPERATURE: 0.7,
+    MAX_TOKENS: 8192,
+    MAX_CONTENT_LENGTH: 32000 // Optimized to match 8k context window (8192 * 4 chars) to prevent wasted processing
+  },
+  IMAGE: {
+    MODEL: DEFAULT_AI_MODELS.IMAGE_ANALYSIS,
+    HOST: SERVICE_URLS.OLLAMA_HOST,
+    TEMPERATURE: 0.2,
+    MAX_TOKENS: 4096
+  },
+  EMBEDDING: {
+    MODEL: DEFAULT_AI_MODELS.EMBEDDING,
+    DIMENSIONS: 1024,
+    FALLBACK_MODELS: ['mxbai-embed-large', 'nomic-embed-text', 'embeddinggemma'],
+    AUTO_CHUNK_ON_ANALYSIS: false
+  }
+};
+
+/**
+ * Processing Limits
+ */
+const PROCESSING_LIMITS = {
+  MAX_CONCURRENT_ANALYSIS: 3,
+  MAX_BATCH_SIZE: 100,
+  RETRY_ATTEMPTS: 3,
+  MAX_BATCH_OPERATION_SIZE: 1000,
+  MAX_TOTAL_BATCH_TIME: 300000
+};
+
+/**
+ * File Size Limits (bytes)
+ */
+const FILE_SIZE_LIMITS = {
+  MAX_TEXT_FILE_SIZE: 50 * 1024 * 1024, // 50MB
+  MAX_IMAGE_FILE_SIZE: 100 * 1024 * 1024, // 100MB
+  MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024 // 200MB
+};
+
+/**
+ * System Limits
+ */
+const LIMITS = {
+  ...PERFORMANCE_LIMITS,
+  MAX_PATH_LENGTH: 260,
+  MAX_FILE_SIZE: 100 * 1024 * 1024,
+  MAX_FILENAME_LENGTH: PERFORMANCE_LIMITS.MAX_FILENAME_LENGTH ?? 255
+};
+
+/**
+ * UI Virtualization Constants
+ */
+const UI_VIRTUALIZATION = {
+  THRESHOLD: 30, // Number of items before enabling virtualization
+  ANALYSIS_RESULTS_ITEM_HEIGHT: 72, // px
+  FILE_GRID_ITEM_HEIGHT: 200, // px
+  FILE_GRID_ITEM_WIDTH: 180, // px
+  FILE_GRID_ROW_HEIGHT: 240, // px
+  MEASUREMENT_PADDING: 16, // px
+  PROCESSED_FILES_ITEM_HEIGHT: 64, // px
+  TARGET_FOLDER_ITEM_HEIGHT: 56, // px
+  OVERSCAN_COUNT: 5 // Number of items to render outside visible area
+};
+
+/**
+ * File Extension Constants
+ */
+const SUPPORTED_IMAGE_EXTENSIONS = [
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.bmp',
+  '.webp',
+  '.svg',
+  '.tiff',
+  '.ico'
+];
+
+const SUPPORTED_DOCUMENT_EXTENSIONS = [
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.md',
+  '.rtf',
+  '.csv',
+  '.json',
+  '.xml',
+  '.yml',
+  '.yaml',
+  '.html',
+  '.css',
+  '.js',
+  '.ts',
+  '.sql',
+  '.py',
+  '.java',
+  '.c',
+  '.cpp',
+  '.h',
+  '.rb',
+  '.go',
+  '.rs',
+  '.php',
+  '.odt',
+  '.ods',
+  '.odp',
+  '.epub',
+  '.eml',
+  '.msg',
+  '.kml',
+  '.kmz',
+  '.sh',
+  '.bat',
+  '.ps1'
+];
+
+// Text-like file extensions for plain-text extraction
+const SUPPORTED_TEXT_EXTENSIONS = [
+  '.txt',
+  '.md',
+  '.rtf',
+  '.json',
+  '.csv',
+  '.xml',
+  '.yml',
+  '.yaml',
+  '.html',
+  '.css',
+  '.js',
+  '.ts',
+  '.sql',
+  '.py',
+  '.java',
+  '.c',
+  '.cpp',
+  '.h',
+  '.rb',
+  '.go',
+  '.rs',
+  '.php',
+  '.sh',
+  '.bat',
+  '.ps1'
+];
+
+const SUPPORTED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
+
+const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.webm'];
+
+const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'];
+
+const ALL_SUPPORTED_EXTENSIONS = Array.from(
+  new Set([
+    ...SUPPORTED_TEXT_EXTENSIONS,
+    ...SUPPORTED_DOCUMENT_EXTENSIONS,
+    ...SUPPORTED_IMAGE_EXTENSIONS,
+    ...SUPPORTED_AUDIO_EXTENSIONS,
+    ...SUPPORTED_VIDEO_EXTENSIONS,
+    ...SUPPORTED_ARCHIVE_EXTENSIONS
+  ])
+);
+
+/**
+ * Application Phases
+ */
 const PHASES = {
   WELCOME: 'welcome',
   SETUP: 'setup',
@@ -16,265 +379,78 @@ const PHASES = {
   COMPLETE: 'complete'
 };
 
-// Phase transition rules - defines valid navigation paths
-// Fixed: Allow direct navigation to WELCOME from all phases for error recovery
 const PHASE_TRANSITIONS = {
   [PHASES.WELCOME]: [PHASES.SETUP, PHASES.DISCOVER],
-  [PHASES.SETUP]: [PHASES.DISCOVER, PHASES.WELCOME],
-  [PHASES.DISCOVER]: [PHASES.ORGANIZE, PHASES.SETUP, PHASES.WELCOME],
-  [PHASES.ORGANIZE]: [PHASES.COMPLETE, PHASES.DISCOVER, PHASES.WELCOME],
-  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.ORGANIZE, PHASES.DISCOVER] // Allow going back without losing data
+  [PHASES.SETUP]: [PHASES.WELCOME, PHASES.DISCOVER],
+  [PHASES.DISCOVER]: [PHASES.WELCOME, PHASES.SETUP, PHASES.ORGANIZE],
+  [PHASES.ORGANIZE]: [PHASES.WELCOME, PHASES.DISCOVER, PHASES.COMPLETE],
+  [PHASES.COMPLETE]: [PHASES.WELCOME, PHASES.DISCOVER]
 };
 
-// Phase metadata for UI display
+const PHASE_ORDER = [
+  PHASES.WELCOME,
+  PHASES.SETUP,
+  PHASES.DISCOVER,
+  PHASES.ORGANIZE,
+  PHASES.COMPLETE
+];
+
 const PHASE_METADATA = {
   [PHASES.WELCOME]: {
-    title: 'Welcome to StratoSort',
+    id: PHASES.WELCOME,
+    title: 'Welcome',
     navLabel: 'Welcome',
-    icon: '🚀',
-    progress: 0
+    icon: 'W',
+    progress: 0,
+    description: 'Introduction to Stratosort',
+    step: 0,
+    label: 'Welcome'
   },
   [PHASES.SETUP]: {
-    title: 'Configure Smart Folders',
-    navLabel: 'Smart Folders',
-    icon: '⚙️',
-    progress: 20
+    id: PHASES.SETUP,
+    title: 'Setup',
+    navLabel: 'Setup',
+    icon: 'S',
+    progress: 25,
+    description: 'Configure your environment',
+    step: 1,
+    label: 'Setup'
   },
   [PHASES.DISCOVER]: {
-    title: 'Discover & Analyze Files',
-    navLabel: 'Discover Files',
-    icon: '🔎',
-    progress: 50
+    id: PHASES.DISCOVER,
+    title: 'Discover',
+    navLabel: 'Discover',
+    icon: 'D',
+    progress: 50,
+    description: 'Analyze and select files',
+    step: 2,
+    label: 'Discover'
   },
   [PHASES.ORGANIZE]: {
-    title: 'Review & Organize',
-    navLabel: 'Review Organize',
-    icon: '📂',
-    progress: 80
+    id: PHASES.ORGANIZE,
+    title: 'Organize',
+    navLabel: 'Organize',
+    icon: 'O',
+    progress: 75,
+    description: 'Review and apply changes',
+    step: 3,
+    label: 'Organize'
   },
   [PHASES.COMPLETE]: {
-    title: 'Organization Complete',
+    id: PHASES.COMPLETE,
+    title: 'Complete',
     navLabel: 'Complete',
-    icon: '✅',
-    progress: 100
+    icon: 'C',
+    progress: 100,
+    description: 'Summary and cleanup',
+    step: 4,
+    label: 'Complete'
   }
 };
 
-// IPC Channel constants - centralized to avoid magic strings
-const IPC_CHANNELS = {
-  // File Operations
-  FILES: {
-    SELECT: 'handle-file-selection',
-    SELECT_DIRECTORY: 'select-directory',
-    GET_DOCUMENTS_PATH: 'get-documents-path',
-    CREATE_FOLDER_DIRECT: 'create-folder-direct',
-    GET_FILE_STATS: 'get-file-stats',
-    GET_FILES_IN_DIRECTORY: 'get-files-in-directory',
-    DELETE_FOLDER: 'delete-folder',
-    DELETE_FILE: 'delete-file',
-    OPEN_FILE: 'open-file',
-    REVEAL_FILE: 'reveal-file',
-    COPY_FILE: 'copy-file',
-    OPEN_FOLDER: 'open-folder',
-    PERFORM_OPERATION: 'perform-file-operation'
-  },
-
-  // Smart Folders
-  SMART_FOLDERS: {
-    GET: 'get-smart-folders',
-    GET_CUSTOM: 'get-custom-folders',
-    SAVE: 'save-smart-folders',
-    UPDATE_CUSTOM: 'update-custom-folders',
-    SCAN_STRUCTURE: 'scan-folder-structure',
-    ADD: 'add-smart-folder',
-    EDIT: 'edit-smart-folder',
-    DELETE: 'delete-smart-folder',
-    MATCH: 'match-smart-folder',
-    RESET_TO_DEFAULTS: 'reset-smart-folders-to-defaults',
-    GENERATE_DESCRIPTION: 'generate-smart-folder-description',
-    // Smart Folder Watcher - auto-analyze files in smart folders
-    WATCHER_START: 'smart-folder-watcher-start',
-    WATCHER_STOP: 'smart-folder-watcher-stop',
-    WATCHER_STATUS: 'smart-folder-watcher-status',
-    WATCHER_SCAN: 'smart-folder-watcher-scan'
-  },
-
-  // Analysis
-  ANALYSIS: {
-    ANALYZE_DOCUMENT: 'analyze-document',
-    ANALYZE_IMAGE: 'analyze-image',
-    EXTRACT_IMAGE_TEXT: 'extract-text-from-image'
-  },
-
-  // Organization Suggestions
-  SUGGESTIONS: {
-    GET_FILE_SUGGESTIONS: 'get-file-suggestions',
-    GET_BATCH_SUGGESTIONS: 'get-batch-suggestions',
-    RECORD_FEEDBACK: 'record-suggestion-feedback',
-    ADD_FEEDBACK_MEMORY: 'add-feedback-memory',
-    GET_FEEDBACK_MEMORY: 'get-feedback-memory',
-    DELETE_FEEDBACK_MEMORY: 'delete-feedback-memory',
-    UPDATE_FEEDBACK_MEMORY: 'update-feedback-memory',
-    GET_STRATEGIES: 'get-organization-strategies',
-    APPLY_STRATEGY: 'apply-organization-strategy',
-    GET_USER_PATTERNS: 'get-user-patterns',
-    CLEAR_PATTERNS: 'clear-user-patterns',
-    ANALYZE_FOLDER_STRUCTURE: 'analyze-folder-structure',
-    SUGGEST_NEW_FOLDER: 'suggest-new-folder'
-  },
-
-  // Auto-Organize
-  ORGANIZE: {
-    AUTO: 'auto-organize-files',
-    BATCH: 'batch-organize-files',
-    PROCESS_NEW: 'process-new-file',
-    GET_STATS: 'get-organize-stats',
-    UPDATE_THRESHOLDS: 'update-organize-thresholds',
-    // Cluster-based organization
-    CLUSTER_BATCH: 'cluster-batch-organize',
-    IDENTIFY_OUTLIERS: 'identify-organization-outliers',
-    GET_CLUSTER_SUGGESTIONS: 'get-cluster-suggestions'
-  },
-
-  // Settings
-  SETTINGS: {
-    GET: 'get-settings',
-    SAVE: 'save-settings',
-    // Extended settings operations (backup, export, import)
-    GET_CONFIGURABLE_LIMITS: 'get-configurable-limits',
-    EXPORT: 'export-settings',
-    IMPORT: 'import-settings',
-    CREATE_BACKUP: 'settings-create-backup',
-    LIST_BACKUPS: 'settings-list-backups',
-    RESTORE_BACKUP: 'settings-restore-backup',
-    DELETE_BACKUP: 'settings-delete-backup',
-    // Troubleshooting / diagnostics
-    GET_LOGS_INFO: 'get-logs-info',
-    OPEN_LOGS_FOLDER: 'open-logs-folder'
-  },
-
-  // Embeddings / Semantic Matching
-  EMBEDDINGS: {
-    REBUILD_FOLDERS: 'embeddings-rebuild-folders',
-    REBUILD_FILES: 'embeddings-rebuild-files',
-    FULL_REBUILD: 'embeddings-full-rebuild',
-    REANALYZE_ALL: 'embeddings-reanalyze-all',
-    CLEAR_STORE: 'embeddings-clear-store',
-    GET_STATS: 'embeddings-get-stats',
-    FIND_SIMILAR: 'embeddings-find-similar',
-    SEARCH: 'embeddings-search',
-    SCORE_FILES: 'embeddings-score-files',
-    // Hybrid search (SEARCH handler now supports mode: 'hybrid' | 'vector' | 'bm25')
-    REBUILD_BM25_INDEX: 'embeddings-rebuild-bm25-index',
-    GET_SEARCH_STATUS: 'embeddings-get-search-status',
-    // Multi-hop expansion
-    FIND_MULTI_HOP: 'embeddings-find-multi-hop',
-    // Clustering
-    COMPUTE_CLUSTERS: 'embeddings-compute-clusters',
-    GET_CLUSTERS: 'embeddings-get-clusters',
-    GET_CLUSTER_MEMBERS: 'embeddings-get-cluster-members',
-    GET_SIMILARITY_EDGES: 'embeddings-get-similarity-edges',
-    GET_FILE_METADATA: 'embeddings-get-file-metadata',
-    FIND_DUPLICATES: 'embeddings-find-duplicates',
-    // FIX: Add CLEAR_CLUSTERS channel for manual cluster cache reset
-    CLEAR_CLUSTERS: 'embeddings-clear-clusters',
-    // Diagnostic endpoint for troubleshooting search issues
-    DIAGNOSE_SEARCH: 'embeddings-diagnose-search'
-  },
-
-  // Chat / Document QA
-  CHAT: {
-    QUERY: 'chat-query',
-    RESET_SESSION: 'chat-reset-session'
-  },
-
-  // Knowledge relationships
-  KNOWLEDGE: {
-    GET_RELATIONSHIP_EDGES: 'knowledge-get-relationship-edges'
-  },
-
-  // Ollama
-  OLLAMA: {
-    GET_MODELS: 'get-ollama-models',
-    TEST_CONNECTION: 'test-ollama-connection',
-    PULL_MODELS: 'ollama-pull-models',
-    DELETE_MODEL: 'ollama-delete-model'
-  },
-
-  // Undo/Redo
-  UNDO_REDO: {
-    CAN_UNDO: 'can-undo',
-    CAN_REDO: 'can-redo',
-    UNDO: 'undo-action',
-    REDO: 'redo-action',
-    GET_HISTORY: 'get-action-history',
-    CLEAR_HISTORY: 'clear-action-history',
-    // FIX H-3: New channel for notifying renderer of state changes after undo/redo
-    STATE_CHANGED: 'undo-redo:state-changed'
-  },
-
-  // Analysis History
-  ANALYSIS_HISTORY: {
-    GET: 'get-analysis-history',
-    SEARCH: 'search-analysis-history',
-    GET_STATISTICS: 'get-analysis-statistics',
-    GET_FILE_HISTORY: 'get-file-analysis-history',
-    CLEAR: 'clear-analysis-history',
-    EXPORT: 'export-analysis-history'
-  },
-
-  // System Monitoring
-  SYSTEM: {
-    GET_APPLICATION_STATISTICS: 'get-application-statistics',
-    GET_METRICS: 'get-system-metrics',
-    APPLY_UPDATE: 'apply-update',
-    GET_CONFIG: 'get-app-config',
-    GET_CONFIG_VALUE: 'get-config-value',
-    // FIX: Add constant for renderer error reporting channel
-    RENDERER_ERROR_REPORT: 'renderer-error-report'
-  },
-
-  // Window Controls
-  WINDOW: {
-    MINIMIZE: 'window-minimize',
-    MAXIMIZE: 'window-maximize',
-    UNMAXIMIZE: 'window-unmaximize',
-    TOGGLE_MAXIMIZE: 'window-toggle-maximize',
-    IS_MAXIMIZED: 'window-is-maximized',
-    CLOSE: 'window-close'
-  },
-
-  // Menu Actions
-  MENU: {
-    NEW_ANALYSIS: 'menu-new-analysis',
-    UNDO: 'menu-undo',
-    REDO: 'menu-redo'
-  },
-
-  // ChromaDB Service Status
-  CHROMADB: {
-    GET_STATUS: 'chromadb-get-status',
-    GET_CIRCUIT_STATS: 'chromadb-get-circuit-stats',
-    GET_QUEUE_STATS: 'chromadb-get-queue-stats',
-    FORCE_RECOVERY: 'chromadb-force-recovery',
-    HEALTH_CHECK: 'chromadb-health-check',
-    // Events (sent from main to renderer)
-    STATUS_CHANGED: 'chromadb-status-changed'
-  },
-
-  // Dependency Management (Ollama + ChromaDB)
-  DEPENDENCIES: {
-    GET_STATUS: 'dependencies-get-status',
-    INSTALL_OLLAMA: 'dependencies-install-ollama',
-    INSTALL_CHROMADB: 'dependencies-install-chromadb',
-    UPDATE_OLLAMA: 'dependencies-update-ollama',
-    UPDATE_CHROMADB: 'dependencies-update-chromadb',
-    // Events (sent from main to renderer)
-    SERVICE_STATUS_CHANGED: 'dependencies-service-status-changed'
-  }
-};
-
-// System status constants
+/**
+ * Error Types
+ */
 const SYSTEM_STATUS = {
   CHECKING: 'checking',
   HEALTHY: 'healthy',
@@ -282,7 +458,6 @@ const SYSTEM_STATUS = {
   OFFLINE: 'offline'
 };
 
-// Notification types
 const NOTIFICATION_TYPES = {
   INFO: 'info',
   SUCCESS: 'success',
@@ -290,7 +465,6 @@ const NOTIFICATION_TYPES = {
   ERROR: 'error'
 };
 
-// File processing states
 const FILE_STATES = {
   PENDING: 'pending',
   ANALYZING: 'analyzing',
@@ -302,7 +476,6 @@ const FILE_STATES = {
   CANCELLED: 'cancelled'
 };
 
-// Error types
 const ERROR_TYPES = {
   UNKNOWN: 'UNKNOWN',
   FILE_NOT_FOUND: 'FILE_NOT_FOUND',
@@ -310,300 +483,91 @@ const ERROR_TYPES = {
   NETWORK_ERROR: 'NETWORK_ERROR',
   AI_UNAVAILABLE: 'AI_UNAVAILABLE',
   INVALID_FORMAT: 'INVALID_FORMAT',
-  FILE_TOO_LARGE: 'FILE_TOO_LARGE',
-  PROCESSING_FAILED: 'PROCESSING_FAILED'
+  FILE_TOO_LARGE: 'FILE_TOO_LARGE'
 };
 
-// File system error codes - comprehensive codes for file operations
 const FILE_SYSTEM_ERROR_CODES = {
-  // Access and permission errors
   FILE_ACCESS_DENIED: 'FILE_ACCESS_DENIED',
   FILE_NOT_FOUND: 'FILE_NOT_FOUND',
   DIRECTORY_NOT_FOUND: 'DIRECTORY_NOT_FOUND',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
-
-  // Write and modification errors
   WRITE_FAILED: 'WRITE_FAILED',
   READ_FAILED: 'READ_FAILED',
   DELETE_FAILED: 'DELETE_FAILED',
   RENAME_FAILED: 'RENAME_FAILED',
   COPY_FAILED: 'COPY_FAILED',
   MOVE_FAILED: 'MOVE_FAILED',
-
-  // Directory errors
   MKDIR_FAILED: 'MKDIR_FAILED',
   RMDIR_FAILED: 'RMDIR_FAILED',
   DIRECTORY_NOT_EMPTY: 'DIRECTORY_NOT_EMPTY',
   NOT_A_DIRECTORY: 'NOT_A_DIRECTORY',
   NOT_A_FILE: 'NOT_A_FILE',
-
-  // Space and resource errors
   DISK_FULL: 'DISK_FULL',
   QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
   TOO_MANY_OPEN_FILES: 'TOO_MANY_OPEN_FILES',
-
-  // File state errors
   FILE_IN_USE: 'FILE_IN_USE',
   FILE_LOCKED: 'FILE_LOCKED',
   FILE_EXISTS: 'FILE_EXISTS',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
-
-  // Path errors
   PATH_TOO_LONG: 'PATH_TOO_LONG',
   INVALID_PATH: 'INVALID_PATH',
   CROSS_DEVICE_LINK: 'CROSS_DEVICE_LINK',
-
-  // Integrity errors
   CHECKSUM_MISMATCH: 'CHECKSUM_MISMATCH',
   SIZE_MISMATCH: 'SIZE_MISMATCH',
   PARTIAL_WRITE: 'PARTIAL_WRITE',
   CORRUPTED_FILE: 'CORRUPTED_FILE',
-
-  // Watcher errors
   WATCHER_FAILED: 'WATCHER_FAILED',
   WATCHER_CLOSED: 'WATCHER_CLOSED',
-
-  // Atomic operation errors
   ATOMIC_OPERATION_FAILED: 'ATOMIC_OPERATION_FAILED',
   ROLLBACK_FAILED: 'ROLLBACK_FAILED',
   TRANSACTION_TIMEOUT: 'TRANSACTION_TIMEOUT',
-
-  // I/O errors
   IO_ERROR: 'IO_ERROR',
   NETWORK_ERROR: 'NETWORK_ERROR',
-
-  // Generic
   UNKNOWN_ERROR: 'UNKNOWN_ERROR'
 };
 
-// Action types for undo/redo
-const ACTION_TYPES = {
-  FILE_MOVE: 'FILE_MOVE',
-  FILE_RENAME: 'FILE_RENAME',
-  FILE_DELETE: 'FILE_DELETE',
-  FOLDER_CREATE: 'FOLDER_CREATE',
-  FOLDER_DELETE: 'FOLDER_DELETE',
-  FOLDER_RENAME: 'FOLDER_RENAME',
-  BATCH_OPERATION: 'BATCH_OPERATION',
-  SETTINGS_CHANGE: 'SETTINGS_CHANGE',
-  ANALYSIS_RESULT: 'ANALYSIS_RESULT'
-};
-
-// Keyboard shortcuts (only define shortcuts that are actually used in the app)
 const SHORTCUTS = {
   UNDO: 'Ctrl+Z',
   REDO: 'Ctrl+Y',
   SELECT_ALL: 'Ctrl+A'
 };
 
-// File size limits
-const LIMITS = {
-  MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
-  MAX_PATH_LENGTH: 260,
-  MAX_FILENAME_LENGTH: 255
-};
-
-// Note: TIMEOUTS moved to performanceConstants.js - use that as single source of truth
-
-// File type mappings
-const SUPPORTED_TEXT_EXTENSIONS = [
-  '.txt',
-  '.md',
-  '.rtf',
-  '.json',
-  '.csv',
-  '.xml',
-  '.html',
-  '.htm',
-  '.js',
-  '.ts',
-  '.jsx',
-  '.tsx',
-  '.py',
-  '.java',
-  '.cpp',
-  '.c',
-  '.h',
-  '.css',
-  '.scss',
-  '.sass',
-  '.less',
-  '.sql',
-  '.sh',
-  '.bat',
-  '.ps1',
-  '.yaml',
-  '.yml',
-  '.ini',
-  '.conf',
-  '.log'
-];
-
-const SUPPORTED_DOCUMENT_EXTENSIONS = [
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xlsx',
-  '.pptx',
-  // Legacy Office
-  '.xls',
-  '.ppt',
-  // OpenDocument formats
-  '.odt',
-  '.ods',
-  '.odp',
-  // E-books and email
-  '.epub',
-  '.eml',
-  '.msg',
-  // Geospatial packages (treat as documents for analysis)
-  '.kml',
-  '.kmz'
-];
-
-const SUPPORTED_IMAGE_EXTENSIONS = [
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tiff',
-  '.svg',
-  '.heic'
-];
-
-const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv'];
-
-const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z', '.tar', '.gz'];
-
-// All supported extensions combined
-const ALL_SUPPORTED_EXTENSIONS = [
-  ...SUPPORTED_TEXT_EXTENSIONS,
-  ...SUPPORTED_DOCUMENT_EXTENSIONS,
-  ...SUPPORTED_IMAGE_EXTENSIONS,
-  ...SUPPORTED_VIDEO_EXTENSIONS,
-  ...SUPPORTED_ARCHIVE_EXTENSIONS
-];
-
-// AI Model configurations - Optimized for Quality ("Top Tier")
-// Using best available models from user's local library
-const DEFAULT_AI_MODELS = {
-  TEXT_ANALYSIS: 'llama3.2:latest', // 3B - Excellent reasoning & instruction following
-  IMAGE_ANALYSIS: 'llava:latest', // 7B - Best-in-class open source vision
-  EMBEDDING: 'mxbai-embed-large', // 1024 dims - Top tier retrieval performance
-  FALLBACK_MODELS: ['qwen3:0.6b', 'gemma3:latest', 'moondream:1.8b', 'nomic-embed-text']
-};
-
-// AI defaults centralized for analyzers
-const AI_DEFAULTS = {
-  TEXT: {
-    MODEL: 'llama3.2:latest',
-    HOST: SERVICE_URLS.OLLAMA_HOST,
-    MAX_CONTENT_LENGTH: 12000,
-    TEMPERATURE: 0.1,
-    MAX_TOKENS: 800
-  },
-  IMAGE: {
-    MODEL: 'llava:latest',
-    HOST: SERVICE_URLS.OLLAMA_HOST,
-    TEMPERATURE: 0.1, // ANTI-HALLUCINATION: Low temperature for factual image analysis
-    MAX_TOKENS: 1000
-  },
-  EMBEDDING: {
-    MODEL: 'mxbai-embed-large',
-    DIMENSIONS: 1024, // mxbai-embed-large uses 1024 dimensions
-    // FIX: Fallback chain for embedding models (in order of preference)
-    // Used when primary model is not available on the Ollama server
-    FALLBACK_MODELS: [
-      'mxbai-embed-large', // 1024 dims - High quality
-      'nomic-embed-text', // 768 dims - Good general purpose
-      'embeddinggemma', // 768 dims - Google's default
-      'all-minilm', // 384 dims - Fast, smaller
-      'bge-large', // 1024 dims - Chinese & English
-      'snowflake-arctic-embed' // 1024 dims - High quality
-    ],
-    // Opt-in: Generate chunk embeddings during file analysis for deep semantic search
-    // When enabled, extracted text is chunked and embedded for better natural language queries
-    // Note: Increases analysis time but improves search quality significantly
-    AUTO_CHUNK_ON_ANALYSIS: false
-  }
-};
-
-// File size limits
-const FILE_SIZE_LIMITS = {
-  MAX_TEXT_FILE_SIZE: 50 * 1024 * 1024, // 50MB
-  MAX_IMAGE_FILE_SIZE: 100 * 1024 * 1024, // 100MB
-  MAX_AUDIO_FILE_SIZE: 500 * 1024 * 1024, // 500MB
-  MAX_DOCUMENT_FILE_SIZE: 200 * 1024 * 1024 // 200MB
-};
-
-// Processing limits - Optimized for faster models
-const PROCESSING_LIMITS = {
-  MAX_CONCURRENT_ANALYSIS: 3,
-  MAX_BATCH_SIZE: 100, // Items per processing batch
-  MAX_BATCH_OPERATION_SIZE: 1000, // Security limit for batch file operations
-  MAX_BATCH_OPERATION_TIME: 600000, // 10 minutes timeout for batch operations
-  ANALYSIS_TIMEOUT: 60000, // 1 minute for faster models
-  RETRY_ATTEMPTS: 3
-};
-
-// Renderer/UI specific constants
 const UI_WORKFLOW = {
-  RESTORE_MAX_AGE_MS: 60 * 60 * 1000, // 1 hour
-  SAVE_DEBOUNCE_MS: 1000 // 1s
+  RESTORE_MAX_AGE_MS: 60 * 60 * 1000,
+  SAVE_DEBOUNCE_MS: 1000
 };
 
 const RENDERER_LIMITS = {
   FILE_STATS_BATCH_SIZE: 25,
-  ANALYSIS_TIMEOUT_MS: 3 * 60 * 1000 // 3 minutes
+  ANALYSIS_TIMEOUT_MS: 3 * 60 * 1000
 };
 
-// FIX L-2: Centralized UI virtualization constants to avoid magic numbers
-// Used by react-window list components across the organize phase
-const UI_VIRTUALIZATION = {
-  // Item heights for different list types
-  ANALYSIS_RESULTS_ITEM_HEIGHT: 176, // Height of analysis result row
-  FILE_GRID_ROW_HEIGHT: 400, // Height of file grid row (cards)
-  PROCESSED_FILES_ITEM_HEIGHT: 72, // Compact height for processed files
-  TARGET_FOLDER_ITEM_HEIGHT: 100, // Height of target folder item
-  // Threshold for enabling virtualization (items count)
-  THRESHOLD: 30,
-  // Default overscan count for react-window
-  OVERSCAN_COUNT: 5,
-  // Measurement padding for container sizing
-  MEASUREMENT_PADDING: 24
-};
-
-// Export both CommonJS (for main process) and ES6 (for renderer with webpack)
-const exports_object = {
+module.exports = {
+  IPC_CHANNELS,
+  ACTION_TYPES,
+  DEFAULT_AI_MODELS,
+  AI_DEFAULTS,
+  PROCESSING_LIMITS,
+  FILE_SIZE_LIMITS,
+  LIMITS,
+  UI_VIRTUALIZATION,
+  SUPPORTED_IMAGE_EXTENSIONS,
+  SUPPORTED_DOCUMENT_EXTENSIONS,
+  SUPPORTED_TEXT_EXTENSIONS,
+  SUPPORTED_AUDIO_EXTENSIONS,
+  SUPPORTED_VIDEO_EXTENSIONS,
+  SUPPORTED_ARCHIVE_EXTENSIONS,
+  ALL_SUPPORTED_EXTENSIONS,
   PHASES,
+  PHASE_ORDER,
   PHASE_TRANSITIONS,
   PHASE_METADATA,
-  IPC_CHANNELS,
   SYSTEM_STATUS,
   NOTIFICATION_TYPES,
   FILE_STATES,
   ERROR_TYPES,
   FILE_SYSTEM_ERROR_CODES,
-  ACTION_TYPES,
   SHORTCUTS,
-  LIMITS,
-  SUPPORTED_TEXT_EXTENSIONS,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
-  SUPPORTED_IMAGE_EXTENSIONS,
-  SUPPORTED_VIDEO_EXTENSIONS,
-  SUPPORTED_ARCHIVE_EXTENSIONS,
-  ALL_SUPPORTED_EXTENSIONS,
-  DEFAULT_AI_MODELS,
-  AI_DEFAULTS,
-  FILE_SIZE_LIMITS,
-  PROCESSING_LIMITS,
   UI_WORKFLOW,
-  RENDERER_LIMITS,
-  UI_VIRTUALIZATION
+  RENDERER_LIMITS
 };
-
-// CommonJS export for both Node.js (main process) and webpack (renderer)
-// Webpack handles CommonJS imports perfectly, so we don't need dual exports
-module.exports = exports_object;

@@ -106,6 +106,38 @@ function createSuccessResponse(data) {
 }
 
 /**
+ * Create standardized error response
+ * @param {Error|Object} error - Error object or error-like object
+ * @param {Object} context - Additional context to include
+ * @returns {Object} Standardized error response
+ */
+function createErrorResponse(error, context = {}) {
+  const errorMessage = error?.message || String(error || 'Unknown error');
+  const errorName = error?.name || 'Error';
+  const errorCode = error?.code || error?.errorCode || ERROR_CODES.UNKNOWN_ERROR;
+
+  const details = {
+    errorType: errorName,
+    ...context,
+    ...(error?.validationErrors && {
+      validationErrors: error.validationErrors
+    }),
+    ...(error?.validationWarnings && {
+      validationWarnings: error.validationWarnings
+    })
+  };
+
+  return {
+    success: false,
+    error: {
+      code: errorCode,
+      message: errorMessage,
+      details: Object.keys(details).length > 1 ? details : undefined
+    }
+  };
+}
+
+/**
  * Retry wrapper with exponential backoff.
  * Re-exported from promiseUtils for backward compatibility.
  *
@@ -239,6 +271,7 @@ function getErrorMessage(error, fallback = 'Unknown error') {
 
 module.exports = {
   ERROR_CODES,
+  createErrorResponse,
   createSuccessResponse,
   withRetry,
   logFallback,
