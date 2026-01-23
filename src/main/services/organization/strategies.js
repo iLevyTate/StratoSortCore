@@ -119,8 +119,11 @@ function mapFileToStrategy(file, strategy, smartFolders) {
     .replace('{specific_folder}', analysis.purpose || 'Misc');
 
   // Find matching smart folder or create suggestion
-  const matchingFolder = smartFolders.find(
-    (f) => f.name.toLowerCase() === path.basename(folderPath).toLowerCase()
+  const matchingFolder = (smartFolders || []).find(
+    (f) =>
+      f?.name &&
+      typeof f.name === 'string' &&
+      f.name.toLowerCase() === path.basename(folderPath).toLowerCase()
   );
 
   return {
@@ -232,8 +235,9 @@ function selectBestStrategy(patterns, files = []) {
  */
 function getFallbackSuggestion(file, smartFolders) {
   const category = getFileTypeCategory(file.extension);
-  const matchingFolder = smartFolders.find((f) =>
-    f.name.toLowerCase().includes(category.toLowerCase())
+  const matchingFolder = (smartFolders || []).find(
+    (f) =>
+      f?.name && typeof f.name === 'string' && f.name.toLowerCase().includes(category.toLowerCase())
   );
 
   return {

@@ -10,6 +10,7 @@
 const { getSearchCacheKey, maintainCacheSize } = require('./cacheManager');
 const { getInstance: getParallelEmbedding } = require('../ParallelEmbeddingService');
 const { cosineSimilarity } = require('../../../shared/vectorMath');
+const { logger } = require('../../../shared/logger');
 
 // Build the text representation used for semantic embedding
 function buildEntryText(entry) {
@@ -98,9 +99,24 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
   }
 
   // Prevent unbounded growth of in-memory embedding cache
+  // FIX: Use LRU eviction instead of clearing all entries to avoid recomputation storm
   const MAX_ENTRY_EMBEDDINGS = 2000;
+  const EVICTION_TARGET = 1600; // Remove ~20% of oldest entries
+
   if (cacheStore.entryEmbeddings.size > MAX_ENTRY_EMBEDDINGS) {
-    cacheStore.entryEmbeddings.clear();
+    // Sort by timestamp (access time), remove oldest entries
+    const entries = Array.from(cacheStore.entryEmbeddings.entries());
+    entries.sort((a, b) => (a[1].timestamp || 0) - (b[1].timestamp || 0));
+
+    const toRemove = cacheStore.entryEmbeddings.size - EVICTION_TARGET;
+    for (let i = 0; i < toRemove; i++) {
+      cacheStore.entryEmbeddings.delete(entries[i][0]);
+    }
+
+    logger.debug('[Search] Evicted old embeddings from cache', {
+      removed: toRemove,
+      remaining: cacheStore.entryEmbeddings.size
+    });
   }
 
   // Avoid unbounded embedding work on large histories:

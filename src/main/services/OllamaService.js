@@ -224,19 +224,27 @@ class OllamaService {
 
       // FIX: Track model downgrade at method scope so it can be returned
       let modelWasDowngraded = false;
+      // FIX #9: Track callback failures to return accurate count instead of hardcoded 0
+      let totalCallbackFailures = 0;
 
       if (config.host) await setOllamaHost(config.host, !skipSave);
 
       if (config.textModel) {
         await setOllamaModel(config.textModel, !skipSave);
         // FIX: Await async notification to ensure callbacks complete
-        await this._notifyModelChange('text', previousTextModel, config.textModel);
+        const result = await this._notifyModelChange('text', previousTextModel, config.textModel);
+        if (result?.failed) totalCallbackFailures += result.failed;
       }
 
       if (config.visionModel) {
         await setOllamaVisionModel(config.visionModel, !skipSave);
         // FIX: Await async notification to ensure callbacks complete
-        await this._notifyModelChange('vision', previousVisionModel, config.visionModel);
+        const result = await this._notifyModelChange(
+          'vision',
+          previousVisionModel,
+          config.visionModel
+        );
+        if (result?.failed) totalCallbackFailures += result.failed;
       }
 
       if (config.embeddingModel) {
@@ -267,12 +275,21 @@ class OllamaService {
         await setOllamaEmbeddingModel(embedModel, !skipSave);
         // FIX: Await async notification to ensure callbacks complete (critical for embedding model
         // changes since ChromaDB collections need to be reset before continuing)
-        await this._notifyModelChange('embedding', previousEmbeddingModel, embedModel);
+        const result = await this._notifyModelChange(
+          'embedding',
+          previousEmbeddingModel,
+          embedModel
+        );
+        if (result?.failed) totalCallbackFailures += result.failed;
       }
 
       logger.info('[OllamaService] Configuration updated');
-      // FIX: Return actual downgrade status instead of hardcoded false
-      return { success: true, callbackFailures: 0, modelDowngraded: modelWasDowngraded };
+      // FIX #9: Return actual callback failures count instead of hardcoded 0
+      return {
+        success: true,
+        callbackFailures: totalCallbackFailures,
+        modelDowngraded: modelWasDowngraded
+      };
     } catch (error) {
       logger.error('[OllamaService] Failed to update config:', error);
       return { success: false, error: error.message };
@@ -307,11 +324,17 @@ class OllamaService {
       }
 
       if (config.embeddingModel) {
-        // FIX: Use module-level ALLOWED_EMBED_MODELS constant (defined above updateConfig)
+        // FIX LOW #23: Use exact base name matching instead of substring to prevent
+        // malicious model names like "evil-nomic-embed-text" from passing validation
+        // This makes validation consistent with updateConfig() method
         const normalizedModel = config.embeddingModel.toLowerCase();
         const isAllowed =
           ALLOWED_EMBED_MODELS.includes(config.embeddingModel) ||
-          ALLOWED_EMBED_MODELS.some((allowed) => normalizedModel.includes(allowed.toLowerCase()));
+          ALLOWED_EMBED_MODELS.some((allowed) => {
+            // Strip version tag (e.g., "nomic-embed-text:v1.5" -> "nomic-embed-text")
+            const base = normalizedModel.split(':')[0];
+            return base === allowed.toLowerCase();
+          });
 
         actualEmbeddingModel = isAllowed ? config.embeddingModel : 'embeddinggemma';
         originalRequestedModel = config.embeddingModel;
@@ -383,11 +406,17 @@ class OllamaService {
       }
 
       if (config.embeddingModel) {
-        // FIX: Use module-level ALLOWED_EMBED_MODELS constant (defined above updateConfig)
+        // FIX Issue 2.2: Use exact base name matching instead of substring to prevent
+        // malicious model names like "evil-nomic-embed-text" from passing validation
+        // This makes validation consistent with updateConfig() and updateConfigWithDowngradeInfo()
         const normalizedModel = config.embeddingModel.toLowerCase();
         const isAllowed =
           ALLOWED_EMBED_MODELS.includes(config.embeddingModel) ||
-          ALLOWED_EMBED_MODELS.some((allowed) => normalizedModel.includes(allowed.toLowerCase()));
+          ALLOWED_EMBED_MODELS.some((allowed) => {
+            // Strip version tag (e.g., "nomic-embed-text:v1.5" -> "nomic-embed-text")
+            const base = normalizedModel.split(':')[0];
+            return base === allowed.toLowerCase();
+          });
 
         const embedModel = isAllowed ? config.embeddingModel : 'embeddinggemma';
         await setOllamaEmbeddingModel(embedModel);
@@ -577,8 +606,10 @@ class OllamaService {
       return this._generateEmbeddingWithModel(text, primaryModel, options);
     }
 
-    // FIX: Build fallback chain - start with configured model, then fallbacks
-    const fallbackModels = AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS || [primaryModel];
+    // FIX #8: Validate FALLBACK_MODELS is array before use to prevent runtime errors
+    const fallbackModels = Array.isArray(AI_DEFAULTS.EMBEDDING?.FALLBACK_MODELS)
+      ? AI_DEFAULTS.EMBEDDING.FALLBACK_MODELS
+      : [primaryModel];
     const modelChain = [primaryModel];
 
     // Add fallback models that aren't already the primary
@@ -895,12 +926,16 @@ class OllamaService {
     const results = [];
     const errors = [];
     let abortedAt = null;
+    // FIX #7: Track abort reason to avoid index vs boolean confusion and
+    // prevent incorrect timedOut detection based on post-loop time comparison
+    let abortReason = null;
 
     for (let i = 0; i < items.length; i++) {
       // FIX: Check deadline/abort before each item
       const check = shouldAbort();
       if (check.abort) {
         abortedAt = i;
+        abortReason = check.reason; // FIX #7: Store actual abort reason
         logger.warn('[OllamaService] Batch aborted', {
           reason: check.reason,
           processed: i,
@@ -955,7 +990,10 @@ class OllamaService {
       }
     }
 
-    const timedOut = abortedAt !== null && Date.now() >= absoluteDeadline;
+    // FIX #7: Use stored abort reason instead of post-loop time comparison
+    // This prevents incorrectly reporting timedOut=true when aborted due to cancellation
+    // just before the deadline (where post-loop Date.now() might exceed deadline)
+    const timedOut = abortReason === 'timeout';
 
     return {
       success: errors.length === 0,
@@ -967,7 +1005,8 @@ class OllamaService {
         failed: errors.length,
         duration: Date.now() - startTime,
         timedOut,
-        abortedAt
+        abortedAt,
+        abortReason // FIX #7: Include abort reason in stats for debugging
       }
     };
   }

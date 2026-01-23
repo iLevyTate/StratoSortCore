@@ -761,6 +761,16 @@ class ChromaDBServiceCore extends EventEmitter {
     });
 
     const processor = async (operation) => {
+      // FIX: Skip dimension_mismatch items - they cannot be retried until rebuild
+      // These items were queued before the fix and should be discarded
+      if (operation.metadata?.reason === 'dimension_mismatch') {
+        logger.warn('[ChromaDB] Skipping dimension_mismatch item from queue - requires rebuild', {
+          type: operation.type,
+          dataKeys: Object.keys(operation.data || {})
+        });
+        return; // Skip processing, will be removed from queue
+      }
+
       switch (operation.type) {
         case OperationType.UPSERT_FILE:
           await this._directUpsertFile(operation.data);
@@ -771,9 +781,21 @@ class ChromaDBServiceCore extends EventEmitter {
         case OperationType.DELETE_FILE:
           await this.deleteFileEmbedding(operation.data.fileId);
           break;
-        case OperationType.BATCH_UPSERT_FILES:
-          await this._directBatchUpsertFiles(operation.data.files);
+        case OperationType.BATCH_UPSERT_FILES: {
+          // FIX: Chunk large batches to prevent memory spikes
+          const files = operation.data.files || [];
+          const CHUNK_SIZE = 100;
+
+          for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+            const chunk = files.slice(i, i + CHUNK_SIZE);
+            await this._directBatchUpsertFiles(chunk);
+            // Small delay between chunks to avoid overwhelming the system
+            if (i + CHUNK_SIZE < files.length) {
+              await new Promise((r) => setTimeout(r, 100));
+            }
+          }
           break;
+        }
         case OperationType.BATCH_UPSERT_FOLDERS:
           await this._directBatchUpsertFolders(operation.data.folders);
           break;
@@ -1450,20 +1472,29 @@ class ChromaDBServiceCore extends EventEmitter {
     // FIX P1-3: Validate embedding dimensions before upsert
     const dimValidation = await this.validateEmbeddingDimension(file.vector, 'files');
     if (!dimValidation.valid) {
-      logger.warn('[ChromaDB] Dimension mismatch in upsertFile', {
+      // FIX: DO NOT queue dimension_mismatch - it creates infinite retry loop
+      // The embedding model changed; file cannot be embedded until rebuild
+      logger.error('[ChromaDB] Dimension mismatch - file cannot be embedded until rebuild', {
         fileId: file.id,
         expected: dimValidation.expectedDim,
         actual: dimValidation.actualDim
       });
-      this.emit('dimension-mismatch', {
-        type: 'files',
-        expected: dimValidation.expectedDim,
-        actual: dimValidation.actualDim
+
+      // Emit event for UI to prompt rebuild instead of queuing
+      this.emit('embedding-blocked', {
+        type: 'dimension_mismatch',
+        fileId: file.id,
+        expectedDim: dimValidation.expectedDim,
+        actualDim: dimValidation.actualDim,
+        message: 'Embedding model changed. Run "Rebuild Embeddings" to fix.'
       });
-      this.offlineQueue.enqueue(OperationType.UPSERT_FILE, file, {
-        reason: 'dimension_mismatch'
-      });
-      return { queued: true, fileId: file.id, reason: 'dimension_mismatch' };
+
+      return {
+        success: false,
+        fileId: file.id,
+        error: 'dimension_mismatch',
+        requiresRebuild: true
+      };
     }
 
     return this.circuitBreaker.execute(async () =>
@@ -1507,24 +1538,29 @@ class ChromaDBServiceCore extends EventEmitter {
         'files'
       );
       if (!dimValidation.valid && dimValidation.error === 'dimension_mismatch') {
-        logger.warn('[ChromaDB] Dimension mismatch in batchUpsertFiles', {
+        // FIX: DO NOT queue dimension_mismatch - it creates infinite retry loop
+        // The embedding model changed; files cannot be embedded until rebuild
+        logger.error('[ChromaDB] Dimension mismatch - batch cannot be embedded until rebuild', {
           expected: dimValidation.expectedDim,
           actual: dimValidation.actualDim,
           fileCount: files.length
         });
-        this.emit('dimension-mismatch', {
-          type: 'files',
-          expected: dimValidation.expectedDim,
-          actual: dimValidation.actualDim
+
+        // Emit event for UI to prompt rebuild instead of queuing
+        this.emit('embedding-blocked', {
+          type: 'dimension_mismatch',
+          fileCount: files.length,
+          expectedDim: dimValidation.expectedDim,
+          actualDim: dimValidation.actualDim,
+          message: 'Embedding model changed. Run "Rebuild Embeddings" to fix.'
         });
-        this.offlineQueue.enqueue(
-          OperationType.BATCH_UPSERT_FILES,
-          { files },
-          {
-            reason: 'dimension_mismatch'
-          }
-        );
-        return { queued: true, count: files.length, reason: 'dimension_mismatch' };
+
+        return {
+          success: false,
+          count: files.length,
+          error: 'dimension_mismatch',
+          requiresRebuild: true
+        };
       }
     }
 

@@ -8,6 +8,7 @@ const EmbeddingCache = require('./EmbeddingCache');
 const SmartFolderWatcher = require('./SmartFolderWatcher');
 const NotificationService = require('./NotificationService');
 const { container, ServiceIds, SHUTDOWN_ORDER } = require('./ServiceContainer');
+const { getCanonicalFileId } = require('../../shared/pathSanitization');
 const { logger } = require('../../shared/logger');
 
 logger.setContext('ServiceIntegration');
@@ -257,7 +258,7 @@ class ServiceIntegration {
                     .map((p) => {
                       const ext = (path.extname(p) || '').toLowerCase();
                       const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-                      return `${isImage ? 'image' : 'file'}:${p}`;
+                      return getCanonicalFileId(p, isImage);
                     })
                 )
               );
@@ -494,6 +495,47 @@ class ServiceIntegration {
     if (!container.has(ServiceIds.FILE_ACCESS_POLICY)) {
       const { registerWithContainer: registerFileAccessPolicy } = require('./FileAccessPolicy');
       registerFileAccessPolicy(container, ServiceIds.FILE_ACCESS_POLICY);
+    }
+
+    // Register CacheInvalidationBus (used by all caches for coordinated invalidation)
+    if (!container.has(ServiceIds.CACHE_INVALIDATION_BUS)) {
+      container.registerSingleton(ServiceIds.CACHE_INVALIDATION_BUS, () => {
+        const { getInstance: getCacheInvalidationBus } = require('../../shared/cacheInvalidation');
+        return getCacheInvalidationBus();
+      });
+    }
+
+    // Register FilePathCoordinator (coordinates all path-dependent systems)
+    if (!container.has(ServiceIds.FILE_PATH_COORDINATOR)) {
+      container.registerSingleton(ServiceIds.FILE_PATH_COORDINATOR, (c) => {
+        const { FilePathCoordinator } = require('./FilePathCoordinator');
+        const coordinator = new FilePathCoordinator();
+
+        // Wire up services lazily to avoid circular dependencies
+        // Services are set after initial construction
+        const chromaDb = c.tryResolve(ServiceIds.CHROMA_DB);
+        const analysisHistory = c.tryResolve(ServiceIds.ANALYSIS_HISTORY);
+        const processingState = c.tryResolve(ServiceIds.PROCESSING_STATE);
+        const cacheInvalidationBus = c.tryResolve(ServiceIds.CACHE_INVALIDATION_BUS);
+
+        // EmbeddingQueue is not in the container, use direct require
+        let embeddingQueue = null;
+        try {
+          embeddingQueue = require('../analysis/embeddingQueue');
+        } catch (err) {
+          logger.debug('[ServiceIntegration] EmbeddingQueue not available for FilePathCoordinator');
+        }
+
+        coordinator.setServices({
+          chromaDbService: chromaDb,
+          analysisHistoryService: analysisHistory,
+          embeddingQueue,
+          processingStateService: processingState,
+          cacheInvalidationBus
+        });
+
+        return coordinator;
+      });
     }
 
     // Register NotificationService (used by watchers for user feedback)

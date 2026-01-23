@@ -6,13 +6,16 @@ const { getInstance: getOllamaService } = require('./OllamaService');
 
 logger.setContext('ParallelEmbeddingService');
 
+const { TIMEOUTS } = require('../../shared/performanceConstants');
+
 /**
  * Semaphore configuration constants
  * FIX: Made configurable to prevent hanging promises and memory bloat
+ * Increased timeout to 3 minutes to withstand long-running blocking operations (like large image analysis)
  */
 const SEMAPHORE_CONFIG = {
   MAX_QUEUE_SIZE: 100, // Maximum queued requests before rejecting
-  QUEUE_TIMEOUT_MS: 60000 // 60 second timeout for queued requests
+  QUEUE_TIMEOUT_MS: TIMEOUTS.AI_ANALYSIS_LONG // 180 second timeout to survive blocking operations
 };
 
 /**

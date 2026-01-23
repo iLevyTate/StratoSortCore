@@ -8,9 +8,8 @@ const {
   SUPPORTED_VIDEO_EXTENSIONS,
   AI_DEFAULTS
 } = require('../../shared/constants');
-const { TRUNCATION, THRESHOLDS, TIMEOUTS } = require('../../shared/performanceConstants');
+const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
-const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getOllamaModel, loadOllamaConfig } = require('../ollamaUtils');
 const { AppConfig } = require('./documentLlm');
 
@@ -41,28 +40,36 @@ const { normalizeExtractedTextForStorage } = require('./analysisTextUtils');
 const {
   getIntelligentCategory,
   getIntelligentKeywords,
-  safeSuggestedName
+  safeSuggestedName,
+  createFallbackAnalysis
 } = require('./fallbackUtils');
-const { capEmbeddingInput } = require('../utils/embeddingInput');
-const { getInstance: getChromaDB } = require('../services/chromadb');
-const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const { globalDeduplicator } = require('../utils/llmOptimization');
-const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
+const {
+  applySemanticFolderMatching: applyUnifiedFolderMatching,
+  getServices
+} = require('./semanticFolderMatcher');
+const { LRUCache } = require('../../shared/LRUCache');
+
 // Cache configuration constants
 const CACHE_CONFIG = {
   MAX_FILE_CACHE: 500, // Maximum number of files to cache in memory
   FALLBACK_CONFIDENCE: 65, // Confidence score for fallback analysis
   DEFAULT_CONFIDENCE: 85, // Default confidence for successful analysis
-  CACHE_TTL_MS: 30 * 60 * 1000 // CRITICAL FIX: 30 minute TTL to prevent memory leaks
+  CACHE_TTL_MS: 30 * 60 * 1000 // 30 minute TTL to prevent memory leaks
 };
 const ANALYSIS_SIGNATURE_VERSION = 'v2';
 
 // Folder match threshold now in THRESHOLDS.FOLDER_MATCH_CONFIDENCE
 
-// CRITICAL FIX: In-memory cache with TTL support to prevent memory leaks
-// Cache entries now include timestamp for TTL-based expiration
-const fileAnalysisCache = new Map(); // signature -> { value, timestamp }
+// Stage 3 Migration: Use shared LRUCache instead of manual Map+TTL implementation
+// This eliminates ~40 lines of manual cache management code
+const fileAnalysisCache = new LRUCache({
+  maxSize: CACHE_CONFIG.MAX_FILE_CACHE,
+  ttlMs: CACHE_CONFIG.CACHE_TTL_MS,
+  lruStrategy: 'insertion', // FIFO-style for file analysis cache
+  name: 'FileAnalysisCache'
+});
 
 /**
  * Get cached value if exists and not expired
@@ -71,323 +78,26 @@ const fileAnalysisCache = new Map(); // signature -> { value, timestamp }
  */
 function getFileCache(signature) {
   if (!signature) return null;
-  const entry = fileAnalysisCache.get(signature);
-  if (!entry) return null;
-
-  // Check TTL expiration
-  if (Date.now() - entry.timestamp > CACHE_CONFIG.CACHE_TTL_MS) {
-    fileAnalysisCache.delete(signature);
-    return null;
-  }
-  return entry.value;
+  return fileAnalysisCache.get(signature);
 }
 
 /**
- * Set cache value with timestamp for TTL tracking
+ * Set cache value with automatic TTL and LRU eviction
  * @param {string} signature - Cache key
  * @param {Object} value - Value to cache
  */
 function setFileCache(signature, value) {
   if (!signature) return;
-
-  // CRITICAL FIX: Store with timestamp for TTL-based expiration
-  fileAnalysisCache.set(signature, {
-    value,
-    timestamp: Date.now()
-  });
-
-  // Evict oldest entries if over size limit
-  if (fileAnalysisCache.size > CACHE_CONFIG.MAX_FILE_CACHE) {
-    // FIX P1-9: Collect keys to delete first, then delete in separate pass
-    // Deleting while iterating over Map can skip entries or cause corruption
-    const now = Date.now();
-    const keysToDelete = [];
-
-    // First pass: identify expired entries
-    for (const [key, entry] of fileAnalysisCache) {
-      if (now - entry.timestamp > CACHE_CONFIG.CACHE_TTL_MS) {
-        keysToDelete.push(key);
-      }
-      // Collect enough keys to get under limit
-      if (fileAnalysisCache.size - keysToDelete.length <= CACHE_CONFIG.MAX_FILE_CACHE) {
-        break;
-      }
-    }
-
-    // Second pass: delete collected keys
-    for (const key of keysToDelete) {
-      fileAnalysisCache.delete(key);
-    }
-
-    // If still over limit after TTL eviction, evict oldest (FIFO)
-    if (fileAnalysisCache.size > CACHE_CONFIG.MAX_FILE_CACHE) {
-      const firstKey = fileAnalysisCache.keys().next().value;
-      if (firstKey) {
-        fileAnalysisCache.delete(firstKey);
-      }
-    }
-  }
+  fileAnalysisCache.set(signature, value);
 }
 
 // Import error handling system
 const { FileProcessingError } = require('../errors/AnalysisError');
 
-// CRITICAL FIX: Use lazy initialization instead of module-level singleton creation
-// This prevents startup failures when ChromaDB is not immediately available
-let chromaDbService = null;
-let folderMatcher = null;
-
-/**
- * Lazily initialize ChromaDB service and FolderMatchingService
- * Returns existing instances if already initialized
- * @returns {{ chromaDb: Object|null, matcher: FolderMatchingService|null }}
- */
-function getServicesLazy() {
-  if (!chromaDbService) {
-    try {
-      chromaDbService = getChromaDB();
-    } catch (e) {
-      logger.debug('[DocumentAnalysis] ChromaDB not available yet:', e.message);
-    }
-  }
-  if (!folderMatcher && chromaDbService) {
-    try {
-      folderMatcher = new FolderMatchingService(chromaDbService);
-    } catch (e) {
-      logger.debug('[DocumentAnalysis] FolderMatchingService creation failed:', e.message);
-    }
-  }
-  return { chromaDb: chromaDbService, matcher: folderMatcher };
-}
+// Stage 5: Local getServicesLazy removed - now using getServices from semanticFolderMatcher
 
 // Set logger context for this module
 logger.setContext('DocumentAnalysis');
-
-// ============================================================================
-// Helper Functions - Extracted for readability and maintainability
-// ============================================================================
-
-/**
- * Create a fallback analysis result when AI analysis is unavailable
- * @param {string} fileName - Original file name
- * @param {string} fileExtension - File extension
- * @param {string} purpose - Purpose description
- * @param {Array} smartFolders - Smart folders for category matching
- * @param {Object} options - Additional options (confidence, extractionMethod, error)
- * @returns {Object} Fallback analysis result
- */
-function createDocumentFallback(fileName, fileExtension, purpose, smartFolders, options = {}) {
-  const {
-    confidence = CACHE_CONFIG.FALLBACK_CONFIDENCE,
-    extractionMethod = 'filename_fallback',
-    error = null,
-    date = new Date().toISOString().split('T')[0]
-  } = options;
-
-  const intelligentCategory = getIntelligentCategory(fileName, fileExtension, smartFolders);
-  const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
-  const safeCategory = intelligentCategory || 'document';
-
-  const result = {
-    purpose:
-      purpose ||
-      `fallback analysis for ${safeCategory.charAt(0).toUpperCase() + safeCategory.slice(1)} document`,
-    project: fileName.replace(fileExtension, ''),
-    category: safeCategory,
-    date,
-    keywords: intelligentKeywords || [],
-    confidence,
-    suggestedName: safeSuggestedName(fileName, fileExtension),
-    extractionMethod,
-    summary: purpose || `Fallback analysis for ${fileName}`
-  };
-
-  if (error) {
-    result.error = error;
-  }
-
-  return result;
-}
-
-function buildEmbeddingSummary(analysis, extractedText, fileExtension) {
-  const baseParts = [
-    analysis.summary,
-    analysis.purpose,
-    analysis.project,
-    Array.isArray(analysis.keywords) ? analysis.keywords.join(' ') : ''
-  ].filter(Boolean);
-
-  // FIX: Enrich with semantic keywords based on file extension (e.g. .stl -> "3d printing")
-  // This ensures embedding matching works even if LLM missed the semantic connection
-  const enrichedBase = enrichFileTextForEmbedding(baseParts.join('\n'), fileExtension);
-
-  const textSnippet = extractedText ? extractedText.slice(0, TRUNCATION.TEXT_EXTRACT_MAX) : '';
-  const combined = [enrichedBase, textSnippet].filter(Boolean).join('\n');
-  const cappedCombined = capEmbeddingInput(combined);
-
-  if (cappedCombined.wasTruncated && baseParts.length > 0) {
-    const summaryOnly = capEmbeddingInput(enrichedBase);
-    if (summaryOnly.text) {
-      return { ...summaryOnly, usedSummaryOnly: true };
-    }
-  }
-
-  return { ...cappedCombined, usedSummaryOnly: false };
-}
-
-/**
- * Apply semantic folder matching using ChromaDB embeddings
- * @param {Object} analysis - Current analysis result
- * @param {string} filePath - File path
- * @param {string} fileName - File name
- * @param {string} extractedText - Extracted text content
- * @param {Array} smartFolders - Available smart folders
- */
-async function applyDocumentFolderMatching(
-  analysis,
-  filePath,
-  fileName,
-  extractedText,
-  smartFolders,
-  fileExtension,
-  fileSize
-) {
-  // CRITICAL FIX: Guard against null/undefined analysis to prevent crash
-  if (!analysis || typeof analysis !== 'object') {
-    logger.warn('[DocumentAnalysis] Invalid analysis object, skipping folder matching', {
-      filePath,
-      analysisType: typeof analysis
-    });
-    return;
-  }
-
-  // CRITICAL FIX: Use lazy initialization to get services
-  const { chromaDb, matcher } = getServicesLazy();
-
-  if (!chromaDb) {
-    logger.warn('[DocumentAnalysis] ChromaDB service not available, skipping folder matching');
-    return;
-  }
-
-  await chromaDb.initialize();
-
-  if (matcher && !matcher.embeddingCache?.initialized) {
-    await matcher.initialize();
-    logger.debug('[DocumentAnalysis] FolderMatchingService initialized');
-  }
-
-  if (!matcher) {
-    logger.warn('[DocumentAnalysis] FolderMatchingService not available, skipping folder matching');
-    return;
-  }
-
-  if (smartFolders && smartFolders.length > 0) {
-    logger.debug('[DocumentAnalysis] Upserting folder embeddings', {
-      folderCount: smartFolders.length
-    });
-    await matcher.batchUpsertFolders(smartFolders);
-  }
-
-  const normalizedPath = normalizePathForIndex(filePath);
-  const fileId = `file:${normalizedPath}`;
-  const embeddingSummary = buildEmbeddingSummary(analysis, extractedText, fileExtension);
-  const summaryForEmbedding = embeddingSummary.text;
-
-  if (embeddingSummary.wasTruncated || embeddingSummary.usedSummaryOnly) {
-    logger.warn('[DocumentAnalysis] Embedding summary truncated to token limit', {
-      fileId,
-      summaryLength: summaryForEmbedding.length,
-      estimatedTokens: embeddingSummary.estimatedTokens,
-      maxTokens: embeddingSummary.maxTokens,
-      usedSummaryOnly: embeddingSummary.usedSummaryOnly
-    });
-  }
-  logger.debug('[DocumentAnalysis] Generating embedding for folder matching', {
-    fileId,
-    summaryLength: summaryForEmbedding.length
-  });
-
-  const { vector, model } = await matcher.embedText(summaryForEmbedding || '');
-  const candidates = await matcher.matchVectorToFolders(vector, 5);
-
-  // FIX: Include category and confidence in metadata for search display
-  const rawConfidence = analysis.confidence ?? 0;
-  const confidencePercent =
-    typeof rawConfidence === 'number'
-      ? rawConfidence > 1
-        ? Math.round(rawConfidence)
-        : Math.round(rawConfidence * 100)
-      : 0;
-  embeddingQueue.enqueue({
-    id: fileId,
-    vector,
-    model,
-    meta: {
-      path: filePath,
-      name: fileName,
-      fileExtension,
-      fileSize,
-      category: analysis.category || 'Uncategorized',
-      confidence: confidencePercent,
-      type: 'document',
-      extractionMethod: analysis.extractionMethod || 'content',
-      summary: (summaryForEmbedding || analysis.summary || analysis.purpose || '').substring(
-        0,
-        500
-      ),
-      tags: Array.isArray(analysis.keywords) ? analysis.keywords : analysis.tags || [],
-      keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
-      entity: analysis.entity,
-      project: analysis.project,
-      date: analysis.date,
-      suggestedName: analysis.suggestedName,
-      purpose: analysis.purpose
-    },
-    updatedAt: new Date().toISOString()
-  });
-
-  if (Array.isArray(candidates) && candidates.length > 0) {
-    logger.debug('[DocumentAnalysis] Folder matching results', {
-      fileId,
-      candidateCount: candidates.length,
-      topScore: candidates[0]?.score,
-      topFolder: candidates[0]?.name
-    });
-
-    const top = candidates[0];
-    // Only override LLM category if embedding score exceeds both threshold AND LLM confidence
-    // This ensures semantic understanding from content analysis remains primary
-    const llmConfidence = analysis.confidence || 0.7;
-    const shouldOverride =
-      top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE && top.score > llmConfidence;
-
-    if (shouldOverride) {
-      logger.info('[DocumentAnalysis] Embedding override - folder match exceeds LLM confidence', {
-        llmCategory: analysis.category,
-        llmConfidence,
-        embeddingCategory: top.name,
-        embeddingScore: top.score
-      });
-      analysis.llmOriginalCategory = analysis.category;
-      analysis.category = top.name;
-      analysis.categorySource = 'embedding_override';
-      analysis.suggestedFolder = top.name;
-      analysis.destinationFolder = top.path || top.name;
-    } else if (top && top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
-      // Embedding met threshold but LLM confidence was higher - keep LLM category
-      logger.debug('[DocumentAnalysis] LLM category preserved - confidence higher than embedding', {
-        llmCategory: analysis.category,
-        llmConfidence,
-        embeddingCategory: top.name,
-        embeddingScore: top.score
-      });
-      analysis.categorySource = 'llm_preserved';
-    }
-    analysis.folderMatchCandidates = candidates;
-  } else {
-    logger.debug('[DocumentAnalysis] No folder matches found', { fileId });
-  }
-}
 
 /**
  * Analyzes a document file using AI or fallback methods
@@ -491,15 +201,25 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
     if (!isRunning) {
       logger.warn('Ollama unavailable. Using filename-based analysis.');
-      return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
-        date: fileDate
+      return createFallbackAnalysis({
+        fileName,
+        fileExtension,
+        reason: 'Ollama unavailable',
+        smartFolders,
+        type: 'document',
+        options: { date: fileDate }
       });
     }
   } catch (error) {
     logger.error('Pre-flight verification failed:', error);
-    return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
+    return createFallbackAnalysis({
+      fileName,
+      fileExtension,
+      reason: 'Pre-flight verification failed',
+      smartFolders,
       confidence: 65,
-      date: fileDate
+      type: 'document',
+      options: { date: fileDate }
     });
   }
 
@@ -719,18 +439,26 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         extension: fileExtension,
         fileName
       });
-      return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
+      return createFallbackAnalysis({
+        fileName,
+        fileExtension,
+        reason: 'No content parser available',
+        smartFolders,
         confidence: 75,
-        extractionMethod: 'filename',
-        date: fileDate
+        type: 'document',
+        options: { extractionMethod: 'filename', date: fileDate }
       });
     }
 
     // If PDF had no extractable text, attempt OCR on a rasterized page
+    // REDUNDANT: OCR is already attempted in the PDF extraction block above.
+    // Removing to prevent double-processing and performance waste.
+    /*
     if (fileExtension === '.pdf' && (!extractedText || extractedText.trim().length === 0)) {
       const ocrText = await ocrPdfIfNeeded(filePath);
       if (ocrText) extractedText = ocrText;
     }
+    */
 
     if (extractedText && extractedText.trim().length > 0) {
       logger.info(`[CONTENT-ANALYSIS] Processing`, {
@@ -744,7 +472,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       // OPTIMIZATION: Retrieve similar file names to improve naming consistency (Vector-based Decision)
       let namingContext = [];
       try {
-        const { matcher } = getServicesLazy();
+        const { matcher } = getServices();
         if (matcher) {
           // Initialize matcher if needed (lazy init pattern)
           if (!matcher.embeddingCache?.initialized) {
@@ -799,19 +527,21 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         analyzeTextWithOllama(extractedText, fileName, smartFolders, fileDate, namingContext)
       );
 
-      // Semantic folder refinement using embeddings (delegated to helper)
+      // Semantic folder refinement using embeddings
+      // MIGRATION: Now uses unified semanticFolderMatcher module
       // CRITICAL FIX: Guard against null/undefined analysis before folder matching
       if (analysis && typeof analysis === 'object' && !analysis.error) {
         try {
-          await applyDocumentFolderMatching(
+          await applyUnifiedFolderMatching({
             analysis,
             filePath,
             fileName,
-            extractedText,
-            smartFolders,
             fileExtension,
-            fileStats?.size
-          );
+            fileSize: fileStats?.size,
+            smartFolders,
+            extractedText,
+            type: 'document'
+          });
         } catch (e) {
           logger.warn('[DocumentAnalysis] Folder matching failed (non-fatal):', {
             error: e.message,
@@ -855,7 +585,8 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         {
           rawText: extractedTextPreview,
           extractedText: extractedTextForStorage,
-          keywords: Array.isArray(analysis.keywords)
+          // FIX #3: Use optional chaining to prevent crash when analysis is null/undefined
+          keywords: Array.isArray(analysis?.keywords)
             ? analysis.keywords
             : ['document', 'analysis_failed'],
           purpose: 'Text extracted, but Ollama analysis failed.',
@@ -874,16 +605,18 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
     logger.error(`[EXTRACTION-FAILED] Could not extract any text content`, {
       fileName
     });
-    const result = {
-      error: 'Could not extract text or analyze document.',
-      project: fileName,
-      category: 'document',
-      date: new Date().toISOString().split('T')[0],
-      keywords: [],
+    const result = createFallbackAnalysis({
+      fileName,
+      fileExtension,
+      reason: 'extraction failed',
+      smartFolders,
       confidence: 50,
-      extractionMethod: 'failed',
-      summary: 'Analysis failed: Could not extract text'
-    };
+      type: 'document',
+      options: {
+        extractionMethod: 'failed',
+        error: 'Could not extract text or analyze document.'
+      }
+    });
     // Use pre-computed signature if available, otherwise skip caching
     if (fileSignature) {
       setFileCache(fileSignature, result);
@@ -894,9 +627,14 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       path: filePath,
       error: error.message
     });
-    return createDocumentFallback(fileName, fileExtension, null, smartFolders, {
+    return createFallbackAnalysis({
+      fileName,
+      fileExtension,
+      reason: 'Error processing document',
+      smartFolders,
       confidence: 60,
-      date: fileDate
+      type: 'document',
+      options: { date: fileDate, error: error.message }
     });
   }
 }

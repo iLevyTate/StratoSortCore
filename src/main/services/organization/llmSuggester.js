@@ -8,6 +8,9 @@
  */
 
 const { logger } = require('../../../shared/logger');
+const { TIMEOUTS } = require('../../../shared/performanceConstants');
+const { withAbortableTimeout } = require('../../../shared/promiseUtils');
+const { AI_DEFAULTS } = require('../../../shared/constants');
 const { getOllama, getOllamaModel } = require('../../ollamaUtils');
 const { buildOllamaOptions } = require('../PerformanceService');
 const { globalDeduplicator } = require('../../utils/llmOptimization');
@@ -28,9 +31,9 @@ const MAX_RESPONSE_SIZE = 1024 * 1024; // 1MB
 async function getLLMAlternativeSuggestions(file, smartFolders, config = {}) {
   try {
     const ollama = getOllama();
-    const model = getOllamaModel();
+    const model = getOllamaModel() || AI_DEFAULTS.TEXT.MODEL;
 
-    if (!ollama || !model) {
+    if (!ollama) {
       return [];
     }
 
@@ -72,17 +75,25 @@ Return JSON: {
       type: 'organization-suggestions'
     });
 
-    const response = await globalDeduplicator.deduplicate(deduplicationKey, () =>
-      ollama.generate({
-        model,
-        prompt,
-        format: 'json',
-        options: {
-          ...perfOptions,
-          temperature: llmTemperature,
-          num_predict: llmMaxTokens
-        }
-      })
+    const timeoutMs = TIMEOUTS.AI_ANALYSIS_LONG;
+    logger.debug('[LLMSuggester] Using text model', { model, timeoutMs, file: file?.name });
+    const response = await withAbortableTimeout(
+      (abortController) =>
+        globalDeduplicator.deduplicate(deduplicationKey, () =>
+          ollama.generate({
+            model,
+            prompt,
+            format: 'json',
+            options: {
+              ...perfOptions,
+              temperature: llmTemperature,
+              num_predict: llmMaxTokens
+            },
+            signal: abortController.signal
+          })
+        ),
+      timeoutMs,
+      'LLM organization suggestions'
     );
 
     // Validate response size

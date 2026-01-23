@@ -10,6 +10,8 @@
 
 const { logger } = require('../../shared/logger');
 const { TIMEOUTS } = require('../../shared/performanceConstants');
+const { LRUCache } = require('../../shared/LRUCache');
+const { getInstance: getCacheInvalidationBus } = require('../../shared/cacheInvalidation');
 
 logger.setContext('ReRankerService');
 
@@ -64,9 +66,20 @@ class ReRankerService {
     this.textModel = options.textModel || null; // Will use OllamaService default
     this.config = { ...DEFAULT_CONFIG, ...options };
 
-    // Cache for query-result scores to avoid redundant LLM calls
-    // Key: `${query}::${fileId}`, Value: { score, timestamp }
-    this.scoreCache = new Map();
+    // FIX: Use LRUCache with periodic cleanup instead of plain Map
+    // This prevents stale entries from accumulating between queries
+    this.scoreCache = new LRUCache({
+      maxSize: this.config.cacheMaxSize,
+      ttlMs: this.config.cacheTTLMs,
+      name: 'ReRankerScoreCache',
+      trackMetrics: true
+    });
+    // Initialize with 1-minute cleanup interval for expired entries
+    this.scoreCache.initialize(60000);
+
+    // FIX MED #13: In-flight request tracking to prevent duplicate LLM calls
+    // When concurrent requests have the same cache key, they share the same promise
+    this._inFlightRequests = new Map();
 
     // Statistics
     this.stats = {
@@ -77,10 +90,73 @@ class ReRankerService {
       avgLatencyMs: 0
     };
 
+    // Cache invalidation bus subscription
+    this._unsubscribe = null;
+    this._subscribeToInvalidationBus();
+
     logger.info('[ReRankerService] Initialized', {
       topN: this.config.topN,
       model: this.textModel || 'default'
     });
+  }
+
+  /**
+   * Subscribe to the cache invalidation bus for coordinated cache clearing
+   * @private
+   */
+  _subscribeToInvalidationBus() {
+    try {
+      const bus = getCacheInvalidationBus();
+      this._unsubscribe = bus.subscribe('ReRankerService', {
+        onInvalidate: (event) => {
+          if (event.type === 'full-invalidate') {
+            this.clearCache();
+          }
+        },
+        onPathChange: (oldPath) => {
+          // Invalidate scores for files that were moved/renamed
+          this._invalidateForPath(oldPath);
+        },
+        onDeletion: (filePath) => {
+          this._invalidateForPath(filePath);
+        },
+        onBatch: (changes) => {
+          // For batch operations, invalidate all affected paths
+          for (const change of changes) {
+            this._invalidateForPath(change.oldPath);
+          }
+        }
+      });
+      logger.debug('[ReRankerService] Subscribed to cache invalidation bus');
+    } catch (error) {
+      logger.warn(
+        '[ReRankerService] Failed to subscribe to cache invalidation bus:',
+        error.message
+      );
+    }
+  }
+
+  /**
+   * Invalidate cache entries for a specific file path
+   * @param {string} filePath - Path to invalidate
+   * @private
+   */
+  _invalidateForPath(filePath) {
+    if (!filePath) return;
+
+    // Score cache keys are in format: "query::fileId"
+    // We need to invalidate any entry where the fileId contains the path
+    let invalidated = 0;
+    for (const key of this.scoreCache.keys()) {
+      if (key.includes(filePath)) {
+        this.scoreCache.delete(key);
+        invalidated++;
+      }
+    }
+
+    if (invalidated > 0) {
+      logger.debug(`[ReRankerService] Invalidated ${invalidated} scores for path change`);
+    }
   }
 
   /**
@@ -194,8 +270,24 @@ class ReRankerService {
       return { ...candidate, llmScore: cached, fromCache: true };
     }
 
+    // FIX MED #13: Check for in-flight request with same key to prevent duplicate LLM calls
+    // If another request is already fetching this score, wait for it instead of making duplicate call
+    if (this._inFlightRequests.has(cacheKey)) {
+      try {
+        const llmScore = await this._inFlightRequests.get(cacheKey);
+        return { ...candidate, llmScore, fromInFlight: true };
+      } catch (error) {
+        // In-flight request failed, return fallback
+        return { ...candidate, llmScore: this.config.fallbackScore, error: error.message };
+      }
+    }
+
+    // Create promise for this request and track it
+    const scorePromise = this._scoreRelevance(query, candidate);
+    this._inFlightRequests.set(cacheKey, scorePromise);
+
     try {
-      const llmScore = await this._scoreRelevance(query, candidate);
+      const llmScore = await scorePromise;
       this.stats.totalFilesScored++;
 
       // Cache the score
@@ -206,6 +298,9 @@ class ReRankerService {
       this.stats.llmErrors++;
       logger.debug('[ReRankerService] Scoring failed for:', fileId, error.message);
       return { ...candidate, llmScore: this.config.fallbackScore, error: error.message };
+    } finally {
+      // FIX MED #13: Always remove from in-flight tracking when done
+      this._inFlightRequests.delete(cacheKey);
     }
   }
 
@@ -307,41 +402,24 @@ class ReRankerService {
 
   /**
    * Get cached score if valid
+   * FIX: Updated to use LRUCache API (TTL check handled by cache)
    *
    * @param {string} key - Cache key
    * @returns {number|null} Cached score or null
    */
   _getCachedScore(key) {
-    const cached = this.scoreCache.get(key);
-    if (!cached) return null;
-
-    // Check TTL
-    if (Date.now() - cached.timestamp > this.config.cacheTTLMs) {
-      this.scoreCache.delete(key);
-      return null;
-    }
-
-    return cached.score;
+    return this.scoreCache.get(key);
   }
 
   /**
    * Set cached score
+   * FIX: Updated to use LRUCache API (size enforcement handled by cache)
    *
    * @param {string} key - Cache key
    * @param {number} score - Score to cache
    */
   _setCachedScore(key, score) {
-    // Enforce cache size limit
-    if (this.scoreCache.size >= this.config.cacheMaxSize) {
-      // Remove oldest entry
-      const firstKey = this.scoreCache.keys().next().value;
-      this.scoreCache.delete(firstKey);
-    }
-
-    this.scoreCache.set(key, {
-      score,
-      timestamp: Date.now()
-    });
+    this.scoreCache.set(key, score);
   }
 
   /**
@@ -363,9 +441,11 @@ class ReRankerService {
    * @returns {Object} Statistics
    */
   getStats() {
+    const cacheStats = this.scoreCache.getStats();
     return {
       ...this.stats,
-      cacheSize: this.scoreCache.size
+      cacheSize: cacheStats.size,
+      cacheHitRate: cacheStats.hitRate
     };
   }
 
@@ -388,45 +468,54 @@ class ReRankerService {
 
   /**
    * Cleanup resources
+   * FIX: Use LRUCache shutdown to clean up intervals
    */
-  cleanup() {
-    this.scoreCache.clear();
+  async cleanup() {
+    // Unsubscribe from cache invalidation bus
+    if (this._unsubscribe) {
+      this._unsubscribe();
+      this._unsubscribe = null;
+    }
+    await this.scoreCache.shutdown();
     this.ollamaService = null;
     logger.info('[ReRankerService] Cleanup complete');
   }
 }
 
-// Singleton instance
-let instance = null;
+// Use singleton factory to prevent race conditions in getInstance()
+const { createSingletonHelpers } = require('../../shared/singletonFactory');
+
+const {
+  getInstance: _getInstance,
+  resetInstance,
+  registerWithContainer
+} = createSingletonHelpers({
+  ServiceClass: ReRankerService,
+  serviceId: 'RERANKER',
+  serviceName: 'ReRankerService',
+  containerPath: './ServiceContainer',
+  shutdownMethod: 'cleanup'
+});
 
 /**
  * Get singleton ReRankerService instance
- *
+ * FIX: Wrapped to handle ollamaService injection safely after initialization
  * @param {Object} options - Options for initialization
  * @returns {ReRankerService}
  */
 function getInstance(options = {}) {
-  if (!instance) {
-    instance = new ReRankerService(options);
-  } else if (options.ollamaService && !instance.ollamaService) {
-    // Update ollamaService if provided and not set
+  const instance = _getInstance(options);
+  // FIX: Handle ollamaService injection after singleton is created
+  // This is safe because we're setting a property, not creating a new instance
+  if (options.ollamaService && instance && !instance.ollamaService) {
     instance.ollamaService = options.ollamaService;
   }
   return instance;
 }
 
-/**
- * Reset singleton (for testing)
- */
-function resetInstance() {
-  if (instance) {
-    instance.cleanup();
-    instance = null;
-  }
-}
-
 module.exports = {
   ReRankerService,
   getInstance,
-  resetInstance
+  resetInstance,
+  registerWithContainer
 };

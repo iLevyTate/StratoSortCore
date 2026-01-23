@@ -27,6 +27,7 @@ try {
   ({ XMLParser } = require('./xmlParserFallback'));
 }
 const { parse: parseCsv } = require('csv-parse/sync');
+const { isTesseractAvailable, recognizeIfAvailable } = require('../utils/tesseractUtils');
 
 logger.setContext('DocumentExtractors');
 
@@ -453,6 +454,11 @@ async function ocrPdfIfNeeded(filePath) {
   const OCR_MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB limit (reduced from 50MB)
 
   try {
+    if (!(await isTesseractAvailable())) {
+      logger.debug('[OCR] Skipping PDF OCR - tesseract unavailable');
+      return '';
+    }
+
     // Fixed: Check file size before OCR processing (OCR is very memory intensive)
     const stats = await fs.stat(filePath);
     // OCR has stricter limits due to image processing overhead
@@ -492,11 +498,15 @@ async function ocrPdfIfNeeded(filePath) {
     // Clear PDF buffer before OCR to reduce peak memory
     pdfBuffer = null;
 
-    const ocrText = await tesseract.recognize(rasterPng, {
+    const ocrResult = await recognizeIfAvailable(tesseract, rasterPng, {
       lang: 'eng',
       oem: 1,
       psm: 3
     });
+    if (!ocrResult.success) {
+      return '';
+    }
+    const ocrText = ocrResult.text;
 
     // Fixed: Truncate OCR results and clean up
     const result = ocrText && ocrText.trim().length > 0 ? truncateText(ocrText) : '';
@@ -541,6 +551,145 @@ async function extractTextFromDoc(filePath) {
   }
 }
 
+async function extractImagesFromOfficeArchiveAndOcr(filePath, mediaPathPrefix) {
+  const AdmZip = require('adm-zip');
+  const tesseract = require('node-tesseract-ocr');
+  const sharp = require('sharp');
+  const OCR_MAX_WIDTH = 2480; // ~A4 at 150 DPI
+  const OCR_MAX_HEIGHT = 3508; // ~A4 at 150 DPI
+  const OCR_MAX_BYTES = 20 * 1024 * 1024; // 20MB limit per image
+
+  try {
+    if (!(await isTesseractAvailable())) {
+      logger.debug('[OFFICE-OCR] Skipping OCR - tesseract unavailable');
+      return '';
+    }
+
+    const zip = new AdmZip(filePath);
+    const zipEntries = zip.getEntries();
+    let ocrText = '';
+    let processedImages = 0;
+
+    // Filter for image files in the specified media folder (e.g. 'word/media/' or 'ppt/media/')
+    const imageEntries = zipEntries.filter(
+      (entry) =>
+        entry.entryName.startsWith(mediaPathPrefix) &&
+        /\.(png|jpg|jpeg|tiff|bmp|gif|webp)$/i.test(entry.entryName)
+    );
+
+    if (imageEntries.length === 0) return '';
+
+    logger.info(
+      `[OFFICE-OCR] Found ${imageEntries.length} images in ${mediaPathPrefix}, attempting OCR`
+    );
+
+    for (const entry of imageEntries) {
+      // Limit to first 10 images to prevent timeouts/memory issues
+      if (processedImages >= 10) break;
+
+      const buffer = entry.getData();
+      if (!buffer || buffer.length === 0) {
+        continue;
+      }
+      if (buffer.length > OCR_MAX_BYTES) {
+        logger.debug('[OFFICE-OCR] Skipping large image', {
+          entry: entry.entryName,
+          size: buffer.length,
+          maxBytes: OCR_MAX_BYTES
+        });
+        continue;
+      }
+
+      let ocrBuffer = buffer;
+      try {
+        let pipeline = sharp(buffer);
+        const meta = await pipeline.metadata();
+        if (meta.width > OCR_MAX_WIDTH || meta.height > OCR_MAX_HEIGHT) {
+          pipeline = pipeline.resize(OCR_MAX_WIDTH, OCR_MAX_HEIGHT, {
+            fit: 'inside',
+            withoutEnlargement: true
+          });
+        }
+        ocrBuffer = await pipeline.png({ compressionLevel: 6 }).toBuffer();
+      } catch (prepError) {
+        logger.debug('[OFFICE-OCR] Image preprocessing failed, using original buffer', {
+          entry: entry.entryName,
+          error: prepError.message
+        });
+      }
+      const ocrResult = await recognizeIfAvailable(tesseract, ocrBuffer, {
+        lang: 'eng',
+        oem: 1,
+        psm: 3
+      });
+      if (!ocrResult.success) {
+        logger.debug('[OFFICE-OCR] OCR failed for image', {
+          entry: entry.entryName,
+          error: ocrResult.error
+        });
+        continue;
+      }
+      if (ocrResult.success && ocrResult.text && ocrResult.text.trim()) {
+        ocrText += `${ocrResult.text.trim()}\n\n`;
+        processedImages++;
+      }
+    }
+
+    return ocrText.trim();
+  } catch (error) {
+    logger.warn('[OFFICE-OCR] Failed to extract/OCR images from office archive', {
+      error: error.message
+    });
+    return '';
+  }
+}
+
+async function extractTextFromDocxXml(filePath) {
+  try {
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip(filePath);
+    if (!zip || typeof zip.getEntries !== 'function') {
+      logger.debug('[DOCX] Zip reader unavailable, skipping XML extraction');
+      return '';
+    }
+    const entries = zip.getEntries();
+    if (!entries || entries.length === 0) return '';
+
+    const xmlEntries = entries.filter((entry) => {
+      const name = entry.entryName.toLowerCase();
+      return (
+        name === 'word/document.xml' ||
+        name.startsWith('word/header') ||
+        name.startsWith('word/footer')
+      );
+    });
+
+    if (xmlEntries.length === 0) return '';
+
+    const chunks = [];
+    for (const entry of xmlEntries) {
+      try {
+        const xml = entry.getData()?.toString('utf8') || '';
+        if (!xml) continue;
+        const text = extractPlainTextFromXml(xml);
+        if (text) {
+          chunks.push(text);
+        }
+      } catch (error) {
+        logger.debug('[DOCX] XML extraction failed for entry', {
+          entry: entry.entryName,
+          error: error.message
+        });
+      }
+    }
+
+    return truncateText(chunks.join('\n\n'));
+  } catch (error) {
+    logger.debug('[DOCX] XML extraction failed for archive', { error: error.message });
+    return '';
+  }
+}
+
 async function extractTextFromDocx(filePath) {
   const mammoth = require('mammoth');
   // Fixed: Check file size before reading
@@ -578,10 +727,36 @@ async function extractTextFromDocx(filePath) {
         const text = typeof result === 'string' ? result : (result && result.text) || '';
 
         if (!text || text.trim().length === 0) {
+          // Fallback 2: XML extraction from docx archive
+          const xmlText = await extractTextFromDocxXml(filePath);
+          if (xmlText && xmlText.length > 0) {
+            return truncateText(xmlText);
+          }
+
+          // Fallback 3: OCR for image-heavy documents
+          logger.info('[DOCX] Text extraction failed, attempting OCR for embedded images');
+          const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
+          if (ocrText && ocrText.length > 0) {
+            return truncateText(ocrText);
+          }
           throw new Error('No text content in DOCX (fallback)');
         }
         return truncateText(text);
       } catch (fallbackError) {
+        // If we haven't tried OCR yet (because officeparser threw before checking text length), try it now
+        if (fallbackError.message !== 'No text content in DOCX (fallback)') {
+          const xmlText = await extractTextFromDocxXml(filePath);
+          if (xmlText && xmlText.length > 0) {
+            return truncateText(xmlText);
+          }
+
+          logger.info('[DOCX] Officeparser failed, attempting OCR for embedded images');
+          const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
+          if (ocrText && ocrText.length > 0) {
+            return truncateText(ocrText);
+          }
+        }
+
         logger.error('[DOCX] All extraction methods failed', {
           mammothError: error.message,
           fallbackError: fallbackError.message
@@ -591,6 +766,22 @@ async function extractTextFromDocx(filePath) {
       }
     }
   } catch (error) {
+    // This outer catch block seems redundant given the structure, but we'll keep it for safety
+    // and add OCR check here too just in case
+    try {
+      const xmlText = await extractTextFromDocxXml(filePath);
+      if (xmlText && xmlText.length > 0) {
+        return truncateText(xmlText);
+      }
+
+      const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
+      if (ocrText && ocrText.length > 0) {
+        return truncateText(ocrText);
+      }
+    } catch (ocrErr) {
+      // Ignore OCR error and throw original
+    }
+
     logger.warn('[DOCX] Mammoth extraction failed, trying officeparser fallback', {
       error: error.message,
       filePath
@@ -603,6 +794,11 @@ async function extractTextFromDocx(filePath) {
       const text = typeof result === 'string' ? result : (result && result.text) || '';
 
       if (!text || text.trim().length === 0) {
+        // Fallback 2: OCR
+        const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'word/media/');
+        if (ocrText && ocrText.length > 0) {
+          return truncateText(ocrText);
+        }
         throw new Error('No text content in DOCX (fallback)');
       }
       return truncateText(text);
@@ -878,7 +1074,13 @@ async function extractTextFromPptx(filePath) {
         const name = entry.entryName.toLowerCase();
         if (name.startsWith('ppt/slides/slide') && name.endsWith('.xml')) {
           try {
-            const xmlContent = entry.getData().toString('utf8');
+            // FIX MED-4: Add null check before calling .toString()
+            const entryData = entry.getData();
+            if (!entryData) {
+              logger.debug('[PPTX] Entry getData() returned null', { entry: name });
+              continue;
+            }
+            const xmlContent = entryData.toString('utf8');
             // Extract text from XML (simple tag stripping)
             const slideText = extractPlainTextFromHtml(xmlContent);
             if (slideText && slideText.trim()) {
@@ -906,6 +1108,17 @@ async function extractTextFromPptx(filePath) {
       logger.warn('[PPTX] ZIP-based extraction failed', {
         error: zipError.message
       });
+    }
+
+    // Fallback 3: OCR for image-heavy presentations
+    try {
+      logger.info('[PPTX] Text extraction failed, attempting OCR for embedded images');
+      const ocrText = await extractImagesFromOfficeArchiveAndOcr(filePath, 'ppt/media/');
+      if (ocrText && ocrText.length > 0) {
+        return truncateText(ocrText);
+      }
+    } catch (ocrError) {
+      logger.warn('[PPTX] OCR fallback failed', { error: ocrError.message });
     }
 
     // If we reach here, both methods failed or returned empty

@@ -126,11 +126,14 @@ class ProcessingStateService {
    */
   async _saveStateInternal() {
     this.state.updatedAt = new Date().toISOString();
+    await this._performAtomicWrite(this.state);
+  }
+
+  async _performAtomicWrite(stateSnapshot) {
     await this.ensureParentDirectory(this.statePath);
-    // FIX: Use atomic write (temp + rename) to prevent corruption on crash
-    const tempPath = `${this.statePath}.tmp.${Date.now()}`;
+    const tempPath = `${this.statePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
     try {
-      await fs.writeFile(tempPath, JSON.stringify(this.state, null, 2));
+      await fs.writeFile(tempPath, JSON.stringify(stateSnapshot, null, 2));
       // Retry rename on Windows EPERM errors (file handle race condition)
       let lastError;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -160,6 +163,27 @@ class ProcessingStateService {
     }
   }
 
+  _handleSaveSuccess() {
+    this._consecutiveSaveFailures = 0;
+    this._lastSaveError = null;
+    return { success: true };
+  }
+
+  _handleSaveFailure(err) {
+    this._consecutiveSaveFailures++;
+    this._lastSaveError = err;
+    logger.error('[ProcessingStateService] Save failed:', {
+      error: err?.message,
+      consecutiveFailures: this._consecutiveSaveFailures
+    });
+    if (this._consecutiveSaveFailures >= this._maxConsecutiveFailures) {
+      logger.error(
+        '[ProcessingStateService] CRITICAL: Multiple consecutive save failures - state persistence may be compromised'
+      );
+    }
+    return { success: false, error: err?.message };
+  }
+
   /**
    * Save state with write lock to prevent concurrent writes
    * Race condition fix: Captures state snapshot before chaining to prevent
@@ -175,63 +199,16 @@ class ProcessingStateService {
     const stateSnapshot = JSON.parse(JSON.stringify(this.state));
 
     // Chain this save after any pending saves complete
-    const saveOperation = async () => {
-      await this.ensureParentDirectory(this.statePath);
-      const tempPath = `${this.statePath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`;
-      try {
-        await fs.writeFile(tempPath, JSON.stringify(stateSnapshot, null, 2));
-        // Retry rename on Windows EPERM errors (file handle race condition)
-        let lastError;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            await fs.rename(tempPath, this.statePath);
-            return; // Success
-          } catch (renameError) {
-            lastError = renameError;
-            if (renameError.code === 'EPERM' && attempt < 2) {
-              await new Promise((resolve) =>
-                setTimeout(resolve, RETRY.ATOMIC_BACKOFF_STEP_MS * (attempt + 1))
-              );
-              continue;
-            }
-            throw renameError;
-          }
-        }
-        throw lastError;
-      } catch (error) {
-        // Clean up temp file on failure
-        try {
-          await fs.unlink(tempPath);
-        } catch {
-          // Ignore cleanup errors
-        }
-        throw error;
-      }
-    };
+    const saveOperation = async () => this._performAtomicWrite(stateSnapshot);
 
     let saveResult = { success: true };
     this._writeLock = this._writeLock
       .then(() => saveOperation())
       .then(() => {
-        this._consecutiveSaveFailures = 0;
-        // FIX: Clear last error on success so callers can check save health
-        this._lastSaveError = null;
-        saveResult = { success: true };
+        saveResult = this._handleSaveSuccess();
       })
       .catch((err) => {
-        this._consecutiveSaveFailures++;
-        // FIX: Store error so callers can check if save failed via getLastSaveError()
-        this._lastSaveError = err;
-        saveResult = { success: false, error: err?.message };
-        logger.error('[ProcessingStateService] Save failed:', {
-          error: err?.message,
-          consecutiveFailures: this._consecutiveSaveFailures
-        });
-        if (this._consecutiveSaveFailures >= this._maxConsecutiveFailures) {
-          logger.error(
-            '[ProcessingStateService] CRITICAL: Multiple consecutive save failures - state persistence may be compromised'
-          );
-        }
+        saveResult = this._handleSaveFailure(err);
         // NOTE: Error is intentionally NOT re-thrown to maintain backward compatibility.
         // Callers can use getLastSaveError() or isSaveHealthy() to check save status.
       });

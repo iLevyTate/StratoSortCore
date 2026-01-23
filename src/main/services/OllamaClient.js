@@ -75,6 +75,7 @@ class OllamaClient {
     this.consecutiveFailures = 0;
     this.lastHealthCheck = null;
     this.healthCheckTimer = null;
+    this._healthCheckInFlight = null; // FIX Bug 6: Track in-flight health check for clean shutdown
 
     // Concurrency control (uses shared Semaphore utility)
     this.semaphore = new Semaphore(
@@ -183,6 +184,7 @@ class OllamaClient {
 
   /**
    * Shutdown the client gracefully
+   * FIX Bug 6: Wait for in-flight health check before shutdown
    */
   async shutdown() {
     logger.info('[OllamaClient] Shutting down...');
@@ -197,6 +199,23 @@ class OllamaClient {
     if (this.offlineQueueTimer) {
       clearInterval(this.offlineQueueTimer);
       this.offlineQueueTimer = null;
+    }
+
+    // FIX Bug 6: Wait for in-flight health check to complete (with 5s timeout)
+    if (this._healthCheckInFlight) {
+      logger.debug('[OllamaClient] Waiting for in-flight health check to complete');
+      try {
+        const healthCheckTimeout = 5000;
+        await Promise.race([
+          this._healthCheckInFlight,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Health check shutdown timeout')), healthCheckTimeout)
+          )
+        ]);
+      } catch (error) {
+        logger.warn('[OllamaClient] Health check did not complete before shutdown:', error.message);
+      }
+      this._healthCheckInFlight = null;
     }
 
     // Wait for pending operations (with timeout)
@@ -287,9 +306,30 @@ class OllamaClient {
 
   /**
    * Perform a health check
+   * FIX Bug 6: Track in-flight health check for clean shutdown
    * @returns {Promise<boolean>}
    */
   async _performHealthCheck() {
+    // FIX Bug 6: Create and track the health check promise
+    const healthCheckPromise = this._doHealthCheck();
+    this._healthCheckInFlight = healthCheckPromise;
+
+    try {
+      return await healthCheckPromise;
+    } finally {
+      // FIX Bug 6: Clear in-flight tracker when done
+      if (this._healthCheckInFlight === healthCheckPromise) {
+        this._healthCheckInFlight = null;
+      }
+    }
+  }
+
+  /**
+   * Internal health check implementation
+   * @private
+   * @returns {Promise<boolean>}
+   */
+  async _doHealthCheck() {
     let timer = null;
     try {
       const { getOllama } = require('../ollamaUtils');
@@ -385,6 +425,7 @@ class OllamaClient {
 
   /**
    * Load offline queue from disk
+   * FIX Bug 3: Recovery logic for items that were being processed during crash
    */
   async _loadOfflineQueue() {
     const data = await loadJsonFile(this.offlineQueuePath, {
@@ -393,8 +434,28 @@ class OllamaClient {
     });
 
     if (Array.isArray(data)) {
-      this.offlineQueue = data.slice(0, this.config.maxOfflineQueueSize);
-      logger.info('[OllamaClient] Loaded offline queue:', this.offlineQueue.length);
+      // FIX Bug 3: Clean up items that were being processed when crash occurred
+      // Items with _processingId indicate they were mid-processing - recover them
+      let recoveredCount = 0;
+      this.offlineQueue = data.slice(0, this.config.maxOfflineQueueSize).map((item) => {
+        if (item._processingId) {
+          recoveredCount++;
+          // Remove processing markers, item will be re-processed
+          const { _processingId, _processingStartedAt, ...cleanItem } = item;
+          return cleanItem;
+        }
+        return item;
+      });
+
+      logger.info('[OllamaClient] Loaded offline queue:', {
+        total: this.offlineQueue.length,
+        recoveredFromCrash: recoveredCount
+      });
+
+      // If we recovered items, persist the cleaned queue
+      if (recoveredCount > 0) {
+        await this._persistOfflineQueue();
+      }
     }
   }
 
@@ -465,6 +526,7 @@ class OllamaClient {
 
   /**
    * Process offline queue
+   * FIX Bug 3: Use processing markers to prevent data loss on crash
    */
   async _processOfflineQueue() {
     if (this.isProcessingOfflineQueue || !this.isHealthy) return;
@@ -477,33 +539,73 @@ class OllamaClient {
 
       // Process in batches
       const batchSize = Math.min(10, this.offlineQueue.length);
-      // FIX HIGH-63: Don't remove items until processed to prevent data loss on crash
-      // Peek items instead of splicing immediately
-      const batch = this.offlineQueue.slice(0, batchSize);
+
+      // FIX Bug 3: Generate unique processing ID for this batch
+      const processingId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // FIX Bug 3: Mark items as being processed BEFORE starting
+      // This allows recovery on crash - marked items can be identified and re-queued
+      const batch = this.offlineQueue.slice(0, batchSize).map((request) => ({
+        ...request,
+        _processingId: processingId,
+        _processingStartedAt: Date.now()
+      }));
+
+      // FIX Bug 3: Update queue with processing markers and persist BEFORE processing
+      // On crash, recovery can identify in-progress items by _processingId
+      this.offlineQueue = [...batch, ...this.offlineQueue.slice(batchSize)];
+      await this._persistOfflineQueue();
 
       const results = await Promise.allSettled(
         batch.map((request) => this._processQueuedRequest(request))
       );
 
-      // Remove successful items and update failed ones
-      const newQueue = this.offlineQueue.slice(batchSize); // Remaining items
-      const retryQueue = []; // Items to re-queue
+      // FIX Bug 3: Track which items to remove by processingId, not index
+      const processedIds = new Set();
+      const retryQueue = [];
 
       results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          const request = batch[index];
+        const request = batch[index];
+        if (result.status === 'fulfilled') {
+          // Success - mark for removal
+          processedIds.add(request._processingId + '_' + index);
+        } else {
+          // Failed - check retry count
           if (request.retryCount < 3) {
+            // Remove processing marker and increment retry
+            const { _processingId, _processingStartedAt, ...cleanRequest } = request;
             retryQueue.push({
-              ...request,
-              retryCount: request.retryCount + 1
+              ...cleanRequest,
+              retryCount: (cleanRequest.retryCount || 0) + 1
             });
           }
+          // Max retries exceeded - will be removed
+          processedIds.add(request._processingId + '_' + index);
         }
-        // If fulfilled, it's dropped (success)
       });
 
-      // Update queue atomically
-      this.offlineQueue = [...retryQueue, ...newQueue];
+      // FIX Bug 3: Filter out processed items by processingId, rebuild queue
+      // This is crash-safe because items without _processingId are untouched
+      const remainingQueue = this.offlineQueue.filter((item, idx) => {
+        if (item._processingId === processingId) {
+          // This was in our batch - check if it should be removed
+          return !processedIds.has(item._processingId + '_' + idx);
+        }
+        // Not part of this batch - keep it
+        return true;
+      });
+
+      // Clean processing markers from any remaining items and add retry items
+      this.offlineQueue = [
+        ...retryQueue,
+        ...remainingQueue.map((item) => {
+          if (item._processingId) {
+            const { _processingId, _processingStartedAt, ...clean } = item;
+            return clean;
+          }
+          return item;
+        })
+      ];
 
       const successful = results.filter((r) => r.status === 'fulfilled').length;
       logger.info('[OllamaClient] Processed offline queue batch', {
@@ -513,7 +615,7 @@ class OllamaClient {
         remaining: this.offlineQueue.length
       });
 
-      // Persist updated queue
+      // Persist final state
       await this._persistOfflineQueue();
     } catch (error) {
       logger.error('[OllamaClient] Error processing offline queue:', error.message);
@@ -822,6 +924,32 @@ class OllamaClient {
       lastError: null,
       lastErrorTime: null
     };
+  }
+
+  /**
+   * FIX MED #14: Reset circuit breaker state when model configuration changes
+   * Should be called when user switches Ollama models to clear stale failure state
+   * from the previous model configuration
+   */
+  resetCircuitBreaker() {
+    if (this.circuitBreaker && typeof this.circuitBreaker.reset === 'function') {
+      this.circuitBreaker.reset();
+      logger.info('[OllamaClient] Circuit breaker reset due to model configuration change');
+    }
+    // Also reset health state since it may have been affected by old model
+    this.isHealthy = true;
+    this.consecutiveFailures = 0;
+  }
+
+  /**
+   * Notify client of model configuration change
+   * Resets circuit breaker and triggers health check with new model
+   */
+  async onModelChanged() {
+    this.resetCircuitBreaker();
+    // Trigger fresh health check to verify new model works
+    await this._performHealthCheck();
+    logger.info('[OllamaClient] Model change processed, health check triggered');
   }
 }
 

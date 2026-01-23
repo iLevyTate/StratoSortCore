@@ -22,6 +22,8 @@ try {
 }
 const { distance } = require('fastest-levenshtein');
 const { logger } = require('../../shared/logger');
+const { LRUCache } = require('../../shared/LRUCache');
+const { getInstance: getCacheInvalidationBus } = require('../../shared/cacheInvalidation');
 
 logger.setContext('QueryProcessor');
 
@@ -239,9 +241,13 @@ class QueryProcessor {
     // Phonetic codes for badly misspelled words
     this.phoneticIndex = this._buildPhoneticIndex();
 
-    // Synonym cache to avoid repeated WordNet lookups
-    this.synonymCache = new Map();
-    this.synonymCacheMaxSize = options.synonymCacheMaxSize || 500;
+    // FIX: Use LRUCache to avoid race condition in concurrent async calls
+    // The previous Map-based approach had check-then-delete race when cache was full
+    this.synonymCache = new LRUCache({
+      maxSize: options.synonymCacheMaxSize || 500,
+      ttlMs: 30 * 60 * 1000, // 30 minutes
+      name: 'SynonymCache'
+    });
 
     // Statistics
     this.stats = {
@@ -251,6 +257,10 @@ class QueryProcessor {
       cacheHits: 0
     };
 
+    // Cache invalidation bus subscription
+    this._unsubscribe = null;
+    this._subscribeToInvalidationBus();
+
     logger.info(
       '[QueryProcessor] Initialized:',
       this.domainWords.size,
@@ -258,6 +268,32 @@ class QueryProcessor {
       this.stopWords.size,
       'stop words'
     );
+  }
+
+  /**
+   * Subscribe to the cache invalidation bus for coordinated cache clearing
+   * @private
+   */
+  _subscribeToInvalidationBus() {
+    try {
+      const bus = getCacheInvalidationBus();
+      this._unsubscribe = bus.subscribe('QueryProcessor', {
+        onInvalidate: (event) => {
+          // Clear synonym cache on full invalidation
+          if (event.type === 'full-invalidate') {
+            this.clearCache();
+          }
+        },
+        // Note: QueryProcessor's synonym cache is not path-specific,
+        // but we clear on batch changes to ensure consistency after major operations
+        onBatch: () => {
+          this.clearCache();
+        }
+      });
+      logger.debug('[QueryProcessor] Subscribed to cache invalidation bus');
+    } catch (error) {
+      logger.warn('[QueryProcessor] Failed to subscribe to cache invalidation bus:', error.message);
+    }
   }
 
   _resolveWordNetDictPath() {
@@ -479,17 +515,16 @@ class QueryProcessor {
    * @returns {Promise<string[]>} Array of synonyms
    */
   async _getSynonyms(word) {
-    // Check cache first
-    if (this.synonymCache.has(word)) {
+    // FIX: Use LRUCache API which handles size limits atomically
+    // This prevents race conditions in concurrent async lookups
+    const cached = this.synonymCache.get(word);
+    if (cached !== null) {
       this.stats.cacheHits++;
-      return this.synonymCache.get(word);
+      return cached;
     }
 
+    // Simple cache helper using LRUCache.set (handles size limits internally)
     const cacheSynonyms = (synonymArray) => {
-      if (this.synonymCache.size >= this.synonymCacheMaxSize) {
-        const firstKey = this.synonymCache.keys().next().value;
-        this.synonymCache.delete(firstKey);
-      }
       this.synonymCache.set(word, synonymArray);
     };
 
@@ -697,6 +732,11 @@ class QueryProcessor {
    * Cleanup resources
    */
   cleanup() {
+    // Unsubscribe from cache invalidation bus
+    if (this._unsubscribe) {
+      this._unsubscribe();
+      this._unsubscribe = null;
+    }
     this.synonymCache.clear();
     this.wordpos = null;
     this._wordposPromise = null;
@@ -704,32 +744,20 @@ class QueryProcessor {
   }
 }
 
-// Singleton instance
-let instance = null;
+// Use singleton factory to prevent race conditions in getInstance()
+const { createSingletonHelpers } = require('../../shared/singletonFactory');
 
-/**
- * Get singleton QueryProcessor instance
- * @returns {QueryProcessor}
- */
-function getInstance() {
-  if (!instance) {
-    instance = new QueryProcessor();
-  }
-  return instance;
-}
-
-/**
- * Reset singleton (for testing)
- */
-function resetInstance() {
-  if (instance) {
-    instance.cleanup();
-    instance = null;
-  }
-}
+const { getInstance, resetInstance, registerWithContainer } = createSingletonHelpers({
+  ServiceClass: QueryProcessor,
+  serviceId: 'QUERY_PROCESSOR',
+  serviceName: 'QueryProcessor',
+  containerPath: './ServiceContainer',
+  shutdownMethod: 'cleanup'
+});
 
 module.exports = {
   QueryProcessor,
   getInstance,
-  resetInstance
+  resetInstance,
+  registerWithContainer
 };

@@ -99,13 +99,21 @@ async function processItemsInParallel({
     return new Promise((resolve) => waitQueue.push(resolve));
   };
 
+  // FIX HIGH #9: Improved semaphore release with defensive bounds checking
+  // JavaScript's single-threaded model makes this atomic, but we add extra safety
   const releaseSlot = () => {
-    // Use Math.max to prevent negative activeCount
-    activeCount = Math.max(0, activeCount - 1);
-    if (waitQueue.length > 0) {
+    // Decrement first, ensuring we don't go below 0
+    if (activeCount > 0) {
+      activeCount--;
+    }
+    // Only process waitQueue if we have room AND there are waiters
+    // This double-check prevents any edge case where activeCount could exceed limit
+    if (waitQueue.length > 0 && activeCount < concurrency) {
       activeCount++;
       const next = waitQueue.shift();
-      next();
+      // Use setImmediate to ensure the next task starts in a new microtask
+      // This prevents deep call stacks when many items complete rapidly
+      setImmediate(next);
     }
   };
 

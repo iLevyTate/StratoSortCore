@@ -80,8 +80,15 @@ async function batchUpsertFileChunks({ chunks, chunkCollection }) {
         if (seenIds.has(chunk.id)) continue;
         seenIds.add(chunk.id);
 
-        const validation = validateEmbeddingVector(chunk.vector, chunk.id);
-        if (!validation.valid) continue;
+        const validation = validateEmbeddingVector(chunk.vector);
+        if (!validation.valid) {
+          logger.warn('[ChunkOps] Skipping chunk with invalid vector', {
+            chunkId: chunk.id,
+            error: validation.error,
+            index: validation.index
+          });
+          continue;
+        }
 
         const rawMeta = chunk.meta || {};
         const rawValidation = validateChunkMetadata(rawMeta);
@@ -156,7 +163,9 @@ async function querySimilarFileChunks({ queryEmbedding, topK = 20, chunkCollecti
       const distance = i < distances.length ? distances[i] : 1;
       const metadata = i < metadatas.length ? metadatas[i] : {};
       const document = i < documents.length ? documents[i] : '';
-      const score = Math.max(0, 1 - distance / 2);
+      // FIX HIGH #8: Add NaN check to prevent score NaN propagation through sorting
+      // If distance is NaN/Infinity, use score of 0 instead of propagating corruption
+      const score = Number.isFinite(distance) ? Math.max(0, 1 - distance / 2) : 0;
 
       matches.push({
         id: ids[i],

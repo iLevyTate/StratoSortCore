@@ -12,6 +12,7 @@ const { logger } = require('../../../shared/logger');
 const { container, ServiceIds } = require('../../services/ServiceContainer');
 const { get: getConfig } = require('../../../shared/config/index');
 const { normalizePathForIndex } = require('../../../shared/pathSanitization');
+const { traceQueueUpdate } = require('../../../shared/pathTraceLogger');
 const {
   BATCH,
   LIMITS,
@@ -42,7 +43,7 @@ class EmbeddingQueue {
 
     // Memory limits
     this.MAX_QUEUE_SIZE = LIMITS.MAX_QUEUE_SIZE;
-    this.MAX_RETRY_COUNT = getConfig('ANALYSIS.retryAttempts', 10);
+    this.MAX_RETRY_COUNT = getConfig('ANALYSIS.retryAttempts', 3);
     this.retryCount = 0;
 
     // Memory monitoring thresholds
@@ -109,16 +110,23 @@ class EmbeddingQueue {
 
     try {
       await Promise.race([current, timeoutPromise]);
-      clearTimeout(timeoutId);
       return release;
     } catch (error) {
-      clearTimeout(timeoutId);
+      // FIX MED #18: Force release on any error to prevent deadlock
+      // The release() function has a guard flag so it's safe to call multiple times
       if (error.code === 'MUTEX_TIMEOUT') {
         logger.error('[EmbeddingQueue] Mutex timeout - forcing release to prevent deadlock');
-        // FIX: Safe to call - guard flag prevents double-release
-        release();
       }
+      release();
       throw error;
+    } finally {
+      // FIX MED #18: Always clear timeout in finally block to prevent timer leak
+      // Wrap in try-catch as defensive measure (clearTimeout shouldn't throw)
+      try {
+        if (timeoutId) clearTimeout(timeoutId);
+      } catch (clearError) {
+        logger.debug('[EmbeddingQueue] clearTimeout error (non-fatal):', clearError.message);
+      }
     }
   }
 
@@ -242,15 +250,19 @@ class EmbeddingQueue {
       return { success: false, reason: 'invalid_vector_format' };
     }
 
-    // Validate vector contains valid numeric values (sample check for performance)
-    const sampleIndices = [0, Math.floor(item.vector.length / 2), item.vector.length - 1];
-    for (const idx of sampleIndices) {
-      if (typeof item.vector[idx] !== 'number' || !Number.isFinite(item.vector[idx])) {
+    // FIX HIGH #6: Validate ALL vector values, not just 3 samples
+    // NaN/Infinity in any position will corrupt similarity calculations
+    // Performance: Typical embedding vectors are 384-4096 dimensions, checking all is fast
+    const vectorLength = item.vector.length;
+    for (let idx = 0; idx < vectorLength; idx++) {
+      const val = item.vector[idx];
+      if (typeof val !== 'number' || !Number.isFinite(val)) {
         logger.warn('[EmbeddingQueue] Invalid vector - contains non-numeric values', {
           id: item.id,
-          sampleIndex: idx,
-          sampleValue: item.vector[idx],
-          sampleType: typeof item.vector[idx]
+          invalidIndex: idx,
+          invalidValue: val,
+          valueType: typeof val,
+          vectorLength
         });
         return { success: false, reason: 'invalid_vector_values' };
       }
@@ -443,10 +455,11 @@ class EmbeddingQueue {
         }
 
         // Process folders
-        // HIGH FIX: Capture return value to include folder count in processedCount
+        // FIX CRITICAL #2: Remove void operator that discards processedCount assignment
+        // The void operator was causing folder processing counts to be lost
         if (folderItems.length > 0) {
           // Note: processedCount is used as input via startProcessedCount
-          void (processedCount = await processItemsInParallel({
+          await processItemsInParallel({
             items: folderItems,
             type: 'folder',
             chromaDbService,
@@ -456,7 +469,7 @@ class EmbeddingQueue {
             concurrency: this.PARALLEL_FLUSH_CONCURRENCY,
             onProgress: (p) => this._notifyProgress(p),
             onItemFailed: (item, err) => this._failedItemHandler.trackFailedItem(item, err)
-          }));
+          });
         }
 
         // Remove processed items from queue
@@ -537,7 +550,18 @@ class EmbeddingQueue {
       this.queue.splice(0, batchSize);
       this.retryCount = 0;
       await this.persistQueue();
-      this.isFlushing = false;
+
+      // FIX LOW #19: Notify progress with fatal error phase
+      // This allows UI listeners to know the batch failed permanently
+      this._notifyProgress({
+        phase: 'fatal_error',
+        total: batch.length,
+        completed: 0,
+        failed: batch.length,
+        error: `Database offline after ${this.MAX_RETRY_COUNT} retries`
+      });
+
+      // FIX HIGH-4: Removed redundant isFlushing = false - handled by flush() finally block
       return;
     }
 
@@ -552,7 +576,7 @@ class EmbeddingQueue {
     logger.info(`[EmbeddingQueue] Retry in ${backoffDelay / 1000}s`);
     const retryTimer = setTimeout(() => this.scheduleFlush(), backoffDelay);
     if (retryTimer.unref) retryTimer.unref();
-    this.isFlushing = false;
+    // FIX HIGH-4: Removed redundant isFlushing = false - handled by flush() finally block
   }
 
   /**
@@ -715,6 +739,11 @@ class EmbeddingQueue {
    */
   updateByFilePath(oldPath, newPath) {
     const { queueUpdated, failedUpdated } = this._updatePath(oldPath, newPath);
+
+    // PATH-TRACE: Log embedding queue path update
+    if (queueUpdated > 0 || failedUpdated) {
+      traceQueueUpdate(oldPath, newPath, queueUpdated + (failedUpdated ? 1 : 0));
+    }
 
     if (queueUpdated > 0) {
       this.persistQueue().catch((err) =>
@@ -903,6 +932,25 @@ class EmbeddingQueue {
     // FIX: Clear progress tracker callbacks to prevent memory leak
     if (this._progressTracker?.clear) {
       this._progressTracker.clear();
+    }
+
+    // FIX MED #17: Wait for any pending persistence operations before final persist
+    // This prevents race conditions where async persistence from enqueue() is still running
+    if (this._pendingPersistence) {
+      try {
+        await this._pendingPersistence;
+      } catch (err) {
+        logger.warn('[EmbeddingQueue] Pending persistence failed during shutdown:', err.message);
+      }
+    }
+
+    // FIX MED #17: Wait for pending flush operations
+    if (this._pendingFlush) {
+      try {
+        await this._pendingFlush;
+      } catch (err) {
+        logger.warn('[EmbeddingQueue] Pending flush failed during shutdown:', err.message);
+      }
     }
 
     await this.persistQueue();

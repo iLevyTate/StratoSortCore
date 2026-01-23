@@ -14,6 +14,7 @@ const { logger } = require('../../../shared/logger');
 const { analysisResultSchema, validateSchema } = require('../../../shared/normalization/schemas');
 const { LIMITS } = require('../../../shared/performanceConstants');
 const { CircuitBreaker } = require('../../utils/CircuitBreaker');
+const { traceHistoryUpdate } = require('../../../shared/pathTraceLogger');
 
 // Import decomposed modules
 const {
@@ -24,7 +25,8 @@ const {
   updateIncrementalStatsOnRemove,
   invalidateCachesOnRemove,
   clearCaches: clearCachesHelper,
-  warmCache: warmCacheHelper
+  warmCache: warmCacheHelper,
+  subscribeToInvalidationBus
 } = require('./cacheManager');
 
 const {
@@ -113,6 +115,9 @@ class AnalysisHistoryServiceCore {
       timeout: 5000,
       resetTimeout: 10000
     });
+
+    // Cache invalidation bus subscription handle for cleanup
+    this._busUnsubscribe = null;
   }
 
   /**
@@ -185,6 +190,10 @@ class AnalysisHistoryServiceCore {
       await this.loadHistory();
       await this.loadIndex();
       this.initialized = true;
+
+      // Subscribe to cache invalidation bus for cross-service cache coordination
+      this._busUnsubscribe = subscribeToInvalidationBus(this._cache, this);
+
       logger.info('[AnalysisHistoryService] Initialized successfully');
     } catch (error) {
       logger.error('[AnalysisHistoryService] Failed to initialize', {
@@ -553,6 +562,19 @@ class AnalysisHistoryServiceCore {
   }
 
   /**
+   * Shutdown the service and release resources
+   * Should be called during app exit to cleanly unsubscribe from the cache invalidation bus
+   */
+  shutdown() {
+    if (this._busUnsubscribe) {
+      this._busUnsubscribe();
+      this._busUnsubscribe = null;
+      logger.debug('[AnalysisHistoryService] Unsubscribed from cache invalidation bus');
+    }
+    this.clearCaches();
+  }
+
+  /**
    * Update entry paths after files have been moved/organized.
    * This updates the organization.actual field so that search results
    * show the current file location, not the original path.
@@ -615,6 +637,9 @@ class AnalysisHistoryServiceCore {
           if (this.analysisIndex) {
             updatePathIndexForMove(this.analysisIndex, entry, oldActualPath, update.newPath);
           }
+
+          // PATH-TRACE: Log history entry path update
+          traceHistoryUpdate(update.oldPath, update.newPath, entry.id, true);
 
           updated++;
           updateMap.delete(entry.originalPath); // Remove to track not found

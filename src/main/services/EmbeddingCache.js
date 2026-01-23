@@ -3,6 +3,7 @@ const { LRUCache } = require('../../shared/LRUCache');
 const { logger } = require('../../shared/logger');
 const { CACHE } = require('../../shared/performanceConstants');
 const { get: getConfig } = require('../../shared/config/index');
+const { getInstance: getCacheInvalidationBus } = require('../../shared/cacheInvalidation');
 
 logger.setContext('EmbeddingCache');
 
@@ -34,6 +35,9 @@ class EmbeddingCache {
     // Track size separately for metrics (updated on set)
     this._currentSize = 0;
 
+    // Cache invalidation bus subscription
+    this._unsubscribe = null;
+
     logger.info('[EmbeddingCache] Created', {
       maxSize: this.maxSize,
       ttlMinutes: this.ttlMs / 60000
@@ -47,10 +51,40 @@ class EmbeddingCache {
   initialize() {
     this._cache.initialize(300000); // 5 minute cleanup interval
 
+    // Subscribe to cache invalidation bus
+    this._subscribeToInvalidationBus();
+
     logger.info('[EmbeddingCache] Initialized with cleanup interval', {
       maxSize: this.maxSize,
       ttlMinutes: this.ttlMs / 60000
     });
+  }
+
+  /**
+   * Subscribe to the cache invalidation bus for coordinated cache clearing
+   * @private
+   */
+  _subscribeToInvalidationBus() {
+    try {
+      const bus = getCacheInvalidationBus();
+      this._unsubscribe = bus.subscribe('EmbeddingCache', {
+        onInvalidate: (event) => {
+          if (event.type === 'full-invalidate') {
+            this.clear();
+          }
+        },
+        // Embedding cache is keyed by content hash, not file path,
+        // so we don't need to handle path changes or deletions directly.
+        // The content hash remains valid even if the file moves.
+        // However, we clear on full invalidation to support resets.
+        onBatch: () => {
+          // Optional: could clear on batch operations if aggressive cleanup is desired
+        }
+      });
+      logger.debug('[EmbeddingCache] Subscribed to cache invalidation bus');
+    } catch (error) {
+      logger.warn('[EmbeddingCache] Failed to subscribe to cache invalidation bus:', error.message);
+    }
   }
 
   /**
@@ -224,6 +258,11 @@ class EmbeddingCache {
   async shutdown() {
     const stats = this.getStats();
     logger.info('[EmbeddingCache] Shutdown complete', stats);
+
+    if (this._unsubscribe) {
+      this._unsubscribe();
+      this._unsubscribe = null;
+    }
 
     await this._cache.shutdown();
     this._currentSize = 0;

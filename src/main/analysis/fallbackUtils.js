@@ -1,10 +1,40 @@
-// no path usage here
+/**
+ * Fallback Analysis Utilities
+ *
+ * This module provides intelligent filename-based analysis fallbacks
+ * for when AI analysis is unavailable or fails. It includes:
+ * - Smart category matching against folder definitions
+ * - Intelligent keyword extraction from filenames
+ * - Safe filename suggestion generation
+ * - Unified fallback factory function
+ *
+ * @module analysis/fallbackUtils
+ */
 
 // Use shared semantic extension mapping
 const {
   getSemanticExtensionScore,
   getSemanticConceptsForExtension
 } = require('./semanticExtensionMap');
+const FolderMatchingService = require('../services/FolderMatchingService');
+
+const normalizeCategoryToSmartFolders =
+  typeof FolderMatchingService?.matchCategoryToFolder === 'function'
+    ? FolderMatchingService.matchCategoryToFolder.bind(FolderMatchingService)
+    : (category, smartFolders) => {
+        const folders = Array.isArray(smartFolders) ? smartFolders : [];
+        if (!folders.length) return category;
+        const normalized = String(category || '')
+          .trim()
+          .toLowerCase();
+        const match = folders.find(
+          (folder) =>
+            String(folder?.name || '')
+              .trim()
+              .toLowerCase() === normalized
+        );
+        return match?.name || category;
+      };
 
 function getIntelligentCategory(fileName, extension, smartFolders = []) {
   const lowerFileName = fileName.toLowerCase();
@@ -335,7 +365,7 @@ function getIntelligentCategory(fileName, extension, smartFolders = []) {
     '.key': 'Presentations'
   };
 
-  const fallbackCategory = extensionCategories[extension] || 'Documents';
+  const fallbackCategory = extensionCategories[lowerExtension] || 'Documents';
 
   // Try to find a matching smart folder for the fallback category
   if (smartFolders && smartFolders.length > 0) {
@@ -501,8 +531,89 @@ function safeSuggestedName(fileName, extension) {
   return truncatedName + extension;
 }
 
+/**
+ * Create a unified fallback analysis result
+ *
+ * This factory function consolidates fallback creation patterns from:
+ * - ollamaDocumentAnalysis.js (createDocumentFallback)
+ * - ollamaImageAnalysis.js (createFallbackResult)
+ *
+ * @param {Object} params - Parameters for fallback creation
+ * @param {string} params.fileName - Original file name
+ * @param {string} params.fileExtension - File extension
+ * @param {string} [params.reason] - Reason for fallback analysis
+ * @param {Array} [params.smartFolders=[]] - Smart folders for category matching
+ * @param {number} [params.confidence=65] - Confidence score
+ * @param {string} [params.type='document'] - File type ('document' or 'image')
+ * @param {Object} [params.options={}] - Additional options
+ * @param {string} [params.options.extractionMethod='filename_fallback'] - Extraction method
+ * @param {string} [params.options.date] - Override date
+ * @param {string} [params.options.error] - Error message to include
+ * @returns {Object} Fallback analysis result
+ *
+ * @example
+ * const fallback = createFallbackAnalysis({
+ *   fileName: 'report.pdf',
+ *   fileExtension: '.pdf',
+ *   reason: 'Ollama unavailable',
+ *   smartFolders: folders,
+ *   confidence: 60,
+ *   type: 'document'
+ * });
+ */
+function createFallbackAnalysis(params) {
+  const {
+    fileName,
+    fileExtension,
+    reason,
+    smartFolders = [],
+    confidence = 65,
+    type = 'document',
+    options = {}
+  } = params;
+
+  const {
+    extractionMethod = 'filename_fallback',
+    date = new Date().toISOString().split('T')[0],
+    error = null
+  } = options;
+
+  // Get intelligent category and keywords from filename
+  const intelligentCategory = getIntelligentCategory(fileName, fileExtension, smartFolders);
+  const intelligentKeywords = getIntelligentKeywords(fileName, fileExtension);
+
+  // Build purpose string based on type and reason
+  const purpose = reason
+    ? `${type === 'image' ? 'Image' : 'Document'} (fallback - ${reason})`
+    : `${type === 'image' ? 'Image' : 'Document'} (fallback analysis)`;
+
+  // Build the result object
+  const baseCategory = intelligentCategory || (type === 'image' ? 'Images' : 'Documents');
+  const category = normalizeCategoryToSmartFolders(baseCategory, smartFolders);
+
+  const result = {
+    purpose,
+    project: fileName.replace(fileExtension, ''),
+    category,
+    date,
+    keywords: intelligentKeywords || [],
+    confidence,
+    suggestedName: safeSuggestedName(fileName, fileExtension),
+    extractionMethod,
+    fallbackReason: reason || 'fallback analysis'
+  };
+
+  // Add error if provided
+  if (error) {
+    result.error = error;
+  }
+
+  return result;
+}
+
 module.exports = {
   getIntelligentCategory,
   getIntelligentKeywords,
-  safeSuggestedName
+  safeSuggestedName,
+  createFallbackAnalysis
 };

@@ -14,6 +14,7 @@ const {
   validateEmbeddingDimensions
 } = require('../../shared/vectorMath');
 const { getOllamaModel } = require('../ollamaUtils');
+const { AI_DEFAULTS } = require('../../shared/constants');
 
 logger.setContext('ClusteringService');
 
@@ -617,7 +618,7 @@ Respond with ONLY the cluster name, nothing else.
 Examples of good names: "Q4 Financial Reports", "Employee Onboarding Materials", "Product Launch Assets", "Client Meeting Notes", "Marketing Campaign Images"`;
 
         const response = await this.ollama.analyzeText(prompt, {
-          model: getOllamaModel() || 'qwen3:0.6b',
+          model: getOllamaModel() || AI_DEFAULTS.TEXT.MODEL,
           maxTokens: 30
         });
 

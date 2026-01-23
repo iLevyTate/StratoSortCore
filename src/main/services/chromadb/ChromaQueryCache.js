@@ -9,6 +9,10 @@
 
 const { LRUCache } = require('../../../shared/LRUCache');
 const { logger } = require('../../../shared/logger');
+const {
+  getInstance: getCacheInvalidationBus,
+  InvalidationType
+} = require('../../../shared/cacheInvalidation');
 
 logger.setContext('ChromaDB:QueryCache');
 
@@ -55,6 +59,66 @@ class ChromaQueryCache {
     // Expose for compatibility
     this.maxSize = maxSize;
     this.ttlMs = ttlMs;
+
+    // Subscribe to cache invalidation bus for coordinated cache clearing
+    this._unsubscribe = null;
+    this._subscribeToInvalidationBus();
+  }
+
+  /**
+   * Subscribe to the cache invalidation bus
+   * @private
+   */
+  _subscribeToInvalidationBus() {
+    try {
+      const bus = getCacheInvalidationBus();
+      this._unsubscribe = bus.subscribe('ChromaQueryCache', {
+        onInvalidate: (event) => {
+          // Full invalidation clears everything
+          if (event.type === InvalidationType.FULL_INVALIDATE) {
+            this.clear();
+            return;
+          }
+        },
+        onPathChange: (oldPath, newPath) => {
+          // Invalidate cache entries that might contain the old path
+          this._cache.invalidateWhere((key) => key.includes(oldPath));
+          logger.debug('[QueryCache] Invalidated entries for path change', {
+            oldPath: oldPath.split(/[/\\]/).pop(),
+            newPath: newPath.split(/[/\\]/).pop()
+          });
+        },
+        onDeletion: (filePath) => {
+          // Invalidate cache entries for deleted file
+          this._cache.invalidateWhere((key) => key.includes(filePath));
+          logger.debug('[QueryCache] Invalidated entries for deletion', {
+            file: filePath.split(/[/\\]/).pop()
+          });
+        },
+        onBatch: (changes) => {
+          // For batch operations, invalidate all affected paths
+          const pathsToInvalidate = new Set();
+          changes.forEach((c) => {
+            pathsToInvalidate.add(c.oldPath);
+          });
+
+          this._cache.invalidateWhere((key) => {
+            for (const p of pathsToInvalidate) {
+              if (key.includes(p)) return true;
+            }
+            return false;
+          });
+          logger.debug('[QueryCache] Invalidated entries for batch change', {
+            count: changes.length
+          });
+        }
+      });
+      logger.debug('[QueryCache] Subscribed to cache invalidation bus');
+    } catch (err) {
+      logger.warn('[QueryCache] Failed to subscribe to invalidation bus', {
+        error: err.message
+      });
+    }
   }
 
   /**
@@ -142,6 +206,17 @@ class ChromaQueryCache {
    */
   get cache() {
     return this._cache.cache;
+  }
+
+  /**
+   * Dispose the cache and unsubscribe from invalidation bus
+   */
+  dispose() {
+    if (this._unsubscribe) {
+      this._unsubscribe();
+      this._unsubscribe = null;
+    }
+    this.clear();
   }
 }
 

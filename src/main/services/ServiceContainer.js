@@ -577,6 +577,8 @@ const ServiceIds = {
   DEPENDENCY_MANAGER: 'dependencyManager',
   SEARCH_SERVICE: 'searchService',
   DOWNLOAD_WATCHER: 'downloadWatcher',
+  FILE_PATH_COORDINATOR: 'filePathCoordinator',
+  CACHE_INVALIDATION_BUS: 'cacheInvalidationBus',
 
   // AI/Embedding services
   OLLAMA_SERVICE: 'ollamaService',
@@ -619,6 +621,7 @@ const SHUTDOWN_ORDER = [
   ServiceIds.SMART_FOLDER_WATCHER,
   ServiceIds.DOWNLOAD_WATCHER,
   // High-level services that use other services
+  ServiceIds.FILE_PATH_COORDINATOR, // Coordinator depends on many services
   ServiceIds.SEARCH_SERVICE,
   ServiceIds.AUTO_ORGANIZE,
   ServiceIds.ORGANIZATION_SUGGESTION,
@@ -642,6 +645,8 @@ const SHUTDOWN_ORDER = [
   // FIX L4: Add dependency manager and file access policy (infrastructure services)
   ServiceIds.DEPENDENCY_MANAGER,
   ServiceIds.FILE_ACCESS_POLICY,
+  // Cache invalidation bus (needed by all caches)
+  ServiceIds.CACHE_INVALIDATION_BUS,
   // Last: Settings and config
   ServiceIds.SETTINGS
 ];

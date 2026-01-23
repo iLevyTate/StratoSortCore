@@ -13,38 +13,11 @@ const { withRetry } = require('../../../shared/errorHandlingUtils');
 const { prepareFileMetadata, sanitizeMetadata } = require('../../../shared/pathSanitization');
 const { normalizeEmbeddingMetadata } = require('../../../shared/normalization');
 const { embeddingMetaSchema, validateSchema } = require('../../../shared/normalization/schemas');
+const { validateEmbeddingVector } = require('../../../shared/vectorMath');
 const { OperationType } = require('../../utils/OfflineQueue');
+const { traceChromaDbUpdate } = require('../../../shared/pathTraceLogger');
 
 logger.setContext('ChromaDB:FileOps');
-
-/**
- * Validate embedding vector for NaN, Infinity, and dimension issues
- * FIX: Prevents corrupted embeddings from being stored in ChromaDB
- *
- * @param {Array<number>} vector - Embedding vector to validate
- * @param {string} [context] - Optional context for error messages
- * @returns {{ valid: boolean, error?: string, index?: number }}
- */
-function validateEmbeddingVector(vector, context = 'unknown') {
-  if (!Array.isArray(vector)) {
-    return { valid: false, error: 'not_array' };
-  }
-  if (vector.length === 0) {
-    return { valid: false, error: 'empty_vector' };
-  }
-  // Check for NaN or Infinity values
-  for (let i = 0; i < vector.length; i++) {
-    if (!Number.isFinite(vector[i])) {
-      logger.warn(`[FileOps] Invalid vector value at index ${i}`, {
-        context,
-        value: String(vector[i]),
-        vectorLength: vector.length
-      });
-      return { valid: false, error: 'invalid_value', index: i };
-    }
-  }
-  return { valid: true };
-}
 
 /**
  * Direct upsert file without circuit breaker (used by queue flush)
@@ -60,7 +33,7 @@ async function directUpsertFile({ file, fileCollection, queryCache }) {
     async () => {
       try {
         // FIX: Validate vector before upsert to prevent corrupted embeddings
-        const validation = validateEmbeddingVector(file.vector, file.id);
+        const validation = validateEmbeddingVector(file.vector);
         if (!validation.valid) {
           throw new Error(
             `Invalid embedding vector for file ${file.id}: ${validation.error}${validation.index !== undefined ? ` at index ${validation.index}` : ''}`
@@ -165,7 +138,7 @@ async function directBatchUpsertFiles({ files, fileCollection, queryCache }) {
           seenIds.add(file.id);
 
           // FIX: Validate vector for NaN/Infinity before including in batch
-          const validation = validateEmbeddingVector(file.vector, file.id);
+          const validation = validateEmbeddingVector(file.vector);
           if (!validation.valid) {
             logger.warn('[FileOps] Skipping file with invalid vector in batch', {
               id: file.id,
@@ -453,6 +426,18 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
       updated: updatedCount
     });
 
+    // PATH-TRACE: Log ChromaDB path updates for each update in the batch
+    for (const update of pathUpdates) {
+      if (update.oldId && update.newId) {
+        // Extract path from metadata or ID
+        const oldPath = update.newMeta?.path
+          ? update.oldId.replace(/^(file|image):/, '')
+          : update.oldId;
+        const newPath = update.newMeta?.path || update.newId.replace(/^(file|image):/, '');
+        traceChromaDbUpdate(oldPath, newPath, 1, true);
+      }
+    }
+
     return updatedCount;
   } catch (error) {
     logger.error('[FileOps] Failed to update file paths', {
@@ -461,6 +446,10 @@ async function updateFilePaths({ pathUpdates, fileCollection, queryCache }) {
       totalUpdates: pathUpdates.length,
       updatedCount
     });
+
+    // PATH-TRACE: Log ChromaDB path update failure
+    traceChromaDbUpdate(null, null, 0, false, error.message);
+
     throw error;
   }
 }

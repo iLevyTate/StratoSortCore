@@ -1,50 +1,49 @@
 const fs = require('fs').promises;
 const path = require('path');
-const { getCanonicalFileId } = require('../../shared/pathSanitization');
+// getCanonicalFileId removed - now handled by unified semanticFolderMatcher
 const sharp = require('sharp');
 const { getOllamaVisionModel, loadOllamaConfig, getOllama } = require('../ollamaUtils');
 const { buildOllamaOptions } = require('../services/PerformanceService');
 const { globalDeduplicator } = require('../utils/llmOptimization');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
-const {
-  AI_DEFAULTS,
-  SUPPORTED_IMAGE_EXTENSIONS,
-  PROCESSING_LIMITS
-} = require('../../shared/constants');
-const { TRUNCATION, THRESHOLDS } = require('../../shared/performanceConstants');
+const { attemptJsonRepairWithOllama } = require('../utils/ollamaJsonRepair');
+const { AI_DEFAULTS, SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
+const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
+const { withAbortableTimeout } = require('../../shared/promiseUtils');
+// THRESHOLDS removed - now handled by unified semanticFolderMatcher
 const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
 const { normalizeAnalysisResult } = require('./utils');
 const { normalizeExtractedTextForStorage } = require('./analysisTextUtils');
 const {
   getIntelligentCategory: getIntelligentImageCategory,
   getIntelligentKeywords: getIntelligentImageKeywords,
-  safeSuggestedName
+  safeSuggestedName,
+  createFallbackAnalysis
 } = require('./fallbackUtils');
-const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
-const { container, ServiceIds } = require('../services/ServiceContainer');
+// enrichFileTextForEmbedding removed - now handled by unified semanticFolderMatcher
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const { logger } = require('../../shared/logger');
+const {
+  applySemanticFolderMatching: applyUnifiedFolderMatching,
+  getServices,
+  resetSingletons: resetMatcherSingletons
+} = require('./semanticFolderMatcher');
+const { getImageAnalysisCache } = require('../services/AnalysisCacheService');
 
 logger.setContext('OllamaImageAnalysis');
-let chromaDbSingleton = null;
-let folderMatcherSingleton = null;
-
-// In-memory cache for image analysis keyed by path|size|mtimeMs
-const imageAnalysisCache = new Map();
-const MAX_IMAGE_CACHE = 300;
-const IMAGE_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const IMAGE_SIGNATURE_VERSION = 'v2';
+
+/**
+ * Set image cache value with automatic TTL and LRU eviction
+ * @param {string} signature - Cache key
+ * @param {Object} value - Value to cache
+ */
 function setImageCache(signature, value) {
   if (!signature) return;
-  // FIX CRIT-28: Add timestamp for TTL eviction
-  imageAnalysisCache.set(signature, { value, timestamp: Date.now() });
-  if (imageAnalysisCache.size > MAX_IMAGE_CACHE) {
-    const first = imageAnalysisCache.keys().next().value;
-    imageAnalysisCache.delete(first);
-  }
+  getImageAnalysisCache().set(signature, value);
 }
 
 // App configuration for image analysis - Optimized for speed
@@ -55,15 +54,14 @@ const AppConfig = {
       defaultHost: AI_DEFAULTS.IMAGE.HOST,
       // Keep image analysis aligned with global processing timeouts so the renderer lock
       // doesn't get "stuck" for minutes when vision calls hang.
-      timeout: PROCESSING_LIMITS.ANALYSIS_TIMEOUT,
+      timeout: TIMEOUTS.AI_ANALYSIS_LONG,
       temperature: AI_DEFAULTS.IMAGE.TEMPERATURE,
       maxTokens: AI_DEFAULTS.IMAGE.MAX_TOKENS
     }
   }
 };
 
-const JSON_REPAIR_MAX_CHARS = 4000;
-const JSON_REPAIR_MAX_TOKENS = 400;
+// JSON repair constants and function consolidated to ../utils/ollamaJsonRepair.js
 const IMAGE_ANALYSIS_SCHEMA = {
   ...ANALYSIS_SCHEMA_PROMPT,
   colors: ['#hex1', '#hex2'],
@@ -97,43 +95,7 @@ const IMAGE_ANALYSIS_TOOL = {
   }
 };
 
-async function attemptJsonRepairWithOllama(client, model, rawResponse) {
-  if (!rawResponse || !client) return null;
-  const trimmed =
-    rawResponse.length > JSON_REPAIR_MAX_CHARS
-      ? rawResponse.slice(0, JSON_REPAIR_MAX_CHARS)
-      : rawResponse;
-  const repairPrompt = `You are a JSON repair assistant. Fix the JSON below and output ONLY valid JSON.
-Do NOT include any commentary, markdown, or extra text.
-Schema (for structure reference only):
-${JSON.stringify(IMAGE_ANALYSIS_SCHEMA, null, 2)}
-
-JSON to repair:
-${trimmed}`;
-
-  const perfOptions = await buildOllamaOptions('text');
-  const response = await generateWithRetry(
-    client,
-    {
-      model,
-      prompt: repairPrompt,
-      options: {
-        temperature: 0,
-        num_predict: Math.min(AppConfig.ai.imageAnalysis.maxTokens, JSON_REPAIR_MAX_TOKENS),
-        ...perfOptions
-      },
-      format: 'json'
-    },
-    {
-      operation: 'Image analysis JSON repair',
-      maxRetries: 1,
-      initialDelay: 500,
-      maxDelay: 1000
-    }
-  );
-
-  return response?.response || null;
-}
+// Local attemptJsonRepairWithOllama removed - using ../utils/ollamaJsonRepair.js
 
 async function analyzeImageWithOllama(
   imageBase64,
@@ -143,6 +105,7 @@ async function analyzeImageWithOllama(
   namingContext = []
 ) {
   try {
+    const startedAt = Date.now();
     logger.info(`Analyzing image content with Ollama`, {
       model: AppConfig.ai.imageAnalysis.defaultModel
     });
@@ -236,66 +199,51 @@ Analyze this image:`;
 
     // IMPORTANT: Vision model calls can hang indefinitely if the model/server gets stuck.
     // Enforce a hard timeout and abort the underlying request (supported by Ollama client).
-    const abortController = new AbortController();
-    let timeoutId = null;
     const timeoutMs = Number(AppConfig.ai.imageAnalysis.timeout) || 60000;
-    const startedAt = Date.now();
-
-    const response = await (async () => {
-      const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-          try {
-            abortController.abort();
-          } catch (abortErr) {
-            // Intentionally ignored: abort may fail if request already completed
-            logger.debug('[IMAGE-ANALYSIS] Abort signal error (non-fatal):', abortErr?.message);
-          }
-          reject(new Error(`Image analysis timeout after ${timeoutMs}ms`));
-        }, timeoutMs);
-
-        // Ensure timers don't keep the process alive
-        if (timeoutId && typeof timeoutId.unref === 'function') {
-          timeoutId.unref();
-        }
-      });
-
-      const generateRequest = {
-        model: modelToUse,
-        prompt,
-        images: [imageBase64],
-        options: {
-          temperature: AppConfig.ai.imageAnalysis.temperature,
-          num_predict: AppConfig.ai.imageAnalysis.maxTokens,
-          ...perfOptions
-        },
-        format: 'json',
-        signal: abortController.signal
-      };
-      if (useToolCalling) {
-        generateRequest.tools = [IMAGE_ANALYSIS_TOOL];
-        generateRequest.tool_choice = {
-          type: 'function',
-          function: { name: IMAGE_ANALYSIS_TOOL.function.name }
+    logger.debug('[IMAGE-ANALYSIS] Using vision model', {
+      model: modelToUse,
+      fileName: originalFileName,
+      timeoutMs
+    });
+    const response = await withAbortableTimeout(
+      (abortController) => {
+        const generateRequest = {
+          model: modelToUse,
+          prompt,
+          images: [imageBase64],
+          options: {
+            temperature: AppConfig.ai.imageAnalysis.temperature,
+            num_predict: AppConfig.ai.imageAnalysis.maxTokens,
+            ...perfOptions
+          },
+          format: 'json',
+          signal: abortController.signal
         };
-      }
-      const generatePromise = globalDeduplicator.deduplicate(
-        deduplicationKey,
-        () =>
-          generateWithRetry(client, generateRequest, {
-            operation: `Image analysis for ${originalFileName}`,
-            maxRetries: 3,
-            initialDelay: 1000,
-            maxDelay: 4000
-          }),
-        { type: 'image', fileName: originalFileName } // Metadata for debugging cache hits
-      );
-
-      try {
-        return await Promise.race([generatePromise, timeoutPromise]);
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-      }
-    })();
+        if (useToolCalling) {
+          generateRequest.tools = [IMAGE_ANALYSIS_TOOL];
+          generateRequest.tool_choice = {
+            type: 'function',
+            function: { name: IMAGE_ANALYSIS_TOOL.function.name }
+          };
+        }
+        // FIX MED #11: Reduce retries to prevent exceeding outer timeout
+        // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
+        return globalDeduplicator.deduplicate(
+          deduplicationKey,
+          () =>
+            generateWithRetry(client, generateRequest, {
+              operation: `Image analysis for ${originalFileName}`,
+              maxRetries: 2,
+              initialDelay: 1000,
+              maxDelay: 2000,
+              maxTotalTime: timeoutMs
+            }),
+          { type: 'image', fileName: originalFileName } // Metadata for debugging cache hits
+        );
+      },
+      timeoutMs,
+      `Image analysis for ${originalFileName}`
+    );
 
     logger.info('[IMAGE-ANALYSIS] Ollama vision request completed', {
       fileName: originalFileName,
@@ -316,7 +264,12 @@ Analyze this image:`;
           const repairedResponse = await attemptJsonRepairWithOllama(
             client,
             modelToUse,
-            response.response
+            response.response,
+            {
+              schema: IMAGE_ANALYSIS_SCHEMA,
+              maxTokens: AppConfig.ai.imageAnalysis.maxTokens,
+              operation: 'Image analysis'
+            }
           );
           if (repairedResponse) {
             parsedJson = extractAndParseJSON(repairedResponse, null, {
@@ -484,7 +437,7 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
 
   // Check if suggested name indicates landscape/scenic content
   const suggestedIsLandscape = landscapeTerms.some((term) => suggestedLower.includes(term));
-  // const keywordsAreLandscape = landscapeTerms.some((term) => keywordsStr.includes(term)); // Unused
+  // FIX #12: Removed unused keywordsAreLandscape variable
 
   // CRITICAL: Detect financial document → landscape hallucination
   if (filenameIsFinancial && suggestedIsLandscape) {
@@ -621,40 +574,9 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
 // Helper Functions - Extracted for readability and maintainability
 // ============================================================================
 
-/**
- * Create a fallback analysis result when AI analysis is unavailable
- * @param {string} fileName - Original file name
- * @param {string} fileExtension - File extension
- * @param {string} reason - Reason for fallback
- * @param {number} confidence - Confidence score (default: 60)
- * @returns {Object} Fallback analysis result
- */
-function normalizeCategoryToSmartFolder(category, smartFolders) {
-  if (typeof FolderMatchingService?.matchCategoryToFolder === 'function') {
-    return FolderMatchingService.matchCategoryToFolder(category, smartFolders);
-  }
-  return category;
-}
-
-function createFallbackResult(fileName, fileExtension, reason, confidence = 60, smartFolders = []) {
-  const intelligentCategory = getIntelligentImageCategory(fileName, fileExtension);
-  const intelligentKeywords = getIntelligentImageKeywords(fileName, fileExtension);
-  const normalizedCategory =
-    typeof intelligentCategory === 'string' && intelligentCategory.trim().length > 0
-      ? normalizeCategoryToSmartFolder(intelligentCategory, smartFolders)
-      : intelligentCategory;
-  return {
-    purpose: `Image (fallback - ${reason})`,
-    project: fileName.replace(fileExtension, ''),
-    category: normalizedCategory,
-    date: new Date().toISOString().split('T')[0],
-    keywords: intelligentKeywords,
-    confidence,
-    suggestedName: safeSuggestedName(fileName, fileExtension),
-    extractionMethod: 'filename_fallback',
-    fallbackReason: reason
-  };
-}
+// Stage 5: createFallbackResult and normalizeCategoryToSmartFolder removed
+// Now using createFallbackAnalysis from ./fallbackUtils
+// For category normalization, use FolderMatchingService.matchCategoryToFolder directly
 
 /**
  * Extract EXIF date from image metadata
@@ -697,7 +619,7 @@ async function preprocessImageBuffer(imageBuffer, fileExtension) {
     const needsFormatConversion = ['.svg', '.tiff', '.tif', '.bmp', '.gif', '.webp'].includes(
       fileExtension
     );
-    const maxDimension = 1536;
+    const maxDimension = 1024; // Reduced from 1536 to prevent timeouts on large images while maintaining quality
 
     let meta = null;
     try {
@@ -729,183 +651,6 @@ async function preprocessImageBuffer(imageBuffer, fileExtension) {
     logger.error('[IMAGE] Preprocessing failed:', error.message);
     throw error;
   }
-}
-
-/**
- * Apply semantic folder matching using ChromaDB embeddings
- * @param {Object} analysis - Current analysis result
- * @param {string} filePath - File path for embedding
- * @param {Array} smartFolders - Available smart folders
- * @returns {Promise<Object>} Analysis with folder matching applied
- */
-async function applySemanticFolderMatching(
-  analysis,
-  filePath,
-  smartFolders,
-  fileSize,
-  extractedText
-) {
-  const chromaDb = container.tryResolve(ServiceIds.CHROMA_DB);
-  if (chromaDb !== chromaDbSingleton) {
-    chromaDbSingleton = chromaDb;
-  }
-
-  if (!chromaDb) {
-    logger.warn('[IMAGE] ChromaDB not available, skipping semantic folder refinement');
-    return analysis;
-  }
-
-  const folderMatcher =
-    folderMatcherSingleton || (folderMatcherSingleton = new FolderMatchingService(chromaDb));
-
-  // Validate folder matcher has required methods
-  const hasRequiredMethods =
-    folderMatcher &&
-    typeof folderMatcher === 'object' &&
-    typeof folderMatcher.initialize === 'function' &&
-    typeof folderMatcher.batchUpsertFolders === 'function' &&
-    typeof folderMatcher.embedText === 'function' &&
-    typeof folderMatcher.matchVectorToFolders === 'function';
-
-  if (!hasRequiredMethods) {
-    logger.warn('[IMAGE] FolderMatcher invalid or missing required methods');
-    return analysis;
-  }
-
-  // Initialize on first use
-  if (!folderMatcher.embeddingCache?.initialized) {
-    try {
-      await folderMatcher.initialize();
-    } catch (initError) {
-      logger.warn('[IMAGE] FolderMatcher initialization error:', initError.message);
-      return analysis;
-    }
-  }
-
-  // Upsert smart folders
-  if (smartFolders && Array.isArray(smartFolders) && smartFolders.length > 0) {
-    try {
-      const validFolders = smartFolders.filter(
-        (f) => f && typeof f === 'object' && (f.name || f.id || f.path)
-      );
-      if (validFolders.length > 0) {
-        await folderMatcher.batchUpsertFolders(validFolders);
-      }
-    } catch (upsertError) {
-      logger.warn('[IMAGE] Folder embedding upsert error:', upsertError.message);
-    }
-  }
-
-  // Build summary for matching
-  const summaryBase = [
-    analysis.project,
-    analysis.purpose,
-    (analysis.keywords || []).join(' '),
-    analysis.content_type || ''
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  // FIX: Enrich with semantic keywords based on file extension (e.g. .svg -> "vector graphic")
-  // This ensures embedding matching works even if LLM missed the semantic connection
-  const fileExtension = path.extname(filePath).toLowerCase();
-  const summaryEnriched = enrichFileTextForEmbedding(summaryBase, fileExtension);
-
-  const summary = [
-    summaryEnriched,
-    (extractedText || '').slice(0, 500) // Include OCR text for better matching
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  if (!summary || summary.trim().length === 0) {
-    logger.debug('[IMAGE] Empty summary, skipping folder matching');
-    return analysis;
-  }
-
-  try {
-    const chromaDbService = container.tryResolve(ServiceIds.CHROMA_DB);
-    if (chromaDbService) {
-      await chromaDbService.initialize();
-    }
-
-    const { vector, model } = await folderMatcher.embedText(summary);
-    const candidates = await folderMatcher.matchVectorToFolders(vector, 5);
-
-    // Queue embedding for batch persistence
-    // FIX: Include category and confidence in metadata for search display
-    const fileName = path.basename(filePath);
-    const rawConfidence = analysis.confidence ?? 0;
-    const confidencePercent =
-      typeof rawConfidence === 'number'
-        ? rawConfidence > 1
-          ? Math.round(rawConfidence)
-          : Math.round(rawConfidence * 100)
-        : 0;
-    embeddingQueue.enqueue({
-      id: getCanonicalFileId(filePath, true),
-      vector,
-      model,
-      meta: {
-        path: filePath,
-        name: fileName,
-        fileExtension: path.extname(fileName).toLowerCase(),
-        fileSize,
-        category: analysis.category || 'Uncategorized',
-        confidence: confidencePercent,
-        type: 'image',
-        extractionMethod: extractedText ? 'image_ocr' : 'image_analysis',
-        summary: summary.substring(0, 500),
-        tags: Array.isArray(analysis.keywords) ? analysis.keywords : [],
-        keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
-        date: analysis.date,
-        suggestedName: analysis.suggestedName,
-        content_type: analysis.content_type,
-        colors: Array.isArray(analysis.colors) ? analysis.colors : [],
-        has_text: analysis.has_text === true
-      },
-      updatedAt: new Date().toISOString()
-    });
-
-    if (Array.isArray(candidates) && candidates.length > 0) {
-      const top = candidates[0];
-      if (top && typeof top === 'object' && typeof top.score === 'number' && top.name) {
-        // Only override LLM category if embedding score exceeds both threshold AND LLM confidence
-        // This ensures semantic understanding from content analysis remains primary
-        const llmConfidence = analysis.confidence || 0.7;
-        const shouldOverride =
-          top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE && top.score > llmConfidence;
-
-        if (shouldOverride) {
-          logger.info('[IMAGE] Embedding override - folder match exceeds LLM confidence', {
-            llmCategory: analysis.category,
-            llmConfidence,
-            embeddingCategory: top.name,
-            embeddingScore: top.score
-          });
-          analysis.llmOriginalCategory = analysis.category;
-          analysis.category = top.name;
-          analysis.categorySource = 'embedding_override';
-          analysis.suggestedFolder = top.name;
-          analysis.destinationFolder = top.path || top.name;
-        } else if (top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE) {
-          // Embedding met threshold but LLM confidence was higher - keep LLM category
-          logger.debug('[IMAGE] LLM category preserved - confidence higher than embedding', {
-            llmCategory: analysis.category,
-            llmConfidence,
-            embeddingCategory: top.name,
-            embeddingScore: top.score
-          });
-          analysis.categorySource = 'llm_preserved';
-        }
-        analysis.folderMatchCandidates = candidates;
-      }
-    }
-  } catch (matchError) {
-    logger.warn('[IMAGE] Folder matching error:', matchError.message);
-  }
-
-  return analysis;
 }
 
 // ============================================================================
@@ -946,13 +691,27 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     const isRunning = await isOllamaRunning();
     if (!isRunning) {
       logger.warn('[ANALYSIS-FALLBACK] Ollama unavailable, using filename-based analysis');
-      return createFallbackResult(fileName, fileExtension, 'Ollama unavailable', 60, smartFolders);
+      return createFallbackAnalysis({
+        fileName,
+        fileExtension,
+        reason: 'Ollama unavailable',
+        smartFolders,
+        confidence: 60,
+        type: 'image'
+      });
     }
   } catch (error) {
     logger.error('[IMAGE] Pre-flight verification failed', {
       error: error.message
     });
-    return createFallbackResult(fileName, fileExtension, error.message, 55, smartFolders);
+    return createFallbackAnalysis({
+      fileName,
+      fileExtension,
+      reason: error.message,
+      smartFolders,
+      confidence: 55,
+      type: 'image'
+    });
   }
 
   try {
@@ -967,6 +726,39 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     } catch (err) {
       logger.debug('[IMAGE] Config load failed, using default model:', err.message);
       visionModelName = AppConfig.ai.imageAnalysis.defaultModel;
+    }
+
+    // FIX HIGH #7: Verify required vision model is loaded before proceeding
+    // This prevents analysis from timing out on guaranteed failures when model isn't available
+    try {
+      const ollama = await getOllama();
+      const modelList = await ollama.list();
+      const availableModels = modelList?.models || [];
+      const modelNames = availableModels.map((m) => m.name || m.model || '');
+      // Check if the vision model (or a variant with tag) is available
+      const modelBase = visionModelName.split(':')[0];
+      const isModelAvailable = modelNames.some(
+        (name) => name === visionModelName || name.startsWith(modelBase + ':') || name === modelBase
+      );
+      if (!isModelAvailable) {
+        logger.warn('[IMAGE] Vision model not available, using filename-based analysis', {
+          requiredModel: visionModelName,
+          availableModels: modelNames.slice(0, 5) // Log first 5 for debugging
+        });
+        return createFallbackAnalysis({
+          fileName,
+          fileExtension,
+          reason: `Vision model '${visionModelName}' not loaded`,
+          smartFolders,
+          confidence: 55,
+          type: 'image'
+        });
+      }
+    } catch (modelCheckError) {
+      // If model check fails, log but continue - the analysis may still work
+      logger.debug('[IMAGE] Model availability check failed, proceeding anyway', {
+        error: modelCheckError.message
+      });
     }
 
     // First, check if file exists and has content
@@ -1017,16 +809,14 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     }
 
     // Cache quick path: signature based on file stats
+    // LRUCache handles TTL automatically - get() returns null for expired entries
     const signature = `${IMAGE_SIGNATURE_VERSION}|${visionModelName}|${smartFolderSig}|${filePath}|${stats.size}|${stats.mtimeMs}`;
-    if (!bypassCache && imageAnalysisCache.has(signature)) {
-      // FIX CRIT-28: Check TTL
-      const cached = imageAnalysisCache.get(signature);
-      if (Date.now() - cached.timestamp < IMAGE_CACHE_TTL_MS) {
-        return cached.value;
+    if (!bypassCache) {
+      const cached = getImageAnalysisCache().get(signature);
+      if (cached !== null) {
+        return cached;
       }
-      imageAnalysisCache.delete(signature);
-    }
-    if (bypassCache) {
+    } else {
       logger.debug('[IMAGE] Bypassing analysis cache for reanalysis', { filePath });
     }
 
@@ -1039,15 +829,15 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         path: filePath,
         error: preErr.message
       });
-      const fallback = createFallbackResult(
+      return createFallbackAnalysis({
         fileName,
         fileExtension,
-        'image preprocessing failed',
-        40,
-        smartFolders
-      );
-      fallback.error = preErr.message;
-      return fallback;
+        reason: 'image preprocessing failed',
+        smartFolders,
+        confidence: 40,
+        type: 'image',
+        options: { error: preErr.message }
+      });
     }
 
     // Validate buffer is not empty
@@ -1120,19 +910,16 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     let namingContext = [];
     try {
       // Try to get folder matcher to find similar files for naming context
-      const chromaDb = container.tryResolve(ServiceIds.CHROMA_DB);
-      if (chromaDb) {
-        if (chromaDb !== chromaDbSingleton) chromaDbSingleton = chromaDb;
-        if (!folderMatcherSingleton) folderMatcherSingleton = new FolderMatchingService(chromaDb);
-
+      const { matcher } = getServices();
+      if (matcher) {
         // Only if we have some text or at least a filename to embed
         const textForEmbedding = (extractedText || fileName || '').slice(0, 1000);
-        if (folderMatcherSingleton && textForEmbedding) {
-          if (!folderMatcherSingleton.embeddingCache?.initialized) {
-            await folderMatcherSingleton.initialize();
+        if (textForEmbedding) {
+          if (!matcher.embeddingCache?.initialized) {
+            await matcher.initialize();
           }
-          const { vector } = await folderMatcherSingleton.embedText(textForEmbedding);
-          const similarFiles = await folderMatcherSingleton.findSimilarFilesByVector(vector, 5);
+          const { vector } = await matcher.embedText(textForEmbedding);
+          const similarFiles = await matcher.findSimilarFilesByVector(vector, 5);
           namingContext = similarFiles
             .filter((f) => f.metadata && f.metadata.name && f.metadata.name !== fileName)
             .map((f) => f.metadata.name);
@@ -1175,18 +962,19 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
         error: error.message,
         filePath
       });
-      const fallback = createFallbackResult(
+      const fallback = createFallbackAnalysis({
         fileName,
         fileExtension,
-        'analysis error',
-        55,
-        smartFolders
-      );
+        reason: 'analysis error',
+        smartFolders,
+        confidence: 55,
+        type: 'image',
+        options: { error: error.message }
+      });
       const extractedTextForStorage = normalizeExtractedTextForStorage(extractedText);
       if (extractedTextForStorage) {
         fallback.extractedText = extractedTextForStorage;
       }
-      fallback.error = error.message;
       return fallback;
     }
 
@@ -1217,17 +1005,64 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
 
     const extractedTextForStorage = normalizeExtractedTextForStorage(extractedText);
 
-    // Semantic folder refinement using embeddings (delegated to helper)
+    // Semantic folder refinement using embeddings
+    // MIGRATION: Now uses unified semanticFolderMatcher module
     try {
-      await applySemanticFolderMatching(
+      await applyUnifiedFolderMatching({
         analysis,
         filePath,
+        fileName: path.basename(filePath),
+        fileExtension: path.extname(filePath),
+        fileSize: stats?.size,
         smartFolders,
-        stats?.size,
-        extractedTextForStorage
-      );
+        extractedText: extractedTextForStorage,
+        type: 'image'
+      });
+
+      // FIX: Explicitly queue embedding for images to ensure they are searchable
+      // even if they don't have OCR text (using keywords/description instead)
+      const { matcher } = getServices();
+      if (matcher && analysis) {
+        const textParts = [
+          analysis.suggestedName,
+          analysis.summary,
+          analysis.category,
+          ...(analysis.keywords || [])
+        ].filter(Boolean);
+
+        // Include OCR text if available to boost search relevance
+        if (extractedTextForStorage) {
+          textParts.push(extractedTextForStorage.slice(0, 1000));
+        }
+
+        const textToEmbed = textParts.join(' ');
+        if (textToEmbed.length > 0) {
+          // Initialize if needed
+          if (!matcher.embeddingCache?.initialized) {
+            await matcher.initialize();
+          }
+
+          const { vector } = await matcher.embedText(textToEmbed);
+          if (vector) {
+            embeddingQueue.enqueue({
+              id: `image:${filePath}`,
+              path: filePath,
+              text: textToEmbed,
+              vector,
+              metadata: {
+                fileName,
+                fileSize: stats?.size,
+                fileExtension,
+                analysis,
+                type: 'image'
+              }
+            });
+            logger.debug('[IMAGE] Queued embedding for persistence', { path: filePath });
+          }
+        }
+      }
     } catch (error) {
-      logger.warn('[IMAGE] Unexpected error in semantic folder refinement:', {
+      logger.warn('[IMAGE] Unexpected error in semantic folder refinement or embedding:', {
         error: error?.message,
         filePath
       });
@@ -1238,21 +1073,23 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       logger.warn('[IMAGE] analyzeImageWithOllama returned undefined', {
         filePath
       });
-      const result = createFallbackResult(
+      const result = createFallbackAnalysis({
         fileName,
         fileExtension,
-        'undefined result',
-        60,
-        smartFolders
-      );
-      result.error = 'Ollama image analysis returned undefined';
+        reason: 'undefined result',
+        smartFolders,
+        confidence: 60,
+        type: 'image',
+        options: { error: 'Ollama image analysis returned undefined' }
+      });
       if (extractedTextForStorage) {
         result.extractedText = extractedTextForStorage;
       }
       try {
         setImageCache(signature, result);
-      } catch {
-        // Non-fatal if caching fails
+      } catch (cacheError) {
+        // FIX #5: Log cache failures for debugging instead of silent swallowing
+        logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
       }
       return result;
     }
@@ -1268,7 +1105,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       }
       const normalizedCategory =
         typeof analysis.category === 'string' && analysis.category.trim().length > 0
-          ? normalizeCategoryToSmartFolder(analysis.category, smartFolders)
+          ? FolderMatchingService.matchCategoryToFolder(analysis.category, smartFolders)
           : analysis.category;
       const normalized = normalizeAnalysisResult(
         {
@@ -1282,26 +1119,36 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       );
       try {
         setImageCache(signature, normalized);
-      } catch {
-        // Non-fatal if caching fails
+      } catch (cacheError) {
+        // FIX #5: Log cache failures for debugging instead of silent swallowing
+        logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
       }
       return normalized;
     }
 
     // Fallback analysis if Ollama fails
-    const result = createFallbackResult(fileName, fileExtension, 'Ollama failed', 60, smartFolders);
+    const result = createFallbackAnalysis({
+      fileName,
+      fileExtension,
+      reason: 'Ollama failed',
+      smartFolders,
+      confidence: 60,
+      type: 'image',
+      options: { error: analysis?.error || 'Ollama image analysis failed.' }
+    });
+    // FIX HIGH-3: Add null check before accessing analysis.keywords
     // Preserve keywords from partial analysis if available
-    if (Array.isArray(analysis.keywords)) {
+    if (analysis && Array.isArray(analysis.keywords)) {
       result.keywords = analysis.keywords;
     }
     if (extractedTextForStorage) {
       result.extractedText = extractedTextForStorage;
     }
-    result.error = analysis?.error || 'Ollama image analysis failed.';
     try {
       setImageCache(signature, result);
-    } catch {
-      // Non-fatal if caching fails
+    } catch (cacheError) {
+      // FIX #5: Log cache failures for debugging instead of silent swallowing
+      logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
     }
     return result;
   } catch (error) {
@@ -1340,23 +1187,36 @@ async function extractTextFromImage(filePath) {
     const modelToUse2 =
       getOllamaVisionModel() || cfg2.selectedVisionModel || AppConfig.ai.imageAnalysis.defaultModel;
     const client2 = await getOllama();
-    const response = await generateWithRetry(
-      client2,
-      {
-        model: modelToUse2,
-        prompt,
-        images: [imageBase64],
-        options: {
-          temperature: 0.1, // Lower temperature for text extraction
-          num_predict: 2000
-        }
-      },
-      {
-        operation: `Text extraction from image ${path.basename(filePath)}`,
-        maxRetries: 3,
-        initialDelay: 1000,
-        maxDelay: 4000
-      }
+    const timeoutMs = Number(AppConfig.ai.imageAnalysis.timeout) || 60000;
+    logger.debug('[IMAGE-OCR] Using vision model for OCR', {
+      model: modelToUse2,
+      fileName: path.basename(filePath),
+      timeoutMs
+    });
+    const response = await withAbortableTimeout(
+      (abortController) =>
+        generateWithRetry(
+          client2,
+          {
+            model: modelToUse2,
+            prompt,
+            images: [imageBase64],
+            options: {
+              temperature: 0.1, // Lower temperature for text extraction
+              num_predict: 2000
+            },
+            signal: abortController.signal
+          },
+          {
+            operation: `Text extraction from image ${path.basename(filePath)}`,
+            maxRetries: 3,
+            initialDelay: 1000,
+            maxDelay: 4000,
+            maxTotalTime: timeoutMs
+          }
+        ),
+      timeoutMs,
+      `Image OCR for ${path.basename(filePath)}`
     );
 
     if (response.response && response.response.trim() !== 'NO_TEXT_FOUND') {
@@ -1384,9 +1244,10 @@ async function flushAllEmbeddings() {
  * Useful for hot reload, testing, or reconnecting to services
  */
 function resetSingletons() {
-  chromaDbSingleton = null;
-  folderMatcherSingleton = null;
-  imageAnalysisCache.clear();
+  // Stage 5: Delegate to unified matcher reset for shared singletons
+  resetMatcherSingletons();
+  // Clear local image analysis cache
+  getImageAnalysisCache().clear();
 }
 
 module.exports = {

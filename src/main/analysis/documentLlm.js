@@ -5,11 +5,17 @@ const { globalDeduplicator } = require('../utils/llmOptimization');
 // const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
 const { generateWithRetry } = require('../utils/ollamaApiRetry');
 const { extractAndParseJSON } = require('../utils/jsonRepair');
+const { attemptJsonRepairWithOllama } = require('../utils/ollamaJsonRepair');
 const { AI_DEFAULTS } = require('../../shared/constants');
+const { withAbortableTimeout } = require('../../shared/promiseUtils');
+const { TIMEOUTS } = require('../../shared/performanceConstants');
 const { logger } = require('../../shared/logger');
 const { chunkTextForAnalysis } = require('./documentExtractors');
+const { normalizeForModel } = require('./textNormalization');
 const FolderMatchingService = require('../services/FolderMatchingService');
 const { getInstance: getAnalysisCache } = require('../services/AnalysisCacheService');
+// FIX HIGH-1: Move import to top of file (was at line 117, but used at line 88)
+const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
 
 logger.setContext('DocumentLLM');
 
@@ -18,7 +24,7 @@ const AppConfig = {
     textAnalysis: {
       defaultModel: AI_DEFAULTS.TEXT.MODEL,
       defaultHost: AI_DEFAULTS.TEXT.HOST,
-      timeout: 60000,
+      timeout: TIMEOUTS.AI_ANALYSIS_LONG,
       maxContentLength: AI_DEFAULTS.TEXT.MAX_CONTENT_LENGTH,
       temperature: AI_DEFAULTS.TEXT.TEMPERATURE,
       maxTokens: AI_DEFAULTS.TEXT.MAX_TOKENS
@@ -55,66 +61,11 @@ const DOCUMENT_ANALYSIS_TOOL = {
 // Re-export for backward compatibility
 const normalizeCategoryToSmartFolders = FolderMatchingService.matchCategoryToFolder;
 
-function normalizeTextForModel(input, maxLen) {
-  if (!input) return '';
-  let text = String(input);
-  // CRITICAL FIX: Truncate BEFORE regex operations to prevent buffer overflow
-  // Processing very large strings with complex regex can cause catastrophic backtracking
-  if (typeof maxLen === 'number' && maxLen > 0 && text.length > maxLen) {
-    text = text.slice(0, maxLen);
-  }
-  // Now safe to apply regex operations on bounded text
-  // Remove null bytes and collapse excessive whitespace to reduce tokens
-  // eslint-disable-next-line no-control-regex
-  text = text.replace(/\u0000/g, '');
-  // eslint-disable-next-line no-control-regex
-  text = text.replace(/[\t\x0B\f\r]+/g, ' ');
-  text = text.replace(/\s{2,}/g, ' ').trim();
-  return text;
-}
+// normalizeTextForModel moved to ./textNormalization.js
+// Using normalizeForModel from that module instead
 
-const JSON_REPAIR_MAX_CHARS = 4000;
-const JSON_REPAIR_MAX_TOKENS = 400;
-
-async function attemptJsonRepairWithOllama(client, model, rawResponse) {
-  if (!rawResponse || !client) return null;
-  const trimmed =
-    rawResponse.length > JSON_REPAIR_MAX_CHARS
-      ? rawResponse.slice(0, JSON_REPAIR_MAX_CHARS)
-      : rawResponse;
-  const repairPrompt = `You are a JSON repair assistant. Fix the JSON below and output ONLY valid JSON.
-Do NOT include any commentary, markdown, or extra text.
-Schema (for structure reference only):
-${JSON.stringify(ANALYSIS_SCHEMA_PROMPT, null, 2)}
-
-JSON to repair:
-${trimmed}`;
-
-  const perfOptions = await buildOllamaOptions('text');
-  const response = await generateWithRetry(
-    client,
-    {
-      model,
-      prompt: repairPrompt,
-      options: {
-        temperature: 0,
-        num_predict: Math.min(AppConfig.ai.textAnalysis.maxTokens, JSON_REPAIR_MAX_TOKENS),
-        ...perfOptions
-      },
-      format: 'json'
-    },
-    {
-      operation: 'Document analysis JSON repair',
-      maxRetries: 1,
-      initialDelay: 500,
-      maxDelay: 1000
-    }
-  );
-
-  return response?.response || null;
-}
-
-const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
+// JSON repair constants and function consolidated to ../utils/ollamaJsonRepair.js
+// FIX HIGH-1: Import moved to top of file - removed duplicate import here
 
 async function analyzeTextWithOllama(
   textContent,
@@ -132,7 +83,7 @@ async function analyzeTextWithOllama(
       AppConfig.ai.textAnalysis.defaultModel;
 
     // Normalize and chunk text to reduce truncation loss
-    const normalized = normalizeTextForModel(
+    const normalized = normalizeForModel(
       textContent,
       AppConfig.ai.textAnalysis.maxContentLength * 4
     );
@@ -143,8 +94,7 @@ async function analyzeTextWithOllama(
     });
     const maxLen = AppConfig.ai.textAnalysis.maxContentLength;
     const truncatedRaw =
-      combinedChunks ||
-      normalizeTextForModel(normalized, AppConfig.ai.textAnalysis.maxContentLength);
+      combinedChunks || normalizeForModel(normalized, AppConfig.ai.textAnalysis.maxContentLength);
     // Hard cap the final text to maxLen. chunkTextForAnalysis tries to respect maxTotalLength,
     // but may add small separators/metadata during concatenation; we enforce the contract here.
     const truncated =
@@ -253,34 +203,34 @@ ${truncated}`;
         function: { name: DOCUMENT_ANALYSIS_TOOL.function.name }
       };
     }
-    const generatePromise = globalDeduplicator.deduplicate(
-      deduplicationKey,
-      () =>
-        generateWithRetry(client, generateRequest, {
-          operation: `Document analysis for ${originalFileName}`,
-          maxRetries: 3,
-          initialDelay: 1000,
-          maxDelay: 4000
-        }),
-      { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
-    );
-    // FIX: Store timeout ID outside Promise.race to ensure cleanup
-    let timeoutId;
+    // FIX MED #11: Reduce retries to prevent exceeding outer timeout
+    // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
+    // Previous: 3 retries with 4s max delay could exceed 60s (4 attempts × 20s + 7s delays = 87s)
     try {
-      const response = await Promise.race([
-        generatePromise,
-        new Promise((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error('LLM request timed out')),
-            AppConfig.ai.textAnalysis.timeout
+      logger.debug('[documentLlm] Using text model', {
+        model: modelToUse,
+        fileName: originalFileName,
+        timeoutMs: AppConfig.ai.textAnalysis.timeout
+      });
+      const response = await withAbortableTimeout(
+        (abortController) => {
+          const requestWithSignal = { ...generateRequest, signal: abortController.signal };
+          return globalDeduplicator.deduplicate(
+            deduplicationKey,
+            () =>
+              generateWithRetry(client, requestWithSignal, {
+                operation: `Document analysis for ${originalFileName}`,
+                maxRetries: 2,
+                initialDelay: 1000,
+                maxDelay: 2000,
+                maxTotalTime: AppConfig.ai.textAnalysis.timeout
+              }),
+            { type: 'document', fileName: originalFileName } // Metadata for debugging cache hits
           );
-          try {
-            timeoutId.unref();
-          } catch {
-            // Expected: unref() may fail on non-Node timers or if already cleared
-          }
-        })
-      ]);
+        },
+        AppConfig.ai.textAnalysis.timeout,
+        `Document analysis for ${originalFileName}`
+      );
 
       if (response.response) {
         try {
@@ -295,7 +245,12 @@ ${truncated}`;
             const repairedResponse = await attemptJsonRepairWithOllama(
               client,
               modelToUse,
-              response.response
+              response.response,
+              {
+                schema: ANALYSIS_SCHEMA_PROMPT,
+                maxTokens: AppConfig.ai.textAnalysis.maxTokens,
+                operation: 'Document analysis'
+              }
             );
             if (repairedResponse) {
               parsedJson = extractAndParseJSON(repairedResponse, null, {
@@ -447,9 +402,7 @@ ${truncated}`;
       };
     } finally {
       // FIX: Always clear timeout to prevent timer leak
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      // withAbortableTimeout handles timeout cleanup
     }
   } catch (error) {
     return {

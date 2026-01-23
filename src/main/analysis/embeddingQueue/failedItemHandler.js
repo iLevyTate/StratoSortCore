@@ -68,6 +68,13 @@ function createFailedItemHandler(config) {
       }
     }
 
+    // FIX Bug 5: Delete and re-insert to maintain true LRU ordering
+    // Map maintains insertion order, so updating an existing key doesn't move it
+    // By deleting first then re-inserting, the item moves to the end (most recently used)
+    if (existing) {
+      failedItems.delete(item.id);
+    }
+
     failedItems.set(item.id, {
       item,
       retryCount,
@@ -134,8 +141,9 @@ function createFailedItemHandler(config) {
     const itemsToRetry = [];
 
     for (const [id, data] of failedItems) {
-      // Exponential backoff per item: 10s, 20s, 40s
-      const backoffMs = RETRY.BACKOFF_BASE_MS * 2 * 2 ** (data.retryCount - 1);
+      // FIX LOW-2: Remove extra * 2 multiplier - exponential backoff per item: 10s, 20s, 40s
+      // Formula: BASE_MS * 2^(retryCount-1) gives 10s, 20s, 40s for retryCount 1, 2, 3
+      const backoffMs = RETRY.BACKOFF_BASE_MS * 2 ** (data.retryCount - 1);
 
       if (now - data.lastAttempt >= backoffMs) {
         itemsToRetry.push(data.item);

@@ -10,6 +10,7 @@
 const { get: getConfig } = require('../../../shared/config/index');
 const { CACHE } = require('../../../shared/performanceConstants');
 const { logger } = require('../../../shared/logger');
+const { getInstance: getCacheInvalidationBus } = require('../../../shared/cacheInvalidation');
 
 logger.setContext('AnalysisHistory-Cache');
 
@@ -230,6 +231,89 @@ async function warmCache(cache, getRecentAnalysis, analysisHistory, state) {
   logger.debug('[AnalysisHistoryService] Cache warmed');
 }
 
+/**
+ * Subscribe cache to the cache invalidation bus
+ * Ensures analysis history caches are cleared when files are moved/deleted
+ *
+ * @param {Object} cache - Cache store object
+ * @param {Object} state - State object with _statsNeedFullRecalc flag
+ * @returns {Function} Unsubscribe function
+ */
+function subscribeToInvalidationBus(cache, state) {
+  try {
+    const bus = getCacheInvalidationBus();
+    const unsubscribe = bus.subscribe('AnalysisHistoryCache', {
+      onInvalidate: (event) => {
+        if (event.type === 'full-invalidate') {
+          invalidateCaches(cache, state);
+          logger.debug('[AnalysisHistory-Cache] Full invalidation from bus');
+        }
+      },
+      onPathChange: (oldPath, newPath) => {
+        // When a file path changes, invalidate search results that may reference it
+        _invalidateSearchResultsForPath(cache, oldPath);
+        _invalidateSearchResultsForPath(cache, newPath);
+      },
+      onDeletion: (filePath) => {
+        _invalidateSearchResultsForPath(cache, filePath);
+        // On deletion, also clear the entry embeddings for this file
+        _removeEntryEmbeddingForPath(cache, filePath);
+      },
+      onBatch: (_changes) => {
+        // For batch operations, invalidate more aggressively
+        // Clear search results cache entirely for efficiency
+        cache.searchResults.clear();
+        cache.categoryResults.clear();
+        cache.tagResults.clear();
+        logger.debug('[AnalysisHistory-Cache] Batch invalidation, cleared search caches');
+      }
+    });
+    logger.debug('[AnalysisHistory-Cache] Subscribed to cache invalidation bus');
+    return unsubscribe;
+  } catch (error) {
+    logger.warn('[AnalysisHistory-Cache] Failed to subscribe to invalidation bus:', error.message);
+    return () => {}; // Return no-op unsubscribe
+  }
+}
+
+/**
+ * Invalidate search results that may reference a specific path
+ * @param {Object} cache - Cache store object
+ * @param {string} filePath - Path to check
+ * @private
+ */
+function _invalidateSearchResultsForPath(cache, filePath) {
+  if (!filePath || !cache.searchResults) return;
+
+  // For efficiency, just mark sorted entries as invalid rather than
+  // iterating through all search results
+  cache.sortedEntriesValid = false;
+
+  // Clear the entire search cache since results may contain the path
+  // This is more efficient than checking each result
+  if (cache.searchResults.size > 0) {
+    cache.searchResults.clear();
+    logger.debug('[AnalysisHistory-Cache] Cleared search results for path change');
+  }
+}
+
+/**
+ * Remove entry embeddings for a deleted file
+ * @param {Object} cache - Cache store object
+ * @param {string} filePath - Deleted file path
+ * @private
+ */
+function _removeEntryEmbeddingForPath(cache, filePath) {
+  if (!filePath || !cache.entryEmbeddings) return;
+
+  // Entry embeddings are keyed by entry ID which may include the path
+  for (const [entryId] of cache.entryEmbeddings) {
+    if (entryId.includes(filePath)) {
+      cache.entryEmbeddings.delete(entryId);
+    }
+  }
+}
+
 module.exports = {
   createCacheStore,
   getCacheTTLs,
@@ -243,5 +327,6 @@ module.exports = {
   updateIncrementalStatsOnRemove,
   recalculateIncrementalStats,
   clearCaches,
-  warmCache
+  warmCache,
+  subscribeToInvalidationBus
 };
