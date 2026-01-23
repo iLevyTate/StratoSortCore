@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
-import { Sparkles } from 'lucide-react';
-import { Button, Input, Textarea } from '../ui';
+import { Sparkles, X } from 'lucide-react';
+import { Button, Input, Textarea, IconButton } from '../ui';
 import { logger } from '../../../shared/logger';
 
 logger.setContext('AddSmartFolderModal');
@@ -193,23 +193,16 @@ function AddSmartFolderModal({
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-modal-enter">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-system-gray-100">
-          <h2 id="add-folder-title" className="text-lg font-semibold text-system-gray-900">
+          <h2 id="add-folder-title" className="heading-secondary">
             Add Smart Folder
           </h2>
-          <button
+          <IconButton
             onClick={handleClose}
-            className="p-2 -m-2 text-system-gray-400 hover:text-system-gray-600 transition-colors rounded-lg hover:bg-system-gray-100"
+            variant="ghost"
+            size="sm"
             aria-label="Close"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+            icon={<X className="w-5 h-5" />}
+          />
         </div>
 
         {/* Form */}

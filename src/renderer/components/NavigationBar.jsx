@@ -193,9 +193,7 @@ const NavTab = memo(function NavTab({
       onMouseLeave={() => onHover(null)}
       disabled={!canNavigate}
       className={`
-        relative flex flex-col sm:flex-row items-center gap-0.5 sm:gap-2 rounded-full
-        px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0
-        transition-all duration-200 ease-out
+        phase-nav-tab
         focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
         ${
           isActive
@@ -216,18 +214,18 @@ const NavTab = memo(function NavTab({
       style={{ WebkitAppRegion: 'no-drag' }}
     >
       {showSpinner ? (
-        <SpinnerIcon className="h-4 w-4 text-stratosort-blue flex-shrink-0" />
+        <SpinnerIcon className="phase-nav-icon text-stratosort-blue flex-shrink-0" />
       ) : (
         IconComponent && (
           <IconComponent
-            className={`h-4 w-4 flex-shrink-0 transition-colors duration-200
+            className={`phase-nav-icon flex-shrink-0 transition-colors duration-200
               ${isActive || isHovered ? 'text-stratosort-blue' : 'text-current opacity-70'}
             `}
           />
         )
       )}
       {/* FIX: Always show label, with clear size/line-height for visibility */}
-      <span className="text-[10px] sm:text-sm leading-none">{label}</span>
+      <span className="phase-nav-label">{label}</span>
 
       {/* Active indicator */}
       {isActive && !showSpinner && (
@@ -260,7 +258,7 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
         type="button"
         onClick={isWidgetOpen ? closeWidget : openWidget}
         className={`
-          h-9 px-3 rounded-lg flex items-center justify-center gap-2
+          h-9 px-2 sm:px-3 rounded-lg flex items-center justify-center gap-2
           text-system-gray-500 hover:text-stratosort-blue
           bg-white/80 hover:bg-white border border-system-gray-200 hover:border-stratosort-blue/30
           shadow-sm hover:shadow-md
@@ -273,9 +271,6 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
       >
         <SearchIcon className="h-4 w-4" />
         <span className="text-xs font-medium hidden sm:inline">Search</span>
-        <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-system-gray-100 rounded text-[10px] font-mono text-system-gray-500">
-          {isMac ? '⌘' : 'Ctrl+'}K
-        </kbd>
       </button>
       <button
         type="button"
@@ -589,7 +584,7 @@ function NavigationBar() {
         willChange: 'auto'
       }}
     >
-      <div className="relative flex h-14 items-center px-4 lg:px-6">
+      <div className="relative flex h-[var(--app-nav-height)] items-center px-4 lg:px-6">
         {/* Left: Brand */}
         <div className="flex-shrink-0 z-20" style={{ WebkitAppRegion: 'no-drag' }}>
           <Brand status={connectionStatus} />
@@ -598,7 +593,7 @@ function NavigationBar() {
         {/* Center: Phase Navigation - Absolute center relative to viewport width */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <nav
-            className="flex items-center gap-0.5 sm:gap-1 overflow-x-auto max-w-[60vw] scrollbar-none flex-shrink min-w-0 pointer-events-auto"
+            className="phase-nav max-w-[60vw]"
             style={{ WebkitAppRegion: 'no-drag' }}
             aria-label="Phase navigation"
           >

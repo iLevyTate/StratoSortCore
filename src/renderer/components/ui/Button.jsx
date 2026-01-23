@@ -6,6 +6,8 @@ const VARIANT_TO_CLASS = {
   secondary: 'btn-secondary',
   success: 'btn-success',
   danger: 'btn-danger',
+  warning: 'btn-warning',
+  info: 'btn-info',
   ghost: 'btn-ghost',
   outline: 'btn-outline',
   subtle: 'btn-subtle'
@@ -78,15 +80,15 @@ const Button = memo(function Button({
       aria-label={accessibleLabel}
       {...rest}
     >
-      {isLoading && <Spinner className="mr-2" />}
+      {isLoading && <Spinner className="button-icon" />}
       {!isLoading && leftIcon && (
-        <span className="mr-2" aria-hidden="true">
+        <span className="button-icon" aria-hidden="true">
           {leftIcon}
         </span>
       )}
       {children}
       {!isLoading && rightIcon && (
-        <span className="ml-2" aria-hidden="true">
+        <span className="button-icon" aria-hidden="true">
           {rightIcon}
         </span>
       )}
@@ -102,6 +104,8 @@ Button.propTypes = {
     'secondary',
     'success',
     'danger',
+    'warning',
+    'info',
     'ghost',
     'outline',
     'subtle'

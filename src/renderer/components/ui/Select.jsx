@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
+import { ChevronDown } from 'lucide-react';
 
 const Select = memo(
   forwardRef(function Select(
@@ -207,7 +208,9 @@ const Select = memo(
           disabled={rest.disabled}
         >
           <span className="truncate">{selectedOption?.label ?? ''}</span>
-          <span className="ml-3 text-system-gray-500">▾</span>
+          <span className="ml-3 text-system-gray-500" aria-hidden="true">
+            <ChevronDown className="h-4 w-4" />
+          </span>
         </button>
 
         {isOpen &&

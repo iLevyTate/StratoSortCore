@@ -83,32 +83,32 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
         </div>
       )}
 
-      {displayPurpose && (
-        <div className="text-sm text-system-gray-600">
-          <strong>Purpose:</strong> {displayPurpose}
-        </div>
-      )}
-
       {displayProject && (
-        <div className="text-sm text-system-gray-600">
+        <div className="text-sm text-system-gray-700">
           <strong>Project:</strong> {displayProject}
         </div>
       )}
 
+      {displayPurpose && (
+        <div className="text-sm text-system-gray-700">
+          <strong>Purpose:</strong> {displayPurpose}
+        </div>
+      )}
+
       {summaryText && (
-        <div className="text-sm text-system-gray-600 line-clamp-4">
+        <div className="text-sm text-system-gray-700 line-clamp-4">
           <strong>Summary:</strong> {summaryText}
         </div>
       )}
 
       {displayDate && (
-        <div className="text-sm text-system-gray-600">
+        <div className="text-sm text-system-gray-700">
           <strong>Date:</strong> {displayDate}
         </div>
       )}
 
       {hasKeywords && (
-        <div className="text-sm text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong className="block mb-1.5">Keywords:</strong>
           <div className="flex flex-wrap gap-1.5">
             {keywordList.map((keyword, i) => (
@@ -124,13 +124,13 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
       )}
 
       {displayConfidence !== null && (
-        <div className="text-xs text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong>AI Confidence:</strong> {displayConfidence}%
         </div>
       )}
 
       {displayContentType && (
-        <div className="text-xs text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong>Content Type:</strong>{' '}
           {typeof displayContentType === 'object'
             ? displayContentType.mime ||
@@ -142,46 +142,48 @@ const AnalysisDetails = React.memo(function AnalysisDetails({ analysis, options 
       )}
 
       {extractionMethod && (
-        <div className="text-xs text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong>Extraction Method:</strong> {extractionMethod}
         </div>
       )}
 
       {contentLength !== null && (
-        <div className="text-xs text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong>Content Length:</strong> {contentLength.toLocaleString()} chars
         </div>
       )}
 
       {typeof displayHasText !== 'undefined' && (
-        <div className="text-xs text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong>Has Text:</strong> {displayHasText ? 'Yes' : 'No'}
         </div>
       )}
 
       {hasColors && (
-        <div className="text-xs text-system-gray-500">
+        <div className="text-sm text-system-gray-700">
           <strong>Colors:</strong> {colorList.join(', ')}
         </div>
       )}
 
       {ocrText && (
-        <div className="text-xs text-system-gray-500 line-clamp-6">
-          <strong>OCR:</strong> {ocrText.slice(0, 300)}
+        <div className="text-xs text-system-gray-600 line-clamp-6 pt-1">
+          <strong className="text-system-gray-700">OCR:</strong> {ocrText.slice(0, 300)}
           {isOcrTruncated ? '… (truncated)' : ''}
         </div>
       )}
 
       {transcriptText && (
-        <div className="text-xs text-system-gray-500 line-clamp-6">
-          <strong>Transcript:</strong> {transcriptText.slice(0, 300)}
+        <div className="text-xs text-system-gray-600 line-clamp-6 pt-1">
+          <strong className="text-system-gray-700">Transcript:</strong>{' '}
+          {transcriptText.slice(0, 300)}
           {isTranscriptTruncated ? '… (truncated)' : ''}
         </div>
       )}
 
       {extractedText && (
-        <div className="text-xs text-system-gray-500 line-clamp-6">
-          <strong>Extracted Text:</strong> {extractedText.slice(0, 300)}
+        <div className="text-xs text-system-gray-600 line-clamp-6 pt-1">
+          <strong className="text-system-gray-700">Extracted Text:</strong>{' '}
+          {extractedText.slice(0, 300)}
           {isExtractedTextTruncated ? '… (truncated)' : ''}
         </div>
       )}

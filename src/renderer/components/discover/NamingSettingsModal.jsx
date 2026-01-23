@@ -24,6 +24,13 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
       size="large"
       closeOnOverlayClick
       showCloseButton
+      footer={
+        <div className="flex justify-end">
+          <Button onClick={onClose} variant="primary">
+            Done
+          </Button>
+        </div>
+      }
     >
       <div className="flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
         <p className="text-sm text-system-gray-600">
@@ -49,12 +56,6 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
                 ? 'original-filename.ext'
                 : `${namingConvention.replace(/-/g, separator || '-')}.ext`}
             </span>
-          </div>
-
-          <div className="flex justify-end">
-            <Button onClick={onClose} variant="primary">
-              Done
-            </Button>
           </div>
         </div>
       </div>

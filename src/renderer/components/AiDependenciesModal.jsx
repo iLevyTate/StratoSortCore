@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types';
 import Modal from './Modal';
 import Button from './ui/Button';
+import StatusBadge from './ui/StatusBadge';
 import { logger } from '../../shared/logger';
 import { ErrorBoundaryCore as ErrorBoundary } from './ErrorBoundary';
 
@@ -19,35 +20,6 @@ function normalizeOllamaModelName(name) {
 // Unique ID counter for log entries (prevents key collisions)
 let logIdCounter = 0;
 const MAX_LOG_ENTRIES = 50;
-
-// Status badge component
-function StatusBadge({ status, label }) {
-  const styles = {
-    running: 'bg-green-100 text-green-700 border-green-200',
-    installed: 'bg-blue-100 text-blue-700 border-blue-200',
-    missing: 'bg-amber-100 text-amber-700 border-amber-200',
-    error: 'bg-red-100 text-red-700 border-red-200',
-    checking: 'bg-gray-100 text-gray-600 border-gray-200'
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${styles[status] || styles.missing}`}
-    >
-      {status === 'running' && (
-        <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse" />
-      )}
-      {status === 'checking' && (
-        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mr-1.5 animate-pulse" />
-      )}
-      {label}
-    </span>
-  );
-}
-
-StatusBadge.propTypes = {
-  status: PropTypes.oneOf(['running', 'installed', 'missing', 'error', 'checking']).isRequired,
-  label: PropTypes.string.isRequired
-};
 
 export default function AiDependenciesModal({ isOpen, onClose }) {
   const [status, setStatus] = useState(null);
@@ -342,30 +314,38 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   const pythonVersion = status?.python?.version || null;
 
   // Derive status badges
-  const getOllamaStatus = () => {
-    if (status === null) return { status: 'checking', label: 'Checking...' };
-    if (ollamaRunning) return { status: 'running', label: 'Running' };
-    if (ollamaOk) return { status: 'installed', label: 'Installed' };
-    return { status: 'missing', label: 'Not Installed' };
+  const getStatusBadgeProps = (running, installed) => {
+    if (status === null) return { variant: 'info', children: 'Checking...', animated: true };
+    if (running) return { variant: 'success', children: 'Running', animated: true };
+    if (installed) return { variant: 'info', children: 'Installed', animated: false };
+    return { variant: 'warning', children: 'Not Installed', animated: false };
   };
 
-  const getChromaStatus = () => {
-    if (status === null) return { status: 'checking', label: 'Checking...' };
-    if (chromaRunning) return { status: 'running', label: 'Running' };
-    if (chromaOk) return { status: 'installed', label: 'Installed' };
-    return { status: 'missing', label: 'Not Installed' };
-  };
+  const getOllamaStatusProps = () => getStatusBadgeProps(ollamaRunning, ollamaOk);
+  const getChromaStatusProps = () => getStatusBadgeProps(chromaRunning, chromaOk);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="AI Components Setup" size="large">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="AI Components Setup"
+      size="large"
+      footer={
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      }
+    >
       <ErrorBoundary variant="phase" contextName="AI Dependencies">
         <div className="flex flex-col gap-5">
           {/* Header description */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+          <div className="bg-stratosort-blue/5 rounded-xl p-4 border border-stratosort-blue/20">
             <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <div className="flex-shrink-0 w-10 h-10 bg-stratosort-blue/10 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-5 h-5 text-blue-600"
+                  className="w-5 h-5 text-stratosort-blue"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -379,8 +359,8 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </svg>
               </div>
               <div>
-                <h3 className="font-medium text-gray-900">Get Started with AI Features</h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <h3 className="font-medium text-system-gray-900">Get Started with AI Features</h3>
+                <p className="text-sm text-system-gray-600 mt-1">
                   Install Ollama for AI-powered file analysis and ChromaDB for Knowledge OS
                   (semantic search + RAG). These are optional but unlock powerful organization
                   features.
@@ -392,11 +372,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
           {/* Dependency Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Ollama Card */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="bg-white rounded-xl border border-system-gray-200 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-lg flex items-center justify-center shadow-sm">
+                    <div className="w-10 h-10 bg-gradient-to-br from-stratosort-warning to-stratosort-danger rounded-lg flex items-center justify-center shadow-sm">
                       <svg
                         className="w-5 h-5 text-white"
                         fill="none"
@@ -412,17 +392,17 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">Ollama</h4>
-                      <p className="text-xs text-gray-500">Local AI inference engine</p>
+                      <h4 className="font-semibold text-system-gray-900">Ollama</h4>
+                      <p className="text-xs text-system-gray-500">Local AI inference engine</p>
                     </div>
                   </div>
-                  <StatusBadge {...getOllamaStatus()} />
+                  <StatusBadge {...getOllamaStatusProps()} className="px-2 py-0.5 text-xs" />
                 </div>
               </div>
 
               <div className="p-4 space-y-4">
                 {ollamaVersion && (
-                  <div className="text-xs text-gray-500">Version: {ollamaVersion}</div>
+                  <div className="text-xs text-system-gray-500">Version: {ollamaVersion}</div>
                 )}
 
                 <Button
@@ -463,9 +443,9 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
                 {/* Models Section */}
                 {ollamaOk && (
-                  <div className="border-t border-gray-100 pt-4">
+                  <div className="border-t border-system-gray-100 pt-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-gray-700">AI Models</span>
+                      <span className="text-sm font-medium text-system-gray-700">AI Models</span>
                       <Button
                         variant="secondary"
                         className="text-xs px-3 py-1.5"
@@ -488,13 +468,13 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                     {/* Download Progress Bar */}
                     {downloadingModels && downloadProgress && (
                       <div className="mb-3">
-                        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                        <div className="flex items-center justify-between text-xs text-system-gray-600 mb-1">
                           <span>Downloading {downloadProgress.model?.replace(':latest', '')}</span>
                           <span>{downloadProgress.percent}%</span>
                         </div>
-                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-2 bg-system-gray-100 rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300"
+                            className="h-full bg-gradient-to-r from-stratosort-blue to-stratosort-indigo transition-all duration-300"
                             style={{ width: `${downloadProgress.percent}%` }}
                           />
                         </div>
@@ -512,14 +492,14 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                             <div
                               key={model}
                               className={`flex items-center justify-between p-2 rounded-lg ${
-                                isInstalled ? 'bg-green-50' : 'bg-gray-50'
+                                isInstalled ? 'bg-stratosort-success/5' : 'bg-system-gray-50'
                               }`}
                             >
-                              <span className="text-sm text-gray-700">
+                              <span className="text-sm text-system-gray-700">
                                 {model.replace(':latest', '')}
                               </span>
                               {isInstalled ? (
-                                <span className="flex items-center text-xs text-green-600 font-medium">
+                                <span className="flex items-center text-xs text-stratosort-success font-medium">
                                   <svg
                                     className="w-4 h-4 mr-1"
                                     fill="none"
@@ -536,13 +516,13 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                                   Ready
                                 </span>
                               ) : (
-                                <span className="text-xs text-gray-500">Not downloaded</span>
+                                <span className="text-xs text-system-gray-500">Not downloaded</span>
                               )}
                             </div>
                           );
                         })
                       ) : (
-                        <p className="text-xs text-gray-500 text-center py-2">
+                        <p className="text-xs text-system-gray-500 text-center py-2">
                           No models configured. Set models in Settings.
                         </p>
                       )}
@@ -553,11 +533,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
             </div>
 
             {/* ChromaDB Card */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="bg-white rounded-xl border border-system-gray-200 shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-indigo-500 rounded-lg flex items-center justify-center shadow-sm">
+                    <div className="w-10 h-10 bg-gradient-to-br from-stratosort-purple to-stratosort-indigo rounded-lg flex items-center justify-center shadow-sm">
                       <svg
                         className="w-5 h-5 text-white"
                         fill="none"
@@ -573,18 +553,20 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900">ChromaDB</h4>
-                      <p className="text-xs text-gray-500">Vector database for Knowledge OS</p>
+                      <h4 className="font-semibold text-system-gray-900">ChromaDB</h4>
+                      <p className="text-xs text-system-gray-500">
+                        Vector database for Knowledge OS
+                      </p>
                     </div>
                   </div>
-                  <StatusBadge {...getChromaStatus()} />
+                  <StatusBadge {...getChromaStatusProps()} className="px-2 py-0.5 text-xs" />
                 </div>
               </div>
 
               <div className="p-4 space-y-4">
                 {/* Status Details */}
                 {status !== null && (
-                  <div className="space-y-1 text-xs text-gray-500">
+                  <div className="space-y-1 text-xs text-system-gray-500">
                     {chromaExternal ? (
                       <>
                         <div className="flex items-center gap-2">
@@ -593,7 +575,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                         {status?.chromadb?.serverUrl && (
                           <div className="flex items-center gap-2">
                             <span className="font-medium">URL:</span>
-                            <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">
+                            <code className="bg-system-gray-100 px-1.5 py-0.5 rounded text-xs">
                               {status.chromadb.serverUrl}
                             </code>
                           </div>
@@ -603,7 +585,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       <>
                         <div className="flex items-center gap-2">
                           <span
-                            className={`w-2 h-2 rounded-full ${pythonOk ? 'bg-green-400' : 'bg-amber-400'}`}
+                            className={`w-2 h-2 rounded-full ${pythonOk ? 'bg-stratosort-success' : 'bg-stratosort-warning'}`}
                           />
                           Python: {pythonOk ? pythonVersion || 'Detected' : 'Required'}
                         </div>
@@ -656,20 +638,20 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
                 {/* Help messages */}
                 {!pythonOk && !chromaExternal && status !== null && (
-                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
-                    <p className="text-xs text-amber-700">
+                  <div className="bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg p-3">
+                    <p className="text-xs text-stratosort-warning">
                       Python 3 is required. Install it and ensure it&apos;s available as{' '}
-                      <code className="bg-amber-100 px-1 rounded">py -3</code> (Windows) or{' '}
-                      <code className="bg-amber-100 px-1 rounded">python3</code>.
+                      <code className="bg-white/50 px-1 rounded">py -3</code> (Windows) or{' '}
+                      <code className="bg-white/50 px-1 rounded">python3</code>.
                     </p>
                   </div>
                 )}
 
                 {chromaExternal && !chromaRunning && (
-                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                    <p className="text-xs text-blue-700">
+                  <div className="bg-stratosort-blue/10 border border-stratosort-blue/20 rounded-lg p-3">
+                    <p className="text-xs text-stratosort-blue">
                       Ensure your Docker container is running and the port is mapped (e.g.{' '}
-                      <code className="bg-blue-100 px-1 rounded">-p 8000:8000</code>), then click
+                      <code className="bg-white/50 px-1 rounded">-p 8000:8000</code>), then click
                       Refresh.
                     </p>
                   </div>
@@ -679,11 +661,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
           </div>
 
           {/* Auto-Update Permissions */}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+          <div className="bg-system-gray-50 rounded-xl p-4 border border-system-gray-200">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-system-gray-200 rounded-lg flex items-center justify-center">
                 <svg
-                  className="w-4 h-4 text-gray-600"
+                  className="w-4 h-4 text-system-gray-600"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -697,41 +679,41 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </svg>
               </div>
               <div>
-                <h4 className="font-medium text-gray-900 text-sm">Automatic Updates</h4>
-                <p className="text-xs text-gray-500">
+                <h4 className="font-medium text-system-gray-900 text-sm">Automatic Updates</h4>
+                <p className="text-xs text-system-gray-500">
                   Allow StratoSort to keep dependencies up to date
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap gap-4 ml-11">
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group">
+              <label className="flex items-center gap-2 text-sm text-system-gray-700 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={Boolean(settings?.autoUpdateOllama)}
                   onChange={(e) => saveSetting({ autoUpdateOllama: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  className="w-4 h-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue cursor-pointer"
                 />
-                <span className="group-hover:text-gray-900 transition-colors">Ollama</span>
+                <span className="group-hover:text-system-gray-900 transition-colors">Ollama</span>
               </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer group">
+              <label className="flex items-center gap-2 text-sm text-system-gray-700 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={Boolean(settings?.autoUpdateChromaDb)}
                   onChange={(e) => saveSetting({ autoUpdateChromaDb: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  className="w-4 h-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue cursor-pointer"
                 />
-                <span className="group-hover:text-gray-900 transition-colors">ChromaDB</span>
+                <span className="group-hover:text-system-gray-900 transition-colors">ChromaDB</span>
               </label>
             </div>
           </div>
 
           {/* Activity Log */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="bg-white rounded-xl border border-system-gray-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-system-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                <div className="w-8 h-8 bg-system-gray-100 rounded-lg flex items-center justify-center">
                   <svg
-                    className="w-4 h-4 text-gray-600"
+                    className="w-4 h-4 text-system-gray-600"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -745,8 +727,8 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-medium text-gray-900 text-sm">Activity Log</h4>
-                  <p className="text-xs text-gray-500">
+                  <h4 className="font-medium text-system-gray-900 text-sm">Activity Log</h4>
+                  <p className="text-xs text-system-gray-500">
                     {loading ? 'Checking status...' : 'Live updates while this modal is open'}
                   </p>
                 </div>
@@ -785,10 +767,10 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
             <div
               ref={logContainerRef}
-              className="p-4 bg-gray-900 max-h-32 overflow-auto text-xs font-mono modern-scrollbar"
+              className="p-4 bg-system-gray-900 max-h-32 overflow-auto text-xs font-mono modern-scrollbar"
             >
               {logLines.length === 0 ? (
-                <div className="text-gray-500 text-center py-4">
+                <div className="text-system-gray-500 text-center py-4">
                   No activity yet. Install or refresh to see updates.
                 </div>
               ) : (
@@ -798,14 +780,14 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       key={entry.id}
                       className={`${
                         entry.text.includes('[error]')
-                          ? 'text-red-400'
+                          ? 'text-stratosort-danger'
                           : entry.text.includes('[success]')
-                            ? 'text-green-400'
+                            ? 'text-stratosort-success'
                             : entry.text.includes('[warning]')
-                              ? 'text-amber-400'
+                              ? 'text-stratosort-warning'
                               : entry.text.includes('[status]')
-                                ? 'text-blue-400'
-                                : 'text-gray-300'
+                                ? 'text-stratosort-blue'
+                                : 'text-system-gray-300'
                       }`}
                     >
                       {entry.text}
@@ -814,13 +796,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </ul>
               )}
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-end pt-2">
-            <Button variant="secondary" onClick={onClose}>
-              Done
-            </Button>
           </div>
         </div>
       </ErrorBoundary>

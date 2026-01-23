@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import { X, AlertTriangle, Info, HelpCircle, FileText } from 'lucide-react';
 import { logger } from '../../shared/logger';
+import Button from './ui/Button';
+import IconButton from './ui/IconButton';
 
 function Modal({
   isOpen,
@@ -178,19 +180,19 @@ function Modal({
         {(title || showCloseButton) && (
           <div className="flex-shrink-0 flex items-center justify-between border-b border-border-soft/70 px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] bg-white rounded-t-2xl">
             {title && (
-              <h2 id="modal-title" className="text-lg font-semibold text-system-gray-900">
+              <h2 id="modal-title" className="heading-secondary">
                 {title}
               </h2>
             )}
             {showCloseButton && (
-              <button
+              <IconButton
                 type="button"
                 onClick={onClose}
-                className="p-1.5 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-100 rounded-lg transition-colors"
+                variant="ghost"
+                size="sm"
                 aria-label="Close modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
+                icon={<X className="w-5 h-5" />}
+              />
             )}
           </div>
         )}
@@ -274,25 +276,14 @@ export function ConfirmModal({
     }
   }, [isConfirming, onConfirm, onClose]);
 
-  const getConfirmButtonClass = () => {
-    const baseClass =
-      'px-[var(--panel-padding)] py-[var(--spacing-cozy)] rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 transform hover:scale-105 active:scale-95';
-
-    switch (variant) {
-      case 'danger':
-        return `${baseClass} bg-stratosort-danger hover:bg-stratosort-danger/90 text-white focus:ring-stratosort-danger/80 hover:shadow-lg shadow-stratosort-danger/25`;
-      case 'warning':
-        return `${baseClass} bg-stratosort-warning hover:bg-stratosort-warning/90 text-white focus:ring-stratosort-warning/80 hover:shadow-lg shadow-stratosort-warning/25`;
-      case 'info':
-        return `${baseClass} bg-stratosort-blue hover:bg-stratosort-blue/90 text-white focus:ring-stratosort-blue/80 hover:shadow-lg shadow-stratosort-blue/25`;
-      default:
-        return `${baseClass} bg-system-gray-600 hover:bg-system-gray-700 text-white focus:ring-system-gray-500/80 hover:shadow-lg shadow-system-gray-500/25`;
-    }
-  };
-
-  const getCancelButtonClass = () => {
-    return 'bg-system-gray-100 hover:bg-system-gray-200 text-system-gray-700 px-[var(--panel-padding)] py-[var(--spacing-cozy)] rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-system-gray-500/80 focus:ring-offset-2 transform hover:scale-105 active:scale-95 hover:shadow-sm';
-  };
+  const confirmVariant =
+    variant === 'danger'
+      ? 'danger'
+      : variant === 'warning'
+        ? 'warning'
+        : variant === 'info'
+          ? 'info'
+          : 'primary';
 
   const getIcon = () => {
     switch (variant) {
@@ -332,14 +323,12 @@ export function ConfirmModal({
       showCloseButton={false}
       className="rounded-2xl border border-border-soft shadow-xl bg-white/95"
     >
-      <div className="p-[var(--spacing-relaxed)]">
+      <div className="px-[var(--panel-padding)] py-[var(--panel-padding)]">
         {/* Icon and Content */}
-        <div className="flex items-start gap-[var(--spacing-default)] mb-[var(--panel-padding)]">
+        <div className="flex items-start gap-[var(--spacing-default)] mb-[var(--spacing-relaxed)]">
           <div className={variant === 'danger' ? 'animate-confirm-bounce' : ''}>{getIcon()}</div>
           <div className="flex-1 pt-1">
-            <h3 className="text-lg font-semibold text-system-gray-900 mb-2 leading-tight">
-              {title}
-            </h3>
+            <h3 className="heading-tertiary mb-2 leading-tight">{title}</h3>
             <div className="text-system-gray-600 leading-relaxed break-words">
               {message}
               {fileName && (
@@ -356,17 +345,19 @@ export function ConfirmModal({
 
         {/* Action Buttons */}
         <div className="flex gap-[var(--spacing-cozy)] justify-end pt-[var(--spacing-default)] border-t border-border-soft/70">
-          <button onClick={onClose} className={getCancelButtonClass()} disabled={isConfirming}>
+          <Button onClick={onClose} variant="secondary" size="sm" disabled={isConfirming}>
             {cancelText}
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleConfirm}
-            className={getConfirmButtonClass()}
+            variant={confirmVariant}
+            size="sm"
+            isLoading={isConfirming}
             disabled={isConfirming}
             autoFocus
           >
             {isConfirming ? 'Processing...' : confirmText}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>
