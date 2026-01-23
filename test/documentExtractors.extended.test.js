@@ -11,7 +11,8 @@ jest.mock('fs', () => {
     promises: {
       readFile: jest.fn(),
       stat: jest.fn(),
-      access: jest.fn()
+      access: jest.fn(),
+      open: jest.fn()
     },
     createReadStream: jest.fn()
   };
@@ -33,6 +34,24 @@ jest.mock('csv-parse/sync', () => ({
 jest.mock('xlsx-populate', () => ({
   fromFileAsync: jest.fn()
 }));
+
+jest.mock('mammoth', () => ({
+  extractRawText: jest.fn()
+}));
+
+jest.mock('node-tesseract-ocr', () => ({
+  recognize: jest.fn()
+}));
+
+jest.mock('sharp', () => {
+  const sharpMock = jest.fn(() => ({
+    metadata: jest.fn().mockResolvedValue({ width: 1200, height: 800 }),
+    resize: jest.fn().mockReturnThis(),
+    png: jest.fn().mockReturnThis(),
+    toBuffer: jest.fn().mockResolvedValue(Buffer.from('png data'))
+  }));
+  return sharpMock;
+});
 
 jest.mock('officeparser', () => ({
   parseOfficeAsync: jest.fn()
@@ -60,6 +79,65 @@ describe('Document Extractors Extended', () => {
     jest.clearAllMocks();
     // Default stat size to be small
     fs.stat.mockResolvedValue({ size: 1000 });
+  });
+
+  describe('extractTextFromDocx - OCR fallback', () => {
+    const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]);
+
+    const mockSignature = async () => {
+      const handle = {
+        read: jest.fn().mockImplementation(async (buffer, offset, length) => {
+          ZIP_SIGNATURE.copy(buffer, offset, 0, length);
+          return { bytesRead: length, buffer };
+        }),
+        close: jest.fn().mockResolvedValue()
+      };
+      fs.open.mockResolvedValue(handle);
+      return handle;
+    };
+
+    test('extracts text from embedded images when text is empty', async () => {
+      const mammoth = require('mammoth');
+      const officeParser = require('officeparser');
+      const tesseract = require('node-tesseract-ocr');
+      const AdmZip = require('adm-zip');
+
+      mammoth.extractRawText.mockResolvedValue({ value: '' });
+      officeParser.parseOfficeAsync.mockResolvedValue('');
+      tesseract.recognize.mockResolvedValue('OCR text from image');
+      await mockSignature();
+
+      AdmZip.mockImplementation(() => ({
+        getEntries: () => [
+          { entryName: 'word/media/image1.png', getData: () => Buffer.from('image') }
+        ]
+      }));
+
+      const result = await documentExtractors.extractTextFromDocx('doc.docx');
+      expect(result).toContain('OCR text from image');
+      expect(tesseract.recognize).toHaveBeenCalled();
+    });
+  });
+
+  describe('extractTextFromPptx - OCR fallback', () => {
+    test('extracts text from embedded images when slides are empty', async () => {
+      const officeParser = require('officeparser');
+      const tesseract = require('node-tesseract-ocr');
+      const AdmZip = require('adm-zip');
+
+      officeParser.parseOfficeAsync.mockResolvedValue('');
+      tesseract.recognize.mockResolvedValue('Slide OCR text');
+
+      AdmZip.mockImplementation(() => ({
+        getEntries: () => [
+          { entryName: 'ppt/media/slide1.png', getData: () => Buffer.from('image') }
+        ]
+      }));
+
+      const result = await documentExtractors.extractTextFromPptx('slides.pptx');
+      expect(result).toContain('Slide OCR text');
+      expect(tesseract.recognize).toHaveBeenCalled();
+    });
   });
 
   describe('extractContentStreaming', () => {

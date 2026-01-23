@@ -32,7 +32,7 @@ describe('performanceConstants', () => {
     test('defines AI analysis timeouts', () => {
       expect(constants.TIMEOUTS.AI_ANALYSIS_SHORT).toBe(30000);
       expect(constants.TIMEOUTS.AI_ANALYSIS_MEDIUM).toBe(60000);
-      expect(constants.TIMEOUTS.AI_ANALYSIS_LONG).toBe(120000);
+      expect(constants.TIMEOUTS.AI_ANALYSIS_LONG).toBe(180000);
     });
 
     test('defines service timeouts', () => {

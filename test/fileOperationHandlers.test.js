@@ -88,10 +88,29 @@ describe('File Operation Handlers', () => {
   let mockIpcMain;
   let mockLogger;
   let handlers;
+  let mockCoordinator;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
+
+    // Create fresh mock for this test execution
+    mockCoordinator = {
+      atomicPathUpdate: jest.fn().mockResolvedValue({ success: true, errors: [] }),
+      handleFileDeletion: jest.fn().mockResolvedValue({ success: true, errors: [] }),
+      handleFileCopy: jest.fn().mockResolvedValue({ success: true, errors: [] })
+    };
+
+    // Re-mock ServiceContainer with the fresh coordinator
+    jest.doMock('../src/main/services/ServiceContainer', () => ({
+      container: {
+        has: jest.fn().mockReturnValue(true),
+        resolve: jest.fn().mockReturnValue(mockCoordinator)
+      },
+      ServiceIds: {
+        FILE_PATH_COORDINATOR: 'FILE_PATH_COORDINATOR'
+      }
+    }));
 
     mockIpcMain = {
       handle: jest.fn()
@@ -246,9 +265,9 @@ describe('File Operation Handlers', () => {
     });
 
     test('handles database update failure gracefully', async () => {
-      const { getInstance } = require('../src/main/services/chromadb');
-      getInstance.mockReturnValueOnce({
-        updateFilePaths: jest.fn().mockRejectedValue(new Error('DB error'))
+      mockCoordinator.atomicPathUpdate.mockResolvedValue({
+        success: false,
+        errors: [{ system: 'test', error: 'DB error' }]
       });
 
       const handler = handlers['files:perform-operation'];
@@ -261,6 +280,7 @@ describe('File Operation Handlers', () => {
         }
       );
 
+      expect(mockCoordinator.atomicPathUpdate).toHaveBeenCalled();
       expect(result.success).toBe(true);
       expect(result.warning).toBeDefined();
     });
@@ -313,12 +333,10 @@ describe('File Operation Handlers', () => {
     });
 
     test('cleans up embedding queue', async () => {
-      const embeddingQueue = require('../src/main/analysis/embeddingQueue');
-
       const handler = handlers['files:delete-file'];
       await handler({}, '/path/to/file.txt');
 
-      expect(embeddingQueue.removeByFilePath).toHaveBeenCalledWith('/path/to/file.txt');
+      expect(mockCoordinator.handleFileDeletion).toHaveBeenCalledWith('/path/to/file.txt');
     });
   });
 

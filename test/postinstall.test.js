@@ -28,7 +28,7 @@ describe('scripts/postinstall.js', () => {
     });
 
     expect(code).toBe(0);
-    expect(spawnSyncImpl).toHaveBeenCalledTimes(3);
+    expect(spawnSyncImpl).toHaveBeenCalledTimes(4);
     // failures should be warned but not crash
     expect(log.warn).toHaveBeenCalled();
   });
@@ -44,8 +44,8 @@ describe('scripts/postinstall.js', () => {
     });
 
     expect(code).toBe(0);
-    // should run only setup scripts (2 commands)
-    expect(spawnSyncImpl).toHaveBeenCalledTimes(2);
+    // should run only setup scripts (3 commands)
+    expect(spawnSyncImpl).toHaveBeenCalledTimes(3);
   });
 
   test('respects SKIP_APP_DEPS and skips install-app-deps when set', () => {
@@ -59,7 +59,7 @@ describe('scripts/postinstall.js', () => {
     });
 
     expect(code).toBe(0);
-    // should run only setup scripts (2 commands)
-    expect(spawnSyncImpl).toHaveBeenCalledTimes(2);
+    // should run only setup scripts (3 commands)
+    expect(spawnSyncImpl).toHaveBeenCalledTimes(3);
   });
 });

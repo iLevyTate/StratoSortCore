@@ -112,6 +112,12 @@ describe('Path Sanitization', () => {
         expect(() => sanitizePath('C:\\file[2].txt')).not.toThrow();
       });
 
+      test('allows dot sequences in filenames', () => {
+        const pathWithDots = 'C:\\Users\\Ben\\Downloads\\Important - To Do........pdf';
+        expect(() => sanitizePath(pathWithDots)).not.toThrow();
+        expect(isPathSafe(pathWithDots)).toBe(true);
+      });
+
       test('handles spaces in paths', () => {
         expect(() => sanitizePath('C:\\Program Files\\app\\file.txt')).not.toThrow();
         expect(() => sanitizePath('/home/user/My Documents/file.txt')).not.toThrow();

@@ -890,11 +890,9 @@ describe('Path Handling Utilities', () => {
         expect(() => sanitizePath(dotEnd)).not.toThrow();
       });
 
-      test('handles paths with consecutive dots in name (triggers traversal check)', () => {
-        // Note: file...txt contains '..' which triggers traversal detection
-        // This is expected behavior - the sanitizer is conservative
+      test('handles paths with consecutive dots in name', () => {
         const dots = '/home/user/file...txt';
-        expect(() => sanitizePath(dots)).toThrow(/path traversal/);
+        expect(() => sanitizePath(dots)).not.toThrow();
       });
 
       test('handles paths with single dots in name', () => {

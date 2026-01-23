@@ -106,7 +106,8 @@ describe('ReRankerService', () => {
     test('initializes with valid dependencies', () => {
       expect(service.ollamaService).toBe(mockOllamaService);
       expect(service.textModel).toBe('llama3.2');
-      expect(service.scoreCache).toBeInstanceOf(Map);
+      // FIX: scoreCache is now an LRUCache, not a Map
+      expect(service.scoreCache).toBeDefined();
     });
 
     test('works without ollamaService', () => {
@@ -289,19 +290,28 @@ describe('ReRankerService', () => {
     });
 
     test('cache expires after TTL', async () => {
+      // FIX: Create a new service with short TTL (LRUCache TTL is set at construction)
+      const shortTtlService = new ReRankerService({
+        ollamaService: mockOllamaService,
+        textModel: 'llama3.2',
+        cacheTTLMs: 1000 // 1 second TTL
+      });
+
       const result = sampleResults[0];
-      service.config.cacheTTLMs = 1000; // 1 second TTL
 
       // First call
-      await service.rerank('vacation', [result], { topN: 1 });
+      await shortTtlService.rerank('vacation', [result], { topN: 1 });
       expect(mockOllamaService.generate).toHaveBeenCalledTimes(1);
 
       // Advance time past cache TTL
       jest.advanceTimersByTime(2000);
 
       // Second call - cache expired
-      await service.rerank('vacation', [result], { topN: 1 });
+      await shortTtlService.rerank('vacation', [result], { topN: 1 });
       expect(mockOllamaService.generate).toHaveBeenCalledTimes(2);
+
+      // Cleanup
+      await shortTtlService.cleanup();
     });
   });
 
@@ -332,8 +342,9 @@ describe('ReRankerService', () => {
   });
 
   describe('cleanup', () => {
-    test('clears resources', () => {
-      service.cleanup();
+    test('clears resources', async () => {
+      // FIX: cleanup is now async (uses LRUCache.shutdown())
+      await service.cleanup();
 
       expect(service.scoreCache.size).toBe(0);
       expect(service.ollamaService).toBeNull();

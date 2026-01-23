@@ -115,6 +115,7 @@ describe('backgroundSetup automated dependencies', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    process.env.SKIP_TESSERACT_SETUP = 'true';
 
     // memfs in this repo normalizes writeFile/rename/readFile, but NOT access/unlink.
     // backgroundSetup uses fs.access/unlink with platform paths, so normalize them here.
@@ -133,6 +134,10 @@ describe('backgroundSetup automated dependencies', () => {
     // Create directories needed for the test
     await fs.mkdir('/test/exe', { recursive: true });
     await fs.mkdir('/test/userData', { recursive: true });
+  });
+
+  afterEach(() => {
+    delete process.env.SKIP_TESSERACT_SETUP;
   });
 
   test('first run installs deps, starts services, pulls models, writes marker', async () => {

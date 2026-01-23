@@ -139,6 +139,29 @@ jest.mock('../../../src/main/utils/llmOptimization', () => ({
   }
 }));
 
+// Mock ServiceContainer for semanticFolderMatcher resolution
+jest.mock('../../../src/main/services/ServiceContainer', () => {
+  return {
+    container: {
+      tryResolve: jest.fn((id) => {
+        if (id === 'CHROMA_DB') {
+          return require('../../../src/main/services/chromadb').getInstance();
+        }
+        if (id === 'FOLDER_MATCHING') {
+          const FolderMatchingService = require('../../../src/main/services/FolderMatchingService');
+          return new FolderMatchingService();
+        }
+        return null;
+      }),
+      resolve: jest.fn()
+    },
+    ServiceIds: {
+      CHROMA_DB: 'CHROMA_DB',
+      FOLDER_MATCHING: 'FOLDER_MATCHING'
+    }
+  };
+});
+
 // ============================================================================
 // NOW IMPORT THE MODULE UNDER TEST (after mocks are set up)
 // ============================================================================

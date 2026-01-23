@@ -19,6 +19,7 @@ const mockOllama = {
   generate: jest.fn()
 };
 const mockModel = 'llama2';
+const { AI_DEFAULTS } = require('../src/shared/constants');
 
 jest.mock('../src/main/ollamaUtils', () => ({
   getOllama: jest.fn(() => mockOllama),
@@ -151,18 +152,14 @@ describe('llmSuggester', () => {
     expect(suggestions).toEqual([]);
   });
 
-  test('returns empty array when model is not available', async () => {
+  test('falls back to default model when model is not available', async () => {
     const { getOllamaModel } = require('../src/main/ollamaUtils');
     getOllamaModel.mockReturnValueOnce(null);
-
-    jest.resetModules();
-    const {
-      getLLMAlternativeSuggestions: getSuggestions
-    } = require('../src/main/services/organization/llmSuggester');
-
-    const suggestions = await getSuggestions(testFile, testSmartFolders);
-
-    expect(suggestions).toEqual([]);
+    const suggestions = await getLLMAlternativeSuggestions(testFile, testSmartFolders);
+    expect(suggestions).toHaveLength(1);
+    expect(mockOllama.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ model: AI_DEFAULTS.TEXT.MODEL })
+    );
   });
 
   test('returns empty array when response exceeds size limit', async () => {

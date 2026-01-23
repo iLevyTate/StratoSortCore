@@ -109,6 +109,7 @@ describe('Batch Organize Handler', () => {
   let handleBatchOrganize;
   let computeFileChecksum;
   let MAX_BATCH_SIZE;
+  let mockCoordinator;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -116,6 +117,20 @@ describe('Batch Organize Handler', () => {
 
     // Reset hash counter for unique idempotency keys
     global.__hashCounter = 0;
+
+    mockCoordinator = {
+      batchPathUpdate: jest.fn().mockResolvedValue({ success: true, summary: {} })
+    };
+
+    jest.doMock('../src/main/services/ServiceContainer', () => ({
+      container: {
+        has: jest.fn((id) => id === 'filePathCoordinator'),
+        resolve: jest.fn(() => mockCoordinator)
+      },
+      ServiceIds: {
+        FILE_PATH_COORDINATOR: 'filePathCoordinator'
+      }
+    }));
 
     // Reset fs mock implementations to default success behavior
     mockFs.rename.mockReset().mockResolvedValue(undefined);
@@ -244,9 +259,9 @@ describe('Batch Organize Handler', () => {
       expect(result.successCount).toBe(2);
       expect(result.failCount).toBe(0);
 
-      // Verify analysis history update was called with correct paths
-      expect(mockUpdateEntryPaths).toHaveBeenCalled();
-      const calls = mockUpdateEntryPaths.mock.calls[0][0];
+      // Verify FilePathCoordinator batch update was called with correct paths
+      expect(mockCoordinator.batchPathUpdate).toHaveBeenCalled();
+      const calls = mockCoordinator.batchPathUpdate.mock.calls[0][0];
       expect(calls).toHaveLength(2);
       expect(calls[0]).toMatchObject({
         oldPath: '/src/file1.txt',

@@ -89,10 +89,60 @@ jest.mock('../src/main/analysis/documentExtractors', () => ({
 }));
 
 // Mock fallback utils
-jest.mock('../src/main/analysis/fallbackUtils', () => ({
-  getIntelligentCategory: jest.fn(() => 'documents'),
-  getIntelligentKeywords: jest.fn(() => ['document', 'text']),
-  safeSuggestedName: jest.fn((name, ext) => name.replace(ext, ''))
+jest.mock('../src/main/analysis/fallbackUtils', () => {
+  const mockGetIntelligentCategory = jest.fn(() => 'documents');
+  const mockGetIntelligentKeywords = jest.fn(() => ['document', 'text']);
+  const mockSafeSuggestedName = jest.fn((name, ext) => {
+    if (!name || name === ext) return 'unnamed_file';
+    let nameWithoutExt = name;
+    if (ext && name.toLowerCase().endsWith(ext.toLowerCase())) {
+      nameWithoutExt = name.slice(0, -ext.length);
+    }
+    return nameWithoutExt;
+  });
+
+  return {
+    getIntelligentCategory: mockGetIntelligentCategory,
+    getIntelligentKeywords: mockGetIntelligentKeywords,
+    safeSuggestedName: mockSafeSuggestedName,
+    createFallbackAnalysis: jest.fn(
+      ({ fileName, fileExtension, reason, confidence, type, options = {} }) => {
+        // Use mocked getIntelligentCategory like the real implementation
+        const intelligentCategory = mockGetIntelligentCategory(fileName, fileExtension);
+        const intelligentKeywords = mockGetIntelligentKeywords(fileName, fileExtension);
+
+        let suggestedName = 'fallback';
+        if (fileName) {
+          suggestedName = fileName;
+          if (fileExtension && fileName.toLowerCase().endsWith(fileExtension.toLowerCase())) {
+            suggestedName = fileName.slice(0, -fileExtension.length);
+          }
+        }
+        const result = {
+          purpose: `${type === 'image' ? 'Image' : 'Document'} (fallback - ${reason || 'fallback analysis'})`,
+          project: fileName ? fileName.replace(fileExtension || '', '') : 'unknown',
+          category: intelligentCategory || (type === 'image' ? 'Images' : 'Documents'),
+          date: new Date().toISOString().split('T')[0],
+          keywords: intelligentKeywords || ['document', 'text'],
+          confidence: confidence || 65,
+          suggestedName,
+          extractionMethod: 'filename_fallback',
+          fallbackReason: reason || 'fallback analysis'
+        };
+        if (options.error) {
+          result.error = options.error;
+        }
+        return result;
+      }
+    )
+  };
+});
+
+// Mock semanticFolderMatcher
+jest.mock('../src/main/analysis/semanticFolderMatcher', () => ({
+  applySemanticFolderMatching: jest.fn().mockResolvedValue(undefined),
+  getServices: jest.fn().mockReturnValue({ chromaDb: null, matcher: null }),
+  resetSingletons: jest.fn()
 }));
 
 // Mock other utilities
@@ -342,7 +392,8 @@ describe('ollamaDocumentAnalysis - Category Mapping', () => {
     const result = await analyzeDocumentFile('/test/random.pdf', []);
 
     expect(result).toBeDefined();
-    expect(result.category).toBe('document');
+    // When no intelligent category, defaults to 'Documents' for document type
+    expect(result.category).toBe('Documents');
   });
 });
 

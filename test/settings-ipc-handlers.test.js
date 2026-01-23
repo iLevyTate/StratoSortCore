@@ -193,15 +193,15 @@ describe('Settings IPC Handlers', () => {
 
   const IPC_CHANNELS = {
     SETTINGS: {
-      GET: 'get-settings',
-      SAVE: 'save-settings',
-      GET_CONFIGURABLE_LIMITS: 'get-configurable-limits',
-      EXPORT: 'export-settings',
-      IMPORT: 'import-settings',
-      CREATE_BACKUP: 'settings-create-backup',
-      LIST_BACKUPS: 'settings-list-backups',
-      RESTORE_BACKUP: 'settings-restore-backup',
-      DELETE_BACKUP: 'settings-delete-backup'
+      GET: 'settings:get',
+      SAVE: 'settings:save',
+      GET_CONFIGURABLE_LIMITS: 'settings:get-limits',
+      EXPORT: 'settings:export',
+      IMPORT: 'settings:import',
+      CREATE_BACKUP: 'settings:create-backup',
+      LIST_BACKUPS: 'settings:list-backups',
+      RESTORE_BACKUP: 'settings:restore-backup',
+      DELETE_BACKUP: 'settings:delete-backup'
     }
   };
 

@@ -42,10 +42,10 @@ describe('ipcVerification', () => {
 
   describe('REQUIRED_HANDLERS', () => {
     test('contains core handler channels', () => {
-      expect(ipcVerification.REQUIRED_HANDLERS).toContain('get-settings');
-      expect(ipcVerification.REQUIRED_HANDLERS).toContain('save-settings');
-      expect(ipcVerification.REQUIRED_HANDLERS).toContain('get-smart-folders');
-      expect(ipcVerification.REQUIRED_HANDLERS).toContain('analyze-document');
+      expect(ipcVerification.REQUIRED_HANDLERS).toContain('settings:get');
+      expect(ipcVerification.REQUIRED_HANDLERS).toContain('settings:save');
+      expect(ipcVerification.REQUIRED_HANDLERS).toContain('smart-folders:get');
+      expect(ipcVerification.REQUIRED_HANDLERS).toContain('analysis:analyze-document');
     });
 
     test('is an array', () => {
@@ -55,9 +55,9 @@ describe('ipcVerification', () => {
 
   describe('WINDOWS_HANDLERS', () => {
     test('contains window control channels', () => {
-      expect(ipcVerification.WINDOWS_HANDLERS).toContain('window-minimize');
-      expect(ipcVerification.WINDOWS_HANDLERS).toContain('window-maximize');
-      expect(ipcVerification.WINDOWS_HANDLERS).toContain('window-close');
+      expect(ipcVerification.WINDOWS_HANDLERS).toContain('window:minimize');
+      expect(ipcVerification.WINDOWS_HANDLERS).toContain('window:maximize');
+      expect(ipcVerification.WINDOWS_HANDLERS).toContain('window:close');
     });
 
     test('is an array', () => {
@@ -96,7 +96,7 @@ describe('ipcVerification', () => {
     });
 
     test('detects handlers registered via Map.has()', () => {
-      const channel = 'get-settings';
+      const channel = 'settings:get';
       ipcMain._invokeHandlers.set(channel, jest.fn());
       ipcMain.listenerCount.mockReturnValue(0);
 
@@ -110,8 +110,8 @@ describe('ipcVerification', () => {
 
       const result = ipcVerification.checkHandlers();
 
-      expect(result.missing).toContain('get-settings');
-      expect(result.missing).toContain('analyze-document');
+      expect(result.missing).toContain('settings:get');
+      expect(result.missing).toContain('analysis:analyze-document');
     });
   });
 

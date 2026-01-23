@@ -148,10 +148,21 @@ describe('ChromaDBServiceCore Deep Coverage', () => {
         await processor({ type: OperationType.UPSERT_FOLDER, data: { id: 'd1' } });
         await processor({ type: OperationType.DELETE_FILE, data: { fileId: 'f2' } });
         await processor({ type: OperationType.DELETE_FOLDER, data: { folderId: 'd2' } });
-        await processor({ type: OperationType.BATCH_UPSERT_FILES, data: { files: [] } });
-        await processor({ type: OperationType.BATCH_UPSERT_FOLDERS, data: { folders: [] } });
-        await processor({ type: OperationType.BATCH_DELETE_FILES, data: { fileIds: [] } });
-        await processor({ type: OperationType.BATCH_DELETE_FOLDERS, data: { folderIds: [] } });
+        // FIX: Use non-empty arrays to trigger the batch operations
+        // Empty arrays skip the processing loop (for loop condition: 0 < 0 is false)
+        await processor({
+          type: OperationType.BATCH_UPSERT_FILES,
+          data: { files: [{ id: 'batch-f1' }] }
+        });
+        await processor({
+          type: OperationType.BATCH_UPSERT_FOLDERS,
+          data: { folders: [{ id: 'batch-d1' }] }
+        });
+        await processor({ type: OperationType.BATCH_DELETE_FILES, data: { fileIds: ['del-f1'] } });
+        await processor({
+          type: OperationType.BATCH_DELETE_FOLDERS,
+          data: { folderIds: ['del-d1'] }
+        });
         await processor({ type: OperationType.UPDATE_FILE_PATHS, data: { pathUpdates: [] } });
 
         // Also test unknown type
@@ -163,6 +174,9 @@ describe('ChromaDBServiceCore Deep Coverage', () => {
       // Stub methods that might be called
       service.deleteFileEmbedding = jest.fn();
       service.updateFilePaths = jest.fn();
+      // FIX: Set folderCollection BEFORE flush so DELETE_FOLDER operations can use it
+      service.folderCollection = { delete: jest.fn().mockResolvedValue() };
+      service.fileCollection = { delete: jest.fn().mockResolvedValue() };
 
       // Spy on private/direct methods if needed or use the mocked imported modules
       // Since we mocked the imported modules, we check those
@@ -172,10 +186,6 @@ describe('ChromaDBServiceCore Deep Coverage', () => {
       expect(fileOps.directUpsertFile).toHaveBeenCalled();
       expect(folderOps.directUpsertFolder).toHaveBeenCalled();
       expect(service.deleteFileEmbedding).toHaveBeenCalledWith('f2');
-      // For DELETE_FOLDER, the service calls _directDeleteFolder which calls folderCollection.delete
-      // We need to check if _directDeleteFolder calls folderCollection.delete
-      // But _directDeleteFolder is instance method. Let's mock folderCollection
-      service.folderCollection = { delete: jest.fn().mockResolvedValue() };
 
       expect(fileOps.directBatchUpsertFiles).toHaveBeenCalled();
       expect(folderOps.directBatchUpsertFolders).toHaveBeenCalled();
@@ -183,10 +193,7 @@ describe('ChromaDBServiceCore Deep Coverage', () => {
       // For BATCH_DELETE_FILES, it calls _directBatchDeleteFiles which calls fileOps.batchDeleteFileEmbeddings
       expect(fileOps.batchDeleteFileEmbeddings).toHaveBeenCalled();
 
-      // For BATCH_DELETE_FOLDERS, it calls _directBatchDeleteFolders which calls folderCollection.delete
-      expect(service.folderCollection.delete).not.toHaveBeenCalled(); // Wait, we didn't mock _directBatchDeleteFolders, so it should run logic
-      // Actually we mocked flush to run the processor.
-      // Let's verify logger.warn for unknown
+      // Let's verify logger.warn for unknown operation type
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('Unknown operation type'),
         expect.anything()

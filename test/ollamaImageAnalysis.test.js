@@ -102,8 +102,33 @@ jest.mock('../src/main/services/ChromaDBService', () => ({
 
 // Mock FolderMatchingService
 jest.mock('../src/main/services/FolderMatchingService', () => {
-  return jest.fn();
+  const MockFolderMatchingService = jest.fn();
+  MockFolderMatchingService.matchCategoryToFolder = jest.fn((category) => category);
+  return MockFolderMatchingService;
 });
+
+// Mock semanticFolderMatcher
+jest.mock('../src/main/analysis/semanticFolderMatcher', () => ({
+  applySemanticFolderMatching: jest.fn().mockResolvedValue(undefined),
+  getServices: jest.fn().mockReturnValue({ chromaDb: null, matcher: null }),
+  resetSingletons: jest.fn()
+}));
+
+// Mock jsonRepair
+jest.mock('../src/main/utils/jsonRepair', () => ({
+  extractAndParseJSON: jest.fn((text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  })
+}));
+
+// Mock ollamaJsonRepair
+jest.mock('../src/main/utils/ollamaJsonRepair', () => ({
+  attemptJsonRepairWithOllama: jest.fn().mockResolvedValue(null)
+}));
 
 // Mock PerformanceService
 jest.mock('../src/main/services/PerformanceService', () => ({
@@ -139,7 +164,28 @@ jest.mock('../src/main/analysis/utils', () => ({
 jest.mock('../src/main/analysis/fallbackUtils', () => ({
   getIntelligentCategory: jest.fn(() => 'images'),
   getIntelligentKeywords: jest.fn(() => ['image', 'photo']),
-  safeSuggestedName: jest.fn((name, ext) => name.replace(ext, ''))
+  safeSuggestedName: jest.fn((name, ext) => name.replace(ext || '', '') + (ext || '')),
+  createFallbackAnalysis: jest.fn(
+    ({ fileName, fileExtension, reason, confidence, type, options = {} }) => {
+      const result = {
+        purpose: `${type === 'image' ? 'Image' : 'Document'} (fallback - ${reason || 'fallback analysis'})`,
+        project: fileName ? fileName.replace(fileExtension || '', '') : 'unknown',
+        category: 'images',
+        date: new Date().toISOString().split('T')[0],
+        keywords: ['image', 'photo'],
+        confidence: confidence || 65,
+        suggestedName: fileName
+          ? fileName.replace(fileExtension || '', '') + (fileExtension || '.jpg')
+          : 'fallback.jpg',
+        extractionMethod: 'filename_fallback',
+        fallbackReason: reason || 'fallback analysis'
+      };
+      if (options.error) {
+        result.error = options.error;
+      }
+      return result;
+    }
+  )
 }));
 
 describe('ollamaImageAnalysis - Rewritten Tests', () => {
@@ -189,6 +235,7 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       expect(result.keywords).toContain('beach');
       expect(result.confidence).toBe(85);
       expect(mockOllamaClient.generate).toHaveBeenCalledTimes(1);
+      expect(mockOllamaClient.generate.mock.calls[0][0].model).toBe('llava');
     });
 
     test('should handle unsupported file format', async () => {

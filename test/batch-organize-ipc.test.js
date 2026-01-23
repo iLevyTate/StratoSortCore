@@ -101,11 +101,25 @@ jest.mock('../src/main/services/chromadb', () => ({
   getInstance: () => mockChromaInstance
 }));
 
+let mockCoordinator;
+jest.mock('../src/main/services/ServiceContainer', () => ({
+  container: {
+    has: jest.fn(() => true),
+    resolve: jest.fn(() => mockCoordinator)
+  },
+  ServiceIds: {
+    FILE_PATH_COORDINATOR: 'filePathCoordinator'
+  }
+}));
+
 describe('Files IPC - batch organize', () => {
   beforeEach(() => {
     ipcMain._handlers.clear();
     ipcMain.handle.mockClear();
     mockUpdateFilePaths.mockClear();
+    mockCoordinator = {
+      batchPathUpdate: jest.fn().mockResolvedValue({ success: true, summary: {} })
+    };
   });
 
   function register() {
@@ -197,21 +211,15 @@ describe('Files IPC - batch organize', () => {
       expect(Array.isArray(results)).toBe(true);
       expect(serviceIntegration.processingState.completeOrganizeBatch).toHaveBeenCalled();
 
-      // Verify database update was called with both file: and image: prefixes
-      expect(mockUpdateFilePaths).toHaveBeenCalled();
-      const updateCalls = mockUpdateFilePaths.mock.calls[0][0];
-      // Expect at least 4 entries: file: and image: prefix for each of the 2 files
-      expect(updateCalls.length).toBeGreaterThanOrEqual(4);
-      // Check file: prefixes are present for both source files
-      const fileUpdates = updateCalls.filter((u) => u.oldId.startsWith('file:'));
-      const imageUpdates = updateCalls.filter((u) => u.oldId.startsWith('image:'));
-      expect(fileUpdates.length).toBeGreaterThanOrEqual(2);
-      expect(imageUpdates.length).toBeGreaterThanOrEqual(2);
+      // Verify FilePathCoordinator batch update was called with correct paths
+      expect(mockCoordinator.batchPathUpdate).toHaveBeenCalled();
+      const updateCalls = mockCoordinator.batchPathUpdate.mock.calls[0][0];
+      expect(updateCalls.length).toBe(2);
       // Parallel processing means order is not guaranteed - check both files exist
-      expect(fileUpdates.some((u) => u.oldId.includes('src_A'))).toBe(true);
-      expect(fileUpdates.some((u) => u.oldId.includes('src_B'))).toBe(true);
-      expect(fileUpdates.some((u) => u.newId.includes('dest_A'))).toBe(true);
-      expect(fileUpdates.some((u) => u.newId.includes('dest_B'))).toBe(true);
+      expect(updateCalls.some((u) => u.oldPath.includes('src_A'))).toBe(true);
+      expect(updateCalls.some((u) => u.oldPath.includes('src_B'))).toBe(true);
+      expect(updateCalls.some((u) => u.newPath.includes('dest_A'))).toBe(true);
+      expect(updateCalls.some((u) => u.newPath.includes('dest_B'))).toBe(true);
     } finally {
       if (tmpBase) await fs.rm(tmpBase, { recursive: true, force: true });
     }

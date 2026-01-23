@@ -200,14 +200,15 @@ describe('failedItemHandler', () => {
       handler.trackFailedItem(item, 'Error 1');
       handler.trackFailedItem(item, 'Error 2'); // retryCount = 2
 
-      // First backoff: 100 * 2 * 2^0 = 200ms
-      // Second backoff: 100 * 2 * 2^1 = 400ms
+      // FIX: Updated to match corrected backoff formula (no extra *2 multiplier)
+      // Formula: BASE_MS * 2^(retryCount-1)
+      // For retryCount=2: 100 * 2^1 = 200ms
 
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      expect(handler.getItemsToRetry()).toHaveLength(0); // Still waiting
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(handler.getItemsToRetry()).toHaveLength(0); // Still waiting (200ms not elapsed)
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(handler.getItemsToRetry()).toHaveLength(1); // Now ready
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(handler.getItemsToRetry()).toHaveLength(1); // Now ready (250ms > 200ms)
     });
   });
 

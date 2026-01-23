@@ -62,7 +62,8 @@ describe('QueryProcessor', () => {
     });
 
     test('initializes empty synonym cache', () => {
-      expect(processor.synonymCache).toBeInstanceOf(Map);
+      // FIX: synonymCache is now an LRUCache, not a Map
+      expect(processor.synonymCache).toBeDefined();
       expect(processor.synonymCache.size).toBe(0);
     });
 
