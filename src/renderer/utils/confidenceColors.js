@@ -25,13 +25,13 @@ export const CONFIDENCE_COLORS = {
     combined: 'bg-blue-100 text-blue-700 border-blue-200'
   },
   low: {
-    bg: 'bg-gray-100',
-    text: 'text-gray-600',
-    border: 'border-gray-200',
+    bg: 'bg-system-gray-100',
+    text: 'text-system-gray-600',
+    border: 'border-system-gray-200',
     dot: '○',
     label: 'low',
     desc: 'Fallback',
-    combined: 'bg-gray-100 text-gray-600 border-gray-200'
+    combined: 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'
   }
 };
 

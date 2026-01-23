@@ -97,6 +97,23 @@
   --spacing-relaxed: 1.5rem; /* 24px */
   --spacing-spacious: 2rem; /* 32px */
 
+  /* Action/footer layout spacing */
+  --action-button-gap: 1rem; /* 16px */
+  --action-footer-padding-top: 1.5rem; /* 24px */
+  --action-footer-padding-bottom: 0.75rem; /* 12px */
+
+  /* Icon + label spacing */
+  --button-icon-gap: 0.75rem; /* 12px */
+
+  /* Phase navigation sizing */
+  --nav-tab-gap: 0.5rem; /* 8px */
+  --nav-tab-padding-x: 0.75rem; /* 12px */
+  --nav-tab-padding-y: 0.4rem; /* 6.4px */
+  --nav-tab-min-height: 2.25rem; /* 36px */
+  --nav-icon-size: 1rem; /* 16px */
+  --nav-label-size: 0.6875rem; /* 11px */
+  --nav-label-size-sm: 0.875rem; /* 14px */
+
   /* Button padding tokens */
   --button-padding-sm: 0.375rem 0.75rem; /* 6px 12px */
   --button-padding-md: 0.625rem 1.5rem; /* 10px 24px */
@@ -109,10 +126,10 @@
   --radius-full: 9999px; /* Pills, badges */
 
   /* Responsive typography guardrails */
-  --heading-1: clamp(26px, 3vw, 32px);
-  --heading-2: clamp(22px, 2.6vw, 28px);
-  --heading-3: clamp(18px, 2.1vw, 22px);
-  --body-text: clamp(15px, 1.8vw, 16px);
+  --heading-1: clamp(28px, 3.2vw, 36px);
+  --heading-2: clamp(22px, 2.6vw, 30px);
+  --heading-3: clamp(18px, 2.1vw, 24px);
+  --body-text: clamp(15px, 1.7vw, 16px);
 
   /* Animation duration tokens */
   --duration-fast: 150ms;
@@ -403,6 +420,53 @@
     @apply grid gap-8 sm:gap-11;
   }
 
+  .phase-nav {
+    @apply flex items-center overflow-x-auto flex-shrink min-w-0 pointer-events-auto;
+    gap: var(--spacing-compact);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .phase-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .phase-nav-tab {
+    @apply relative flex flex-col sm:flex-row items-center rounded-full font-medium whitespace-nowrap flex-shrink-0 transition-all duration-200 ease-out;
+    padding: var(--nav-tab-padding-y) var(--nav-tab-padding-x);
+    gap: var(--nav-tab-gap);
+    min-height: var(--nav-tab-min-height);
+  }
+
+  .phase-nav-icon {
+    width: var(--nav-icon-size);
+    height: var(--nav-icon-size);
+  }
+
+  .phase-nav-label {
+    font-size: var(--nav-label-size);
+    line-height: 1.1;
+  }
+
+  @media (min-width: 640px) {
+    .phase-nav-label {
+      font-size: var(--nav-label-size-sm);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .phase-nav-label {
+      display: none;
+    }
+  }
+
+  .page-action-bar {
+    @apply mt-auto border-t border-system-gray-200/50 flex flex-col sm:flex-row items-center justify-between flex-shrink-0;
+    padding-top: var(--action-footer-padding-top);
+    padding-bottom: var(--action-footer-padding-bottom);
+    gap: var(--action-button-gap);
+  }
+
   .heading-primary {
     font-size: var(--heading-1);
     @apply font-semibold text-system-gray-900 tracking-tight;
@@ -441,15 +505,17 @@
   }
 
   .btn-base {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply text-white shadow-md shadow-stratosort-blue/20;
     background: linear-gradient(135deg, #4f8bff 0%, #6c7ffb 100%);
   }
@@ -459,55 +525,82 @@
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply bg-white/90 border border-border-soft text-system-gray-700 shadow-sm;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply bg-transparent text-system-gray-600 border border-transparent hover:border-border-soft hover:bg-system-gray-50;
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply border-2 border-stratosort-blue text-stratosort-blue bg-transparent;
   }
 
   .btn-subtle {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply bg-system-gray-100 text-system-gray-700 border border-border-soft;
   }
 
   .btn-success {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply bg-stratosort-success text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply bg-stratosort-danger text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
+  }
+
+  .btn-warning {
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-warning/60 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    padding: 0.65rem 1.5rem;
+    transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
+    @apply bg-stratosort-warning text-white shadow-md hover:shadow-lg hover:-translate-y-0.5;
+  }
+
+  .btn-info {
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/60 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    padding: 0.65rem 1.5rem;
+    transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
+    @apply bg-stratosort-blue text-white shadow-md shadow-stratosort-blue/20 hover:shadow-lg hover:-translate-y-0.5;
   }
 
   /* @deprecated - Legacy alias, will be removed in future release.
    * Use .btn-ghost instead.
    */
   .btn-ghost-minimal {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center rounded-full font-medium transition-all focus:outline-none focus:ring-2 focus:ring-stratosort-blue/80 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     padding: 0.65rem 1.5rem;
     transition-duration: var(--duration-normal);
+    gap: var(--button-icon-gap);
     @apply bg-transparent text-system-gray-600 border border-transparent hover:border-border-soft hover:bg-system-gray-50;
+  }
+
+  .button-icon {
+    @apply inline-flex items-center;
   }
 
   .form-input-enhanced {
