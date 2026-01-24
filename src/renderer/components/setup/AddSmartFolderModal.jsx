@@ -95,8 +95,9 @@ function AddSmartFolderModal({
       return;
     }
 
-    // Helper to check if path is absolute
-    const isAbsolutePath = (p) => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('/');
+    // Helper to check if path is absolute (including UNC paths)
+    const isAbsolutePath = (p) =>
+      /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('/') || /^[\\/]{2}[^\\/]/.test(p);
 
     // Build target path - use browsed path if provided, otherwise construct from defaultLocation
     let targetPath = folderPath.trim();
