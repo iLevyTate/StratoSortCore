@@ -88,7 +88,7 @@
     "dist:linux": "npm run build && electron-builder --linux --publish never --config electron-builder.json",
     "dist:all": "npm run build && electron-builder --mac --win --linux --publish never --config electron-builder.json",
     "ci": "npm run format:check && npm run lint && npm test && npm run build",
-    "upgrade": "npx npm-check-updates -u && npm install --legacy-peer-deps"
+    "upgrade": "npx npm-check-updates -u && npm install"
   },
   "browserslist": [],
   "overrides": {
