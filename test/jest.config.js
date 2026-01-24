@@ -10,6 +10,9 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.+(js|ts|tsx)', '**/*.(test|spec).+(js|ts|tsx)'],
   // Exclude specialized test directories (they have their own configs)
   testPathIgnorePatterns: ['/node_modules/', '/stress/', '/performance/', '/e2e/', '/manual/'],
+  // FIX: Force exit to prevent hanging on open handles from HTTP agents/intervals
+  // The afterAll cleanup in test-setup.js handles most cases, but this is a safety net
+  forceExit: true,
   transform: {
     '^.+\\.(js|jsx|ts|tsx)$': [
       'babel-jest',

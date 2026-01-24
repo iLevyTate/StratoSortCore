@@ -313,7 +313,50 @@ beforeAll(() => {
   console.log('🎯 Mock services configured');
 });
 
-afterAll(() => {
+afterAll(async () => {
+  // FIX: Clean up HTTP agents from ollamaUtils to prevent open handles
+  // The ollamaUtils module creates keep-alive HTTP agents that hold Jest open
+  // Only attempt cleanup if the module was actually loaded during tests
+  const ollamaUtilsPath = require.resolve('../src/main/ollamaUtils');
+  if (require.cache[ollamaUtilsPath]) {
+    try {
+      const { cleanupOllamaAgent } = require('../src/main/ollamaUtils');
+      if (typeof cleanupOllamaAgent === 'function') {
+        cleanupOllamaAgent();
+      }
+    } catch {
+      // Safe to ignore cleanup errors
+    }
+  }
+
+  // FIX: Shutdown ServiceContainer to clean up all registered services
+  // Services like SmartFolderWatcher, ChromaDB, etc. have intervals/connections
+  const containerPath = require.resolve('../src/main/services/ServiceContainer');
+  if (require.cache[containerPath]) {
+    try {
+      const { container, SHUTDOWN_ORDER } = require('../src/main/services/ServiceContainer');
+      if (container && typeof container.shutdown === 'function') {
+        await container.shutdown(SHUTDOWN_ORDER);
+      }
+    } catch {
+      // Safe to ignore cleanup errors
+    }
+  }
+
+  // FIX: Clean up any OllamaClient instances that might have health check timers
+  try {
+    const ollamaClientPath = require.resolve('../src/main/services/OllamaClient');
+    if (require.cache[ollamaClientPath]) {
+      const OllamaClient = require('../src/main/services/OllamaClient');
+      // Check for singleton instance
+      if (OllamaClient._instance && typeof OllamaClient._instance.shutdown === 'function') {
+        await OllamaClient._instance.shutdown();
+      }
+    }
+  } catch {
+    // Safe to ignore
+  }
+
   console.log('✅ All Stratosort tests completed');
   console.log('🧹 Test environment cleaned up');
 });

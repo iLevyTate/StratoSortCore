@@ -39,5 +39,8 @@ module.exports = {
   collectCoverage: false,
 
   // Verbose output
-  verbose: true
+  verbose: true,
+
+  // FIX: Force exit to prevent hanging on open handles
+  forceExit: true
 };

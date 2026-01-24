@@ -77,7 +77,12 @@ function withTimeout(fnOrPromise, timeoutMs, operationName = 'Operation') {
       timeoutId = setTimeout(() => {
         reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
-      // FIX: Removed unref() that prevented timeouts from firing during startup
+      // Allow process to exit if this timer is the only thing keeping it alive
+      // This is critical for Jest test cleanup - the timeout will still fire
+      // as long as Promise.race keeps the event loop active
+      if (timeoutId.unref) {
+        timeoutId.unref();
+      }
     });
     return { timeoutPromise, timeoutId };
   };
@@ -128,9 +133,9 @@ async function withAbortableTimeout(fn, timeoutMs, operationName = 'Operation') 
       abortController.abort();
       reject(new Error(`${operationName} timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-
-    // Prevent timer from keeping Node.js process alive
-    if (timeoutId && typeof timeoutId.unref === 'function') {
+    // Allow process to exit if this timer is the only thing keeping it alive
+    // Critical for Jest test cleanup
+    if (timeoutId.unref) {
       timeoutId.unref();
     }
   });
