@@ -49,12 +49,15 @@ async function createDefaultFolder(smartFolders) {
     }
 
     // Check for UNC paths which can bypass security checks on Windows
+    // REMOVED: UNC paths are now allowed for network drive support
+    /*
     if (isUNCPath(documentsDir)) {
       throw new Error(
         `Security violation: UNC paths not allowed in documents directory. ` +
           `Detected UNC path: ${documentsDir}`
       );
     }
+    */
 
     // Sanitize folder path components to prevent directory traversal
     const sanitizedBaseName = 'StratoSort'.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -64,12 +67,15 @@ async function createDefaultFolder(smartFolders) {
     const defaultFolderPath = path.resolve(documentsDir, sanitizedBaseName, sanitizedFolderName);
 
     // Additional UNC path check on resolved path
+    // REMOVED: UNC paths are now allowed for network drive support
+    /*
     if (isUNCPath(defaultFolderPath)) {
       throw new Error(
         `Security violation: UNC path detected after resolution. ` +
           `Path ${defaultFolderPath} is a UNC path which is not allowed`
       );
     }
+    */
 
     // Verify the resolved path is actually inside documents directory
     const resolvedDocumentsDir = path.resolve(documentsDir);

@@ -18,6 +18,7 @@ const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfiden
 const { getSemanticFileId, isImagePath } = require('../../shared/fileIdUtils');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
+const { isUNCPath } = require('../../shared/crossPlatformUtils');
 
 const logger = typeof createLogger === 'function' ? createLogger('DownloadWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
@@ -124,6 +125,12 @@ class DownloadWatcher {
 
       logger.info('[DOWNLOAD-WATCHER] Watching', downloadsPath);
 
+      // Check for UNC path to enable polling for network drives
+      const usePolling = isUNCPath(downloadsPath);
+      if (usePolling) {
+        logger.info('[DOWNLOAD-WATCHER] Downloads folder is on network drive, enabling polling');
+      }
+
       // PERFORMANCE FIX: Optimize chokidar watcher configuration
       // - ignoreInitial: Don't process existing files on startup
       // - ignored: Comprehensive temp/system file filtering
@@ -157,7 +164,9 @@ class DownloadWatcher {
         },
         // Error handling options
         persistent: true,
-        usePolling: false, // Use native watchers for better performance
+        usePolling: usePolling, // Use native watchers for better performance unless UNC
+        interval: usePolling ? 2000 : 100,
+        binaryInterval: usePolling ? 2000 : 300,
         alwaysStat: false, // Don't stat files we're ignoring
         depth: 0 // Only watch immediate directory, not subdirectories
       });

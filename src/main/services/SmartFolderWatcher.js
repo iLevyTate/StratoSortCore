@@ -29,6 +29,7 @@ const { CHUNKING } = require('../../shared/performanceConstants');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
+const { isUNCPath } = require('../../shared/crossPlatformUtils');
 const {
   getInstance: getLearningFeedbackService,
   FEEDBACK_SOURCES
@@ -295,6 +296,12 @@ class SmartFolderWatcher {
 
       logger.info('[SMART-FOLDER-WATCHER] Starting to watch folders:', validPaths);
 
+      // Check for UNC paths to enable polling for network drives
+      const usePolling = validPaths.some((p) => isUNCPath(p));
+      if (usePolling) {
+        logger.info('[SMART-FOLDER-WATCHER] UNC paths detected, enabling polling mode');
+      }
+
       // Create watcher with stability detection
       this.watcher = chokidar.watch(validPaths, {
         ignoreInitial: true, // Don't process existing files on startup
@@ -305,7 +312,9 @@ class SmartFolderWatcher {
           ...TEMP_FILE_PATTERNS
         ],
         persistent: true,
-        usePolling: false,
+        usePolling: usePolling,
+        interval: usePolling ? 2000 : 100, // Slower polling for network drives
+        binaryInterval: usePolling ? 2000 : 300,
         awaitWriteFinish: {
           stabilityThreshold: this.stabilityThreshold,
           pollInterval: 200
