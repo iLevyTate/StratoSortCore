@@ -195,12 +195,15 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
   // Pre-flight checks for AI-first operation (graceful fallback if Ollama unavailable)
   try {
-    // Check if Ollama is running using shared detection logic or ModelManager
-    const { isOllamaRunning } = require('../utils/ollamaDetection');
-    const isRunning = await isOllamaRunning();
+    // Check if Ollama is running using shared detection logic with retries
+    // This is important because Ollama may be slow to respond when loading models
+    const { isOllamaRunningWithRetry } = require('../utils/ollamaDetection');
+    const { getOllamaHost } = require('../ollamaUtils');
+    const host = getOllamaHost(); // Use configured host, not hardcoded default
+    const isRunning = await isOllamaRunningWithRetry(host);
 
     if (!isRunning) {
-      logger.warn('Ollama unavailable. Using filename-based analysis.');
+      logger.warn('Ollama unavailable after retries. Using filename-based analysis.', { host });
       return createFallbackAnalysis({
         fileName,
         fileExtension,
@@ -469,7 +472,9 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         preview: extractedText.substring(0, TRUNCATION.PREVIEW_MEDIUM)
       });
 
-      // OPTIMIZATION: Retrieve similar file names to improve naming consistency (Vector-based Decision)
+      // OPTIMIZATION: Retrieve similar file names to improve naming consistency
+      // With OLLAMA_MAX_LOADED_MODELS=2, both embedding and text models stay loaded
+      // so there's no model swap overhead between embedding and LLM calls
       let namingContext = [];
       try {
         const { matcher } = getServices();

@@ -78,7 +78,8 @@ jest.mock('../src/shared/constants', () => ({
 // Mock Ollama utilities - define mockOllamaClient separately for use in tests
 jest.mock('../src/main/ollamaUtils', () => {
   const mockClient = {
-    generate: jest.fn()
+    generate: jest.fn(),
+    list: jest.fn().mockResolvedValue({ models: [{ name: 'llava' }] })
   };
   return {
     getOllama: jest.fn().mockResolvedValue(mockClient),
@@ -86,13 +87,15 @@ jest.mock('../src/main/ollamaUtils', () => {
     loadOllamaConfig: jest.fn().mockResolvedValue({
       selectedVisionModel: 'llava'
     }),
+    getOllamaHost: jest.fn().mockReturnValue('http://127.0.0.1:11434'),
     __mockClient: mockClient // Export for test access
   };
 });
 
 // Mock ollamaDetection
 jest.mock('../src/main/utils/ollamaDetection', () => ({
-  isOllamaRunning: jest.fn().mockResolvedValue(true)
+  isOllamaRunning: jest.fn().mockResolvedValue(true),
+  isOllamaRunningWithRetry: jest.fn().mockResolvedValue(true)
 }));
 
 // Mock ChromaDB to return null (skip semantic matching)
@@ -260,8 +263,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
     });
 
     test('should fallback when Ollama is unavailable', async () => {
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(false);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(false);
 
       jest.spyOn(fs, 'stat').mockResolvedValue({
         size: 50000,
@@ -346,8 +349,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       error.code = 'ENOENT';
       jest.spyOn(fs, 'stat').mockRejectedValue(error);
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
 
       const result = await analyzeImageFile(mockImagePath, []);
 
@@ -367,8 +370,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       error.code = 'ENOENT';
       jest.spyOn(fs, 'readFile').mockRejectedValue(error);
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
 
       const result = await analyzeImageFile(mockImagePath, []);
 
@@ -384,8 +387,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from(''));
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
 
       const sharp = require('sharp');
       sharp.mockReturnValue({
@@ -412,8 +415,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
     });
 
     test('should handle null smart folders', async () => {
@@ -488,8 +491,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
     });
 
     test('should handle zero-length image error', async () => {
@@ -584,8 +587,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
     });
 
     test('should validate date format from Ollama', async () => {
@@ -635,8 +638,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
       });
       jest.spyOn(fs, 'readFile').mockResolvedValue(Buffer.from('mock image data'));
 
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockResolvedValue(true);
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockResolvedValue(true);
     });
 
     test('should preserve file extension in suggested name', async () => {
@@ -686,8 +689,8 @@ describe('ollamaImageAnalysis - Rewritten Tests', () => {
 
   describe('pre-flight detection error', () => {
     test('should handle ollamaDetection error gracefully', async () => {
-      const { isOllamaRunning } = require('../src/main/utils/ollamaDetection');
-      isOllamaRunning.mockRejectedValue(new Error('Detection failed'));
+      const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+      isOllamaRunningWithRetry.mockRejectedValue(new Error('Detection failed'));
 
       jest.spyOn(fs, 'stat').mockResolvedValue({
         size: 50000,

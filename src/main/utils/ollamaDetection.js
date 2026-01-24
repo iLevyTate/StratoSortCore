@@ -96,9 +96,10 @@ async function getOllamaVersion() {
 /**
  * Check if Ollama server is running
  * @param {string} host - Host URL to check (default: http://127.0.0.1:11434)
+ * @param {number} timeoutMs - Timeout in milliseconds (default: 10000 - generous for slow startup)
  * @returns {Promise<boolean>}
  */
-async function isOllamaRunning(host = 'http://127.0.0.1:11434') {
+async function isOllamaRunning(host = 'http://127.0.0.1:11434', timeoutMs = 10000) {
   try {
     const url = new URL('/api/tags', host);
     return new Promise((resolve) => {
@@ -106,7 +107,7 @@ async function isOllamaRunning(host = 'http://127.0.0.1:11434') {
         resolve(res.statusCode === 200);
       });
       request.on('error', () => resolve(false));
-      request.setTimeout(2000, () => {
+      request.setTimeout(timeoutMs, () => {
         request.destroy();
         resolve(false);
       });
@@ -114,6 +115,29 @@ async function isOllamaRunning(host = 'http://127.0.0.1:11434') {
   } catch {
     return false;
   }
+}
+
+/**
+ * Check if Ollama server is running with retries
+ * @param {string} host - Host URL to check (default: http://127.0.0.1:11434)
+ * @param {number} maxRetries - Max retry attempts (default: 2)
+ * @param {number} retryDelayMs - Delay between retries (default: 1000)
+ * @returns {Promise<boolean>}
+ */
+async function isOllamaRunningWithRetry(
+  host = 'http://127.0.0.1:11434',
+  maxRetries = 2,
+  retryDelayMs = 1000
+) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const isRunning = await isOllamaRunning(host, 5000); // 5s timeout per attempt
+    if (isRunning) return true;
+
+    if (attempt < maxRetries) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+  return false;
 }
 
 /**
@@ -143,6 +167,7 @@ module.exports = {
   isOllamaInstalled,
   getOllamaVersion,
   isOllamaRunning,
+  isOllamaRunningWithRetry,
   getInstalledModels,
   findOllamaBinary,
   getOllamaFallbackPaths

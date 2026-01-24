@@ -684,13 +684,18 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
   }
 
   // Fixed: Proactive graceful degradation - check Ollama availability before processing
-  // Use shared detection logic instead of ModelVerifier
-  const { isOllamaRunning } = require('../utils/ollamaDetection');
+  // Use shared detection logic with retries (Ollama may be slow when loading models)
+  const { isOllamaRunningWithRetry } = require('../utils/ollamaDetection');
+  const { getOllamaHost } = require('../ollamaUtils');
 
   try {
-    const isRunning = await isOllamaRunning();
+    const host = getOllamaHost(); // Use configured host, not hardcoded default
+    const isRunning = await isOllamaRunningWithRetry(host);
     if (!isRunning) {
-      logger.warn('[ANALYSIS-FALLBACK] Ollama unavailable, using filename-based analysis');
+      logger.warn(
+        '[ANALYSIS-FALLBACK] Ollama unavailable after retries, using filename-based analysis',
+        { host }
+      );
       return createFallbackAnalysis({
         fileName,
         fileExtension,

@@ -61,6 +61,7 @@ jest.mock('../src/shared/constants', () => ({
 // Mock ollamaDetection
 jest.mock('../src/main/utils/ollamaDetection', () => ({
   isOllamaRunning: jest.fn().mockResolvedValue(false),
+  isOllamaRunningWithRetry: jest.fn().mockResolvedValue(false),
   isOllamaInstalled: jest.fn().mockResolvedValue(true),
   getOllamaVersion: jest.fn().mockResolvedValue('0.1.30')
 }));

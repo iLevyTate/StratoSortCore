@@ -96,7 +96,9 @@ async function startOllama({ serviceStatus }) {
     parallel: envVars.OLLAMA_NUM_PARALLEL,
     gpu: envVars.OLLAMA_NUM_GPU,
     batch: envVars.OLLAMA_NUM_BATCH,
-    threads: envVars.OLLAMA_NUM_THREAD
+    threads: envVars.OLLAMA_NUM_THREAD,
+    maxLoadedModels: envVars.OLLAMA_MAX_LOADED_MODELS,
+    loadTimeout: envVars.OLLAMA_LOAD_TIMEOUT
   });
 
   let ollamaProcess;

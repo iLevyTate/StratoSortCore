@@ -381,10 +381,31 @@ async function runBackgroundSetup() {
       logger.debug('[BACKGROUND] Not first run, skipping automated dependency setup');
 
       // Reliability improvement:
-      // Even after first-run, users can end up with ChromaDB stopped (crash, killed process, reboot).
-      // On normal launches we should still attempt a best-effort restart so semantic features recover.
+      // Even after first-run, users can end up with services stopped (crash, killed process, reboot).
+      // On normal launches we should still attempt a best-effort restart so features recover.
+      const startupManager = getStartupManager();
+
+      // Attempt to recover Ollama if not running
       try {
-        const startupManager = getStartupManager();
+        const { isOllamaRunning } = require('../utils/ollamaDetection');
+        const ollamaRunning = await isOllamaRunning();
+        if (!ollamaRunning) {
+          logger.info('[BACKGROUND] Ollama is offline. Attempting restart…');
+          emitDependencyProgress({
+            message: 'Ollama is offline. Attempting restart…',
+            dependency: 'ollama',
+            stage: 'recover'
+          });
+          await startupManager.startOllama();
+        } else {
+          logger.debug('[BACKGROUND] Ollama already running');
+        }
+      } catch (e) {
+        logger.debug('[BACKGROUND] Non-fatal Ollama restart attempt failed:', e?.message);
+      }
+
+      // Attempt to recover ChromaDB if not running
+      try {
         const { isChromaDBRunning } = require('../services/startup/chromaService');
         const running = await isChromaDBRunning();
         if (!running) {

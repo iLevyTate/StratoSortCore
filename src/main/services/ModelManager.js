@@ -310,8 +310,8 @@ class ModelManager {
           abortController.abort();
           reject(new Error('Model test timeout'));
         }, timeout);
-
-        // Ensure timeout doesn't keep process alive
+        // Allow process to exit if this timer is the only thing keeping it alive
+        // Critical for Jest test cleanup - the timeout still fires during Promise.race
         if (timeoutId.unref) {
           timeoutId.unref();
         }
