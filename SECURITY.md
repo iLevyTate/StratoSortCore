@@ -1,9 +1,15 @@
 # Security Policy
 
+<p align="center">
+  <img src="https://img.shields.io/badge/security-priority-red?style=flat-square" alt="Security Priority" />
+  <img src="https://img.shields.io/badge/local--only-no%20cloud-green?style=flat-square" alt="Local Only" />
+</p>
+
 ## Supported Versions
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.1.x   | :white_check_mark: |
 | 1.0.x   | :white_check_mark: |
 | < 1.0   | :x:                |
 
@@ -107,4 +113,4 @@ Contributors who report valid security issues will be acknowledged here (with pe
 
 ---
 
-_Last updated: December 2024_
+_Last updated: January 2026_

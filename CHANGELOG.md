@@ -1,6 +1,11 @@
 # Changelog
 
-All notable changes to StratoSort will be documented in this file.
+<p align="center">
+  <img src="https://img.shields.io/badge/format-Keep%20a%20Changelog-E05735?style=flat-square" alt="Keep a Changelog" />
+  <img src="https://img.shields.io/badge/versioning-SemVer-3F4551?style=flat-square" alt="Semantic Versioning" />
+</p>
+
+All notable changes to El StratoSort will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -165,6 +170,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
 
-[Unreleased]: https://github.com/stratosort/stratosort/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/stratosort/stratosort/releases/tag/v1.1.0
-[1.0.0]: https://github.com/stratosort/stratosort/releases/tag/v1.0.0
+[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.1.0
+[1.0.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.0.0

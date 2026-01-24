@@ -1,0 +1,10 @@
+feat(organization): wire learning feedback into app workflow
+
+- Record feedback on manual file moves into smart folders
+- Record implicit feedback when SmartFolderWatcher analyzes files in smart folders
+- Register and configure LearningFeedbackService in DI
+- Add optional startup scan to learn from existing analyzed files
+
+This connects implicit organization signals to the suggestion engine without
+blocking core file operations.
+

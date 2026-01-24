@@ -68,7 +68,7 @@
     "start": "npm run build:dev && cross-env NODE_ENV=development electron . --enable-logging",
     "start:prod": "cross-env NODE_ENV=production electron .",
     "start:debug": "cross-env NODE_ENV=development electron . --enable-logging --inspect",
-    "test": "jest --config test/jest.config.js",
+    "test": "jest --config test/jest.config.js --detectOpenHandles",
     "test:coverage": "jest --config test/jest.config.js --coverage",
     "test:watch": "jest --config test/jest.config.js --watch",
     "test:perf": "jest --config test/performance/jest.config.js --runInBand",

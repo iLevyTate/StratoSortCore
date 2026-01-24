@@ -1,6 +1,18 @@
 # Getting Started with El StratoSort
 
+<p align="center">
+  <img src="https://img.shields.io/badge/setup%20time-~10%20minutes-blue?style=flat-square" alt="Setup Time" />
+  <img src="https://img.shields.io/badge/difficulty-beginner-green?style=flat-square" alt="Difficulty" />
+</p>
+
 This guide will walk you through setting up **El StratoSort** on your local machine.
+
+## Table of Contents
+
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Detailed Setup Instructions](#detailed-setup-instructions)
+- [Troubleshooting](#troubleshooting)
 
 ## System Requirements
 
@@ -142,3 +154,21 @@ If you encounter issues during setup:
     ```bash
     npm run setup:deps
     ```
+
+---
+
+## Next Steps
+
+Once setup is complete, you're ready to start organizing your files:
+
+1. **Add Smart Folders** - Configure folders with keywords and descriptions
+2. **Enable Auto-Organization** - Turn on folder watching in Settings
+3. **Explore the Knowledge Graph** - Visualize relationships between your files
+
+For more information, see the [main README](../README.md) or explore the [documentation](README.md).
+
+---
+
+<p align="center">
+  Need help? <a href="https://github.com/iLevyTate/elstratosort/issues">Open an issue</a> on GitHub.
+</p>

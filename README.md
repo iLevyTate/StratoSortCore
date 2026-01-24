@@ -1,154 +1,189 @@
 # El StratoSort
 
-![Coverage](https://img.shields.io/badge/coverage-76.4%25-orange)
+<p align="center">
+  <img src="assets/stratosort-logo.png" alt="El StratoSort Logo" width="128" />
+</p>
 
-**Smart File Organization with Local AI**
+<p align="center">
+  <strong>Smart File Organization with Local AI</strong>
+</p>
 
-El StratoSort is a privacy-first document organizer that uses local AI to categorize and arrange
-files without sending data to the cloud. It is a focused variation of the broader StratoSort family,
-retaining the same logo and identity while targeting this branch’s priorities.
+<p align="center">
+  <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/iLevyTate/elstratosort/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" /></a>
+  <a href="https://github.com/iLevyTate/elstratosort/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/elstratosort/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
+  <img src="https://img.shields.io/badge/coverage-42.4%25-yellow?style=flat-square" alt="Coverage" />
+</p>
 
-![StratoSort Logo](assets/stratosort-logo.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform" />
+  <img src="https://img.shields.io/badge/electron-40+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/node-18+-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome" />
+</p>
 
-## Features
-
-- **Local AI Analysis**: Powered by **Ollama** and fully offline.
-- **Smart Organization**: Automatically categorizes files based on content, not just filenames.
-- **Smart Folder Monitoring**: Watches specific folders and organizes new files as they arrive.
-- **Image Understanding**: Analyzes visual content to categorize photos and screenshots.
-- **Safe Operations**: Full undo/redo capability with history navigation.
-- **Privacy-First**: No data exfiltration. All processing happens on your machine.
-- **Vector Search**: Uses **ChromaDB** for semantic understanding and retrieval.
-
-## Download & Install
-
-> **Platform Note**: El StratoSort is developed with a Windows-first approach. While releases are
-> published for all major platforms, **only the Windows build is robustly tested**. macOS and Linux
-> builds are provided on a best-effort basis.
-
-### Why Windows First?
-
-El StratoSort is designed for students and professionals who accumulate documents through work,
-school, and research—helping them navigate and organize their information more efficiently.
-
-We prioritize Windows because the majority of professional and educational institutions rely on it
-as their primary operating system. This focus ensures the most polished experience for our core user
-base.
-
-**Roadmap**: Full support for macOS and Linux is planned. Development for those platforms is ongoing
-but not yet fully optimized.
+<p align="center">
+  <a href="#features">Features</a> &bull;
+  <a href="#quick-start">Quick Start</a> &bull;
+  <a href="#documentation">Docs</a> &bull;
+  <a href="#contributing">Contributing</a> &bull;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
 ---
 
-## Getting Started
+El StratoSort is a **privacy-first document organizer** that uses local AI to categorize and arrange
+files without sending data to the cloud. All processing happens on your machine using
+[Ollama](https://ollama.ai) for AI inference and [ChromaDB](https://www.trychroma.com) for semantic
+search.
 
-For detailed installation instructions, system requirements, and dependency setup (including Python,
-ChromaDB, and Tesseract), please see our **[Getting Started Guide](docs/GETTING_STARTED.md)**.
+## What's New in v1.1.0
 
-### Quick Start
+- **Smart Folder Watcher** - Automatically analyzes new and modified files in your configured smart
+  folders
+- **Enhanced Knowledge Graph** - Color-coded nodes by category, relationship tooltips explaining
+  _why_ files are connected, and improved layout algorithms
+- **AI Description Generation** - Generate smart folder descriptions with one click using AI
+- **Undo History Navigation** - Jump to specific points in your undo history
+- **Retry Failed Files** - Easily retry analysis for files that encountered errors
+- **Conflict Detection** - Warnings when multiple files target the same destination
+
+See [CHANGELOG.md](CHANGELOG.md) for full release notes.
+
+## Features
+
+| Feature                  | Description                                                  |
+| ------------------------ | ------------------------------------------------------------ |
+| **Local AI Analysis**    | Powered by Ollama - fully offline, no cloud required         |
+| **Smart Organization**   | Categorizes files based on content, not just filenames       |
+| **Smart Folder Watcher** | Monitors folders and analyzes new files automatically        |
+| **Image Understanding**  | Analyzes visual content to categorize photos and screenshots |
+| **Knowledge Graph**      | Visualize file relationships with color-coded categories     |
+| **Safe Operations**      | Full undo/redo capability with history navigation            |
+| **Privacy-First**        | No data exfiltration - all processing on your machine        |
+| **Vector Search**        | ChromaDB-powered semantic understanding and retrieval        |
+
+## Quick Start
+
+### Prerequisites
+
+- **OS**: Windows 10/11 (recommended), macOS 10.15+, or Linux
+- **RAM**: 8GB+ recommended
+- **Disk**: 12GB+ free space
+- **Dependencies**: Python 3.9+ (for ChromaDB)
+
+### Installation
 
 ```bash
 git clone https://github.com/iLevyTate/elstratosort.git
 cd elstratosort
-npm ci            # Install dependencies
-npm run dev       # Start the app
+npm ci
+npm run dev
 ```
 
 **First Launch:** The app will guide you through installing Ollama and downloading AI models. It
 will also attempt to install ChromaDB and Tesseract OCR automatically.
 
-## System Requirements (Summary)
+> **Note:** El StratoSort is developed with a Windows-first approach. While releases are published
+> for all major platforms, only the Windows build is robustly tested. macOS and Linux builds are
+> provided on a best-effort basis.
 
-- **OS**: Windows 10/11 (Recommended), macOS 10.15+, or Linux
-- **RAM**: 8GB+ Recommended
-- **Disk**: 12GB+ free space
-- **Dependencies**: Python 3.9+, Tesseract OCR (See [Getting Started](docs/GETTING_STARTED.md) for
-  details)
+For detailed setup instructions, see the **[Getting Started Guide](docs/GETTING_STARTED.md)**.
 
 ## Privacy & Security
 
-- **100% Local**: No internet required after setup.
-- **No Tracking**: No data collection or exfiltration.
-- **Open Source**: Inspect the code to verify our claims.
+| Principle             | Implementation                                         |
+| --------------------- | ------------------------------------------------------ |
+| **100% Local**        | No internet required after initial setup               |
+| **No Tracking**       | Zero data collection or telemetry                      |
+| **Open Source**       | Full source code available for inspection              |
+| **Secure by Default** | Context isolation, input validation, path sanitization |
+
+See [SECURITY.md](SECURITY.md) for our security policy and vulnerability reporting.
 
 ## Advanced Features
 
 ### Smart Folders
 
-Configure keywords and descriptions. The AI learns from selections and improves over time.
+Configure keywords and descriptions for your folders. The AI learns from your selections and
+improves suggestions over time.
 
 ### Auto-Organization
 
 Enable "Watch Downloads Folder" or "Watch Smart Folders" in Settings to automatically analyze and
-organize new files.
+organize new files as they arrive.
 
 ### Batch Operations
 
-Select multiple files/folders, analyze, and apply suggestions in bulk with full undo support.
-
----
+Select multiple files or folders, analyze them together, and apply suggestions in bulk with full
+undo support.
 
 ## Documentation
 
-Detailed documentation is available in the `docs/` directory:
+| Document                                       | Description                   |
+| ---------------------------------------------- | ----------------------------- |
+| [Getting Started](docs/GETTING_STARTED.md)     | Installation and setup guide  |
+| [Architecture](docs/ARCHITECTURE.md)           | System design and data flow   |
+| [Learning Guide](docs/LEARNING_GUIDE.md)       | Codebase onboarding           |
+| [Testing](TESTING.md)                          | Test patterns and coverage    |
+| [Code Quality](docs/CODE_QUALITY_STANDARDS.md) | Style and review standards    |
+| [DI Patterns](docs/DI_PATTERNS.md)             | Dependency injection patterns |
+| [Error Handling](docs/ERROR_HANDLING_GUIDE.md) | Error handling standards      |
+| [IPC Contracts](docs/IPC_CONTRACTS.md)         | IPC communication specs       |
 
-- [Getting Started Guide](docs/GETTING_STARTED.md)
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [Learning Guide](docs/LEARNING_GUIDE.md)
-- [Testing Guide](TESTING.md)
-- [Code Quality Standards](docs/CODE_QUALITY_STANDARDS.md)
-- [Dependency Patterns](docs/DI_PATTERNS.md)
-- [Error Handling](docs/ERROR_HANDLING_GUIDE.md)
-- [IPC Contracts](docs/IPC_CONTRACTS.md)
-
-## For Developers & Contributors
+## For Developers
 
 ### Tech Stack
 
-- **Electron**: Cross-platform desktop framework
-- **React**: UI library
-- **Ollama**: Local AI inference (Text/Vision)
-- **ChromaDB**: Vector database for semantic search
-- **Tailwind CSS**: Styling
+| Technology            | Purpose                              |
+| --------------------- | ------------------------------------ |
+| **Electron**          | Cross-platform desktop framework     |
+| **React 19**          | UI library with Redux Toolkit        |
+| **Ollama**            | Local AI inference (text and vision) |
+| **ChromaDB**          | Vector database for semantic search  |
+| **Tailwind CSS**      | Utility-first styling                |
+| **Jest + Playwright** | Testing infrastructure               |
 
 ### Key Scripts
 
 ```bash
-npm run dev            # Dev mode
-npm run lint           # ESLint
-npm test               # Jest unit/integration
+npm run dev            # Development mode with hot reload
+npm run lint           # ESLint code quality check
+npm test               # Run Jest unit/integration tests
 npm run build          # Production webpack build
-npm run dist:win       # Create Windows installer (run on Windows)
-npm run dist:mac       # Create macOS installer (run on macOS)
-npm run dist:linux     # Create Linux packages (run on Linux/WSL)
-npm run setup:deps     # Install Ollama + ChromaDB + Tesseract (beta)
+npm run dist:win       # Create Windows installer
+npm run dist:mac       # Create macOS installer
+npm run dist:linux     # Create Linux packages
+npm run setup:deps     # Install Ollama + ChromaDB + Tesseract
 ```
 
-### Building installers
+### Building Installers
 
-- **Windows (preferred)**: Run the GitHub Actions workflow **“Windows Dist (Manual)”** (Actions →
-  select workflow → Run). Artifacts include the NSIS installer, portable EXE, and blockmap. Locally,
-  run `npm run dist:win` on Windows.
-- **macOS/Linux (optional)**: Build on the target OS with `npm run dist:mac` or
-  `npm run dist:linux`. On Windows, Linux builds may require WSL or Developer Mode to allow
-  symlinks.
+- **Windows (preferred)**: Run the GitHub Actions workflow "Windows Dist (Manual)" or locally with
+  `npm run dist:win`
+- **macOS/Linux**: Build on the target OS with `npm run dist:mac` or `npm run dist:linux`
 
-### Contributing
+## Contributing
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Make changes and verify with `npm test`.
-4. Submit a Pull Request.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-See `CONTRIBUTING.md` for full setup, standards, and testing guidance.
+1. Fork the repository
+2. Create a feature branch
+3. Make changes and verify with `npm test`
+4. Submit a Pull Request
 
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
-## Links
+---
 
-- GitHub: [github.com/iLevyTate/elstratosort](https://github.com/iLevyTate/elstratosort)
-- Issues: [Report a bug](https://github.com/iLevyTate/elstratosort/issues)
-- Ollama: [ollama.ai](https://ollama.ai)
-- ChromaDB: [trychroma.com](https://www.trychroma.com)
+<p align="center">
+  <a href="https://github.com/iLevyTate/elstratosort">GitHub</a> &bull;
+  <a href="https://github.com/iLevyTate/elstratosort/issues">Report Bug</a> &bull;
+  <a href="https://github.com/iLevyTate/elstratosort/issues">Request Feature</a>
+</p>
+
+<p align="center">
+  Built with <a href="https://ollama.ai">Ollama</a> and <a href="https://www.trychroma.com">ChromaDB</a>
+</p>
