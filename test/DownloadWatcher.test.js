@@ -104,6 +104,11 @@ jest.mock('../src/shared/fileOperationTracker', () => ({
   DEFAULT_COOLDOWN_MS: 5000
 }));
 
+// Mock crossPlatformUtils
+jest.mock('../src/shared/crossPlatformUtils', () => ({
+  isUNCPath: jest.fn((p) => p && (p.startsWith('\\\\') || p.startsWith('//')))
+}));
+
 describe('DownloadWatcher', () => {
   let DownloadWatcher;
   let chokidar;
@@ -223,6 +228,32 @@ describe('DownloadWatcher', () => {
       expect(mockWatcher.on).toHaveBeenCalledWith('add', expect.any(Function));
       expect(mockWatcher.on).toHaveBeenCalledWith('error', expect.any(Function));
       expect(mockWatcher.on).toHaveBeenCalledWith('ready', expect.any(Function));
+    });
+
+    test('enables polling for UNC paths (network drive)', async () => {
+      // Mock homedir to return a UNC path
+      const os = require('os');
+      jest.spyOn(os, 'homedir').mockReturnValue('\\\\server\\share\\Users\\User');
+
+      // Mock verify directory to succeed
+      watcher._verifyDirectory = jest.fn().mockResolvedValue(true);
+
+      watcher.start();
+
+      // Wait for async
+      await new Promise((r) => originalSetTimeout(r, 100));
+
+      expect(chokidar.watch).toHaveBeenCalledWith(
+        expect.stringContaining('Downloads'),
+        expect.objectContaining({
+          usePolling: true,
+          interval: 2000,
+          binaryInterval: 2000
+        })
+      );
+
+      // Restore homedir mock
+      jest.restoreAllMocks();
     });
   });
 

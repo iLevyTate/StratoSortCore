@@ -66,6 +66,14 @@ jest.mock('../src/main/services/SmartFoldersLLMService', () => ({
   })
 }));
 
+// Mock FolderMatchingService
+jest.mock('../src/main/services/FolderMatchingService', () => ({
+  getInstance: jest.fn(() => ({
+    initialize: jest.fn().mockResolvedValue(undefined),
+    embedText: jest.fn().mockResolvedValue({ vector: [0.1, 0.2, 0.3], model: 'test-model' })
+  }))
+}));
+
 // Mock customFolders reset (used by RESET_TO_DEFAULTS handler)
 jest.mock('../src/main/core/customFolders', () => ({
   resetToDefaultFolders: jest.fn()
@@ -93,6 +101,25 @@ jest.mock('../src/main/utils/jsonRepair', () => ({
 jest.mock('../src/shared/securityConfig', () => ({
   getDangerousPaths: jest.fn(() => ['/System', '/Windows', 'C:\\Windows']),
   ALLOWED_APP_PATHS: ['documents', 'downloads', 'desktop', 'pictures', 'videos', 'music', 'home']
+}));
+
+// Mock crossPlatformUtils
+jest.mock('../src/shared/crossPlatformUtils', () => ({
+  isUNCPath: jest.fn((p) => p && (p.startsWith('\\\\') || p.startsWith('//')))
+}));
+
+// Mock pathSanitization
+jest.mock('../src/shared/pathSanitization', () => ({
+  validateFileOperationPathSync: jest.fn((path, allowedBasePaths, options) => {
+    // If it looks like a UNC path
+    if (path && (path.startsWith('\\\\') || path.startsWith('//'))) {
+      if (options && options.disallowUNC) {
+        return { valid: false, error: 'UNC paths not allowed' };
+      }
+    }
+    return { valid: true, normalizedPath: path };
+  }),
+  sanitizePath: (p) => p
 }));
 
 describe('Smart Folders IPC Handlers', () => {
@@ -717,6 +744,21 @@ describe('Smart Folders IPC Handlers', () => {
         expect(result.folder.name).toBe('Work');
       }
     });
+
+    test('ADD accepts UNC paths', async () => {
+      const handler = handlers[IPC_CHANNELS.SMART_FOLDERS.ADD];
+      const uncPath = '\\\\server\\share\\Documents';
+
+      // Mock fs.stat to return true for UNC path
+      fs.stat.mockResolvedValue({ isDirectory: () => true });
+
+      const result = await handler({}, { name: 'NetworkDocs', path: uncPath });
+
+      // Should succeed
+      expect(result.success).toBe(true);
+      // Path might be resolved/normalized, but should still be accepted
+      expect(result.folder.path).toContain('server');
+    });
   });
 
   describe('SMART_FOLDERS.EDIT handler', () => {
@@ -1157,6 +1199,13 @@ describe('Smart Folders IPC Handlers', () => {
           .fn()
           .mockResolvedValue({ response: JSON.stringify({ index: 'abc', reason: 'x' }) })
       }));
+
+      // Override FolderMatchingService to fail
+      const FolderMatchingService = require('../src/main/services/FolderMatchingService');
+      FolderMatchingService.getInstance.mockReturnValue({
+        initialize: jest.fn().mockResolvedValue(undefined),
+        embedText: jest.fn().mockRejectedValue(new Error('embed failed'))
+      });
 
       registerSmartFoldersIpc({
         ipcMain: mockIpcMain,

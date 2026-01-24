@@ -193,6 +193,19 @@ describe('Folder Handlers', () => {
       expect(result.success).toBe(false);
       expect(result.errorCode).toBe('NAME_TOO_LONG');
     });
+
+    test('creates UNC folder successfully', async () => {
+      mockFs.stat.mockRejectedValueOnce({ code: 'ENOENT' });
+
+      const handler = handlers['files:create-folder-direct'];
+      const uncPath = '\\\\server\\share\\NewFolder';
+      const result = await handler({}, uncPath);
+
+      expect(result.success).toBe(true);
+      expect(mockFs.mkdir).toHaveBeenCalledWith(expect.stringContaining('NewFolder'), {
+        recursive: true
+      });
+    });
   });
 
   describe('openFolder handler', () => {

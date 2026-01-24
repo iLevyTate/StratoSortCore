@@ -44,6 +44,11 @@ jest.mock('../src/shared/fileOperationTracker', () => ({
   DEFAULT_COOLDOWN_MS: 5000
 }));
 
+// Mock crossPlatformUtils
+jest.mock('../src/shared/crossPlatformUtils', () => ({
+  isUNCPath: jest.fn((p) => p && (p.startsWith('\\\\') || p.startsWith('//')))
+}));
+
 describe('SmartFolderWatcher analysis history recording', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -224,5 +229,38 @@ describe('SmartFolderWatcher start race condition (M3 fix)', () => {
     // Flags should be reset even on failure
     expect(watcher._startPromise).toBeNull();
     expect(watcher.isStarting).toBe(false);
+  });
+
+  test('enables polling for UNC paths (network drive)', async () => {
+    const SmartFolderWatcher = require('../src/main/services/SmartFolderWatcher');
+    const chokidar = require('chokidar');
+
+    const watcher = new SmartFolderWatcher({
+      getSmartFolders: () => [{ path: '\\\\server\\share\\SmartFolder', name: 'NetworkFolder' }],
+      analysisHistoryService: {},
+      analyzeDocumentFile: jest.fn(),
+      analyzeImageFile: jest.fn(),
+      settingsService: { load: jest.fn().mockResolvedValue({}) },
+      chromaDbService: null,
+      folderMatcher: null,
+      notificationService: null
+    });
+
+    // Mock _getValidFolderPaths to return the UNC path
+    watcher._getValidFolderPaths = jest.fn().mockResolvedValue(['\\\\server\\share\\SmartFolder']);
+
+    // Mock _startQueueProcessor
+    watcher._startQueueProcessor = jest.fn();
+
+    await watcher.start();
+
+    expect(chokidar.watch).toHaveBeenCalledWith(
+      expect.arrayContaining(['\\\\server\\share\\SmartFolder']),
+      expect.objectContaining({
+        usePolling: true,
+        interval: 2000,
+        binaryInterval: 2000
+      })
+    );
   });
 });
