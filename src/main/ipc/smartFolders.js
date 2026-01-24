@@ -24,6 +24,8 @@ const { validateFileOperationPathSync } = require('../../shared/pathSanitization
 // FIX: Import centralized error codes for consistent error handling
 const { ERROR_CODES } = require('../../shared/errorHandlingUtils');
 
+const { isUNCPath } = require('../../shared/crossPlatformUtils');
+
 /**
  * CRITICAL SECURITY FIX: Sanitize and validate folder paths to prevent path traversal attacks
  * @param {string} inputPath - User-provided path to validate
@@ -40,11 +42,18 @@ function sanitizeFolderPath(inputPath) {
     }
   }).filter(Boolean);
 
-  const validation = validateFileOperationPathSync(inputPath, ALLOWED_BASE_PATHS, {
-    requireAbsolute: true,
-    disallowUNC: true,
-    disallowUrlSchemes: true
-  });
+  // Check if it is a UNC path
+  const isUNC = isUNCPath(inputPath);
+
+  const validation = validateFileOperationPathSync(
+    inputPath,
+    isUNC ? null : ALLOWED_BASE_PATHS, // Bypass allowed base paths for UNC
+    {
+      requireAbsolute: true,
+      disallowUNC: false, // Allow UNC paths
+      disallowUrlSchemes: true
+    }
+  );
 
   if (validation.valid) {
     return validation.normalizedPath;
@@ -565,6 +574,9 @@ function registerSmartFoldersIpc(servicesOrParams) {
           try {
             // CRITICAL SECURITY FIX: Sanitize path before any operations
             const normalizedPath = sanitizeFolderPath(updatedFolder.path);
+            if (isUNCPath(normalizedPath)) {
+              logger.info('[SMART-FOLDERS] UNC path accepted for folder update:', normalizedPath);
+            }
             const parentDir = path.dirname(normalizedPath);
 
             // FIX: Auto-create parent directory if it doesn't exist (Issue 3.1-A, 3.1-B)
@@ -817,6 +829,9 @@ Now generate a description for "${folderName}":`;
         let normalizedPath;
         try {
           normalizedPath = sanitizeFolderPath(folder.path);
+          if (isUNCPath(normalizedPath)) {
+            logger.info('[SMART-FOLDERS] UNC path accepted for new folder:', normalizedPath);
+          }
         } catch (securityError) {
           return {
             success: false,

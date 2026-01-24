@@ -132,7 +132,7 @@ function validateImportedSettings(settings, logger) {
 
     const validation = validateFileOperationPathSync(trimmed, null, {
       requireAbsolute: true,
-      disallowUNC: true,
+      disallowUNC: false,
       disallowUrlSchemes: true,
       allowFileUrl: false
     });

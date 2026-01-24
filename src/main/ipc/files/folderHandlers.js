@@ -19,6 +19,7 @@ const {
   ErrorCategory,
   getErrorCategory
 } = require('../../../shared/errorClassifier');
+const { isUNCPath } = require('../../../shared/crossPlatformUtils');
 
 logger.setContext('IPC:Files:Folders');
 
@@ -64,9 +65,12 @@ function registerFolderHandlers(servicesOrParams) {
           app.getPath('desktop')
         ];
 
+        const isUNC = isUNCPath(normalizedPath);
+
         const validation = await validateFileOperationPath(normalizedPath, {
-          allowedBasePaths: allowedPaths,
-          checkSymlinks: true
+          allowedBasePaths: isUNC ? null : allowedPaths,
+          checkSymlinks: true,
+          disallowUNC: false
         });
 
         if (!validation.valid) {
@@ -108,6 +112,9 @@ function registerFolderHandlers(servicesOrParams) {
         // Create the folder recursively
         await fs.mkdir(normalizedPath, { recursive: true });
         logger.info('[FILE-OPS] Created folder:', normalizedPath);
+        if (isUNC) {
+          logger.info('[FILE-OPS] UNC folder created:', normalizedPath);
+        }
 
         return {
           success: true,
