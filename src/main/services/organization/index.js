@@ -26,6 +26,7 @@ const suggestionRanker = require('./suggestionRanker');
 const folderAnalyzer = require('./folderAnalyzer');
 const llmSuggester = require('./llmSuggester');
 const filePatternAnalyzer = require('./filePatternAnalyzer');
+const learningFeedback = require('./learningFeedback');
 
 // Export core class as OrganizationSuggestionService for backward compatibility
 const OrganizationSuggestionService = OrganizationSuggestionServiceCore;
@@ -72,3 +73,4 @@ module.exports.suggestionRanker = suggestionRanker;
 module.exports.folderAnalyzer = folderAnalyzer;
 module.exports.llmSuggester = llmSuggester;
 module.exports.filePatternAnalyzer = filePatternAnalyzer;
+module.exports.learningFeedback = learningFeedback;

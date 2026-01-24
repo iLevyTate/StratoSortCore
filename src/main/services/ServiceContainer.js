@@ -592,6 +592,7 @@ const ServiceIds = {
   ORGANIZATION_SUGGESTION: 'organizationSuggestion',
   AUTO_ORGANIZE: 'autoOrganize',
   CLUSTERING: 'clustering', // FIX: Added as separate DI entry to avoid circular dependency
+  LEARNING_FEEDBACK: 'learningFeedback', // Records implicit feedback from file organization
 
   // State services
   ANALYSIS_HISTORY: 'analysisHistory',
@@ -623,6 +624,7 @@ const SHUTDOWN_ORDER = [
   // High-level services that use other services
   ServiceIds.FILE_PATH_COORDINATOR, // Coordinator depends on many services
   ServiceIds.SEARCH_SERVICE,
+  ServiceIds.LEARNING_FEEDBACK, // Depends on suggestion service, must shutdown before it
   ServiceIds.AUTO_ORGANIZE,
   ServiceIds.ORGANIZATION_SUGGESTION,
   ServiceIds.CLUSTERING, // FIX: HIGH - Added to shutdown order (was missing, causing improper cleanup)
