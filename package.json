@@ -59,8 +59,8 @@
     "setup:chromadb": "node scripts/setup-chromadb.js --auto",
     "setup:chromadb:check": "node scripts/setup-chromadb.js --check",
     "setup:deps": "node scripts/setup-ollama.js --auto && node scripts/setup-chromadb.js --auto",
-    "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx",
-    "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "lint": "cross-env NODE_ENV=development eslint .",
+    "lint:fix": "cross-env NODE_ENV=development eslint . --fix",
     "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx}\" \"test/**/*.{js,ts}\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
     "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx}\" \"test/**/*.{js,ts}\" \"scripts/**/*.js\" \"*.{js,json}\" \"webpack.config.js\" \"babel.config.js\" \"postcss.config.js\" \"playwright.config.js\"",
     "prepare": "husky install",
@@ -87,12 +87,14 @@
     "dist:mac": "npm run build && electron-builder --mac --publish never --config electron-builder.json",
     "dist:linux": "npm run build && electron-builder --linux --publish never --config electron-builder.json",
     "dist:all": "npm run build && electron-builder --mac --win --linux --publish never --config electron-builder.json",
-    "ci": "npm run format:check && npm run lint && npm test && npm run build"
+    "ci": "npm run format:check && npm run lint && npm test && npm run build",
+    "upgrade": "npx npm-check-updates -u && npm install"
   },
   "browserslist": [],
   "overrides": {
     "@jridgewell/gen-mapping": "^0.3.5",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "tar": ">=7.5.3"
   },
   "jest": {
     "projects": [
@@ -100,6 +102,7 @@
     ]
   },
   "dependencies": {
+    "@langchain/core": "^1.1.17",
     "chokidar": "^5.0.0",
     "chromadb": "^3.2.2",
     "electron-updater": "^6.7.3",
@@ -108,9 +111,8 @@
     "fast-xml-parser": "^5.3.3",
     "fastest-levenshtein": "^1.0.16",
     "framer-motion": "^12.29.0",
-    "@langchain/core": "^1.1.16",
-    "langchain": "^1.2.12",
-    "lucide-react": "^0.562.0",
+    "langchain": "^1.2.13",
+    "lucide-react": "^0.563.0",
     "lunr": "^2.3.9",
     "mammoth": "^1.11.0",
     "node-fetch": "^3.3.2",
@@ -138,9 +140,10 @@
     "@electron/notarize": "^3.1.1",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@mui/icons-material": "^7.3.6",
-    "@mui/material": "^7.3.6",
-    "@playwright/test": "^1.49.0",
+    "@eslint/js": "^9.39.2",
+    "@mui/icons-material": "^7.3.7",
+    "@mui/material": "^7.3.7",
+    "@playwright/test": "^1.58.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
     "@reduxjs/toolkit": "^2.11.2",
     "@svgr/webpack": "^8.1.0",
@@ -157,28 +160,26 @@
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
     "@types/react-dropzone": "^5.1.0",
-    "@types/react-test-renderer": "^19.0.0",
+    "@types/react-test-renderer": "^19.1.0",
     "@types/react-window": "^2.0.0",
     "@types/semver": "^7.7.1",
     "@types/terser-webpack-plugin": "^5.2.0",
     "@types/tough-cookie": "^4.0.5",
     "@types/uuid": "^11.0.0",
-    "@types/webpack-bundle-analyzer": "^4.6.0",
+    "@types/webpack-bundle-analyzer": "^4.7.0",
     "@typescript-eslint/eslint-plugin": "^8.53.1",
-    "@typescript-eslint/parser": "^8.49.0",
+    "@typescript-eslint/parser": "^8.53.1",
     "adm-zip": "^0.5.16",
     "assert": "^2.1.0",
     "autoprefixer": "^10.4.23",
     "axios": "^1.13.2",
     "babel-jest": "^30.2.0",
     "babel-loader": "^10.0.0",
-    "browserslist-config-erb": "^0.0.3",
     "buffer": "^6.0.3",
     "chalk": "^5.6.2",
     "concurrently": "^9.2.1",
     "core-js": "^3.48.0",
     "cross-env": "^10.1.0",
-    "crypto-browserify": "^3.12.1",
     "css-loader": "^7.1.2",
     "css-minimizer-webpack-plugin": "^7.0.4",
     "cssnano": "^7.1.2",
@@ -186,36 +187,35 @@
     "detect-port": "^2.1.0",
     "dotenv": "^17.2.3",
     "electron": "^40.0.0",
-    "electron-builder": "^26.4.0",
+    "electron-builder": "^26.5.0",
     "electron-debug": "^4.1.0",
     "electron-devtools-installer": "^4.0.0",
-    "eslint": "^8.57.1",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-config-erb": "^4.1.0-0",
+    "eslint": "^9.39.2",
     "eslint-import-resolver-typescript": "^4.4.4",
-    "eslint-import-resolver-webpack": "^0.13.7",
-    "eslint-plugin-compat": "^6.0.2",
-    "eslint-plugin-import": "^2.28.1",
+    "eslint-import-resolver-webpack": "^0.13.10",
+    "eslint-plugin-compat": "^6.1.0",
+    "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-jest": "^29.12.1",
-    "eslint-plugin-jsx-a11y": "^6.7.1",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-promise": "^7.2.1",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "exif-reader": "^2.0.2",
+    "exif-reader": "^2.0.3",
     "file-loader": "^6.2.0",
+    "globals": "^17.1.0",
     "html-webpack-plugin": "^5.6.6",
     "https-browserify": "^1.0.0",
-    "husky": "^9.0.11",
+    "husky": "^9.1.7",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
     "lint-staged": "^16.2.7",
-    "memfs": "^4.56.9",
+    "memfs": "^4.56.10",
     "mini-css-extract-plugin": "^2.10.0",
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
     "png-to-ico": "^3.0.1",
-    "postcss": "^8.4.24",
+    "postcss": "^8.5.6",
     "postcss-loader": "^8.2.0",
     "prettier": "^3.8.1",
     "process": "^0.11.10",
@@ -227,14 +227,14 @@
     "sass-loader": "^16.0.6",
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",
-    "style-loader": "^3.3.4",
+    "style-loader": "^4.0.0",
     "tailwindcss": "^4.1.18",
     "terser-webpack-plugin": "^5.3.16",
     "ts-jest": "^29.4.6",
     "ts-loader": "^9.5.4",
-    "ts-node": "^10.9.1",
-    "tsconfig-paths-webpack-plugin": "^4.1.0",
-    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths-webpack-plugin": "^4.2.0",
+    "typescript": "^5.9.3",
     "url": "^0.11.4",
     "url-loader": "^4.1.1",
     "util": "^0.12.5",
@@ -252,36 +252,6 @@
     "*.{json,md,yml,yaml,css,scss}": [
       "prettier --write"
     ]
-  },
-  "eslintConfig": {
-    "extends": "erb",
-    "parserOptions": {
-      "ecmaVersion": 2020,
-      "sourceType": "module",
-      "project": "./tsconfig.json",
-      "tsconfigRootDir": "./",
-      "createDefaultProgram": true
-    },
-    "settings": {
-      "import/resolver": {
-        "node": {},
-        "webpack": {
-          "config": "./webpack.config.js"
-        },
-        "typescript": {}
-      },
-      "import/parsers": {
-        "@typescript-eslint/parser": [
-          ".ts",
-          ".tsx"
-        ]
-      }
-    },
-    "rules": {
-      "import/no-extraneous-dependencies": "off",
-      "import/no-unresolved": "error",
-      "react/react-in-jsx-scope": "off"
-    }
   },
   "collective": {
     "url": "https://opencollective.com/electron-react-boilerplate-594"

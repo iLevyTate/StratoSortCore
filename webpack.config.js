@@ -85,10 +85,11 @@ module.exports = (env, argv) => {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       // FIX: Use consistent fallbacks for both dev and prod to avoid module resolution issues
       // Redux Toolkit and other modern libraries require process polyfill
+      // Note: crypto fallback disabled - renderer uses native Web Crypto API instead
       fallback: {
         path: require.resolve('path-browserify'),
         os: require.resolve('os-browserify/browser'),
-        crypto: require.resolve('crypto-browserify'),
+        crypto: false,
         buffer: require.resolve('buffer'),
         process: require.resolve('process/browser'),
         stream: require.resolve('stream-browserify'),
