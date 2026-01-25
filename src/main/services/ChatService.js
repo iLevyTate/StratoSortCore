@@ -312,7 +312,30 @@ class ChatService {
     const sources = finalResults.map((result, index) => {
       const fileId = result?.id;
       const metadata = result?.metadata || {};
-      const snippet = chunkMap.get(fileId) || metadata.summary || metadata.subject || '';
+      // Build comprehensive snippet with fallbacks for richer context
+      const snippet =
+        chunkMap.get(fileId) || metadata.summary || metadata.purpose || metadata.subject || '';
+      // Parse tags if stored as JSON string
+      let tags = metadata.tags || metadata.keywords || [];
+      if (typeof tags === 'string') {
+        try {
+          tags = JSON.parse(tags);
+        } catch {
+          tags = [];
+        }
+      }
+
+      // Parse colors if stored as JSON string
+      let colors = metadata.colors || [];
+      if (typeof colors === 'string') {
+        try {
+          colors = JSON.parse(colors);
+        } catch {
+          colors = [];
+        }
+      }
+
+      const isImage = metadata.type === 'image';
 
       return {
         id: `doc-${index + 1}`,
@@ -320,11 +343,30 @@ class ChatService {
         name: metadata.name || fileId,
         path: metadata.path || '',
         snippet,
-        tags: metadata.tags || metadata.keywords || [],
+        // Extended context for richer conversations
+        summary: metadata.summary || '',
+        purpose: metadata.purpose || '',
+        subject: metadata.subject || '',
+        entity: metadata.entity || '',
+        project: metadata.project || '',
+        documentType: metadata.documentType || metadata.type || '',
+        category: metadata.category || '',
+        reasoning: metadata.reasoning || '',
+        // Document's primary date (from analysis)
+        documentDate: metadata.date || metadata.documentDate || '',
+        // Include truncated extracted text for deep context
+        extractedText: metadata.extractedText ? metadata.extractedText.substring(0, 2000) : '',
+        tags: Array.isArray(tags) ? tags : [],
         entities: metadata.keyEntities || [],
         dates: metadata.dates || [],
         score: result?.score || 0,
-        matchDetails: result?.matchDetails || {}
+        confidence: metadata.confidence || 0,
+        matchDetails: result?.matchDetails || {},
+        // Image-specific fields
+        isImage,
+        contentType: isImage ? metadata.content_type || '' : '',
+        hasText: isImage ? Boolean(metadata.has_text) : false,
+        colors: isImage ? (Array.isArray(colors) ? colors : []) : []
       };
     });
 
@@ -407,18 +449,39 @@ class ChatService {
   }
 
   _buildPrompt({ query, history, sources, persona }) {
+    // Build comprehensive source context for richer conversations
     const sourcesText = sources
       .map((s) => {
-        const snippet = s.snippet ? `Snippet: ${s.snippet}` : 'Snippet: (none)';
-        return `[${s.id}] ${s.name} ${s.path ? `(${s.path})` : ''}\n${snippet}`;
+        const lines = [`[${s.id}] ${s.name} ${s.isImage ? '(Image)' : '(Document)'}`];
+        if (s.path) lines.push(`Path: ${s.path}`);
+        if (s.category) lines.push(`Category: ${s.category}`);
+        if (s.documentType) lines.push(`Type: ${s.documentType}`);
+        if (s.documentDate) lines.push(`Date: ${s.documentDate}`);
+        if (s.entity) lines.push(`Entity: ${s.entity}`);
+        if (s.project) lines.push(`Project: ${s.project}`);
+        if (s.purpose) lines.push(`Purpose: ${s.purpose}`);
+        if (s.reasoning) lines.push(`Classification reason: ${s.reasoning}`);
+        if (s.snippet) lines.push(`Summary: ${s.snippet}`);
+        if (s.tags?.length > 0) lines.push(`Tags: ${s.tags.join(', ')}`);
+        // Image-specific context
+        if (s.isImage) {
+          if (s.contentType) lines.push(`Content type: ${s.contentType}`);
+          if (s.hasText) lines.push(`Contains text: Yes`);
+          if (s.colors?.length > 0) lines.push(`Color palette: ${s.colors.slice(0, 5).join(', ')}`);
+        }
+        // Include extracted text for deeper context if available
+        if (s.extractedText)
+          lines.push(`Content excerpt: ${s.extractedText.substring(0, 1000)}...`);
+        return lines.join('\n');
       })
-      .join('\n\n');
+      .join('\n\n---\n\n');
     const personaText = persona?.guidance
       ? `${persona.label}\n${persona.guidance}`
       : '(no persona guidance)';
 
     return `
 You are StratoSort, an intelligent and helpful local document assistant.
+You have access to the user's documents and can answer questions about them.
 You may use your general training knowledge, but you must clearly distinguish it from document-sourced information.
 
 Persona guidance:
@@ -431,7 +494,7 @@ User question:
 ${query}
 
 Document sources (for citations):
-${sourcesText || '(no sources)'}
+${sourcesText || '(no documents found)'}
 
 Return ONLY valid JSON with this shape:
 {
@@ -445,10 +508,12 @@ Return ONLY valid JSON with this shape:
 }
 
 Rules:
+- Use the document metadata (category, type, entity, project, purpose, tags) to provide rich context.
 - Put document-grounded statements only in documentAnswer, with citations to the source ids above.
 - Put training-knowledge statements only in modelAnswer, with no citations.
 - If no document support exists, documentAnswer should be empty.
 - If the question is conversational (e.g., "hello", "who are you"), respond in modelAnswer.
+- When discussing documents, mention relevant details like entity, project, and purpose when helpful.
 - Keep responses concise and conversational.
 `.trim();
   }

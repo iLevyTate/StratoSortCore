@@ -538,6 +538,13 @@ const CONFIG_SCHEMA = {
       type: 'boolean',
       default: DEFAULT_SETTINGS.backgroundMode,
       description: 'Enable background processing mode'
+    },
+    /** Redact file/folder paths in the UI (for demos/recordings) */
+    redactPaths: {
+      type: 'boolean',
+      default: false,
+      envVar: 'STRATOSORT_REDACT_PATHS',
+      description: 'Redact file/folder paths in the UI (for demos/recordings)'
     }
   },
 

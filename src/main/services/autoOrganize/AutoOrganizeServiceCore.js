@@ -116,7 +116,17 @@ class AutoOrganizeServiceCore {
       batchSize = DEFAULT_BATCH_SIZE
     } = options;
 
-    const effectiveThreshold = coerceConfidence(confidenceThreshold, this.thresholds.confidence);
+    // IMPORTANT: Options may raise the threshold, but must not lower it below the
+    // service's configured threshold (which is synced from settings).
+    // This prevents callers from accidentally bypassing user safety preferences.
+    const baseThreshold = coerceConfidence(
+      this.thresholds.confidence,
+      DEFAULT_SETTINGS.confidenceThreshold
+    );
+    const requestedThreshold =
+      confidenceThreshold == null ? null : coerceConfidence(confidenceThreshold, baseThreshold);
+    const effectiveThreshold =
+      requestedThreshold == null ? baseThreshold : Math.max(baseThreshold, requestedThreshold);
 
     logger.info('[AutoOrganize] Starting automatic organization', {
       fileCount: files.length,

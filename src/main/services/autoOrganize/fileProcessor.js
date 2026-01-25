@@ -83,12 +83,9 @@ async function processFilesWithoutAnalysis(files, smartFolders, _defaultLocation
  */
 async function processFilesIndividually(files, smartFolders, options, results, suggestionService) {
   const { confidenceThreshold, defaultLocation, preserveNames } = options;
-  // FIX LOW-20: Use constant for base threshold
-  const baseThreshold = 0.75;
-  const effectiveThreshold = Math.max(
-    Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0,
-    baseThreshold
-  );
+  // FIX: Use user's configured threshold directly - don't override with minimum
+  // This allows users to organize files with lower confidence (e.g., filename-only analysis)
+  const effectiveThreshold = Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0.75;
 
   for (const file of files) {
     try {
@@ -266,14 +263,12 @@ async function processFilesIndividually(files, smartFolders, options, results, s
 async function processNewFile(filePath, smartFolders, options, suggestionService, undoRedo) {
   const {
     autoOrganizeEnabled = false,
-    // FIX LOW-20: Use constant for default confidence threshold
+    // Default confidence threshold - user can override via settings
     confidenceThreshold = 0.75
   } = options;
-  const baseThreshold = 0.75;
-  const effectiveThreshold = Math.max(
-    Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0,
-    baseThreshold
-  );
+  // FIX: Use user's configured threshold directly - don't override with minimum
+  // This allows users to organize files with lower confidence (e.g., filename-only analysis)
+  const effectiveThreshold = Number.isFinite(confidenceThreshold) ? confidenceThreshold : 0.75;
 
   if (!autoOrganizeEnabled) {
     logger.info('[AutoOrganize] Auto-organize disabled, skipping file:', filePath);
@@ -437,12 +432,13 @@ async function processNewFile(filePath, smartFolders, options, suggestionService
       };
     }
 
-    logger.info('[AutoOrganize] File confidence too low for auto-organization', {
+    // Confidence below threshold - do not move automatically.
+    const confidence = suggestion.confidence || 0;
+    logger.info('[AutoOrganize] File confidence below threshold; skipping auto-organize', {
       file: filePath,
-      confidence: suggestion.confidence || 0,
+      confidence,
       threshold: effectiveThreshold
     });
-
     return null;
   } catch (error) {
     logger.error('[AutoOrganize] Error processing new file:', {

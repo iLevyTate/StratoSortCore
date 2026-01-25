@@ -232,7 +232,17 @@ const ALLOWED_METADATA_FIELDS = [
   'colors',
   'has_text',
   'subject',
-  'confidence'
+  'confidence',
+  // Extended fields for document conversations
+  'documentType',
+  'extractedText',
+  'extractionMethod',
+  'keyEntities',
+  'dates',
+  'reasoning',
+  // Image-specific fields
+  'has_text',
+  'content_type'
 ];
 
 /**

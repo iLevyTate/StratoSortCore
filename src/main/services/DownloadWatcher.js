@@ -541,7 +541,26 @@ class DownloadWatcher {
         // 1. Embed for search
         await this._embedAnalyzedFile(filePath, analysisResult);
 
-        // 2. Apply naming convention if enabled (rename in place)
+        // 2. Record to analysis history for conversations and queries
+        if (this.analysisHistoryService) {
+          try {
+            await recordAnalysisResult({
+              filePath,
+              result: analysisResult,
+              processingTime: analysisResult.processingTime || 0,
+              modelType: isImage ? 'vision' : 'llm',
+              analysisHistory: this.analysisHistoryService,
+              logger
+            });
+          } catch (historyError) {
+            logger.warn('[DOWNLOAD-WATCHER] Failed to record analysis history:', {
+              filePath,
+              error: historyError.message
+            });
+          }
+        }
+
+        // 3. Apply naming convention if enabled (rename in place)
         const settings = await this.settingsService.load();
         if (settings && settings.namingConvention) {
           // Construct naming settings object to match old implementation expectations
@@ -747,20 +766,36 @@ class DownloadWatcher {
         // Record to analysis history (post-move, use destination path)
         if (this.analysisHistoryService) {
           try {
+            // Get analysis data from result (may be nested in result.analysis)
+            const analysis = result.analysis || result;
             const analysisForHistory = {
               suggestedName: path.basename(result.destination),
               category: result.category || result.folder || destFolder || 'organized',
               // FIX NEW-10: Include keywords from analysis for history display
-              keywords: result.keywords || result.analysis?.keywords || [],
+              keywords: result.keywords || analysis.keywords || [],
               // UI expects percentage, not fraction
               confidence: confidencePercent,
               smartFolder: result.smartFolder || null,
-              summary: result.summary || result.analysis?.summary || '',
+              summary: result.summary || analysis.summary || '',
               model: 'auto-organize',
               suggestedPath: result.destination,
               actualPath: result.destination,
               renamed: true,
-              newName: path.basename(result.destination)
+              newName: path.basename(result.destination),
+              // Extended fields for richer context in chat/search
+              documentType: analysis.type || null,
+              entity: analysis.entity || null,
+              project: analysis.project || null,
+              purpose: analysis.purpose || null,
+              reasoning: analysis.reasoning || null,
+              documentDate: analysis.date || null,
+              keyEntities: analysis.keyEntities || [],
+              extractionMethod: analysis.extractionMethod || null,
+              extractedText: analysis.extractedText || null,
+              // Image-specific fields
+              content_type: analysis.content_type || null,
+              has_text: typeof analysis.has_text === 'boolean' ? analysis.has_text : null,
+              colors: Array.isArray(analysis.colors) ? analysis.colors : null
             };
 
             await recordAnalysisResult({
@@ -989,7 +1024,7 @@ class DownloadWatcher {
     try {
       // Extract analysis data - handle different result structures
       const analysis = analysisResult.analysis || analysisResult;
-      const summary = analysis.summary || analysis.description || '';
+      const summary = analysis.summary || analysis.description || analysis.purpose || '';
       const category = analysis.category || analysis.folder || 'Uncategorized';
       const keywords = analysis.keywords || analysis.tags || [];
       const subject = analysis.subject || analysis.suggestedName || '';
@@ -1008,8 +1043,18 @@ class DownloadWatcher {
         return;
       }
 
+      // FIX: Include more context for richer embeddings and conversations
+      const purpose = analysis.purpose || '';
+      const entity = analysis.entity || '';
+      const project = analysis.project || '';
+      const documentType = analysis.type || '';
+      const extractedText = analysis.extractedText || '';
+
       // Generate embedding vector using folderMatcher
-      const textToEmbed = [summary, subject, keywords?.join(' ')].filter(Boolean).join(' ');
+      // Include more context for better semantic matching
+      const textToEmbed = [summary, subject, purpose, keywords?.join(' ')]
+        .filter(Boolean)
+        .join(' ');
       const embedding = await this.folderMatcher.embedText(textToEmbed);
 
       if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
@@ -1023,21 +1068,44 @@ class DownloadWatcher {
       const isImage = isImagePath(filePath);
       const fileName = path.basename(filePath);
 
-      // Upsert to ChromaDB
+      // Build metadata object - shared for documents and images
+      const baseMeta = {
+        path: filePath,
+        name: fileName,
+        category,
+        subject,
+        summary: summary.substring(0, 2000), // Increased limit for richer context
+        purpose: purpose.substring(0, 1000),
+        tags: JSON.stringify(keywords.slice(0, 15)), // Increased tag limit
+        type: isImage ? 'image' : 'document',
+        confidence,
+        // Additional fields for document/image conversations
+        entity: entity.substring(0, 255),
+        project: project.substring(0, 255),
+        documentType: documentType.substring(0, 100),
+        reasoning: (analysis.reasoning || '').substring(0, 500),
+        // Store truncated extracted text for conversation context
+        extractedText: extractedText.substring(0, 5000),
+        extractionMethod: analysis.extractionMethod || 'unknown',
+        // Document date for time-based queries
+        date: analysis.date || null
+      };
+
+      // Add image-specific metadata for richer image conversations
+      if (isImage) {
+        baseMeta.content_type = analysis.content_type || 'unknown';
+        baseMeta.has_text = Boolean(analysis.has_text);
+        if (Array.isArray(analysis.colors) && analysis.colors.length > 0) {
+          baseMeta.colors = JSON.stringify(analysis.colors.slice(0, 10));
+        }
+      }
+
+      // Upsert to ChromaDB with comprehensive metadata for conversations
       await this.chromaDbService.upsertFile({
         id: fileId,
         vector: embedding.vector,
         model: embedding.model || 'unknown',
-        meta: {
-          path: filePath,
-          name: fileName,
-          category,
-          subject,
-          summary: summary.substring(0, 1000), // Limit summary length
-          tags: JSON.stringify(keywords.slice(0, 10)), // Limit tags
-          type: isImage ? 'image' : 'document',
-          confidence // FIX: Include confidence score in metadata for search display
-        },
+        meta: baseMeta,
         updatedAt: new Date().toISOString()
       });
 

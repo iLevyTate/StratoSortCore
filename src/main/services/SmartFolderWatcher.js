@@ -851,6 +851,7 @@ class SmartFolderWatcher {
               ? analysis.confidence
               : derivedConfidence;
 
+          const isImage = isImageFile(filePath);
           const historyPayload = {
             // The history utility uses suggestedName as the subject fallback.
             // Prefer any naming-convention output; otherwise keep the original basename.
@@ -858,10 +859,24 @@ class SmartFolderWatcher {
             category: analysis.category || analysis.folder || 'uncategorized',
             keywords,
             confidence: historyConfidence,
-            summary: analysis.summary || analysis.description || analysis.purpose || '',
+            summary: analysis.summary || analysis.description || '',
             extractedText: analysis.extractedText || null,
             smartFolder: analysis.smartFolder || analysis.folder || null,
-            model: analysis.model || result.model || (isImageFile(filePath) ? 'vision' : 'llm')
+            model: analysis.model || result.model || (isImage ? 'vision' : 'llm'),
+            // Extended fields for document/image conversations
+            // CRITICAL: Use field names that match AnalysisHistoryServiceCore expectations
+            documentType: analysis.type || null,
+            entity: analysis.entity || null,
+            project: analysis.project || null,
+            purpose: analysis.purpose || null,
+            reasoning: analysis.reasoning || null,
+            documentDate: analysis.date || null,
+            keyEntities: analysis.keyEntities || [],
+            extractionMethod: analysis.extractionMethod || null,
+            // Image-specific fields
+            content_type: isImage ? analysis.content_type || null : null,
+            has_text: isImage ? Boolean(analysis.has_text) : null,
+            colors: isImage && Array.isArray(analysis.colors) ? analysis.colors : null
           };
 
           await recordAnalysisResult({
@@ -987,7 +1002,7 @@ class SmartFolderWatcher {
       const summary = analysis.summary || analysis.description || analysis.purpose || '';
       const category = analysis.category || 'Uncategorized';
       const keywords = analysis.keywords || analysis.tags || [];
-      const subject = analysis.subject || '';
+      const subject = analysis.subject || analysis.suggestedName || '';
       // FIX: Extract confidence score - normalize to 0-100 integer
       const rawConfidence = analysis.confidence ?? analysisResult.confidence ?? 0;
       const confidence =
@@ -1003,8 +1018,18 @@ class SmartFolderWatcher {
         return;
       }
 
+      // FIX: Include more context for richer embeddings and conversations
+      const purpose = analysis.purpose || '';
+      const entity = analysis.entity || '';
+      const project = analysis.project || '';
+      const documentType = analysis.type || '';
+      const extractedText = analysis.extractedText || '';
+
       // Generate embedding vector using folderMatcher
-      const textToEmbed = [summary, subject, keywords?.join(' ')].filter(Boolean).join(' ');
+      // Include more context for better semantic matching
+      const textToEmbed = [summary, subject, purpose, keywords?.join(' ')]
+        .filter(Boolean)
+        .join(' ');
       const embedding = await this.folderMatcher.embedText(textToEmbed);
 
       if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
@@ -1017,21 +1042,45 @@ class SmartFolderWatcher {
       const fileId = getCanonicalFileId(filePath, isImageFile(filePath));
       const fileName = path.basename(filePath);
 
-      // Upsert to ChromaDB
+      // Build metadata object - shared for documents and images
+      const isImage = isImageFile(filePath);
+      const baseMeta = {
+        path: filePath,
+        name: fileName,
+        category,
+        subject,
+        summary: summary.substring(0, 2000), // Increased limit for richer context
+        purpose: purpose.substring(0, 1000),
+        tags: JSON.stringify(keywords.slice(0, 15)), // Increased tag limit
+        type: isImage ? 'image' : 'document',
+        confidence,
+        // Additional fields for document/image conversations
+        entity: entity.substring(0, 255),
+        project: project.substring(0, 255),
+        documentType: documentType.substring(0, 100),
+        reasoning: (analysis.reasoning || '').substring(0, 500),
+        // Store truncated extracted text for conversation context
+        extractedText: extractedText.substring(0, 5000),
+        extractionMethod: analysis.extractionMethod || 'unknown',
+        // Document date for time-based queries
+        date: analysis.date || null
+      };
+
+      // Add image-specific metadata for richer image conversations
+      if (isImage) {
+        baseMeta.content_type = analysis.content_type || 'unknown';
+        baseMeta.has_text = Boolean(analysis.has_text);
+        if (Array.isArray(analysis.colors) && analysis.colors.length > 0) {
+          baseMeta.colors = JSON.stringify(analysis.colors.slice(0, 10));
+        }
+      }
+
+      // Upsert to ChromaDB with comprehensive metadata for conversations
       await this.chromaDbService.upsertFile({
         id: fileId,
         vector: embedding.vector,
         model: embedding.model || 'unknown',
-        meta: {
-          path: filePath,
-          name: fileName,
-          category,
-          subject,
-          summary: summary.substring(0, 1000), // Limit summary length
-          tags: JSON.stringify(keywords.slice(0, 10)), // Limit tags
-          type: isImageFile(filePath) ? 'image' : 'document',
-          confidence // FIX: Include confidence score in metadata for search display
-        },
+        meta: baseMeta,
         updatedAt: new Date().toISOString()
       });
 

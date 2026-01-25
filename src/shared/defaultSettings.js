@@ -26,7 +26,8 @@ const DEFAULT_SETTINGS = {
   autoOrganize: false,
   backgroundMode: false,
   launchOnStartup: false,
-  // Organization Confidence Threshold (files must meet this confidence to be auto-organized)
+  // Organization Confidence Threshold (files must meet this confidence to be auto-organized to suggested folder)
+  // Files below this threshold are routed to "Uncategorized" for manual review
   confidenceThreshold: 0.75,
   // Smart folder routing mode: auto-select based on embedding health
   smartFolderRoutingMode: 'auto',

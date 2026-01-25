@@ -255,7 +255,7 @@ async function applySemanticFolderMatching(params) {
           : Math.round(rawConfidence * 100)
         : 0;
 
-    // Build metadata based on type
+    // Build metadata based on type - comprehensive for chat/search/graph
     const baseMeta = {
       path: filePath,
       name: fileName,
@@ -267,23 +267,26 @@ async function applySemanticFolderMatching(params) {
       extractionMethod: analysis.extractionMethod || (extractedText ? 'content' : 'analysis'),
       summary: (summaryForEmbedding || analysis.summary || analysis.purpose || '').substring(
         0,
-        500
+        2000
       ),
       tags: Array.isArray(analysis.keywords) ? analysis.keywords : [],
       keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
       date: analysis.date,
-      suggestedName: analysis.suggestedName
+      suggestedName: analysis.suggestedName,
+      // Common fields for all file types
+      entity: analysis.entity || '',
+      project: analysis.project || '',
+      purpose: (analysis.purpose || '').substring(0, 1000),
+      reasoning: (analysis.reasoning || '').substring(0, 500),
+      documentType: analysis.type || '',
+      extractedText: (extractedText || '').substring(0, 5000)
     };
 
-    // Add type-specific metadata
+    // Add image-specific metadata
     if (type === 'image') {
-      baseMeta.content_type = analysis.content_type;
+      baseMeta.content_type = analysis.content_type || 'unknown';
       baseMeta.colors = Array.isArray(analysis.colors) ? analysis.colors : [];
       baseMeta.has_text = analysis.has_text === true;
-    } else {
-      baseMeta.entity = analysis.entity;
-      baseMeta.project = analysis.project;
-      baseMeta.purpose = analysis.purpose;
     }
 
     // Queue embedding for batch persistence

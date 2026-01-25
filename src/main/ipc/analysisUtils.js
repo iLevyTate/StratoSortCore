@@ -177,18 +177,41 @@ async function recordAnalysisResult({
       mimeType: null
     };
 
+    // FIX: Capture comprehensive data for document/image conversations
+    // Include all LLM-extracted fields for richer context in chat/queries
     const normalized = {
       subject: normalizeText(result.suggestedName || path.basename(filePath), { maxLength: 255 }),
       category: normalizeText(result.category || 'uncategorized', { maxLength: 100 }),
       tags: normalizeKeywords(Array.isArray(result.keywords) ? result.keywords : []),
       confidence: typeof result.confidence === 'number' ? result.confidence : 0,
-      summary: normalizeOptionalText(result.purpose || result.summary || '', { maxLength: 2000 }),
-      extractedText: normalizeOptionalText(result.extractedText || '', { maxLength: 20000 }),
+      // Combine purpose and summary for comprehensive context
+      summary: normalizeOptionalText(result.summary || result.purpose || result.description || '', {
+        maxLength: 2000
+      }),
+      // Store full extracted text for conversation context (increased limit)
+      extractedText: normalizeOptionalText(result.extractedText || '', { maxLength: 50000 }),
       model: normalizeText(result.model || modelType, { maxLength: 100 }),
       processingTime,
       smartFolder: normalizeOptionalText(result.smartFolder || null, { maxLength: 255 }),
       newName: normalizeOptionalText(result.suggestedName || null, { maxLength: 255 }),
-      renamed: Boolean(result.suggestedName)
+      renamed: Boolean(result.suggestedName),
+      // Additional fields for richer document/image context
+      documentType: normalizeOptionalText(result.type || null, { maxLength: 100 }),
+      entity: normalizeOptionalText(result.entity || null, { maxLength: 255 }),
+      project: normalizeOptionalText(result.project || null, { maxLength: 255 }),
+      purpose: normalizeOptionalText(result.purpose || null, { maxLength: 1000 }),
+      reasoning: normalizeOptionalText(result.reasoning || null, { maxLength: 500 }),
+      documentDate: normalizeOptionalText(result.date || null, { maxLength: 50 }),
+      // Key entities for conversation (people, organizations, dates mentioned)
+      keyEntities: Array.isArray(result.keyEntities)
+        ? result.keyEntities.slice(0, 20).map((e) => normalizeText(e, { maxLength: 100 }))
+        : [],
+      // Store extraction method for debugging
+      extractionMethod: normalizeOptionalText(result.extractionMethod || null, { maxLength: 50 }),
+      // Image-specific fields
+      content_type: normalizeOptionalText(result.content_type || null, { maxLength: 100 }),
+      has_text: typeof result.has_text === 'boolean' ? result.has_text : null,
+      colors: Array.isArray(result.colors) ? result.colors.slice(0, 10) : null
     };
 
     await analysisHistory.recordAnalysis(fileInfo, normalized);

@@ -351,7 +351,7 @@ class AnalysisHistoryServiceCore {
             lastModified: fileInfo.lastModified,
             mimeType: fileInfo.mimeType || null,
 
-            // Analysis results
+            // Analysis results - comprehensive data for document/image conversations
             analysis: {
               subject: safeResults.subject || null,
               category: safeResults.category || null,
@@ -359,11 +359,24 @@ class AnalysisHistoryServiceCore {
               confidence: safeResults.confidence || 0,
               summary: safeResults.summary || null,
               extractedText: safeResults.extractedText || null,
+              // Document/image metadata for richer context
+              documentType: safeResults.documentType || null,
+              entity: safeResults.entity || null,
+              project: safeResults.project || null,
+              purpose: safeResults.purpose || null,
+              reasoning: safeResults.reasoning || null,
+              documentDate: safeResults.documentDate || null,
+              extractionMethod: safeResults.extractionMethod || null,
+              // Structured data for queries
               keyEntities: safeResults.keyEntities || [],
               dates: safeResults.dates || [],
               amounts: safeResults.amounts || [],
               language: safeResults.language || null,
-              sentiment: safeResults.sentiment || null
+              sentiment: safeResults.sentiment || null,
+              // Image-specific fields
+              content_type: safeResults.content_type || null,
+              has_text: safeResults.has_text ?? null,
+              colors: safeResults.colors || null
             },
 
             // Processing metadata

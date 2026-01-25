@@ -1037,9 +1037,46 @@ Now generate a description for "${folderName}":`;
           };
         }
 
-        logger.info('[FOLDER-SCAN] Scanning folder structure:', sanitizedPath);
+        const scanStartedAt = Date.now();
+        logger.info('[FOLDER-SCAN] Scanning folder structure', {
+          path: sanitizedPath,
+          isUNC: isUNCPath(sanitizedPath),
+          timeoutMs: TIMEOUTS.DIRECTORY_SCAN || 60000
+        });
+
+        // Dev-only: allow simulating slow folder scans without a network drive.
+        // Guardrails:
+        // - opt-in via env var
+        // - disabled under Jest
+        // - clamped to prevent accidental multi-minute stalls
+        // Set STRATOSORT_SCAN_STRUCTURE_DELAY_MS=35000 to verify IPC timeout behavior.
+        if (process.env.NODE_ENV === 'development' && !process.env.JEST_WORKER_ID) {
+          const rawDelayMs = Number.parseInt(process.env.STRATOSORT_SCAN_STRUCTURE_DELAY_MS, 10);
+          const delayMs =
+            Number.isFinite(rawDelayMs) && rawDelayMs > 0
+              ? Math.min(rawDelayMs, TIMEOUTS.DIRECTORY_SCAN || 60000)
+              : 0;
+
+          if (delayMs > 0) {
+            logger.warn('[FOLDER-SCAN] Dev scan delay enabled', {
+              delayMs,
+              requestedDelayMs: rawDelayMs
+            });
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+        }
+
         // Reuse existing scanner (shallow aggregation is done in renderer today)
-        const items = await scanDirectory(sanitizedPath);
+        const items = await scanDirectory(sanitizedPath, undefined, {
+          // For folder selection we only need names/paths; stats are very expensive on network shares.
+          includeStats: false,
+          // Avoid runaway scans on giant folders / network drives.
+          maxDepth: 10,
+          maxFiles: 5000,
+          timeoutMs: TIMEOUTS.DIRECTORY_SCAN || 60000,
+          perDirectoryTimeoutMs: TIMEOUTS.FILE_READ || 5000
+        });
+        const scanMeta = items && items.__scanMeta ? items.__scanMeta : null;
         // Flatten file-like items with basic filtering similar to prior inline implementation
         const flatten = (nodes) => {
           const out = [];
@@ -1056,8 +1093,31 @@ Now generate a description for "${folderName}":`;
           return out;
         };
         const files = flatten(items);
-        logger.info('[FOLDER-SCAN] Found', files.length, 'supported files');
-        return { success: true, files };
+        const partial = !!scanMeta?.partial;
+        logger.info('[FOLDER-SCAN] Completed scan', {
+          durationMs: Date.now() - scanStartedAt,
+          path: sanitizedPath,
+          fileCount: files.length,
+          partial,
+          reasons: scanMeta?.reasons,
+          timeouts: scanMeta?.timeouts,
+          skippedDirectories: scanMeta?.skippedDirectories,
+          skippedErrors: scanMeta?.skippedErrors,
+          directoriesVisited: scanMeta?.directoriesVisited,
+          filesIncluded: scanMeta?.filesIncluded,
+          lastDirectory: scanMeta?.lastDirectory,
+          lastEntry: scanMeta?.lastEntry,
+          errorSamples: scanMeta?.errorSamples
+        });
+        return {
+          success: true,
+          files,
+          ...(partial && {
+            partial: true,
+            skippedDirectories: scanMeta?.skippedDirectories || 0,
+            skippedErrors: scanMeta?.skippedErrors || 0
+          })
+        };
       } catch (error) {
         logger.error('[FOLDER-SCAN] Error scanning folder structure:', error);
         return { success: false, error: error.message };

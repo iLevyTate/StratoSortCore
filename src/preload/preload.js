@@ -107,6 +107,11 @@ class SecureIPCManager {
 
   _getInvokeTimeout(channel) {
     let timeout = PERF_LIMITS.IPC_INVOKE_TIMEOUT || 30000;
+    // Folder scans can legitimately take longer than default IPC timeout,
+    // especially for large folders or slower/network drives.
+    if (channel === IPC_CHANNELS.SMART_FOLDERS.SCAN_STRUCTURE) {
+      timeout = TIMEOUTS.DIRECTORY_SCAN || 60000;
+    }
     if (
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
@@ -336,6 +341,19 @@ class SecureIPCManager {
 
 // Initialize secure IPC manager
 const secureIPC = new SecureIPCManager();
+
+// Log derived invoke timeouts once at startup to help diagnose preload caching/reload issues.
+try {
+  log.info('[SecureIPC] Invoke timeouts', {
+    defaultInvokeTimeoutMs: PERF_LIMITS.IPC_INVOKE_TIMEOUT || 30000,
+    directoryScanTimeoutMs: TIMEOUTS.DIRECTORY_SCAN || 60000,
+    scanStructureInvokeTimeoutMs: secureIPC._getInvokeTimeout(
+      IPC_CHANNELS.SMART_FOLDERS.SCAN_STRUCTURE
+    )
+  });
+} catch {
+  // Non-fatal (logging only)
+}
 
 // FIX: Periodic listener audit to detect potential memory leaks (every 10 minutes)
 // Store interval ID for cleanup on window unload

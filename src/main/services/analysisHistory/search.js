@@ -205,6 +205,44 @@ async function searchAnalysis(analysisHistory, cache, searchCacheTTL, query, opt
       score += 5;
     }
 
+    // FIX: Search extended document fields for richer conversation context
+    if (entry.analysis.entity && entry.analysis.entity.toLowerCase().includes(queryLower)) {
+      score += 6; // Entity is important for "documents from X" queries
+    }
+
+    if (entry.analysis.project && entry.analysis.project.toLowerCase().includes(queryLower)) {
+      score += 5; // Project context is useful
+    }
+
+    if (entry.analysis.purpose && entry.analysis.purpose.toLowerCase().includes(queryLower)) {
+      score += 4;
+    }
+
+    if (
+      entry.analysis.documentType &&
+      entry.analysis.documentType.toLowerCase().includes(queryLower)
+    ) {
+      score += 5; // Document type like "invoice", "contract" is searchable
+    }
+
+    // Search keyEntities array
+    if (entry.analysis.keyEntities && Array.isArray(entry.analysis.keyEntities)) {
+      for (const entity of entry.analysis.keyEntities) {
+        if (entity.toLowerCase().includes(queryLower)) {
+          score += 4;
+          break;
+        }
+      }
+    }
+
+    // Image-specific: search content_type (e.g., "screenshot", "photograph")
+    if (
+      entry.analysis.content_type &&
+      entry.analysis.content_type.toLowerCase().includes(queryLower)
+    ) {
+      score += 4;
+    }
+
     if (
       score === 0 &&
       entry.analysis.extractedText &&
