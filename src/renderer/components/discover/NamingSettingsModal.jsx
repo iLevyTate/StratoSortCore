@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import Modal from '../Modal';
 import NamingSettings from './NamingSettings';
 import { Button } from '../ui';
+import { Inline, Stack } from '../layout';
 
 const NamingSettingsModal = memo(function NamingSettingsModal({
   isOpen,
@@ -25,14 +26,14 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
       closeOnOverlayClick
       showCloseButton
       footer={
-        <div className="flex justify-end">
+        <Inline className="justify-end" gap="compact" wrap={false}>
           <Button onClick={onClose} variant="primary">
             Done
           </Button>
-        </div>
+        </Inline>
       }
     >
-      <div className="flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
+      <Stack gap="default">
         <p className="text-sm text-system-gray-600">
           Configure how StratoSort will rename your files during analysis.
         </p>
@@ -58,7 +59,7 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
             </span>
           </div>
         </div>
-      </div>
+      </Stack>
     </Modal>
   );
 });

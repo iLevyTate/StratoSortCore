@@ -16,6 +16,7 @@ import { logger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { useNotification } from '../contexts/NotificationContext';
+import { getElectronAPI, eventsIpc, ollamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch } from '../store/hooks';
 import { toggleSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
@@ -54,7 +55,7 @@ logger.setContext('SettingsPanel');
 
 // FIX: Helper to safely check if electronAPI is available
 const isElectronAPIAvailable = () => {
-  return typeof window !== 'undefined' && window.electronAPI != null;
+  return getElectronAPI() != null;
 };
 
 // Allowed embedding models - must match settingsValidation.js enum
@@ -178,7 +179,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   // Uses centralized DEFAULT_SETTINGS to avoid duplication and ensure consistency
   const loadSettings = useCallback(async () => {
     try {
-      const savedSettings = await window.electronAPI.settings.get();
+      const savedSettings = await settingsIpc.get();
       // Avoid auto-save loops caused by setSettings during hydration
       skipAutoSaveRef.current = true;
       // Set complete settings: centralized defaults merged with saved settings
@@ -203,7 +204,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const loadOllamaModels = useCallback(async () => {
     try {
       setIsRefreshingModels(true);
-      const response = await window.electronAPI.ollama.getModels();
+      const response = await ollamaIpc.getModels();
       const categories = response?.categories || {
         text: [],
         vision: [],
@@ -312,7 +313,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
     (async () => {
       try {
-        const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
+        const res = await ollamaIpc.testConnection(settings.ollamaHost);
         if (!isMounted) return;
         setOllamaHealth(res?.ollamaHealth || null);
         if (res?.success && isMounted) {
@@ -361,7 +362,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       // Avoid auto-save loops caused by setSettings during explicit save
       skipAutoSaveRef.current = true;
       applySettingsUpdate(normalizedSettings);
-      const res = await window.electronAPI.settings.save(normalizedSettings);
+      const res = await settingsIpc.save(normalizedSettings);
       if (res?.success === false) {
         throw new Error(res?.error || 'Failed to save settings');
       }
@@ -400,7 +401,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const normalizedSettings = sanitizeSettings({
         ...currentSettings
       });
-      await window.electronAPI.settings.save(normalizedSettings);
+      await settingsIpc.save(normalizedSettings);
       // Note: We intentionally don't apply res.settings here to avoid race conditions.
       // The local state is the source of truth during editing.
     } catch (error) {
@@ -444,7 +445,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     // Note: settings is initialized with DEFAULT_SETTINGS, so !settings check alone is insufficient
     if (!settings?.ollamaHost) return;
     try {
-      const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
+      const res = await ollamaIpc.testConnection(settings.ollamaHost);
       setOllamaHealth(res?.ollamaHealth || null);
       if (res?.success) {
         const modelText = res.modelCount === 1 ? '1 model' : `${res.modelCount} models`;
@@ -469,7 +470,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setIsAddingModel(true);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
-        progressUnsubRef.current = window.electronAPI.events.onOperationProgress((evt) => {
+        progressUnsubRef.current = eventsIpc.onOperationProgress((evt) => {
           if (evt?.type === 'ollama-pull' && evt?.model?.includes(newModel.trim())) {
             setPullProgress(evt.progress || {});
           }
@@ -477,7 +478,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       } catch {
         // Non-fatal if progress subscription fails
       }
-      const res = await window.electronAPI.ollama.pullModels([newModel.trim()]);
+      const res = await ollamaIpc.pullModels([newModel.trim()]);
       const result = res?.results?.[0];
       if (result?.success) {
         addNotification(`Model "${newModel.trim()}" installed`, 'success');

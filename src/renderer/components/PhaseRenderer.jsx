@@ -119,7 +119,7 @@ function PhaseRenderer() {
 
   return (
     <>
-      <div className="flex flex-col w-full min-h-full">
+      <div className="flex flex-col w-full h-full">
         <Suspense fallback={<LazyLoadingSpinner message="Loading phase..." />}>
           <AnimatePresence mode="wait" initial={false}>
             <motion.div

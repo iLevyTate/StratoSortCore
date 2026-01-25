@@ -2,10 +2,14 @@ import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import { FolderOpen } from 'lucide-react';
 import { StatusBadge } from '../ui';
+import Card from '../ui/Card';
+import { Text } from '../ui/Typography';
 
 const AnalysisProgress = memo(function AnalysisProgress({
   progress = { current: 0, total: 0 },
-  currentFile = ''
+  currentFile = '',
+  surface = 'card',
+  className = ''
 }) {
   const total = Math.max(0, Number(progress.total) || 0);
   const current = Math.max(
@@ -16,9 +20,8 @@ const AnalysisProgress = memo(function AnalysisProgress({
   const isDone = hasTotals && current >= total;
   const percent = hasTotals ? Math.min(100, Math.round((current / total) * 100)) : 0;
 
-  return (
-    // FIX: Add aria-live for screen reader accessibility
-    <div className="surface-card p-5" role="status" aria-live="polite" aria-atomic="true">
+  const Content = (
+    <div className={`w-full ${className}`}>
       <div className="flex items-center justify-between gap-4 mb-4">
         <div className="flex items-center gap-3">
           <div className="relative h-10 w-10">
@@ -28,16 +31,16 @@ const AnalysisProgress = memo(function AnalysisProgress({
             </div>
           </div>
           <div>
-            <p className="text-sm font-semibold text-system-gray-900">
+            <Text variant="small" className="font-semibold text-system-gray-900">
               {isDone
                 ? 'Analysis complete'
                 : hasTotals
                   ? `Analyzing ${current} of ${total}`
                   : 'Preparing analysis...'}
-            </p>
-            <p className="text-xs text-system-gray-600">
+            </Text>
+            <Text variant="tiny" className="text-system-gray-600">
               {hasTotals ? `${percent}%` : 'Estimating remaining time'}
-            </p>
+            </Text>
           </div>
         </div>
         {hasTotals && <StatusBadge variant="info">{percent}%</StatusBadge>}
@@ -45,20 +48,35 @@ const AnalysisProgress = memo(function AnalysisProgress({
 
       <div className="space-y-3">
         {hasTotals ? (
-          <div className="progress-enhanced">
-            <div className="progress-bar-enhanced" style={{ width: `${percent}%` }} />
+          <div className="h-2 w-full bg-system-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-stratosort-blue transition-all duration-300 ease-out"
+              style={{ width: `${percent}%` }}
+            />
           </div>
         ) : (
-          <div className="indeterminate-bar" />
+          <div className="h-2 w-full bg-system-gray-100 rounded-full overflow-hidden relative">
+            <div className="absolute inset-y-0 left-0 w-1/3 bg-stratosort-blue animate-[shimmer_1.5s_infinite]" />
+          </div>
         )}
         {currentFile && (
-          <div className="text-xs text-system-gray-500 break-words">
+          <Text variant="tiny" className="text-system-gray-500 break-words truncate">
             {isDone ? 'Last processed:' : 'Currently processing:'}{' '}
-            <span className="text-system-gray-700">{currentFile}</span>
-          </div>
+            <span className="text-system-gray-700 font-medium">{currentFile}</span>
+          </Text>
         )}
       </div>
     </div>
+  );
+
+  if (surface === 'none') {
+    return Content;
+  }
+
+  return (
+    <Card variant="default" className="p-5" role="status" aria-live="polite" aria-atomic="true">
+      {Content}
+    </Card>
   );
 });
 
@@ -67,7 +85,9 @@ AnalysisProgress.propTypes = {
     current: PropTypes.number,
     total: PropTypes.number
   }),
-  currentFile: PropTypes.string
+  currentFile: PropTypes.string,
+  surface: PropTypes.oneOf(['card', 'none']),
+  className: PropTypes.string
 };
 
 export default AnalysisProgress;

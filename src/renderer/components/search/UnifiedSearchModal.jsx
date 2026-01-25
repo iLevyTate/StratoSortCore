@@ -35,6 +35,7 @@ import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { GRAPH_FEATURE_FLAGS } from '../../../shared/featureFlags';
 import { safeBasename } from '../../utils/pathUtils';
+import { formatDisplayPath } from '../../utils/pathDisplay';
 import { scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
 import { makeQueryNodeId, defaultNodePosition } from '../../utils/graphUtils';
 import {
@@ -51,7 +52,7 @@ import FileNode from './nodes/FileNode';
 import FolderNode from './nodes/FolderNode';
 import QueryNode from './nodes/QueryNode';
 import { useGraphState, useGraphKeyboardNav, useFileActions } from '../../hooks';
-import { useAppDispatch } from '../../store/hooks';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { toggleSettings } from '../../store/slices/uiSlice';
 import SimilarityEdge from './SimilarityEdge';
 import QueryMatchEdge from './QueryMatchEdge';
@@ -556,6 +557,7 @@ export default function UnifiedSearchModal({
   defaultTopK = 20,
   initialTab = 'search'
 }) {
+  const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
   // Tab state
   // Graph is currently feature-flagged off. If callers pass initialTab="graph",
   // ensure we still render the Search tab content instead of a blank body.
@@ -4134,7 +4136,10 @@ export default function UnifiedSearchModal({
                           'File'}
                       </h3>
                       <p className="text-xs text-system-gray-500 mt-1 break-all">
-                        {selectedSearchResult?.metadata?.path}
+                        {formatDisplayPath(selectedSearchResult?.metadata?.path || '', {
+                          redact: redactPaths,
+                          segments: 2
+                        })}
                       </p>
                     </div>
 

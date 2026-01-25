@@ -1,9 +1,12 @@
 import React, { memo, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { FileText, Play } from 'lucide-react';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
 import { StatusBadge } from '../ui';
+import { Inline, Stack } from '../layout';
+import { formatDisplayPath } from '../../utils/pathDisplay';
 
 function ReadyFileItem({
   file,
@@ -18,6 +21,7 @@ function ReadyFileItem({
   category: categoryProp,
   onViewDetails
 }) {
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
   const analysis = editing?.analysis || file?.analysis;
   const suggestedName = editing?.suggestedName ?? analysis?.suggestedName;
   const category = categoryProp ?? editing?.category ?? analysis?.category;
@@ -46,6 +50,11 @@ function ReadyFileItem({
 
   // Extract file path for tooltip
   const filePath = file.path || '';
+  const displayFilePath = formatDisplayPath(filePath, { redact: redactPaths, segments: 2 });
+  const displayDestination = formatDisplayPath(destination || '', {
+    redact: redactPaths,
+    segments: 2
+  });
   const tone = stateDisplay.color?.includes('green')
     ? 'success'
     : stateDisplay.color?.includes('amber') || stateDisplay.color?.includes('warning')
@@ -58,20 +67,6 @@ function ReadyFileItem({
     <div
       className={`surface-card w-full h-full relative transition-all [transition-duration:var(--duration-normal)] overflow-visible ${isSelected ? 'ring-2 ring-stratosort-blue/25 shadow-md' : ''}`}
     >
-      {/* Absolute positioned status elements to maximize content width */}
-      <div className="absolute top-4 right-4 z-10">
-        <StatusBadge variant={tone}>
-          <span className={stateDisplay.spinning ? 'animate-spin' : ''}>{stateDisplay.icon}</span>
-          <span className="hidden sm:inline">{stateDisplay.label}</span>
-        </StatusBadge>
-      </div>
-
-      {computedConfidence !== null && (
-        <div className="absolute bottom-4 right-4 z-10 text-[11px] text-system-gray-500">
-          Confidence {computedConfidence}%
-        </div>
-      )}
-
       <div className="flex gap-3 h-full">
         <input
           type="checkbox"
@@ -81,95 +76,121 @@ function ReadyFileItem({
           aria-label={`Select ${file.name}`}
         />
         <div className="flex-1 min-w-0 overflow-visible">
-          {/* Header Section - with padding right to avoid badge */}
-          <div className="flex items-center gap-3 mb-3 pr-28">
-            <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
-            <div className="flex-1 min-w-0 overflow-visible w-full">
-              <div
-                className="font-medium text-system-gray-900 whitespace-normal break-words leading-tight w-full"
-                title={`${file.name}${filePath ? ` (${filePath})` : ''}`}
-              >
-                {file.name}
-              </div>
-              <div className="text-sm text-system-gray-500 whitespace-normal break-words leading-tight w-full">
-                {[
-                  file.size ? `${Math.round(file.size / 1024)} KB` : 'Pending size',
-                  file.source && file.source !== 'file_selection'
-                    ? file.source.replace('_', ' ')
-                    : null
-                ]
-                  .filter(Boolean)
-                  .join(' • ')}
-              </div>
-            </div>
-          </div>
-
-          {/* Analysis Section - Full Width (Middle section flows under badge area if needed) */}
-          {analysis ? (
-            <>
-              <div className="grid grid-cols-1 gap-3 mb-3 w-full">
-                <div className="w-full min-w-0">
-                  <label className="block text-xs font-medium text-system-gray-700 mb-1">
-                    Suggested Name
-                  </label>
-                  <Input
-                    type="text"
-                    value={suggestedName}
-                    onChange={handleEditName}
-                    className="text-sm w-full"
-                    title={suggestedName}
-                  />
-                </div>
-                <div className="w-full min-w-0">
-                  <label className="block text-xs font-medium text-system-gray-700 mb-1">
-                    Category
-                  </label>
-                  <Select value={category} onChange={handleEditCategory} className="text-sm w-full">
-                    {!hasCategoryOption && category && (
-                      <option value={category}>{`Unmapped: ${category}`}</option>
-                    )}
-                    {smartFolders.map((folder) => (
-                      <option key={folder.id} value={folder.name}>
-                        {folder.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
-
-              {/* Keywords removed from main card view - available in details modal */}
-
-              <div className="mt-3 pt-3 border-t border-border-soft/70">
-                <button
-                  type="button"
-                  onClick={() => onViewDetails && onViewDetails(file)}
-                  className="text-sm text-system-gray-600 hover:text-system-gray-900 font-medium flex items-center gap-2 mb-2 w-full transition-colors"
-                  aria-label={`View analysis details for ${file.name}`}
-                >
-                  <Play className="w-3 h-3 fill-current opacity-70" aria-hidden="true" />
-                  View Analysis Details
-                </button>
-              </div>
-              {destination && (
-                <details className="text-sm text-system-gray-600 mt-2 overflow-visible pr-28 group">
-                  <summary className="cursor-pointer list-none font-medium hover:text-system-gray-900 transition-colors flex items-center gap-2 select-none focus:outline-none">
-                    <Play className="w-3 h-3 fill-current opacity-70 transition-transform group-open:rotate-90" />
-                    Destination
-                  </summary>
-                  <span
-                    className="text-stratosort-blue block mt-1 break-all line-clamp-2 pl-5"
-                    title={destination}
+          <Stack gap="cozy" className="w-full">
+            {/* Header Section */}
+            <Inline className="justify-between w-full" align="start" wrap={false} gap="cozy">
+              <Inline align="start" wrap={false} gap="cozy" className="min-w-0 flex-1">
+                <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="font-medium text-system-gray-900 whitespace-normal break-words leading-tight w-full"
+                    title={`${file.name}${displayFilePath ? ` (${displayFilePath})` : ''}`}
                   >
-                    {destination}
-                  </span>
-                </details>
-              )}
-            </>
-          ) : (
-            <div className="text-sm text-system-red-600 mt-2">
-              Analysis failed - will be skipped
-            </div>
-          )}
+                    {file.name}
+                  </div>
+                  <div className="text-sm text-system-gray-500 whitespace-normal break-words leading-tight w-full">
+                    {[
+                      file.size ? `${Math.round(file.size / 1024)} KB` : 'Pending size',
+                      file.source && file.source !== 'file_selection'
+                        ? file.source.replace('_', ' ')
+                        : null
+                    ]
+                      .filter(Boolean)
+                      .join(' • ')}
+                  </div>
+                </div>
+              </Inline>
+
+              <StatusBadge variant={tone}>
+                <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
+                  {stateDisplay.icon}
+                </span>
+                <span className="hidden sm:inline">{stateDisplay.label}</span>
+              </StatusBadge>
+            </Inline>
+
+            {/* Analysis Section */}
+            {analysis ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 w-full">
+                  <div className="w-full min-w-0">
+                    <label className="block text-xs font-medium text-system-gray-700 mb-1">
+                      Suggested Name
+                    </label>
+                    <Input
+                      type="text"
+                      value={suggestedName}
+                      onChange={handleEditName}
+                      className="text-sm w-full"
+                      title={suggestedName}
+                    />
+                  </div>
+                  <div className="w-full min-w-0">
+                    <label className="block text-xs font-medium text-system-gray-700 mb-1">
+                      Category
+                    </label>
+                    <Select
+                      value={category}
+                      onChange={handleEditCategory}
+                      className="text-sm w-full"
+                    >
+                      {!hasCategoryOption && category && (
+                        <option value={category}>{`Unmapped: ${category}`}</option>
+                      )}
+                      {smartFolders.map((folder) => (
+                        <option key={folder.id} value={folder.name}>
+                          {folder.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Keywords removed from main card view - available in details modal */}
+
+                <div className="pt-3 border-t border-border-soft/70">
+                  <button
+                    type="button"
+                    onClick={() => onViewDetails && onViewDetails(file)}
+                    className="text-sm text-system-gray-600 hover:text-system-gray-900 font-medium flex items-center gap-2 w-full transition-colors"
+                    aria-label={`View analysis details for ${file.name}`}
+                  >
+                    <Play className="w-3 h-3 fill-current opacity-70" aria-hidden="true" />
+                    View Analysis Details
+                  </button>
+                </div>
+
+                <div className="flex items-end justify-between gap-3">
+                  {destination ? (
+                    <details className="text-sm text-system-gray-600 overflow-visible group min-w-0 flex-1">
+                      <summary className="cursor-pointer list-none font-medium hover:text-system-gray-900 transition-colors flex items-center gap-2 select-none focus:outline-none">
+                        <Play className="w-3 h-3 fill-current opacity-70 transition-transform group-open:rotate-90" />
+                        Destination
+                      </summary>
+                      <span
+                        className="text-stratosort-blue block mt-1 break-all line-clamp-2 pl-5"
+                        title={displayDestination}
+                      >
+                        {displayDestination}
+                      </span>
+                    </details>
+                  ) : (
+                    <div />
+                  )}
+
+                  {computedConfidence !== null && (
+                    <div className="text-[11px] text-system-gray-500 flex-shrink-0">
+                      Confidence {computedConfidence}%
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-system-red-600 mt-2">
+                Analysis failed - will be skipped
+              </div>
+            )}
+          </Stack>
         </div>
       </div>
     </div>

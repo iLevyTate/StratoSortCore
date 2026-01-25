@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { Send, RefreshCw, FileText } from 'lucide-react';
 import { Button, Textarea, Switch } from '../ui';
+import { formatDisplayPath } from '../../utils/pathDisplay';
 
 function normalizeImageSource(value) {
   if (typeof value !== 'string') return '';
@@ -200,10 +202,11 @@ SourceList.propTypes = {
 };
 
 function AnswerBlock({ title, items, showTitle, sources, onOpenSource }) {
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
+
   if (!items || items.length === 0) {
     return null;
   }
-
   const sourceById = new Map(
     (sources || []).map((source) => [source.id, source]).filter((pair) => pair[0])
   );
@@ -225,6 +228,9 @@ function AnswerBlock({ title, items, showTitle, sources, onOpenSource }) {
                   const source = sourceById.get(citation);
                   const label = source?.name ? `${citation} · ${source.name}` : citation;
                   const canOpen = typeof onOpenSource === 'function' && source?.path;
+                  const titleText = source?.path
+                    ? formatDisplayPath(source.path, { redact: redactPaths, segments: 2 })
+                    : citation;
 
                   return (
                     <button
@@ -234,7 +240,7 @@ function AnswerBlock({ title, items, showTitle, sources, onOpenSource }) {
                       onClick={() => {
                         if (canOpen) onOpenSource(source);
                       }}
-                      title={source?.path || citation}
+                      title={titleText}
                       disabled={!canOpen}
                     >
                       {label}

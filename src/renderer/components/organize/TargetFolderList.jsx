@@ -1,8 +1,10 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { List } from 'react-window';
 import { Folder } from 'lucide-react';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
+import { formatDisplayPath } from '../../utils/pathDisplay';
 
 // FIX L-2: Use centralized constants for virtualization
 const ITEM_HEIGHT = UI_VIRTUALIZATION.TARGET_FOLDER_ITEM_HEIGHT;
@@ -25,6 +27,8 @@ const getListHeight = (folderCount, viewportHeight) => {
 // FIX: Added proper text overflow handling for long paths with title tooltips
 const FolderItem = memo(function FolderItem({ folder, defaultLocation, style }) {
   const fullPath = folder.path || `${defaultLocation}/${folder.name}`;
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
+  const displayPath = formatDisplayPath(fullPath, { redact: redactPaths, segments: 2 });
 
   return (
     <div style={style} className="p-2">
@@ -34,7 +38,7 @@ const FolderItem = memo(function FolderItem({ folder, defaultLocation, style }) 
         </div>
         <div className="text-sm text-system-gray-700 leading-relaxed break-words flex items-center gap-1.5">
           <Folder className="w-4 h-4 text-stratosort-blue flex-shrink-0" />
-          <span>{fullPath}</span>
+          <span>{displayPath}</span>
         </div>
         {folder.description && (
           <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 p-3 rounded-lg italic leading-relaxed break-words">

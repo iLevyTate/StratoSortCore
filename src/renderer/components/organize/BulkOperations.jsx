@@ -1,7 +1,9 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { Check, Pencil } from 'lucide-react';
 import Button from '../ui/Button';
 import Select from '../ui/Select';
+import { Inline, Stack } from '../layout';
 
 function BulkOperations({
   total,
@@ -17,43 +19,53 @@ function BulkOperations({
   isProcessing = false
 }) {
   return (
-    <div className="surface-quiet flex items-center justify-between flex-wrap gap-4">
-      <div className="flex items-center gap-3 flex-wrap">
-        <input
-          id="bulk-select-all"
-          type="checkbox"
-          checked={selectedCount === total && total > 0}
-          onChange={onSelectAll}
-          className="form-checkbox accent-stratosort-blue"
-          aria-label={
-            selectedCount > 0 ? `${selectedCount} of ${total} items selected` : 'Select all items'
-          }
-        />
-        <label htmlFor="bulk-select-all" className="text-sm font-medium cursor-pointer">
-          {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
-        </label>
+    <Stack gap="cozy" className="w-full">
+      <Inline className="justify-between w-full" gap="cozy">
+        <Inline gap="cozy">
+          <input
+            id="bulk-select-all"
+            type="checkbox"
+            checked={selectedCount === total && total > 0}
+            onChange={onSelectAll}
+            className="form-checkbox accent-stratosort-blue"
+            aria-label={
+              selectedCount > 0 ? `${selectedCount} of ${total} items selected` : 'Select all items'
+            }
+          />
+          <label htmlFor="bulk-select-all" className="text-sm font-medium cursor-pointer">
+            {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
+          </label>
+        </Inline>
+
         {selectedCount > 0 && (
-          <div className="flex items-center gap-3 flex-wrap">
+          <Inline gap="cozy">
             <Button
               onClick={onApproveSelected}
               variant="primary"
               className="text-sm"
               disabled={isProcessing}
             >
-              {isProcessing ? 'Processing...' : '✓ Approve Selected'}
+              <Inline as="span" gap="compact" wrap={false}>
+                <Check className="w-4 h-4" aria-hidden="true" />
+                <span>{isProcessing ? 'Processing...' : 'Approve Selected'}</span>
+              </Inline>
             </Button>
             <Button
               onClick={() => setBulkEditMode(!bulkEditMode)}
               variant="secondary"
               className="text-sm"
             >
-              ✏️ Bulk Edit
+              <Inline as="span" gap="compact" wrap={false}>
+                <Pencil className="w-4 h-4" aria-hidden="true" />
+                <span>Bulk Edit</span>
+              </Inline>
             </Button>
-          </div>
+          </Inline>
         )}
-      </div>
+      </Inline>
+
       {bulkEditMode && (
-        <div className="flex items-center gap-4 flex-wrap">
+        <Inline gap="cozy" className="w-full">
           <Select
             value={bulkCategory}
             onChange={(e) => setBulkCategory(e.target.value)}
@@ -85,9 +97,9 @@ function BulkOperations({
           >
             Cancel
           </Button>
-        </div>
+        </Inline>
       )}
-    </div>
+    </Stack>
   );
 }
 

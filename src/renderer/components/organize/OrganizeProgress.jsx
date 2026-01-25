@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { FolderOpen, CheckCircle, Clock, FileText } from 'lucide-react';
+import { formatDisplayPath } from '../../utils/pathDisplay';
 
 function OrganizeProgress({
   isOrganizing,
   batchProgress = { current: 0, total: 0, currentFile: '' },
   preview = []
 }) {
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
   const [startedAt, setStartedAt] = useState(null);
   const hasTotals = Number(batchProgress.total) > 0;
   const actualPercent = hasTotals
@@ -108,7 +111,8 @@ function OrganizeProgress({
         )}
         {batchProgress.currentFile && (
           <div className="text-xs text-system-gray-500 mt-3 break-words">
-            Currently processing: {batchProgress.currentFile}
+            Currently processing:{' '}
+            {formatDisplayPath(batchProgress.currentFile, { redact: redactPaths, segments: 2 })}
           </div>
         )}
         <div className="text-xs text-system-gray-500 mt-3">{etaText}</div>
@@ -144,8 +148,14 @@ function OrganizeProgress({
                     <div className="font-medium text-system-gray-900 truncate" title={op.fileName}>
                       {op.fileName}
                     </div>
-                    <div className="text-xs text-system-gray-600 truncate" title={op.destination}>
-                      → {op.destination}
+                    <div
+                      className="text-xs text-system-gray-600 truncate"
+                      title={formatDisplayPath(op.destination, {
+                        redact: redactPaths,
+                        segments: 2
+                      })}
+                    >
+                      → {formatDisplayPath(op.destination, { redact: redactPaths, segments: 2 })}
                     </div>
                   </div>
                 </div>

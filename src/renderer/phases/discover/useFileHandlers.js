@@ -393,6 +393,15 @@ export function useFileHandlers({
             if (scanTimeoutId) clearTimeout(scanTimeoutId);
           });
 
+          if (scanResult?.partial) {
+            addNotification(
+              'Folder scan returned partial results (slow drive or too many files). Try a smaller folder.',
+              'warning',
+              4000,
+              'folder-scan-partial'
+            );
+          }
+
           if (scanResult?.files?.length > 0) {
             const supportedFiles = scanResult.files.filter((file) => {
               const ext = extractExtension(file.name);
@@ -401,7 +410,7 @@ export function useFileHandlers({
 
             if (supportedFiles.length === 0) {
               addNotification(
-                `No supported files found in dropped folder: ${dir.name || dir.path}`,
+                `No supported files found in dropped folder: ${dir.name || 'Selected folder'}`,
                 'warning',
                 3000,
                 'drop-folder-empty'
@@ -418,7 +427,7 @@ export function useFileHandlers({
             );
           } else {
             addNotification(
-              `No files found in dropped folder: ${dir.name || dir.path}`,
+              `No files found in dropped folder: ${dir.name || 'Selected folder'}`,
               'warning',
               3000,
               'drop-folder-empty'
@@ -426,7 +435,7 @@ export function useFileHandlers({
           }
         } catch (error) {
           addNotification(
-            `Error scanning dropped folder: ${dir.name || dir.path}`,
+            `Error scanning dropped folder: ${dir.name || 'Selected folder'}`,
             'error',
             4000,
             'drop-folder-error'
@@ -570,6 +579,15 @@ export function useFileHandlers({
         ]).finally(() => {
           if (scanTimeoutId) clearTimeout(scanTimeoutId);
         });
+
+        if (scanResult?.partial) {
+          addNotification(
+            'Folder scan returned partial results (slow drive or too many files). Try a smaller folder.',
+            'warning',
+            4000,
+            'folder-scan-partial'
+          );
+        }
 
         if (scanResult?.files?.length > 0) {
           const supportedFiles = scanResult.files.filter((file) => {

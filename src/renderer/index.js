@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { logger } from '../shared/logger';
 import store from './store';
-import { fetchDocumentsPath } from './store/slices/systemSlice';
+import { fetchDocumentsPath, fetchRedactPaths } from './store/slices/systemSlice';
 import { fetchSmartFolders, setOrganizedFiles } from './store/slices/filesSlice';
 import { fetchSettings } from './store/slices/uiSlice';
 import App from './App.js';
@@ -13,6 +13,7 @@ import './styles.css';
 
 // Fetch commonly-used data early so it's cached before components need it
 store.dispatch(fetchDocumentsPath());
+store.dispatch(fetchRedactPaths());
 // FIX: Force refresh on startup to ensure we have latest data from disk
 // This overrides potentially stale data from localStorage
 store.dispatch(fetchSmartFolders(true));

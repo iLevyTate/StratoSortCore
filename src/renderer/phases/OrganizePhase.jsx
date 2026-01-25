@@ -6,6 +6,7 @@ import { Button, Card } from '../components/ui';
 // FIX M-3: Import ErrorBoundaryCore for virtualized component protection
 import { ErrorBoundaryCore } from '../components/ErrorBoundary';
 import { FolderOpen, BarChart3, CheckCircle2, Inbox, Sparkles, AlertTriangle } from 'lucide-react';
+import { ActionBar, Inline, Stack } from '../components/layout';
 import {
   StatusOverview,
   TargetFolderList,
@@ -307,8 +308,8 @@ function OrganizePhase() {
     <div className="organize-page phase-container bg-white pb-spacious">
       <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
         {/* Header */}
-        <div className="text-center flex flex-col flex-shrink-0 gap-compact">
-          <h1 className="heading-primary text-xl md:text-2xl">
+        <Stack className="text-center flex-shrink-0" gap="compact">
+          <h1 className="heading-primary">
             Review & <span className="text-gradient">Organize</span>
           </h1>
           <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
@@ -324,16 +325,17 @@ function OrganizePhase() {
               </div>
             </div>
           )}
-        </div>
+        </Stack>
 
         {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-cozy mb-2">
+        <Inline className="justify-between mb-2" gap="cozy">
           {/* Quick Access Toolbar - Open modals for secondary info */}
           {/* FIX M-5: Added aria-labels to toolbar buttons for accessibility */}
-          <div
-            className="flex items-center flex-wrap gap-cozy flex-shrink-0"
+          <Inline
+            className="flex-shrink-0"
             role="toolbar"
             aria-label="Organization tools"
+            gap="cozy"
           >
             {safeSmartFolders.length > 0 && (
               <button
@@ -369,12 +371,12 @@ function OrganizePhase() {
                 <span>{processedFiles.length} Organized</span>
               </button>
             )}
-          </div>
+          </Inline>
           <UndoRedoToolbar className="flex-shrink-0" />
-        </div>
+        </Inline>
 
         {/* Main Content - Files Ready for Organization takes primary focus */}
-        <div className="flex-1 min-h-0 flex flex-col gap-6">
+        <Stack className="flex-1 min-h-0" gap="relaxed">
           {/* Inline Bulk Operations when files selected */}
           {unprocessedFiles.length > 0 && selectedFiles.size > 0 && (
             <div className="surface-panel p-default flex-shrink-0">
@@ -552,10 +554,10 @@ function OrganizePhase() {
               </div>
             </div>
           )}
-        </div>
+        </Stack>
 
         {/* Footer Buttons */}
-        <div className="page-action-bar">
+        <ActionBar>
           <Button
             onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
             variant="secondary"
@@ -580,7 +582,7 @@ function OrganizePhase() {
           >
             View Results →
           </Button>
-        </div>
+        </ActionBar>
       </div>
 
       {/* Analysis Details Modal */}

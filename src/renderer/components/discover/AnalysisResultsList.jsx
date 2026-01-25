@@ -1,12 +1,15 @@
 import React, { memo, useMemo, useCallback, useState, useEffect, Component } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { List } from 'react-window';
 import { FileText, Compass, AlertTriangle } from 'lucide-react';
 import { Button, StatusBadge } from '../ui';
+import { Inline } from '../layout';
 import { logger } from '../../../shared/logger';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
+import { formatDisplayPath } from '../../utils/pathDisplay';
+import { Text } from '../ui/Typography';
 
-// FIX: Add error boundary to prevent single bad file from crashing entire list
 class AnalysisResultsErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -54,36 +57,28 @@ AnalysisResultsErrorBoundary.propTypes = {
   children: PropTypes.node.isRequired
 };
 
-// FIX L-2: Use centralized constants for virtualization
 const ITEM_HEIGHT = UI_VIRTUALIZATION.ANALYSIS_RESULTS_ITEM_HEIGHT;
 const VIRTUALIZATION_THRESHOLD = UI_VIRTUALIZATION.THRESHOLD;
 
-// FIX M-3: Normalize confidence values with explicit scale detection
-// Values in 0-1 range (exclusive of 1) are treated as decimal percentages
-// Values >= 1 are treated as already being in 0-100 scale
-// Edge case: 1.0 is treated as 100% (0-100 scale) for better UX
 const formatConfidence = (value) => {
   if (typeof value !== 'number' || Number.isNaN(value)) return null;
-  // Detect scale: values < 1 are assumed to be 0-1 scale
-  // Values >= 1 are assumed to be 0-100 scale (including 1.0 = 1%)
   const normalized = value < 1 ? value * 100 : value;
   const clamped = Math.min(100, Math.max(0, normalized));
   return Math.round(clamped);
 };
 
-/**
- * Individual row component for virtualized list
- */
 const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }) {
-  // Defensive check for data integrity
   if (!data || !data.items) return null;
-  const { items, handleAction, getFileStateDisplay } = data;
+  const { items, handleAction, getFileStateDisplay, redactPaths } = data;
 
-  // FIX: Strict bounds checking to prevent invalid index access
   if (!Array.isArray(items) || index < 0 || index >= items.length) return null;
 
   const file = items[index];
   if (!file) return null;
+  const displayPath = formatDisplayPath(file.path || '', {
+    redact: Boolean(redactPaths),
+    segments: 2
+  });
 
   let stateDisplay = { label: 'Unknown', icon: null, color: '', spinning: false };
   try {
@@ -91,11 +86,9 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
       ? getFileStateDisplay(file.path, !!file.analysis)
       : stateDisplay;
   } catch (err) {
-    // Fallback if getFileStateDisplay fails
     stateDisplay = { label: 'Error', icon: null, color: 'text-red-500', spinning: false };
   }
 
-  // Ensure stateDisplay properties exist to prevent crashes
   const displayColor = stateDisplay?.color || '';
 
   const confidence = formatConfidence(file.analysis?.confidence);
@@ -111,67 +104,75 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
 
   return (
     <div style={style} className="px-2 py-2">
-      <div className="list-row h-full overflow-hidden p-4 flex flex-col gap-2">
+      <div className="bg-white rounded-lg border border-border-soft p-4 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
         <div className="flex items-start gap-4">
-          <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
+          <div className="p-2 bg-system-gray-50 rounded-lg shrink-0">
+            <FileText className="w-5 h-5 text-system-gray-500" />
+          </div>
           <div className="flex-1 min-w-0 overflow-hidden">
-            <div
-              className="font-medium text-system-gray-900 clamp-2 break-words leading-snug"
-              title={`${file.name}${file.path ? ` (${file.path})` : ''}`}
-            >
-              {file.name || 'Unknown File'}
+            <div className="flex items-center justify-between gap-4 mb-1">
+              <Text
+                variant="small"
+                className="font-medium text-system-gray-900 truncate"
+                title={file.name}
+              >
+                {file.name || 'Unknown File'}
+              </Text>
+              <div className="flex items-center gap-2 shrink-0">
+                {confidence !== null && (
+                  <Text variant="tiny" className="text-system-gray-500">
+                    {confidence}%
+                  </Text>
+                )}
+                <StatusBadge variant={tone} className="py-0.5 px-2 text-xs">
+                  <span className={stateDisplay?.spinning ? 'animate-spin mr-1' : 'mr-1'}>
+                    {stateDisplay?.icon}
+                  </span>
+                  {stateDisplay?.label || 'Status'}
+                </StatusBadge>
+              </div>
             </div>
-            <div className="text-xs text-system-gray-500 clamp-1 break-words">
-              {file.source && file.source !== 'file_selection' && (
-                <>
-                  {file.source.replace('_', ' ')}
-                  {file.size ? ' • ' : ''}
-                </>
-              )}
-              {file.size ? `${Math.round(file.size / 1024)} KB` : ''}
-            </div>
+
+            <Text variant="tiny" className="text-system-gray-500 truncate mb-2" title={displayPath}>
+              {displayPath}
+            </Text>
+
             {file.analysis?.category && (
-              <div className="text-xs text-system-gray-600 mt-1 clamp-1 break-words">
-                Category:{' '}
-                <span className="text-stratosort-blue font-medium">{file.analysis.category}</span>
+              <div className="flex items-center gap-2 mb-2">
+                <Text variant="tiny" className="text-system-gray-500">
+                  Category:
+                </Text>
+                <span className="text-xs font-medium text-stratosort-blue bg-stratosort-blue/5 px-1.5 py-0.5 rounded">
+                  {file.analysis.category}
+                </span>
               </div>
             )}
+
             {keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
+              <div className="flex flex-wrap gap-1">
                 {keywords.slice(0, 5).map((tag, i) => (
                   <span
                     key={i}
-                    className="px-1.5 py-0.5 bg-system-gray-100 text-system-gray-600 rounded text-[10px] font-medium border border-system-gray-200 whitespace-nowrap"
+                    className="px-1.5 py-0.5 bg-system-gray-50 text-system-gray-600 rounded text-[10px] border border-system-gray-100"
                   >
                     {tag}
                   </span>
                 ))}
                 {keywords.length > 5 && (
-                  <span className="px-1.5 py-0.5 text-system-gray-500 text-[10px]">
+                  <span className="px-1.5 py-0.5 text-system-gray-400 text-[10px]">
                     +{keywords.length - 5}
                   </span>
                 )}
               </div>
             )}
           </div>
-          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-            <StatusBadge variant={tone}>
-              <span className={stateDisplay?.spinning ? 'animate-spin' : ''}>
-                {stateDisplay?.icon}
-              </span>
-              <span>{stateDisplay?.label || 'Status'}</span>
-            </StatusBadge>
-            {confidence !== null && (
-              <span className="text-xs text-system-gray-500">Confidence {confidence}%</span>
-            )}
-          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-border-soft/70">
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-soft/50">
           <Button
             size="sm"
             variant="ghost"
             onClick={() => handleAction && handleAction('open', file.path)}
-            aria-label="Open file"
           >
             Open
           </Button>
@@ -179,26 +180,17 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
             size="sm"
             variant="ghost"
             onClick={() => handleAction && handleAction('reveal', file.path)}
-            aria-label="Reveal in file explorer"
           >
             Reveal
           </Button>
+          <div className="w-px h-4 bg-border-soft mx-1" />
           <Button
             size="sm"
-            variant="subtle"
+            variant="ghost"
+            className="text-stratosort-danger hover:text-stratosort-danger hover:bg-stratosort-danger/10"
             onClick={() => handleAction && handleAction('remove', file.path)}
-            aria-label="Remove from queue"
-            className="ml-auto"
           >
             Remove
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => handleAction && handleAction('delete', file.path)}
-            aria-label="Delete file permanently"
-          >
-            Delete
           </Button>
         </div>
       </div>
@@ -216,11 +208,8 @@ AnalysisResultRow.propTypes = {
   }).isRequired
 };
 
-/**
- * Analysis results list with optional virtualization for large lists
- * FIX: Implements react-window for performance with 100+ items
- */
 function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }) {
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
   const safeResults = useMemo(() => {
     if (!Array.isArray(results)) return [];
     return results.filter((r) => r && typeof r === 'object' && (r.path || r.name));
@@ -230,21 +219,23 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   const items = safeResults;
   const handleAction = useCallback((action, path) => onFileAction(action, path), [onFileAction]);
 
-  // FIX: Use callback ref pattern to properly observe container when it becomes available
   const [containerNode, setContainerNode] = useState(null);
   const containerRef = useCallback((node) => {
     setContainerNode(node);
   }, []);
   const [dimensions, setDimensions] = useState({ width: 0, height: 600 });
 
-  // FIX: Re-observe when containerNode changes (properly handles initial null case)
-  // FIX: Add ResizeObserver feature detection for safety
   useEffect(() => {
     if (!containerNode) return undefined;
 
-    // Feature detection for environments without ResizeObserver
-    if (typeof ResizeObserver === 'undefined') {
-      // Fallback: use window dimensions
+    const ResizeObserverCtor =
+      typeof ResizeObserver !== 'undefined'
+        ? ResizeObserver
+        : typeof window !== 'undefined'
+          ? window.ResizeObserver
+          : undefined;
+
+    if (!ResizeObserverCtor) {
       const updateDimensions = () => {
         setDimensions({
           width: containerNode.offsetWidth || 0,
@@ -263,7 +254,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
       return undefined;
     }
 
-    const observer = new ResizeObserver((entries) => {
+    const observer = new ResizeObserverCtor((entries) => {
       const entry = entries[0];
       if (entry) {
         const { width, height } = entry.contentRect;
@@ -278,52 +269,49 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
     return () => observer.disconnect();
   }, [containerNode]);
 
-  // Keep a stable object so the list can memoize rows efficiently.
   const rowProps = useMemo(
     () => ({
       data: {
         items,
         handleAction,
-        getFileStateDisplay
+        getFileStateDisplay,
+        redactPaths
       }
     }),
-    [items, handleAction, getFileStateDisplay]
+    [items, handleAction, getFileStateDisplay, redactPaths]
   );
   const safeRowProps = rowProps ?? {};
   const listItemData = safeRowProps.data || {
     items: [],
     handleAction,
-    getFileStateDisplay
+    getFileStateDisplay,
+    redactPaths
   };
 
-  // FIX: Use virtualization only for large lists to avoid overhead on small lists
   const shouldVirtualize = items.length > VIRTUALIZATION_THRESHOLD;
-
-  // Simple wrapper - inline to avoid component identity issues
-  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-4`;
+  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-2`;
 
   if (isEmpty) {
     return (
-      <div className="empty-state p-4">
-        <Compass className="w-8 h-8 text-system-gray-400" />
-        <div className="space-y-1">
-          <p className="text-system-gray-800 font-semibold">No analysis results yet</p>
-          <p className="text-system-gray-500 text-sm">
-            Add files above and start an analysis to see suggestions stream in.
-          </p>
+      <div className="flex flex-col items-center justify-center h-64 text-center p-8">
+        <div className="w-16 h-16 bg-system-gray-100 rounded-full flex items-center justify-center mb-4">
+          <Compass className="w-8 h-8 text-system-gray-400" />
         </div>
+        <Text variant="body" className="font-medium text-system-gray-900">
+          No analysis results yet
+        </Text>
+        <Text variant="small" className="text-system-gray-500 max-w-sm mt-1">
+          Add files above and start an analysis to see suggestions stream in.
+        </Text>
       </div>
     );
   }
 
   if (shouldVirtualize) {
     return (
-      <div
-        ref={containerRef}
-        className="relative w-full h-full px-4 py-2" // Add padding to container not list
-      >
-        <div className="text-xs text-system-gray-500 mb-2 absolute top-0 right-4 z-10 bg-white/80 px-2 py-1 rounded backdrop-blur-sm">
-          Showing {items.length} files (virtualized)
+      <div ref={containerRef} className="relative w-full h-full">
+        <div className="absolute top-2 right-4 z-10 bg-white/90 px-2 py-1 rounded text-xs text-system-gray-500 border border-border-soft backdrop-blur-sm shadow-sm">
+          Showing {items.length} files
         </div>
         <List
           key={`list-${items.length}`}
@@ -340,123 +328,16 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
     );
   }
 
-  // For smaller lists, render normally without virtualization overhead
   return (
     <div className={`${listContainerClass} p-4`}>
-      {/* FIX: Use stable composite key that doesn't rely on array index
-          Priority: path > id > name+size+lastModified (all stable file properties) */}
-      {items.map((file) => {
-        const stateDisplay = getFileStateDisplay(file.path, !!file.analysis);
-        const confidence = formatConfidence(file.analysis?.confidence);
-        const tone = stateDisplay.color?.includes('green')
-          ? 'success'
-          : stateDisplay.color?.includes('amber') || stateDisplay.color?.includes('warning')
-            ? 'warning'
-            : stateDisplay.color?.includes('red') || stateDisplay.color?.includes('danger')
-              ? 'error'
-              : 'info';
-        // Generate stable key from file properties (avoid index which breaks on reorder)
-        const stableKey =
-          file.path || file.id || `${file.name}-${file.size || 0}-${file.lastModified || 'nomod'}`;
-
-        const keywords = file.analysis?.keywords || [];
-
-        return (
-          <div key={stableKey} className="list-row p-4 overflow-hidden flex flex-col gap-2">
-            <div className="flex items-start gap-4">
-              <FileText className="w-6 h-6 text-system-gray-400 flex-shrink-0" />
-              <div className="flex-1 min-w-0 overflow-hidden">
-                <div
-                  className="font-medium text-system-gray-900 clamp-2 break-words leading-snug"
-                  title={`${file.name}${file.path ? ` (${file.path})` : ''}`}
-                >
-                  {file.name}
-                </div>
-                <div className="text-xs text-system-gray-500 clamp-1 break-words">
-                  {file.source && file.source !== 'file_selection' && (
-                    <>
-                      {file.source.replace('_', ' ')}
-                      {file.size ? ' • ' : ''}
-                    </>
-                  )}
-                  {file.size ? `${Math.round(file.size / 1024)} KB` : ''}
-                </div>
-                {file.analysis?.category && (
-                  <div className="text-xs text-system-gray-600 mt-1 clamp-1 break-words">
-                    Category:{' '}
-                    <span className="text-stratosort-blue font-medium">
-                      {file.analysis.category}
-                    </span>
-                  </div>
-                )}
-                {keywords.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {keywords.slice(0, 5).map((tag, i) => (
-                      <span
-                        key={i}
-                        className="px-1.5 py-0.5 bg-system-gray-100 text-system-gray-600 rounded text-[10px] font-medium border border-system-gray-200 whitespace-nowrap"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {keywords.length > 5 && (
-                      <span className="px-1.5 py-0.5 text-system-gray-500 text-[10px]">
-                        +{keywords.length - 5}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <StatusBadge variant={tone}>
-                  <span className={stateDisplay.spinning ? 'animate-spin' : ''}>
-                    {stateDisplay.icon}
-                  </span>
-                  <span>{stateDisplay.label}</span>
-                </StatusBadge>
-                {confidence !== null && (
-                  <span className="text-xs text-system-gray-500">Confidence {confidence}%</span>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 mt-3 border-t pt-2 border-border-soft/70">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleAction('open', file.path)}
-                aria-label="Open file"
-              >
-                Open
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleAction('reveal', file.path)}
-                aria-label="Reveal in file explorer"
-              >
-                Reveal
-              </Button>
-              <Button
-                size="sm"
-                variant="subtle"
-                onClick={() => handleAction('remove', file.path)}
-                aria-label="Remove from queue"
-                className="ml-auto"
-              >
-                Remove
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() => handleAction('delete', file.path)}
-                aria-label="Delete file permanently"
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        );
-      })}
+      {items.map((file, index) => (
+        <AnalysisResultRow
+          key={file.path || file.id || index}
+          index={index}
+          style={{}}
+          data={listItemData}
+        />
+      ))}
     </div>
   );
 }
@@ -467,7 +348,6 @@ AnalysisResultsList.propTypes = {
   getFileStateDisplay: PropTypes.func.isRequired
 };
 
-// FIX: Wrap with error boundary to prevent crashes from malformed file data
 const MemoizedAnalysisResultsList = memo(AnalysisResultsList);
 
 function AnalysisResultsListWithErrorBoundary(props) {

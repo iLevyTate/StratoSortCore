@@ -16,6 +16,7 @@ import { useNotification } from '../contexts/NotificationContext';
 import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import { useConfirmDialog, useDragAndDrop, useSettingsSubscription } from '../hooks';
 import { Button } from '../components/ui';
+import { ActionBar, Inline, Stack } from '../components/layout';
 import { FolderOpenIcon, SettingsIcon } from '../components/icons';
 import {
   NamingSettingsModal,
@@ -470,23 +471,21 @@ function DiscoverPhase() {
 
   return (
     <div className="phase-container bg-system-gray-50/30 pb-spacious">
-      <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
+      <Stack className="container-responsive flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
         {/* Header Section */}
-        <div className="text-center flex flex-col flex-shrink-0 gap-compact">
-          <h1 className="heading-primary text-xl md:text-2xl">
+        <Stack className="text-center flex-shrink-0" gap="compact">
+          <h1 className="heading-primary">
             Discover & <span className="text-gradient">Analyze</span>
           </h1>
           <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
             Add your files and configure how StratoSort should name them.
           </p>
-        </div>
+        </Stack>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between gap-cozy mb-2">
-          <div className="flex items-center gap-compact">
-            {/* Left side toolbar items if any */}
-          </div>
-          <div className="flex items-center gap-compact">
+        <Inline className="justify-between mb-2" gap="cozy" wrap={false}>
+          <Inline gap="compact">{/* Left side toolbar items if any */}</Inline>
+          <Inline gap="compact" wrap>
             <Button
               variant="secondary"
               size="sm"
@@ -506,14 +505,14 @@ function DiscoverPhase() {
               <Network className="w-4 h-4" />
               <span>Knowledge OS</span>
             </Button>
-          </div>
-        </div>
+          </Inline>
+        </Inline>
 
-        <div className="flex-1 min-h-0 flex flex-col gap-6">
+        <Stack className="flex-1 min-h-0" gap="relaxed">
           {/* Primary Content Selection Card */}
-          <section className="surface-panel flex flex-col flex-shrink-0 gap-default">
-            <div className="flex items-center justify-between flex-wrap gap-cozy">
-              <div className="flex items-center gap-cozy">
+          <Stack as="section" className="surface-panel flex-shrink-0" gap="default">
+            <Inline className="justify-between" gap="cozy" wrap>
+              <Inline gap="cozy">
                 <h3 className="heading-tertiary m-0 flex items-center gap-cozy">
                   <FolderOpenIcon className="w-5 h-5 text-stratosort-blue" />
                   <span>Select Content</span>
@@ -525,8 +524,8 @@ function DiscoverPhase() {
                     {unorganizedSelectedCount !== 1 ? 's' : ''} ready
                   </span>
                 )}
-              </div>
-            </div>
+              </Inline>
+            </Inline>
 
             <div
               className={`flex-1 flex flex-col items-center justify-center animate-fade-in text-center min-h-content-md p-spacious transition-colors duration-200 border-2 border-dashed rounded-xl ${
@@ -554,95 +553,102 @@ function DiscoverPhase() {
                 className="w-full max-w-sm justify-center"
               />
             </div>
-          </section>
+          </Stack>
 
           {/* Middle Section - Queue & Status Actions */}
           {/* FIX H-3: Use unorganizedSelectedCount to hide when all files organized */}
           {shouldShowQueueBar && (
-            <div className="surface-panel flex items-center justify-between bg-white/85 backdrop-blur-md animate-fade-in p-default gap-default">
-              <div className="flex items-center flex-1 gap-default">
-                {isAnalyzing ? (
-                  <div className="flex-1 max-w-2xl">
-                    <AnalysisProgress
-                      progress={analysisProgress}
-                      currentFile={currentAnalysisFile}
-                    />
-                  </div>
-                ) : (
-                  <div className="text-sm text-system-gray-600 flex items-center gap-compact">
-                    <span className="status-dot success animate-pulse" />
-                    {/* FIX H-3: Use pendingAnalysisCount to exclude already-analyzed files */}
-                    {pendingAnalysisCount > 0 ? (
-                      <>
-                        Ready to analyze {pendingAnalysisCount} file
-                        {pendingAnalysisCount !== 1 ? 's' : ''}
-                      </>
-                    ) : (
-                      <>
-                        Analysis complete
-                        {visibleReadyCount > 0 && ` • ${visibleReadyCount} ready`}
-                        {visibleFailedCount > 0 && ` • ${visibleFailedCount} failed`}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+            <div className="sticky top-4 z-20">
+              <Inline
+                className="surface-panel justify-between bg-white/85 backdrop-blur-md animate-fade-in p-default"
+                gap="default"
+                wrap
+              >
+                <div className="flex items-center flex-1 min-w-0">
+                  {isAnalyzing ? (
+                    <div className="flex-1 max-w-2xl min-w-0">
+                      <AnalysisProgress
+                        progress={analysisProgress}
+                        currentFile={currentAnalysisFile}
+                        surface="none"
+                      />
+                    </div>
+                  ) : (
+                    <Inline className="text-sm text-system-gray-600" gap="compact" wrap>
+                      <span className="status-dot success animate-pulse" />
+                      {/* FIX H-3: Use pendingAnalysisCount to exclude already-analyzed files */}
+                      {pendingAnalysisCount > 0 ? (
+                        <>
+                          Ready to analyze {pendingAnalysisCount} file
+                          {pendingAnalysisCount !== 1 ? 's' : ''}
+                        </>
+                      ) : (
+                        <>
+                          Analysis complete
+                          {visibleReadyCount > 0 && ` • ${visibleReadyCount} ready`}
+                          {visibleFailedCount > 0 && ` • ${visibleFailedCount} failed`}
+                        </>
+                      )}
+                    </Inline>
+                  )}
+                </div>
 
-              <div className="flex items-center gap-cozy">
-                {isAnalyzing ? (
-                  <>
-                    <Button onClick={cancelAnalysis} variant="danger" size="sm">
-                      Stop Analysis
-                    </Button>
-                    {analysisProgress.lastActivity &&
-                      Date.now() - analysisProgress.lastActivity >
-                        TIMEOUTS.STUCK_ANALYSIS_CHECK && (
+                <Inline gap="cozy" wrap>
+                  {isAnalyzing ? (
+                    <>
+                      <Button onClick={cancelAnalysis} variant="danger" size="sm">
+                        Stop Analysis
+                      </Button>
+                      {analysisProgress.lastActivity &&
+                        Date.now() - analysisProgress.lastActivity >
+                          TIMEOUTS.STUCK_ANALYSIS_CHECK && (
+                          <Button
+                            onClick={() => resetAnalysisState('User forced reset')}
+                            variant="secondary"
+                            size="sm"
+                            className="status-chip warning"
+                          >
+                            Force Reset
+                          </Button>
+                        )}
+                    </>
+                  ) : (
+                    <>
+                      {pendingAnalysisCount > 0 && (
                         <Button
-                          onClick={() => resetAnalysisState('User forced reset')}
-                          variant="secondary"
+                          onClick={() => analyzeFiles?.(pendingAnalysisFiles)}
+                          variant="primary"
                           size="sm"
-                          className="status-chip warning"
+                          className="shadow-md shadow-stratosort-blue/20"
+                          title={analysisStartHint || undefined}
                         >
-                          Force Reset
+                          Analyze {pendingAnalysisCount} File
+                          {pendingAnalysisCount !== 1 ? 's' : ''}
                         </Button>
                       )}
-                  </>
-                ) : (
-                  <div className="flex items-center gap-cozy">
-                    {pendingAnalysisCount > 0 && (
+                      {/* FIX M-3: Retry Failed Files button */}
+                      {visibleFailedCount > 0 && (
+                        <Button
+                          onClick={retryFailedFiles}
+                          variant="ghost"
+                          size="sm"
+                          className="text-stratosort-warning hover:text-stratosort-warning hover:bg-stratosort-warning/10"
+                        >
+                          Retry {visibleFailedCount} Failed
+                        </Button>
+                      )}
                       <Button
-                        onClick={() => analyzeFiles?.(pendingAnalysisFiles)}
-                        variant="primary"
-                        size="sm"
-                        className="shadow-md shadow-stratosort-blue/20"
-                        title={analysisStartHint || undefined}
-                      >
-                        Analyze {pendingAnalysisCount} File
-                        {pendingAnalysisCount !== 1 ? 's' : ''}
-                      </Button>
-                    )}
-                    {/* FIX M-3: Retry Failed Files button */}
-                    {visibleFailedCount > 0 && (
-                      <Button
-                        onClick={retryFailedFiles}
+                        onClick={clearAnalysisQueue}
                         variant="ghost"
                         size="sm"
-                        className="text-stratosort-warning hover:text-stratosort-warning hover:bg-stratosort-warning/10"
+                        className="text-system-gray-500 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
                       >
-                        Retry {visibleFailedCount} Failed
+                        Clear Queue
                       </Button>
-                    )}
-                    <Button
-                      onClick={clearAnalysisQueue}
-                      variant="ghost"
-                      size="sm"
-                      className="text-system-gray-500 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
-                    >
-                      Clear Queue
-                    </Button>
-                  </div>
-                )}
-              </div>
+                    </>
+                  )}
+                </Inline>
+              </Inline>
             </div>
           )}
 
@@ -650,7 +656,11 @@ function DiscoverPhase() {
           {/* FIX H-3: Use unorganizedSelectedCount to hide when all files organized */}
           {(visibleAnalysisResults.length > 0 || (isAnalyzing && unorganizedSelectedCount > 0)) && (
             <div className="flex-1 min-h-content-md surface-panel flex flex-col overflow-hidden animate-slide-up">
-              <div className="border-b border-border-soft/70 bg-white/70 flex items-center justify-between p-default">
+              <Inline
+                className="border-b border-border-soft/70 bg-white/70 justify-between p-default"
+                gap="default"
+                wrap
+              >
                 <h3 className="heading-tertiary m-0 text-sm uppercase tracking-wider text-system-gray-500">
                   Analysis Results
                 </h3>
@@ -658,7 +668,7 @@ function DiscoverPhase() {
                   {/* FIX L-1: Remove duplicate "Analyzing files..." since progress bar already shows status */}
                   {`${visibleReadyCount} successful, ${visibleFailedCount} failed`}
                 </div>
-              </div>
+              </Inline>
               <div className="flex-1 min-h-0 p-0 bg-white/10 overflow-y-auto modern-scrollbar pb-default">
                 {visibleAnalysisResults.length > 0 ? (
                   <AnalysisResultsList
@@ -674,7 +684,7 @@ function DiscoverPhase() {
               </div>
             </div>
           )}
-        </div>
+        </Stack>
 
         {/* Embedding Prompt Banner - shown after first successful analysis */}
         {showEmbeddingPrompt && !isAnalyzing && (
@@ -801,7 +811,7 @@ function DiscoverPhase() {
         )}
 
         {/* Footer Navigation */}
-        <div className="page-action-bar">
+        <ActionBar>
           <Button
             onClick={() => actions.advancePhase(PHASES?.SETUP ?? 'setup')}
             variant="secondary"
@@ -870,7 +880,7 @@ function DiscoverPhase() {
               </Button>
             );
           })()}
-        </div>
+        </ActionBar>
 
         <ConfirmDialog />
         <NamingSettingsModal
@@ -885,7 +895,7 @@ function DiscoverPhase() {
           separator={separator}
           setSeparator={setSeparator}
         />
-      </div>
+      </Stack>
     </div>
   );
 }
