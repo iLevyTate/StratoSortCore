@@ -2,8 +2,8 @@ import React, { memo, useMemo, useCallback, useState, useEffect, Component } fro
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
 import { List } from 'react-window';
-import { FileText, Compass, AlertTriangle } from 'lucide-react';
-import { Button, StatusBadge } from '../ui';
+import { FileText, Compass, AlertTriangle, Eye, FolderOpen, Trash2 } from 'lucide-react';
+import { Button, StatusBadge, Card, IconButton } from '../ui';
 import { logger } from '../../../shared/logger';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 import { formatDisplayPath } from '../../utils/pathDisplay';
@@ -103,102 +103,94 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
 
   return (
     <div style={style} className="px-2 py-2">
-      <div className="bg-white rounded-lg border border-border-soft p-4 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow">
-        <div className="flex items-start gap-4">
-          <div className="p-2 bg-system-gray-50 rounded-lg shrink-0">
-            <FileText className="w-5 h-5 text-system-gray-500" />
-          </div>
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <div className="flex items-center justify-between gap-4 mb-1">
-              <Text
-                variant="small"
-                className="font-medium text-system-gray-900 truncate"
-                title={file.name}
-              >
-                {file.name || 'Unknown File'}
-              </Text>
-              <div className="flex items-center gap-2 shrink-0">
-                {confidence !== null && (
-                  <Text variant="tiny" className="text-system-gray-500">
-                    {confidence}%
-                  </Text>
-                )}
-                <StatusBadge variant={tone} size="sm">
-                  <span className={stateDisplay?.spinning ? 'animate-spin mr-1' : 'mr-1'}>
-                    {stateDisplay?.icon}
-                  </span>
-                  {stateDisplay?.label || 'Status'}
-                </StatusBadge>
-              </div>
-            </div>
+      <Card
+        variant="interactive"
+        className="flex items-center p-3 gap-3 h-full group transition-all duration-200 hover:border-stratosort-blue/30"
+        onClick={() => handleAction && handleAction('open', file.path)}
+      >
+        {/* Icon */}
+        <div className="p-2 bg-system-gray-50 rounded-lg shrink-0 text-system-gray-500 group-hover:bg-stratosort-blue/5 group-hover:text-stratosort-blue transition-colors">
+          <FileText className="w-5 h-5" />
+        </div>
 
-            <Text variant="tiny" className="text-system-gray-500 truncate mb-2" title={displayPath}>
+        {/* Content */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
+          <div className="flex items-center gap-2">
+            <Text variant="body" className="font-medium text-system-gray-900 truncate">
+              {file.name || 'Unknown File'}
+            </Text>
+            <StatusBadge
+              variant={tone}
+              size="sm"
+              className="px-1.5 py-0.5 text-[10px] h-5 border-0 bg-opacity-50"
+            >
+              <span className={stateDisplay?.spinning ? 'animate-spin mr-1' : 'mr-1'}>
+                {stateDisplay?.icon}
+              </span>
+              {stateDisplay?.label || 'Status'}
+            </StatusBadge>
+            {confidence !== null && (
+              <Text variant="tiny" className="text-system-gray-400">
+                {confidence}%
+              </Text>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 text-system-gray-500">
+            <Text variant="tiny" className="truncate max-w-[300px]" title={displayPath}>
               {displayPath}
             </Text>
-
             {file.analysis?.category && (
-              <div className="flex items-center gap-2 mb-2">
-                <Text variant="tiny" className="text-system-gray-500">
-                  Category:
-                </Text>
-                <Text
-                  as="span"
-                  variant="tiny"
-                  className="font-medium text-stratosort-blue bg-stratosort-blue/5 px-1.5 py-0.5 rounded"
-                >
+              <>
+                <span className="w-1 h-1 rounded-full bg-system-gray-300" />
+                <span className="text-[10px] px-1.5 py-0.5 bg-system-gray-100 rounded-md text-system-gray-600 font-medium border border-system-gray-200">
                   {file.analysis.category}
-                </Text>
-              </div>
+                </span>
+              </>
             )}
-
             {keywords.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {keywords.slice(0, 5).map((tag, i) => (
-                  <Text
-                    as="span"
-                    variant="tiny"
-                    key={i}
-                    className="px-1.5 py-0.5 bg-system-gray-50 text-system-gray-600 rounded border border-system-gray-100"
-                  >
-                    {tag}
-                  </Text>
-                ))}
-                {keywords.length > 5 && (
-                  <Text as="span" variant="tiny" className="px-1.5 py-0.5 text-system-gray-400">
-                    +{keywords.length - 5}
-                  </Text>
-                )}
-              </div>
+              <span className="text-[10px] text-system-gray-400 truncate max-w-[150px]">
+                {keywords.join(', ')}
+              </span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-soft/50">
-          <Button
+        {/* Actions */}
+        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          <IconButton
+            icon={<Eye className="w-4 h-4" />}
             size="sm"
             variant="ghost"
-            onClick={() => handleAction && handleAction('open', file.path)}
-          >
-            Open
-          </Button>
-          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAction && handleAction('open', file.path);
+            }}
+            title="Open File"
+          />
+          <IconButton
+            icon={<FolderOpen className="w-4 h-4" />}
             size="sm"
             variant="ghost"
-            onClick={() => handleAction && handleAction('reveal', file.path)}
-          >
-            Reveal
-          </Button>
-          <div className="w-px h-4 bg-border-soft mx-1" />
-          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAction && handleAction('reveal', file.path);
+            }}
+            title="Reveal in Folder"
+          />
+          <IconButton
+            icon={<Trash2 className="w-4 h-4" />}
             size="sm"
             variant="ghost"
-            className="text-stratosort-danger hover:text-stratosort-danger hover:bg-stratosort-danger/10"
-            onClick={() => handleAction && handleAction('remove', file.path)}
-          >
-            Remove
-          </Button>
+            className="text-stratosort-danger hover:bg-stratosort-danger/10 hover:text-stratosort-danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAction && handleAction('remove', file.path);
+            }}
+            title="Remove from List"
+          />
         </div>
-      </div>
+      </Card>
     </div>
   );
 });
@@ -295,7 +287,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   };
 
   const shouldVirtualize = items.length > VIRTUALIZATION_THRESHOLD;
-  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-2`;
+  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-4`;
 
   if (isEmpty) {
     return (

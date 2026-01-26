@@ -9,7 +9,8 @@ import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
 // FIX L-2: Use centralized constants for virtualization
 const DEFAULT_ROW_HEIGHT = UI_VIRTUALIZATION.FILE_GRID_ROW_HEIGHT;
-const MEASUREMENT_PADDING = UI_VIRTUALIZATION.MEASUREMENT_PADDING;
+// Use locally defined padding for better visual separation
+const MEASUREMENT_PADDING = 32;
 const ROW_HEIGHT_TOLERANCE = 12; // avoid reflows for small delta (component-specific)
 const VIRTUALIZATION_THRESHOLD = UI_VIRTUALIZATION.THRESHOLD;
 
@@ -104,7 +105,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
   }
 
   return (
-    <div style={style} className="flex gap-6">
+    <div style={style} className="flex gap-8 pb-8 box-border">
       {rowItems}
     </div>
   );
@@ -223,7 +224,7 @@ function VirtualizedFileGrid({
   const rowCount = Math.max(1, Math.ceil(safeFiles.length / columnsPerRow));
   const shouldVirtualize = safeFiles.length > VIRTUALIZATION_THRESHOLD;
   const columnWidthEstimate = useMemo(
-    () => Math.max(320, Math.floor(dimensions.width / columnsPerRow) - 16),
+    () => Math.max(320, Math.floor(dimensions.width / columnsPerRow) - 32),
     [dimensions.width, columnsPerRow]
   );
 
@@ -334,7 +335,7 @@ function VirtualizedFileGrid({
 
   if (shouldVirtualize) {
     return (
-      <div ref={containerRef} className="relative w-full h-full">
+      <div ref={containerRef} className="relative w-full h-full p-8">
         {/* Helper for measurement only */}
         <div
           style={{
@@ -398,7 +399,7 @@ function VirtualizedFileGrid({
   return (
     <div
       ref={containerRef}
-      className="grid grid-adaptive-lg gap-6 h-full overflow-y-auto modern-scrollbar p-6"
+      className="grid grid-adaptive-lg gap-8 h-full overflow-y-auto modern-scrollbar p-8"
     >
       {safeFiles.map((file, index) => {
         const fileWithEdits = getFileWithEdits(file, index);

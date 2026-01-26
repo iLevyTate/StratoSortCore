@@ -11,7 +11,9 @@ const fs = require('fs').promises;
 const {
   SUPPORTED_DOCUMENT_EXTENSIONS,
   SUPPORTED_IMAGE_EXTENSIONS,
-  SUPPORTED_ARCHIVE_EXTENSIONS
+  SUPPORTED_ARCHIVE_EXTENSIONS,
+  SUPPORTED_3D_EXTENSIONS,
+  SUPPORTED_DESIGN_EXTENSIONS
 } = require('../../../shared/constants');
 const { withErrorLogging, safeHandle } = require('../ipcWrappers');
 const { logger } = require('../../../shared/logger');
@@ -79,13 +81,19 @@ function buildFileFilters() {
   const docs = stripDot([...SUPPORTED_DOCUMENT_EXTENSIONS, '.txt', '.md', '.rtf']);
   const images = stripDot(SUPPORTED_IMAGE_EXTENSIONS);
   const archives = stripDot(SUPPORTED_ARCHIVE_EXTENSIONS);
-  const allSupported = Array.from(new Set([...docs, ...images, ...archives]));
+  const models3d = stripDot(SUPPORTED_3D_EXTENSIONS);
+  const designs = stripDot(SUPPORTED_DESIGN_EXTENSIONS);
+  const allSupported = Array.from(
+    new Set([...docs, ...images, ...archives, ...models3d, ...designs])
+  );
 
   return [
     { name: 'All Supported Files', extensions: allSupported },
     { name: 'Documents', extensions: docs },
     { name: 'Images', extensions: images },
     { name: 'Archives', extensions: archives },
+    { name: '3D Models', extensions: models3d },
+    { name: 'Design Files', extensions: designs },
     { name: 'All Files', extensions: ['*'] }
   ];
 }
@@ -136,6 +144,8 @@ function getSupportedExtensions() {
       ...SUPPORTED_DOCUMENT_EXTENSIONS,
       ...SUPPORTED_IMAGE_EXTENSIONS,
       ...SUPPORTED_ARCHIVE_EXTENSIONS,
+      ...SUPPORTED_3D_EXTENSIONS,
+      ...SUPPORTED_DESIGN_EXTENSIONS,
       '.csv',
       '.json',
       '.xml',

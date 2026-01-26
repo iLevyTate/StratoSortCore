@@ -106,7 +106,7 @@ export function getEdgeStyle(kind, hop = 0) {
       animated: true
     },
     multi_hop: {
-      stroke: '#22c55e',
+      stroke: '#3b82f6', // Changed from #22c55e (green) to blue
       strokeWidth: 1.5,
       strokeDasharray: hop > 1 ? '3,3' : undefined,
       animated: hop === 1

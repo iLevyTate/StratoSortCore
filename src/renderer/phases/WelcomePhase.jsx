@@ -51,25 +51,25 @@ function WelcomePhase() {
   ];
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 justify-center py-10">
+    <div className="flex flex-col flex-1 min-h-0 justify-center py-12">
       {/* Main content wrapper - centers vertically and limits max width */}
-      <div className="flex flex-col gap-8 max-w-2xl mx-auto w-full">
+      <div className="flex flex-col gap-10 max-w-3xl mx-auto w-full px-6">
         {/* Header - compact and centered */}
-        <header className="text-center space-y-4">
+        <header className="text-center space-y-6">
           <Text
             variant="tiny"
             className="uppercase tracking-[0.25em] font-medium text-system-gray-500"
           >
             Intelligent file orchestration
           </Text>
-          <Heading as="h1" variant="display" id="welcome-heading">
+          <Heading as="h1" variant="display" id="welcome-heading" className="leading-tight">
             <Rocket
-              className="inline-block animate-float text-stratosort-blue w-8 h-8 md:w-10 md:h-10 mr-3 align-middle"
+              className="inline-block animate-float text-stratosort-blue w-10 h-10 md:w-12 md:h-12 mr-4 align-middle"
               aria-label="rocket"
             />
             Welcome to <span className="text-gradient">StratoSort</span>
           </Heading>
-          <Text variant="lead" className="max-w-xl mx-auto">
+          <Text variant="lead" className="max-w-xl mx-auto text-system-gray-600">
             Let our local AI co-pilot study your workspace, understand every file, and deliver calm,
             glassy organization in minutes.
           </Text>
@@ -77,67 +77,74 @@ function WelcomePhase() {
 
         {/* Primary Actions Card */}
         <Card variant="hero" role="navigation" aria-label="Primary actions">
-          <Stack gap="relaxed">
+          <div className="flex flex-col">
             {/* Primary Action - Organize */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3 items-center pb-8 border-b border-system-gray-100">
               <Button
                 onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
                 variant="primary"
-                size="md"
-                className="w-full justify-center"
+                size="lg"
+                className="w-full max-w-md justify-center shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
                 aria-describedby="organize-help"
               >
-                <FolderOpen className="w-5 h-5 mr-2" />
-                <span>Organize files now</span>
+                <FolderOpen className="w-6 h-6 mr-3" />
+                <span className="font-semibold text-lg">Organize files now</span>
               </Button>
-              <Text variant="tiny" className="text-center text-system-gray-500" id="organize-help">
+              <Text
+                variant="small"
+                className="text-center text-system-gray-500 font-medium"
+                id="organize-help"
+              >
                 Start scanning with smart defaults
               </Text>
             </div>
 
-            <div className="border-t border-border-soft/50" />
+            {/* Secondary Actions Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6">
+              {/* Tertiary Action - AI setup */}
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={() => dispatch(setActiveModal('ai-deps'))}
+                  variant="secondary"
+                  className="w-full justify-center h-full py-4 bg-white/50 hover:bg-white/80"
+                  aria-describedby="ai-setup-help"
+                >
+                  <Sparkles className="w-4 h-4 mr-2 text-stratosort-purple" />
+                  <span>Set up AI components</span>
+                </Button>
+                <Text
+                  variant="tiny"
+                  className="text-center text-system-gray-400"
+                  id="ai-setup-help"
+                >
+                  Optional (Ollama + ChromaDB)
+                </Text>
+              </div>
 
-            {/* Tertiary Action - AI setup */}
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={() => dispatch(setActiveModal('ai-deps'))}
-                variant="secondary"
-                className="w-full justify-center"
-                aria-describedby="ai-setup-help"
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                <span>Set up AI components (Ollama + ChromaDB)</span>
-              </Button>
-              <Text variant="tiny" className="text-center text-system-gray-500" id="ai-setup-help">
-                Optional, runs in the background
-              </Text>
+              {/* Secondary Action - Configure */}
+              <div className="flex flex-col gap-2">
+                <Button
+                  onClick={() => actions.advancePhase(PHASES?.SETUP ?? 'setup')}
+                  variant="secondary"
+                  className="w-full justify-center h-full py-4 bg-white/50 hover:bg-white/80"
+                  aria-describedby="setup-help"
+                >
+                  <Settings className="w-4 h-4 mr-2 text-system-gray-600" />
+                  <span>Configure smart folders</span>
+                </Button>
+                <Text variant="tiny" className="text-center text-system-gray-400" id="setup-help">
+                  Set up destinations first
+                </Text>
+              </div>
             </div>
-
-            <div className="border-t border-border-soft/50" />
-
-            {/* Secondary Action - Configure */}
-            <div className="flex flex-col gap-2">
-              <Button
-                onClick={() => actions.advancePhase(PHASES?.SETUP ?? 'setup')}
-                variant="secondary"
-                className="w-full justify-center"
-                aria-describedby="setup-help"
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                <span>Configure smart folders</span>
-              </Button>
-              <Text variant="tiny" className="text-center text-system-gray-500" id="setup-help">
-                Set up destinations first
-              </Text>
-            </div>
-          </Stack>
+          </div>
         </Card>
 
         {/* How it works link */}
         <div className="text-center">
           <button
             onClick={() => setShowFlowsModal(true)}
-            className="text-sm text-system-gray-500 hover:text-stratosort-blue transition-colors underline underline-offset-2"
+            className="text-sm text-system-gray-500 hover:text-stratosort-blue transition-colors hover:underline underline-offset-4"
           >
             How does StratoSort work?
           </button>

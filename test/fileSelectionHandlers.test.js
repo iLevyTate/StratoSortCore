@@ -28,6 +28,8 @@ jest.mock('../src/shared/constants', () => ({
   SUPPORTED_DOCUMENT_EXTENSIONS: ['.pdf', '.doc', '.docx'],
   SUPPORTED_IMAGE_EXTENSIONS: ['.jpg', '.png', '.gif'],
   SUPPORTED_ARCHIVE_EXTENSIONS: ['.zip', '.rar'],
+  SUPPORTED_3D_EXTENSIONS: ['.stl', '.obj'],
+  SUPPORTED_DESIGN_EXTENSIONS: ['.ai', '.psd'],
   DEFAULT_AI_MODELS: {
     TEXT_ANALYSIS: 'qwen3:0.6b',
     IMAGE_ANALYSIS: 'gemma3:latest',

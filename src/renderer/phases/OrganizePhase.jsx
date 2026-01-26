@@ -301,7 +301,12 @@ function OrganizePhase() {
 
       {/* Toolbar */}
       <Inline className="justify-between" gap="cozy">
-        <Inline className="flex-shrink-0" role="toolbar" aria-label="Organization tools" gap="cozy">
+        <Inline
+          className="flex-shrink-0"
+          role="toolbar"
+          aria-label="Organization tools"
+          gap="default"
+        >
           {safeSmartFolders.length > 0 && (
             <Button
               variant="secondary"
@@ -569,7 +574,7 @@ function OrganizePhase() {
         title="File Analysis Details"
         size="md"
         footer={
-          <Inline className="justify-end" gap="compact" wrap={false}>
+          <Inline className="justify-end" gap="default" wrap={false}>
             <Button onClick={() => setViewingFileDetails(null)} variant="secondary" size="sm">
               Close
             </Button>
@@ -599,7 +604,7 @@ function OrganizePhase() {
         title="Target Smart Folders"
         size="lg"
         footer={
-          <Inline className="justify-end" gap="compact" wrap={false}>
+          <Inline className="justify-end" gap="default" wrap={false}>
             <Button onClick={() => setShowFoldersModal(false)} variant="secondary" size="sm">
               Close
             </Button>
@@ -628,7 +633,7 @@ function OrganizePhase() {
         }
         size="md"
         footer={
-          <Inline className="justify-end" gap="compact" wrap={false}>
+          <Inline className="justify-end" gap="default" wrap={false}>
             <Button onClick={() => setShowStatusModal(false)} variant="secondary" size="sm">
               Close
             </Button>
@@ -649,7 +654,7 @@ function OrganizePhase() {
         title="Previously Organized Files"
         size="lg"
         footer={
-          <Inline className="justify-end" gap="compact" wrap={false}>
+          <Inline className="justify-end" gap="default" wrap={false}>
             <Button onClick={() => setShowHistoryModal(false)} variant="secondary" size="sm">
               Close
             </Button>

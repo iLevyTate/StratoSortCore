@@ -255,7 +255,7 @@ const LIMITS = {
  */
 const UI_VIRTUALIZATION = {
   THRESHOLD: 30, // Number of items before enabling virtualization
-  ANALYSIS_RESULTS_ITEM_HEIGHT: 72, // px
+  ANALYSIS_RESULTS_ITEM_HEIGHT: 100, // px
   FILE_GRID_ITEM_HEIGHT: 200, // px
   FILE_GRID_ITEM_WIDTH: 180, // px
   FILE_GRID_ROW_HEIGHT: 240, // px
@@ -349,7 +349,11 @@ const SUPPORTED_TEXT_EXTENSIONS = [
   '.php',
   '.sh',
   '.bat',
-  '.ps1'
+  '.ps1',
+  '.ini',
+  '.log',
+  '.scad',
+  '.gcode'
 ];
 
 const SUPPORTED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
@@ -358,6 +362,10 @@ const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.we
 
 const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'];
 
+const SUPPORTED_3D_EXTENSIONS = ['.stl', '.obj', '.3mf'];
+
+const SUPPORTED_DESIGN_EXTENSIONS = ['.ai', '.eps', '.psd'];
+
 const ALL_SUPPORTED_EXTENSIONS = Array.from(
   new Set([
     ...SUPPORTED_TEXT_EXTENSIONS,
@@ -365,7 +373,9 @@ const ALL_SUPPORTED_EXTENSIONS = Array.from(
     ...SUPPORTED_IMAGE_EXTENSIONS,
     ...SUPPORTED_AUDIO_EXTENSIONS,
     ...SUPPORTED_VIDEO_EXTENSIONS,
-    ...SUPPORTED_ARCHIVE_EXTENSIONS
+    ...SUPPORTED_ARCHIVE_EXTENSIONS,
+    ...SUPPORTED_3D_EXTENSIONS,
+    ...SUPPORTED_DESIGN_EXTENSIONS
   ])
 );
 
@@ -558,6 +568,8 @@ module.exports = {
   SUPPORTED_AUDIO_EXTENSIONS,
   SUPPORTED_VIDEO_EXTENSIONS,
   SUPPORTED_ARCHIVE_EXTENSIONS,
+  SUPPORTED_3D_EXTENSIONS,
+  SUPPORTED_DESIGN_EXTENSIONS,
   ALL_SUPPORTED_EXTENSIONS,
   PHASES,
   PHASE_ORDER,

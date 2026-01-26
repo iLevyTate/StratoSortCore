@@ -137,6 +137,31 @@ const ClusterLegend = memo(
             </button>
           </div>
 
+          {/* Connection Logic (New) */}
+          <div className="space-y-1 pt-2 border-t border-system-gray-100">
+            <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">
+              Connection Logic
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className="w-8 h-0.5 bg-blue-500 rounded-full" />
+                <span className="text-system-gray-600">Shared Tags</span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className="w-8 h-0.5 bg-violet-500 rounded-full" />
+                <span className="text-system-gray-600">Same Category</span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className="w-8 h-0.5 bg-emerald-500 rounded-full" />
+                <span className="text-system-gray-600">Content Match</span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className="w-8 h-0.5 border-t border-dashed border-slate-400" />
+                <span className="text-system-gray-600">Vector Similarity</span>
+              </div>
+            </div>
+          </div>
+
           {/* NEW: File Categories */}
           <div className="space-y-1 pt-2 border-t border-system-gray-100">
             <div className="text-[10px] uppercase tracking-wider text-system-gray-400 font-medium">

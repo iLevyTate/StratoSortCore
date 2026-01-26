@@ -60,10 +60,6 @@ const CACHE_CONFIG = {
 };
 const ANALYSIS_SIGNATURE_VERSION = 'v2';
 
-// Folder match threshold now in THRESHOLDS.FOLDER_MATCH_CONFIDENCE
-
-// Stage 3 Migration: Use shared LRUCache instead of manual Map+TTL implementation
-// This eliminates ~40 lines of manual cache management code
 const fileAnalysisCache = new LRUCache({
   maxSize: CACHE_CONFIG.MAX_FILE_CACHE,
   ttlMs: CACHE_CONFIG.CACHE_TTL_MS,
@@ -93,8 +89,6 @@ function setFileCache(signature, value) {
 
 // Import error handling system
 const { FileProcessingError } = require('../errors/AnalysisError');
-
-// Stage 5: Local getServicesLazy removed - now using getServices from semanticFolderMatcher
 
 // Set logger context for this module
 logger.setContext('DocumentAnalysis');
@@ -135,7 +129,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
   try {
     fileStats = await fs.stat(filePath);
     fileSignature = `${ANALYSIS_SIGNATURE_VERSION}|${modelName}|${smartFolderSig}|${filePath}|${fileStats.size}|${fileStats.mtimeMs}`;
-    // CRITICAL FIX: Use TTL-aware cache getter instead of direct Map access
     if (!bypassCache) {
       const cachedResult = getFileCache(fileSignature);
       if (cachedResult) {
@@ -517,7 +510,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         .update(modelName)
         .digest('hex');
 
-      // FIX HIGH-65: Remove redundant model/folders from key since contentHash + fileName covers uniqueness
       // Folders are only relevant if they change the prompt structure, but analyzeTextWithOllama uses
       // folders in the prompt. So we SHOULD include folders. But model is in contentHash.
       const deduplicationKey = globalDeduplicator.generateKey({
@@ -533,8 +525,6 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       );
 
       // Semantic folder refinement using embeddings
-      // MIGRATION: Now uses unified semanticFolderMatcher module
-      // CRITICAL FIX: Guard against null/undefined analysis before folder matching
       if (analysis && typeof analysis === 'object' && !analysis.error) {
         try {
           await applyUnifiedFolderMatching({
@@ -555,7 +545,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         }
       }
 
-      // FIX P1-5: Capture values needed from extractedText and release it for GC
+      // Capture values needed from extractedText and release it for GC
       // Large documents can be 2MB+, holding this in memory during subsequent async
       // operations wastes memory. Capture what we need and null the reference.
       const extractedTextLength = extractedText?.length || 0;
@@ -590,7 +580,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         {
           rawText: extractedTextPreview,
           extractedText: extractedTextForStorage,
-          // FIX #3: Use optional chaining to prevent crash when analysis is null/undefined
+          // Use optional chaining to prevent crash when analysis is null/undefined
           keywords: Array.isArray(analysis?.keywords)
             ? analysis.keywords
             : ['document', 'analysis_failed'],

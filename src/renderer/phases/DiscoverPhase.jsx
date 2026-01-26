@@ -419,7 +419,7 @@ function DiscoverPhase() {
       {/* Toolbar */}
       <Inline className="justify-between" gap="cozy" wrap={false}>
         <Inline gap="compact">{/* Left side toolbar items if any */}</Inline>
-        <Inline gap="compact" wrap>
+        <Inline gap="relaxed" wrap>
           <Button
             variant="secondary"
             size="sm"
@@ -504,7 +504,7 @@ function DiscoverPhase() {
                       />
                     </div>
                   ) : (
-                    <Inline className="text-sm text-system-gray-600" gap="compact" wrap>
+                    <Inline className="text-sm text-system-gray-600" gap="cozy" wrap>
                       <span className="status-dot success animate-pulse" />
                       {pendingAnalysisCount > 0 ? (
                         <Text variant="small">
@@ -522,7 +522,7 @@ function DiscoverPhase() {
                   )}
                 </div>
 
-                <Inline gap="cozy" wrap>
+                <Inline gap="default" wrap>
                   {isAnalyzing ? (
                     <>
                       <Button onClick={cancelAnalysis} variant="danger" size="sm">

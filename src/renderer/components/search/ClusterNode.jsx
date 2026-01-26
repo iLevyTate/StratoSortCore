@@ -21,8 +21,8 @@ import {
 
 // Hub sizing constants
 const HUB_SIZE = {
-  MIN_DIAMETER: 120,
-  MAX_DIAMETER: 200,
+  MIN_DIAMETER: 100,
+  MAX_DIAMETER: 160,
   LOG_SCALE_DIVISOR: 2.5
 };
 

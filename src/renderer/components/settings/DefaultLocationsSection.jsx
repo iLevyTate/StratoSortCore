@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { FolderOpen } from 'lucide-react';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
@@ -9,6 +10,8 @@ import SettingRow from './SettingRow';
  * Default locations section for smart folder configuration
  */
 function DefaultLocationsSection({ settings, setSettings }) {
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
+
   const handleBrowse = useCallback(async () => {
     const res = await window.electronAPI.files.selectDirectory();
     if (res?.success && res.path) {
@@ -28,7 +31,7 @@ function DefaultLocationsSection({ settings, setSettings }) {
       >
         <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
           <Input
-            type="text"
+            type={redactPaths ? 'password' : 'text'}
             value={settings.defaultSmartFolderLocation}
             onChange={(e) =>
               setSettings((prev) => ({

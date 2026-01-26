@@ -666,6 +666,18 @@ export default function UnifiedSearchModal({
   // Help tour state (for re-showing the tour via help button)
   const [showTourManually, setShowTourManually] = useState(false);
 
+  // Persistence and Notes state
+  const [graphNotes, setGraphNotes] = useState({}); // Map of nodeId -> note string
+  // const [showNotesPanel, setShowNotesPanel] = useState(false);
+  const [enableAutoClustering, setEnableAutoClustering] = useState(false);
+  const [showEdgeLabels, setShowEdgeLabels] = useState(true); // Default to showing labels for clarity
+  const showEdgeLabelsRef = useRef(true); // Ref for access in callbacks without dependency
+
+  // Sync ref with state
+  useEffect(() => {
+    showEdgeLabelsRef.current = showEdgeLabels;
+  }, [showEdgeLabels, showEdgeLabelsRef]); // Default to false to reduce clutter
+
   const dispatch = useAppDispatch();
   const handleOpenSettings = useCallback(() => {
     dispatch(toggleSettings());
@@ -821,7 +833,7 @@ export default function UnifiedSearchModal({
   }, []);
 
   const handleChatSend = useCallback(
-    async (text) => {
+    async (text, overrideContextIds = null) => {
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) return;
 
@@ -831,23 +843,27 @@ export default function UnifiedSearchModal({
 
       try {
         const sessionId = ensureChatSession();
-        const contextFileIds = useSearchContext
-          ? Array.from(
-              new Set(
-                (searchResults || [])
-                  .map((result) => result?.id)
-                  .filter((id) => typeof id === 'string' && id.length > 0)
-              )
+        let contextFileIds = [];
+
+        if (Array.isArray(overrideContextIds) && overrideContextIds.length > 0) {
+          contextFileIds = overrideContextIds;
+        } else if (useSearchContext) {
+          contextFileIds = Array.from(
+            new Set(
+              (searchResults || [])
+                .map((result) => result?.id)
+                .filter((id) => typeof id === 'string' && id.length > 0)
             )
-              .sort((aId, bId) => {
-                const aPath = searchResults.find((r) => r?.id === aId)?.metadata?.path || '';
-                const bPath = searchResults.find((r) => r?.id === bId)?.metadata?.path || '';
-                const aRec = recommendationMap[aPath] ? 1 : 0;
-                const bRec = recommendationMap[bPath] ? 1 : 0;
-                return bRec - aRec;
-              })
-              .slice(0, 200)
-          : [];
+          )
+            .sort((aId, bId) => {
+              const aPath = searchResults.find((r) => r?.id === aId)?.metadata?.path || '';
+              const bPath = searchResults.find((r) => r?.id === bId)?.metadata?.path || '';
+              const aRec = recommendationMap[aPath] ? 1 : 0;
+              const bRec = recommendationMap[bPath] ? 1 : 0;
+              return bRec - aRec;
+            })
+            .slice(0, 200);
+        }
 
         logger.info('[KnowledgeOS] Chat query', {
           sessionId,
@@ -990,7 +1006,8 @@ export default function UnifiedSearchModal({
               kind: 'similarity',
               similarity: edge.similarity,
               sourceData: nodeDataMap.get(edge.source) || {},
-              targetData: nodeDataMap.get(edge.target) || {}
+              targetData: nodeDataMap.get(edge.target) || {},
+              showEdgeLabels: showEdgeLabelsRef.current
             }
           }));
           if (similarityEdges.length > 0) {
@@ -1004,12 +1021,19 @@ export default function UnifiedSearchModal({
 
       if (autoLayout && fileNodes.length > 1) {
         try {
-          const layouted = await debouncedElkLayout(fileNodes, edgesRef.current || [], {
-            direction: 'RIGHT',
-            spacing: GRAPH_LAYOUT_SPACING,
-            layerSpacing: GRAPH_LAYER_SPACING
-          });
-          graphActions.setNodes(layouted);
+          const { nodes: layoutedNodes, edges: layoutedEdges } = await debouncedElkLayout(
+            fileNodes,
+            edgesRef.current || [],
+            {
+              direction: 'RIGHT',
+              spacing: GRAPH_LAYOUT_SPACING,
+              layerSpacing: GRAPH_LAYER_SPACING
+            }
+          );
+          graphActions.setNodes(layoutedNodes);
+          if (layoutedEdges && layoutedEdges.length > 0) {
+            graphActions.setEdges(layoutedEdges);
+          }
         } catch (layoutError) {
           logger.warn('[Graph] Layout from chat sources failed:', layoutError);
         }
@@ -1105,6 +1129,81 @@ export default function UnifiedSearchModal({
     setFocusedResultIndex(-1);
   }, [activeTab]);
 
+  // Update edge visibility when toggle changes
+  useEffect(() => {
+    graphActions.setEdges((prevEdges) =>
+      prevEdges.map((e) => ({
+        ...e,
+        data: { ...e.data, showEdgeLabels }
+      }))
+    );
+  }, [showEdgeLabels, graphActions]);
+
+  // ============================================================================
+  // Persistence & Notes
+  // ============================================================================
+
+  const handleSaveGraph = useCallback(() => {
+    try {
+      const state = {
+        nodes,
+        edges,
+        notes: graphNotes,
+        chatMessages,
+        settings: {
+          enableAutoClustering,
+          autoLayout,
+          showEdgeLabels
+        },
+        timestamp: Date.now()
+      };
+      localStorage.setItem('stratosort_graph_state', JSON.stringify(state));
+      setGraphStatus('Graph, chat, and settings saved');
+    } catch (e) {
+      logger.error('Failed to save graph', e);
+      setError('Failed to save graph state');
+    }
+  }, [nodes, edges, graphNotes, chatMessages, enableAutoClustering, autoLayout, showEdgeLabels]);
+
+  const handleLoadGraph = useCallback(() => {
+    try {
+      const saved = localStorage.getItem('stratosort_graph_state');
+      if (!saved) {
+        setGraphStatus('No saved graph found');
+        return;
+      }
+      const state = JSON.parse(saved);
+      if (state.nodes && state.edges) {
+        graphActions.setNodes(state.nodes);
+        // Ensure edge visibility respects current or loaded setting
+        const loadedShowLabels = state.settings?.showEdgeLabels ?? true;
+
+        // Restore edges with updated visibility if needed
+        const restoredEdges = state.edges.map((e) => ({
+          ...e,
+          data: { ...e.data, showEdgeLabels: loadedShowLabels }
+        }));
+        graphActions.setEdges(restoredEdges);
+
+        if (state.notes) setGraphNotes(state.notes);
+        if (state.chatMessages) setChatMessages(state.chatMessages);
+
+        // Restore settings
+        if (state.settings) {
+          if (state.settings.enableAutoClustering !== undefined)
+            setEnableAutoClustering(state.settings.enableAutoClustering);
+          if (state.settings.autoLayout !== undefined) setAutoLayout(state.settings.autoLayout);
+          setShowEdgeLabels(loadedShowLabels);
+        }
+
+        setGraphStatus(`Loaded graph from ${new Date(state.timestamp).toLocaleTimeString()}`);
+      }
+    } catch (e) {
+      logger.error('Failed to load graph', e);
+      setError('Failed to load saved graph');
+    }
+  }, [graphActions]);
+
   // ============================================================================
   // Shared: File Actions (defined early for keyboard shortcut dependency)
   // ============================================================================
@@ -1168,7 +1267,8 @@ export default function UnifiedSearchModal({
         data: {
           kind: 'query_match',
           score: result?.score || 0,
-          matchDetails: result?.matchDetails || {}
+          matchDetails: result?.matchDetails || {},
+          showEdgeLabels: showEdgeLabelsRef.current
         }
       };
     });
@@ -2567,7 +2667,8 @@ export default function UnifiedSearchModal({
                       animated: false,
                       data: {
                         kind: 'similarity',
-                        score: sim.score
+                        score: sim.score,
+                        showEdgeLabels: showEdgeLabelsRef.current
                       }
                     });
                   }
@@ -2821,11 +2922,12 @@ export default function UnifiedSearchModal({
     if (hasAutoLoadedClusters.current) return;
     if (nodes.length > 0) return; // Already have nodes
     if (!stats?.files || stats.files === 0) return; // No indexed files
+    if (!enableAutoClustering) return; // Skip if auto-clustering is disabled
 
     // Auto-load clusters to give users something to explore
     hasAutoLoadedClusters.current = true;
     loadClusters();
-  }, [isOpen, activeTab, stats, nodes.length, loadClusters]);
+  }, [isOpen, activeTab, stats, nodes.length, loadClusters, enableAutoClustering]);
 
   // Real-time updates: Listen for file operations
   useEffect(() => {
@@ -3215,7 +3317,8 @@ export default function UnifiedSearchModal({
                   kind: 'similarity',
                   similarity: e.similarity,
                   sourceData: nodeDataMap.get(e.source) || {},
-                  targetData: nodeDataMap.get(e.target) || {}
+                  targetData: nodeDataMap.get(e.target) || {},
+                  showEdgeLabels: showEdgeLabelsRef.current
                 }
               }));
 
@@ -3345,7 +3448,8 @@ export default function UnifiedSearchModal({
               kind: 'similarity',
               similarity: r.score || 0,
               sourceData: seedNodeData,
-              targetData: targetNodeData
+              targetData: targetNodeData,
+              showEdgeLabels: showEdgeLabelsRef.current
             }
           });
         });
@@ -3455,7 +3559,8 @@ export default function UnifiedSearchModal({
                     kind: 'similarity',
                     similarity: e.similarity,
                     sourceData: nodeDataMap.get(e.source) || {},
-                    targetData: nodeDataMap.get(e.target) || {}
+                    targetData: nodeDataMap.get(e.target) || {},
+                    showEdgeLabels: showEdgeLabelsRef.current
                   }
                 }));
 
@@ -3879,7 +3984,7 @@ export default function UnifiedSearchModal({
         {/* Header - simplified when graph is hidden */}
         {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && !isGraphMaximized ? (
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-system-gray-200">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
               <TabButton
                 active={activeTab === 'search'}
                 onClick={() => setActiveTab('search')}
@@ -3977,6 +4082,22 @@ export default function UnifiedSearchModal({
                       <span>View in Graph</span>
                     </Button>
                   )}
+                  {/* Ask Assistant button */}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setActiveTab('chat');
+                      // If there is a query, ask about it
+                      if (debouncedQuery) {
+                        handleChatSend(`Tell me about "${debouncedQuery}" based on these results`);
+                      }
+                    }}
+                    title="Ask AI assistant about these results"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span>Ask AI</span>
+                  </Button>
                   <div
                     className="flex items-center gap-1 bg-system-gray-100 rounded-lg p-0.5"
                     role="group"
@@ -4338,7 +4459,7 @@ export default function UnifiedSearchModal({
                     <span>Explore</span>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <Button
                       variant={showClusters ? 'primary' : 'secondary'}
                       size="sm"
@@ -4371,7 +4492,7 @@ export default function UnifiedSearchModal({
 
                     {/* Expand/Collapse All Clusters */}
                     {showClusters && (
-                      <div className="flex gap-1">
+                      <div className="flex gap-3">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -4529,6 +4650,90 @@ export default function UnifiedSearchModal({
                         />
                         Auto-layout on changes
                       </label>
+
+                      {/* Auto-clustering Toggle */}
+                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableAutoClustering}
+                          onChange={(e) => setEnableAutoClustering(e.target.checked)}
+                          className="rounded"
+                        />
+                        Auto-load clusters
+                      </label>
+
+                      {/* Edge Labels Toggle */}
+                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer mt-1">
+                        <input
+                          type="checkbox"
+                          checked={showEdgeLabels}
+                          onChange={(e) => setShowEdgeLabels(e.target.checked)}
+                          className="rounded"
+                        />
+                        Show connection labels
+                      </label>
+
+                      {/* Save/Load Controls */}
+                      <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleSaveGraph}
+                          className="flex-1 justify-center text-xs"
+                        >
+                          Save State
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleLoadGraph}
+                          className="flex-1 justify-center text-xs"
+                        >
+                          Load State
+                        </Button>
+                      </div>
+
+                      {/* Auto-clustering Toggle */}
+                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={enableAutoClustering}
+                          onChange={(e) => setEnableAutoClustering(e.target.checked)}
+                          className="rounded"
+                        />
+                        Auto-load clusters
+                      </label>
+
+                      {/* Edge Labels Toggle */}
+                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer mt-1">
+                        <input
+                          type="checkbox"
+                          checked={showEdgeLabels}
+                          onChange={(e) => setShowEdgeLabels(e.target.checked)}
+                          className="rounded"
+                        />
+                        Show connection labels
+                      </label>
+
+                      {/* Save/Load Controls */}
+                      <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleSaveGraph}
+                          className="flex-1 justify-center text-xs"
+                        >
+                          Save State
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleLoadGraph}
+                          className="flex-1 justify-center text-xs"
+                        >
+                          Load State
+                        </Button>
+                      </div>
 
                       <Button
                         variant="secondary"
@@ -4969,6 +5174,25 @@ export default function UnifiedSearchModal({
                             </div>
                           )}
 
+                          {/* Notes Section */}
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between">
+                              <span>Notes</span>
+                            </div>
+                            <textarea
+                              className="w-full text-xs p-2 border border-system-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-stratosort-blue/20 focus:border-stratosort-blue/50"
+                              rows={3}
+                              placeholder="Add notes about this node or connection..."
+                              value={graphNotes[selectedNode.id] || ''}
+                              onChange={(e) =>
+                                setGraphNotes((prev) => ({
+                                  ...prev,
+                                  [selectedNode.id]: e.target.value
+                                }))
+                              }
+                            />
+                          </div>
+
                           {/* Connections Section */}
                           <div className="space-y-2">
                             <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between">
@@ -5081,19 +5305,36 @@ export default function UnifiedSearchModal({
                             </div>
 
                             {selectedKind === 'file' && selectedPath && (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                  const fileName = safeBasename(selectedPath) || 'file';
-                                  setQuery(`similar to: ${fileName}`);
-                                  setActiveTab('search');
-                                }}
-                                className="w-full justify-center"
-                              >
-                                <SearchIcon className="h-3.5 w-3.5" />
-                                <span>Find Similar</span>
-                              </Button>
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    const fileName = safeBasename(selectedPath) || 'file';
+                                    setQuery(`similar to: ${fileName}`);
+                                    setActiveTab('search');
+                                  }}
+                                  className="w-full justify-center"
+                                >
+                                  <SearchIcon className="h-3.5 w-3.5" />
+                                  <span>Find Similar</span>
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => {
+                                    const fileName = safeBasename(selectedPath) || 'file';
+                                    setActiveTab('chat');
+                                    // Pre-populate chat context/input with this file
+                                    const contextMsg = `Tell me about ${fileName}`;
+                                    handleChatSend(contextMsg, [selectedNode.id]);
+                                  }}
+                                  className="w-full justify-center"
+                                >
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                  <span>Ask Assistant</span>
+                                </Button>
+                              </>
                             )}
                           </div>
 

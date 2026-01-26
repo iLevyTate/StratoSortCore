@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
 
@@ -19,9 +19,30 @@ const SmartStepEdge = ({
   targetPosition,
   style = {},
   markerEnd,
-  label = null
+  label = null,
+  data
 }) => {
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  // Get the edge path
+  // Prefer ELK-routed path if available for collision avoidance
+  const elkPath = useMemo(() => {
+    const sections = data?.elkSections;
+    if (!sections || sections.length === 0) return null;
+
+    return sections
+      .map((section) => {
+        let pathStr = `M ${section.startPoint.x},${section.startPoint.y}`;
+        if (section.bendPoints) {
+          section.bendPoints.forEach((bp) => {
+            pathStr += ` L ${bp.x},${bp.y}`;
+          });
+        }
+        pathStr += ` L ${section.endPoint.x},${section.endPoint.y}`;
+        return pathStr;
+      })
+      .join(' ');
+  }, [data?.elkSections]);
+
+  const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -31,6 +52,10 @@ const SmartStepEdge = ({
     borderRadius: 16, // Increased border radius for smoother corners
     offset: 20 // Offset for the path to avoid hugging nodes too closely
   });
+
+  const edgePath = elkPath || smoothPath;
+  const labelX = smoothLabelX;
+  const labelY = smoothLabelY;
 
   return (
     <>

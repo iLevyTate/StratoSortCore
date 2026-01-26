@@ -67,8 +67,18 @@ function ReadyFileItem({
   return (
     <Card
       variant={isSelected ? 'interactive' : 'default'}
-      className={`h-full p-4 ${isSelected ? 'ring-2 ring-stratosort-blue/25' : ''}`}
+      className={`h-full p-4 relative ${isSelected ? 'ring-2 ring-stratosort-blue/25' : ''}`}
     >
+      {/* Absolute positioned status badge */}
+      <div className="absolute top-3 right-3 z-10">
+        <StatusBadge variant={tone} size="sm" className="shadow-sm">
+          <span className={stateDisplay.spinning ? 'animate-spin mr-1' : 'mr-1'}>
+            {stateDisplay.icon}
+          </span>
+          <span className="hidden sm:inline">{stateDisplay.label}</span>
+        </StatusBadge>
+      </div>
+
       <div className="flex gap-3 h-full">
         <div className="pt-1">
           <input
@@ -82,7 +92,7 @@ function ReadyFileItem({
         <div className="flex-1 min-w-0 overflow-visible">
           <Stack gap="cozy" className="w-full">
             {/* Header Section */}
-            <div className="flex justify-between items-start gap-2">
+            <div className="flex justify-between items-start gap-2 pr-12">
               <div className="flex items-start gap-3 min-w-0 flex-1">
                 <FileText className="w-5 h-5 text-system-gray-400 flex-shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
@@ -105,13 +115,6 @@ function ReadyFileItem({
                   </Text>
                 </div>
               </div>
-
-              <StatusBadge variant={tone} size="sm" className="flex-shrink-0">
-                <span className={stateDisplay.spinning ? 'animate-spin mr-1' : 'mr-1'}>
-                  {stateDisplay.icon}
-                </span>
-                <span className="hidden sm:inline">{stateDisplay.label}</span>
-              </StatusBadge>
             </div>
 
             {/* Analysis Section */}
@@ -163,29 +166,47 @@ function ReadyFileItem({
 
                 <div className="flex items-end justify-between gap-3">
                   {destination ? (
-                    <details className="text-system-gray-600 overflow-visible group min-w-0 flex-1">
-                      <summary className="cursor-pointer list-none font-medium hover:text-system-gray-900 transition-colors flex items-center gap-2 select-none focus:outline-none">
-                        <Play className="w-3 h-3 fill-current opacity-70 transition-transform group-open:rotate-90" />
-                        <Text as="span" variant="tiny">
-                          Destination
-                        </Text>
-                      </summary>
+                    <div className="min-w-0 flex-1">
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="text-system-gray-500 font-medium mb-1"
+                      >
+                        Destination
+                      </Text>
                       <Text
                         variant="tiny"
-                        className="text-stratosort-blue block mt-1 break-all line-clamp-2 pl-5"
+                        className="text-stratosort-blue break-all line-clamp-2"
                         title={displayDestination}
                       >
                         {displayDestination}
                       </Text>
-                    </details>
+                    </div>
                   ) : (
                     <div />
                   )}
 
                   {computedConfidence !== null && (
-                    <Text variant="tiny" className="text-system-gray-400 flex-shrink-0">
-                      {computedConfidence}% confidence
-                    </Text>
+                    <div
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border flex-shrink-0 ${
+                        computedConfidence >= 80
+                          ? 'bg-stratosort-success/10 text-stratosort-success border-stratosort-success/20'
+                          : computedConfidence >= 50
+                            ? 'bg-stratosort-warning/10 text-stratosort-warning border-stratosort-warning/20'
+                            : 'bg-system-gray-100 text-system-gray-600 border-system-gray-200'
+                      }`}
+                    >
+                      <div
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          computedConfidence >= 80
+                            ? 'bg-stratosort-success'
+                            : computedConfidence >= 50
+                              ? 'bg-stratosort-warning'
+                              : 'bg-system-gray-400'
+                        }`}
+                      />
+                      {computedConfidence}%
+                    </div>
                   )}
                 </div>
               </>

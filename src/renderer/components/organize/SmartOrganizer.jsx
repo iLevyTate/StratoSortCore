@@ -376,7 +376,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                   : "You'll review each suggestion before organizing"}
               </p>
 
-              <div className="flex gap-3 justify-center">
+              <div className="flex gap-4 justify-center">
                 {mode === 'quick' ? (
                   <Button
                     variant="primary"
@@ -669,7 +669,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
               )}
             </div>
 
-            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+            <div className="flex justify-end gap-4 mt-6 pt-4 border-t">
               <Button variant="secondary" size="sm" onClick={handleCancelGroupCustomization}>
                 Cancel
               </Button>

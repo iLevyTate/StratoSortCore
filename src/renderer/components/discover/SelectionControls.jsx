@@ -10,7 +10,7 @@ const SelectionControls = memo(function SelectionControls({
   className = ''
 }) {
   return (
-    <Inline gap="cozy" className={`justify-center ${className}`}>
+    <Inline gap="relaxed" className={`justify-center ${className}`}>
       <Button onClick={onSelectFiles} variant="primary" disabled={isScanning}>
         Select Files
       </Button>

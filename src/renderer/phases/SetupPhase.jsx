@@ -422,7 +422,7 @@ function SetupPhase() {
           )}
         </Inline>
 
-        <Inline gap="compact">
+        <Inline gap="default">
           {smartFolders.length > 0 && (
             <Button onClick={handleResetToDefaults} variant="secondary" size="sm">
               <RotateCcw className="w-4 h-4 mr-1.5" />
@@ -466,7 +466,7 @@ function SetupPhase() {
                 Add at least one destination folder so StratoSort knows where to organize your
                 files.
               </Text>
-              <Inline gap="compact">
+              <Inline gap="default">
                 <Button onClick={handleResetToDefaults} variant="secondary">
                   <RotateCcw className="w-4 h-4 mr-1.5" />
                   Load Defaults

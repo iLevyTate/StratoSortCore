@@ -1,6 +1,5 @@
 const fs = require('fs').promises;
 const path = require('path');
-// getCanonicalFileId removed - now handled by unified semanticFolderMatcher
 const sharp = require('sharp');
 const { getOllamaVisionModel, loadOllamaConfig, getOllama } = require('../ollamaUtils');
 const { buildOllamaOptions } = require('../services/PerformanceService');
@@ -11,7 +10,6 @@ const { attemptJsonRepairWithOllama } = require('../utils/ollamaJsonRepair');
 const { AI_DEFAULTS, SUPPORTED_IMAGE_EXTENSIONS } = require('../../shared/constants');
 const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
 const { withAbortableTimeout } = require('../../shared/promiseUtils');
-// THRESHOLDS removed - now handled by unified semanticFolderMatcher
 const { ANALYSIS_SCHEMA_PROMPT } = require('../../shared/analysisSchema');
 const { normalizeAnalysisResult } = require('./utils');
 const { normalizeExtractedTextForStorage } = require('./analysisTextUtils');
@@ -21,7 +19,6 @@ const {
   safeSuggestedName,
   createFallbackAnalysis
 } = require('./fallbackUtils');
-// enrichFileTextForEmbedding removed - now handled by unified semanticFolderMatcher
 const FolderMatchingService = require('../services/FolderMatchingService');
 const embeddingQueue = require('./embeddingQueue');
 const { logger } = require('../../shared/logger');
@@ -181,8 +178,7 @@ Analyze this image:`;
       getOllamaVisionModel() || cfg.selectedVisionModel || AppConfig.ai.imageAnalysis.defaultModel;
 
     // Use deduplicator to prevent duplicate LLM calls for identical images
-    // FIX: Handle case where smartFolders is explicitly passed as undefined
-    // CRITICAL: Include 'type' to prevent cross-file cache contamination with document analysis
+    // Include 'type' to prevent cross-file cache contamination with document analysis
     const safeFolders = Array.isArray(smartFolders) ? smartFolders : [];
     const deduplicationKey = globalDeduplicator.generateKey({
       type: 'image', // Prevent cross-type contamination with document analysis
@@ -200,11 +196,6 @@ Analyze this image:`;
     // IMPORTANT: Vision model calls can hang indefinitely if the model/server gets stuck.
     // Enforce a hard timeout and abort the underlying request (supported by Ollama client).
     const timeoutMs = Number(AppConfig.ai.imageAnalysis.timeout) || 60000;
-    logger.debug('[IMAGE-ANALYSIS] Using vision model', {
-      model: modelToUse,
-      fileName: originalFileName,
-      timeoutMs
-    });
     const response = await withAbortableTimeout(
       (abortController) => {
         const generateRequest = {
@@ -226,7 +217,7 @@ Analyze this image:`;
             function: { name: IMAGE_ANALYSIS_TOOL.function.name }
           };
         }
-        // FIX MED #11: Reduce retries to prevent exceeding outer timeout
+        // Reduce retries to prevent exceeding outer timeout
         // With 60s outer timeout and ~20s per LLM call, 2 retries (3 attempts) + delays fits within budget
         return globalDeduplicator.deduplicate(
           deduplicationKey,
@@ -312,7 +303,7 @@ Analyze this image:`;
         }
 
         // Ensure confidence is a reasonable number
-        // MEDIUM PRIORITY FIX (MED-10): Use fixed default instead of random value
+        // Use fixed default instead of random value
         if (!parsedJson.confidence || parsedJson.confidence < 60 || parsedJson.confidence > 100) {
           parsedJson.confidence = 75; // Fixed default when Ollama returns invalid confidence
           logger.debug('[IMAGE-ANALYSIS] Invalid confidence from Ollama, using default: 75');
@@ -437,7 +428,6 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
 
   // Check if suggested name indicates landscape/scenic content
   const suggestedIsLandscape = landscapeTerms.some((term) => suggestedLower.includes(term));
-  // FIX #12: Removed unused keywordsAreLandscape variable
 
   // CRITICAL: Detect financial document → landscape hallucination
   if (filenameIsFinancial && suggestedIsLandscape) {
@@ -574,7 +564,7 @@ function validateAnalysisConsistency(analysis, fileName, extractedText = null) {
 // Helper Functions - Extracted for readability and maintainability
 // ============================================================================
 
-// Stage 5: createFallbackResult and normalizeCategoryToSmartFolder removed
+// createFallbackResult and normalizeCategoryToSmartFolder removed
 // Now using createFallbackAnalysis from ./fallbackUtils
 // For category normalization, use FolderMatchingService.matchCategoryToFolder directly
 
@@ -614,7 +604,7 @@ async function extractExifDate(imageBuffer) {
  * @returns {Promise<Buffer>} Processed image buffer
  */
 async function preprocessImageBuffer(imageBuffer, fileExtension) {
-  // FIX HIGH-67: Wrap entire preprocessing in try/catch to catch synchronous sharp errors
+  // Wrap entire preprocessing in try/catch to catch synchronous sharp errors
   try {
     const needsFormatConversion = ['.svg', '.tiff', '.tif', '.bmp', '.gif', '.webp'].includes(
       fileExtension
@@ -733,7 +723,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       visionModelName = AppConfig.ai.imageAnalysis.defaultModel;
     }
 
-    // FIX HIGH #7: Verify required vision model is loaded before proceeding
+    // Verify required vision model is loaded before proceeding
     // This prevents analysis from timing out on guaranteed failures when model isn't available
     try {
       const ollama = await getOllama();
@@ -859,7 +849,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     logger.debug(`Image buffer size`, { bytes: imageBuffer.length });
     const imageBase64 = imageBuffer.toString('base64');
 
-    // FIX P1-1: Release image buffer immediately after base64 conversion
+    // Release image buffer immediately after base64 conversion
     // This prevents holding potentially large (10MB+) buffers in memory during
     // subsequent async operations (Ollama analysis, semantic matching, etc.)
     imageBuffer = null;
@@ -1093,7 +1083,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       try {
         setImageCache(signature, result);
       } catch (cacheError) {
-        // FIX #5: Log cache failures for debugging instead of silent swallowing
+        // Log cache failures for debugging instead of silent swallowing
         logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
       }
       return result;
@@ -1141,7 +1131,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
       type: 'image',
       options: { error: analysis?.error || 'Ollama image analysis failed.' }
     });
-    // FIX HIGH-3: Add null check before accessing analysis.keywords
+    // Add null check before accessing analysis.keywords
     // Preserve keywords from partial analysis if available
     if (analysis && Array.isArray(analysis.keywords)) {
       result.keywords = analysis.keywords;
@@ -1152,7 +1142,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
     try {
       setImageCache(signature, result);
     } catch (cacheError) {
-      // FIX #5: Log cache failures for debugging instead of silent swallowing
+      // Log cache failures for debugging instead of silent swallowing
       logger.debug('[IMAGE] Cache write failed (non-fatal):', cacheError?.message);
     }
     return result;
@@ -1171,7 +1161,7 @@ async function analyzeImageFile(filePath, smartFolders = [], options = {}) {
 // OCR capability using Ollama for text extraction from images
 async function extractTextFromImage(filePath) {
   try {
-    // FIX CRIT-30: Check file size before reading to prevent memory exhaustion
+    // Check file size before reading to prevent memory exhaustion
     const stats = await fs.stat(filePath);
     const MAX_OCR_SIZE = 20 * 1024 * 1024; // 20MB limit for OCR
     if (stats.size > MAX_OCR_SIZE) {
@@ -1249,7 +1239,7 @@ async function flushAllEmbeddings() {
  * Useful for hot reload, testing, or reconnecting to services
  */
 function resetSingletons() {
-  // Stage 5: Delegate to unified matcher reset for shared singletons
+  // Delegate to unified matcher reset for shared singletons
   resetMatcherSingletons();
   // Clear local image analysis cache
   getImageAnalysisCache().clear();

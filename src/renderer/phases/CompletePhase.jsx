@@ -129,7 +129,7 @@ function CompletePhase() {
 
       {/* Stats & Toolbar */}
       <Inline className="justify-between" gap="cozy" wrap>
-        <Inline className="justify-center sm:justify-start w-full sm:w-auto" gap="compact" wrap>
+        <Inline className="justify-center sm:justify-start w-full sm:w-auto" gap="default" wrap>
           <StatPill label="Files organized" value={totalFiles} tone="success" />
           <StatPill label="Destinations" value={destinationCount || 1} />
         </Inline>
@@ -229,7 +229,7 @@ function CompletePhase() {
             ? `Done — ${totalFiles} file${totalFiles !== 1 ? 's' : ''} organized.`
             : 'Done — no changes applied.'}
         </div>
-        <Inline className="justify-end w-full sm:w-auto" gap="cozy" wrap={true}>
+        <Inline className="justify-end w-full sm:w-auto" gap="default" wrap={true}>
           <Button
             onClick={() => actions.advancePhase(PHASES?.ORGANIZE ?? 'organize')}
             variant="secondary"

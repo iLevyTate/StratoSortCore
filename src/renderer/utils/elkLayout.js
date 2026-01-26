@@ -26,7 +26,7 @@ const VERY_LARGE_GRAPH_THRESHOLD = 200;
 // Debounce tracking for layout requests
 let pendingLayoutPromise = null;
 let layoutDebounceTimer = null;
-const LAYOUT_DEBOUNCE_MS = 150;
+const LAYOUT_DEBOUNCE_MS = 200; // Increased debounce to let UI settle before heavy layout
 
 // Track pending promise callbacks to prevent memory leaks and handle cancellation
 let pendingCallbacks = [];
@@ -54,8 +54,8 @@ const NODE_SIZES = {
  */
 const DEFAULT_OPTIONS = {
   direction: 'RIGHT',
-  spacing: 160, // Optimized for Brandes-Koepf alignment
-  layerSpacing: 280, // Tighter layer spacing
+  spacing: 250, // Increased spacing to reduce overlap
+  layerSpacing: 400, // Increased layer spacing for clarity
   algorithm: 'layered'
 };
 
@@ -76,11 +76,11 @@ const ALGORITHM_MAP = {
  * @param {number} options.spacing - Node-to-node spacing
  * @param {number} options.layerSpacing - Spacing between layers
  * @param {string} options.algorithm - ELK algorithm: 'layered', 'force', 'stress'
- * @returns {Promise<Array>} Nodes with updated positions
+ * @returns {Promise<{nodes: Array, edges: Array}>} Object containing updated nodes and edges
  */
 export async function elkLayout(nodes, edges, options = {}) {
   if (!nodes || nodes.length === 0) {
-    return nodes || [];
+    return { nodes: nodes || [], edges: edges || [] };
   }
 
   // Normalize edges to empty array if null/undefined to prevent TypeError on .map()
@@ -88,16 +88,17 @@ export async function elkLayout(nodes, edges, options = {}) {
 
   const {
     direction = DEFAULT_OPTIONS.direction,
-    spacing = DEFAULT_OPTIONS.spacing,
-    layerSpacing = DEFAULT_OPTIONS.layerSpacing,
+    spacing = 250, // Significantly increased from 160 to reduce overlaps
+    layerSpacing = 400, // Increased from 280 to give more breathing room
     algorithm = DEFAULT_OPTIONS.algorithm
   } = options;
 
   const elkAlgorithm = ALGORITHM_MAP[algorithm] || algorithm;
 
-  const edgeSpacing = Math.max(20, Math.round(spacing / 4));
-  const edgeNodeSpacing = Math.max(24, Math.round(spacing / 3));
-  const edgeLayerSpacing = Math.max(40, Math.round(layerSpacing / 3));
+  // Spacing proportional to base spacing
+  const edgeSpacing = Math.max(40, Math.round(spacing / 4));
+  const edgeNodeSpacing = Math.max(40, Math.round(spacing / 3));
+  const edgeLayerSpacing = Math.max(60, Math.round(layerSpacing / 3));
 
   // Base layout options
   const layoutOptions = {
@@ -106,8 +107,12 @@ export async function elkLayout(nodes, edges, options = {}) {
     'elk.spacing.nodeNode': String(spacing),
     'elk.spacing.edgeEdge': String(edgeSpacing),
     'elk.spacing.edgeNode': String(edgeNodeSpacing),
-    // Improve edge routing
-    'elk.edgeRouting': 'ORTHOGONAL'
+    // Improve edge routing - SPLINES looks cleaner than ORTHOGONAL for complex graphs
+    'elk.edgeRouting': 'SPLINES',
+    // Prioritize node placement that reduces edge crossings
+    'elk.layered.crossingMinimization.forceNodeModelOrder': 'true',
+    // Separate edge segments to prevent overlap
+    'elk.layered.mergeEdges': 'false'
   };
 
   // Add algorithm-specific options
@@ -177,11 +182,14 @@ export async function elkLayout(nodes, edges, options = {}) {
       );
     }
 
-    return applyElkPositions(nodes, layout.children);
+    const updatedNodes = applyElkPositions(nodes, layout.children);
+    const updatedEdges = applyElkEdgeRoutes(safeEdges, layout.edges);
+
+    return { nodes: updatedNodes, edges: updatedEdges };
   } catch (error) {
     logger.error('[elkLayout] Layout failed:', { error: error.message });
-    // Return original nodes if layout fails
-    return nodes;
+    // Return original nodes and edges if layout fails
+    return { nodes, edges: safeEdges };
   }
 }
 
@@ -198,7 +206,7 @@ export async function elkLayout(nodes, edges, options = {}) {
  * @param {Array} edges - ReactFlow edges
  * @param {Object} options - Layout options
  * @param {number} options.debounceMs - Debounce delay (default: 150ms)
- * @returns {Promise<Array>} Nodes with updated positions
+ * @returns {Promise<{nodes: Array, edges: Array}>} Object containing updated nodes and edges
  */
 export function debouncedElkLayout(nodes, edges, options = {}) {
   const { debounceMs = LAYOUT_DEBOUNCE_MS, ...layoutOptions } = options;
@@ -276,7 +284,7 @@ export function debouncedElkLayout(nodes, edges, options = {}) {
           abortError.name = 'AbortError';
           callbacksToNotify.forEach((cb) => cb.reject(abortError));
         } else {
-          callbacksToNotify.forEach((cb) => cb.resolve(latestNodes));
+          callbacksToNotify.forEach((cb) => cb.resolve({ nodes: latestNodes, edges: latestEdges }));
         }
       } finally {
         pendingLayoutPromise = null;
@@ -324,13 +332,13 @@ export function cancelPendingLayout() {
  * @param {Array} edges - ReactFlow edges
  * @param {Object} options - Layout options
  * @param {boolean} options.progressive - Enable progressive rendering for large graphs
- * @returns {Promise<{nodes: Array, isPartial: boolean, totalNodes: number}>}
+ * @returns {Promise<{nodes: Array, edges: Array, isPartial: boolean, totalNodes: number}>}
  */
 export async function smartLayout(nodes, edges, options = {}) {
   const { progressive = true, maxInitialNodes = 50, ...layoutOptions } = options;
 
   if (!nodes || nodes.length === 0) {
-    return { nodes: nodes || [], isPartial: false, totalNodes: 0 };
+    return { nodes: nodes || [], edges: edges || [], isPartial: false, totalNodes: 0 };
   }
 
   // Normalize edges to empty array if null/undefined
@@ -358,7 +366,11 @@ export async function smartLayout(nodes, edges, options = {}) {
     );
 
     // Layout initial nodes
-    const layoutedInitial = await elkLayout(initialNodes, initialEdges, layoutOptions);
+    const { nodes: layoutedInitial, edges: layoutedEdges } = await elkLayout(
+      initialNodes,
+      initialEdges,
+      layoutOptions
+    );
 
     // For remaining nodes, position them in a grid below the laid out nodes
     const remainingNodes = sortedNodes.slice(maxInitialNodes);
@@ -377,6 +389,10 @@ export async function smartLayout(nodes, edges, options = {}) {
 
     return {
       nodes: [...layoutedInitial, ...layoutedRemaining],
+      edges: [
+        ...layoutedEdges,
+        ...safeEdges.filter((e) => !initialNodeIds.has(e.source) || !initialNodeIds.has(e.target))
+      ],
       isPartial: true,
       totalNodes,
       layoutedCount: initialNodes.length
@@ -384,8 +400,7 @@ export async function smartLayout(nodes, edges, options = {}) {
   }
 
   // For smaller graphs, do full layout
-  const layoutedNodes = await elkLayout(nodes, safeEdges, layoutOptions);
-  return { nodes: layoutedNodes, isPartial: false, totalNodes };
+  return await elkLayout(nodes, safeEdges, layoutOptions);
 }
 
 /**
@@ -417,6 +432,34 @@ function applyElkPositions(nodes, elkChildren) {
     return {
       ...node,
       position: newPos
+    };
+  });
+}
+
+/**
+ * Apply ELK edge routes to ReactFlow edges
+ *
+ * @param {Array} edges - Original ReactFlow edges
+ * @param {Array} elkEdges - ELK layout result edges
+ * @returns {Array} Edges with updated route data
+ */
+function applyElkEdgeRoutes(edges, elkEdges) {
+  if (!elkEdges || elkEdges.length === 0) {
+    return edges;
+  }
+
+  const routeMap = new Map(elkEdges.map((edge) => [edge.id, edge.sections]));
+
+  return edges.map((edge) => {
+    const sections = routeMap.get(edge.id);
+    if (!sections) return edge;
+
+    return {
+      ...edge,
+      data: {
+        ...edge.data,
+        elkSections: sections
+      }
     };
   });
 }
@@ -737,8 +780,8 @@ function applyClusterRepulsion(nodes, options = {}) {
  */
 export function clusterExpansionLayout(clusterNode, memberNodes, options = {}) {
   const {
-    offsetX = 300,
-    spacing = 60
+    offsetX = 450, // Increased from 300 to prevent node overlap
+    spacing = 80 // Increased from 60
     // fanAngle = Math.PI / 3 // 60 degrees spread - reserved for future radial layout
   } = options;
 
