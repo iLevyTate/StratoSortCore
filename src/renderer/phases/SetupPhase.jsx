@@ -11,11 +11,10 @@ import { useConfirmDialog } from '../hooks';
 import { Button, IconButton } from '../components/ui';
 import { Heading, Text } from '../components/ui/Typography';
 import { ActionBar, Inline, Stack } from '../components/layout';
-import { SmartFolderSkeleton } from '../components/LoadingSkeleton';
+import { SmartFolderSkeleton } from '../components/ui/LoadingSkeleton';
 import { SmartFolderItem, AddSmartFolderModal } from '../components/setup';
 import { Plus, ChevronDown, ChevronUp, RotateCcw, Folder } from 'lucide-react';
 import { filesIpc, settingsIpc, smartFoldersIpc } from '../services/ipc';
-import Card from '../components/ui/Card';
 
 logger.setContext('SetupPhase');
 
@@ -456,7 +455,7 @@ function SetupPhase() {
           }`}
         >
           {smartFolders.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="flex flex-col items-center justify-center p-8 text-center">
               <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
                 <Folder className="w-8 h-8 text-system-gray-400" />
               </div>
@@ -515,7 +514,8 @@ function SetupPhase() {
         <Button
           onClick={() => actions.advancePhase(PHASES?.WELCOME ?? 'welcome')}
           variant="secondary"
-          className="w-full sm:w-auto"
+          size="md"
+          className="w-full sm:w-auto min-w-[180px]"
         >
           Back
         </Button>
@@ -533,7 +533,8 @@ function SetupPhase() {
             }
           }}
           variant="primary"
-          className="w-full sm:w-auto"
+          size="md"
+          className="w-full sm:w-auto min-w-[180px]"
           disabled={isLoading}
         >
           {isLoading ? 'Loading...' : 'Continue to Discovery'}

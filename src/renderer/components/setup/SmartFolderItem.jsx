@@ -1,13 +1,10 @@
 import React, { useEffect, useState, memo } from 'react';
-import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
 import {
   Folder,
   FolderOpen,
   Edit2,
   Trash2,
-  Check,
-  X,
   ChevronDown,
   ChevronUp,
   FolderPlus,
@@ -208,12 +205,16 @@ const SmartFolderItem = memo(function SmartFolderItem({
         {folder.physicallyExists ? (
           <div className="flex items-center rounded-full border px-2.5 py-1 bg-stratosort-success/10 border-stratosort-success/20 shrink-0 gap-1.5">
             <div className="w-2 h-2 rounded-full bg-stratosort-success" />
-            <span className="text-xs font-medium text-stratosort-success">Ready</span>
+            <Text as="span" variant="tiny" className="font-medium text-stratosort-success">
+              Ready
+            </Text>
           </div>
         ) : (
           <div className="flex items-center rounded-full border px-2.5 py-1 bg-stratosort-warning/10 border-stratosort-warning/20 shrink-0 gap-1.5">
             <div className="w-2 h-2 rounded-full bg-stratosort-warning" />
-            <span className="text-xs font-medium text-stratosort-warning">Missing</span>
+            <Text as="span" variant="tiny" className="font-medium text-stratosort-warning">
+              Missing
+            </Text>
           </div>
         )}
       </div>

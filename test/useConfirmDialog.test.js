@@ -18,7 +18,7 @@ jest.mock('../src/shared/logger', () => ({
 }));
 
 // Mock Modal component with testable buttons
-jest.mock('../src/renderer/components/Modal', () => ({
+jest.mock('../src/renderer/components/ui/Modal', () => ({
   ConfirmModal: ({ isOpen, onConfirm, onClose, title, confirmText, cancelText, variant }) => {
     if (!isOpen) return null;
     return (

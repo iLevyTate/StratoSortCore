@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { logger } from '../../shared/logger';
+import { RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Text } from './ui/Typography';
 
-// Set logger context for this component
 logger.setContext('UpdateIndicator');
 
 const UpdateIndicator = React.memo(function UpdateIndicator() {
@@ -13,16 +14,13 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Check if API is available
     if (!window?.electronAPI?.events?.onAppUpdate) {
       logger.warn('Update API not available');
       return undefined;
     }
 
-    // Listen for update events from main
     try {
       unsubscribeRef.current = window.electronAPI.events.onAppUpdate((payload) => {
-        // Check if component is still mounted
         if (!isMountedRef.current) return;
 
         try {
@@ -31,7 +29,6 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
             return;
           }
 
-          // Update state only if mounted
           if (payload.status === 'ready') {
             setStatus('ready');
             setVisible(true);
@@ -55,11 +52,8 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
       });
     }
 
-    // Cleanup function
     return () => {
       isMountedRef.current = false;
-
-      // Safely unsubscribe
       if (unsubscribeRef.current && typeof unsubscribeRef.current === 'function') {
         try {
           unsubscribeRef.current();
@@ -79,11 +73,9 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
   return (
     <button
       onClick={async () => {
-        // Prevent multiple clicks
         if (status === 'applying') return;
 
         try {
-          // Check if API is available
           if (!window?.electronAPI?.system?.applyUpdate) {
             logger.error('Apply update API not available');
             setStatus('error');
@@ -92,11 +84,8 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
 
           setStatus('applying');
 
-          // Add timeout for update operation
           const updatePromise = window.electronAPI.system.applyUpdate();
-          // Use constant for timeout (30 seconds)
-          const UPDATE_TIMEOUT_MS = 30000; // Could be moved to shared constants
-          // FIX: Store timeout ID so we can clear it to prevent memory leak
+          const UPDATE_TIMEOUT_MS = 30000;
           let timeoutId;
           const timeoutPromise = new Promise((_, reject) => {
             timeoutId = setTimeout(() => reject(new Error('Update timeout')), UPDATE_TIMEOUT_MS);
@@ -106,7 +95,6 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
           try {
             res = await Promise.race([updatePromise, timeoutPromise]);
           } finally {
-            // FIX: Always clear timeout to prevent memory leak
             if (timeoutId) clearTimeout(timeoutId);
           }
 
@@ -122,40 +110,39 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
           });
         }
       }}
-      className="
-        relative px-4 py-2 h-10
-        text-xs font-medium rounded-xl
-        bg-gradient-to-r from-emerald-500/10 to-teal-500/10
-        border border-emerald-500/20
-        text-emerald-700 
+      className={`
+        relative px-3 py-1.5 h-9
+        font-medium rounded-lg
         overflow-hidden group
         transition-all duration-200 ease-out
-        hover:bg-gradient-to-r hover:from-emerald-500/15 hover:to-teal-500/15
-        hover:border-emerald-500/30
-        hover:shadow-sm
-        active:scale-95
-        flex items-center
-      "
-      title="Apply downloaded update"
+        flex items-center gap-2
+        ${
+          status === 'error'
+            ? 'bg-stratosort-danger/10 text-stratosort-danger border border-stratosort-danger/30 hover:bg-stratosort-danger/20'
+            : 'bg-stratosort-success/10 text-stratosort-success border border-stratosort-success/30 hover:bg-stratosort-success/20'
+        }
+        shadow-sm hover:shadow active:scale-95
+      `}
+      title={status === 'error' ? 'Update failed' : 'Apply downloaded update'}
       aria-label="Apply update"
     >
-      <span className="relative z-10 flex items-center gap-2">
-        {(status === 'applying' || status === 'ready') && (
-          <span className="w-2 h-2 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full animate-pulse" />
-        )}
-        <span className="font-medium">
-          {status === 'applying' ? 'Updating…' : status === 'ready' ? 'Update Ready' : 'Update'}
-        </span>
-      </span>
-      {/* Shimmer effect */}
-      <span
-        className="
-        absolute inset-0 -translate-x-full
-        bg-gradient-to-r from-transparent via-white/10 to-transparent
-        group-hover:translate-x-full
-        transition-transform duration-500
-      "
-      />
+      {status === 'applying' ? (
+        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+      ) : status === 'error' ? (
+        <AlertCircle className="w-3.5 h-3.5" />
+      ) : (
+        <CheckCircle2 className="w-3.5 h-3.5" />
+      )}
+
+      <Text as="span" variant="tiny" className="relative z-10 font-medium">
+        {status === 'applying'
+          ? 'Updating…'
+          : status === 'ready'
+            ? 'Update Ready'
+            : status === 'error'
+              ? 'Retry Update'
+              : 'Update'}
+      </Text>
     </button>
   );
 });

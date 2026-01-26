@@ -9,7 +9,7 @@ import PropTypes from 'prop-types';
  * @param {ReactNode} subheader - Optional subheader component
  * @param {ReactNode} footer - Optional footer component
  * @param {ReactNode} children - Main content (phases)
- * @param {string} maxWidth - Max width class for the main content (e.g., 'max-w-7xl', 'max-w-5xl')
+ * @param {string} contentClassName - Classes for the main content container (replaces maxWidth)
  * @param {string} className - Additional classes for the shell
  */
 const AppShell = memo(function AppShell({
@@ -17,7 +17,7 @@ const AppShell = memo(function AppShell({
   subheader,
   footer,
   children,
-  maxWidth = 'max-w-screen-2xl',
+  contentClassName = 'flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 max-w-screen-2xl',
   className = ''
 }) {
   return (
@@ -33,9 +33,7 @@ const AppShell = memo(function AppShell({
 
         {subheader}
 
-        <div className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 ${maxWidth}`}>
-          {children}
-        </div>
+        <div className={contentClassName}>{children}</div>
       </main>
       {footer}
     </div>
@@ -47,7 +45,7 @@ AppShell.propTypes = {
   subheader: PropTypes.node,
   footer: PropTypes.node,
   children: PropTypes.node,
-  maxWidth: PropTypes.string,
+  contentClassName: PropTypes.string,
   className: PropTypes.string
 };
 

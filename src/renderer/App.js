@@ -16,26 +16,34 @@ import AppShell from './components/layout/AppShell';
 function AppContent() {
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
 
-  // Determine max width based on phase
-  const maxWidth = useMemo(() => {
+  // Determine content container classes based on phase
+  const contentClassName = useMemo(() => {
+    const baseClasses = 'flex-1 w-full mx-auto';
+
     switch (currentPhase) {
       case PHASES?.WELCOME:
       case 'welcome':
-        return 'max-w-5xl';
+        // Welcome phase handles its own vertical padding/centering
+        return `${baseClasses} px-4 sm:px-6 lg:px-8 py-0 max-w-5xl`;
+
       case PHASES?.SETUP:
       case 'setup':
-        return 'max-w-5xl';
+        return `${baseClasses} px-4 sm:px-6 lg:px-8 py-6 max-w-screen-2xl`;
+
       case PHASES?.DISCOVER:
       case 'discover':
-        return 'max-w-screen-2xl';
+        return `${baseClasses} px-4 sm:px-6 lg:px-8 py-6 max-w-screen-2xl`;
+
       case PHASES?.ORGANIZE:
       case 'organize':
-        return 'max-w-full px-0 sm:px-0 lg:px-0'; // Full width for organize phase
+        return `${baseClasses} px-4 sm:px-6 lg:px-8 py-6 max-w-screen-2xl`;
+
       case PHASES?.COMPLETE:
       case 'complete':
-        return 'max-w-5xl';
+        return `${baseClasses} px-4 sm:px-6 lg:px-8 py-6 max-w-screen-2xl`;
+
       default:
-        return 'max-w-screen-2xl';
+        return `${baseClasses} px-4 sm:px-6 lg:px-8 py-6 max-w-screen-2xl`;
     }
   }, [currentPhase]);
 
@@ -48,7 +56,7 @@ function AppContent() {
         Skip to main content
       </a>
 
-      <AppShell header={<NavigationBar />} maxWidth={maxWidth}>
+      <AppShell header={<NavigationBar />} contentClassName={contentClassName}>
         <PhaseRenderer />
       </AppShell>
 

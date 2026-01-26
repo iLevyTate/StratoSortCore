@@ -2,6 +2,9 @@ import React, { useState, useRef } from 'react';
 import { logger } from '../../shared/logger';
 import { PHASES, PHASE_METADATA } from '../../shared/constants';
 import { useAppSelector } from '../store/hooks';
+import { Heading, Text } from './ui/Typography';
+import { IconButton } from './ui';
+import { ChevronDown } from 'lucide-react';
 
 logger.setContext('ProgressIndicator');
 
@@ -14,11 +17,9 @@ function ProgressIndicator() {
     icon: '?',
     progress: 0
   };
-  // FIX: Add null check to prevent crash if PHASES is undefined
   const phases = PHASES ? Object.values(PHASES) : [];
   const currentIndex = phases.indexOf(currentPhase);
 
-  // FIX: Add null checks for PHASES to prevent crash if undefined
   const getPersistKeysForPhase = () => {
     switch (currentPhase) {
       case PHASES?.SETUP ?? 'setup':
@@ -57,16 +58,18 @@ function ProgressIndicator() {
   };
 
   return (
-    <div className="bg-surface-muted/70 border-b border-border-soft py-[var(--section-gap)] backdrop-blur-sm">
-      <div className="container-enhanced">
+    <div className="bg-white/80 border-b border-border-soft py-4 backdrop-blur-sm sticky top-[var(--app-nav-height)] z-10">
+      <div className="container-responsive">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-[var(--section-gap)]">
-            <span className="text-2xl">{metadata.icon}</span>
+          <div className="flex items-center gap-4">
+            <span className="text-2xl text-system-gray-700">{metadata.icon}</span>
             <div>
-              <div className="heading-tertiary">{metadata.title}</div>
-              <div className="text-sm text-system-gray-600">
+              <Heading as="h2" variant="h5" className="text-system-gray-900">
+                {metadata.title}
+              </Heading>
+              <Text variant="tiny" className="text-system-gray-500">
                 Step {currentIndex + 1} of {phases.length}
-              </div>
+              </Text>
             </div>
             {getPersistKeysForPhase().length > 0 && (
               <div
@@ -84,32 +87,22 @@ function ProgressIndicator() {
                   }
                 }}
               >
-                <button
+                <IconButton
                   type="button"
-                  className="p-[var(--spacing-default)] text-system-gray-500 hover:text-system-gray-700 rounded-[var(--radius-sm)]"
+                  variant="ghost"
+                  size="sm"
                   aria-haspopup="menu"
                   aria-expanded={showPhaseMenu}
                   title="Phase sections"
                   aria-label="Open phase menu"
                   onClick={() => setShowPhaseMenu((prev) => !prev)}
-                >
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 011.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
+                  icon={<ChevronDown className="w-4 h-4" />}
+                />
+
                 {showPhaseMenu && (
-                  <div className="absolute right-0 mt-2 bg-white border border-system-gray-200 rounded-[var(--radius-sm)] shadow-lg z-overlay min-w-36">
+                  <div className="absolute left-0 mt-2 bg-white border border-border-soft rounded-lg shadow-lg z-overlay min-w-[140px] py-1 overflow-hidden">
                     <button
-                      className="nav-item"
+                      className="w-full text-left px-4 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50 transition-colors focus:bg-system-gray-50 focus:outline-none"
                       ref={firstMenuItemRef}
                       onClick={() => {
                         applyPhaseExpandCollapse(true);
@@ -119,7 +112,7 @@ function ProgressIndicator() {
                       Expand all
                     </button>
                     <button
-                      className="nav-item"
+                      className="w-full text-left px-4 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50 transition-colors focus:bg-system-gray-50 focus:outline-none"
                       onClick={() => {
                         applyPhaseExpandCollapse(false);
                         setShowPhaseMenu(false);
@@ -133,10 +126,12 @@ function ProgressIndicator() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-[var(--section-gap)]">
-              <div className="text-sm text-system-gray-600">{metadata.progress}%</div>
+            <div className="flex items-center gap-3">
+              <Text variant="small" className="text-system-gray-500 font-medium">
+                {metadata.progress}%
+              </Text>
               <div
-                className="w-32 h-2 bg-system-gray-200 rounded-[var(--radius-full)] overflow-hidden"
+                className="w-32 h-2 bg-system-gray-100 rounded-full overflow-hidden"
                 role="progressbar"
                 aria-valuenow={metadata.progress}
                 aria-valuemin={0}
@@ -144,7 +139,7 @@ function ProgressIndicator() {
                 aria-label={`${metadata.title || 'Progress'}: ${metadata.progress}%`}
               >
                 <div
-                  className="h-full bg-stratosort-blue transition-all [transition-duration:var(--duration-slow)]"
+                  className="h-full bg-stratosort-blue transition-all duration-500 ease-out"
                   style={{ width: `${metadata.progress}%` }}
                 />
               </div>

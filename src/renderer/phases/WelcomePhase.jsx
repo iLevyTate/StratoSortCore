@@ -4,8 +4,7 @@ import { PHASES } from '../../shared/constants';
 import { useAppDispatch } from '../store/hooks';
 import { setActiveModal, setPhase } from '../store/slices/uiSlice';
 import { useNotification } from '../contexts/NotificationContext';
-import Button from '../components/ui/Button';
-import Card from '../components/ui/Card';
+import { Button, Card } from '../components/ui';
 import { Heading, Text } from '../components/ui/Typography';
 import Modal from '../components/ui/Modal';
 import { Stack } from '../components/layout';
@@ -84,7 +83,7 @@ function WelcomePhase() {
               <Button
                 onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
                 variant="primary"
-                size="lg"
+                size="md"
                 className="w-full justify-center"
                 aria-describedby="organize-help"
               >
@@ -152,16 +151,19 @@ function WelcomePhase() {
         title="How StratoSort Works"
         size="md"
         footer={
-          <Button
-            onClick={() => {
-              setShowFlowsModal(false);
-              actions.advancePhase(PHASES?.DISCOVER ?? 'discover');
-            }}
-            variant="primary"
-            className="w-full"
-          >
-            Get Started
-          </Button>
+          <Stack gap="compact" className="w-full">
+            <Button
+              onClick={() => {
+                setShowFlowsModal(false);
+                actions.advancePhase(PHASES?.DISCOVER ?? 'discover');
+              }}
+              variant="primary"
+              size="sm"
+              className="w-full"
+            >
+              Get Started
+            </Button>
+          </Stack>
         }
       >
         <Stack gap="default">
@@ -179,9 +181,13 @@ function WelcomePhase() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-system-gray-400 uppercase tracking-wider">
+                    <Text
+                      as="span"
+                      variant="tiny"
+                      className="font-medium text-system-gray-400 uppercase tracking-wider"
+                    >
                       Step {idx + 1}
-                    </span>
+                    </Text>
                   </div>
                   <Heading as="h4" variant="h6" className="mb-1">
                     {item.title}

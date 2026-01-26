@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useKeyboardShortcuts } from '../hooks';
 import { useAppSelector } from '../store/hooks';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
-import { LazyLoadingSpinner, ModalLoadingOverlay } from './LoadingSkeleton';
+import { LazyLoadingSpinner, ModalLoadingOverlay } from './ui/LoadingSkeleton';
 import { logger } from '../../shared/logger';
 import { PHASES } from '../../shared/constants';
 

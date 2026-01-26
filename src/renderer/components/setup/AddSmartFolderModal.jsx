@@ -1,9 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
 import { Sparkles, FolderOpen } from 'lucide-react';
-import { Button, Input, Textarea, IconButton } from '../ui';
+import { Button, Input, Textarea } from '../ui';
+import { Text } from '../ui/Typography';
 import Modal from '../ui/Modal';
 import { Inline, Stack } from '../layout';
 import { logger } from '../../../shared/logger';
@@ -167,18 +167,25 @@ function AddSmartFolderModal({
       title="Add Smart Folder"
       size="md"
       footer={
-        <>
-          <Button type="button" onClick={handleClose} variant="secondary" disabled={isAdding}>
+        <Inline className="justify-end" gap="compact" wrap={false}>
+          <Button
+            type="button"
+            onClick={handleClose}
+            variant="secondary"
+            size="sm"
+            disabled={isAdding}
+          >
             Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             variant="primary"
+            size="sm"
             disabled={!folderName.trim() || isAdding}
           >
             {isAdding ? 'Adding...' : 'Add Folder'}
           </Button>
-        </>
+        </Inline>
       }
     >
       <Stack gap="relaxed">
@@ -213,8 +220,9 @@ function AddSmartFolderModal({
               type="button"
               onClick={handleBrowse}
               variant="secondary"
+              size="sm"
               title="Browse for folder"
-              className="px-3 shrink-0"
+              className="shrink-0"
             >
               <FolderOpen className="w-4 h-4 mr-2" />
               Browse
@@ -232,17 +240,21 @@ function AddSmartFolderModal({
               type="button"
               onClick={handleGenerateDescription}
               disabled={isGeneratingDescription || !folderName.trim()}
-              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-2 py-1 font-medium text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isGeneratingDescription ? (
                 <>
                   <span className="inline-block w-3 h-3 border-2 border-stratosort-blue border-t-transparent rounded-full animate-spin" />
-                  Generating...
+                  <Text as="span" variant="tiny">
+                    Generating...
+                  </Text>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3 h-3" />
-                  Generate with AI
+                  <Text as="span" variant="tiny">
+                    Generate with AI
+                  </Text>
                 </>
               )}
             </button>

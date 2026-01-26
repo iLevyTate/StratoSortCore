@@ -1,8 +1,9 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import { Heading, Text, Code } from './ui/Typography';
+import { Text, Code } from './ui/Typography';
 import { Stack } from './layout';
 import StatusBadge from './ui/StatusBadge';
+import { formatDisplayPath } from '../utils/pathDisplay';
 
 const DetailRow = ({ label, value, truncate = false }) => {
   if (!value) return null;
@@ -24,17 +25,27 @@ const DetailRow = ({ label, value, truncate = false }) => {
   );
 };
 
-const AnalysisDetails = memo(function AnalysisDetails({ analysis, options = {} }) {
+const AnalysisDetails = memo(function AnalysisDetails({
+  analysis,
+  options = {},
+  filePath,
+  redactPaths = false
+}) {
   if (!analysis || typeof analysis !== 'object') return null;
 
   const { showName = true, showCategory = true } = options || {};
+  const resolvedFilePath =
+    typeof filePath === 'string' && filePath.trim().length > 0
+      ? filePath
+      : typeof analysis.path === 'string'
+        ? analysis.path
+        : '';
+  const displayFilePath = resolvedFilePath
+    ? formatDisplayPath(resolvedFilePath, { redact: Boolean(redactPaths), segments: 2 })
+    : '';
 
   const keywordList = Array.isArray(analysis.keywords)
     ? analysis.keywords.filter((k) => typeof k === 'string' && k.trim().length > 0)
-    : [];
-
-  const colorList = Array.isArray(analysis.colors)
-    ? analysis.colors.filter((c) => typeof c === 'string')
     : [];
 
   const confidenceValue =
@@ -62,11 +73,21 @@ const AnalysisDetails = memo(function AnalysisDetails({ analysis, options = {} }
         {showName && analysis.suggestedName && (
           <DetailRow label="Suggested Name" value={<Code>{analysis.suggestedName}</Code>} />
         )}
+        {displayFilePath && (
+          <DetailRow
+            label="File Path"
+            value={
+              <Code className="break-all" title={redactPaths ? undefined : resolvedFilePath}>
+                {displayFilePath}
+              </Code>
+            }
+          />
+        )}
         {showCategory && analysis.category && (
           <DetailRow
             label="Category"
             value={
-              <StatusBadge variant="info" className="py-0.5 px-2 text-xs">
+              <StatusBadge variant="info" size="sm">
                 {analysis.category}
               </StatusBadge>
             }
@@ -136,12 +157,14 @@ const AnalysisDetails = memo(function AnalysisDetails({ analysis, options = {} }
           </Text>
           <div className="flex flex-wrap gap-1.5">
             {keywordList.map((keyword, i) => (
-              <span
+              <Text
+                as="span"
+                variant="tiny"
                 key={i}
-                className="px-2 py-1 bg-white border border-system-gray-200 rounded text-xs text-system-gray-600"
+                className="px-2 py-1 bg-white border border-system-gray-200 rounded text-system-gray-600"
               >
                 {keyword}
-              </span>
+              </Text>
             ))}
           </div>
         </div>
@@ -206,7 +229,9 @@ const AnalysisDetails = memo(function AnalysisDetails({ analysis, options = {} }
 
 AnalysisDetails.propTypes = {
   analysis: PropTypes.object,
-  options: PropTypes.object
+  options: PropTypes.object,
+  filePath: PropTypes.string,
+  redactPaths: PropTypes.bool
 };
 
 export default AnalysisDetails;
