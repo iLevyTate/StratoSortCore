@@ -12,6 +12,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-01-26
+
+### Added
+
+- **UNC Path Support**: Enhanced support for network paths (UNC) in setup, analysis, and watchers.
+- **Demo Mode**: Implemented demo mode with path redaction and UI updates.
+- **Organization Workflow**: Revamped organization workflow UI.
+- **Discovery Phase**: Enhanced discovery phase UI and performance.
+
+### Improved
+
+- **Modernized UI**: Major updates to core UI components, styling, application shell, and global
+  components.
+- **Settings**: Modernized settings and dependency panels.
+- **Analysis**: Improved folder scanning and network path resilience.
+
 ## [1.1.0] - 2026-01-23
 
 ### Added
@@ -170,6 +186,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
 
-[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.0
 [1.1.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.1.0
 [1.0.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.0.0
