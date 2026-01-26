@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { CheckCircle, XCircle } from 'lucide-react';
 import Button from '../ui/Button';
+import { Text } from '../ui/Typography';
 
 /**
  * Backend API test section for debugging connectivity
@@ -76,14 +77,14 @@ function APITestSection({ addNotification }) {
           {Object.entries(testResults).map(([service, result]) => (
             <div key={service} className="flex justify-between items-center">
               <span className="capitalize">{service.replace(/([A-Z])/g, ' $1').trim()}:</span>
-              <span className="font-mono text-xs flex items-center gap-1">
+              <Text as="span" variant="tiny" className="font-mono flex items-center gap-1">
                 {result.success ? (
                   <CheckCircle className="w-4 h-4 text-stratosort-success" />
                 ) : (
                   <XCircle className="w-4 h-4 text-stratosort-danger" />
                 )}
                 {result.success ? result.message : `Error: ${result.message}`}
-              </span>
+              </Text>
             </div>
           ))}
         </div>

@@ -18,6 +18,7 @@ import {
 import { logger } from '../../../shared/logger';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button, IconButton } from '../ui';
+import { Text } from '../ui/Typography';
 import OrganizationSuggestions from './OrganizationSuggestions';
 import FeedbackMemoryPanel from './FeedbackMemoryPanel';
 import BatchOrganizationSuggestions from './BatchOrganizationSuggestions';
@@ -379,7 +380,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                 {mode === 'quick' ? (
                   <Button
                     variant="primary"
-                    size="lg"
+                    size="md"
                     onClick={handleQuickOrganize}
                     className="bg-stratosort-blue hover:bg-stratosort-blue/90"
                   >
@@ -389,14 +390,14 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                 ) : (
                   <Button
                     variant="primary"
-                    size="lg"
+                    size="md"
                     onClick={() => setCurrentStep('review')}
                     className="bg-stratosort-blue hover:bg-stratosort-blue/90"
                   >
                     Review Suggestions
                   </Button>
                 )}
-                <Button variant="secondary" size="lg" onClick={onCancel}>
+                <Button variant="secondary" size="md" onClick={onCancel}>
                   Cancel
                 </Button>
               </div>
@@ -458,13 +459,17 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                                   improvement.type ||
                                   `Improvement ${index + 1}`}
                               </h5>
-                              <p className="text-xs text-system-gray-600 mt-1">
+                              <Text variant="tiny" className="text-system-gray-600 mt-1">
                                 {improvement.description ||
                                   improvement.reason ||
                                   'Suggested folder structure improvement'}
-                              </p>
+                              </Text>
                               {improvement.from && improvement.to && (
-                                <div className="flex items-center gap-2 mt-2 text-xs text-system-gray-500">
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="flex items-center gap-2 mt-2 text-system-gray-500"
+                                >
                                   <span className="font-mono bg-system-gray-100 px-1.5 py-0.5 rounded">
                                     {improvement.from}
                                   </span>
@@ -472,27 +477,29 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                                   <span className="font-mono bg-stratosort-blue/10 text-stratosort-blue px-1.5 py-0.5 rounded">
                                     {improvement.to}
                                   </span>
-                                </div>
+                                </Text>
                               )}
                               {improvement.affectedFiles && (
-                                <p className="text-xs text-system-gray-500 mt-1">
+                                <Text variant="tiny" className="text-system-gray-500 mt-1">
                                   Affects {improvement.affectedFiles} file
                                   {improvement.affectedFiles !== 1 ? 's' : ''}
-                                </p>
+                                </Text>
                               )}
                             </div>
                             {improvement.priority && (
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full ${
+                              <Text
+                                as="span"
+                                variant="tiny"
+                                className={`px-2 py-0.5 rounded-full ${
                                   improvement.priority === 'high'
-                                    ? 'bg-red-100 text-red-700'
+                                    ? 'bg-stratosort-danger/15 text-stratosort-danger'
                                     : improvement.priority === 'medium'
-                                      ? 'bg-amber-100 text-amber-700'
-                                      : 'bg-blue-100 text-blue-700'
+                                      ? 'bg-stratosort-warning/15 text-stratosort-warning'
+                                      : 'bg-stratosort-blue/10 text-stratosort-blue'
                                 }`}
                               >
                                 {improvement.priority}
-                              </span>
+                              </Text>
                             )}
                           </div>
                         </div>
@@ -595,7 +602,9 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
               <span>{Object.keys(acceptedSuggestions).length} Accepted</span>
             </span>
           </div>
-          <div className="text-xs">The system learns from your choices</div>
+          <Text variant="tiny" className="text-system-gray-500">
+            The system learns from your choices
+          </Text>
         </div>
       )}
 
@@ -661,11 +670,12 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
             </div>
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-              <Button variant="secondary" onClick={handleCancelGroupCustomization}>
+              <Button variant="secondary" size="sm" onClick={handleCancelGroupCustomization}>
                 Cancel
               </Button>
               <Button
                 variant="primary"
+                size="sm"
                 onClick={handleApplyGroupCustomization}
                 disabled={!customGroupFolder.trim()}
                 className="bg-stratosort-blue hover:bg-stratosort-blue/90"

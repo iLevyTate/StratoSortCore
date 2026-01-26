@@ -4,6 +4,7 @@ import { FileText } from 'lucide-react';
 import Select from '../ui/Select';
 import Input from '../ui/Input';
 import SettingRow from './SettingRow';
+import { Text, Heading } from '../ui/Typography';
 
 // Characters that could break file paths - used for separator validation
 const UNSAFE_SEPARATOR_CHARS = /[/\\:*?"<>|]/;
@@ -39,15 +40,12 @@ function NamingSettingsSection({ settings, setSettings }) {
     [updateSetting]
   );
 
-  // FIX: Validate separator against unsafe characters that could break file paths
   const handleSeparatorChange = useCallback(
     (e) => {
       const { value } = e.target;
-      // Only allow safe characters (reject path-breaking ones)
       if (value === '' || !UNSAFE_SEPARATOR_CHARS.test(value)) {
         updateSetting('separator', value);
       }
-      // Silently reject unsafe characters
     },
     [updateSetting]
   );
@@ -58,16 +56,16 @@ function NamingSettingsSection({ settings, setSettings }) {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <FileText className="w-5 h-5 text-stratosort-blue" />
-          <h3 className="text-base font-medium text-system-gray-900">
+          <Heading as="h3" variant="h6">
             File Naming Defaults (Watchers &amp; Reanalysis)
-          </h3>
+          </Heading>
         </div>
-        <p className="text-sm text-system-gray-500 ml-7">
+        <Text variant="small" className="text-system-gray-500 ml-7">
           Configure how files are renamed by <strong>Download Watcher</strong>,{' '}
           <strong>Smart Folder Watcher</strong>, and when running{' '}
           <strong>Reanalyze All Files</strong>. These settings do not affect the Discover phase —
           Discover has its own naming controls in the analysis interface.
-        </p>
+        </Text>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

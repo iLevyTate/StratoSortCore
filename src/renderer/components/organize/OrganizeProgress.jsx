@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { FolderOpen, CheckCircle, Clock, FileText } from 'lucide-react';
+import { formatDisplayPath } from '../../utils/pathDisplay';
+import { Heading, Text } from '../ui/Typography';
+import Card from '../ui/Card';
 
 function OrganizeProgress({
   isOrganizing,
   batchProgress = { current: 0, total: 0, currentFile: '' },
   preview = []
 }) {
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
   const [startedAt, setStartedAt] = useState(null);
   const hasTotals = Number(batchProgress.total) > 0;
   const actualPercent = hasTotals
@@ -23,7 +28,6 @@ function OrganizeProgress({
     if (!startedAt) setStartedAt(Date.now());
   }, [isOrganizing, startedAt]);
 
-  // Smooth, informative visual progress when real percent is unavailable
   useEffect(() => {
     if (!isOrganizing) return undefined;
     if (hasTotals && actualPercent > 0) {
@@ -35,7 +39,6 @@ function OrganizeProgress({
     const tick = () => {
       if (!isMounted) return;
       setVisualPercent((prev) => {
-        // Ease towards 85% while waiting for real progress
         const next = prev + Math.max(0.2, (85 - prev) * 0.02);
         return Math.min(85, next);
       });
@@ -48,7 +51,6 @@ function OrganizeProgress({
     };
   }, [isOrganizing, hasTotals, actualPercent]);
 
-  // Compute ETA only when totals are known and progress is non-zero
   const etaText = useMemo(() => {
     if (!startedAt || !hasTotals || actualPercent <= 0) return 'Estimating...';
     const elapsedMs = Date.now() - startedAt;
@@ -60,34 +62,32 @@ function OrganizeProgress({
     const s = remainingSec % 60;
     return `${m}m ${s}s remaining`;
   }, [startedAt, hasTotals, actualPercent, batchProgress]);
-  // batchProgress props are read for computation; lint incorrectly flags object properties
 
   if (!isOrganizing) return null;
 
   const percentToShow = hasTotals ? Math.max(visualPercent, actualPercent) : visualPercent;
 
   return (
-    // py-12 (3rem vertical padding) provides optimal visual breathing room for the organization
-    // progress display, ensuring the animated spinner, progress bars, and file preview list
-    // are comfortably spaced without overwhelming the interface during file operations
-    <div className="py-12">
-      {/* Animated header */}
-      <div className="flex items-center justify-center gap-8 text-stratosort-blue mb-8">
-        <div className="relative w-21 h-21">
+    <div className="py-8 w-full max-w-2xl mx-auto">
+      <div className="flex items-center justify-center gap-6 text-stratosort-blue mb-8">
+        <div className="relative w-16 h-16 flex-shrink-0">
           <div className="absolute inset-0 animate-spin rounded-full border-4 border-stratosort-blue/30 border-t-stratosort-blue" />
           <div className="absolute inset-2 rounded-full bg-stratosort-blue/5 flex items-center justify-center">
-            <FolderOpen className="w-5 h-5 text-stratosort-blue" />
+            <FolderOpen className="w-6 h-6 text-stratosort-blue" />
           </div>
         </div>
         <div>
-          <div className="heading-tertiary">Organizing Files...</div>
-          <div className="text-xs text-system-gray-600">Do not close the app until completion</div>
+          <Heading as="h3" variant="h4" className="text-stratosort-blue">
+            Organizing Files...
+          </Heading>
+          <Text variant="small" className="text-system-gray-600">
+            Do not close the app until completion
+          </Text>
         </div>
       </div>
 
-      {/* Progress */}
       <div className="mb-8">
-        <div className="flex justify-between text-sm text-system-gray-600 mb-3">
+        <div className="flex justify-between text-sm text-system-gray-600 mb-2 font-medium">
           <span>
             {hasTotals ? (
               <>
@@ -99,28 +99,44 @@ function OrganizeProgress({
           </span>
           <span>{Math.round(percentToShow)}%</span>
         </div>
-        {hasTotals ? (
-          <div className="progress-enhanced">
-            <div className="progress-bar-enhanced" style={{ width: `${percentToShow}%` }} />
-          </div>
-        ) : (
-          <div className="indeterminate-bar" />
-        )}
+
+        <div className="h-3 w-full bg-system-gray-100 rounded-full overflow-hidden mb-3">
+          {hasTotals ? (
+            <div
+              className="h-full bg-stratosort-blue transition-all duration-300 ease-out rounded-full"
+              style={{ width: `${percentToShow}%` }}
+            />
+          ) : (
+            <div className="h-full w-full bg-system-gray-200 relative overflow-hidden">
+              <div className="absolute inset-y-0 left-0 w-1/3 bg-stratosort-blue animate-[shimmer_1.5s_infinite]" />
+            </div>
+          )}
+        </div>
+
         {batchProgress.currentFile && (
-          <div className="text-xs text-system-gray-500 mt-3 break-words">
-            Currently processing: {batchProgress.currentFile}
-          </div>
+          <Text variant="tiny" className="text-system-gray-500 break-words truncate">
+            Currently processing:{' '}
+            <span className="font-medium text-system-gray-700">
+              {formatDisplayPath(batchProgress.currentFile, { redact: redactPaths, segments: 2 })}
+            </span>
+          </Text>
         )}
-        <div className="text-xs text-system-gray-500 mt-3">{etaText}</div>
+        <Text variant="tiny" className="text-system-gray-500 mt-1">
+          {etaText}
+        </Text>
       </div>
 
-      {/* Preview upcoming or recent operations */}
       {Array.isArray(preview) && preview.length > 0 && (
-        <div className="bg-system-gray-50 border border-system-gray-200 rounded-lg p-8 overflow-hidden">
-          <div className="text-xs font-semibold text-system-gray-700 mb-5">
-            Planned operations ({preview.length} files)
+        <Card variant="static" className="p-0 overflow-hidden border-system-gray-200">
+          <div className="px-4 py-3 bg-system-gray-50 border-b border-system-gray-200">
+            <Text
+              variant="tiny"
+              className="font-semibold text-system-gray-700 uppercase tracking-wide"
+            >
+              Planned operations ({preview.length} files)
+            </Text>
           </div>
-          <div className="space-y-5 max-h-40 overflow-y-auto pr-5">
+          <div className="max-h-48 overflow-y-auto p-2 space-y-1 custom-scrollbar">
             {preview.slice(0, 6).map((op, idx) => {
               const isCurrentFile =
                 batchProgress.currentFile && op.fileName === batchProgress.currentFile;
@@ -129,9 +145,11 @@ function OrganizeProgress({
               return (
                 <div
                   key={op.destination || op.fileName || idx}
-                  className={`flex items-start gap-3 text-sm ${isCurrentFile ? 'bg-stratosort-blue/10 -mx-2 px-2 py-1 rounded' : ''}`}
+                  className={`flex items-center gap-3 text-sm p-2 rounded-lg transition-colors ${
+                    isCurrentFile ? 'bg-stratosort-blue/10' : 'hover:bg-system-gray-50'
+                  }`}
                 >
-                  <span className="mt-0.5 flex-shrink-0">
+                  <span className="flex-shrink-0">
                     {isProcessed ? (
                       <CheckCircle className="w-4 h-4 text-stratosort-success" />
                     ) : isCurrentFile ? (
@@ -140,24 +158,33 @@ function OrganizeProgress({
                       <FileText className="w-4 h-4 text-system-gray-400" />
                     )}
                   </span>
-                  <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="min-w-0 flex-1 overflow-hidden grid grid-cols-2 gap-4">
                     <div className="font-medium text-system-gray-900 truncate" title={op.fileName}>
                       {op.fileName}
                     </div>
-                    <div className="text-xs text-system-gray-600 truncate" title={op.destination}>
-                      → {op.destination}
-                    </div>
+                    <Text
+                      as="div"
+                      variant="tiny"
+                      className="text-system-gray-500 truncate flex items-center"
+                      title={formatDisplayPath(op.destination, {
+                        redact: redactPaths,
+                        segments: 2
+                      })}
+                    >
+                      <span className="mr-1">→</span>
+                      {formatDisplayPath(op.destination, { redact: redactPaths, segments: 2 })}
+                    </Text>
                   </div>
                 </div>
               );
             })}
             {preview.length > 6 && (
-              <div className="text-xs text-system-gray-500 italic">
+              <Text variant="tiny" className="text-system-gray-500 italic text-center py-2">
                 ...and {preview.length - 6} more files
-              </div>
+              </Text>
             )}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

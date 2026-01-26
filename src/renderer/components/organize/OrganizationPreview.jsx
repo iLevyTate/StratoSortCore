@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Folder, CheckCircle, XCircle } from 'lucide-react';
 import { Card, Button } from '../ui';
+import { Text } from '../ui/Typography';
 import { ErrorBoundaryCore } from '../ErrorBoundary';
 
 function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel }) {
@@ -148,19 +149,27 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
       <div className="grid grid-cols-4 gap-6">
         <Card className="p-3 text-center">
           <div className="text-2xl font-semibold text-stratosort-blue">{stats.totalFiles}</div>
-          <div className="text-xs text-system-gray-600">Total Files</div>
+          <Text variant="tiny" className="text-system-gray-600">
+            Total Files
+          </Text>
         </Card>
         <Card className="p-3 text-center">
           <div className="text-2xl font-semibold text-stratosort-success">{stats.totalFolders}</div>
-          <div className="text-xs text-system-gray-600">Target Folders</div>
+          <Text variant="tiny" className="text-system-gray-600">
+            Target Folders
+          </Text>
         </Card>
         <Card className="p-3 text-center">
           <div className="text-2xl font-semibold text-stratosort-blue">{stats.movedFiles}</div>
-          <div className="text-xs text-system-gray-600">Files to Move</div>
+          <Text variant="tiny" className="text-system-gray-600">
+            Files to Move
+          </Text>
         </Card>
         <Card className="p-3 text-center">
           <div className="text-2xl font-semibold text-stratosort-indigo">{stats.renamedFiles}</div>
-          <div className="text-xs text-system-gray-600">Files to Rename</div>
+          <Text variant="tiny" className="text-system-gray-600">
+            Files to Rename
+          </Text>
         </Card>
       </div>
 
@@ -191,19 +200,21 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`text-xs px-2 py-1 rounded-md ${getConfidenceColor(
+                  <Text
+                    as="span"
+                    variant="tiny"
+                    className={`px-2 py-1 rounded-md ${getConfidenceColor(
                       normalizeConfidenceFraction(folder.confidence)
                     )}`}
                   >
                     {Math.round(normalizeConfidenceFraction(folder.confidence) * 100)}% match
-                  </span>
+                  </Text>
                 </div>
               </div>
 
               {expandedFolders.has(folderPath) && (
                 <div className="border-t bg-system-gray-50 p-3">
-                  <details className="mb-3 text-xs text-system-gray-500 group">
+                  <details className="mb-3 text-system-gray-500 group">
                     <summary className="cursor-pointer list-none hover:text-system-gray-700 flex items-center gap-1 w-fit select-none">
                       Target Path{' '}
                       <span className="text-[8px] opacity-70 group-open:rotate-180 transition-transform">
@@ -239,18 +250,26 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs">
+                        <Text as="div" variant="tiny" className="flex items-center gap-2">
                           {fileInfo.renamed && (
-                            <span className="px-2 py-0.5 bg-system-purple/10 text-system-purple rounded-md">
+                            <Text
+                              as="span"
+                              variant="tiny"
+                              className="px-2 py-0.5 bg-system-purple/10 text-system-purple rounded-md"
+                            >
                               Renamed
-                            </span>
+                            </Text>
                           )}
                           {fileInfo.moved && (
-                            <span className="px-2 py-0.5 bg-stratosort-blue/10 text-stratosort-blue rounded-md">
+                            <Text
+                              as="span"
+                              variant="tiny"
+                              className="px-2 py-0.5 bg-stratosort-blue/10 text-stratosort-blue rounded-md"
+                            >
                               Moved
-                            </span>
+                            </Text>
                           )}
-                        </div>
+                        </Text>
                       </div>
                     ))}
                   </div>
@@ -276,7 +295,9 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
               <div key={folderPath}>
                 <div className="text-system-gray-600">
                   {indent}└─ {folder.name}
-                  <span className="text-xs text-system-gray-500 ml-2">({folder.files.length})</span>
+                  <Text as="span" variant="tiny" className="text-system-gray-500 ml-2">
+                    ({folder.files.length})
+                  </Text>
                 </div>
               </div>
             );

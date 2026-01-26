@@ -1,6 +1,7 @@
 import React, { useState, memo, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { Card, Button } from '../ui';
+import { Text } from '../ui/Typography';
 
 const OrganizationSuggestions = memo(function OrganizationSuggestions({
   file,
@@ -136,13 +137,15 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
               )}
 
               {primary.strategy && (
-                <div className="mt-2 text-xs text-system-gray-500">
+                <Text variant="tiny" className="mt-2 text-system-gray-500">
                   Strategy: {primary.strategyName || primary.strategy}
-                </div>
+                </Text>
               )}
 
               {primary.memoryAdjustment && (
-                <div className="mt-2 text-xs text-system-gray-500">Memory boost applied</div>
+                <Text variant="tiny" className="mt-2 text-system-gray-500">
+                  Memory boost applied
+                </Text>
               )}
             </div>
 
@@ -205,9 +208,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
           className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
           rows={2}
         />
-        <div className="mt-2 text-xs text-system-gray-500">
+        <Text variant="tiny" className="mt-2 text-system-gray-500">
           Notes are saved as memory to improve future suggestions.
-        </div>
+        </Text>
       </Card>
 
       {/* Alternative Suggestions */}
@@ -240,24 +243,30 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                         <span className="font-medium text-sm">
                           {sanitizeFolderName(alt.folder)}
                         </span>
-                        <span
-                          className={`text-xs ${getConfidenceColor(
+                        <Text
+                          as="span"
+                          variant="tiny"
+                          className={getConfidenceColor(
                             normalizeConfidenceFraction(alt.confidence || 0)
-                          )}`}
+                          )}
                         >
                           {Math.round(normalizeConfidenceFraction(alt.confidence || 0) * 100)}%
-                        </span>
+                        </Text>
                       </div>
                       {alt.reasoning && (
-                        <p className="text-xs text-system-gray-500 mt-1">{alt.reasoning}</p>
+                        <Text variant="tiny" className="text-system-gray-500 mt-1">
+                          {alt.reasoning}
+                        </Text>
                       )}
                       {alt.method && (
-                        <span className="text-xs text-system-gray-500">
+                        <Text as="span" variant="tiny" className="text-system-gray-500">
                           Source: {alt.method.replace('_', ' ')}
-                        </span>
+                        </Text>
                       )}
                       {alt.memoryAdjustment && (
-                        <div className="text-xs text-system-gray-500">Memory boost applied</div>
+                        <Text variant="tiny" className="text-system-gray-500">
+                          Memory boost applied
+                        </Text>
                       )}
                     </div>
                     <Button
@@ -294,14 +303,16 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="font-medium text-sm">{strategy.name}</div>
-                    <div className="text-xs text-system-gray-600">{strategy.description}</div>
-                    <div className="text-xs text-system-gray-500 mt-1">
+                    <Text variant="tiny" className="text-system-gray-600">
+                      {strategy.description}
+                    </Text>
+                    <Text variant="tiny" className="text-system-gray-500 mt-1">
                       Pattern: {strategy.pattern}
-                    </div>
+                    </Text>
                   </div>
-                  <div className="text-xs text-system-gray-500">
+                  <Text variant="tiny" className="text-system-gray-500">
                     {Math.round(strategy.applicability * 100)}% match
-                  </div>
+                  </Text>
                 </div>
               </div>
             ))}

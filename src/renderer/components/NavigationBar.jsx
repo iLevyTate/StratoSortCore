@@ -18,6 +18,7 @@ import { setPhase, toggleSettings } from '../store/slices/uiSlice';
 import { updateHealth } from '../store/slices/systemSlice';
 import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import UpdateIndicator from './UpdateIndicator';
+import { Text } from './ui/Typography';
 import { isMac } from '../utils/platform';
 
 logger.setContext('NavigationBar');
@@ -138,8 +139,12 @@ const Brand = memo(function Brand({ status }) {
         </div>
       </div>
       <div className="hidden sm:block leading-tight">
-        <p className="text-sm font-semibold text-system-gray-900">StratoSort</p>
-        <p className="text-xs text-system-gray-500">Cognitive file flow</p>
+        <Text as="p" variant="small" className="font-semibold text-system-gray-900">
+          StratoSort
+        </Text>
+        <Text as="p" variant="tiny" className="text-system-gray-500">
+          Cognitive file flow
+        </Text>
       </div>
     </div>
   );
@@ -270,7 +275,9 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
         title={isWidgetOpen ? 'Close Search Widget' : 'Search files (Ctrl+K)'}
       >
         <SearchIcon className="h-4 w-4" />
-        <span className="text-xs font-medium hidden sm:inline">Search</span>
+        <Text as="span" variant="tiny" className="font-medium hidden sm:inline">
+          Search
+        </Text>
       </button>
       <button
         type="button"

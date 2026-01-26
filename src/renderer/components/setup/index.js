@@ -149,11 +149,11 @@ export default function FirstRunWizard({ onComplete }) {
                 <div key={r.model} className="text-sm">
                   <span className="inline-flex items-center gap-1">
                     {r.status === 'ready' ? (
-                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <CheckCircle className="w-4 h-4 text-stratosort-success" />
                     ) : r.status.startsWith('failed') ? (
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <AlertTriangle className="w-4 h-4 text-stratosort-warning" />
                     ) : (
-                      <Clock className="w-4 h-4 text-blue-600" />
+                      <Clock className="w-4 h-4 text-stratosort-blue" />
                     )}
                     {r.model} {r.status === 'ready' ? 'ready' : r.status}
                   </span>

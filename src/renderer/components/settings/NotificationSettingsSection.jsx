@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Monitor, Smartphone, MessageSquare, AlertTriangle } from 'lucide-react';
 import Switch from '../ui/Switch';
 import SettingRow from './SettingRow';
+import { Text, Heading } from '../ui/Typography';
 
 /**
  * NotificationSettingsSection - Settings section for notification preferences
@@ -61,9 +62,9 @@ function NotificationSettingsSection({ settings, setSettings }) {
                   <Smartphone
                     className={`w-4 h-4 ${notificationMode === 'both' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
                   />
-                  <span className="text-sm font-medium text-system-gray-900">
+                  <Text variant="small" className="font-medium text-system-gray-900">
                     App and system tray (Recommended)
-                  </span>
+                  </Text>
                 </div>
               </label>
 
@@ -85,9 +86,9 @@ function NotificationSettingsSection({ settings, setSettings }) {
                   <Monitor
                     className={`w-4 h-4 ${notificationMode === 'ui' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
                   />
-                  <span className="text-sm font-medium text-system-gray-900">
+                  <Text variant="small" className="font-medium text-system-gray-900">
                     App only (in-window toasts)
-                  </span>
+                  </Text>
                 </div>
               </label>
 
@@ -109,14 +110,18 @@ function NotificationSettingsSection({ settings, setSettings }) {
                   <Smartphone
                     className={`w-4 h-4 ${notificationMode === 'tray' ? 'text-stratosort-blue' : 'text-system-gray-500'}`}
                   />
-                  <span className="text-sm font-medium text-system-gray-900">System tray only</span>
+                  <Text variant="small" className="font-medium text-system-gray-900">
+                    System tray only
+                  </Text>
                 </div>
               </label>
             </div>
           </SettingRow>
 
           <div className="pt-4 border-t border-system-gray-100">
-            <h4 className="text-sm font-medium text-system-gray-900 mb-4">Notification Events</h4>
+            <Heading as="h4" variant="h6" className="mb-4">
+              Notification Events
+            </Heading>
             <div className="space-y-4">
               <SettingRow
                 label={
@@ -136,7 +141,7 @@ function NotificationSettingsSection({ settings, setSettings }) {
               <SettingRow
                 label={
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <AlertTriangle className="w-4 h-4 text-stratosort-warning" />
                     <span>Low confidence files</span>
                   </div>
                 }

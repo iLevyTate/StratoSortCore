@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
 import Button from '../ui/Button';
+import { Inline } from '../layout';
 
 const SelectionControls = memo(function SelectionControls({
   onSelectFiles,
@@ -9,7 +10,7 @@ const SelectionControls = memo(function SelectionControls({
   className = ''
 }) {
   return (
-    <div className={`flex items-center gap-4 flex-wrap ${className}`}>
+    <Inline gap="cozy" className={`justify-center ${className}`}>
       <Button onClick={onSelectFiles} variant="primary" disabled={isScanning}>
         Select Files
       </Button>
@@ -21,7 +22,7 @@ const SelectionControls = memo(function SelectionControls({
           Scanning files...
         </span>
       )}
-    </div>
+    </Inline>
   );
 });
 

@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
 import SettingRow from './SettingRow';
+import { Text } from '../ui/Typography';
 
 function BackgroundModeSection({ settings, setSettings }) {
   return (
@@ -22,11 +23,11 @@ function BackgroundModeSection({ settings, setSettings }) {
       </SettingRow>
 
       {settings.backgroundMode && !settings.autoOrganize && (
-        <div className="ml-0 pl-4 border-l-2 border-amber-200">
-          <p className="text-xs text-amber-700">
+        <div className="ml-0 pl-4 border-l-2 border-stratosort-warning/30">
+          <Text variant="tiny" className="text-stratosort-warning">
             Enable &quot;Auto-organize Downloads&quot; above to process files while running in
             background.
-          </p>
+          </Text>
         </div>
       )}
     </div>

@@ -1,8 +1,10 @@
 import React, { memo } from 'react';
 import PropTypes from 'prop-types';
-import Modal from '../Modal';
+import Modal from '../ui/Modal';
 import NamingSettings from './NamingSettings';
 import { Button } from '../ui';
+import { Text } from '../ui/Typography';
+import { Inline, Stack } from '../layout';
 
 const NamingSettingsModal = memo(function NamingSettingsModal({
   isOpen,
@@ -21,18 +23,17 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Naming Strategy"
-      size="large"
+      size="lg"
       closeOnOverlayClick
-      showCloseButton
       footer={
-        <div className="flex justify-end">
-          <Button onClick={onClose} variant="primary">
+        <Inline className="justify-end" gap="compact" wrap={false}>
+          <Button onClick={onClose} variant="primary" size="sm">
             Done
           </Button>
-        </div>
+        </Inline>
       }
     >
-      <div className="flex flex-col" style={{ gap: 'var(--spacing-default)' }}>
+      <Stack gap="default">
         <p className="text-sm text-system-gray-600">
           Configure how StratoSort will rename your files during analysis.
         </p>
@@ -49,16 +50,16 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
         />
 
         <div className="border-t border-border-soft/70 pt-4 mt-2">
-          <div className="text-xs text-system-gray-500 mb-4">
+          <Text variant="tiny" className="text-system-gray-500 mb-4">
             <strong>Preview:</strong>{' '}
             <span className="font-mono bg-system-gray-100 px-2 py-1 rounded">
               {namingConvention === 'keep-original'
                 ? 'original-filename.ext'
                 : `${namingConvention.replace(/-/g, separator || '-')}.ext`}
             </span>
-          </div>
+          </Text>
         </div>
-      </div>
+      </Stack>
     </Modal>
   );
 });

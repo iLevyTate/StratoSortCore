@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { PHASES, PHASE_TRANSITIONS, PHASE_ORDER } from '../../../shared/constants';
 import { logger } from '../../../shared/logger';
 import { serializeData } from '../../utils/serialization';
+import { settingsIpc } from '../../services/ipc';
 
 // FIX: Define explicit phase order for navigation logic
 // PHASE_ORDER is imported from constants
@@ -91,14 +92,19 @@ const NAVIGATION_RULES = {
 // FIX: Added forceRefresh parameter to allow cache invalidation
 export const fetchSettings = createAsyncThunk(
   'ui/fetchSettings',
-  async (forceRefresh = false, { getState }) => {
+  async (forceRefresh = false, { getState, rejectWithValue }) => {
     const { ui } = getState();
     // Return cached value if already fetched and not forcing refresh
     if (!forceRefresh && ui.settings) {
       return ui.settings;
     }
-    const settings = await window.electronAPI?.settings?.get?.();
-    return settings || {};
+    try {
+      const settings = await settingsIpc.get();
+      return settings || {};
+    } catch (error) {
+      logger.error('[uiSlice] Failed to fetch settings', { error: error?.message });
+      return rejectWithValue(error?.message || 'Failed to load settings');
+    }
   }
 );
 
@@ -278,7 +284,7 @@ const uiSlice = createSlice({
           state.settings = {};
         }
         state.settingsLoading = false;
-        state.settingsError = action.error?.message || 'Failed to load settings';
+        state.settingsError = action.payload || action.error?.message || 'Failed to load settings';
       });
   }
 });

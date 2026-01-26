@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import Switch from '../ui/Switch';
 import Select from '../ui/Select';
 import SettingRow from './SettingRow';
+import { Text } from '../ui/Typography';
 
 const DEFAULT_CONFIDENCE = 0.75; // 75%
 const CONFIDENCE_MIN = 0.5; // 50%
@@ -75,10 +76,10 @@ function AutoOrganizeSection({ settings, setSettings }) {
             <span className="text-sm font-medium text-system-gray-700">Minimum confidence</span>
             <span className="text-sm font-medium text-stratosort-blue">{confidencePercent}%</span>
           </div>
-          <p className="text-xs text-system-gray-500 mb-3">
+          <Text variant="tiny" className="text-system-gray-500 mb-3">
             Files must meet this confidence level to be automatically organized. Lower confidence
             matches require manual review.
-          </p>
+          </Text>
           <input
             type="range"
             min={Math.round(CONFIDENCE_MIN * 100)}

@@ -58,8 +58,10 @@ describe('HighlightedText', () => {
     test('applies default highlight classes to mark', () => {
       render(<HighlightedText text="hello world" query="hello" />);
       const mark = screen.getByText('hello');
-      expect(mark).toHaveClass('bg-yellow-100');
-      expect(mark).toHaveClass('text-yellow-900');
+      expect(mark).toHaveClass('bg-stratosort-warning/15');
+      expect(mark).toHaveClass('text-system-gray-900');
+      expect(mark).toHaveClass('rounded-sm');
+      expect(mark).toHaveClass('px-0.5');
     });
 
     test('applies custom highlightClassName to mark', () => {

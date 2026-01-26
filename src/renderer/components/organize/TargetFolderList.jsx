@@ -1,47 +1,50 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
+import { useSelector } from 'react-redux';
 import { List } from 'react-window';
 import { Folder } from 'lucide-react';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
+import { formatDisplayPath } from '../../utils/pathDisplay';
+import Card from '../ui/Card';
+import { Text } from '../ui/Typography';
 
-// FIX L-2: Use centralized constants for virtualization
 const ITEM_HEIGHT = UI_VIRTUALIZATION.TARGET_FOLDER_ITEM_HEIGHT;
-// Folders have lower threshold since they're typically fewer
 const VIRTUALIZATION_THRESHOLD = 20;
 
-/**
- * Calculate optimal list height based on folder count and viewport
- * Adapts to data volume for proportional space usage
- */
 const getListHeight = (folderCount, viewportHeight) => {
-  // Folders list rarely has many items, optimize for readability
   const maxFraction = folderCount <= 10 ? 0.35 : 0.45;
   const contentHeight = folderCount * ITEM_HEIGHT;
   const maxHeight = Math.round(viewportHeight * maxFraction);
   return Math.max(ITEM_HEIGHT * 2, Math.min(contentHeight, maxHeight));
 };
 
-// Memoized FolderItem to prevent re-renders when folder data hasn't changed
-// FIX: Added proper text overflow handling for long paths with title tooltips
 const FolderItem = memo(function FolderItem({ folder, defaultLocation, style }) {
   const fullPath = folder.path || `${defaultLocation}/${folder.name}`;
+  const redactPaths = useSelector((state) => Boolean(state?.system?.redactPaths));
+  const displayPath = formatDisplayPath(fullPath, { redact: redactPaths, segments: 2 });
 
   return (
     <div style={style} className="p-2">
-      <div className="p-4 bg-white rounded-xl border border-border-soft shadow-sm min-w-0 h-full overflow-hidden space-y-2">
-        <div className="font-semibold text-system-gray-900 text-base leading-snug break-words">
+      <Card variant="default" className="h-full p-4 flex flex-col gap-2">
+        <Text variant="body" className="font-semibold text-system-gray-900 break-words">
           {folder.name}
-        </div>
-        <div className="text-sm text-system-gray-700 leading-relaxed break-words flex items-center gap-1.5">
+        </Text>
+        <div className="flex items-center gap-2 text-system-gray-700">
           <Folder className="w-4 h-4 text-stratosort-blue flex-shrink-0" />
-          <span>{fullPath}</span>
+          <Text variant="small" className="break-words">
+            {displayPath}
+          </Text>
         </div>
         {folder.description && (
-          <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 p-3 rounded-lg italic leading-relaxed break-words">
+          <Text
+            as="div"
+            variant="tiny"
+            className="text-system-gray-600 bg-stratosort-blue/5 p-2 rounded-lg italic leading-relaxed break-words mt-auto"
+          >
             &ldquo;{folder.description}&rdquo;
-          </div>
+          </Text>
         )}
-      </div>
+      </Card>
     </div>
   );
 });
@@ -57,9 +60,6 @@ FolderItem.propTypes = {
   style: PropTypes.object
 };
 
-/**
- * Virtualized row component for rendering folder items
- */
 const VirtualizedFolderRow = memo(function VirtualizedFolderRow({ index, style, data }) {
   const { folders, defaultLocation } = data || {};
   const folder = folders && folders[index];
@@ -94,9 +94,7 @@ const TargetFolderList = memo(function TargetFolderList({
     }),
     [folders, defaultLocation]
   );
-  const safeRowProps = rowProps ?? {};
 
-  // Calculate optimal list height based on folder count (data-aware sizing)
   const listHeight = useMemo(() => {
     const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 900;
     return getListHeight(folders.length, viewportHeight);
@@ -118,27 +116,24 @@ const TargetFolderList = memo(function TargetFolderList({
   if (shouldVirtualize) {
     return (
       <div className="w-full">
-        <div className="text-xs text-system-gray-500 mb-3">
-          Showing {folders.length} folders (virtualized for performance)
-        </div>
+        <Text variant="tiny" className="text-system-gray-500 mb-3">
+          Showing {folders.length} folders
+        </Text>
         <List
-          itemCount={folders.length}
-          itemSize={ITEM_HEIGHT}
-          itemData={safeRowProps.data}
+          rowCount={folders.length}
+          rowHeight={ITEM_HEIGHT}
+          rowComponent={VirtualizedFolderRow}
+          rowProps={rowProps}
           overscanCount={4}
           style={{ height: listHeight, width: '100%' }}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        >
-          {VirtualizedFolderRow}
-        </List>
+        />
       </div>
     );
   }
 
-  // For smaller lists, render normally without virtualization overhead
-  // Use auto-fit grid that adapts to content amount
   return (
-    <div className="grid grid-cols-auto-fit-md gap-6">
+    <div className="grid grid-cols-auto-fit-md gap-4">
       {folders.map((folder) => (
         <FolderItem key={folder.id} folder={folder} defaultLocation={defaultLocation} />
       ))}
@@ -147,14 +142,7 @@ const TargetFolderList = memo(function TargetFolderList({
 });
 
 TargetFolderList.propTypes = {
-  folders: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-      name: PropTypes.string.isRequired,
-      path: PropTypes.string,
-      description: PropTypes.string
-    })
-  ),
+  folders: PropTypes.array,
   defaultLocation: PropTypes.string,
   isLoading: PropTypes.bool
 };

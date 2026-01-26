@@ -9,7 +9,7 @@ const HighlightedText = memo(function HighlightedText({
   text,
   query,
   className = '',
-  highlightClassName = 'bg-yellow-100 text-yellow-900 rounded-sm px-0.5',
+  highlightClassName = 'bg-stratosort-warning/15 text-system-gray-900 rounded-sm px-0.5',
   as: Component = 'span'
 }) {
   const segments = useMemo(() => highlightMatches(text, query), [text, query]);

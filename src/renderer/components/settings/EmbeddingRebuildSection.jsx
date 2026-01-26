@@ -4,6 +4,8 @@ import Button from '../ui/Button';
 import Switch from '../ui/Switch';
 import { logger } from '../../../shared/logger';
 import { useAppSelector } from '../../store/hooks';
+import { Text } from '../ui/Typography';
+import { Stack } from '../layout';
 
 /**
  * Embedding rebuild section for folder and file embeddings
@@ -26,21 +28,12 @@ function EmbeddingRebuildSection({ addNotification }) {
     setIsLoadingStats(true);
     try {
       const res = await window.electronAPI.embeddings.getStats();
-      // FIX: Better logging to diagnose embedding count issues
-      // Reduced verbosity to prevent log spam during polling
-      // logger.debug('[EmbeddingRebuildSection] getStats response', {
-      //   success: res?.success,
-      //   files: res?.files,
-      //   folders: res?.folders,
-      //   error: res?.error
-      // });
       if (res && res.success) {
         setStats({
           files: typeof res.files === 'number' ? res.files : 0,
           folders: typeof res.folders === 'number' ? res.folders : 0,
           initialized: Boolean(res.initialized),
           serverUrl: res.serverUrl || '',
-          // FIX: Pass through needsFileEmbeddingRebuild and analysisHistory for proper display
           needsFileEmbeddingRebuild: res.needsFileEmbeddingRebuild,
           analysisHistory: res.analysisHistory,
           embeddingIndex: res.embeddingIndex,
@@ -64,19 +57,13 @@ function EmbeddingRebuildSection({ addNotification }) {
     let errorCount = 0;
     let isMounted = true;
 
-    // Helper for scheduling next update with backoff and visibility check
     const scheduleNext = () => {
       if (!isMounted) return;
-
-      // Exponential backoff: 5s, 10s, 20s... max 60s
       const delay = Math.min(5000 * 2 ** errorCount, 60000);
 
       timerId = setTimeout(() => {
         if (!isMounted) return;
-
-        // Fix: Stop polling when tab/window is not visible
         if (document.hidden) {
-          // If hidden, just wait standard delay and check again
           scheduleNext();
           return;
         }
@@ -101,7 +88,6 @@ function EmbeddingRebuildSection({ addNotification }) {
       }, delay);
     };
 
-    // Initial load
     refreshStats()
       .catch((err) => {
         logger.debug('[EmbeddingRebuildSection] Initial stats refresh failed', {
@@ -109,7 +95,6 @@ function EmbeddingRebuildSection({ addNotification }) {
         });
       })
       .finally(() => {
-        // Start polling loop
         if (isMounted) scheduleNext();
       });
 
@@ -127,7 +112,6 @@ function EmbeddingRebuildSection({ addNotification }) {
       const active = stats.activeEmbeddingModel ? `${stats.activeEmbeddingModel}` : 'unknown';
       return `Embedding model mismatch: indexed with ${indexed}, configured ${active}. Run Full Rebuild to apply.`;
     }
-    // FIX M-5: Show helpful context when embeddings are 0 but files have been analyzed
     if (stats.needsFileEmbeddingRebuild) {
       const analyzed = stats.analysisHistory?.totalFiles || 0;
       return `${stats.folders} folder embeddings • ${stats.files} file embeddings (${analyzed} files analyzed - click Rebuild to index)`;
@@ -152,7 +136,6 @@ function EmbeddingRebuildSection({ addNotification }) {
           'success'
         );
       } else {
-        // Provide actionable error message
         const errorMsg = res?.error || '';
         if (errorMsg.includes('Ollama') || errorMsg.includes('ECONNREFUSED')) {
           addNotification('Ollama not running. Start Ollama and try again.', 'error');
@@ -224,23 +207,23 @@ function EmbeddingRebuildSection({ addNotification }) {
   const analysisTotal = Number.isFinite(analysisProgress?.total) ? analysisProgress.total : 0;
 
   return (
-    <div className="space-y-4">
+    <Stack gap="default">
       <div>
         <label className="block text-sm font-medium text-system-gray-700 mb-2">
           Embeddings maintenance
         </label>
-        <p className="text-xs text-system-gray-500">
+        <Text variant="small" className="text-system-gray-500">
           {statsLabel}
           {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
-        </p>
-        <p className="text-xs text-system-gray-400 mt-1">
+        </Text>
+        <Text variant="tiny" className="text-system-gray-400 mt-1">
           When changing embedding models, use <strong>Rebuild All Embeddings</strong> to update
           everything. This preserves your analysis data but regenerates the search index.
-        </p>
+        </Text>
         {analysisIsActive && (
-          <p className="text-xs text-system-gray-500 mt-2">
+          <Text variant="tiny" className="text-system-gray-500 mt-2">
             Background analysis running: {analysisCurrent}/{analysisTotal} files
-          </p>
+          </Text>
         )}
       </div>
 
@@ -258,19 +241,21 @@ function EmbeddingRebuildSection({ addNotification }) {
         >
           {isFullRebuilding ? 'Rebuilding All Embeddings…' : 'Rebuild All Embeddings'}
         </Button>
-        <p className="text-xs text-system-gray-500 mt-2">
+        <Text variant="tiny" className="text-system-gray-500 mt-2">
           Use this after changing the embedding model setting. It updates folder matches, file
           search, and sorting.
-        </p>
+        </Text>
       </div>
 
       {/* Advanced Options Toggle */}
       <div className="pt-4 border-t border-system-gray-100">
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium focus:outline-none"
+          className="text-stratosort-blue hover:text-stratosort-blue/80 flex items-center gap-1 font-medium focus:outline-none"
         >
-          {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+          <Text as="span" variant="tiny">
+            {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+          </Text>
           <svg
             className={`w-3 h-3 transform transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
             fill="none"
@@ -285,12 +270,18 @@ function EmbeddingRebuildSection({ addNotification }) {
           <div className="mt-4 space-y-4 pl-4 border-l-2 border-system-gray-100">
             {/* Reanalyze All (Destructive) */}
             <div className="pt-2 border-t border-system-gray-100">
-              <label className="block text-xs font-medium text-red-700 mb-2">Danger Zone</label>
-              <p className="text-xs text-system-gray-500 mb-2">
+              <Text
+                as="label"
+                variant="tiny"
+                className="block font-medium text-stratosort-danger mb-2"
+              >
+                Danger Zone
+              </Text>
+              <Text variant="tiny" className="text-system-gray-500 mb-2">
                 <strong>Reanalyze All Files</strong> will delete all analysis history and re-process
                 every file with the LLM. Use this only if you changed the <em>Text/Vision Model</em>{' '}
                 (not just the embedding model).
-              </p>
+              </Text>
               <div className="mb-3">
                 <div className="flex items-center gap-3">
                   <Switch
@@ -306,10 +297,10 @@ function EmbeddingRebuildSection({ addNotification }) {
                     Apply naming conventions to files during reanalysis
                   </label>
                 </div>
-                <p className="text-xs text-system-gray-400 mt-1 ml-14">
+                <Text variant="tiny" className="text-system-gray-400 mt-1 ml-14">
                   When enabled, files will be renamed according to your naming convention settings.
                   When disabled, original file names will be preserved.
-                </p>
+                </Text>
               </div>
               <Button
                 onClick={handleReanalyzeAll}
@@ -331,7 +322,7 @@ function EmbeddingRebuildSection({ addNotification }) {
           </div>
         )}
       </div>
-    </div>
+    </Stack>
   );
 }
 

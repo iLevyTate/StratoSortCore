@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import { ErrorBoundaryCore } from '../ErrorBoundary';
 import ReadyFileItem from './ReadyFileItem';
+import { Text } from '../ui/Typography';
 import { joinPath } from '../../utils/platform';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
@@ -312,22 +313,6 @@ function VirtualizedFileGrid({
       onViewDetails
     ]
   );
-  const safeRowProps = rowProps ?? {};
-  const listItemData = safeRowProps.data || {
-    files: [],
-    columnsPerRow,
-    selectedFiles: safeSelectedFiles,
-    toggleFileSelection,
-    getFileWithEdits,
-    editingFiles: safeEditingFiles,
-    findSmartFolderForCategory,
-    getFileStateDisplay,
-    handleEditFile,
-    smartFolders: safeSmartFolders,
-    defaultLocation: safeDefaultLocation,
-    onViewDetails
-  };
-
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
     // Use measured height or fallback to viewport calculation
@@ -385,20 +370,23 @@ function VirtualizedFileGrid({
             />
           </div>
         )}
-        <div className="text-xs text-system-gray-500 mb-2 absolute top-0 right-0 z-10 bg-white/80 px-2 py-1 rounded backdrop-blur-sm">
+        <Text
+          as="div"
+          variant="tiny"
+          className="text-system-gray-500 mb-2 absolute top-0 right-0 z-10 bg-white/80 px-2 py-1 rounded backdrop-blur-sm"
+        >
           Showing {safeFiles.length} files
-        </div>
+        </Text>
         <List
           key={`list-${rowHeight}-${columnsPerRow}-${safeFiles.length}`}
-          itemCount={rowCount}
-          itemSize={rowHeight}
-          itemData={listItemData}
+          rowCount={rowCount}
+          rowHeight={rowHeight}
+          rowComponent={VirtualizedFileRow}
+          rowProps={rowProps}
           overscanCount={2}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
           style={{ height: listHeight, width: dimensions.width }}
-        >
-          {VirtualizedFileRow}
-        </List>
+        />
       </div>
     );
   }

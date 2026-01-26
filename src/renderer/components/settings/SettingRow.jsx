@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { Heading, Text } from '../ui/Typography';
 
 /**
  * Standard layout for a setting row.
@@ -14,8 +15,16 @@ function SettingRow({ label, description, children, className = '', layout = 'ro
       className={`flex ${layout === 'row' ? 'flex-row items-center justify-between gap-4' : 'flex-col gap-2'} ${className}`}
     >
       <div className={`${layout === 'row' ? 'flex-1' : ''} min-w-0`}>
-        {label && <h3 className="text-sm font-medium text-system-gray-900">{label}</h3>}
-        {description && <p className="text-sm text-system-gray-500 mt-1">{description}</p>}
+        {label && (
+          <Heading as="h3" variant="h6" className="text-sm font-medium text-system-gray-900">
+            {label}
+          </Heading>
+        )}
+        {description && (
+          <Text variant="small" className="text-system-gray-500 mt-1">
+            {description}
+          </Text>
+        )}
       </div>
       <div className={layout === 'row' ? 'flex-shrink-0' : 'w-full max-w-md'}>{children}</div>
     </div>

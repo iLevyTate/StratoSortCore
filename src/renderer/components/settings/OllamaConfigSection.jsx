@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
 import StatusBadge from '../ui/StatusBadge';
+import { Text } from '../ui/Typography';
 import SettingRow from './SettingRow';
 import { SERVICE_URLS } from '../../../shared/configDefaults';
 
@@ -57,15 +58,18 @@ function OllamaConfigSection({
   }, [ollamaHealth, ollamaModelLists]);
 
   return (
-    <Card className="p-5 space-y-5 border border-system-gray-200 shadow-sm">
+    <Card variant="default" className="p-5 space-y-5">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-system-gray-500">
+          <Text
+            variant="tiny"
+            className="font-semibold uppercase tracking-wide text-system-gray-500"
+          >
             Ollama connection
-          </p>
-          <p className="text-sm text-system-gray-600">
+          </Text>
+          <Text variant="small" className="text-system-gray-600">
             Point StratoSort to your local Ollama API and refresh available models.
-          </p>
+          </Text>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge variant={healthBadge.variant} className="whitespace-nowrap">
@@ -74,9 +78,13 @@ function OllamaConfigSection({
               <span className="truncate">{healthBadge.label}</span>
             </span>
           </StatusBadge>
-          <div className="text-xs text-system-gray-500 px-3 py-1 rounded-full bg-system-gray-100 border border-system-gray-200 whitespace-nowrap">
+          <Text
+            as="div"
+            variant="tiny"
+            className="text-system-gray-500 px-3 py-1 rounded-full bg-system-gray-100 border border-system-gray-200 whitespace-nowrap"
+          >
             {modelCountLabel}
-          </div>
+          </Text>
         </div>
       </div>
 
@@ -142,7 +150,11 @@ function OllamaConfigSection({
         >
           {showAllModels ? 'Hide Models' : 'View All Models'}
         </Button>
-        <div className="flex-1 min-w-[240px] text-xs text-system-gray-600 flex items-center gap-2">
+        <Text
+          as="div"
+          variant="tiny"
+          className="flex-1 min-w-[240px] text-system-gray-600 flex items-center gap-2"
+        >
           {pullProgressText ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin text-system-gray-500" />
@@ -157,17 +169,23 @@ function OllamaConfigSection({
                 : 'Test connection to verify your Ollama instance.'}
             </span>
           )}
-        </div>
+        </Text>
       </div>
 
       {showAllModels && (
-        <div className="p-4 bg-system-gray-50 rounded-lg border border-system-gray-200 text-xs space-y-2">
+        <div className="p-4 bg-system-gray-50 rounded-lg border border-system-gray-200 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <div className="font-medium text-system-gray-700">All models from Ollama</div>
-            <div className="text-system-gray-500">{modelCountLabel}</div>
+            <Text variant="small" className="font-medium text-system-gray-700">
+              All models from Ollama
+            </Text>
+            <Text variant="tiny" className="text-system-gray-500">
+              {modelCountLabel}
+            </Text>
           </div>
           {ollamaModelLists.all.length === 0 ? (
-            <div className="text-system-gray-500">No models returned</div>
+            <Text variant="tiny" className="text-system-gray-500">
+              No models returned
+            </Text>
           ) : (
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {ollamaModelLists.all.map((m) => (

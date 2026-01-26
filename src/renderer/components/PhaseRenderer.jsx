@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useKeyboardShortcuts } from '../hooks';
 import { useAppSelector } from '../store/hooks';
 import PhaseErrorBoundary from './PhaseErrorBoundary';
-import { LazyLoadingSpinner, ModalLoadingOverlay } from './LoadingSkeleton';
+import { LazyLoadingSpinner, ModalLoadingOverlay } from './ui/LoadingSkeleton';
 import { logger } from '../../shared/logger';
 import { PHASES } from '../../shared/constants';
 
@@ -119,7 +119,7 @@ function PhaseRenderer() {
 
   return (
     <>
-      <div className="flex flex-col w-full min-h-full">
+      <div className="flex flex-col w-full h-full">
         <Suspense fallback={<LazyLoadingSpinner message="Loading phase..." />}>
           <AnimatePresence mode="wait" initial={false}>
             <motion.div

@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import Modal from './Modal';
+import Modal from './ui/Modal';
 import Button from './ui/Button';
+import Card from './ui/Card';
 import StatusBadge from './ui/StatusBadge';
-import { logger } from '../../shared/logger';
+import { Heading, Text } from './ui/Typography';
 import { ErrorBoundaryCore as ErrorBoundary } from './ErrorBoundary';
+import { logger } from '../../shared/logger';
+import { Inline } from './layout';
 
 logger.setContext('AiDependenciesModal');
 
@@ -12,12 +15,10 @@ function normalizeOllamaModelName(name) {
   if (!name || typeof name !== 'string') return null;
   const trimmed = name.trim();
   if (!trimmed) return null;
-  // If user selected "mxbai-embed-large" without tag, pull latest
   if (!trimmed.includes(':')) return `${trimmed}:latest`;
   return trimmed;
 }
 
-// Unique ID counter for log entries (prevents key collisions)
 let logIdCounter = 0;
 const MAX_LOG_ENTRIES = 50;
 
@@ -27,25 +28,21 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState({ ollama: false, chromadb: false });
   const [downloadingModels, setDownloadingModels] = useState(false);
-  const [logLines, setLogLines] = useState([]); // Now stores { id, text } objects
-  const [installedModels, setInstalledModels] = useState([]); // Models already downloaded
-  const [downloadProgress, setDownloadProgress] = useState(null); // { model, percent }
+  const [logLines, setLogLines] = useState([]);
+  const [installedModels, setInstalledModels] = useState([]);
+  const [downloadProgress, setDownloadProgress] = useState(null);
   const unsubRef = useRef(null);
   const statusUnsubRef = useRef(null);
   const logContainerRef = useRef(null);
 
-  // Mutex for refresh operations
   const isRefreshingRef = useRef(false);
   const pendingRefreshRef = useRef(false);
 
-  // Helper to add a log entry
   const addLogEntry = useCallback((text) => {
     setLogLines((prev) => [...prev, { id: ++logIdCounter, text }].slice(-MAX_LOG_ENTRIES));
   }, []);
 
-  // Memoized refresh function - stable reference for use in effects
   const refresh = useCallback(async () => {
-    // Mutex guard to prevent overlapping refresh calls
     if (isRefreshingRef.current) {
       pendingRefreshRef.current = true;
       return;
@@ -54,7 +51,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
     try {
       setLoading(true);
-      // Validate API availability before calling
       if (!window.electronAPI?.dependencies?.getStatus) {
         addLogEntry('[error] Dependencies API not available. Please restart the application.');
         setStatus(null);
@@ -65,7 +61,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
         window.electronAPI?.settings?.get?.(),
         window.electronAPI.dependencies.getStatus()
       ]);
-      // Handle error responses from IPC
       if (st?.success === false) {
         logger.error('Failed to get dependency status', { error: st?.error });
         addLogEntry(
@@ -75,7 +70,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       setSettings(s || {});
       setStatus(st?.status || null);
 
-      // Fetch installed models if Ollama is running
       if (st?.status?.ollama?.running && window.electronAPI?.ollama?.getModels) {
         try {
           const modelsRes = await window.electronAPI.ollama.getModels();
@@ -83,7 +77,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
             setInstalledModels(modelsRes.models);
           }
         } catch {
-          // Non-fatal - just won't show installed models
+          // Non-fatal
         }
       }
     } catch (e) {
@@ -93,14 +87,12 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       setLoading(false);
       isRefreshingRef.current = false;
 
-      // Handle pending refresh if one was requested during execution
       if (pendingRefreshRef.current) {
         pendingRefreshRef.current = false;
-        // Schedule next refresh on next tick
         setTimeout(refresh, 0);
       }
     }
-  }, [addLogEntry]); // addLogEntry is stable (useCallback with empty deps)
+  }, [addLogEntry]);
 
   const recommendedModels = useMemo(() => {
     const text = normalizeOllamaModelName(settings?.textModel);
@@ -114,13 +106,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
     refresh();
 
-    // Subscribe to progress while modal is open
     try {
       if (window.electronAPI?.events?.onOperationProgress) {
         unsubRef.current = window.electronAPI.events.onOperationProgress((evt) => {
           try {
             if (!evt) return;
-            // Only show dependency + model download progress to avoid noisy logs
             if (evt.type !== 'dependency' && evt.type !== 'ollama-pull') return;
 
             setLogLines((prev) => {
@@ -134,7 +124,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   p && typeof p.completed === 'number' && typeof p.total === 'number' && p.total > 0
                     ? Math.round((p.completed / p.total) * 100)
                     : null;
-                // Update progress bar state
                 if (pct !== null) {
                   setDownloadProgress({ model: evt.model, percent: pct });
                 }
@@ -154,13 +143,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       logger.warn('Failed to subscribe to progress events', { error: e?.message });
     }
 
-    // Subscribe to service status changes (auto-refresh when services start/stop/fail)
     try {
       if (window.electronAPI?.dependencies?.onServiceStatusChanged) {
         statusUnsubRef.current = window.electronAPI.dependencies.onServiceStatusChanged((evt) => {
           try {
             if (!evt) return;
-            // Log the status change
             const statusMsg =
               evt.status === 'permanently_failed'
                 ? `${evt.service} permanently failed (circuit breaker tripped)`
@@ -170,7 +157,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 -MAX_LOG_ENTRIES
               )
             );
-            // Auto-refresh status to update UI
             refresh();
           } catch (e) {
             logger.debug('Status change handler error', { error: e?.message });
@@ -200,9 +186,8 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       }
       statusUnsubRef.current = null;
     };
-  }, [isOpen, refresh]); // refresh is stable (useCallback with empty deps)
+  }, [isOpen, refresh]);
 
-  // Auto-scroll log container to latest entry
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
@@ -220,7 +205,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   };
 
   const installOllama = async () => {
-    // Validate API availability
     if (!window.electronAPI?.dependencies?.installOllama) {
       addLogEntry('[error] Install API not available. Please restart the application.');
       return;
@@ -228,11 +212,9 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
     setInstalling((p) => ({ ...p, ollama: true }));
     try {
       const result = await window.electronAPI.dependencies.installOllama();
-      // Check for failure response
       if (result && !result.success) {
         addLogEntry(`[error] Ollama install failed: ${result.error || 'Unknown error'}`);
       } else if (result?.startupError) {
-        // Installed but failed to start
         addLogEntry(`[warning] Ollama installed but failed to start: ${result.startupError}`);
       }
       await refresh();
@@ -245,7 +227,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   };
 
   const installChromaDb = async () => {
-    // Validate API availability
     if (!window.electronAPI?.dependencies?.installChromaDb) {
       addLogEntry('[error] Install API not available. Please restart the application.');
       return;
@@ -253,11 +234,9 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
     setInstalling((p) => ({ ...p, chromadb: true }));
     try {
       const result = await window.electronAPI.dependencies.installChromaDb();
-      // Check for failure response
       if (result && !result.success) {
         addLogEntry(`[error] ChromaDB install failed: ${result.error || 'Unknown error'}`);
       } else if (result?.startupError) {
-        // Installed but failed to start
         addLogEntry(`[warning] ChromaDB installed but failed to start: ${result.startupError}`);
       }
       await refresh();
@@ -271,7 +250,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
 
   const downloadModels = async () => {
     if (!recommendedModels.length || downloadingModels) return;
-    // Validate API availability
     if (!window.electronAPI?.ollama?.pullModels) {
       addLogEntry('[error] Ollama API not available. Please restart the application.');
       return;
@@ -283,7 +261,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       if (result && !result.success) {
         addLogEntry(`[error] Model download failed: ${result.error || 'Unknown error'}`);
       } else if (result?.results) {
-        // Log individual model results
         for (const r of result.results) {
           if (r.success) {
             addLogEntry(`[success] Downloaded ${r.model}`);
@@ -313,7 +290,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   const pythonOk = Boolean(status?.python?.installed);
   const pythonVersion = status?.python?.version || null;
 
-  // Derive status badges
   const getStatusBadgeProps = (running, installed) => {
     if (status === null) return { variant: 'info', children: 'Checking...', animated: true };
     if (running) return { variant: 'success', children: 'Running', animated: true };
@@ -329,18 +305,17 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
       isOpen={isOpen}
       onClose={onClose}
       title="AI Components Setup"
-      size="large"
+      size="lg"
       footer={
-        <div className="flex justify-end">
-          <Button variant="secondary" onClick={onClose}>
+        <Inline className="justify-end" gap="compact" wrap={false}>
+          <Button variant="secondary" onClick={onClose} size="sm">
             Done
           </Button>
-        </div>
+        </Inline>
       }
     >
       <ErrorBoundary variant="phase" contextName="AI Dependencies">
         <div className="flex flex-col gap-5">
-          {/* Header description */}
           <div className="bg-stratosort-blue/5 rounded-xl p-4 border border-stratosort-blue/20">
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 w-10 h-10 bg-stratosort-blue/10 rounded-lg flex items-center justify-center">
@@ -359,20 +334,20 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </svg>
               </div>
               <div>
-                <h3 className="font-medium text-system-gray-900">Get Started with AI Features</h3>
-                <p className="text-sm text-system-gray-600 mt-1">
+                <Heading as="h3" variant="h6" className="text-system-gray-900">
+                  Get Started with AI Features
+                </Heading>
+                <Text variant="small" className="text-system-gray-600 mt-1">
                   Install Ollama for AI-powered file analysis and ChromaDB for Knowledge OS
                   (semantic search + RAG). These are optional but unlock powerful organization
                   features.
-                </p>
+                </Text>
               </div>
             </div>
           </div>
 
-          {/* Dependency Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Ollama Card */}
-            <div className="bg-white rounded-xl border border-system-gray-200 shadow-sm overflow-hidden">
+            <Card variant="default" className="p-0 overflow-hidden">
               <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -392,17 +367,23 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-system-gray-900">Ollama</h4>
-                      <p className="text-xs text-system-gray-500">Local AI inference engine</p>
+                      <Heading as="h4" variant="h6" className="text-system-gray-900">
+                        Ollama
+                      </Heading>
+                      <Text variant="tiny" className="text-system-gray-500">
+                        Local AI inference engine
+                      </Text>
                     </div>
                   </div>
-                  <StatusBadge {...getOllamaStatusProps()} className="px-2 py-0.5 text-xs" />
+                  <StatusBadge {...getOllamaStatusProps()} size="sm" />
                 </div>
               </div>
 
               <div className="p-4 space-y-4">
                 {ollamaVersion && (
-                  <div className="text-xs text-system-gray-500">Version: {ollamaVersion}</div>
+                  <Text variant="tiny" className="text-system-gray-500">
+                    Version: {ollamaVersion}
+                  </Text>
                 )}
 
                 <Button
@@ -441,14 +422,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   )}
                 </Button>
 
-                {/* Models Section */}
                 {ollamaOk && (
                   <div className="border-t border-system-gray-100 pt-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-system-gray-700">AI Models</span>
+                      <Text variant="small" className="font-medium text-system-gray-700">
+                        AI Models
+                      </Text>
                       <Button
                         variant="secondary"
-                        className="text-xs px-3 py-1.5"
+                        size="sm"
                         onClick={downloadModels}
                         disabled={
                           !ollamaRunning || recommendedModels.length === 0 || downloadingModels
@@ -465,12 +447,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       </Button>
                     </div>
 
-                    {/* Download Progress Bar */}
                     {downloadingModels && downloadProgress && (
                       <div className="mb-3">
-                        <div className="flex items-center justify-between text-xs text-system-gray-600 mb-1">
-                          <span>Downloading {downloadProgress.model?.replace(':latest', '')}</span>
-                          <span>{downloadProgress.percent}%</span>
+                        <div className="flex items-center justify-between mb-1">
+                          <Text variant="tiny" className="text-system-gray-600">
+                            Downloading {downloadProgress.model?.replace(':latest', '')}
+                          </Text>
+                          <Text variant="tiny" className="text-system-gray-600">
+                            {downloadProgress.percent}%
+                          </Text>
                         </div>
                         <div className="h-2 bg-system-gray-100 rounded-full overflow-hidden">
                           <div
@@ -481,7 +466,6 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       </div>
                     )}
 
-                    {/* Models List */}
                     <div className="space-y-2">
                       {recommendedModels.length > 0 ? (
                         recommendedModels.map((model) => {
@@ -495,11 +479,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                                 isInstalled ? 'bg-stratosort-success/5' : 'bg-system-gray-50'
                               }`}
                             >
-                              <span className="text-sm text-system-gray-700">
+                              <Text variant="small" className="text-system-gray-700">
                                 {model.replace(':latest', '')}
-                              </span>
+                              </Text>
                               {isInstalled ? (
-                                <span className="flex items-center text-xs text-stratosort-success font-medium">
+                                <Text
+                                  as="span"
+                                  variant="tiny"
+                                  className="flex items-center text-stratosort-success font-medium"
+                                >
                                   <svg
                                     className="w-4 h-4 mr-1"
                                     fill="none"
@@ -514,26 +502,27 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                                     />
                                   </svg>
                                   Ready
-                                </span>
+                                </Text>
                               ) : (
-                                <span className="text-xs text-system-gray-500">Not downloaded</span>
+                                <Text variant="tiny" className="text-system-gray-500">
+                                  Not downloaded
+                                </Text>
                               )}
                             </div>
                           );
                         })
                       ) : (
-                        <p className="text-xs text-system-gray-500 text-center py-2">
+                        <Text variant="tiny" className="text-system-gray-500 text-center py-2">
                           No models configured. Set models in Settings.
-                        </p>
+                        </Text>
                       )}
                     </div>
                   </div>
                 )}
               </div>
-            </div>
+            </Card>
 
-            {/* ChromaDB Card */}
-            <div className="bg-white rounded-xl border border-system-gray-200 shadow-sm overflow-hidden">
+            <Card variant="default" className="p-0 overflow-hidden">
               <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -553,20 +542,21 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-system-gray-900">ChromaDB</h4>
-                      <p className="text-xs text-system-gray-500">
+                      <Heading as="h4" variant="h6" className="text-system-gray-900">
+                        ChromaDB
+                      </Heading>
+                      <Text variant="tiny" className="text-system-gray-500">
                         Vector database for Knowledge OS
-                      </p>
+                      </Text>
                     </div>
                   </div>
-                  <StatusBadge {...getChromaStatusProps()} className="px-2 py-0.5 text-xs" />
+                  <StatusBadge {...getChromaStatusProps()} size="sm" />
                 </div>
               </div>
 
               <div className="p-4 space-y-4">
-                {/* Status Details */}
                 {status !== null && (
-                  <div className="space-y-1 text-xs text-system-gray-500">
+                  <Text as="div" variant="tiny" className="space-y-1 text-system-gray-500">
                     {chromaExternal ? (
                       <>
                         <div className="flex items-center gap-2">
@@ -591,7 +581,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                         </div>
                       </>
                     )}
-                  </div>
+                  </Text>
                 )}
 
                 <Button
@@ -636,32 +626,30 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   )}
                 </Button>
 
-                {/* Help messages */}
                 {!pythonOk && !chromaExternal && status !== null && (
                   <div className="bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg p-3">
-                    <p className="text-xs text-stratosort-warning">
+                    <Text variant="tiny" className="text-stratosort-warning">
                       Python 3 is required. Install it and ensure it&apos;s available as{' '}
                       <code className="bg-white/50 px-1 rounded">py -3</code> (Windows) or{' '}
                       <code className="bg-white/50 px-1 rounded">python3</code>.
-                    </p>
+                    </Text>
                   </div>
                 )}
 
                 {chromaExternal && !chromaRunning && (
                   <div className="bg-stratosort-blue/10 border border-stratosort-blue/20 rounded-lg p-3">
-                    <p className="text-xs text-stratosort-blue">
+                    <Text variant="tiny" className="text-stratosort-blue">
                       Ensure your Docker container is running and the port is mapped (e.g.{' '}
                       <code className="bg-white/50 px-1 rounded">-p 8000:8000</code>), then click
                       Refresh.
-                    </p>
+                    </Text>
                   </div>
                 )}
               </div>
-            </div>
+            </Card>
           </div>
 
-          {/* Auto-Update Permissions */}
-          <div className="bg-system-gray-50 rounded-xl p-4 border border-system-gray-200">
+          <Card variant="default" className="p-4">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 bg-system-gray-200 rounded-lg flex items-center justify-center">
                 <svg
@@ -679,10 +667,12 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </svg>
               </div>
               <div>
-                <h4 className="font-medium text-system-gray-900 text-sm">Automatic Updates</h4>
-                <p className="text-xs text-system-gray-500">
+                <Heading as="h4" variant="h6" className="text-sm">
+                  Automatic Updates
+                </Heading>
+                <Text variant="tiny" className="text-system-gray-500">
                   Allow StratoSort to keep dependencies up to date
-                </p>
+                </Text>
               </div>
             </div>
             <div className="flex flex-wrap gap-4 ml-11">
@@ -705,10 +695,9 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 <span className="group-hover:text-system-gray-900 transition-colors">ChromaDB</span>
               </label>
             </div>
-          </div>
+          </Card>
 
-          {/* Activity Log */}
-          <div className="bg-white rounded-xl border border-system-gray-200 shadow-sm overflow-hidden">
+          <Card variant="default" className="p-0 overflow-hidden">
             <div className="p-4 border-b border-system-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-system-gray-100 rounded-lg flex items-center justify-center">
@@ -727,18 +716,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   </svg>
                 </div>
                 <div>
-                  <h4 className="font-medium text-system-gray-900 text-sm">Activity Log</h4>
-                  <p className="text-xs text-system-gray-500">
+                  <Heading as="h4" variant="h6" className="text-sm">
+                    Activity Log
+                  </Heading>
+                  <Text variant="tiny" className="text-system-gray-500">
                     {loading ? 'Checking status...' : 'Live updates while this modal is open'}
-                  </p>
+                  </Text>
                 </div>
               </div>
-              <Button
-                variant="secondary"
-                className="text-xs px-3 py-1.5"
-                onClick={refresh}
-                disabled={loading}
-              >
+              <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
                 {loading ? (
                   <>
                     <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
@@ -796,7 +782,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </ul>
               )}
             </div>
-          </div>
+          </Card>
         </div>
       </ErrorBoundary>
     </Modal>

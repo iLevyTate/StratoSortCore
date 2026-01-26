@@ -12,6 +12,7 @@ import React, {
 import PropTypes from 'prop-types';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
+import Label from './Label';
 
 const Select = memo(
   forwardRef(function Select(
@@ -175,16 +176,11 @@ const Select = memo(
     );
 
     return (
-      <div className="flex flex-col gap-2" ref={containerRef}>
+      <div className="flex flex-col gap-1.5" ref={containerRef}>
         {label && (
-          <label id={labelId} htmlFor={id} className="text-sm font-medium text-system-gray-700">
+          <Label id={labelId} htmlFor={id} required={required}>
             {label}
-            {required && (
-              <span className="text-stratosort-danger ml-1" aria-label="required">
-                *
-              </span>
-            )}
-          </label>
+          </Label>
         )}
         <button
           type="button"
@@ -227,7 +223,7 @@ const Select = memo(
                 width: `${menuPosition.width}px`
               }}
             >
-              <div className="max-h-60 overflow-auto py-1">
+              <div className="max-h-60 overflow-auto py-1 custom-scrollbar">
                 {options.map((option, index) => {
                   const isSelected = option.value === selectedOption?.value;
                   const isHighlighted = index === highlightedIndex;
@@ -257,7 +253,7 @@ const Select = memo(
           )}
 
         {error && (
-          <p id={errorId} className="text-sm text-stratosort-danger" role="alert">
+          <p id={errorId} className="text-sm text-stratosort-danger mt-0.5" role="alert">
             {error}
           </p>
         )}

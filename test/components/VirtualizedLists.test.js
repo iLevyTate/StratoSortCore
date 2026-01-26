@@ -1,6 +1,19 @@
 import React from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
 import AnalysisResultsList from '../../src/renderer/components/discover/AnalysisResultsList';
+
+const renderWithRedux = (ui, { preloadedState } = {}) => {
+  const store = configureStore({
+    reducer: {
+      system: (state = { redactPaths: false }) => state
+    },
+    preloadedState
+  });
+
+  return render(<Provider store={store}>{ui}</Provider>);
+};
 
 // Mock child components to avoid complex dependency issues
 jest.mock('../../src/renderer/components/ui', () => ({
@@ -10,7 +23,8 @@ jest.mock('../../src/renderer/components/ui', () => ({
 
 jest.mock('lucide-react', () => ({
   FileText: () => <div>Icon</div>,
-  Compass: () => <div>Icon</div>
+  Compass: () => <div>Icon</div>,
+  AlertTriangle: () => <div>Icon</div>
 }));
 
 // Mock react-window
@@ -64,8 +78,8 @@ describe('AnalysisResultsList', () => {
 
   const mockOnFileAction = jest.fn();
 
-  test('should render virtualized list when many items are present', () => {
-    render(
+  test('should render virtualized list when many items are present', async () => {
+    renderWithRedux(
       <AnalysisResultsList
         results={mockFiles}
         onFileAction={mockOnFileAction}
@@ -74,17 +88,19 @@ describe('AnalysisResultsList', () => {
     );
 
     // Should observe the container
-    expect(observeMock).toHaveBeenCalled();
+    await waitFor(() => expect(observeMock).toHaveBeenCalled());
   });
 
-  test('should update dimensions on resize', () => {
-    render(
+  test('should update dimensions on resize', async () => {
+    renderWithRedux(
       <AnalysisResultsList
         results={mockFiles}
         onFileAction={mockOnFileAction}
         getFileStateDisplay={mockGetFileStateDisplay}
       />
     );
+
+    await waitFor(() => expect(observeMock).toHaveBeenCalled());
 
     // Simulate resize
     act(() => {

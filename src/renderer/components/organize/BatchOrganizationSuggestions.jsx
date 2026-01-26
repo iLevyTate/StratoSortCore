@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { Card, Button, IconButton } from '../ui';
+import { Text } from '../ui/Typography';
 
 function BatchOrganizationSuggestions({
   batchSuggestions,
@@ -53,7 +54,7 @@ function BatchOrganizationSuggestions({
 
   if (!batchSuggestions || !batchSuggestions.groups) {
     return (
-      <Card className="p-6 text-center">
+      <Card className="p-8 text-center">
         <div className="flex flex-col items-center gap-3">
           <Info className="w-8 h-8 text-muted-foreground" />
           <p className="text-muted-foreground">
@@ -106,13 +107,13 @@ function BatchOrganizationSuggestions({
             Save Memory
           </Button>
         </div>
-        <div className="mt-2 text-xs text-system-gray-500">
+        <Text variant="tiny" className="mt-2 text-system-gray-500">
           Saved notes guide future suggestions for all files.
-        </div>
+        </Text>
       </Card>
       {/* Pattern Analysis */}
       {patterns && (
-        <Card className="p-4 bg-blue-50 border-stratosort-blue/30">
+        <Card className="p-4 bg-stratosort-blue/5 border-stratosort-blue/20">
           <h3 className="font-medium text-system-gray-900 mb-3">Pattern Analysis</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[var(--spacing-cozy)] text-sm">
             {patterns.hasCommonProject && (
@@ -138,9 +139,14 @@ function BatchOrganizationSuggestions({
                 <span className="text-system-gray-600">Common Terms:</span>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {patterns.commonTerms.map((term) => (
-                    <span key={term} className="px-2 py-1 bg-white rounded-md text-xs">
+                    <Text
+                      as="span"
+                      variant="tiny"
+                      key={term}
+                      className="px-2 py-1 bg-white rounded-md"
+                    >
                       {term}
-                    </span>
+                    </Text>
                   ))}
                 </div>
               </div>
@@ -151,7 +157,7 @@ function BatchOrganizationSuggestions({
 
       {/* Recommendations */}
       {recommendations && recommendations.length > 0 && (
-        <Card className="p-4 border-green-200 bg-green-50">
+        <Card className="p-4 border-stratosort-success/20 bg-stratosort-success/10">
           <h3 className="font-medium text-system-gray-900 mb-3">Recommendations</h3>
           <div className="flex flex-col gap-6">
             {/* FIX: Use stable identifier instead of array index as key */}
@@ -168,8 +174,10 @@ function BatchOrganizationSuggestions({
                 </div>
                 <div className="flex-1">
                   <div className="font-medium text-sm">{rec.description}</div>
-                  <div className="text-xs text-system-gray-600 mt-1">{rec.suggestion}</div>
-                  <div className="text-xs text-system-gray-500 mt-1">
+                  <Text variant="tiny" className="text-system-gray-600 mt-1">
+                    {rec.suggestion}
+                  </Text>
+                  <Text variant="tiny" className="text-system-gray-500 mt-1">
                     Confidence:{' '}
                     {Math.round(
                       Math.min(
@@ -181,7 +189,7 @@ function BatchOrganizationSuggestions({
                       )
                     )}
                     %
-                  </div>
+                  </Text>
                 </div>
               </div>
             ))}
@@ -212,10 +220,10 @@ function BatchOrganizationSuggestions({
           <div className="mb-4">
             <div className="font-medium">{suggestedStrategy.name}</div>
             <div className="text-sm text-system-gray-600 mt-1">{suggestedStrategy.description}</div>
-            <div className="text-xs text-system-gray-500 mt-2">
+            <Text variant="tiny" className="text-system-gray-500 mt-2">
               Pattern:{' '}
               <code className="bg-white px-2 py-1 rounded-md">{suggestedStrategy.pattern}</code>
-            </div>
+            </Text>
           </div>
           <div className="flex gap-cozy">
             <Button
@@ -308,9 +316,9 @@ function BatchOrganizationSuggestions({
                             <span>{file.name}</span>
                           </div>
                           {file.suggestion && (
-                            <span className="text-xs text-system-gray-500">
+                            <Text as="span" variant="tiny" className="text-system-gray-500">
                               {Math.round((file.suggestion.confidence || 0) * 100)}% match
-                            </span>
+                            </Text>
                           )}
                         </div>
                       ))}
@@ -322,15 +330,15 @@ function BatchOrganizationSuggestions({
                     Array.isArray(group.files[0]?.alternatives) &&
                     group.files[0].alternatives.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-system-gray-200">
-                        <div className="text-xs text-system-gray-600 mb-2">
+                        <Text variant="tiny" className="text-system-gray-600 mb-2">
                           Alternative folders for this group:
-                        </div>
+                        </Text>
                         <div className="flex flex-wrap gap-2">
                           {/* FIX: Use stable identifier instead of array index as key */}
                           {group.files[0].alternatives.slice(0, 3).map((alt) => (
                             <button
                               key={alt.folder || alt.id}
-                              className="px-2 py-1 text-xs bg-white border border-system-gray-300 rounded-md hover:border-stratosort-blue transition-colors"
+                              className="px-2 py-1 bg-white border border-system-gray-300 rounded-md hover:border-stratosort-blue transition-colors"
                               onClick={() =>
                                 onCustomizeGroup(groupIndex, {
                                   ...group,
@@ -338,7 +346,9 @@ function BatchOrganizationSuggestions({
                                 })
                               }
                             >
-                              {alt.folder}
+                              <Text as="span" variant="tiny">
+                                {alt.folder}
+                              </Text>
                             </button>
                           ))}
                         </div>
@@ -411,19 +421,27 @@ function BatchOrganizationSuggestions({
                           <div className="flex-1 min-w-0">
                             <div className="truncate font-medium">{file.name}</div>
                             {file.currentPath && (
-                              <div className="flex items-center gap-2 text-xs text-system-gray-500 mt-1">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="flex items-center gap-2 text-system-gray-500 mt-1"
+                              >
                                 <span className="truncate">{file.currentPath}</span>
                                 <ArrowRight className="w-3 h-3 flex-shrink-0" />
                                 <span className="truncate text-stratosort-blue">
                                   {group.folder}
                                 </span>
-                              </div>
+                              </Text>
                             )}
                           </div>
                           {file.suggestion?.confidence && (
-                            <span className="text-xs bg-system-gray-100 px-2 py-0.5 rounded">
+                            <Text
+                              as="span"
+                              variant="tiny"
+                              className="bg-system-gray-100 px-2 py-0.5 rounded"
+                            >
                               {Math.round(file.suggestion.confidence * 100)}%
-                            </span>
+                            </Text>
                           )}
                         </div>
                       ))}

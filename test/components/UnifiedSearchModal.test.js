@@ -10,11 +10,24 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { Provider } from 'react-redux';
+import { configureStore } from '@reduxjs/toolkit';
 
 jest.mock('../../src/renderer/store/hooks', () => ({
   useAppDispatch: jest.fn(() => jest.fn()),
   useAppSelector: jest.fn((selector) => selector({}))
 }));
+
+const renderWithRedux = (ui, { preloadedState } = {}) => {
+  const store = configureStore({
+    reducer: {
+      system: (state = { redactPaths: false }) => state
+    },
+    preloadedState
+  });
+
+  return render(<Provider store={store}>{ui}</Provider>);
+};
 
 // Mock ReactFlow
 jest.mock('reactflow', () => ({
@@ -296,20 +309,20 @@ describe('UnifiedSearchModal', () => {
 
   describe('Modal Rendering', () => {
     test('should not render when closed', () => {
-      render(<UnifiedSearchModal isOpen={false} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={false} onClose={jest.fn()} />);
 
       expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
     });
 
     test('should render when open', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       expect(screen.getByTestId('modal')).toBeInTheDocument();
     });
 
     test('should call onClose when close button clicked', () => {
       const onClose = jest.fn();
-      render(<UnifiedSearchModal isOpen={true} onClose={onClose} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={onClose} />);
 
       fireEvent.click(screen.getByTestId('modal-close'));
 
@@ -319,21 +332,21 @@ describe('UnifiedSearchModal', () => {
 
   describe('Tab Switching', () => {
     test('should render Discover tab by default', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       // Search-related elements should be present
       expect(screen.getByLabelText(/search/i)).toBeInTheDocument();
     });
 
     test('should render graph tab when feature is enabled', async () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       // Graph feature is now enabled
       expect(screen.queryByText(/Relate/i)).toBeInTheDocument();
     });
 
     test('should switch back to search tab', async () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
       // Find and click the Discover tab
       const searchTab = screen.getByRole('button', { name: /List Discover/i });
@@ -348,7 +361,7 @@ describe('UnifiedSearchModal', () => {
     });
 
     test('switches to graph tab when initialTab is graph', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
       // Graph tab should be active
       expect(screen.queryByText(/Relate/i)).toBeInTheDocument();
@@ -359,7 +372,7 @@ describe('UnifiedSearchModal', () => {
 
   describe('Query Debouncing', () => {
     test('should debounce search input', async () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       // Type quickly
@@ -384,7 +397,7 @@ describe('UnifiedSearchModal', () => {
     });
 
     test('should not search for queries under 2 characters', async () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'a' } });
@@ -398,7 +411,7 @@ describe('UnifiedSearchModal', () => {
     });
 
     test('should cancel pending debounce on unmount', () => {
-      const { unmount } = render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      const { unmount } = renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -429,7 +442,7 @@ describe('UnifiedSearchModal', () => {
         mode: 'hybrid'
       });
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -450,7 +463,7 @@ describe('UnifiedSearchModal', () => {
         mode: 'hybrid'
       });
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'nonexistent' } });
@@ -472,7 +485,7 @@ describe('UnifiedSearchModal', () => {
         error: 'Service unavailable'
       });
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -489,7 +502,7 @@ describe('UnifiedSearchModal', () => {
     test('should handle search timeout', async () => {
       mockElectronAPI.embeddings.search.mockRejectedValue(new Error('Timeout'));
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -509,7 +522,7 @@ describe('UnifiedSearchModal', () => {
         error: 'ChromaDB not available yet'
       });
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -526,7 +539,7 @@ describe('UnifiedSearchModal', () => {
     test('should handle connection refused error', async () => {
       mockElectronAPI.embeddings.search.mockRejectedValue(new Error('ECONNREFUSED'));
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -543,7 +556,7 @@ describe('UnifiedSearchModal', () => {
 
   describe('Stats Loading', () => {
     test('should render stats area in modal', async () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       // Modal should be rendered
       expect(screen.getByTestId('modal')).toBeInTheDocument();
@@ -566,7 +579,7 @@ describe('UnifiedSearchModal', () => {
 
       // FIX: Component should still render without throwing
       expect(() => {
-        render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+        renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
       }).not.toThrow();
 
       expect(screen.getByTestId('modal')).toBeInTheDocument();
@@ -575,7 +588,7 @@ describe('UnifiedSearchModal', () => {
 
   describe('File Operation Events', () => {
     test('should set up file operation listener when modal opens', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       // FIX: Verify the file operation listener was registered
       expect(mockElectronAPI.events.onFileOperationComplete).toHaveBeenCalled();
@@ -584,7 +597,7 @@ describe('UnifiedSearchModal', () => {
 
     test('should not set up listener when modal is closed', () => {
       jest.clearAllMocks();
-      render(<UnifiedSearchModal isOpen={false} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={false} onClose={jest.fn()} />);
 
       // FIX: Modal should not be in document when closed
       expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
@@ -593,7 +606,7 @@ describe('UnifiedSearchModal', () => {
 
   describe('Graph View', () => {
     test('renders graph UI when graph tab is active', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} initialTab="graph" />);
 
       // Graph controls/UI should be shown
       expect(screen.queryByText(/Relate/i)).toBeInTheDocument();
@@ -607,7 +620,7 @@ describe('UnifiedSearchModal', () => {
   describe('Keyboard Navigation', () => {
     test('should close modal on Escape key', () => {
       const onClose = jest.fn();
-      render(<UnifiedSearchModal isOpen={true} onClose={onClose} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={onClose} />);
 
       // FIX: Fire escape key event and verify modal close is triggered
       fireEvent.keyDown(document, { key: 'Escape' });
@@ -623,7 +636,7 @@ describe('UnifiedSearchModal', () => {
     });
 
     test('should focus search input when modal opens', () => {
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       // FIX: Search input should be present and accessible
       const searchInput = screen.getByLabelText(/search/i);
@@ -642,7 +655,7 @@ describe('UnifiedSearchModal', () => {
         mode: 'hybrid'
       });
 
-      render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+      renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByLabelText(/search/i);
       fireEvent.change(searchInput, { target: { value: 'test' } });
@@ -675,7 +688,7 @@ describe('UnifiedSearchModal - Integration', () => {
   });
 
   test('should perform search and display results flow', async () => {
-    render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+    renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
     // FIX: Modal must be rendered
     expect(screen.getByTestId('modal')).toBeInTheDocument();
@@ -690,7 +703,7 @@ describe('UnifiedSearchModal - Integration', () => {
   });
 
   test('should handle rapid tab switching', async () => {
-    render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+    renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
     const graphTab = screen.getByRole('button', { name: /Relate/i });
     const searchTab = screen.getByRole('button', { name: /List Discover/i });
@@ -712,7 +725,7 @@ describe('UnifiedSearchModal - Integration', () => {
 
   // FIX P2-14: Test for focusedResultIndex reset on tab switch
   test('should reset focused result index when switching tabs', async () => {
-    render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+    renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
     const graphTab = screen.getByRole('button', { name: /Relate/i });
     const searchTab = screen.getByRole('button', { name: /List Discover/i });
@@ -738,7 +751,7 @@ describe('UnifiedSearchModal - Integration', () => {
       error: 'Search failed: Model not available'
     });
 
-    render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+    renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
     // FIX: Trigger a search to test error handling
     const searchInput = screen.getByLabelText(/search/i);
@@ -770,7 +783,7 @@ describe('UnifiedSearchModal - Integration', () => {
       }
     });
 
-    render(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
+    renderWithRedux(<UnifiedSearchModal isOpen={true} onClose={jest.fn()} />);
 
     // FIX: Trigger a search with fallback response
     const searchInput = screen.getByLabelText(/search/i);

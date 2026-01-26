@@ -4,6 +4,7 @@ import { RefreshCw, Download, Upload, Trash2, RotateCcw, Clock } from 'lucide-re
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
 import { logger } from '../../../shared/logger';
+import { Text } from '../ui/Typography';
 
 /**
  * Settings backup/restore section with import/export functionality
@@ -156,9 +157,9 @@ function SettingsBackupSection({ addNotification }) {
           <label className="block text-sm font-medium text-system-gray-700 mb-2">
             Settings Backup & Restore
           </label>
-          <p className="text-xs text-system-gray-500">
+          <Text variant="tiny" className="text-system-gray-500">
             Create backups of your settings or export/import to share across devices.
-          </p>
+          </Text>
         </div>
         <IconButton
           icon={<RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />}
@@ -208,9 +209,9 @@ function SettingsBackupSection({ addNotification }) {
       {/* Backup List */}
       {backups.length > 0 && (
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-system-gray-600">
+          <Text as="label" variant="tiny" className="block font-medium text-system-gray-600">
             Available Backups ({backups.length})
-          </label>
+          </Text>
           <div className="max-h-40 overflow-y-auto space-y-1.5 border border-system-gray-200 rounded-lg p-2 bg-system-gray-50">
             {backups.map((backup) => (
               <div
@@ -221,9 +222,9 @@ function SettingsBackupSection({ addNotification }) {
                   <div className="text-sm font-medium text-system-gray-700 truncate">
                     {backup.name || 'Backup'}
                   </div>
-                  <div className="text-xs text-system-gray-500">
+                  <Text variant="tiny" className="text-system-gray-500">
                     {formatDate(backup.timestamp || backup.created)}
-                  </div>
+                  </Text>
                 </div>
                 <div className="flex items-center gap-1">
                   <IconButton
@@ -243,7 +244,7 @@ function SettingsBackupSection({ addNotification }) {
                     aria-label="Delete this backup"
                     title="Delete"
                     disabled={isDeleting === backup.path}
-                    className="text-red-500 hover:text-red-600"
+                    className="text-stratosort-danger hover:text-stratosort-danger/80"
                   />
                 </div>
               </div>
@@ -253,9 +254,9 @@ function SettingsBackupSection({ addNotification }) {
       )}
 
       {backups.length === 0 && !isLoading && (
-        <p className="text-xs text-system-gray-400 italic">
+        <Text variant="tiny" className="text-system-gray-400 italic">
           No backups found. Create one to save your current settings.
-        </p>
+        </Text>
       )}
     </div>
   );

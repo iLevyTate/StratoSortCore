@@ -2,6 +2,7 @@ import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { List } from 'react-window';
 import { StatusBadge } from '../ui';
+import { Text } from '../ui/Typography';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 
 // FIX L-2: Use centralized constants for virtualization
@@ -56,12 +57,14 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) 
             <div className="text-sm font-medium text-system-gray-900">
               {originalName} -&gt; {newName}
             </div>
-            <div className="text-xs text-system-gray-500">
+            <Text variant="tiny" className="text-system-gray-500">
               Moved to {smartFolder} | {organizedDate}
-            </div>
+            </Text>
           </div>
         </div>
-        <div className="text-xs text-stratosort-success font-semibold">Organized</div>
+        <Text variant="tiny" className="text-stratosort-success font-semibold">
+          Organized
+        </Text>
       </div>
     </div>
   );
@@ -90,7 +93,6 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
     }),
     [files]
   );
-  const safeRowProps = rowProps ?? {};
 
   // Calculate optimal list height based on file count (data-aware sizing)
   const listHeight = useMemo(() => {
@@ -114,19 +116,18 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
   if (shouldVirtualize) {
     return (
       <div className="w-full max-h-[55vh] min-h-[200px] overflow-hidden">
-        <div className="text-xs text-system-gray-500 mb-2">
+        <Text variant="tiny" className="text-system-gray-500 mb-2">
           Showing {files.length} organized files (virtualized for performance)
-        </div>
+        </Text>
         <List
-          itemCount={files.length}
-          itemSize={ITEM_HEIGHT}
-          itemData={safeRowProps.data}
+          rowCount={files.length}
+          rowHeight={ITEM_HEIGHT}
+          rowComponent={ProcessedFileRow}
+          rowProps={rowProps}
           overscanCount={5}
           style={{ height: listHeight, width: '100%' }}
           className="scrollbar-thin scrollbar-thumb-system-gray-300 scrollbar-track-transparent"
-        >
-          {ProcessedFileRow}
-        </List>
+        />
       </div>
     );
   }
@@ -153,12 +154,14 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
                 <div className="text-sm font-medium text-system-gray-900">
                   {originalName} -&gt; {newName}
                 </div>
-                <div className="text-xs text-system-gray-500">
+                <Text variant="tiny" className="text-system-gray-500">
                   Moved to {smartFolder} | {organizedDate}
-                </div>
+                </Text>
               </div>
             </div>
-            <div className="text-xs text-stratosort-success font-semibold">Organized</div>
+            <Text variant="tiny" className="text-stratosort-success font-semibold">
+              Organized
+            </Text>
           </div>
         );
       })}

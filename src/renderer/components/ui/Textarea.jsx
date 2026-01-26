@@ -1,5 +1,6 @@
 import React, { forwardRef, useId } from 'react';
 import PropTypes from 'prop-types';
+import Label from './Label';
 
 const Textarea = forwardRef(function Textarea(
   {
@@ -30,16 +31,11 @@ const Textarea = forwardRef(function Textarea(
 
   // Full form field with label and error
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       {label && (
-        <label htmlFor={id} className="text-sm font-medium text-system-gray-700">
+        <Label htmlFor={id} required={required}>
           {label}
-          {required && (
-            <span className="text-stratosort-danger ml-1" aria-label="required">
-              *
-            </span>
-          )}
-        </label>
+        </Label>
       )}
       <textarea
         ref={ref}
@@ -51,7 +47,7 @@ const Textarea = forwardRef(function Textarea(
         {...rest}
       />
       {error && (
-        <p id={errorId} className="text-sm text-stratosort-danger" role="alert">
+        <p id={errorId} className="text-sm text-stratosort-danger mt-0.5" role="alert">
           {error}
         </p>
       )}

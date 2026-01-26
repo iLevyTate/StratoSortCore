@@ -1,6 +1,6 @@
 import React from 'react';
 import { logger } from '../../shared/logger';
-import { ConfirmModal } from '../components/Modal';
+import { ConfirmModal } from '../components/ui/Modal';
 
 logger.setContext('useConfirmDialog');
 

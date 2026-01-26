@@ -147,6 +147,12 @@ export function useDiscoverState() {
     (val) => {
       if (typeof val === 'function') {
         const resolved = val(fileStatesRef.current);
+        if (!resolved || typeof resolved !== 'object') {
+          logger.warn('[useDiscoverState] setFileStates updater returned invalid value', {
+            type: typeof resolved
+          });
+          return;
+        }
         const serialized = {};
         Object.entries(resolved).forEach(([path, state]) => {
           serialized[path] = serializeData(state);

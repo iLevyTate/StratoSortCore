@@ -115,6 +115,9 @@ class SecureIPCManager {
     if (
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE ||
       channel === IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT ||
+      channel === IPC_CHANNELS.CHAT.QUERY ||
+      channel === IPC_CHANNELS.SUGGESTIONS.GET_BATCH_SUGGESTIONS ||
+      channel === IPC_CHANNELS.SUGGESTIONS.GET_FILE_SUGGESTIONS ||
       channel === IPC_CHANNELS.FILES.PERFORM_OPERATION ||
       channel === IPC_CHANNELS.ORGANIZE.BATCH
     ) {

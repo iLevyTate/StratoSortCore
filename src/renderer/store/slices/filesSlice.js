@@ -1,19 +1,25 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { logger } from '../../../shared/logger';
 import { serializeData } from '../../utils/serialization';
+import { smartFoldersIpc } from '../../services/ipc';
 
 // Thunk to fetch smart folders with optional cache bypass
 // FIX: Added forceRefresh parameter to allow cache invalidation when folders change
 export const fetchSmartFolders = createAsyncThunk(
   'files/fetchSmartFolders',
-  async (forceRefresh = false, { getState }) => {
+  async (forceRefresh = false, { getState, rejectWithValue }) => {
     const { files } = getState();
     // Return cached value if already fetched, not empty, and not forcing refresh
     if (!forceRefresh && files.smartFolders && files.smartFolders.length > 0) {
       return files.smartFolders;
     }
-    const folders = await window.electronAPI?.smartFolders?.get?.();
-    return Array.isArray(folders) ? folders : [];
+    try {
+      const folders = await smartFoldersIpc.get();
+      return Array.isArray(folders) ? folders : [];
+    } catch (error) {
+      logger.error('[filesSlice] Failed to fetch smart folders', { error: error?.message });
+      return rejectWithValue(error?.message || 'Failed to load smart folders');
+    }
   }
 );
 
@@ -219,7 +225,8 @@ const filesSlice = createSlice({
         // FIX: Preserve existing smartFolders on failure instead of losing them
         // Only log the error, don't clear the array
         state.smartFoldersLoading = false;
-        state.smartFoldersError = action.error?.message || 'Failed to load smart folders';
+        state.smartFoldersError =
+          action.payload || action.error?.message || 'Failed to load smart folders';
       });
   }
 });

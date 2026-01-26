@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useState, useCallback, useMemo, memo } from 'react';
 import PropTypes from 'prop-types';
 import { ChevronRight } from 'lucide-react';
+import { Heading, Text } from './Typography';
 import { logger } from '../../../shared/logger';
 
 logger.setContext('Collapsible');
@@ -87,8 +88,10 @@ const Collapsible = memo(function Collapsible({
   return (
     <section className={`${sectionClasses} flex flex-col flex-shrink-0`}>
       <div className={`flex items-center justify-between gap-4 ${headerPadding} flex-shrink-0`}>
-        <h3 className="heading-tertiary m-0 leading-tight">{title}</h3>
-        <div className="flex items-center gap-3 text-xs text-system-gray-500">
+        <Heading as="h3" variant="h6" className="m-0 leading-tight">
+          {title}
+        </Heading>
+        <Text as="div" variant="tiny" className="flex items-center gap-3 text-system-gray-500">
           <button
             type="button"
             className="p-1.5 rounded-md border border-border-soft bg-white/80 hover:bg-system-gray-100 hover:border-system-gray-300 text-system-gray-600 hover:text-system-gray-800 transition-all flex items-center justify-center"
@@ -108,7 +111,7 @@ const Collapsible = memo(function Collapsible({
             />
           </button>
           {actions ? <div className="flex items-center gap-3">{actions}</div> : null}
-        </div>
+        </Text>
       </div>
 
       {isOpen ? (
@@ -120,11 +123,13 @@ const Collapsible = memo(function Collapsible({
           {children}
         </div>
       ) : (
-        <div
+        <Text
+          as="div"
+          variant="small"
           id={contentId}
           role="region"
           aria-hidden="true"
-          className="mt-3 px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.5)] text-sm text-system-gray-500"
+          className="mt-3 px-[var(--panel-padding)] pb-[calc(var(--panel-padding)*0.5)] text-system-gray-500"
         >
           {collapsedPreview || (
             <div className="flex items-center gap-2 py-2 border-t border-border-soft/50">
@@ -132,7 +137,7 @@ const Collapsible = memo(function Collapsible({
               <span className="italic">Click Expand to view content</span>
             </div>
           )}
-        </div>
+        </Text>
       )}
     </section>
   );

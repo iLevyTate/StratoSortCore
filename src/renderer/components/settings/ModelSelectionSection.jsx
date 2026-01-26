@@ -5,7 +5,9 @@ import Select from '../ui/Select';
 import Card from '../ui/Card';
 import StatusBadge from '../ui/StatusBadge';
 import SettingRow from './SettingRow';
-import Modal from '../Modal';
+import Modal from '../ui/Modal';
+import Button from '../ui/Button';
+import { Text } from '../ui/Typography';
 import { logger } from '../../../shared/logger';
 
 // Embedding model dimensions - used for dimension change warnings
@@ -28,8 +30,6 @@ function ModelSelectionSection({
   visionModelOptions,
   embeddingModelOptions
 }) {
-  // Show the "model changed -> rebuild required" message only when the user explicitly changes
-  // the dropdown (avoids confusing banners during initial settings/model hydration).
   const [embeddingModelChanged, setEmbeddingModelChanged] = useState(false);
   const [pendingModel, setPendingModel] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -40,7 +40,6 @@ function ModelSelectionSection({
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
-      // Fetch stats for dialog
       if (window.electronAPI?.embeddings?.getStats) {
         window.electronAPI.embeddings
           .getStats()
@@ -49,8 +48,6 @@ function ModelSelectionSection({
       }
       return;
     }
-    // If the model gets reset programmatically (rare), keep the banner visible only if it was
-    // explicitly triggered by user interaction.
   }, [settings.embeddingModel]);
 
   const handleEmbeddingModelChange = (e) => {
@@ -58,7 +55,6 @@ function ModelSelectionSection({
     if (newModel !== settings.embeddingModel) {
       setPendingModel(newModel);
       setShowConfirmDialog(true);
-      // Refresh stats just in case
       if (window.electronAPI?.embeddings?.getStats) {
         window.electronAPI.embeddings
           .getStats()
@@ -71,13 +67,10 @@ function ModelSelectionSection({
   const confirmChangeAndRebuild = async () => {
     setIsRebuilding(true);
     try {
-      // 1. Update settings
       setSettings((prev) => ({ ...prev, embeddingModel: pendingModel }));
-      // 2. Trigger rebuild
       if (window.electronAPI?.embeddings?.fullRebuild) {
         await window.electronAPI.embeddings.fullRebuild();
       }
-      // 3. Clear warnings since we just rebuilt
       setEmbeddingModelChanged(false);
     } catch (error) {
       logger.error('Failed to rebuild embeddings', error);
@@ -105,15 +98,18 @@ function ModelSelectionSection({
   const hasEmbeddingModels = embeddingModelOptions.length > 0;
 
   return (
-    <Card className="p-5 border border-system-gray-200 shadow-sm space-y-5">
+    <Card variant="default" className="p-5 space-y-5">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-system-gray-500">
+          <Text
+            variant="tiny"
+            className="font-semibold uppercase tracking-wide text-system-gray-500"
+          >
             Default AI models
-          </p>
-          <p className="text-sm text-system-gray-600">
+          </Text>
+          <Text variant="small" className="text-system-gray-600">
             Choose which Ollama models StratoSort uses for analysis, vision, and embeddings.
-          </p>
+          </Text>
         </div>
         <StatusBadge variant="info" className="whitespace-nowrap">
           <span className="flex items-center gap-2">
@@ -149,9 +145,12 @@ function ModelSelectionSection({
               ))}
             </Select>
           ) : (
-            <div className="text-sm text-system-gray-500 italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100">
+            <Text
+              variant="small"
+              className="italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-system-gray-500"
+            >
               No text models found. Pull a model like llama3.2 or mistral.
-            </div>
+            </Text>
           )}
         </SettingRow>
 
@@ -180,9 +179,12 @@ function ModelSelectionSection({
               ))}
             </Select>
           ) : (
-            <div className="text-sm text-system-gray-500 italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100">
+            <Text
+              variant="small"
+              className="italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-system-gray-500"
+            >
               No vision models found. Pull a model like llava or moondream for image analysis.
-            </div>
+            </Text>
           )}
         </SettingRow>
 
@@ -207,28 +209,31 @@ function ModelSelectionSection({
                 ))}
               </Select>
 
-              <div className="flex items-start gap-2 p-2 bg-system-blue/5 rounded-md border border-system-blue/10">
-                <Info className="w-3.5 h-3.5 text-system-blue/70 mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] text-system-gray-600 leading-tight">
+              <div className="flex items-start gap-2 p-2 bg-stratosort-blue/5 rounded-md border border-stratosort-blue/10">
+                <Info className="w-3.5 h-3.5 text-stratosort-blue/70 mt-0.5 flex-shrink-0" />
+                <Text variant="tiny" className="text-system-gray-600 leading-tight">
                   Different models use different vector dimensions. Changing the model requires
                   rebuilding your embeddings database.
-                </p>
+                </Text>
               </div>
 
               {embeddingModelChanged && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                  <div className="text-xs text-amber-700">
+                <div className="p-3 bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-stratosort-warning flex-shrink-0 mt-0.5" />
+                  <Text variant="tiny" className="text-stratosort-warning">
                     <span className="font-medium">Model changed.</span> Rebuild embeddings in AI
                     Configuration to apply.
-                  </div>
+                  </Text>
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-sm text-system-gray-500 italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100">
+            <Text
+              variant="small"
+              className="italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-system-gray-500"
+            >
               No embedding models available. Pull embeddinggemma (recommended) or mxbai-embed-large.
-            </div>
+            </Text>
           )}
         </SettingRow>
       </div>
@@ -238,12 +243,12 @@ function ModelSelectionSection({
         isOpen={showConfirmDialog}
         onClose={cancelChange}
         title="Change Embedding Model?"
-        size="small"
+        size="sm"
       >
         <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-100 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-amber-800">
+          <div className="flex items-start gap-3 p-3 bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg">
+            <AlertTriangle className="w-5 h-5 text-stratosort-warning mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-stratosort-warning">
               <p className="font-medium mb-1">This will invalidate existing embeddings.</p>
               <p>
                 Switching from <strong>{settings.embeddingModel}</strong> to{' '}
@@ -266,29 +271,32 @@ function ModelSelectionSection({
             )}
 
           <div className="flex flex-col gap-2 pt-2">
-            <button
+            <Button
               onClick={confirmChangeAndRebuild}
               disabled={isRebuilding}
-              className="w-full py-2 px-4 bg-system-blue text-white rounded-lg hover:bg-system-blue/90 font-medium transition-colors flex items-center justify-center gap-2"
+              variant="primary"
+              className="w-full justify-center"
             >
               {isRebuilding ? 'Starting Rebuild...' : 'Change & Rebuild Now'}
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={confirmChangeOnly}
               disabled={isRebuilding}
-              className="w-full py-2 px-4 bg-system-gray-100 text-system-gray-700 rounded-lg hover:bg-system-gray-200 font-medium transition-colors"
+              variant="secondary"
+              className="w-full justify-center"
             >
               Change Only (Rebuild Later)
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={cancelChange}
               disabled={isRebuilding}
-              className="w-full py-2 px-4 text-system-gray-500 hover:text-system-gray-700 hover:bg-system-gray-50 rounded-lg transition-colors"
+              variant="ghost"
+              className="w-full justify-center"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

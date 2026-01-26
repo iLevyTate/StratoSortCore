@@ -16,13 +16,16 @@ import { logger } from '../../shared/logger';
 import { sanitizeSettings } from '../../shared/settingsValidation';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { useNotification } from '../contexts/NotificationContext';
+import { getElectronAPI, eventsIpc, ollamaIpc, settingsIpc } from '../services/ipc';
 import { useAppDispatch } from '../store/hooks';
 import { toggleSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
 import IconButton from './ui/IconButton';
 import Collapsible from './ui/Collapsible';
-import { ModalLoadingOverlay } from './LoadingSkeleton';
+import { ModalLoadingOverlay } from './ui/LoadingSkeleton';
+import { Heading, Text } from './ui/Typography';
+import { Stack } from './layout';
 import AutoOrganizeSection from './settings/AutoOrganizeSection';
 import BackgroundModeSection from './settings/BackgroundModeSection';
 import NotificationSettingsSection from './settings/NotificationSettingsSection';
@@ -35,11 +38,10 @@ import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
 import ApplicationSection from './settings/ApplicationSection';
 import APITestSection from './settings/APITestSection';
-// UI-1: ProcessingLimitsSection removed - file size limits/processing params not useful for users
+import SettingsBackupSection from './settings/SettingsBackupSection';
 
 const AnalysisHistoryModal = lazy(() => import('./AnalysisHistoryModal'));
 
-// Section keys for expand/collapse all functionality
 const SECTION_KEYS = [
   'settings-ai',
   'settings-performance',
@@ -49,41 +51,30 @@ const SECTION_KEYS = [
   'settings-api'
 ];
 
-// Set logger context for this component
 logger.setContext('SettingsPanel');
 
-// FIX: Helper to safely check if electronAPI is available
 const isElectronAPIAvailable = () => {
-  return typeof window !== 'undefined' && window.electronAPI != null;
+  return getElectronAPI() != null;
 };
 
-// Allowed embedding models - must match settingsValidation.js enum
-// NOTE: Changing embedding models requires re-embedding all files (dimension mismatch)
 const ALLOWED_EMBED_MODELS = [
-  'embeddinggemma', // 768 dims (default, Google's best-in-class)
-  'mxbai-embed-large', // 1024 dims (legacy)
-  'nomic-embed-text', // 768 dims
-  'all-minilm', // 384 dims (compact)
-  'bge-large' // 1024 dims
+  'embeddinggemma',
+  'mxbai-embed-large',
+  'nomic-embed-text',
+  'all-minilm',
+  'bge-large'
 ];
 const DEFAULT_EMBED_MODEL = 'embeddinggemma';
 
 const SettingsPanel = React.memo(function SettingsPanel() {
   const dispatch = useAppDispatch();
-
-  // FIX: All hooks must be called before any conditional returns (React hooks rules)
   const { addNotification } = useNotification();
-
-  // Check if electronAPI is available (used for conditional rendering at end)
   const isApiAvailable = isElectronAPIAvailable();
 
-  // Memoize the toggleSettings function - dispatch is stable so no recreations
   const handleToggleSettings = useCallback(() => {
     dispatch(toggleSettings());
   }, [dispatch]);
 
-  // FIX: Start with DEFAULT_SETTINGS to prevent loading spinner jerk
-  // Real settings will be merged in via loadSettings() on mount
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [ollamaModelLists, setOllamaModelLists] = useState({
     text: [],
@@ -101,8 +92,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [pullProgress, setPullProgress] = useState(null);
   const progressUnsubRef = useRef(null);
 
-  // FIX: Cleanup progress listener on unmount to prevent memory leak
-  // This handles the case where user closes settings panel mid-model-download
   useEffect(() => {
     return () => {
       if (progressUnsubRef.current) {
@@ -121,17 +110,13 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const [analysisStats, setAnalysisStats] = useState(null);
   const didAutoHealthCheckRef = useRef(false);
   const skipAutoSaveRef = useRef(false);
-  // FIX: Ref to hold cancel function for auto-save debounce (avoids circular dep)
   const cancelAutoSaveRef = useRef(null);
-  // FIX: Ref to always hold the current settings value for debounced callbacks
   const settingsRef = useRef(null);
 
-  // Keep settingsRef in sync with settings state
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
 
-  // Helper to update settings and keep the ref in sync immediately (avoids stale reads on quick save)
   const applySettingsUpdate = useCallback(
     (updater) => {
       setSettings((prev) => {
@@ -143,25 +128,17 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     [setSettings]
   );
 
-  // Memoized computed values
-  // Text models: use categorized list, but fall back to all if empty (text is the default category)
   const textModelOptions = useMemo(
     () => (ollamaModelLists.text.length ? ollamaModelLists.text : ollamaModelLists.all),
     [ollamaModelLists.text, ollamaModelLists.all]
   );
 
-  // Vision models: only show vision-capable models, don't fall back to all models
-  // If no vision models detected, return empty array (UI will show helpful message)
   const visionModelOptions = useMemo(() => ollamaModelLists.vision, [ollamaModelLists.vision]);
 
   const embeddingModelOptions = useMemo(() => {
-    // FIX NEW-8: Use the dynamically filtered list of installed embedding models
-    // This prevents deleted models from appearing in the dropdown
-    // NOTE: Changing embedding models requires re-embedding all files (dimension mismatch)
-    // embeddinggemma: 768 dims, mxbai-embed-large: 1024 dims
     return ollamaModelLists.embedding.length > 0
       ? ollamaModelLists.embedding
-      : ALLOWED_EMBED_MODELS; // Fallback to full list if API fails
+      : ALLOWED_EMBED_MODELS;
   }, [ollamaModelLists.embedding]);
 
   const pullProgressText = useMemo(() => {
@@ -173,15 +150,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     return `Pulling ${newModel.trim()}… ${pullProgress?.status || ''}${percentage}`;
   }, [pullProgress, newModel]);
 
-  // Load settings on mount
-  // FIX: Set complete settings object with defaults as fallback to prevent flash of wrong values
-  // Uses centralized DEFAULT_SETTINGS to avoid duplication and ensure consistency
   const loadSettings = useCallback(async () => {
     try {
-      const savedSettings = await window.electronAPI.settings.get();
-      // Avoid auto-save loops caused by setSettings during hydration
+      const savedSettings = await settingsIpc.get();
       skipAutoSaveRef.current = true;
-      // Set complete settings: centralized defaults merged with saved settings
       applySettingsUpdate({
         ...DEFAULT_SETTINGS,
         ...(savedSettings || {})
@@ -192,26 +164,22 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         error: error.message,
         stack: error.stack
       });
-      // On error, still set defaults so UI is usable
       skipAutoSaveRef.current = true;
       applySettingsUpdate({ ...DEFAULT_SETTINGS });
       setSettingsLoaded(true);
     }
   }, [applySettingsUpdate]);
 
-  // Load Ollama models
   const loadOllamaModels = useCallback(async () => {
     try {
       setIsRefreshingModels(true);
-      const response = await window.electronAPI.ollama.getModels();
+      const response = await ollamaIpc.getModels();
       const categories = response?.categories || {
         text: [],
         vision: [],
         embedding: []
       };
 
-      // FIX NEW-8: Filter embedding models to only show installed ones
-      // This prevents deleted models from appearing in the dropdown
       const installedModels = response?.models || [];
       const installedEmbeddingModels = ALLOWED_EMBED_MODELS.filter((allowedModel) =>
         installedModels.some(
@@ -225,17 +193,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setOllamaModelLists({
         text: (categories.text || []).slice().sort(),
         vision: (categories.vision || []).slice().sort(),
-        // Only expose vetted embedding models that are actually installed
         embedding: installedEmbeddingModels,
         all: installedModels.slice().sort()
       });
       if (response?.ollamaHealth) setOllamaHealth(response.ollamaHealth);
       if (response?.selected) {
-        // Avoid auto-save loops caused by setSettings during hydration
         skipAutoSaveRef.current = true;
         applySettingsUpdate((prev) => {
           const desiredEmbed = response.selected.embeddingModel || prev.embeddingModel;
-          // Validate embedding model is in the allowed list
           const nextEmbeddingModel = ALLOWED_EMBED_MODELS.includes(desiredEmbed)
             ? desiredEmbed
             : DEFAULT_EMBED_MODEL;
@@ -255,7 +220,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
         stack: error.stack
       });
       setOllamaModelLists({ text: [], vision: [], embedding: [], all: [] });
-      // Notify user about the failure so they know models couldn't be loaded
       addNotification('Failed to load Ollama models. Check if Ollama is running.', 'warning');
     } finally {
       setIsRefreshingModels(false);
@@ -263,7 +227,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [addNotification, applySettingsUpdate]);
 
   useEffect(() => {
-    // Don't run if API is not available
     if (!isApiAvailable) return undefined;
 
     let mounted = true;
@@ -281,8 +244,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       }
     };
 
-    // FIX P1-7: Make loading sequential to prevent race condition
-    // Both functions modify settings state, so they must run in sequence
     (async () => {
       try {
         await loadSettingsIfMounted();
@@ -299,11 +260,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     };
   }, [isApiAvailable, loadSettings, loadOllamaModels]);
 
-  // After settings are loaded the first time, automatically check Ollama health
   useEffect(() => {
     if (!isApiAvailable) return undefined;
     if (!settingsLoaded) return undefined;
-    // FIX: Guard against null settings to prevent errors before settings are loaded
     if (settings === null) return undefined;
     if (didAutoHealthCheckRef.current) return undefined;
     didAutoHealthCheckRef.current = true;
@@ -312,7 +271,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
     (async () => {
       try {
-        const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
+        const res = await ollamaIpc.testConnection(settings.ollamaHost);
         if (!isMounted) return;
         setOllamaHealth(res?.ollamaHealth || null);
         if (res?.success && isMounted) {
@@ -330,7 +289,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     };
   }, [isApiAvailable, settingsLoaded, settings, loadOllamaModels]);
 
-  // UX: allow ESC to close settings
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') handleToggleSettings();
@@ -342,26 +300,20 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const saveSettings = useCallback(async () => {
     try {
       setIsSaving(true);
-      // Cancel any pending auto-save to prevent race condition where stale auto-save
-      // overwrites the manual save (fixes CRITICAL-3 race condition bug)
       if (cancelAutoSaveRef.current) {
         cancelAutoSaveRef.current();
       }
-      // Always use the latest settings via ref to avoid stale closures (e.g., save right after slider drag)
       const latest = {
         ...DEFAULT_SETTINGS,
         ...(settingsRef.current || settings || {})
       };
-      // Let sanitizeSettings handle normalization (including string->number conversion for confidenceThreshold)
       const sanitized = sanitizeSettings(latest);
-      // Force confidenceThreshold to fixed 75% (0.75)
       const normalizedSettings = {
         ...sanitized
       };
-      // Avoid auto-save loops caused by setSettings during explicit save
       skipAutoSaveRef.current = true;
       applySettingsUpdate(normalizedSettings);
-      const res = await window.electronAPI.settings.save(normalizedSettings);
+      const res = await settingsIpc.save(normalizedSettings);
       if (res?.success === false) {
         throw new Error(res?.error || 'Failed to save settings');
       }
@@ -370,14 +322,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       } else {
         addNotification('Settings saved successfully!', 'success');
       }
-      // Only close panel on successful save
       handleToggleSettings();
     } catch (error) {
       logger.error('Failed to save settings', {
         error: error.message,
         stack: error.stack
       });
-      // Keep panel open on error so user can fix issues
       addNotification(
         'Failed to save settings. Please check your settings and try again.',
         'error'
@@ -387,22 +337,15 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, [settings, addNotification, handleToggleSettings, applySettingsUpdate]);
 
-  // Auto-save settings on change (debounced)
-  // FIX: Use settingsRef.current to always get the LATEST settings value at execution time
-  // This prevents stale closure issues where the debounce captures an old settings value
   const autoSaveSettings = useDebouncedCallback(async () => {
-    // Read current settings from ref to avoid stale closure
     const currentSettings = settingsRef.current;
     if (!currentSettings) return;
 
     try {
-      // Let sanitizeSettings handle normalization (including string->number conversion for confidenceThreshold)
       const normalizedSettings = sanitizeSettings({
         ...currentSettings
       });
-      await window.electronAPI.settings.save(normalizedSettings);
-      // Note: We intentionally don't apply res.settings here to avoid race conditions.
-      // The local state is the source of truth during editing.
+      await settingsIpc.save(normalizedSettings);
     } catch (error) {
       logger.error('Auto-save settings failed', {
         error: error.message,
@@ -411,17 +354,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, 800);
 
-  // Store cancel function in ref so saveSettings can access it without circular dependency
   useEffect(() => {
     cancelAutoSaveRef.current = autoSaveSettings?.cancel || null;
   }, [autoSaveSettings]);
 
   useEffect(() => {
-    // FIX: Guard against null settings to prevent auto-save before settings are loaded
     if (!isApiAvailable || !settingsLoaded || settings === null) {
       return;
     }
-    // Prevent auto-save storm during initial hydration or when we just applied canonical settings.
     if (skipAutoSaveRef.current) {
       skipAutoSaveRef.current = false;
       return;
@@ -429,8 +369,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     autoSaveSettings();
   }, [isApiAvailable, settings, settingsLoaded, autoSaveSettings]);
 
-  // FIX H-2: Flush pending settings saves on unmount to prevent data loss
-  // when user closes settings panel before debounce completes
   useEffect(() => {
     return () => {
       if (autoSaveSettings?.flush) {
@@ -440,11 +378,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [autoSaveSettings]);
 
   const testOllamaConnection = useCallback(async () => {
-    // FIX: Guard against null/undefined settings or missing ollamaHost
-    // Note: settings is initialized with DEFAULT_SETTINGS, so !settings check alone is insufficient
     if (!settings?.ollamaHost) return;
     try {
-      const res = await window.electronAPI.ollama.testConnection(settings.ollamaHost);
+      const res = await ollamaIpc.testConnection(settings.ollamaHost);
       setOllamaHealth(res?.ollamaHealth || null);
       if (res?.success) {
         const modelText = res.modelCount === 1 ? '1 model' : `${res.modelCount} models`;
@@ -469,7 +405,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       setIsAddingModel(true);
       try {
         if (progressUnsubRef.current) progressUnsubRef.current();
-        progressUnsubRef.current = window.electronAPI.events.onOperationProgress((evt) => {
+        progressUnsubRef.current = eventsIpc.onOperationProgress((evt) => {
           if (evt?.type === 'ollama-pull' && evt?.model?.includes(newModel.trim())) {
             setPullProgress(evt.progress || {});
           }
@@ -477,7 +413,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       } catch {
         // Non-fatal if progress subscription fails
       }
-      const res = await window.electronAPI.ollama.pullModels([newModel.trim()]);
+      const res = await ollamaIpc.pullModels([newModel.trim()]);
       const result = res?.results?.[0];
       if (result?.success) {
         addNotification(`Model "${newModel.trim()}" installed`, 'success');
@@ -508,7 +444,6 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, [newModel, addNotification, loadOllamaModels]);
 
-  // Collapsible section keys for expand/collapse all
   const expandAll = useCallback(() => {
     try {
       SECTION_KEYS.forEach((k) => localStorage.setItem(`collapsible:${k}`, 'true'));
@@ -527,38 +462,44 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     }
   }, []);
 
-  // FIX: Guard against missing electronAPI - moved after all hooks to follow React rules
   if (!isApiAvailable) {
     return (
-      <div className="p-[var(--panel-padding)] text-center">
-        <p className="text-red-600 font-medium">Settings unavailable</p>
-        <p className="text-sm text-system-gray-500 mt-[var(--spacing-sm)]">
+      <div className="p-8 text-center">
+        <Text variant="body" className="text-stratosort-danger font-medium">
+          Settings unavailable
+        </Text>
+        <Text variant="small" className="text-system-gray-500 mt-2">
           Electron API not available. Please restart the application.
-        </p>
+        </Text>
       </div>
     );
   }
 
   return (
     <div
-      className="settings-modal fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-[var(--panel-padding)]"
+      className="settings-modal fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-6"
+      style={{
+        paddingTop: 'calc(var(--app-nav-height) + 1rem)',
+        paddingBottom: '1.5rem'
+      }}
       onMouseDown={(e) => {
-        // UX: click backdrop closes settings (like a real modal)
         if (e.target === e.currentTarget) handleToggleSettings();
       }}
       role="presentation"
     >
       <div className="surface-panel !p-0 w-full max-w-4xl mx-auto max-h-[86vh] flex flex-col overflow-hidden shadow-2xl animate-modal-enter">
-        <div className="settings-modal-header px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-[var(--radius-panel)]">
+        <div className="settings-modal-header px-6 py-4 border-b border-border-soft/70 bg-white flex-shrink-0 rounded-t-2xl">
           <div className="flex items-start sm:items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <SettingsIcon className="h-5 w-5 text-stratosort-blue" aria-hidden="true" />
-                <h2 className="heading-secondary">Settings</h2>
+                <Heading as="h2" variant="h4">
+                  Settings
+                </Heading>
               </div>
-              <p className="text-xs text-system-gray-500 mt-1">
+              <Text variant="tiny" className="text-system-gray-500 mt-1">
                 Configure AI models, performance, default folders, and app behavior.
-              </p>
+              </Text>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <IconButton
@@ -589,7 +530,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="px-[var(--panel-padding)] py-[var(--panel-padding)] flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
+        <div className="px-6 py-6 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
           <Collapsible
             title={
               <div className="flex items-center gap-2">
@@ -600,7 +541,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen={false}
             persistKey="settings-ai"
           >
-            <div className="flex flex-col gap-[var(--spacing-default)]">
+            <Stack gap="default">
               <OllamaConfigSection
                 settings={settings}
                 setSettings={applySettingsUpdate}
@@ -628,7 +569,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 onAddModel={addOllamaModel}
               />
               <EmbeddingRebuildSection addNotification={addNotification} />
-            </div>
+            </Stack>
           </Collapsible>
 
           <Collapsible
@@ -641,11 +582,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen={false}
             persistKey="settings-performance"
           >
-            <div className="flex flex-col gap-[var(--spacing-default)]">
-              {/* UI-1: Processing Limits section removed - file size limits/processing params not useful for users */}
+            <Stack gap="default">
               <AutoOrganizeSection settings={settings} setSettings={applySettingsUpdate} />
               <BackgroundModeSection settings={settings} setSettings={applySettingsUpdate} />
-            </div>
+            </Stack>
           </Collapsible>
 
           <Collapsible
@@ -658,12 +598,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen={false}
             persistKey="settings-defaults"
           >
-            <DefaultLocationsSection settings={settings} setSettings={applySettingsUpdate} />
-
-            {/* File Naming Defaults */}
-            <div className="mt-6 pt-6 border-t border-system-gray-200">
-              <NamingSettingsSection settings={settings} setSettings={applySettingsUpdate} />
-            </div>
+            <Stack gap="default">
+              <DefaultLocationsSection settings={settings} setSettings={applySettingsUpdate} />
+              <div className="pt-6 border-t border-system-gray-200">
+                <NamingSettingsSection settings={settings} setSettings={applySettingsUpdate} />
+              </div>
+            </Stack>
           </Collapsible>
 
           <Collapsible
@@ -676,12 +616,18 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen={false}
             persistKey="settings-app"
           >
-            <ApplicationSection settings={settings} setSettings={applySettingsUpdate} />
-
-            {/* Notification Settings */}
-            <div className="mt-6 pt-6 border-t border-system-gray-200">
-              <NotificationSettingsSection settings={settings} setSettings={applySettingsUpdate} />
-            </div>
+            <Stack gap="default">
+              <ApplicationSection settings={settings} setSettings={applySettingsUpdate} />
+              <div className="pt-6 border-t border-system-gray-200">
+                <NotificationSettingsSection
+                  settings={settings}
+                  setSettings={applySettingsUpdate}
+                />
+              </div>
+              <div className="pt-6 border-t border-system-gray-200">
+                <SettingsBackupSection addNotification={addNotification} />
+              </div>
+            </Stack>
           </Collapsible>
 
           <Collapsible
@@ -694,10 +640,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
             defaultOpen={false}
             persistKey="settings-history"
           >
-            <div className="flex flex-col gap-[var(--spacing-cozy)]">
-              <p className="text-sm text-system-gray-600">
+            <Stack gap="cozy">
+              <Text variant="small" className="text-system-gray-600">
                 View and manage your file analysis history, including past results and statistics.
-              </p>
+              </Text>
               <Button
                 onClick={() => setShowAnalysisHistory(true)}
                 variant="secondary"
@@ -705,7 +651,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
               >
                 View Analysis History
               </Button>
-            </div>
+            </Stack>
           </Collapsible>
 
           <Collapsible
@@ -722,7 +668,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="px-[var(--panel-padding)] py-[calc(var(--panel-padding)*0.75)] border-t border-border-soft/70 bg-white flex items-center justify-end gap-3 flex-shrink-0 rounded-b-[var(--radius-panel)]">
+        <div className="px-6 py-4 border-t border-border-soft/70 bg-white flex items-center justify-end gap-3 flex-shrink-0 rounded-b-2xl">
           <Button
             onClick={handleToggleSettings}
             variant="secondary"

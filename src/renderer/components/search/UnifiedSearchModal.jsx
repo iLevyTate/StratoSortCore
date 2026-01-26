@@ -35,6 +35,7 @@ import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { GRAPH_FEATURE_FLAGS } from '../../../shared/featureFlags';
 import { safeBasename } from '../../utils/pathUtils';
+import { formatDisplayPath } from '../../utils/pathDisplay';
 import { scoreToOpacity, clamp01 } from '../../utils/scoreUtils';
 import { makeQueryNodeId, defaultNodePosition } from '../../utils/graphUtils';
 import {
@@ -51,7 +52,7 @@ import FileNode from './nodes/FileNode';
 import FolderNode from './nodes/FolderNode';
 import QueryNode from './nodes/QueryNode';
 import { useGraphState, useGraphKeyboardNav, useFileActions } from '../../hooks';
-import { useAppDispatch } from '../../store/hooks';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { toggleSettings } from '../../store/slices/uiSlice';
 import SimilarityEdge from './SimilarityEdge';
 import QueryMatchEdge from './QueryMatchEdge';
@@ -70,7 +71,20 @@ const MAX_GRAPH_NODES = 300;
 const GRAPH_LAYOUT_SPACING = 300; // Increased from 180 to reduce clutter
 const GRAPH_LAYER_SPACING = 400; // Increased from 280 to reduce clutter
 
-// React Flow node/edge types are memoized in the component to keep stable references.
+// React Flow node/edge types defined outside component for stable references
+// See: https://reactflow.dev/error#002
+const NODE_TYPES = {
+  fileNode: FileNode,
+  folderNode: FolderNode,
+  queryNode: QueryNode,
+  clusterNode: ClusterNode
+};
+
+const EDGE_TYPES = {
+  similarity: SimilarityEdge,
+  queryMatch: QueryMatchEdge,
+  smartStep: SmartStepEdge
+};
 
 /**
  * Format error messages to be more user-friendly and actionable
@@ -556,6 +570,7 @@ export default function UnifiedSearchModal({
   defaultTopK = 20,
   initialTab = 'search'
 }) {
+  const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
   // Tab state
   // Graph is currently feature-flagged off. If callers pass initialTab="graph",
   // ensure we still render the Search tab content instead of a blank body.
@@ -589,24 +604,8 @@ export default function UnifiedSearchModal({
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1);
   const [viewMode, setViewMode] = useState('all'); // 'all' or 'grouped'
 
-  const nodeTypes = useMemo(
-    () => ({
-      fileNode: FileNode,
-      folderNode: FolderNode,
-      queryNode: QueryNode,
-      clusterNode: ClusterNode
-    }),
-    []
-  );
-
-  const edgeTypes = useMemo(
-    () => ({
-      similarity: SimilarityEdge,
-      queryMatch: QueryMatchEdge,
-      smartStep: SmartStepEdge
-    }),
-    []
-  );
+  // nodeTypes and edgeTypes are defined as module-level constants (NODE_TYPES, EDGE_TYPES)
+  // to prevent React Flow warning about recreating objects on render
 
   // Chat tab state
   const [chatMessages, setChatMessages] = useState([]);
@@ -4134,7 +4133,10 @@ export default function UnifiedSearchModal({
                           'File'}
                       </h3>
                       <p className="text-xs text-system-gray-500 mt-1 break-all">
-                        {selectedSearchResult?.metadata?.path}
+                        {formatDisplayPath(selectedSearchResult?.metadata?.path || '', {
+                          redact: redactPaths,
+                          segments: 2
+                        })}
                       </p>
                     </div>
 
@@ -4758,8 +4760,8 @@ export default function UnifiedSearchModal({
                   <ReactFlow
                     nodes={rfNodes}
                     edges={rfEdges}
-                    nodeTypes={nodeTypes}
-                    edgeTypes={edgeTypes}
+                    nodeTypes={NODE_TYPES}
+                    edgeTypes={EDGE_TYPES}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
                     className={`bg-[var(--surface-muted)] ${zoomLevel < 0.6 ? 'graph-zoomed-out' : ''}`}

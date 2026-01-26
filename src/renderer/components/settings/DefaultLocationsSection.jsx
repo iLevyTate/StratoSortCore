@@ -11,7 +11,6 @@ import SettingRow from './SettingRow';
 function DefaultLocationsSection({ settings, setSettings }) {
   const handleBrowse = useCallback(async () => {
     const res = await window.electronAPI.files.selectDirectory();
-    // FIX: Handler returns 'path' not 'folder'
     if (res?.success && res.path) {
       setSettings((prev) => ({
         ...prev,

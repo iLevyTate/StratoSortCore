@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { serializeData } from '../../utils/serialization';
+import { filesIpc, systemIpc } from '../../services/ipc';
 
 // Normalize the documents path returned from IPC to a plain string.
 // Some IPC implementations return { success, path }, while others return the
@@ -16,14 +17,36 @@ const normalizeDocumentsPath = (value) => {
 // Thunk to fetch documents path (only once)
 export const fetchDocumentsPath = createAsyncThunk(
   'system/fetchDocumentsPath',
-  async (_, { getState }) => {
+  async (_, { getState, rejectWithValue }) => {
     const { system } = getState();
     // Return cached value if already fetched
     if (system.documentsPath) {
       return system.documentsPath;
     }
-    const path = await window.electronAPI?.files?.getDocumentsPath?.();
-    return normalizeDocumentsPath(path);
+    try {
+      const path = await filesIpc.getDocumentsPath();
+      return normalizeDocumentsPath(path);
+    } catch (error) {
+      return rejectWithValue(error?.message || 'Failed to load documents path');
+    }
+  }
+);
+
+// Thunk to fetch privacy flag for UI path redaction (only once)
+export const fetchRedactPaths = createAsyncThunk(
+  'system/fetchRedactPaths',
+  async (_, { getState, rejectWithValue }) => {
+    const { system } = getState();
+    // Return cached value if already fetched
+    if (typeof system.redactPaths === 'boolean') {
+      return system.redactPaths;
+    }
+    try {
+      const value = await systemIpc.getConfigValue('FEATURES.redactPaths');
+      return Boolean(value);
+    } catch (error) {
+      return rejectWithValue(error?.message || 'Failed to load redactPaths flag');
+    }
   }
 );
 
@@ -52,7 +75,12 @@ const initialState = {
   unreadNotificationCount: 0,
   version: '1.0.0',
   documentsPath: null, // Cached documents path
-  documentsPathLoading: false
+  documentsPathLoading: false,
+  documentsPathError: null,
+  // Privacy / recording mode flags
+  redactPaths: null, // null = unknown/unfetched, boolean once loaded
+  redactPathsLoading: false,
+  redactPathsError: null
 };
 
 const systemSlice = createSlice({
@@ -158,14 +186,33 @@ const systemSlice = createSlice({
     builder
       .addCase(fetchDocumentsPath.pending, (state) => {
         state.documentsPathLoading = true;
+        state.documentsPathError = null;
       })
       .addCase(fetchDocumentsPath.fulfilled, (state, action) => {
         state.documentsPath = action.payload;
         state.documentsPathLoading = false;
+        state.documentsPathError = null;
       })
-      .addCase(fetchDocumentsPath.rejected, (state) => {
+      .addCase(fetchDocumentsPath.rejected, (state, action) => {
         state.documentsPath = 'Documents';
         state.documentsPathLoading = false;
+        state.documentsPathError =
+          action.payload || action.error?.message || 'Failed to load documents path';
+      })
+      .addCase(fetchRedactPaths.pending, (state) => {
+        state.redactPathsLoading = true;
+        state.redactPathsError = null;
+      })
+      .addCase(fetchRedactPaths.fulfilled, (state, action) => {
+        state.redactPaths = Boolean(action.payload);
+        state.redactPathsLoading = false;
+        state.redactPathsError = null;
+      })
+      .addCase(fetchRedactPaths.rejected, (state, action) => {
+        state.redactPaths = false;
+        state.redactPathsLoading = false;
+        state.redactPathsError =
+          action.payload || action.error?.message || 'Failed to load redactPaths flag';
       });
   }
 });

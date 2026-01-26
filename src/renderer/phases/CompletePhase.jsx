@@ -1,28 +1,24 @@
 import React, { memo, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { CheckCircle2, ClipboardList, Target, Check, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Target, Check, ArrowLeft, RotateCcw } from 'lucide-react';
 import { PHASES } from '../../shared/constants';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setPhase, resetUi } from '../store/slices/uiSlice';
 import { resetFilesState } from '../store/slices/filesSlice';
 import { resetAnalysisState } from '../store/slices/analysisSlice';
-import Button from '../components/ui/Button';
+import { Button, Card, StatusBadge } from '../components/ui';
+import { Heading, Text } from '../components/ui/Typography';
 import { UndoRedoToolbar } from '../components/UndoRedoSystem';
+import { ActionBar, Inline, Stack } from '../components/layout';
+import { formatDisplayPath } from '../utils/pathDisplay';
 
 function StatPill({ label, value, tone = 'neutral' }) {
-  const toneClass =
-    tone === 'success'
-      ? 'text-stratosort-success bg-white/70 border-stratosort-success/20'
-      : 'text-system-gray-700 bg-white/60 border-border-soft';
-
+  const variant = tone === 'success' ? 'success' : 'info';
   return (
-    <div
-      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-xs ${toneClass}`}
-      style={{ backdropFilter: 'blur(4px)' }}
-    >
-      <span className="text-sm font-semibold">{value}</span>
-      <span className="text-xs text-system-gray-500">{label}</span>
-    </div>
+    <StatusBadge variant={variant} className="justify-between w-full sm:w-auto">
+      <span className="font-semibold tabular-nums mr-2">{value}</span>
+      <span className="opacity-80 font-normal">{label}</span>
+    </StatusBadge>
   );
 }
 
@@ -30,30 +26,37 @@ function FileRow({ file, index }) {
   if (!file || typeof file !== 'object') {
     return null;
   }
-
   const originalName = file.originalName || file.name || `File ${index + 1}`;
-  // FIX: Prefer smartFolder for display if available, otherwise fallback to path
   const displayLocation =
     file.smartFolder || file.path || file.newLocation || file.destination || 'Organized';
   const fullPath = file.path || file.newLocation || file.destination || '';
+  const displayPath = fullPath
+    ? formatDisplayPath(fullPath, { redact: true, segments: 2 })
+    : typeof displayLocation === 'string'
+      ? displayLocation
+      : 'Organized';
 
   return (
-    <div className="text-sm flex items-center bg-white/70 rounded-lg border border-border-soft/60 shadow-sm p-4 gap-3">
-      <div className="h-10 w-10 rounded-lg bg-stratosort-success/10 text-stratosort-success flex items-center justify-center font-semibold text-base flex-shrink-0">
+    <div
+      className="flex items-center p-3 gap-3 border-b border-border-soft/50 last:border-0 hover:bg-system-gray-50/50 transition-colors"
+      aria-label={`Organized file ${index + 1}`}
+    >
+      <div className="h-8 w-8 rounded-lg bg-stratosort-success/10 text-stratosort-success flex items-center justify-center font-semibold text-sm flex-shrink-0">
         {index + 1}
       </div>
-      <div className="flex flex-col flex-1 min-w-0 gap-1 mx-1">
-        <span
-          className="truncate text-system-gray-900 font-medium"
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Text
+          variant="small"
+          className="font-medium text-system-gray-900 truncate"
           title={`${originalName} → ${fullPath}`}
         >
           {originalName}
-        </span>
-        <span className="truncate text-system-gray-500 text-xs" title={fullPath}>
-          {displayLocation}
-        </span>
+        </Text>
+        <Text variant="tiny" className="text-system-gray-500 truncate" title={fullPath || ''}>
+          {displayPath}
+        </Text>
       </div>
-      <Check className="w-5 h-5 text-stratosort-success flex-shrink-0 ml-2" />
+      <Check className="w-4 h-4 text-stratosort-success flex-shrink-0" />
     </div>
   );
 }
@@ -81,7 +84,6 @@ function CompletePhase() {
     };
   }, [organizedFiles]);
 
-  // FIX: Memoize actions object to prevent recreation on every render
   const actions = useMemo(
     () => ({
       advancePhase: (phase) => dispatch(setPhase(phase)),
@@ -89,7 +91,6 @@ function CompletePhase() {
         dispatch(resetUi());
         dispatch(resetFilesState());
         dispatch(resetAnalysisState());
-        // Clear persistence
         try {
           localStorage.removeItem('stratosort_workflow_state');
           localStorage.removeItem('stratosort_redux_state');
@@ -102,136 +103,162 @@ function CompletePhase() {
   );
 
   return (
-    <div className="phase-container bg-system-gray-50/30 pb-spacious">
-      <div className="container-responsive flex flex-col flex-1 min-h-0 px-default pt-8 pb-default md:px-relaxed lg:px-spacious gap-6 lg:gap-8 max-w-6xl w-full mx-auto">
-        {/* Header */}
-        <div className="text-center flex flex-col flex-shrink-0 gap-compact">
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <div className="h-8 w-8 rounded-xl bg-stratosort-success/10 text-stratosort-success flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <p className="text-xs uppercase tracking-wide text-system-gray-500 font-semibold">
-              Session complete
-            </p>
+    <div className="flex flex-col flex-1 min-h-0 gap-6 lg:gap-8 pb-6">
+      {/* Header */}
+      <Stack className="text-center flex-shrink-0" gap="compact">
+        <Inline className="justify-center" gap="compact">
+          <div className="h-8 w-8 rounded-xl bg-stratosort-success/10 text-stratosort-success flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5" />
           </div>
-          <h1 className="heading-primary text-xl md:text-2xl">
-            Organization <span className="text-gradient">Complete</span>
-          </h1>
-          <p className="text-system-gray-600 leading-relaxed max-w-xl mx-auto text-sm md:text-base">
-            Successfully organized {totalFiles} file{totalFiles !== 1 ? 's' : ''} using AI-powered
-            analysis.
-          </p>
-        </div>
+          <Text
+            variant="tiny"
+            className="uppercase tracking-wide text-system-gray-500 font-semibold"
+          >
+            Session complete
+          </Text>
+        </Inline>
+        <Heading as="h1" variant="display">
+          Organization <span className="text-gradient">Complete</span>
+        </Heading>
+        <Text variant="lead" className="max-w-xl mx-auto">
+          {totalFiles > 0
+            ? `Successfully organized ${totalFiles} file${totalFiles !== 1 ? 's' : ''} using AI-powered analysis.`
+            : 'No files were organized in this session. You can go back and adjust your selections or run another session.'}
+        </Text>
+      </Stack>
 
-        {/* Toolbar / Summary Stats */}
-        <div className="flex items-center justify-between gap-cozy mb-2">
-          <div className="flex flex-wrap items-center gap-cozy">
-            <StatPill label="Files organized" value={totalFiles} tone="success" />
-            <StatPill label="Destinations" value={destinationCount || 1} />
-            <StatPill label="Undo/Redo" value="Available" />
+      {/* Stats & Toolbar */}
+      <Inline className="justify-between" gap="cozy" wrap>
+        <Inline className="justify-center sm:justify-start w-full sm:w-auto" gap="compact" wrap>
+          <StatPill label="Files organized" value={totalFiles} tone="success" />
+          <StatPill label="Destinations" value={destinationCount || 1} />
+        </Inline>
+        <div className="flex-shrink-0">
+          <UndoRedoToolbar />
+        </div>
+      </Inline>
+
+      {/* Main Grid Layout */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 flex-1 min-h-0 gap-6">
+        {/* Organization Summary Card */}
+        <Card className="xl:col-span-2 flex flex-col overflow-hidden p-0 h-full max-h-[500px] xl:max-h-none">
+          <div className="p-4 border-b border-border-soft/70 bg-white/50 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-stratosort-blue" />
+              <Heading as="h3" variant="h5">
+                What Changed
+              </Heading>
+            </div>
+            <StatusBadge variant="success">
+              {totalFiles} file{totalFiles !== 1 ? 's' : ''}
+            </StatusBadge>
           </div>
-          <UndoRedoToolbar className="flex-shrink-0" />
-        </div>
 
-        {/* Main Grid Layout */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 flex-1 min-h-0 gap-6">
-          {/* Organization Summary Card */}
-          <section className="surface-panel flex flex-col xl:col-span-2 gap-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-cozy">
-              <h3 className="heading-tertiary m-0 flex items-center gap-cozy">
-                <ClipboardList className="w-5 h-5 text-stratosort-blue" />
-                <span>What changed</span>
-              </h3>
-              <span className="status-chip success">
-                {totalFiles} file{totalFiles !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            <div
-              className="flex-1 min-h-0 overflow-y-auto modern-scrollbar"
-              style={{ maxHeight: '320px' }}
-            >
-              {filesToRender.length > 0 ? (
-                <div className="flex flex-col gap-cozy">
-                  {filesToRender.map((file, index) => (
-                    <FileRow
-                      key={
-                        file.path ||
-                        file.id ||
-                        file.originalPath ||
-                        file.originalName ||
-                        `file-${index}`
-                      }
-                      file={file}
-                      index={index}
-                    />
-                  ))}
-                  {overflowCount > 0 && (
-                    <div className="text-sm text-system-gray-500 text-center p-cozy">
-                      +{overflowCount} more file{overflowCount !== 1 ? 's' : ''} organized
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-system-gray-500 text-center p-default">
-                  No files were organized in this session.
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Next Steps */}
-          <div className="flex flex-col gap-default">
-            <section className="surface-panel flex flex-col justify-between gap-6">
-              <div className="flex items-center justify-between">
-                <h3 className="heading-tertiary m-0 flex items-center gap-cozy">
-                  <Target className="w-5 h-5 text-stratosort-blue" />
-                  <span>Next Steps</span>
-                </h3>
-                <span className="text-xs text-system-gray-500">All set</span>
-              </div>
-
-              <div className="flex flex-col gap-default">
-                <div className="p-4 rounded-xl bg-system-gray-50 border border-border-soft/70">
-                  <p className="text-sm text-system-gray-600 mb-2">Ready for your next session?</p>
-                  <Button
-                    onClick={() => actions.resetWorkflow()}
-                    variant="primary"
-                    className="w-full justify-center"
-                    size="lg"
-                  >
-                    Start New Session
-                  </Button>
-                </div>
-
-                <div className="border-t border-border-soft/60 pt-default">
-                  <p className="text-xs text-system-gray-500 mb-3">Need to make adjustments?</p>
-                  <div className="flex flex-col gap-cozy">
-                    <Button
-                      onClick={() => actions.advancePhase(PHASES?.ORGANIZE ?? 'organize')}
-                      variant="secondary"
-                      size="sm"
-                      className="w-full"
-                    >
-                      <ArrowLeft className="w-4 h-4 mr-2" />
-                      Back to Organization
-                    </Button>
-                    <Button
-                      onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
-                      variant="ghost"
-                      size="sm"
-                      className="w-full"
-                    >
-                      <ArrowLeft className="w-4 h-4 mr-2" />
-                      Back to Discovery
-                    </Button>
+          <div className="flex-1 overflow-y-auto modern-scrollbar bg-white">
+            {filesToRender.length > 0 ? (
+              <div>
+                {filesToRender.map((file, index) => (
+                  <FileRow
+                    key={
+                      file.path ||
+                      file.id ||
+                      file.originalPath ||
+                      file.originalName ||
+                      `file-${index}`
+                    }
+                    file={file}
+                    index={index}
+                  />
+                ))}
+                {overflowCount > 0 && (
+                  <div className="text-sm text-system-gray-500 text-center p-4 bg-system-gray-50/30 border-t border-border-soft/50">
+                    +{overflowCount} more file{overflowCount !== 1 ? 's' : ''} organized
                   </div>
-                </div>
+                )}
               </div>
-            </section>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-48 text-center p-8">
+                <Text variant="small" className="font-semibold text-system-gray-800">
+                  Nothing moved
+                </Text>
+                <Text variant="tiny" className="text-system-gray-500 mt-1">
+                  Go back to Discovery or Organization to adjust your selections.
+                </Text>
+              </div>
+            )}
           </div>
+        </Card>
+
+        {/* Next Steps */}
+        <div className="flex flex-col gap-6">
+          <Card className="flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-stratosort-blue" />
+                <Heading as="h3" variant="h5">
+                  Next Steps
+                </Heading>
+              </div>
+              <Text variant="tiny" className="text-system-gray-500">
+                All set
+              </Text>
+            </div>
+
+            <Stack gap="default">
+              <div className="p-4 rounded-xl bg-system-gray-50 border border-border-soft/70">
+                <Text variant="small" className="font-medium text-system-gray-700 mb-2">
+                  Suggested checks
+                </Text>
+                <ul className="text-sm text-system-gray-600 space-y-2 list-disc pl-4">
+                  <li>Review the changed files list for anything unexpected.</li>
+                  <li>Use undo/redo to revert individual moves if needed.</li>
+                  <li>Start a new session when you’re ready to organize more files.</li>
+                </ul>
+              </div>
+              <Text variant="tiny" className="text-system-gray-500 text-center">
+                Actions are available at the bottom of the page.
+              </Text>
+            </Stack>
+          </Card>
         </div>
       </div>
+
+      <ActionBar>
+        <div className="text-sm text-system-gray-600 hidden sm:block">
+          {totalFiles > 0
+            ? `Done — ${totalFiles} file${totalFiles !== 1 ? 's' : ''} organized.`
+            : 'Done — no changes applied.'}
+        </div>
+        <Inline className="justify-end w-full sm:w-auto" gap="cozy" wrap={true}>
+          <Button
+            onClick={() => actions.advancePhase(PHASES?.ORGANIZE ?? 'organize')}
+            variant="secondary"
+            size="md"
+            className="w-full sm:w-auto min-w-[180px]"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Organization
+          </Button>
+          <Button
+            onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
+            variant="ghost"
+            size="md"
+            className="w-full sm:w-auto min-w-[180px]"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Discovery
+          </Button>
+          <Button
+            onClick={() => actions.resetWorkflow()}
+            variant="primary"
+            size="md"
+            className="w-full sm:w-auto min-w-[180px]"
+          >
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Start New Session
+          </Button>
+        </Inline>
+      </ActionBar>
     </div>
   );
 }
@@ -253,5 +280,4 @@ FileRow.propTypes = {
   index: PropTypes.number.isRequired
 };
 
-// FIX: Wrap with memo to prevent unnecessary re-renders from parent changes
 export default memo(CompletePhase);

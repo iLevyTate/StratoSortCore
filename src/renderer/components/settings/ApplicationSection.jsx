@@ -4,6 +4,7 @@ import Switch from '../ui/Switch';
 import SettingRow from './SettingRow';
 import Button from '../ui/Button';
 import { logger } from '../../../shared/logger';
+import { Stack } from '../layout';
 
 /**
  * Application settings section (launch on startup, etc.)
@@ -26,7 +27,7 @@ function ApplicationSection({ settings, setSettings }) {
   }, [isOpeningLogs]);
 
   return (
-    <div className="space-y-6">
+    <Stack gap="relaxed">
       {/* Launch on Startup */}
       <SettingRow
         label="Launch on Startup"
@@ -58,7 +59,7 @@ function ApplicationSection({ settings, setSettings }) {
           Open Logs Folder
         </Button>
       </SettingRow>
-    </div>
+    </Stack>
   );
 }
 

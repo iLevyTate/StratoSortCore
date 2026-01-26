@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X, Bell } from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { TIMEOUTS } from '../../shared/performanceConstants';
+import { Text } from './ui/Typography';
 
 logger.setContext('Toast');
 
@@ -144,14 +145,18 @@ function Toast({
     >
       <div className="flex items-center gap-2.5">
         <span aria-hidden="true">{getSeverityIcon()}</span>
-        <span className="flex-1 text-[13px] font-medium leading-snug">
+        <Text as="span" variant="small" className="flex-1 text-[13px] font-medium leading-snug">
           {renderMessageContent()}
           {mergeCount > 1 && (
-            <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-current/15 text-[10px] font-semibold">
+            <Text
+              as="span"
+              variant="tiny"
+              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-current/15 text-[10px] font-semibold"
+            >
               {mergeCount}
-            </span>
+            </Text>
           )}
-        </span>
+        </Text>
         <button
           type="button"
           onClick={handleClose}
@@ -245,9 +250,13 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
             <X className="w-4 h-4" aria-hidden="true" />
           )}
           {toasts.length > 0 && collapsed && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-stratosort-blue text-white text-[9px] font-medium leading-4 text-center">
+            <Text
+              as="span"
+              variant="tiny"
+              className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-stratosort-blue text-white text-[9px] font-medium leading-4 text-center"
+            >
               {toasts.length}
-            </span>
+            </Text>
           )}
         </button>
       </div>
@@ -268,9 +277,13 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
             </div>
           ))}
         {!collapsed && hiddenCount > 0 && (
-          <div className="pointer-events-none text-[11px] text-system-gray-400 text-right">
+          <Text
+            as="div"
+            variant="tiny"
+            className="pointer-events-none text-[11px] text-system-gray-400 text-right"
+          >
             +{hiddenCount} more
-          </div>
+          </Text>
         )}
       </div>
     </div>

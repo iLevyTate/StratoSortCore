@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, Lightbulb, Info, Pin, CheckCircle, Folder } from 'lucide-react';
 import { Card, Button } from '../ui';
+import { Text } from '../ui/Typography';
 
 function FolderImprovementSuggestions({
   improvements = [],
@@ -25,11 +26,11 @@ function FolderImprovementSuggestions({
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'high':
-        return 'text-red-600 bg-red-50';
+        return 'text-stratosort-danger bg-stratosort-danger/10';
       case 'medium':
-        return 'text-yellow-600 bg-yellow-50';
+        return 'text-stratosort-warning bg-stratosort-warning/10';
       case 'low':
-        return 'text-blue-600 bg-blue-50';
+        return 'text-stratosort-blue bg-stratosort-blue/10';
       default:
         return 'text-system-gray-600 bg-system-gray-50';
     }
@@ -50,14 +51,14 @@ function FolderImprovementSuggestions({
 
   if (!improvements || improvements.length === 0) {
     return (
-      <Card className="p-4 bg-green-50 border-green-200">
+      <Card className="p-4 bg-stratosort-success/10 border-stratosort-success/20">
         <div className="flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-green-600" />
-          <span className="text-green-700 font-medium">
+          <CheckCircle className="w-5 h-5 text-stratosort-success" />
+          <span className="text-stratosort-success font-medium">
             Your folder structure is well-organized!
           </span>
         </div>
-        <p className="text-sm text-green-600 mt-2">
+        <p className="text-sm text-stratosort-success mt-2">
           No significant improvements needed at this time.
         </p>
       </Card>
@@ -78,7 +79,9 @@ function FolderImprovementSuggestions({
         <Card
           key={improvement.id || improvement.type || improvement.title}
           className={`overflow-hidden ${
-            improvement.priority === 'high' ? 'border-red-200' : 'border-system-gray-200'
+            improvement.priority === 'high'
+              ? 'border-stratosort-danger/30'
+              : 'border-system-gray-200'
           }`}
         >
           <div
@@ -107,13 +110,15 @@ function FolderImprovementSuggestions({
                       {improvement.description}
                     </span>
                   </div>
-                  <span
-                    className={`inline-block mt-1 text-xs px-2 py-1 rounded ${getPriorityColor(
+                  <Text
+                    as="span"
+                    variant="tiny"
+                    className={`inline-block mt-1 px-2 py-1 rounded ${getPriorityColor(
                       improvement.priority
                     )}`}
                   >
                     {improvement.priority} priority
-                  </span>
+                  </Text>
                 </div>
               </div>
               <div className="text-sm text-system-gray-500">
@@ -166,9 +171,9 @@ function FolderImprovementSuggestions({
                           <div className="text-sm text-system-gray-600 mt-1">
                             {Math.round((overlap.similarity || 0) * 100)}% similar
                           </div>
-                          <div className="text-xs text-system-gray-500 mt-1">
+                          <Text variant="tiny" className="text-system-gray-500 mt-1">
                             {overlap.suggestion}
-                          </div>
+                          </Text>
                         </div>
                         <Button
                           size="sm"
@@ -192,13 +197,13 @@ function FolderImprovementSuggestions({
                           <div className="font-medium text-sm flex items-center gap-1">
                             <Folder className="w-4 h-4" /> {folder.name}
                           </div>
-                          <div className="text-xs text-system-gray-600 mt-1">
+                          <Text variant="tiny" className="text-system-gray-600 mt-1">
                             Used {folder.usageCount} time
                             {folder.usageCount !== 1 ? 's' : ''}
-                          </div>
-                          <div className="text-xs text-system-gray-500 mt-1">
+                          </Text>
+                          <Text variant="tiny" className="text-system-gray-500 mt-1">
                             {folder.suggestion}
-                          </div>
+                          </Text>
                         </div>
                         {/* Edit/Remove buttons hidden until feature is implemented */}
                       </div>
@@ -217,12 +222,12 @@ function FolderImprovementSuggestions({
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="font-medium text-sm">{hierarchy.suggestion}</div>
-                          <div className="text-xs text-system-gray-600 mt-2">
+                          <Text variant="tiny" className="text-system-gray-600 mt-2">
                             <div>Parent: {hierarchy.parent}</div>
                             <div className="mt-1">
                               Children: {(hierarchy.children || []).join(', ')}
                             </div>
-                          </div>
+                          </Text>
                         </div>
                         <Button
                           size="sm"
@@ -259,9 +264,9 @@ function FolderImprovementSuggestions({
             <div className="text-3xl font-bold text-stratosort-blue">
               {calculateHealthScore(improvements, smartFolders)}%
             </div>
-            <div className="text-xs text-system-gray-500 mt-1">
+            <Text variant="tiny" className="text-system-gray-500 mt-1">
               {getHealthLabel(calculateHealthScore(improvements, smartFolders))}
-            </div>
+            </Text>
           </div>
         </div>
       </Card>

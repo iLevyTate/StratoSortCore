@@ -10,6 +10,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { PHASES } from '../../../shared/constants';
 import { logger } from '../../../shared/logger';
 import { createOrganizeBatchAction } from '../../components/UndoRedoSystem';
+import { updateResultPathsAfterMove } from '../../store/slices/analysisSlice';
+import { updateFilePathsAfterMove } from '../../store/slices/filesSlice';
 
 logger.setContext('OrganizePhase-Organization');
 
@@ -420,6 +422,7 @@ export function useOrganization({
   phaseData = {},
   addNotification = () => {},
   executeAction = () => {},
+  dispatch = null,
   addOrganizedFiles = () => {},
   removeOrganizedFiles = () => {},
   setOrganizingState = () => {}
@@ -592,6 +595,7 @@ export function useOrganization({
                 resArray = Array.isArray(result?.results) ? result.results : [];
               }
 
+              const operationMap = new Map(operations.map((op) => [op.source, op.destination]));
               const uiResults = resArray
                 .filter((r) => r.success)
                 .map((r) => {
@@ -609,14 +613,29 @@ export function useOrganization({
                   }
                   return {
                     originalPath: r.source,
-                    path: r.destination,
+                    path: r.destination || operationMap.get(r.source),
                     originalName:
                       original.name || (original.path ? original.path.split(/[\\/]/).pop() : ''),
-                    newName: r.destination ? r.destination.split(/[\\/]/).pop() : '',
+                    newName:
+                      (r.destination || operationMap.get(r.source) || '').split(/[\\/]/).pop() ||
+                      '',
                     smartFolder: actualSmartFolder,
                     organizedAt: new Date().toISOString()
                   };
                 });
+              const successfulMoves = resArray
+                .filter((r) => r.success && r.source)
+                .map((r) => ({
+                  source: r.source,
+                  destination: r.destination || operationMap.get(r.source)
+                }))
+                .filter((r) => r.destination);
+              if (dispatch && successfulMoves.length > 0) {
+                const oldPaths = successfulMoves.map((r) => r.source);
+                const newPaths = successfulMoves.map((r) => r.destination);
+                dispatch(updateResultPathsAfterMove({ oldPaths, newPaths }));
+                dispatch(updateFilePathsAfterMove({ oldPaths, newPaths }));
+              }
               if (uiResults.length > 0) {
                 // FIX H-3: Use addOrganizedFiles to append to current state safely (avoids stale closures)
                 addOrganizedFiles(uiResults);
@@ -722,6 +741,7 @@ export function useOrganization({
                 : [];
 
               // If no results from main process, fall back to original operations
+              const operationMap = new Map(operations.map((op) => [op.source, op.destination]));
               const uiResults =
                 successfulResults.length > 0
                   ? successfulResults.map((r) => {
@@ -735,9 +755,12 @@ export function useOrganization({
                       }
                       return {
                         originalPath: r.source,
-                        path: r.destination,
+                        path: r.destination || operationMap.get(r.source),
                         originalName: r.source?.split(/[\\/]/).pop() || '',
-                        newName: r.destination?.split(/[\\/]/).pop() || '',
+                        newName:
+                          (r.destination || operationMap.get(r.source) || '')
+                            .split(/[\\/]/)
+                            .pop() || '',
                         smartFolder: actualSmartFolder,
                         organizedAt: new Date().toISOString()
                       };
@@ -760,6 +783,22 @@ export function useOrganization({
                         organizedAt: new Date().toISOString()
                       };
                     });
+              const redoMoves =
+                successfulResults.length > 0
+                  ? successfulResults
+                      .filter((r) => r.success && r.source)
+                      .map((r) => ({
+                        source: r.source,
+                        destination: r.destination || operationMap.get(r.source)
+                      }))
+                      .filter((r) => r.destination)
+                  : operations.map((op) => ({ source: op.source, destination: op.destination }));
+              if (dispatch && redoMoves.length > 0) {
+                const oldPaths = redoMoves.map((r) => r.source);
+                const newPaths = redoMoves.map((r) => r.destination);
+                dispatch(updateResultPathsAfterMove({ oldPaths, newPaths }));
+                dispatch(updateFilePathsAfterMove({ oldPaths, newPaths }));
+              }
 
               if (uiResults.length > 0) {
                 // FIX H-3: Filter out duplicates, but use latest ref data (synced in onUndo)
@@ -880,6 +919,7 @@ export function useOrganization({
       // FIX: Removed phaseData from deps - using organizedFilesRef instead to avoid stale closure
       addNotification,
       executeAction,
+      dispatch,
       addOrganizedFiles,
       removeOrganizedFiles,
       setOrganizingState,

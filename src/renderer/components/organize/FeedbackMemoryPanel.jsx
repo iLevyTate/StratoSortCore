@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { Trash2 } from 'lucide-react';
 import { Card, Button } from '../ui';
+import { Text } from '../ui/Typography';
 
 function FeedbackMemoryPanel({ className = '', refreshToken }) {
   const [memories, setMemories] = useState([]);
@@ -103,9 +104,13 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
       </div>
 
       {loading ? (
-        <div className="text-xs text-system-gray-500">Loading memories...</div>
+        <Text variant="tiny" className="text-system-gray-500">
+          Loading memories...
+        </Text>
       ) : memories.length === 0 ? (
-        <div className="text-xs text-system-gray-500">No saved memories yet.</div>
+        <Text variant="tiny" className="text-system-gray-500">
+          No saved memories yet.
+        </Text>
       ) : (
         <div className="space-y-2 max-h-48 overflow-y-auto modern-scrollbar">
           {memories.map((entry) => (
@@ -118,7 +123,7 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
                   <textarea
                     value={editingText}
                     onChange={(event) => setEditingText(event.target.value)}
-                    className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-xs text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+                    className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
                     rows={2}
                   />
                   <div className="flex gap-2">
@@ -132,12 +137,16 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
                 </div>
               ) : (
                 <>
-                  <div className="text-xs text-system-gray-700">
-                    <div className="font-medium text-system-gray-800">{entry.text}</div>
+                  <Text as="div" variant="tiny" className="text-system-gray-700">
+                    <Text as="div" variant="tiny" className="font-medium text-system-gray-800">
+                      {entry.text}
+                    </Text>
                     {entry.targetFolder && (
-                      <div className="text-system-gray-500">Target: {entry.targetFolder}</div>
+                      <Text as="div" variant="tiny" className="text-system-gray-500">
+                        Target: {entry.targetFolder}
+                      </Text>
                     )}
-                  </div>
+                  </Text>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -149,7 +158,7 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
                     </button>
                     <button
                       type="button"
-                      className="p-1 rounded-md text-system-gray-400 hover:text-red-500 hover:bg-red-50"
+                      className="p-1 rounded-md text-system-gray-400 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
                       onClick={() => handleDelete(entry.id)}
                       aria-label="Delete memory"
                     >
