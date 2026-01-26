@@ -18,13 +18,22 @@ const renderWithRedux = (ui, { preloadedState } = {}) => {
 // Mock child components to avoid complex dependency issues
 jest.mock('../../src/renderer/components/ui', () => ({
   Button: ({ children, ...props }) => <button {...props}>{children}</button>,
-  StatusBadge: ({ children }) => <div>{children}</div>
+  StatusBadge: ({ children }) => <div>{children}</div>,
+  Card: ({ children, ...props }) => <div {...props}>{children}</div>,
+  IconButton: ({ icon, ...props }) => <button {...props}>{icon}</button>
 }));
 
 jest.mock('lucide-react', () => ({
   FileText: () => <div>Icon</div>,
   Compass: () => <div>Icon</div>,
-  AlertTriangle: () => <div>Icon</div>
+  AlertTriangle: () => <div>Icon</div>,
+  Eye: () => <div>Icon</div>,
+  FolderOpen: () => <div>Icon</div>,
+  Trash2: () => <div>Icon</div>
+}));
+
+jest.mock('../../src/renderer/components/ui/Typography', () => ({
+  Text: ({ children, ...props }) => <div {...props}>{children}</div>
 }));
 
 // Mock react-window

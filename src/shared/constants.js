@@ -351,9 +351,7 @@ const SUPPORTED_TEXT_EXTENSIONS = [
   '.bat',
   '.ps1',
   '.ini',
-  '.log',
-  '.scad',
-  '.gcode'
+  '.log'
 ];
 
 const SUPPORTED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'];
@@ -362,7 +360,7 @@ const SUPPORTED_VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.we
 
 const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'];
 
-const SUPPORTED_3D_EXTENSIONS = ['.stl', '.obj', '.3mf'];
+const SUPPORTED_3D_EXTENSIONS = ['.stl', '.obj', '.3mf', '.scad', '.gcode'];
 
 const SUPPORTED_DESIGN_EXTENSIONS = ['.ai', '.eps', '.psd'];
 
