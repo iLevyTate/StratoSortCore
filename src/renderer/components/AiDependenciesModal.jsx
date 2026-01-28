@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import { Info } from 'lucide-react';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import StatusBadge from './ui/StatusBadge';
+import StateMessage from './ui/StateMessage';
 import { Heading, Text } from './ui/Typography';
 import { ErrorBoundaryCore as ErrorBoundary } from './ErrorBoundary';
 import { logger } from '../../shared/logger';
@@ -512,9 +514,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                           );
                         })
                       ) : (
-                        <Text variant="tiny" className="text-system-gray-500 text-center py-2">
-                          No models configured. Set models in Settings.
-                        </Text>
+                        <StateMessage
+                          icon={Info}
+                          tone="neutral"
+                          size="sm"
+                          title="No models configured"
+                          description="Set models in Settings."
+                          className="py-2"
+                          contentClassName="max-w-xs"
+                        />
                       )}
                     </div>
                   </div>
@@ -756,9 +764,15 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               className="p-4 bg-system-gray-900 max-h-32 overflow-auto text-xs font-mono modern-scrollbar"
             >
               {logLines.length === 0 ? (
-                <div className="text-system-gray-500 text-center py-4">
-                  No activity yet. Install or refresh to see updates.
-                </div>
+                <StateMessage
+                  icon={Info}
+                  tone="neutral"
+                  surface="inverse"
+                  size="sm"
+                  title="No activity yet"
+                  description="Install or refresh to see updates."
+                  className="py-4"
+                />
               ) : (
                 <ul className="space-y-1">
                   {logLines.map((entry) => (

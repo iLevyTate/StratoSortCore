@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { RefreshCw, Download, Upload, Trash2, RotateCcw, Clock } from 'lucide-react';
 import Button from '../ui/Button';
 import IconButton from '../ui/IconButton';
+import StateMessage from '../ui/StateMessage';
 import { logger } from '../../../shared/logger';
 import { Text } from '../ui/Typography';
 
@@ -53,7 +54,7 @@ function SettingsBackupSection({ addNotification }) {
       } else {
         addNotification(res?.error || 'Failed to create backup', 'error');
       }
-    } catch (e) {
+    } catch {
       addNotification('Failed to create backup', 'error');
     } finally {
       setIsCreating(false);
@@ -71,7 +72,7 @@ function SettingsBackupSection({ addNotification }) {
         } else {
           addNotification(res?.error || 'Failed to restore backup', 'error');
         }
-      } catch (e) {
+      } catch {
         addNotification('Failed to restore backup', 'error');
       } finally {
         setIsRestoring(null);
@@ -92,7 +93,7 @@ function SettingsBackupSection({ addNotification }) {
         } else {
           addNotification(res?.error || 'Failed to delete backup', 'error');
         }
-      } catch (e) {
+      } catch {
         addNotification('Failed to delete backup', 'error');
       } finally {
         setIsDeleting(null);
@@ -113,7 +114,7 @@ function SettingsBackupSection({ addNotification }) {
       } else {
         addNotification(res?.error || 'Failed to export settings', 'error');
       }
-    } catch (e) {
+    } catch {
       addNotification('Failed to export settings', 'error');
     } finally {
       setIsExporting(false);
@@ -132,7 +133,7 @@ function SettingsBackupSection({ addNotification }) {
       } else {
         addNotification(res?.error || 'Failed to import settings', 'error');
       }
-    } catch (e) {
+    } catch {
       addNotification('Failed to import settings', 'error');
     } finally {
       setIsImporting(false);
@@ -254,9 +255,16 @@ function SettingsBackupSection({ addNotification }) {
       )}
 
       {backups.length === 0 && !isLoading && (
-        <Text variant="tiny" className="text-system-gray-400 italic">
-          No backups found. Create one to save your current settings.
-        </Text>
+        <StateMessage
+          icon={Clock}
+          tone="neutral"
+          size="sm"
+          align="left"
+          title="No backups found"
+          description="Create one to save your current settings."
+          className="py-2"
+          contentClassName="max-w-sm"
+        />
       )}
     </div>
   );

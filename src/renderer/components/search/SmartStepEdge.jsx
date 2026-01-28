@@ -10,7 +10,7 @@ import { BaseEdge, getSmoothStepPath, EdgeLabelRenderer } from 'reactflow';
  * especially for the hierarchical layout used in the graph.
  */
 const SmartStepEdge = ({
-  id: _id, // eslint-disable-line no-unused-vars -- Required by ReactFlow edge interface
+  id: _id,
   sourceX,
   sourceY,
   targetX,

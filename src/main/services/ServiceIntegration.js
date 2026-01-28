@@ -534,7 +534,7 @@ class ServiceIntegration {
         let embeddingQueue = null;
         try {
           embeddingQueue = require('../analysis/embeddingQueue');
-        } catch (err) {
+        } catch {
           logger.debug('[ServiceIntegration] EmbeddingQueue not available for FilePathCoordinator');
         }
 
@@ -566,6 +566,7 @@ class ServiceIntegration {
         const analysisHistoryService = c.resolve(ServiceIds.ANALYSIS_HISTORY);
         const settingsService = c.resolve(ServiceIds.SETTINGS);
         const chromaDbService = c.resolve(ServiceIds.CHROMA_DB);
+        const filePathCoordinator = c.resolve(ServiceIds.FILE_PATH_COORDINATOR);
         // FIX: Add folderMatcher for auto-embedding analyzed files into ChromaDB
         const folderMatcher = c.resolve(ServiceIds.FOLDER_MATCHING);
         const notificationService = c.resolve(ServiceIds.NOTIFICATION_SERVICE);
@@ -579,6 +580,7 @@ class ServiceIntegration {
           analyzeImageFile: null, // Will be set during app init
           settingsService,
           chromaDbService,
+          filePathCoordinator,
           folderMatcher, // FIX: Pass folderMatcher for immediate auto-embedding
           notificationService // For user feedback on file analysis
         });

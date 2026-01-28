@@ -359,6 +359,37 @@ describe('AutoOrganize Batch Processor', () => {
       expect(result.skipped[0].reason).toBe('Low confidence');
     });
 
+    test('skips high confidence groups that are not smart folders', async () => {
+      mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
+        success: true,
+        groups: [
+          {
+            folder: 'Archives',
+            path: 'Archives',
+            confidence: 0.95,
+            files: [{ name: 'backup.zip', path: '/src/backup.zip' }]
+          }
+        ]
+      });
+
+      const files = [{ name: 'backup.zip', path: '/src/backup.zip' }];
+      const options = { autoApproveThreshold: 0.9 };
+      const thresholds = { autoApprove: 0.9 };
+
+      const smartFolders = [{ name: 'Documents', path: '/docs/Documents', isDefault: true }];
+      const result = await batchOrganize(
+        files,
+        smartFolders,
+        options,
+        mockSuggestionService,
+        thresholds
+      );
+
+      expect(result.operations).toHaveLength(0);
+      expect(result.skipped).toHaveLength(1);
+      expect(result.skipped[0].reason).toBe('Not a smart folder');
+    });
+
     test('throws on failed batch suggestions', async () => {
       mockSuggestionService.getBatchSuggestions.mockResolvedValueOnce({
         success: false

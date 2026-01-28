@@ -189,7 +189,19 @@ class SearchService {
    * @returns {boolean} True if index is stale or missing
    */
   isIndexStale() {
-    if (!this.bm25Index || !this.indexBuiltAt) {
+    if (!this.indexBuiltAt) {
+      return true;
+    }
+    if (!this.bm25Index) {
+      const entryCount = this.history?.analysisHistory?.metadata?.totalEntries ?? 0;
+      if (entryCount > 0) {
+        return true;
+      }
+      // If last build produced an empty index, avoid rebuilding every search.
+      const isEmptyIndex = !this.documentMap || this.documentMap.size === 0;
+      if (isEmptyIndex) {
+        return Date.now() - this.indexBuiltAt > this.INDEX_STALE_MS;
+      }
       return true;
     }
     return Date.now() - this.indexBuiltAt > this.INDEX_STALE_MS;
@@ -236,6 +248,9 @@ class SearchService {
         logger.warn('[SearchService] No documents to index');
         this.bm25Index = null;
         this.documentMap.clear();
+        this.indexBuiltAt = Date.now();
+        this._serializedIndex = null;
+        this._serializedDocMap = null;
         return { success: true, indexed: 0 };
       }
 
@@ -253,6 +268,12 @@ class SearchService {
         this.field('summary', { boost: 1.5 });
         this.field('tags', { boost: 2 });
         this.field('category', { boost: 1.5 });
+        this.field('entity', { boost: 1.4 });
+        this.field('project', { boost: 1.4 });
+        this.field('purpose', { boost: 1.2 });
+        this.field('documentType', { boost: 1.2 });
+        this.field('documentDate', { boost: 0.8 });
+        this.field('reasoning', { boost: 0.6 });
         this.field('extractedText', { boost: 2.5 });
 
         // Add documents
@@ -283,6 +304,12 @@ class SearchService {
             summary: analysis.summary || '',
             tags: (analysis.tags || []).join(' '),
             category: analysis.category || '',
+            entity: analysis.entity || '',
+            project: analysis.project || '',
+            purpose: analysis.purpose || '',
+            documentType: analysis.documentType || analysis.type || '',
+            documentDate: analysis.documentDate || analysis.date || '',
+            reasoning: analysis.reasoning || '',
             confidence: analysis.confidence || 0,
             extractedText: self._truncateText(analysis.extractedText, 5000)
           };
@@ -300,6 +327,12 @@ class SearchService {
             summary: analysis.summary,
             tags: analysis.tags || [],
             category: analysis.category,
+            entity: analysis.entity || null,
+            project: analysis.project || null,
+            purpose: analysis.purpose || null,
+            documentType: analysis.documentType || analysis.type || null,
+            documentDate: analysis.documentDate || analysis.date || null,
+            reasoning: analysis.reasoning || null,
             confidence: analysis.confidence,
             keyEntities: analysis.keyEntities || [],
             dates: analysis.dates || []
@@ -1812,7 +1845,7 @@ class SearchService {
               message: `Chunk collection dimension (${chunkDimension}) differs from current model (${queryDimension}). Chunk search will fail.`
             });
           }
-        } catch (e) {
+        } catch {
           // Non-critical
         }
       }
@@ -1844,7 +1877,7 @@ class SearchService {
             message: `Analysis history (${historyCount}) significantly exceeds file embeddings (${fileCount}). Some files may not be searchable.`
           });
         }
-      } catch (e) {
+      } catch {
         // Non-critical
       }
 
@@ -1907,7 +1940,7 @@ class SearchService {
             });
           }
         }
-      } catch (e) {
+      } catch {
         // Non-critical
       }
 
@@ -1925,7 +1958,7 @@ class SearchService {
             });
           }
         }
-      } catch (e) {
+      } catch {
         // Non-critical
       }
 
@@ -1943,7 +1976,7 @@ class SearchService {
             });
           }
         }
-      } catch (e) {
+      } catch {
         // Non-critical
       }
 
@@ -2002,7 +2035,7 @@ class SearchService {
             });
           }
         }
-      } catch (e) {
+      } catch {
         // Non-critical - queue module may not be available
       }
 
@@ -2025,7 +2058,7 @@ class SearchService {
             });
           }
         }
-      } catch (e) {
+      } catch {
         // Non-critical
       }
 

@@ -66,6 +66,14 @@ jest.mock('../src/shared/constants', () => ({
     INVALID_FORMAT: 'INVALID_FORMAT',
     FILE_TOO_LARGE: 'FILE_TOO_LARGE',
     UNKNOWN: 'UNKNOWN'
+  },
+  IPC_CHANNELS: {
+    CHROMADB: {
+      STATUS_CHANGED: 'chromadb:status-changed'
+    },
+    DEPENDENCIES: {
+      SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed'
+    }
   }
 }));
 

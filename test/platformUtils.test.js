@@ -53,13 +53,13 @@ describe('platformUtils', () => {
   describe('getChromaDbBinName', () => {
     test('returns chromadb for Unix', () => {
       if (!platformUtils.isWindows) {
-        expect(platformUtils.getChromaDbBinName()).toBe('chromadb');
+        expect(platformUtils.getChromaDbBinName()).toBe('chroma');
       }
     });
 
     test('returns chromadb.cmd for Windows', () => {
       if (platformUtils.isWindows) {
-        expect(platformUtils.getChromaDbBinName()).toBe('chromadb.cmd');
+        expect(platformUtils.getChromaDbBinName()).toBe('chroma.cmd');
       }
     });
   });
@@ -155,9 +155,9 @@ describe('platformUtils', () => {
       expect(result.windowsHide).toBe(true);
     });
 
-    test('includes shell based on platform', () => {
+    test('defaults to shell false', () => {
       const result = platformUtils.getSpawnOptions();
-      expect(result.shell).toBe(platformUtils.shouldUseShell());
+      expect(result.shell).toBe(false);
     });
 
     test('respects forceShell option', () => {

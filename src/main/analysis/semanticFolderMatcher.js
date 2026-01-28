@@ -22,8 +22,7 @@
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS } = require('../../shared/performanceConstants');
 const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
-const { capEmbeddingInput } = require('../utils/embeddingInput');
-const { enrichFileTextForEmbedding } = require('./semanticExtensionMap');
+const { buildEmbeddingSummary } = require('./embeddingSummary');
 const { container, ServiceIds } = require('../services/ServiceContainer');
 const embeddingQueue = require('./embeddingQueue');
 
@@ -56,45 +55,6 @@ function validateMatcher(matcher) {
     typeof matcher.embedText === 'function' &&
     typeof matcher.matchVectorToFolders === 'function'
   );
-}
-
-/**
- * Build embedding summary by combining analysis fields and enriching with semantic keywords
- *
- * @param {Object} analysis - Analysis result
- * @param {string} [extractedText=''] - Extracted text content
- * @param {string} fileExtension - File extension for semantic enrichment
- * @param {string} [type='document'] - Analysis type
- * @returns {{ text: string, wasTruncated: boolean, estimatedTokens: number }}
- */
-function buildEmbeddingSummary(analysis, extractedText = '', fileExtension, type = 'document') {
-  // Base fields that apply to both document and image analysis
-  const baseParts = [
-    analysis.summary,
-    analysis.purpose,
-    analysis.project,
-    Array.isArray(analysis.keywords) ? analysis.keywords.join(' ') : ''
-  ];
-
-  // Add type-specific fields
-  if (type === 'image') {
-    baseParts.push(analysis.content_type || '');
-  }
-
-  const baseText = baseParts.filter(Boolean).join('\n');
-
-  // Enrich with semantic keywords based on file extension
-  const enrichedBase = enrichFileTextForEmbedding(baseText, fileExtension);
-
-  // Add extracted text snippet - Increased from 500 to 2000 to maximize embedding context usage
-  // capEmbeddingInput will handle the final token limit safety
-  const textSnippet = extractedText ? extractedText.slice(0, 2000) : '';
-  const combined = [enrichedBase, textSnippet].filter(Boolean).join('\n');
-
-  // Cap to token limit
-  const capped = capEmbeddingInput(combined);
-
-  return capped;
 }
 
 /**
@@ -256,6 +216,9 @@ async function applySemanticFolderMatching(params) {
         : 0;
 
     // Build metadata based on type - comprehensive for chat/search/graph
+    const rawType = typeof analysis.type === 'string' ? analysis.type.trim() : '';
+    const isGenericType = ['image', 'document', 'file', 'unknown'].includes(rawType.toLowerCase());
+    const documentType = analysis.documentType || (!isGenericType && rawType ? rawType : '');
     const baseMeta = {
       path: filePath,
       name: fileName,
@@ -271,14 +234,14 @@ async function applySemanticFolderMatching(params) {
       ),
       tags: Array.isArray(analysis.keywords) ? analysis.keywords : [],
       keywords: Array.isArray(analysis.keywords) ? analysis.keywords : [],
-      date: analysis.date,
+      date: analysis.documentDate || analysis.date || null,
       suggestedName: analysis.suggestedName,
       // Common fields for all file types
       entity: analysis.entity || '',
       project: analysis.project || '',
       purpose: (analysis.purpose || '').substring(0, 1000),
       reasoning: (analysis.reasoning || '').substring(0, 500),
-      documentType: analysis.type || '',
+      documentType,
       extractedText: (extractedText || '').substring(0, 5000)
     };
 
@@ -313,15 +276,48 @@ async function applySemanticFolderMatching(params) {
         // LLM confidence can be 0-100 (percentage) or 0-1 (fraction)
         const rawLlmConfidence = analysis.confidence ?? 70; // Default 70% if missing
         const llmConfidence = rawLlmConfidence > 1 ? rawLlmConfidence / 100 : rawLlmConfidence;
+
+        // If the LLM category is generic or doesn't match any smart folder, don't let it block
+        // a strong embedding match from selecting the correct folder.
+        const rawCategory = typeof analysis.category === 'string' ? analysis.category.trim() : '';
+        const normalizedCategory = rawCategory.toLowerCase();
+        const canonicalize = (value) =>
+          String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim();
+        const categoryCanonical = canonicalize(normalizedCategory);
+        const categoryIsGeneric = [
+          'image',
+          'images',
+          'document',
+          'documents',
+          'file',
+          'files',
+          'unknown',
+          'default'
+        ].includes(normalizedCategory);
+        const categoryMatchesFolder = Array.isArray(smartFolders)
+          ? smartFolders.some((folder) => {
+              const folderName = typeof folder?.name === 'string' ? folder.name.trim() : '';
+              if (!folderName) return false;
+              if (folderName.toLowerCase() === normalizedCategory) return true;
+              return canonicalize(folderName) === categoryCanonical;
+            })
+          : false;
+        const effectiveLlmConfidence =
+          categoryIsGeneric || !categoryMatchesFolder ? 0 : llmConfidence;
+
         // Only override LLM category if embedding score exceeds both threshold AND LLM confidence
         const shouldOverride =
-          top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE && top.score > llmConfidence;
+          top.score >= THRESHOLDS.FOLDER_MATCH_CONFIDENCE && top.score > effectiveLlmConfidence;
 
         if (shouldOverride) {
           logger.info('[FolderMatcher] Embedding override - folder match exceeds LLM confidence', {
             type,
             llmCategory: analysis.category,
             llmConfidence,
+            effectiveLlmConfidence,
             embeddingCategory: top.name,
             embeddingScore: top.score
           });
@@ -338,6 +334,7 @@ async function applySemanticFolderMatching(params) {
               type,
               llmCategory: analysis.category,
               llmConfidence,
+              effectiveLlmConfidence,
               embeddingCategory: top.name,
               embeddingScore: top.score
             }

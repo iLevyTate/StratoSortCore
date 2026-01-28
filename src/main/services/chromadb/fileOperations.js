@@ -496,8 +496,8 @@ async function querySimilarFiles({ queryEmbedding, topK = 10, fileCollection }) 
       const metadata = i < metadatas.length ? metadatas[i] : {};
       const document = i < documents.length ? documents[i] : '';
 
-      // Convert distance to similarity score
-      const score = Math.max(0, 1 - distance / 2);
+      // Convert distance to similarity score (guard NaN/Infinity)
+      const score = Number.isFinite(distance) ? Math.max(0, 1 - distance / 2) : 0;
 
       matches.push({
         id: ids[i],

@@ -67,7 +67,6 @@ function getConfiguredModels() {
   // Fall back to app defaults
   let defaults = null;
   try {
-    // eslint-disable-next-line global-require
     defaults = require('../src/shared/defaultSettings').DEFAULT_SETTINGS;
   } catch {
     defaults = null;
@@ -394,7 +393,7 @@ async function installEssentialModels() {
     console.log(chalk.cyan('\nInstalling configured StratoSort models...'));
     for (const m of missingConfigured) {
       // Best-effort; continue even if one fails
-      // eslint-disable-next-line no-await-in-loop
+
       await pullModel(m);
     }
   }

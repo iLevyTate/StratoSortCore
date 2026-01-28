@@ -113,7 +113,7 @@ async function generateMacIcns(sourcePath, outputDir) {
     try {
       execSync(`iconutil -c icns -o "${icnsPath}" "${iconsetDir}"`);
       console.log('  ✓ macOS ICNS created using iconutil');
-    } catch (e) {
+    } catch {
       console.log('  ⚠ iconutil failed, ICNS not created');
       console.log('    Build on macOS to generate proper ICNS file');
     }
@@ -213,7 +213,7 @@ async function main() {
   // Check if source logo exists
   try {
     await fs.access(sourceLogo);
-  } catch (e) {
+  } catch {
     console.error('❌ Source logo not found:', sourceLogo);
     console.error('   Please ensure assets/stratosort-logo.png exists');
     process.exit(1);
@@ -253,7 +253,7 @@ async function main() {
 async function checkDependencies() {
   try {
     require.resolve('png-to-ico');
-  } catch (e) {
+  } catch {
     console.log('📦 Optional dependency missing: png-to-ico');
     console.log('   Install it for better Windows ICO support:');
     console.log('   npm install --save-dev png-to-ico\n');

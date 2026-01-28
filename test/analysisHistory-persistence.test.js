@@ -106,7 +106,8 @@ describe('persistence', () => {
     });
 
     test('creates default config on error', async () => {
-      fs.readFile.mockRejectedValue(new Error('File not found'));
+      const notFound = Object.assign(new Error('File not found'), { code: 'ENOENT' });
+      fs.readFile.mockRejectedValue(notFound);
       const getDefaultConfig = jest.fn().mockReturnValue({ default: true });
       const saveConfig = jest.fn().mockResolvedValue();
 
@@ -178,7 +179,8 @@ describe('persistence', () => {
     });
 
     test('creates empty history on error', async () => {
-      fs.readFile.mockRejectedValue(new Error('File not found'));
+      const notFound = Object.assign(new Error('File not found'), { code: 'ENOENT' });
+      fs.readFile.mockRejectedValue(notFound);
       const createEmptyHistory = jest.fn().mockReturnValue({ entries: {} });
       const saveHistory = jest.fn().mockResolvedValue();
 
@@ -223,7 +225,8 @@ describe('persistence', () => {
     });
 
     test('creates empty index on error', async () => {
-      fs.readFile.mockRejectedValue(new Error('File not found'));
+      const notFound = Object.assign(new Error('File not found'), { code: 'ENOENT' });
+      fs.readFile.mockRejectedValue(notFound);
       const createEmptyIndex = jest.fn().mockReturnValue({ tagIndex: {} });
       const saveIndex = jest.fn().mockResolvedValue();
 

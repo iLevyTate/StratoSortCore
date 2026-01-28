@@ -12,7 +12,6 @@ const axios = require('axios');
 const { logger } = require('../../../shared/logger');
 const { axiosWithRetry, checkOllamaHealth } = require('../../utils/ollamaApiRetry');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
-const { shouldUseShell } = require('../../../shared/platformUtils');
 const { getValidatedOllamaHost } = require('../../../shared/configDefaults');
 const { getRecommendedEnvSettings } = require('../PerformanceService');
 
@@ -106,7 +105,6 @@ async function startOllama({ serviceStatus }) {
     ollamaProcess = spawn('ollama', ['serve'], {
       detached: false,
       stdio: 'pipe',
-      shell: shouldUseShell(),
       windowsHide: true,
       env: {
         ...process.env,
@@ -220,6 +218,12 @@ async function startOllama({ serviceStatus }) {
   }
 
   if (startupError) {
+    cleanupListeners();
+    try {
+      ollamaProcess?.kill();
+    } catch (killError) {
+      logger.debug('[Ollama] Process kill failed (non-fatal)', { error: killError.message });
+    }
     throw new Error(`Failed to start Ollama: ${startupError}`);
   }
 

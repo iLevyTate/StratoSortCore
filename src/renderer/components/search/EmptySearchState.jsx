@@ -10,6 +10,8 @@
 import React, { useState, useEffect, memo } from 'react';
 import PropTypes from 'prop-types';
 import { Search, Clock, Lightbulb, FolderPlus, X, ArrowRight } from 'lucide-react';
+import { StateMessage } from '../ui';
+import { Text } from '../ui/Typography';
 
 // Storage key matches SearchAutocomplete
 const RECENT_SEARCHES_KEY = 'stratosort-recent-searches';
@@ -74,18 +76,15 @@ const EmptySearchState = memo(function EmptySearchState({
   // No files indexed - show warning
   if (!hasIndexedFiles) {
     return (
-      <div
-        className={`flex flex-col items-center justify-center py-12 px-6 text-center ${className}`}
-      >
-        <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mb-4">
-          <FolderPlus className="w-6 h-6 text-amber-600" />
-        </div>
-        <h3 className="text-base font-medium text-system-gray-900 mb-2">No files indexed yet</h3>
-        <p className="text-sm text-system-gray-500 max-w-xs">
-          Add folders to your library to start searching. Files will be automatically indexed for
-          Knowledge OS.
-        </p>
-      </div>
+      <StateMessage
+        icon={FolderPlus}
+        tone="warning"
+        size="lg"
+        title="No files indexed yet"
+        description="Add folders to your library to start searching. Files will be automatically indexed for Knowledge OS."
+        className={`py-12 px-6 ${className}`.trim()}
+        contentClassName="max-w-xs"
+      />
     );
   }
 
@@ -159,29 +158,27 @@ const EmptySearchState = memo(function EmptySearchState({
 
   // Has query but no results
   return (
-    <div
-      className={`flex flex-col items-center justify-center py-12 px-6 text-center ${className}`}
+    <StateMessage
+      icon={Search}
+      title={
+        <>
+          No results for &quot;
+          {query.length > MAX_DISPLAY_QUERY_LENGTH
+            ? `${query.slice(0, MAX_DISPLAY_QUERY_LENGTH)}...`
+            : query}
+          &quot;
+        </>
+      }
+      description="Try different keywords or check your spelling"
+      size="lg"
+      className={`py-12 px-6 ${className}`.trim()}
+      contentClassName="max-w-xs"
     >
-      <div className="w-12 h-12 rounded-full bg-system-gray-100 flex items-center justify-center mb-4">
-        <Search className="w-6 h-6 text-system-gray-400" />
-      </div>
-      <h3 className="text-base font-medium text-system-gray-900 mb-2">
-        No results for &quot;
-        {query.length > MAX_DISPLAY_QUERY_LENGTH
-          ? `${query.slice(0, MAX_DISPLAY_QUERY_LENGTH)}...`
-          : query}
-        &quot;
-      </h3>
-      <p className="text-sm text-system-gray-500 max-w-xs mb-6">
-        Try different keywords or check your spelling
-      </p>
-
-      {/* Suggestions */}
-      <div className="w-full max-w-xs">
-        <h4 className="text-xs font-medium text-system-gray-500 uppercase tracking-wide mb-2">
+      <div className="w-full">
+        <Text variant="tiny" className="uppercase tracking-wide font-medium text-system-gray-500">
           Try searching for
-        </h4>
-        <div className="flex flex-wrap gap-2 justify-center">
+        </Text>
+        <div className="flex flex-wrap gap-2 justify-center mt-2">
           {['documents', 'images', 'recent files', 'projects'].map((suggestion) => (
             <button
               key={suggestion}
@@ -194,7 +191,7 @@ const EmptySearchState = memo(function EmptySearchState({
           ))}
         </div>
       </div>
-    </div>
+    </StateMessage>
   );
 });
 

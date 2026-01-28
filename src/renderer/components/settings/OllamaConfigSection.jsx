@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Card from '../ui/Card';
 import StatusBadge from '../ui/StatusBadge';
+import StateMessage from '../ui/StateMessage';
 import { Text } from '../ui/Typography';
 import SettingRow from './SettingRow';
 import { SERVICE_URLS } from '../../../shared/configDefaults';
@@ -183,9 +184,16 @@ function OllamaConfigSection({
             </Text>
           </div>
           {ollamaModelLists.all.length === 0 ? (
-            <Text variant="tiny" className="text-system-gray-500">
-              No models returned
-            </Text>
+            <StateMessage
+              icon={AlertCircle}
+              tone="warning"
+              size="sm"
+              align="left"
+              title="No models returned"
+              description="Check your Ollama connection or refresh the model list."
+              className="py-2"
+              contentClassName="max-w-xs"
+            />
           ) : (
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {ollamaModelLists.all.map((m) => (

@@ -896,7 +896,7 @@ class AtomicFileOperations {
         if (await this.fileExists(backup)) {
           await fs.unlink(backup);
         }
-      } catch (error) {
+      } catch {
         // Ignore cleanup errors
       }
     }
@@ -945,7 +945,7 @@ class AtomicFileOperations {
     for (const id of staleTransactions) {
       try {
         await this.cleanupBackups(id);
-      } catch (error) {
+      } catch {
         // Ignore cleanup errors for stale transactions
       }
     }

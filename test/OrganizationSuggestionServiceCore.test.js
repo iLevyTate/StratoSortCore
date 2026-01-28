@@ -377,6 +377,27 @@ describe('OrganizationSuggestionServiceCore', () => {
       expect(getLLMAlternativeSuggestions).not.toHaveBeenCalled();
       semanticSpy.mockRestore();
     });
+
+    test('falls back to analysis category when embeddings yield no matches', async () => {
+      const {
+        getLLMAlternativeSuggestions
+      } = require('../src/main/services/organization/llmSuggester');
+
+      mockChromaDbService.getStats.mockResolvedValueOnce({ files: 120, folders: 1 });
+      mockSettingsService.load.mockResolvedValueOnce({ smartFolderRoutingMode: 'auto' });
+
+      const semanticSpy = jest.spyOn(service, 'getSemanticFolderMatches').mockResolvedValueOnce([]);
+      getLLMAlternativeSuggestions.mockResolvedValueOnce([]);
+
+      const result = await service.getSuggestionsForFile(mockFile, mockSmartFolders, {
+        includeAlternatives: false
+      });
+
+      expect(semanticSpy).toHaveBeenCalled();
+      expect(getLLMAlternativeSuggestions).not.toHaveBeenCalled();
+      expect(result.primary?.folder).toBe('Documents');
+      semanticSpy.mockRestore();
+    });
   });
 
   describe('getBatchSuggestions', () => {

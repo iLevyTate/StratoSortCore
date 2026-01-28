@@ -22,7 +22,6 @@ describe('IPC Validation Schemas', () => {
     }
   });
 
-  /* eslint-disable jest/valid-title, jest/no-done-callback */
   // All schema tests must run; keep a guard per test for clarity
   const testIfZod = (name, fn, timeout) =>
     test(
@@ -32,7 +31,6 @@ describe('IPC Validation Schemas', () => {
       },
       timeout
     );
-  /* eslint-enable jest/valid-title, jest/no-done-callback */
 
   describe('filePath schema', () => {
     testIfZod('accepts valid file path', () => {
@@ -106,7 +104,7 @@ describe('IPC Validation Schemas', () => {
       expect(schemas.settings.safeParse(validNaming).success).toBe(true);
 
       const invalidNaming = { namingConvention: 'invalid-convention' };
-      expect(schemas.settings.safeParse(invalidNaming).success).toBe(true); // string type, specific enum validation might be in shared rules
+      expect(schemas.settings.safeParse(invalidNaming).success).toBe(false);
     });
 
     testIfZod('validates file size limits', () => {
@@ -198,6 +196,23 @@ describe('IPC Validation Schemas', () => {
         operations: [{ source: '', destination: '/dest/file.pdf' }]
       });
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('fileOperation schema', () => {
+    testIfZod('rejects batch_organize without operations', () => {
+      const result = schemas.fileOperation.safeParse({
+        type: 'batch_organize'
+      });
+      expect(result.success).toBe(false);
+    });
+
+    testIfZod('accepts batch_organize with operations', () => {
+      const result = schemas.fileOperation.safeParse({
+        type: 'batch_organize',
+        operations: [{ source: '/src/file1.pdf', destination: '/dest/file1.pdf' }]
+      });
+      expect(result.success).toBe(true);
     });
   });
 

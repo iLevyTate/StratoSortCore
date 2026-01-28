@@ -16,7 +16,8 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock fs.promises
 const mockFs = {
-  access: jest.fn()
+  access: jest.fn(),
+  realpath: jest.fn((p) => Promise.resolve(p))
 };
 jest.mock('fs', () => ({
   promises: mockFs
@@ -31,8 +32,8 @@ jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
 
 // Mock platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
-  getChromaDbBinName: jest.fn().mockReturnValue('chromadb'),
-  shouldUseShell: jest.fn().mockReturnValue(false)
+  getChromaDbBinCandidates: jest.fn().mockReturnValue(['chromadb']),
+  getChromaDbBinName: jest.fn().mockReturnValue('chromadb')
 }));
 
 describe('chromaSpawnUtils', () => {
@@ -84,12 +85,12 @@ describe('chromaSpawnUtils', () => {
     });
 
     test('uses platform-specific binary name', async () => {
-      platformUtils.getChromaDbBinName.mockReturnValue('chromadb.cmd');
+      platformUtils.getChromaDbBinCandidates.mockReturnValue(['chroma.cmd']);
       mockFs.access.mockResolvedValue(undefined);
 
       const result = await chromaSpawnUtils.resolveChromaCliExecutable();
 
-      expect(result).toContain('chromadb.cmd');
+      expect(result).toContain('chroma.cmd');
     });
   });
 
@@ -205,14 +206,13 @@ describe('chromaSpawnUtils', () => {
       }
     });
 
-    test('uses shell option for system chroma on Windows', async () => {
+    test('defaults to no shell for system chroma', async () => {
       mockFs.access.mockRejectedValue(new Error('ENOENT'));
       asyncSpawnUtils.checkChromaExecutableAsync.mockResolvedValue(true);
-      platformUtils.shouldUseShell.mockReturnValue(true);
 
       const result = await chromaSpawnUtils.buildChromaSpawnPlan(defaultConfig);
 
-      expect(result.options.shell).toBe(true);
+      expect(result.options.shell).toBe(false);
     });
 
     test('returns null when no launch method available', async () => {

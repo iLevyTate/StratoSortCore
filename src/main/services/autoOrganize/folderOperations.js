@@ -302,6 +302,7 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
   }
 
   let fileName = preserveNames ? file.name : file.analysis?.suggestedName || file.name;
+  const originalExt = path.extname(file.name);
 
   // FIX H-6: Sanitize fileName to prevent path traversal attacks
   if (typeof fileName === 'string') {
@@ -323,7 +324,6 @@ function buildDestinationPath(file, suggestion, defaultLocation, preserveNames) 
   }
 
   // Ensure the original file extension is preserved
-  const originalExt = path.extname(file.name);
   const currentExt = path.extname(fileName);
   if (originalExt && !currentExt) {
     // suggestedName is missing the extension, add it back

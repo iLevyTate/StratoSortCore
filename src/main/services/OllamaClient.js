@@ -353,7 +353,7 @@ class OllamaClient {
       this.stats.healthChecksPassed++;
 
       return true;
-    } catch (error) {
+    } catch {
       this.consecutiveFailures++;
       this.stats.healthChecksFailed++;
 

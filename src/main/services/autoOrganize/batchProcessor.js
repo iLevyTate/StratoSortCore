@@ -8,6 +8,8 @@
 
 const path = require('path');
 const { logger } = require('../../../shared/logger');
+const { TIMEOUTS } = require('../../../shared/performanceConstants');
+const { withTimeout } = require('../../../shared/promiseUtils');
 const { sanitizeFile } = require('./fileTypeUtils');
 const {
   getFallbackDestination,
@@ -160,7 +162,11 @@ async function processBatchResults(
 
         // Record feedback for learning (non-blocking with error handling)
         pendingFeedback.push(
-          suggestionService.recordFeedback(file, suggestion, true).catch((err) => {
+          withTimeout(
+            suggestionService.recordFeedback(file, suggestion, true),
+            TIMEOUTS.API_REQUEST,
+            'AutoOrganize feedback'
+          ).catch((err) => {
             logger.warn('[AutoOrganize] Failed to record feedback (non-critical):', {
               file: sourcePath,
               error: err.message
@@ -272,15 +278,42 @@ async function batchOrganize(
 
     try {
       if (group.confidence >= confidenceThreshold) {
-        // Auto-approve high confidence groups
+        // Auto-approve high confidence groups, but only if they map to a smart folder.
+        const resolvedGroupFolder = smartFolders.find(
+          (folder) =>
+            (folder.name &&
+              group.folder &&
+              folder.name.toLowerCase() === String(group.folder).toLowerCase()) ||
+            (folder.path &&
+              group.path &&
+              folder.path.toLowerCase() === String(group.path).toLowerCase())
+        );
+
+        if (!resolvedGroupFolder) {
+          results.skipped.push({
+            folder: group.folder,
+            files: group.files,
+            confidence: group.confidence,
+            reason: 'Not a smart folder'
+          });
+          continue;
+        }
+
         const groupOperations = [];
         const groupFailures = [];
 
         for (const file of groupFiles) {
           // FIX H-1: Guard against missing file.path before processing
           if (!file?.path) {
+            const timestamp = new Date().toISOString();
             logger.warn('[AutoOrganize] Skipping file with missing path in batch', {
               fileName: file?.name || 'unknown'
+            });
+            groupFailures.push({
+              file,
+              error: 'Missing file path',
+              filePath: file?.path || null,
+              timestamp
             });
             continue;
           }
@@ -291,23 +324,11 @@ async function batchOrganize(
             let folderName = safeGroup.folder;
             let folderPath = safeGroup.path;
 
-            const resolvedSmartFolder = smartFolders.find(
-              (folder) =>
-                (folder.name &&
-                  folderName &&
-                  folder.name.toLowerCase() === String(folderName).toLowerCase()) ||
-                (folder.path &&
-                  folderPath &&
-                  folder.path.toLowerCase() === String(folderPath).toLowerCase())
-            );
-
-            if (resolvedSmartFolder) {
-              folderName = resolvedSmartFolder.name;
-              folderPath = resolvedSmartFolder.path;
-            }
+            folderName = resolvedGroupFolder.name;
+            folderPath = resolvedGroupFolder.path;
 
             if (!folderPath) {
-              throw new Error('Batch suggestion does not map to a smart folder path');
+              throw new Error('Resolved smart folder is missing a path');
             }
 
             const destination = buildDestFn(
@@ -326,7 +347,11 @@ async function batchOrganize(
             // Record feedback with proper error handling
             if (file.suggestion) {
               try {
-                await suggestionService.recordFeedback(file, file.suggestion, true);
+                await withTimeout(
+                  suggestionService.recordFeedback(file, file.suggestion, true),
+                  TIMEOUTS.API_REQUEST,
+                  'AutoOrganize feedback'
+                );
               } catch (feedbackError) {
                 logger.warn('[AutoOrganize] Failed to record feedback for file:', {
                   file: file.path,
@@ -368,8 +393,8 @@ async function batchOrganize(
           // Use path-based comparison instead of object reference equality
           const failedPaths = new Set(groupFailures.map((failure) => failure.filePath));
           results.groups.push({
-            folder: group.folder,
-            files: group.files.filter((f) => !failedPaths.has(f.path)),
+            folder: resolvedGroupFolder.name,
+            files: group.files.filter((f) => f?.path && !failedPaths.has(f.path)),
             confidence: group.confidence,
             autoApproved: true,
             partialSuccess: groupFailures.length > 0

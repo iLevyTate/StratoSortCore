@@ -13,8 +13,7 @@ const fs = require('fs');
  * Global setup function
  * @param {Object} config - Playwright config
  */
-// eslint-disable-next-line no-unused-vars
-async function globalSetup(config) {
+async function globalSetup(_config) {
   console.log('\n========================================');
   console.log('StratoSort E2E Test Suite - Global Setup');
   console.log('========================================\n');

@@ -44,8 +44,7 @@ jest.mock('../src/main/utils/asyncSpawnUtils', () => ({
 
 // Mock platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
-  isWindows: false,
-  shouldUseShell: jest.fn().mockReturnValue(false)
+  isWindows: false
 }));
 
 // Mock promiseUtils
@@ -201,16 +200,25 @@ describe('Preflight Checks', () => {
       expect(result).toBe(false);
     });
 
-    test('returns true on unknown error (safer default to not block startup)', async () => {
-      // FIX 3.2: Unknown errors now return true (port available) rather than false
-      // This is safer to not block startup due to network/DNS issues
+    test('returns false on ENOTFOUND', async () => {
+      const error = new Error('DNS lookup failed');
+      error.code = 'ENOTFOUND';
+      axios.get.mockRejectedValueOnce(error);
+
+      const result = await isPortAvailable('127.0.0.1', 8000);
+
+      expect(result).toBe(false);
+    });
+
+    test('returns false on unknown error (conservative default)', async () => {
+      // Unknown errors should not be treated as port availability
       const error = new Error('Unknown');
       error.code = 'UNKNOWN';
       axios.get.mockRejectedValueOnce(error);
 
       const result = await isPortAvailable('127.0.0.1', 8000);
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
   });
 

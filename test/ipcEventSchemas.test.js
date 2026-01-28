@@ -9,10 +9,12 @@ describe('IPC Event Schemas', () => {
   let hasEventSchema;
   let getEventSchema;
   let EVENT_SCHEMAS;
+  let IPC_CHANNELS;
 
   beforeEach(() => {
     jest.resetModules();
     const module = require('../src/shared/ipcEventSchemas');
+    IPC_CHANNELS = require('../src/shared/constants').IPC_CHANNELS;
     schemas = module;
     validateEventPayload = module.validateEventPayload;
     hasEventSchema = module.hasEventSchema;
@@ -300,7 +302,7 @@ describe('IPC Event Schemas', () => {
 
   describe('chromadbStatusChangedSchema', () => {
     test('validates connected status', () => {
-      const result = validateEventPayload('chromadb-status-changed', {
+      const result = validateEventPayload(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
         status: 'connected',
         timestamp: Date.now()
       });
@@ -308,7 +310,7 @@ describe('IPC Event Schemas', () => {
     });
 
     test('validates error status with message', () => {
-      const result = validateEventPayload('chromadb-status-changed', {
+      const result = validateEventPayload(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
         status: 'error',
         error: 'Connection refused'
       });
@@ -316,7 +318,7 @@ describe('IPC Event Schemas', () => {
     });
 
     test('rejects invalid status', () => {
-      const result = validateEventPayload('chromadb-status-changed', {
+      const result = validateEventPayload(IPC_CHANNELS.CHROMADB.STATUS_CHANGED, {
         status: 'invalid_status'
       });
       expect(result.valid).toBe(false);

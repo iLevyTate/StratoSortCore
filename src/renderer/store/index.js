@@ -221,7 +221,7 @@ const loadState = () => {
         documentsPathLoading: false
       }
     };
-  } catch (err) {
+  } catch {
     return undefined;
   }
 };

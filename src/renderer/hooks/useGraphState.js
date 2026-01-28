@@ -1,4 +1,5 @@
 import { useReducer, useMemo } from 'react';
+import { logger } from '../../shared/logger';
 import { applyNodeChanges, applyEdgeChanges } from 'reactflow';
 
 // Action types
@@ -17,17 +18,28 @@ const initialState = {
   selectedNodeId: null
 };
 
+function normalizeCollection(value, label) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value == null) {
+    return [];
+  }
+  logger.warn(`[GraphState] Expected array for ${label}, got`, value);
+  return [];
+}
+
 function graphReducer(state, action) {
   switch (action.type) {
     case ACTIONS.SET_NODES: {
       const newNodes =
         typeof action.payload === 'function' ? action.payload(state.nodes) : action.payload;
-      return { ...state, nodes: newNodes };
+      return { ...state, nodes: normalizeCollection(newNodes, 'nodes') };
     }
     case ACTIONS.SET_EDGES: {
       const newEdges =
         typeof action.payload === 'function' ? action.payload(state.edges) : action.payload;
-      return { ...state, edges: newEdges };
+      return { ...state, edges: normalizeCollection(newEdges, 'edges') };
     }
     case ACTIONS.ON_NODES_CHANGE:
       return {

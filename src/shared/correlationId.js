@@ -12,14 +12,14 @@
 let AsyncLocalStorage;
 try {
   ({ AsyncLocalStorage } = require('async_hooks'));
-} catch (e) {
+} catch {
   // async_hooks not available (e.g. browser/renderer without polyfill)
 }
 
 let randomUUID;
 try {
   ({ randomUUID } = require('crypto'));
-} catch (e) {
+} catch {
   // crypto not available via require
 }
 

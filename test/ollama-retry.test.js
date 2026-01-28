@@ -153,7 +153,6 @@ describe('Ollama API Retry Logic', () => {
       });
 
       // Use expect().rejects to properly catch the rejection
-      // eslint-disable-next-line jest/valid-expect
       const assertionPromise = expect(promise).rejects.toThrow('Network error');
 
       // Fast-forward all timers to allow retries to complete
@@ -258,7 +257,6 @@ describe('Ollama API Retry Logic', () => {
       );
 
       // Use expect().rejects to properly catch the rejection
-      // eslint-disable-next-line jest/valid-expect
       const assertionPromise = expect(promise).rejects.toThrow(/HTTP 500|Server error/);
 
       // Advance timers to trigger retries
@@ -363,7 +361,6 @@ describe('Ollama API Retry Logic', () => {
       });
 
       // Create assertion promise BEFORE advancing timers to avoid unhandled rejection
-      // eslint-disable-next-line jest/valid-expect
       const assertionPromise = expect(promise).rejects.toThrow('Network error');
 
       // Advance through all retries

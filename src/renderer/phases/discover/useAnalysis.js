@@ -306,6 +306,8 @@ export function useAnalysis(options = {}) {
   const RESULTS_FLUSH_MS = 200;
   // FIX Issue 4: Auto-advance timeout stored per-hook instance
   const autoAdvanceTimeoutRef = useRef(null);
+  const clearCurrentFileTimeoutRef = useRef(null);
+  const pendingFilesTimeoutRef = useRef(null);
   // FIX CRIT-2: Atomic progress tracking to prevent race conditions with concurrent workers
   // Using a counter ref that workers increment atomically when they complete
   const completedCountRef = useRef(0);
@@ -964,7 +966,12 @@ export function useAnalysis(options = {}) {
         // Update local refs to ensure proper lock synchronization
         localAnalyzingRef.current = false;
 
-        const didComplete = files.length > 0 && completedCountRef.current >= files.length;
+        const trackedTotal =
+          Number.isInteger(analysisProgressRef.current?.total) &&
+          analysisProgressRef.current.total > 0
+            ? analysisProgressRef.current.total
+            : files.length;
+        const didComplete = trackedTotal > 0 && completedCountRef.current >= trackedTotal;
 
         // CRITICAL FIX: Only preserve Redux state if analysis is still in-flight.
         // If we already completed, clear state even if component unmounted to avoid
@@ -974,7 +981,10 @@ export function useAnalysis(options = {}) {
           setIsAnalyzing(false);
 
           // FIX: Delay clearing the current file name to allow UI to show final state
-          setTimeout(() => {
+          if (clearCurrentFileTimeoutRef.current) {
+            clearTimeout(clearCurrentFileTimeoutRef.current);
+          }
+          clearCurrentFileTimeoutRef.current = setTimeout(() => {
             if (isMountedRef.current) {
               setCurrentAnalysisFile('');
               actions.setPhaseData('currentAnalysisFile', '');
@@ -1009,8 +1019,11 @@ export function useAnalysis(options = {}) {
             fileCount: filesToProcess.length
           });
           // Use setTimeout to allow state to settle before starting next batch
-          setTimeout(() => {
-            if (analyzeFilesRef.current) {
+          if (pendingFilesTimeoutRef.current) {
+            clearTimeout(pendingFilesTimeoutRef.current);
+          }
+          pendingFilesTimeoutRef.current = setTimeout(() => {
+            if (isMountedRef.current && analyzeFilesRef.current) {
               analyzeFilesRef.current(filesToProcess);
             }
           }, 100);
@@ -1063,6 +1076,10 @@ export function useAnalysis(options = {}) {
     if (lockTimeoutRef.current) {
       clearTimeout(lockTimeoutRef.current);
       lockTimeoutRef.current = null;
+    }
+    if (pendingFilesTimeoutRef.current) {
+      clearTimeout(pendingFilesTimeoutRef.current);
+      pendingFilesTimeoutRef.current = null;
     }
     if (window.electronAPI?.analysis?.cancel) {
       window.electronAPI.analysis.cancel().catch((error) => {
@@ -1174,6 +1191,14 @@ export function useAnalysis(options = {}) {
       if (lockTimeoutRef.current) {
         clearTimeout(lockTimeoutRef.current);
         lockTimeoutRef.current = null;
+      }
+      if (clearCurrentFileTimeoutRef.current) {
+        clearTimeout(clearCurrentFileTimeoutRef.current);
+        clearCurrentFileTimeoutRef.current = null;
+      }
+      if (pendingFilesTimeoutRef.current) {
+        clearTimeout(pendingFilesTimeoutRef.current);
+        pendingFilesTimeoutRef.current = null;
       }
     };
   }, []);

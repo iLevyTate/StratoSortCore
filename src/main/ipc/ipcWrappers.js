@@ -58,6 +58,15 @@ try {
   z = null;
 }
 
+let hasWarnedMissingZod = false;
+function warnMissingZod(context = 'IPC') {
+  if (hasWarnedMissingZod) {
+    return;
+  }
+  hasWarnedMissingZod = true;
+  logger.warn(`[${context}] Zod not available; schema validation disabled.`);
+}
+
 /**
  * Standard IPC error response format
  * @typedef {Object} IPCErrorResponse
@@ -150,7 +159,7 @@ function withChromaInit({ ensureInit, isInitRef, handler }) {
   return async (...args) => {
     try {
       await ensureInit();
-    } catch (initError) {
+    } catch {
       return {
         success: false,
         error: 'ChromaDB is not available. Please ensure the ChromaDB server is running.',
@@ -211,6 +220,9 @@ function withValidation(logger, schema, handler, options = {}) {
 
   if (!z || !schema) {
     // If zod not available or no schema, just apply error logging
+    if (schema && !z) {
+      warnMissingZod(context);
+    }
     return withErrorLogging(logger, handler, options);
   }
 
@@ -227,7 +239,7 @@ function withValidation(logger, schema, handler, options = {}) {
           return createErrorResponse(
             { message: 'Invalid input', name: 'ValidationError' },
             {
-              details: parsed.error.flatten ? parsed.error.flatten() : String(parsed.error)
+              validationErrors: parsed.error.flatten ? parsed.error.flatten() : String(parsed.error)
             }
           );
         }
@@ -455,6 +467,10 @@ function createHandler({
     };
   }
 
+  if (schema && !z) {
+    warnMissingZod(context);
+  }
+
   // Add normalization without schema (raw payload passthrough)
   if (!schema && typeof normalize === 'function') {
     const innerHandler = wrappedHandler;
@@ -569,6 +585,15 @@ function safeOn(ipcMain, channel, listener) {
  */
 function safeSend(webContents, channel, data, options = {}) {
   const { strict = false } = options;
+
+  if (!webContents || typeof webContents.send !== 'function') {
+    logger.debug(`[IPC Event] Cannot send '${channel}': invalid webContents`);
+    return false;
+  }
+  if (typeof webContents.isDestroyed === 'function' && webContents.isDestroyed()) {
+    logger.debug(`[IPC Event] Cannot send '${channel}': webContents destroyed`);
+    return false;
+  }
 
   // Validate if schema exists for this channel
   if (hasEventSchema(channel)) {

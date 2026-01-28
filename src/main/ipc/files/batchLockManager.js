@@ -52,7 +52,7 @@ async function acquireBatchLockOnce(batchId, timeout = BATCH_LOCK_ACQUIRE_TIMEOU
   try {
     await Promise.race([current, timeoutPromise]);
     clearTimeout(timeoutId);
-  } catch (error) {
+  } catch {
     // Mutex timeout - release our slot and return false
     release();
     return false;

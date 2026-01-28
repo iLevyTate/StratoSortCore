@@ -386,6 +386,28 @@ describe('useOrganization', () => {
         // Verify destination has backslashes and correct structure
         expect(dest).toContain('C:\\Users\\User\\Documents\\SmartFolder\\test.txt');
       });
+
+      test('preserves compound extensions when suggested name omits extension', async () => {
+        const options = createMockOptions({
+          findSmartFolderForCategory: jest.fn(() => ({ name: 'Documents', path: '/Documents' })),
+          unprocessedFiles: [
+            {
+              path: '/archive.tar.gz',
+              name: 'archive.tar.gz',
+              analysis: { category: 'Documents', suggestedName: 'Project Archive' }
+            }
+          ]
+        });
+
+        const { result } = renderHook(() => useOrganization(options));
+        await act(async () => {
+          await result.current.handleOrganizeFiles();
+        });
+
+        const call = options.executeAction.mock.calls[0][0];
+        const dest = call.operations[0].destination;
+        expect(dest).toBe('/Documents/Project Archive.tar.gz');
+      });
     });
 
     describe('fallback operations builder', () => {

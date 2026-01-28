@@ -323,7 +323,6 @@ describe('documentLlm', () => {
       // Invalid dates should either be removed or normalized to a valid date
       if (result.date) {
         // If it exists, it should be in YYYY-MM-DD format
-        // eslint-disable-next-line jest/no-conditional-expect
         expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       }
     });
@@ -347,12 +346,9 @@ describe('documentLlm', () => {
         const result = await analyzeTextWithOllama(`test${testCase.input}`, 'test.txt', []);
 
         if (testCase.expected) {
-          // eslint-disable-next-line jest/no-conditional-expect
           expect(result.confidence).toBeGreaterThanOrEqual(70);
-          // eslint-disable-next-line jest/no-conditional-expect
           expect(result.confidence).toBeLessThanOrEqual(100);
         } else {
-          // eslint-disable-next-line jest/no-conditional-expect
           expect(result.confidence).toBe(testCase.input);
         }
       }

@@ -23,6 +23,7 @@ describe('Service Status Events', () => {
   beforeEach(() => {
     // Reset modules to clear state between tests
     jest.resetModules();
+    const { IPC_CHANNELS } = require('../src/shared/constants');
 
     // Mock window with webContents
     mockWindow = {
@@ -43,7 +44,7 @@ describe('Service Status Events', () => {
     // Mock IPC channels
     mockIPC_CHANNELS = {
       DEPENDENCIES: {
-        SERVICE_STATUS_CHANGED: 'dependencies-service-status-changed'
+        SERVICE_STATUS_CHANGED: IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED
       }
     };
   });
@@ -111,7 +112,7 @@ describe('Service Status Events', () => {
       emitServiceStatusChange(payload);
 
       expect(mockWindow.webContents.send).toHaveBeenCalledWith(
-        'dependencies-service-status-changed',
+        mockIPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED,
         expect.objectContaining({
           service: 'ollama',
           status: 'running',
@@ -213,7 +214,7 @@ describe('Service Status Events', () => {
       });
 
       expect(mockWindow.webContents.send).toHaveBeenCalledWith(
-        'dependencies-service-status-changed',
+        mockIPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED,
         expect.objectContaining({
           service: 'chromadb',
           status: 'failed',

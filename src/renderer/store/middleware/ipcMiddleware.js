@@ -3,11 +3,12 @@ import { updateMetrics, updateHealth, addNotification } from '../slices/systemSl
 import { atomicUpdateFilePathsAfterMove, atomicRemoveFilesWithCleanup } from '../slices/filesSlice';
 import { logger } from '../../../shared/logger';
 import { mapErrorToNotification } from '../../utils/errorMapping';
+import { IPC_CHANNELS } from '../../../shared/constants';
 import { validateEventPayload, hasEventSchema } from '../../../shared/ipcEventSchemas';
 
 /**
  * Validate incoming IPC event data against schema.
- * Logs warnings for invalid data but doesn't block processing.
+ * Logs warnings for invalid data and drops invalid payloads.
  *
  * @param {string} eventName - The event channel name
  * @param {*} data - The event payload
@@ -26,8 +27,7 @@ function validateIncomingEvent(eventName, data) {
       error: result.error?.flatten ? result.error.flatten() : String(result.error),
       dataKeys: data && typeof data === 'object' ? Object.keys(data) : typeof data
     });
-    // Still return original data to avoid breaking functionality
-    return { valid: false, data };
+    return { valid: false, data: null };
   }
 
   return { valid: true, data: result.data };
@@ -134,21 +134,10 @@ function safeDispatch(actionCreator, data) {
         queueSize: eventQueue.length,
         maxSize: MAX_EVENT_QUEUE_SIZE
       });
+    }
 
-      // FIX HIGH-1: Track if we've already warned about overflow to avoid spam
-      if (!safeDispatch.hasWarnedOverflow) {
-        safeDispatch.hasWarnedOverflow = true;
-        // Queue a notification about queue overflow
-        eventQueue.push({
-          actionCreator: addNotification,
-          data: {
-            message: 'System is busy - some updates may be delayed.',
-            severity: 'warning',
-            duration: 5000
-          }
-        });
-      }
-
+    const dropOneEvent = () => {
+      if (eventQueue.length === 0) return;
       const dropIndex = eventQueue.findIndex(
         (entry) => !CRITICAL_ACTION_CREATORS.has(entry.actionCreator)
       );
@@ -162,6 +151,32 @@ function safeDispatch(actionCreator, data) {
           persistCriticalEvent(droppedEvent.actionCreator, droppedEvent.data);
         }
       }
+    };
+
+    // Ensure we have room for overflow warning (if needed) and the new event
+    while (eventQueue.length >= MAX_EVENT_QUEUE_SIZE) {
+      dropOneEvent();
+    }
+
+    // FIX HIGH-1: Track if we've already warned about overflow to avoid spam
+    if (!safeDispatch.hasWarnedOverflow) {
+      safeDispatch.hasWarnedOverflow = true;
+      if (eventQueue.length >= MAX_EVENT_QUEUE_SIZE) {
+        dropOneEvent();
+      }
+      eventQueue.push({
+        actionCreator: addNotification,
+        data: {
+          message: 'System is busy - some updates may be delayed.',
+          severity: 'warning',
+          duration: 5000
+        }
+      });
+    }
+
+    // Ensure we still have space for the incoming event
+    while (eventQueue.length >= MAX_EVENT_QUEUE_SIZE) {
+      dropOneEvent();
     }
     eventQueue.push({ actionCreator, data });
     logger.debug('[IPC Middleware] Queued early event', {
@@ -241,14 +256,16 @@ const ipcMiddleware = (store) => {
     // Listen for operation progress from batch operations
     // FIX: Use safeDispatch to handle early events
     const progressCleanup = window.electronAPI.events.onOperationProgress((data) => {
-      const { data: validatedData } = validateIncomingEvent('operation-progress', data);
+      const { valid, data: validatedData } = validateIncomingEvent('operation-progress', data);
+      if (!valid) return;
       safeDispatch(updateProgress, validatedData);
     });
     if (progressCleanup) cleanupFunctions.push(progressCleanup);
 
     // Listen for system metrics updates
     const metricsCleanup = window.electronAPI.events.onSystemMetrics((metrics) => {
-      const { data: validatedMetrics } = validateIncomingEvent('system-metrics', metrics);
+      const { valid, data: validatedMetrics } = validateIncomingEvent('system-metrics', metrics);
+      if (!valid) return;
       safeDispatch(updateMetrics, validatedMetrics);
     });
     if (metricsCleanup) cleanupFunctions.push(metricsCleanup);
@@ -256,7 +273,8 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to operation complete events for batch operations
     if (window.electronAPI.events.onOperationComplete) {
       const completeCleanup = window.electronAPI.events.onOperationComplete((data) => {
-        const { data: validatedData } = validateIncomingEvent('operation-complete', data);
+        const { valid, data: validatedData } = validateIncomingEvent('operation-complete', data);
+        if (!valid) return;
         logger.info('[IPC] Operation complete event received', {
           type: validatedData.operationType
         });
@@ -279,7 +297,8 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to operation error events
     if (window.electronAPI.events.onOperationError) {
       const errorCleanup = window.electronAPI.events.onOperationError((data) => {
-        const { data: validatedData } = validateIncomingEvent('operation-error', data);
+        const { valid, data: validatedData } = validateIncomingEvent('operation-error', data);
+        if (!valid) return;
         logger.error('[IPC] Operation error event received', {
           type: validatedData.operationType,
           error: validatedData.error
@@ -312,7 +331,11 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to file operation complete events (moves, deletes)
     if (window.electronAPI.events.onFileOperationComplete) {
       const fileOpCleanup = window.electronAPI.events.onFileOperationComplete((data) => {
-        const { data: validatedData } = validateIncomingEvent('file-operation-complete', data);
+        const { valid, data: validatedData } = validateIncomingEvent(
+          'file-operation-complete',
+          data
+        );
+        if (!valid) return;
         logger.info('[IPC] File operation complete event received', {
           operation: validatedData.operation,
           fileCount: validatedData.files?.length
@@ -364,7 +387,8 @@ const ipcMiddleware = (store) => {
     // Now uses unified notification schema from main process (no field translation needed)
     if (window.electronAPI.events.onNotification) {
       const notificationCleanup = window.electronAPI.events.onNotification((data) => {
-        const { data: validatedData } = validateIncomingEvent('notification', data);
+        const { valid, data: validatedData } = validateIncomingEvent('notification', data);
+        if (!valid) return;
 
         // Pass standardized notification directly to Redux
         // Main process now sends unified schema with: id, message, severity, duration, etc.
@@ -384,7 +408,8 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to batch results chunk events for progressive streaming
     if (window.electronAPI.events.onBatchResultsChunk) {
       const batchChunkCleanup = window.electronAPI.events.onBatchResultsChunk((data) => {
-        const { data: validatedData } = validateIncomingEvent('batch-results-chunk', data);
+        const { valid, data: validatedData } = validateIncomingEvent('batch-results-chunk', data);
+        if (!valid) return;
         logger.debug('[IPC] Batch results chunk received', {
           chunk: validatedData?.chunk,
           total: validatedData?.total,
@@ -404,7 +429,8 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to app error events
     if (window.electronAPI.events.onAppError) {
       const appErrorCleanup = window.electronAPI.events.onAppError((data) => {
-        const { data: validatedData } = validateIncomingEvent('app:error', data);
+        const { valid, data: validatedData } = validateIncomingEvent('app:error', data);
+        if (!valid) return;
         logger.error('[IPC] App error event received', validatedData);
 
         store.dispatch(
@@ -450,7 +476,11 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to ChromaDB status changes
     if (window.electronAPI?.chromadb?.onStatusChanged) {
       const chromaStatusCleanup = window.electronAPI.chromadb.onStatusChanged((data) => {
-        const { data: validatedData } = validateIncomingEvent('chromadb-status-changed', data);
+        const { valid, data: validatedData } = validateIncomingEvent(
+          IPC_CHANNELS.CHROMADB.STATUS_CHANGED,
+          data
+        );
+        if (!valid) return;
         logger.debug('[IPC] ChromaDB status changed', { status: validatedData?.status });
 
         // Update health state with new ChromaDB status
@@ -465,10 +495,11 @@ const ipcMiddleware = (store) => {
     // FIX: Subscribe to dependency service status changes (Ollama/ChromaDB)
     if (window.electronAPI?.dependencies?.onServiceStatusChanged) {
       const depsStatusCleanup = window.electronAPI.dependencies.onServiceStatusChanged((data) => {
-        const { data: validatedData } = validateIncomingEvent(
-          'dependencies-service-status-changed',
+        const { valid, data: validatedData } = validateIncomingEvent(
+          IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED,
           data
         );
+        if (!valid) return;
         logger.debug('[IPC] Dependency service status changed', {
           service: validatedData?.service,
           status: validatedData?.status

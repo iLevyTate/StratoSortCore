@@ -156,7 +156,7 @@ function EmbeddingRebuildSection({ addNotification }) {
           addNotification('Full rebuild failed. Check Ollama connection in Settings.', 'error');
         }
       }
-    } catch (e) {
+    } catch {
       addNotification('Full rebuild failed. Check Ollama is running.', 'error');
     } finally {
       setIsFullRebuilding(false);
@@ -194,7 +194,7 @@ function EmbeddingRebuildSection({ addNotification }) {
           );
         }
       }
-    } catch (e) {
+    } catch {
       addNotification('Reanalyze failed. Check Ollama is running.', 'error');
     } finally {
       setIsReanalyzingAll(false);

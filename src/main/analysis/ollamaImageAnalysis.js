@@ -78,6 +78,7 @@ const IMAGE_ANALYSIS_TOOL = {
         type: { type: ['string', 'null'] },
         category: { type: ['string', 'null'] },
         project: { type: ['string', 'null'] },
+        purpose: { type: ['string', 'null'] },
         summary: { type: ['string', 'null'] },
         keywords: { type: 'array', items: { type: 'string' } },
         confidence: { type: 'number' },
@@ -283,7 +284,7 @@ Analyze this image:`;
         if (parsedJson.date) {
           try {
             parsedJson.date = new Date(parsedJson.date).toISOString().split('T')[0];
-          } catch (e) {
+          } catch {
             delete parsedJson.date;
             logger.warn('Ollama returned an invalid date for image, omitting.');
           }

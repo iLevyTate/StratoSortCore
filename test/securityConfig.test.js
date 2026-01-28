@@ -191,7 +191,7 @@ describe('securityConfig', () => {
     test('includes common receive channels', () => {
       expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('system-metrics');
       expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('operation-progress');
-      expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('chromadb-status-changed');
+      expect(securityConfig.ALLOWED_RECEIVE_CHANNELS).toContain('chromadb:status-changed');
     });
   });
 

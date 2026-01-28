@@ -8,23 +8,20 @@ import { setPhase } from '../store/slices/uiSlice';
 import { fetchDocumentsPath } from '../store/slices/systemSlice';
 import { useNotification } from '../contexts/NotificationContext';
 import { useConfirmDialog } from '../hooks';
-import { Button, IconButton } from '../components/ui';
+import { Button, IconButton, StateMessage } from '../components/ui';
 import { Heading, Text } from '../components/ui/Typography';
 import { ActionBar, Inline, Stack } from '../components/layout';
 import { SmartFolderSkeleton } from '../components/ui/LoadingSkeleton';
 import { SmartFolderItem, AddSmartFolderModal } from '../components/setup';
 import { Plus, ChevronDown, ChevronUp, RotateCcw, Folder } from 'lucide-react';
 import { filesIpc, settingsIpc, smartFoldersIpc } from '../services/ipc';
+import { normalizePathValue } from '../utils/pathNormalization';
 
 logger.setContext('SetupPhase');
 
-const normalizePathValue = (value, fallback = 'Documents') => {
-  if (!value) return fallback;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object' && typeof value.path === 'string') {
-    return value.path;
-  }
-  return fallback;
+const normalizePathWithFallback = (value, fallback = 'Documents') => {
+  const normalized = normalizePathValue(value);
+  return normalized || fallback;
 };
 
 function SetupPhase() {
@@ -79,7 +76,7 @@ function SetupPhase() {
   // Update defaultLocation when Redux store gets the path
   useEffect(() => {
     if (documentsPathFromStore && !isDefaultLocationLoaded) {
-      const normalized = normalizePathValue(documentsPathFromStore, 'Documents');
+      const normalized = normalizePathWithFallback(documentsPathFromStore, 'Documents');
       if (normalized !== 'Documents') {
         setDefaultLocation(normalized);
       }
@@ -105,13 +102,15 @@ function SetupPhase() {
       }
       const settings = await settingsIpc.get();
       if (settings?.defaultSmartFolderLocation) {
-        setDefaultLocation(normalizePathValue(settings.defaultSmartFolderLocation, 'Documents'));
+        setDefaultLocation(
+          normalizePathWithFallback(settings.defaultSmartFolderLocation, 'Documents')
+        );
         setIsDefaultLocationLoaded(true);
         return;
       }
 
       if (documentsPathFromStore) {
-        setDefaultLocation(normalizePathValue(documentsPathFromStore, 'Documents'));
+        setDefaultLocation(normalizePathWithFallback(documentsPathFromStore, 'Documents'));
         setIsDefaultLocationLoaded(true);
         return;
       }
@@ -123,7 +122,7 @@ function SetupPhase() {
         error: error?.message
       });
       if (documentsPathFromStore) {
-        setDefaultLocation(normalizePathValue(documentsPathFromStore, 'Documents'));
+        setDefaultLocation(normalizePathWithFallback(documentsPathFromStore, 'Documents'));
         setIsDefaultLocationLoaded(true);
         return;
       }
@@ -456,26 +455,25 @@ function SetupPhase() {
         >
           {smartFolders.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center mb-4">
-                <Folder className="w-8 h-8 text-system-gray-400" />
-              </div>
-              <Heading as="h3" variant="h5" className="mb-1">
-                No smart folders yet
-              </Heading>
-              <Text variant="small" className="mb-4 max-w-sm">
-                Add at least one destination folder so StratoSort knows where to organize your
-                files.
-              </Text>
-              <Inline gap="default">
-                <Button onClick={handleResetToDefaults} variant="secondary">
-                  <RotateCcw className="w-4 h-4 mr-1.5" />
-                  Load Defaults
-                </Button>
-                <Button onClick={handleOpenAddModal} variant="primary">
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  Add Custom Folder
-                </Button>
-              </Inline>
+              <StateMessage
+                icon={Folder}
+                size="lg"
+                title="No smart folders yet"
+                description="Add at least one destination folder so StratoSort knows where to organize your files."
+                action={
+                  <Inline gap="default">
+                    <Button onClick={handleResetToDefaults} variant="secondary">
+                      <RotateCcw className="w-4 h-4 mr-1.5" />
+                      Load Defaults
+                    </Button>
+                    <Button onClick={handleOpenAddModal} variant="primary">
+                      <Plus className="w-4 h-4 mr-1.5" />
+                      Add Custom Folder
+                    </Button>
+                  </Inline>
+                }
+                contentClassName="max-w-md"
+              />
             </div>
           ) : (
             <div

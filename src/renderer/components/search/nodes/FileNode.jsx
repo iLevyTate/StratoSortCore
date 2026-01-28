@@ -3,8 +3,11 @@ import PropTypes from 'prop-types';
 import { Handle, Position, NodeToolbar } from 'reactflow';
 import { ExternalLink, FolderOpen, Copy, GitBranch, Focus } from 'lucide-react';
 import { useFileActions } from '../../../hooks';
+import { useAppSelector } from '../../../store/hooks';
+import { useNotification } from '../../../contexts/NotificationContext';
 import { logger } from '../../../../shared/logger';
 import FileIcon, { getFileCategory } from '../../ui/FileIcon';
+import { formatDisplayPath } from '../../../utils/pathDisplay';
 
 const CATEGORY_STYLES = {
   Documents: {
@@ -71,10 +74,17 @@ const CATEGORY_STYLES = {
 
 const FileNode = memo(({ data, selected }) => {
   const [showActions, setShowActions] = useState(false);
+  const { showError } = useNotification();
+  const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
   const filePath = data?.path || '';
   const tags = Array.isArray(data?.tags) ? data.tags.slice(0, 3) : [];
   const suggestedFolder =
     typeof data?.suggestedFolder === 'string' ? data.suggestedFolder.trim() : '';
+  const rawLabel = data?.label || filePath;
+  const displayLabel = formatDisplayPath(rawLabel, { redact: redactPaths, segments: 2 });
+  const displaySuggestedFolder = suggestedFolder
+    ? formatDisplayPath(suggestedFolder, { redact: redactPaths, segments: 2 })
+    : '';
 
   // Determine category and style
   const category = useMemo(() => getFileCategory(filePath), [filePath]);
@@ -133,13 +143,18 @@ const FileNode = memo(({ data, selected }) => {
     [data?.id, filePath]
   );
 
-  const handleMenuAction = useCallback(async (action) => {
-    try {
-      await action?.();
-    } catch (e) {
-      logger.warn('[FileNode] Menu action failed:', e?.message || e);
-    }
-  }, []);
+  const handleMenuAction = useCallback(
+    async (action) => {
+      try {
+        await action?.();
+      } catch (e) {
+        const message = e?.message || 'Action failed';
+        logger.warn('[FileNode] Menu action failed:', message);
+        showError(message);
+      }
+    },
+    [showError]
+  );
 
   // Calculate display score from withinScore or score
   const displayScore = data?.withinScore ?? data?.score ?? null;
@@ -255,16 +270,16 @@ const FileNode = memo(({ data, selected }) => {
 
           <div
             className="file-node-label text-xs font-semibold text-[var(--color-system-gray-900)] truncate mb-1"
-            title={data?.label}
+            title={displayLabel}
           >
-            {data?.label}
+            {displayLabel}
           </div>
 
-          {(tags.length > 0 || suggestedFolder) && (
+          {(tags.length > 0 || displaySuggestedFolder) && (
             <div className="flex flex-wrap gap-1 mt-1.5">
-              {suggestedFolder && (
+              {displaySuggestedFolder && (
                 <span className="px-1.5 py-0.5 rounded text-[9px] bg-black/5 text-black/60 font-medium truncate max-w-full">
-                  📂 {suggestedFolder}
+                  📂 {displaySuggestedFolder}
                 </span>
               )}
               {tags.map((tag, i) => (

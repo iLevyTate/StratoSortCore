@@ -3,7 +3,7 @@
  * Tests fallback behavior when Ollama is unavailable
  */
 
-const { analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis');
+let analyzeDocumentFile;
 
 // Mock logger
 jest.mock('../src/shared/logger', () => ({
@@ -13,6 +13,13 @@ jest.mock('../src/shared/logger', () => ({
     warn: jest.fn(),
     error: jest.fn(),
     setContext: jest.fn()
+  }
+}));
+
+jest.mock('fs', () => ({
+  promises: {
+    stat: jest.fn().mockResolvedValue({ size: 1024, mtimeMs: Date.now() }),
+    readFile: jest.fn().mockResolvedValue('G1 X0 Y0')
   }
 }));
 
@@ -119,6 +126,8 @@ jest.mock('../src/main/analysis/fallbackUtils', () => {
             suggestedName = fileName.slice(0, -fileExtension.length);
           }
         }
+        const extractionMethod =
+          options.extractionMethod === undefined ? 'filename_fallback' : options.extractionMethod;
         const result = {
           purpose: `${type === 'image' ? 'Image' : 'Document'} (fallback - ${reason || 'fallback analysis'})`,
           project: fileName ? fileName.replace(fileExtension || '', '') : 'unknown',
@@ -127,7 +136,7 @@ jest.mock('../src/main/analysis/fallbackUtils', () => {
           keywords: intelligentKeywords || ['document', 'text'],
           confidence: confidence || 65,
           suggestedName,
-          extractionMethod: 'filename_fallback',
+          extractionMethod,
           fallbackReason: reason || 'fallback analysis'
         };
         if (options.error) {
@@ -144,6 +153,10 @@ jest.mock('../src/main/analysis/semanticFolderMatcher', () => ({
   applySemanticFolderMatching: jest.fn().mockResolvedValue(undefined),
   getServices: jest.fn().mockReturnValue({ chromaDb: null, matcher: null }),
   resetSingletons: jest.fn()
+}));
+
+jest.mock('../src/shared/config/index', () => ({
+  get: jest.fn((_, fallback) => fallback)
 }));
 
 // Mock other utilities
@@ -180,6 +193,8 @@ jest.mock('../src/main/analysis/documentLlm', () => ({
 describe('ollamaDocumentAnalysis - Fallback Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
   });
 
   test('should return fallback analysis for PDF when Ollama unavailable', async () => {
@@ -215,6 +230,26 @@ describe('ollamaDocumentAnalysis - Fallback Tests', () => {
 
     expect(result).toBeDefined();
     expect(result.keywords).toEqual(['document', 'text']);
+  });
+});
+
+describe('ollamaDocumentAnalysis - Text Extraction', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
+  });
+
+  test('should fall back for gcode files', async () => {
+    const { isOllamaRunningWithRetry } = require('../src/main/utils/ollamaDetection');
+    const { analyzeTextWithOllama } = require('../src/main/analysis/documentLlm');
+
+    isOllamaRunningWithRetry.mockResolvedValue(true);
+
+    const result = await analyzeDocumentFile('/test/print.gcode', []);
+
+    expect(analyzeTextWithOllama).not.toHaveBeenCalled();
+    expect(result.extractionMethod).toBe('filename');
   });
 });
 
@@ -286,6 +321,8 @@ describe('ollamaDocumentAnalysis - Smart Folder Matching', () => {
 describe('ollamaDocumentAnalysis - Error Handling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
   });
 
   test('should handle ollamaDetection error gracefully', async () => {
@@ -311,6 +348,8 @@ describe('ollamaDocumentAnalysis - Error Handling', () => {
 describe('ollamaDocumentAnalysis - File Extension Handling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
   });
 
   test('should handle .pdf extension', async () => {
@@ -373,6 +412,8 @@ describe('ollamaDocumentAnalysis - File Extension Handling', () => {
 describe('ollamaDocumentAnalysis - Category Mapping', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
   });
 
   test('should map category to smart folder when available', async () => {
@@ -401,6 +442,8 @@ describe('ollamaDocumentAnalysis - Category Mapping', () => {
 describe('ollamaDocumentAnalysis - Date Handling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
   });
 
   test('should include date in result', async () => {
@@ -416,6 +459,8 @@ describe('ollamaDocumentAnalysis - Date Handling', () => {
 describe('ollamaDocumentAnalysis - Suggested Name', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
+    ({ analyzeDocumentFile } = require('../src/main/analysis/ollamaDocumentAnalysis'));
   });
 
   test('should generate suggested name without extension', async () => {

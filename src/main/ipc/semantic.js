@@ -1,7 +1,9 @@
 const { IpcServiceContext, createFromLegacyParams } = require('./IpcServiceContext');
 const path = require('path');
+const fs = require('fs').promises;
 const { getInstance: getChromaDB } = require('../services/chromadb');
 const { getInstance: getFolderMatcher } = require('../services/FolderMatchingService');
+const { getStartupManager } = require('../services/startup');
 const {
   getInstance: getParallelEmbeddingService
 } = require('../services/ParallelEmbeddingService');
@@ -27,6 +29,7 @@ const {
 } = require('../ollamaUtils');
 const { chunkText } = require('../utils/textChunking');
 const { normalizeText } = require('../../shared/normalization');
+const { getFileEmbeddingId } = require('../utils/fileIdUtils');
 const {
   readEmbeddingIndexMetadata,
   writeEmbeddingIndexMetadata
@@ -397,6 +400,8 @@ function registerEmbeddingsIpc(servicesOrParams) {
   let initPromise = null;
   // FIX: Add mutex flag to prevent race conditions during state transitions
   let initMutexLocked = false;
+  let initFailureReason = null;
+  let initFailedAt = null;
 
   /**
    * Ensures services are initialized before IPC handlers execute
@@ -407,6 +412,20 @@ function registerEmbeddingsIpc(servicesOrParams) {
     // Already initialized successfully
     if (initState === INIT_STATES.COMPLETED) {
       return Promise.resolve();
+    }
+    // Initialization previously failed - rate-limit retries but allow recovery
+    if (initState === INIT_STATES.FAILED) {
+      const now = Date.now();
+      const retryDelayMs = 10000;
+      if (initFailedAt && now - initFailedAt < retryDelayMs) {
+        throw new Error(initFailureReason || 'ChromaDB is not available');
+      }
+      logger.info('[SEMANTIC] Retrying initialization after failure', {
+        reason: initFailureReason
+      });
+      initState = INIT_STATES.PENDING;
+      initFailureReason = null;
+      initFailedAt = null;
     }
 
     // Initialization in progress - wait for it
@@ -432,7 +451,13 @@ function registerEmbeddingsIpc(servicesOrParams) {
         }
       }
       if (initMutexLocked) {
-        throw new Error('Initialization mutex timeout - possible deadlock detected');
+        // Force unlock to allow recovery on the next attempt
+        logger.error('[SEMANTIC] Initialization mutex timeout - forcing unlock');
+        initMutexLocked = false;
+        initState = INIT_STATES.PENDING;
+        initPromise = null;
+        initFailureReason = 'Initialization mutex timeout';
+        initFailedAt = Date.now();
       }
     }
 
@@ -466,6 +491,38 @@ function registerEmbeddingsIpc(servicesOrParams) {
             logger.info(
               `[SEMANTIC] Starting initialization (attempt ${attempt}/${MAX_RETRIES})...`
             );
+
+            // FIX: Check if ChromaDB is disabled/missing before wasting time on retries
+            // This prevents thundering herd of failed connection attempts when ChromaDB is unavailable
+            try {
+              const startupManager = getStartupManager();
+              if (startupManager?.chromadbDependencyMissing) {
+                logger.warn(
+                  '[SEMANTIC] ChromaDB is disabled (dependency missing). Skipping initialization.'
+                );
+                initState = INIT_STATES.FAILED;
+                initFailureReason = 'ChromaDB dependency missing';
+                initFailedAt = Date.now();
+                throw new Error(initFailureReason);
+              }
+              const chromaStatus = startupManager?.serviceStatus?.chromadb;
+              if (chromaStatus?.status === 'disabled' || chromaStatus?.health === 'disabled') {
+                logger.warn('[SEMANTIC] ChromaDB is disabled. Skipping initialization.');
+                initState = INIT_STATES.FAILED;
+                initFailureReason = 'ChromaDB is disabled';
+                initFailedAt = Date.now();
+                throw new Error(initFailureReason);
+              }
+            } catch (startupCheckErr) {
+              if (initState === INIT_STATES.FAILED && initFailureReason) {
+                throw startupCheckErr;
+              }
+              // Startup manager may not be ready yet - continue with normal check
+              logger.debug(
+                '[SEMANTIC] Could not check startup manager status:',
+                startupCheckErr.message
+              );
+            }
 
             // FIX: Check if ChromaDB server is available before initializing
             const isServerReady = await chromaDbService.isServerAvailable(3000);
@@ -514,6 +571,28 @@ function registerEmbeddingsIpc(servicesOrParams) {
             logger.warn(`[SEMANTIC] Initialization attempt ${attempt} failed:`, error.message);
 
             if (attempt < MAX_RETRIES) {
+              // FIX: Check if ChromaDB was disabled during this attempt - fail fast instead of waiting
+              try {
+                const startupManager = getStartupManager();
+                if (
+                  startupManager?.chromadbDependencyMissing ||
+                  startupManager?.serviceStatus?.chromadb?.status === 'disabled'
+                ) {
+                  logger.warn(
+                    '[SEMANTIC] ChromaDB was disabled during initialization. Stopping retries.'
+                  );
+                  initState = INIT_STATES.FAILED;
+                  initFailureReason = 'ChromaDB disabled during initialization';
+                  initFailedAt = Date.now();
+                  throw new Error(initFailureReason);
+                }
+              } catch (startupCheckErr) {
+                if (initState === INIT_STATES.FAILED && initFailureReason) {
+                  throw startupCheckErr;
+                }
+                // Ignore - continue with normal retry
+              }
+
               // Exponential backoff with jitter
               const delay = RETRY_DELAY_BASE * 2 ** (attempt - 1) + Math.random() * 1000;
               logger.info(`[SEMANTIC] Retrying in ${Math.round(delay)}ms...`);
@@ -529,8 +608,9 @@ function registerEmbeddingsIpc(servicesOrParams) {
                 '[SEMANTIC] All initialization attempts failed. ChromaDB features will be unavailable.'
               );
               initState = INIT_STATES.FAILED;
-              // Don't throw - allow the app to continue in degraded mode
-              return;
+              initFailureReason = 'ChromaDB initialization failed';
+              initFailedAt = Date.now();
+              throw new Error(initFailureReason);
             }
           }
         }
@@ -805,7 +885,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
                   model,
                   updatedAt: new Date().toISOString()
                 };
-              } catch (error) {
+              } catch {
                 folderResults.failed++;
                 logger.warn('[EMBEDDINGS] Failed to generate folder embedding:', folder.name);
                 return null;
@@ -853,12 +933,35 @@ function registerEmbeddingsIpc(servicesOrParams) {
           try {
             const organization = entry.organization || {};
             const filePath = organization.actual || entry.originalPath;
+            if (!filePath || typeof filePath !== 'string') {
+              fileResults.failed++;
+              fileResults.errors.push({
+                file: entry.originalPath ? path.basename(entry.originalPath) : 'unknown',
+                error: 'Invalid file path in analysis history'
+              });
+              continue;
+            }
+
             const ext = (path.extname(filePath) || '').toLowerCase();
             const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-            const fileId = `${isImage ? 'image' : 'file'}:${filePath}`;
+            const fileId = getFileEmbeddingId(filePath, isImage ? 'image' : 'file');
 
             // Track unique file IDs in history even if we later skip embedding due to empty content.
             uniqueHistoryFileIds.add(fileId);
+
+            try {
+              await fs.access(filePath);
+            } catch (accessError) {
+              fileResults.failed++;
+              fileResults.errors.push({
+                file: path.basename(filePath),
+                error:
+                  accessError.code === 'ENOENT'
+                    ? 'File no longer exists'
+                    : `File access error: ${accessError.message}`
+              });
+              continue;
+            }
 
             // Skip duplicates (keep the most recent history entry; getRecentAnalysis is expected to be ordered).
             if (filePayloadsById.has(fileId)) {
@@ -1199,11 +1302,36 @@ function registerEmbeddingsIpc(servicesOrParams) {
 
                 // Use current path after organization if available
                 const filePath = organization.actual || entry.originalPath;
+                if (!filePath || typeof filePath !== 'string') {
+                  results.files.failed++;
+                  results.errors.push({
+                    type: 'file',
+                    file: entry.originalPath ? path.basename(entry.originalPath) : 'unknown',
+                    error: 'Invalid file path in analysis history'
+                  });
+                  continue;
+                }
+
+                try {
+                  await fs.access(filePath);
+                } catch (accessError) {
+                  results.files.failed++;
+                  results.errors.push({
+                    type: 'file',
+                    file: path.basename(filePath),
+                    error:
+                      accessError.code === 'ENOENT'
+                        ? 'File no longer exists'
+                        : `File access error: ${accessError.message}`
+                  });
+                  continue;
+                }
+
                 const displayName =
                   organization.newName || entry.fileName || path.basename(filePath);
                 const ext = (path.extname(filePath) || '').toLowerCase();
                 const isImage = SUPPORTED_IMAGE_EXTENSIONS.includes(ext);
-                const fileId = `${isImage ? 'image' : 'file'}:${filePath}`;
+                const fileId = getFileEmbeddingId(filePath, isImage ? 'image' : 'file');
 
                 // Build text representation for embedding
                 const textParts = [
@@ -1271,7 +1399,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
                         document: snippet,
                         updatedAt: new Date().toISOString()
                       });
-                    } catch (chunkErr) {
+                    } catch {
                       results.chunks.failed++;
                     }
                   }
@@ -1312,11 +1440,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
         // Step 5: Rebuild BM25 index
         logger.info('[EMBEDDINGS] Rebuilding BM25 search index...');
         try {
-          const searchService = await getSearchService(
-            getServiceIntegration,
-            chromaDbService,
-            logger
-          );
+          const searchService = await getSearchService();
           if (searchService) {
             await searchService.buildBM25Index();
             results.bm25 = true;
@@ -1496,7 +1620,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
               totalFiles: typeof full?.totalFiles === 'number' ? full.totalFiles : 0
             };
           }
-        } catch (e) {
+        } catch {
           // Non-fatal: stats still useful without history context
           analysisHistory = null;
         }
@@ -1942,9 +2066,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
   // Hybrid Search Handlers
   // ============================================================================
 
-  // NOTE: HYBRID_SEARCH handler removed - use SEARCH handler instead
-  // The SEARCH handler now uses SearchService.hybridSearch() internally
-  // with full support for mode: 'hybrid' | 'vector' | 'bm25'
+  // Hybrid search uses the SEARCH handler (mode: 'hybrid' | 'vector' | 'bm25')
 
   /**
    * Rebuild the BM25 keyword search index
@@ -2373,7 +2495,7 @@ function registerEmbeddingsIpc(servicesOrParams) {
             initPromise,
             new Promise((resolve) => setTimeout(resolve, 5000)) // 5s max wait
           ]);
-        } catch (e) {
+        } catch {
           logger.warn('[SEMANTIC] Cleanup: initialization did not complete, proceeding anyway');
         }
       }

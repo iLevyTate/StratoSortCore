@@ -17,8 +17,8 @@ import { sanitizeSettings } from '../../shared/settingsValidation';
 import { DEFAULT_SETTINGS } from '../../shared/defaultSettings';
 import { useNotification } from '../contexts/NotificationContext';
 import { getElectronAPI, eventsIpc, ollamaIpc, settingsIpc } from '../services/ipc';
-import { useAppDispatch } from '../store/hooks';
-import { toggleSettings } from '../store/slices/uiSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { toggleSettings, updateSettings } from '../store/slices/uiSlice';
 import { useDebouncedCallback } from '../hooks/usePerformance';
 import Button from './ui/Button';
 import IconButton from './ui/IconButton';
@@ -66,8 +66,26 @@ const ALLOWED_EMBED_MODELS = [
 ];
 const DEFAULT_EMBED_MODEL = 'embeddinggemma';
 
+const stableStringify = (value) =>
+  JSON.stringify(
+    value,
+    (key, val) => {
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        return Object.keys(val)
+          .sort()
+          .reduce((acc, k) => {
+            acc[k] = val[k];
+            return acc;
+          }, {});
+      }
+      return val;
+    },
+    0
+  );
+
 const SettingsPanel = React.memo(function SettingsPanel() {
   const dispatch = useAppDispatch();
+  const uiSettings = useAppSelector((state) => state.ui.settings);
   const { addNotification } = useNotification();
   const isApiAvailable = isElectronAPIAvailable();
 
@@ -112,6 +130,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   const skipAutoSaveRef = useRef(false);
   const cancelAutoSaveRef = useRef(null);
   const settingsRef = useRef(null);
+  const uiSettingsRef = useRef(uiSettings);
+  const settingsLoadedRef = useRef(false);
+  const lastSavedSnapshotRef = useRef(stableStringify(sanitizeSettings(DEFAULT_SETTINGS)));
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -127,6 +148,18 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     },
     [setSettings]
   );
+
+  const updateLastSavedSnapshot = useCallback((nextSettings) => {
+    lastSavedSnapshotRef.current = stableStringify(sanitizeSettings(nextSettings || {}));
+  }, []);
+
+  useEffect(() => {
+    uiSettingsRef.current = uiSettings;
+  }, [uiSettings]);
+
+  useEffect(() => {
+    settingsLoadedRef.current = settingsLoaded;
+  }, [settingsLoaded]);
 
   const textModelOptions = useMemo(
     () => (ollamaModelLists.text.length ? ollamaModelLists.text : ollamaModelLists.all),
@@ -152,13 +185,22 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   const loadSettings = useCallback(async () => {
     try {
-      const savedSettings = await settingsIpc.get();
-      skipAutoSaveRef.current = true;
-      applySettingsUpdate({
+      if (settingsLoadedRef.current) return;
+      const hasCachedSettings =
+        uiSettingsRef.current &&
+        typeof uiSettingsRef.current === 'object' &&
+        Object.keys(uiSettingsRef.current).length > 0;
+      const savedSettings = hasCachedSettings ? uiSettingsRef.current : await settingsIpc.get();
+      const mergedSettings = {
         ...DEFAULT_SETTINGS,
         ...(savedSettings || {})
-      });
+      };
+      skipAutoSaveRef.current = true;
+      applySettingsUpdate(mergedSettings);
+      dispatch(updateSettings(mergedSettings));
+      updateLastSavedSnapshot(mergedSettings);
       setSettingsLoaded(true);
+      settingsLoadedRef.current = true;
     } catch (error) {
       logger.error('Failed to load settings', {
         error: error.message,
@@ -166,9 +208,12 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       });
       skipAutoSaveRef.current = true;
       applySettingsUpdate({ ...DEFAULT_SETTINGS });
+      dispatch(updateSettings({ ...DEFAULT_SETTINGS }));
+      updateLastSavedSnapshot(DEFAULT_SETTINGS);
       setSettingsLoaded(true);
+      settingsLoadedRef.current = true;
     }
-  }, [applySettingsUpdate]);
+  }, [applySettingsUpdate, dispatch, updateLastSavedSnapshot]);
 
   const loadOllamaModels = useCallback(async () => {
     try {
@@ -261,6 +306,24 @@ const SettingsPanel = React.memo(function SettingsPanel() {
   }, [isApiAvailable, loadSettings, loadOllamaModels]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+    if (!uiSettings || typeof uiSettings !== 'object') return;
+    const mergedSettings = {
+      ...DEFAULT_SETTINGS,
+      ...(uiSettings || {})
+    };
+    const mergedSnapshot = stableStringify(sanitizeSettings(mergedSettings));
+    const currentSnapshot = stableStringify(sanitizeSettings(settingsRef.current || {}));
+    if (mergedSnapshot === currentSnapshot) {
+      updateLastSavedSnapshot(mergedSettings);
+      return;
+    }
+    skipAutoSaveRef.current = true;
+    applySettingsUpdate(mergedSettings);
+    updateLastSavedSnapshot(mergedSettings);
+  }, [applySettingsUpdate, settingsLoaded, uiSettings, updateLastSavedSnapshot]);
+
+  useEffect(() => {
     if (!isApiAvailable) return undefined;
     if (!settingsLoaded) return undefined;
     if (settings === null) return undefined;
@@ -317,6 +380,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       if (res?.success === false) {
         throw new Error(res?.error || 'Failed to save settings');
       }
+      const savedSettings = res?.settings || normalizedSettings;
+      dispatch(updateSettings(savedSettings));
+      updateLastSavedSnapshot(savedSettings);
       if (Array.isArray(res?.validationWarnings) && res.validationWarnings.length > 0) {
         addNotification(`Saved with warnings: ${res.validationWarnings.join('; ')}`, 'warning');
       } else {
@@ -335,7 +401,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
     } finally {
       setIsSaving(false);
     }
-  }, [settings, addNotification, handleToggleSettings, applySettingsUpdate]);
+  }, [
+    settings,
+    dispatch,
+    addNotification,
+    handleToggleSettings,
+    applySettingsUpdate,
+    updateLastSavedSnapshot
+  ]);
 
   const autoSaveSettings = useDebouncedCallback(async () => {
     const currentSettings = settingsRef.current;
@@ -345,7 +418,14 @@ const SettingsPanel = React.memo(function SettingsPanel() {
       const normalizedSettings = sanitizeSettings({
         ...currentSettings
       });
-      await settingsIpc.save(normalizedSettings);
+      const nextSnapshot = stableStringify(normalizedSettings);
+      if (nextSnapshot === lastSavedSnapshotRef.current) {
+        return;
+      }
+      const res = await settingsIpc.save(normalizedSettings);
+      const savedSettings = res?.settings || normalizedSettings;
+      dispatch(updateSettings(savedSettings));
+      updateLastSavedSnapshot(savedSettings);
     } catch (error) {
       logger.error('Auto-save settings failed', {
         error: error.message,
@@ -394,7 +474,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           addNotification('Connection failed. Check Ollama is running.', 'error');
         }
       }
-    } catch (e) {
+    } catch (error) {
+      logger.error('Ollama connection test failed', {
+        error: error?.message || String(error)
+      });
       addNotification('Connection test failed. Is Ollama running?', 'error');
     }
   }, [settings, addNotification, loadOllamaModels]);
@@ -429,7 +512,10 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           addNotification('Could not install model. Check the name and try again.', 'error');
         }
       }
-    } catch (e) {
+    } catch (error) {
+      logger.error('Ollama model installation failed', {
+        error: error?.message || String(error)
+      });
       addNotification('Model installation failed. Check your connection.', 'error');
     } finally {
       setIsAddingModel(false);

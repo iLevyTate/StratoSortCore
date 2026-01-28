@@ -7,7 +7,15 @@
 
 const { URL_PATTERN } = require('../../shared/settingsValidation');
 const { CHAT_PERSONAS } = require('../../shared/chatPersonas');
-const { LOGGING_LEVELS, NUMERIC_LIMITS } = require('../../shared/validationConstants');
+const {
+  LOGGING_LEVELS,
+  NUMERIC_LIMITS,
+  NOTIFICATION_MODES,
+  NAMING_CONVENTIONS,
+  CASE_CONVENTIONS,
+  SMART_FOLDER_ROUTING_MODES,
+  SEPARATOR_PATTERN
+} = require('../../shared/validationConstants');
 const { collapseDuplicateProtocols } = require('../../shared/urlUtils');
 const { logger } = require('../../shared/logger');
 
@@ -247,6 +255,7 @@ if (!z) {
       visionModel: modelNameSchema,
       embeddingModel: modelNameSchema,
       chatPersona: chatPersonaSchema,
+      chatResponseMode: z.enum(['fast', 'deep']).nullish(),
       autoUpdateOllama: z.boolean().nullish(),
       autoUpdateChromaDb: z.boolean().nullish(),
 
@@ -259,6 +268,7 @@ if (!z) {
       launchOnStartup: z.boolean().nullish(),
       autoOrganize: z.boolean().nullish(),
       backgroundMode: z.boolean().nullish(),
+      autoChunkOnAnalysis: z.boolean().nullish(),
       autoUpdateCheck: z.boolean().nullish(),
       telemetryEnabled: z.boolean().nullish(),
 
@@ -282,21 +292,22 @@ if (!z) {
 
       // Notification settings
       notifications: z.boolean().nullish(),
-      notificationMode: z.enum(['both', 'ui', 'tray', 'none']).nullish(),
+      notificationMode: z.enum(NOTIFICATION_MODES).nullish(),
       notifyOnAutoAnalysis: z.boolean().nullish(),
       notifyOnLowConfidence: z.boolean().nullish(),
 
       // Organization settings
       confidenceThreshold: z.number().min(0).max(1).nullish(),
-      defaultSmartFolderLocation: z.string().nullish(),
+      defaultSmartFolderLocation: z.string().max(500).nullish(),
+      smartFolderRoutingMode: z.enum(SMART_FOLDER_ROUTING_MODES).nullish(),
       maxConcurrentAnalysis: z.number().int().min(1).max(10).nullish(),
-      lastBrowsedPath: z.string().nullish(),
+      lastBrowsedPath: z.string().max(1000).nullish(),
 
       // Naming convention settings
-      namingConvention: z.string().nullish(),
+      namingConvention: z.enum(NAMING_CONVENTIONS).nullish(),
       dateFormat: z.string().nullish(),
-      caseConvention: z.string().nullish(),
-      separator: z.string().nullish(),
+      caseConvention: z.enum(CASE_CONVENTIONS).nullish(),
+      separator: z.string().regex(SEPARATOR_PATTERN).nullish(),
 
       // File size limits
       maxFileSize: z
@@ -327,7 +338,10 @@ if (!z) {
 
       // UI limits
       workflowRestoreMaxAge: z.number().int().min(60000).nullish(),
-      saveDebounceMs: z.number().int().min(100).nullish()
+      saveDebounceMs: z.number().int().min(100).nullish(),
+
+      // Deprecated settings (kept for backward compatibility)
+      smartFolderWatchEnabled: z.boolean().nullish()
     })
     .partial();
 
@@ -364,20 +378,32 @@ if (!z) {
   /**
    * Single file operation
    */
-  const fileOperationSchema = z.object({
-    type: z.enum(['move', 'copy', 'delete', 'batch_organize']),
-    source: z.string().optional(),
-    destination: z.string().optional(),
-    operations: z
-      .array(
-        z.object({
-          source: z.string(),
-          destination: z.string(),
-          type: z.string().optional()
-        })
-      )
-      .optional()
-  });
+  const fileOperationSchema = z
+    .object({
+      type: z.enum(['move', 'copy', 'delete', 'batch_organize']),
+      source: z.string().optional(),
+      destination: z.string().optional(),
+      operations: z
+        .array(
+          z.object({
+            source: z.string(),
+            destination: z.string(),
+            type: z.string().optional()
+          })
+        )
+        .optional()
+    })
+    .superRefine((value, ctx) => {
+      if (value.type === 'batch_organize') {
+        if (!Array.isArray(value.operations) || value.operations.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['operations'],
+            message: 'Batch organize requires at least one operation'
+          });
+        }
+      }
+    });
 
   /**
    * Batch organize operation

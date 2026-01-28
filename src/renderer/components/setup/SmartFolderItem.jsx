@@ -147,7 +147,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
                 } else {
                   addNotification?.(result?.error || 'Failed to generate description', 'error');
                 }
-              } catch (err) {
+              } catch {
                 addNotification?.('Failed to generate description', 'error');
               }
             }}

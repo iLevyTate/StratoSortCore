@@ -3,7 +3,7 @@ import { PHASES } from '../../shared/constants';
 import { logger } from '../../shared/logger';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAppSelector } from '../store/hooks';
-import { Button, Card } from '../components/ui';
+import { Button, Card, StateMessage } from '../components/ui';
 import { Heading, Text } from '../components/ui/Typography';
 import { ErrorBoundaryCore } from '../components/ErrorBoundary';
 import { FolderOpen, BarChart3, CheckCircle2, Inbox, Sparkles, AlertTriangle } from 'lucide-react';
@@ -401,34 +401,29 @@ function OrganizePhase() {
 
           <div className="flex-1 min-h-0 bg-system-gray-50/30 overflow-hidden">
             {unprocessedFiles.length === 0 ? (
-              <div className="h-full flex items-center justify-center p-8 text-center">
-                <div className="flex flex-col items-center gap-4 max-w-md">
-                  <div className="w-16 h-16 rounded-2xl bg-system-gray-100 flex items-center justify-center">
-                    {processedFiles.length > 0 ? (
-                      <CheckCircle2 className="w-8 h-8 text-stratosort-success" />
-                    ) : (
-                      <Inbox className="w-8 h-8 text-system-gray-400" />
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Heading as="h3" variant="h5" className="text-system-gray-800">
-                      {processedFiles.length > 0 ? 'All files organized!' : 'No files ready yet'}
-                    </Heading>
-                    <Text variant="small" className="text-system-gray-500">
-                      {processedFiles.length > 0
-                        ? 'Click "Organized" above to review your organized files, or return to Discover to add more.'
-                        : 'Add files in Discover, run analysis, then return here to organize.'}
-                    </Text>
-                  </div>
-                  {processedFiles.length === 0 && (
-                    <Button
-                      onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
-                      variant="primary"
-                    >
-                      ← Go to Discover
-                    </Button>
-                  )}
-                </div>
+              <div className="h-full flex items-center justify-center p-8">
+                <StateMessage
+                  icon={processedFiles.length > 0 ? CheckCircle2 : Inbox}
+                  tone={processedFiles.length > 0 ? 'success' : 'neutral'}
+                  title={processedFiles.length > 0 ? 'All files organized!' : 'No files ready yet'}
+                  description={
+                    processedFiles.length > 0
+                      ? 'Click "Organized" above to review your organized files, or return to Discover to add more.'
+                      : 'Add files in Discover, run analysis, then return here to organize.'
+                  }
+                  action={
+                    processedFiles.length === 0 ? (
+                      <Button
+                        onClick={() => actions.advancePhase(PHASES?.DISCOVER ?? 'discover')}
+                        variant="primary"
+                      >
+                        ← Go to Discover
+                      </Button>
+                    ) : null
+                  }
+                  size="lg"
+                  contentClassName="max-w-md"
+                />
               </div>
             ) : (
               <div className="flex-1 min-h-0 p-4">

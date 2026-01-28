@@ -10,7 +10,7 @@
 const axios = require('axios');
 const { logger } = require('../../../shared/logger');
 const { TIMEOUTS } = require('../../../shared/performanceConstants');
-const { SERVICE_URLS } = require('../../../shared/configDefaults');
+const { getValidatedOllamaHost } = require('../../../shared/configDefaults');
 const { axiosWithRetry } = require('../../utils/ollamaApiRetry');
 const { isPortAvailable } = require('./preflightChecks');
 const { checkChromaDBHealth } = require('./chromaService');
@@ -159,7 +159,7 @@ async function checkServiceHealthWithRecovery(
       // FIX: Ensure Boolean result to avoid undefined being treated ambiguously
       isHealthy = Boolean(await chromaDbService?.checkHealth?.());
     } else if (serviceName === 'ollama') {
-      const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
+      const { url: baseUrl } = getValidatedOllamaHost();
       const response = await axiosWithRetry(
         () => axios.get(`${baseUrl}/api/tags`, { timeout: 10000 }),
         {
@@ -224,7 +224,7 @@ async function checkServiceHealthWithRecovery(
         } else {
           // For Ollama, check port availability first
           if (serviceName === 'ollama') {
-            const baseUrl = process.env.OLLAMA_BASE_URL || SERVICE_URLS.OLLAMA_HOST;
+            const { url: baseUrl } = getValidatedOllamaHost();
             let host = '127.0.0.1';
             let port = 11434;
             try {
@@ -327,38 +327,50 @@ function createHealthMonitor({
 
   const healthMonitor = setInterval(async () => {
     const healthCheckStartTime = Date.now();
-    const healthCheckTimeout = 5000;
+    const healthCheckTimeout = TIMEOUTS.HEALTH_CHECK;
+    const stuckTimeout = Math.max(healthCheckTimeout * 2, healthCheckTimeout + 2000);
+    const runId = (healthCheckState.runId || 0) + 1;
 
     if (healthCheckState.inProgress) {
-      if (
-        healthCheckState.startedAt &&
-        Date.now() - healthCheckState.startedAt > healthCheckTimeout
-      ) {
+      if (healthCheckState.startedAt && Date.now() - healthCheckState.startedAt > stuckTimeout) {
         logger.error(
           `[HEALTH] Health check stuck for ${(Date.now() - healthCheckState.startedAt) / 1000}s, force resetting flag`
         );
         healthCheckState.inProgress = false;
         healthCheckState.startedAt = null;
+        healthCheckState.activePromise = null;
       } else {
         logger.warn('[HEALTH] Previous health check still in progress, skipping');
         return;
       }
     }
 
+    healthCheckState.runId = runId;
     healthCheckState.inProgress = true;
     healthCheckState.startedAt = healthCheckStartTime;
 
     try {
-      await withTimeout(
-        checkServicesHealth(serviceStatus, config, restartLocks, startChromaDB, startOllama),
-        healthCheckTimeout,
-        'Health check'
+      const healthCheckPromise = checkServicesHealth(
+        serviceStatus,
+        config,
+        restartLocks,
+        startChromaDB,
+        startOllama
       );
+      healthCheckState.activePromise = healthCheckPromise;
+      healthCheckPromise.finally(() => {
+        if (
+          healthCheckState.runId === runId &&
+          healthCheckState.activePromise === healthCheckPromise
+        ) {
+          healthCheckState.inProgress = false;
+          healthCheckState.startedAt = null;
+          healthCheckState.activePromise = null;
+        }
+      });
+      await withTimeout(healthCheckPromise, healthCheckTimeout, 'Health check');
     } catch (error) {
       logger.error('[HEALTH] Health check failed:', error.message);
-    } finally {
-      healthCheckState.inProgress = false;
-      healthCheckState.startedAt = null;
     }
   }, config.healthCheckInterval);
 

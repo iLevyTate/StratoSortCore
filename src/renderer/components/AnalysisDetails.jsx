@@ -65,6 +65,10 @@ const AnalysisDetails = memo(function AnalysisDetails({
     typeof analysis.content_type === 'object'
       ? analysis.content_type.mime || analysis.content_type.type || 'Unknown'
       : analysis.content_type || analysis.contentType;
+  const rawType = typeof analysis.type === 'string' ? analysis.type.trim() : '';
+  const isGenericType = ['image', 'document', 'file', 'unknown'].includes(rawType.toLowerCase());
+  const documentType = analysis.documentType || (!isGenericType && rawType ? rawType : '');
+  const displayDate = analysis.date || analysis.documentDate;
 
   return (
     <Stack gap="relaxed" className="w-full">
@@ -121,10 +125,12 @@ const AnalysisDetails = memo(function AnalysisDetails({
 
       {/* Metadata */}
       <div className="space-y-1">
+        <DetailRow label="Entity" value={analysis.entity} />
         <DetailRow label="Project" value={analysis.project} />
         <DetailRow label="Purpose" value={analysis.purpose} />
-        <DetailRow label="Date" value={analysis.date} />
-        <DetailRow label="Type" value={displayContentType} />
+        <DetailRow label="Date" value={displayDate} />
+        <DetailRow label="Document Type" value={documentType} />
+        <DetailRow label="Content Type" value={displayContentType} />
         <DetailRow label="Method" value={analysis.extractionMethod} />
         {analysis.contentLength && (
           <DetailRow label="Length" value={`${analysis.contentLength.toLocaleString()} chars`} />
@@ -142,6 +148,21 @@ const AnalysisDetails = memo(function AnalysisDetails({
           </Text>
           <Text variant="small" className="leading-relaxed">
             {analysis.summary}
+          </Text>
+        </div>
+      )}
+
+      {/* Reasoning */}
+      {analysis.reasoning && (
+        <div className="bg-system-gray-50 rounded-lg p-3 border border-border-soft">
+          <Text
+            variant="tiny"
+            className="uppercase tracking-wider font-semibold text-system-gray-500 mb-1"
+          >
+            Reasoning
+          </Text>
+          <Text variant="small" className="leading-relaxed">
+            {analysis.reasoning}
           </Text>
         </div>
       )}

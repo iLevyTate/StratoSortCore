@@ -8,19 +8,36 @@ const {
   canceledResponse,
   safeHandle
 } = require('./ipcWrappers');
-const { getConfigurableLimits, sanitizeSettings } = require('../../shared/settingsValidation');
+const {
+  getConfigurableLimits,
+  sanitizeSettings,
+  validateSettings,
+  VALIDATION_RULES
+} = require('../../shared/settingsValidation');
 const fs = require('fs').promises;
 const path = require('path');
 const { settingsSchema, backupPathSchema, z } = require('./validationSchemas');
-const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
-
 // Import centralized security configuration
 const { SETTINGS_VALIDATION, PROTOTYPE_POLLUTION_KEYS } = require('../../shared/securityConfig');
+const { validateFileOperationPathSync } = require('../../shared/pathSanitization');
 const {
+  normalizeSlashes,
+  normalizeProtocolCase,
+  extractBaseUrl,
+  hasProtocol,
+  ensureProtocol
+} = require('../../shared/urlUtils');
+const {
+  LENIENT_URL_PATTERN,
   LOGGING_LEVELS,
   NUMERIC_LIMITS,
-  isValidLoggingLevel,
-  isValidNumericSetting
+  MODEL_NAME_PATTERN,
+  MAX_MODEL_NAME_LENGTH,
+  NOTIFICATION_MODES,
+  NAMING_CONVENTIONS,
+  CASE_CONVENTIONS,
+  SMART_FOLDER_ROUTING_MODES,
+  SEPARATOR_PATTERN
 } = require('../../shared/validationConstants');
 
 /**
@@ -47,6 +64,25 @@ function sanitizeUrlForLogging(url) {
     }
     return url.substring(0, 20) + (url.length > 20 ? '...[truncated]' : '');
   }
+}
+
+function normalizeOllamaHostForValidation(value) {
+  if (!value || typeof value !== 'string') return value;
+  let trimmed = value.trim();
+  if (!trimmed) return trimmed;
+
+  trimmed = normalizeSlashes(trimmed);
+  if (hasProtocol(trimmed)) {
+    trimmed = normalizeProtocolCase(trimmed);
+  }
+
+  trimmed = extractBaseUrl(trimmed);
+
+  if (!hasProtocol(trimmed)) {
+    trimmed = ensureProtocol(trimmed);
+  }
+
+  return trimmed;
 }
 
 /**
@@ -109,10 +145,6 @@ function validateImportedSettings(settings, logger) {
   // Use centralized settings validation config
   const ALLOWED_SETTINGS_KEYS = SETTINGS_VALIDATION.allowedKeys;
 
-  // Regex patterns from centralized config
-  const URL_REGEX = SETTINGS_VALIDATION.patterns.url;
-  const MODEL_REGEX = SETTINGS_VALIDATION.patterns.modelName;
-
   // Check for prototype pollution attempts using centralized config
   // Use Object.hasOwn to check own properties only, not prototype chain
   for (const key of PROTOTYPE_POLLUTION_KEYS) {
@@ -122,23 +154,8 @@ function validateImportedSettings(settings, logger) {
   }
 
   // Sanitize settings using whitelist approach
-  const sanitized = {};
+  const filtered = {};
   let ignoredCount = 0;
-
-  const isSafeAbsolutePathString = (p) => {
-    if (typeof p !== 'string') return false;
-    const trimmed = p.trim();
-    if (!trimmed) return false;
-
-    const validation = validateFileOperationPathSync(trimmed, null, {
-      requireAbsolute: true,
-      disallowUNC: false,
-      disallowUrlSchemes: true,
-      allowFileUrl: false
-    });
-
-    return validation.valid;
-  };
 
   for (const [key, value] of Object.entries(settings)) {
     // Skip unknown keys
@@ -147,197 +164,228 @@ function validateImportedSettings(settings, logger) {
       ignoredCount++;
       continue;
     }
-
-    // Validate value based on key type
-    switch (key) {
-      case 'ollamaHost': {
-        if (typeof value !== 'string' || !URL_REGEX.test(value)) {
-          throw new Error(`Invalid ${key}: must be a valid URL`);
-        }
-        // Block bind-all addresses (0.0.0.0, [::]) which are not valid connection targets
-        // Note: localhost/127.0.0.1 are allowed since Ollama legitimately runs there
-        const lowerValue = value.toLowerCase();
-        if (lowerValue.includes('0.0.0.0') || lowerValue.includes('[::]')) {
-          // SECURITY FIX (CRIT-15): Sanitize URL before logging to prevent credential leakage
-          logger.warn(
-            `[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${sanitizeUrlForLogging(value)}`
-          );
-          throw new Error(`Invalid ${key}: potentially unsafe URL pattern detected`);
-        }
-        // Block URL credential attacks (e.g., http://attacker@127.0.0.1)
-        try {
-          const parsed = new URL(value);
-          if (parsed.username || parsed.password) {
-            // SECURITY FIX (CRIT-15): Sanitize URL before logging to prevent credential leakage
-            logger.warn(
-              `[SETTINGS-IMPORT] Blocking URL with credentials: ${sanitizeUrlForLogging(value)}`
-            );
-            throw new Error(`Invalid ${key}: URLs with credentials are not allowed`);
-          }
-        } catch (urlError) {
-          if (urlError.message.includes('credentials')) {
-            throw urlError;
-          }
-          // FIX: Reject URLs that fail parsing - don't allow potentially malformed URLs
-          // even if they pass the regex, as they could cause issues downstream
-          // SECURITY FIX (CRIT-15): Sanitize URL before logging to prevent credential leakage
-          logger.warn(
-            `[SETTINGS-IMPORT] Rejecting malformed URL: ${sanitizeUrlForLogging(value)}`,
-            {
-              error: urlError.message
-            }
-          );
-          throw new Error(`Invalid ${key}: URL is malformed and cannot be parsed`);
-        }
-        break;
-      }
-
-      case 'textModel':
-      case 'visionModel':
-      case 'embeddingModel':
-        if (typeof value !== 'string' || !MODEL_REGEX.test(value)) {
-          throw new Error(
-            `Invalid ${key}: must be alphanumeric with hyphens, underscores, dots, @, or colons`
-          );
-        }
-        if (value.length > 100) {
-          throw new Error(`Invalid ${key}: name too long (max 100 chars)`);
-        }
-        break;
-
-      case 'launchOnStartup':
-      case 'autoOrganize':
-      case 'backgroundMode':
-      case 'autoUpdateCheck':
-      case 'telemetryEnabled':
-      case 'notifications':
-      case 'notifyOnAutoAnalysis':
-      case 'notifyOnLowConfidence':
-      case 'autoUpdateOllama':
-      case 'autoUpdateChromaDb':
-      case 'dependencyWizardShown':
-      case 'autoChunkOnAnalysis':
-        if (typeof value !== 'boolean') {
-          throw new Error(`Invalid ${key}: must be boolean`);
-        }
-        break;
-
-      case 'notificationMode':
-        if (typeof value !== 'string' || !['both', 'ui', 'tray', 'none'].includes(value)) {
-          throw new Error(`Invalid ${key}: must be one of both, ui, tray, none`);
-        }
-        break;
-
-      case 'namingConvention':
-        if (
-          typeof value !== 'string' ||
-          ![
-            'subject-date',
-            'date-subject',
-            'project-subject-date',
-            'category-subject',
-            'keep-original'
-          ].includes(value)
-        ) {
-          throw new Error(`Invalid ${key}: must be a valid naming convention`);
-        }
-        break;
-
-      case 'caseConvention':
-        if (
-          typeof value !== 'string' ||
-          ![
-            'kebab-case',
-            'snake_case',
-            'camelCase',
-            'PascalCase',
-            'lowercase',
-            'UPPERCASE'
-          ].includes(value)
-        ) {
-          throw new Error(`Invalid ${key}: must be a valid case convention`);
-        }
-        break;
-
-      case 'dateFormat':
-        if (typeof value !== 'string' || value.length > 20) {
-          throw new Error(`Invalid ${key}: must be a string with max 20 characters`);
-        }
-        break;
-
-      case 'separator':
-        if (typeof value !== 'string' || value.length > 5 || /[/\\:*?"<>|]/.test(value)) {
-          throw new Error(
-            `Invalid ${key}: must be a safe separator character (max 5 chars, no path chars)`
-          );
-        }
-        break;
-
-      case 'confidenceThreshold':
-        if (typeof value !== 'number' || value < 0 || value > 1) {
-          throw new Error(`Invalid ${key}: must be a number between 0 and 1`);
-        }
-        break;
-
-      case 'maxConcurrentAnalysis':
-        if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 10) {
-          throw new Error(`Invalid ${key}: must be an integer between 1 and 10`);
-        }
-        break;
-
-      case 'defaultSmartFolderLocation':
-      case 'lastBrowsedPath':
-        if (value !== null) {
-          if (typeof value !== 'string' || value.length > 1000) {
-            throw new Error(`Invalid ${key}: must be a string path (max 1000 chars) or null`);
-          }
-          if (!isSafeAbsolutePathString(value)) {
-            throw new Error(`Invalid ${key}: must be an absolute, safe local filesystem path`);
-          }
-        }
-        break;
-
-      case 'language':
-        if (typeof value !== 'string' || value.length > 10) {
-          throw new Error(`Invalid ${key}: must be a valid language code`);
-        }
-        break;
-
-      case 'loggingLevel':
-        if (!isValidLoggingLevel(value)) {
-          throw new Error(`Invalid ${key}: must be one of ${LOGGING_LEVELS.join(', ')}`);
-        }
-        break;
-
-      case 'cacheSize':
-        if (!isValidNumericSetting('cacheSize', value)) {
-          const { min, max } = NUMERIC_LIMITS.cacheSize;
-          throw new Error(`Invalid ${key}: must be integer between ${min} and ${max}`);
-        }
-        break;
-
-      case 'maxBatchSize':
-        if (!isValidNumericSetting('maxBatchSize', value)) {
-          const { min, max } = NUMERIC_LIMITS.maxBatchSize;
-          throw new Error(`Invalid ${key}: must be integer between ${min} and ${max}`);
-        }
-        break;
-
-      default:
-        // For any other settings, ensure they're primitive types
-        if (typeof value === 'object' && value !== null) {
-          throw new Error(`Invalid ${key}: nested objects not allowed`);
-        }
-    }
-
-    sanitized[key] = value;
+    filtered[key] = value;
   }
 
   if (ignoredCount > 0) {
     logger.info(`[SETTINGS-IMPORT] Ignored ${ignoredCount} unknown setting(s)`);
   }
 
-  return sanitized;
+  const normalized = { ...filtered };
+  if (typeof normalized.ollamaHost === 'string') {
+    const rawHost = normalized.ollamaHost.trim();
+    if (rawHost) {
+      const candidate = ensureProtocol(normalizeProtocolCase(normalizeSlashes(rawHost)));
+      if (!LENIENT_URL_PATTERN.test(rawHost)) {
+        throw new Error('Invalid ollamaHost: URL format is invalid');
+      }
+      try {
+        const parsed = new URL(candidate);
+        if (parsed.username || parsed.password) {
+          throw new Error('Invalid ollamaHost: URLs with credentials are not allowed');
+        }
+      } catch (urlError) {
+        throw new Error(`Invalid ollamaHost: ${urlError.message || 'URL is malformed'}`);
+      }
+    }
+    normalized.ollamaHost = normalizeOllamaHostForValidation(normalized.ollamaHost);
+  }
+
+  // Validate without dropping invalid values so imports fail fast.
+  const validation = validateSettings(normalized);
+
+  if (!validation.valid) {
+    const error = new Error(`Invalid settings: ${validation.errors.join('; ')}`);
+    error.validationErrors = validation.errors;
+    error.validationWarnings = validation.warnings;
+    throw error;
+  }
+
+  // Enforce schema validation for imported settings before sanitization.
+  let validated = normalized;
+  if (z && settingsSchema) {
+    const parsed = settingsSchema.safeParse(normalized);
+    if (!parsed.success) {
+      const first = parsed.error?.issues?.[0];
+      throw new Error(
+        `Invalid settings file: ${first?.path?.join('.') || 'settings'} ${first?.message || 'failed validation'}`
+      );
+    }
+    validated = parsed.data;
+  }
+
+  const enumChecks = {
+    notificationMode: NOTIFICATION_MODES,
+    namingConvention: NAMING_CONVENTIONS,
+    caseConvention: CASE_CONVENTIONS,
+    smartFolderRoutingMode: SMART_FOLDER_ROUTING_MODES
+  };
+
+  Object.entries(enumChecks).forEach(([key, allowed]) => {
+    const value = validated?.[key];
+    if (value === undefined || value === null) return;
+    if (!Array.isArray(allowed) || allowed.length === 0) return;
+    if (!allowed.includes(value)) {
+      throw new Error(`Invalid settings: ${key} must be one of [${allowed.join(', ')}]`);
+    }
+  });
+
+  const booleanKeys = [
+    'launchOnStartup',
+    'autoOrganize',
+    'autoChunkOnAnalysis',
+    'backgroundMode',
+    'autoUpdateOllama',
+    'autoUpdateChromaDb',
+    'dependencyWizardShown',
+    'notifications',
+    'notifyOnAutoAnalysis',
+    'notifyOnLowConfidence',
+    'autoUpdateCheck',
+    'telemetryEnabled'
+  ];
+  booleanKeys.forEach((key) => {
+    const value = validated?.[key];
+    if (value === undefined || value === null) return;
+    if (typeof value !== 'boolean') {
+      throw new Error(`Invalid settings: ${key} must be a boolean`);
+    }
+  });
+
+  if (validated?.language !== undefined && validated?.language !== null) {
+    if (typeof validated.language !== 'string' || validated.language.length > 20) {
+      throw new Error('Invalid settings: language must be a string up to 20 characters');
+    }
+  }
+
+  if (validated?.loggingLevel !== undefined && validated?.loggingLevel !== null) {
+    if (!LOGGING_LEVELS.includes(validated.loggingLevel)) {
+      throw new Error(
+        `Invalid settings: loggingLevel must be one of [${LOGGING_LEVELS.join(', ')}]`
+      );
+    }
+  }
+
+  const modelKeys = ['textModel', 'visionModel', 'embeddingModel'];
+  modelKeys.forEach((key) => {
+    const value = validated?.[key];
+    if (value === undefined || value === null) return;
+    if (typeof value !== 'string') {
+      throw new Error(`Invalid settings: ${key} must be a string`);
+    }
+    if (value.length > MAX_MODEL_NAME_LENGTH || !MODEL_NAME_PATTERN.test(value)) {
+      throw new Error(`Invalid settings: ${key} contains invalid characters`);
+    }
+  });
+
+  if (validated?.cacheSize !== undefined && validated?.cacheSize !== null) {
+    const value = validated.cacheSize;
+    const limits = NUMERIC_LIMITS.cacheSize;
+    if (!Number.isInteger(value) || value < limits.min || value > limits.max) {
+      throw new Error(
+        `Invalid settings: cacheSize must be an integer between ${limits.min} and ${limits.max}`
+      );
+    }
+  }
+
+  if (validated?.maxBatchSize !== undefined && validated?.maxBatchSize !== null) {
+    const value = validated.maxBatchSize;
+    const limits = NUMERIC_LIMITS.maxBatchSize;
+    if (!Number.isInteger(value) || value < limits.min || value > limits.max) {
+      throw new Error(
+        `Invalid settings: maxBatchSize must be an integer between ${limits.min} and ${limits.max}`
+      );
+    }
+  }
+
+  if (validated?.separator !== undefined && validated?.separator !== null) {
+    if (typeof validated.separator !== 'string' || !SEPARATOR_PATTERN.test(validated.separator)) {
+      throw new Error('Invalid settings: separator contains invalid characters');
+    }
+  }
+
+  if (validated?.confidenceThreshold !== undefined && validated?.confidenceThreshold !== null) {
+    const value = validated.confidenceThreshold;
+    if (typeof value !== 'number' || Number.isNaN(value) || value < 0 || value > 1) {
+      throw new Error('Invalid settings: confidenceThreshold must be between 0 and 1');
+    }
+  }
+
+  if (validated?.maxConcurrentAnalysis !== undefined && validated?.maxConcurrentAnalysis !== null) {
+    const value = validated.maxConcurrentAnalysis;
+    if (!Number.isInteger(value) || value < 1 || value > 10) {
+      throw new Error(
+        'Invalid settings: maxConcurrentAnalysis must be an integer between 1 and 10'
+      );
+    }
+  }
+
+  const pathKeys = ['defaultSmartFolderLocation', 'lastBrowsedPath'];
+  const pathLengthLimits = {
+    defaultSmartFolderLocation: VALIDATION_RULES?.defaultSmartFolderLocation?.maxLength ?? 500,
+    lastBrowsedPath: VALIDATION_RULES?.lastBrowsedPath?.maxLength ?? 1000
+  };
+  pathKeys.forEach((key) => {
+    const value = validated?.[key];
+    if (typeof value !== 'string' || value.trim().length === 0) return;
+    const trimmed = value.trim();
+    const maxLength = pathLengthLimits[key];
+    if (Number.isInteger(maxLength) && trimmed.length > maxLength) {
+      throw new Error(`Invalid settings: ${key} must be at most ${maxLength} characters`);
+    }
+
+    // Allow simple folder names for defaultSmartFolderLocation (validated earlier).
+    if (key === 'defaultSmartFolderLocation' && !path.isAbsolute(trimmed)) {
+      return;
+    }
+
+    const pathValidation = validateFileOperationPathSync(trimmed, null, {
+      disallowUNC: false,
+      ...(key === 'lastBrowsedPath' ? { requireAbsolute: true } : {})
+    });
+    if (!pathValidation.valid) {
+      throw new Error(`Invalid settings: ${key} ${pathValidation.error}`);
+    }
+  });
+
+  if (validation.warnings.length > 0) {
+    logger.warn('[SETTINGS-IMPORT] Validation warnings', {
+      warnings: validation.warnings
+    });
+  }
+
+  // Additional safety checks for Ollama host on imports
+  if (typeof validated.ollamaHost === 'string') {
+    const trimmed = normalizeOllamaHostForValidation(validated.ollamaHost);
+    if (trimmed) {
+      const lowerValue = trimmed.toLowerCase();
+      if (lowerValue.includes('0.0.0.0') || lowerValue.includes('[::]')) {
+        logger.warn(
+          `[SETTINGS-IMPORT] Blocking potentially unsafe URL: ${sanitizeUrlForLogging(trimmed)}`
+        );
+        throw new Error('Invalid ollamaHost: potentially unsafe URL pattern detected');
+      }
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.username || parsed.password) {
+          logger.warn(
+            `[SETTINGS-IMPORT] Blocking URL with credentials: ${sanitizeUrlForLogging(trimmed)}`
+          );
+          throw new Error('Invalid ollamaHost: URLs with credentials are not allowed');
+        }
+      } catch (urlError) {
+        logger.warn(
+          `[SETTINGS-IMPORT] Rejecting malformed URL: ${sanitizeUrlForLogging(trimmed)}`,
+          {
+            error: urlError.message
+          }
+        );
+        throw new Error('Invalid ollamaHost: URL is malformed and cannot be parsed');
+      }
+    }
+  }
+
+  return sanitizeSettings(validated);
 }
 
 /**
@@ -627,18 +675,6 @@ function registerSettingsIpc(servicesOrParams) {
         // HIGH PRIORITY FIX (HIGH-14): Sanitize and validate imported settings
         // Prevents prototype pollution, command injection, and data exfiltration
         let sanitizedSettings = validateImportedSettings(importData.settings, logger);
-
-        // If Zod schemas are available, enforce schema validation for imported settings too.
-        if (z && settingsSchema) {
-          const parsed = settingsSchema.safeParse(sanitizedSettings);
-          if (!parsed.success) {
-            const first = parsed.error?.issues?.[0];
-            throw new Error(
-              `Invalid settings file: ${first?.path?.join('.') || 'settings'} ${first?.message || 'failed validation'}`
-            );
-          }
-          sanitizedSettings = parsed.data;
-        }
 
         // Save sanitized settings
         const saveResult = await settingsService.save(sanitizedSettings);

@@ -86,19 +86,11 @@ jest.mock('../src/main/services/startup', () => ({
 
 describe('Dependencies IPC Handlers', () => {
   let handlers;
-  const IPC_CHANNELS = {
-    DEPENDENCIES: {
-      GET_STATUS: 'dependencies-get-status',
-      INSTALL_OLLAMA: 'dependencies-install-ollama',
-      INSTALL_CHROMADB: 'dependencies-install-chromadb',
-      UPDATE_OLLAMA: 'dependencies-update-ollama',
-      UPDATE_CHROMADB: 'dependencies-update-chromadb',
-      SERVICE_STATUS_CHANGED: 'dependencies-service-status-changed'
-    }
-  };
+  let IPC_CHANNELS;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    IPC_CHANNELS = require('../src/shared/constants').IPC_CHANNELS;
 
     // Capture handlers registered with ipcMain.handle
     handlers = {};
@@ -134,7 +126,7 @@ describe('Dependencies IPC Handlers', () => {
       };
       mockGetStatus.mockResolvedValue(mockStatus);
 
-      const handler = handlers['dependencies-get-status'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.GET_STATUS];
       expect(handler).toBeDefined();
 
       const result = await handler({}, {});
@@ -145,7 +137,7 @@ describe('Dependencies IPC Handlers', () => {
     test('handles DependencyManagerService errors', async () => {
       mockGetStatus.mockRejectedValue(new Error('Service unavailable'));
 
-      const handler = handlers['dependencies-get-status'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.GET_STATUS];
 
       // createHandler would normally wrap this, but we mocked it to pass through
       await expect(handler({}, {})).rejects.toThrow('Service unavailable');
@@ -157,7 +149,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallOllama.mockResolvedValue({ success: true });
       mockStartOllama.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
       const result = await handler({}, {});
 
       expect(mockInstallOllama).toHaveBeenCalled();
@@ -168,7 +160,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallOllama.mockResolvedValue({ success: true });
       mockStartOllama.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
       await handler({}, {});
 
       // Should have sent progress messages
@@ -185,7 +177,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallOllama.mockResolvedValue({ success: true });
       mockStartOllama.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
       await handler({}, {});
 
       expect(mockStartOllama).toHaveBeenCalled();
@@ -194,7 +186,7 @@ describe('Dependencies IPC Handlers', () => {
     test('returns error when installation fails', async () => {
       mockInstallOllama.mockResolvedValue({ success: false, error: 'Download failed' });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
       const result = await handler({}, {});
 
       expect(result.success).toBe(false);
@@ -205,7 +197,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallOllama.mockResolvedValue({ success: true });
       mockStartOllama.mockRejectedValue(new Error('Port in use'));
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
       const result = await handler({}, {});
 
       // Install should still succeed even if startup fails
@@ -215,7 +207,7 @@ describe('Dependencies IPC Handlers', () => {
     test('sends error progress when installation fails', async () => {
       mockInstallOllama.mockResolvedValue({ success: false, error: 'Network error' });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
       await handler({}, {});
 
       expect(mockWebContentsSend).toHaveBeenCalledWith(
@@ -234,7 +226,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallChromaDb.mockResolvedValue({ success: true });
       mockStartChromaDB.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB];
       await handler({}, {});
 
       expect(mockInstallChromaDb).toHaveBeenCalledWith(
@@ -249,7 +241,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallChromaDb.mockResolvedValue({ success: true });
       mockStartChromaDB.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB];
       await handler({}, {});
 
       expect(mockSetChromadbDependencyMissing).toHaveBeenCalledWith(false);
@@ -259,7 +251,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallChromaDb.mockResolvedValue({ success: true });
       mockStartChromaDB.mockRejectedValue(new Error('Port 8000 in use'));
 
-      const handler = handlers['dependencies-install-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB];
       const result = await handler({}, {});
 
       expect(result.success).toBe(true);
@@ -269,7 +261,7 @@ describe('Dependencies IPC Handlers', () => {
     test('returns error when installation fails', async () => {
       mockInstallChromaDb.mockResolvedValue({ success: false, error: 'pip not found' });
 
-      const handler = handlers['dependencies-install-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB];
       const result = await handler({}, {});
 
       expect(result.success).toBe(false);
@@ -280,7 +272,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallChromaDb.mockResolvedValue({ success: true });
       mockStartChromaDB.mockRejectedValue(new Error('Module not found'));
 
-      const handler = handlers['dependencies-install-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_CHROMADB];
       await handler({}, {});
 
       expect(mockWebContentsSend).toHaveBeenCalledWith(
@@ -298,7 +290,7 @@ describe('Dependencies IPC Handlers', () => {
     test('calls manager.updateOllama', async () => {
       mockUpdateOllama.mockResolvedValue({ success: true, updated: true });
 
-      const handler = handlers['dependencies-update-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.UPDATE_OLLAMA];
       const result = await handler({}, {});
 
       expect(mockUpdateOllama).toHaveBeenCalled();
@@ -308,7 +300,7 @@ describe('Dependencies IPC Handlers', () => {
     test('sends progress event', async () => {
       mockUpdateOllama.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-update-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.UPDATE_OLLAMA];
       await handler({}, {});
 
       expect(mockWebContentsSend).toHaveBeenCalledWith(
@@ -326,7 +318,7 @@ describe('Dependencies IPC Handlers', () => {
     test('calls manager.updateChromaDb', async () => {
       mockUpdateChromaDb.mockResolvedValue({ success: true, updated: true });
 
-      const handler = handlers['dependencies-update-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.UPDATE_CHROMADB];
       const result = await handler({}, {});
 
       expect(mockUpdateChromaDb).toHaveBeenCalled();
@@ -336,7 +328,7 @@ describe('Dependencies IPC Handlers', () => {
     test('sends progress event', async () => {
       mockUpdateChromaDb.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-update-chromadb'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.UPDATE_CHROMADB];
       await handler({}, {});
 
       expect(mockWebContentsSend).toHaveBeenCalledWith(
@@ -359,7 +351,7 @@ describe('Dependencies IPC Handlers', () => {
       mockInstallOllama.mockResolvedValue({ success: true });
       mockStartOllama.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
 
       // Should not throw
       await expect(handler({}, {})).resolves.toBeDefined();
@@ -369,7 +361,7 @@ describe('Dependencies IPC Handlers', () => {
       mockGetMainWindow.mockReturnValue(null);
       mockInstallOllama.mockResolvedValue({ success: true });
 
-      const handler = handlers['dependencies-install-ollama'];
+      const handler = handlers[IPC_CHANNELS.DEPENDENCIES.INSTALL_OLLAMA];
 
       // Should not throw
       await expect(handler({}, {})).resolves.toBeDefined();

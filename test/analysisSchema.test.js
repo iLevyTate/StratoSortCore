@@ -8,6 +8,7 @@ describe('Extended Analysis Schema', () => {
     expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('type');
     expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('category');
     expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('project');
+    expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('purpose');
     expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('summary');
     expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('keywords');
     expect(ANALYSIS_SCHEMA_PROMPT).toHaveProperty('confidence');
@@ -21,6 +22,7 @@ describe('Extended Analysis Schema', () => {
       type: 'Document',
       category: 'Uncategorized',
       project: null,
+      purpose: null,
       summary: '',
       keywords: [],
       confidence: 0,

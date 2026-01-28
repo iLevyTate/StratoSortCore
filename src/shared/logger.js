@@ -127,7 +127,7 @@ class Logger {
       const oldestFile = `${this.logFile}.${this.MAX_ROTATED_FILES}`;
       try {
         await fs.unlink(oldestFile);
-      } catch (e) {
+      } catch {
         // Ignore if doesn't exist
       }
 
@@ -137,7 +137,7 @@ class Logger {
         const next = `${this.logFile}.${i + 1}`;
         try {
           await fs.rename(current, next);
-        } catch (e) {
+        } catch {
           // Ignore if doesn't exist
         }
       }
@@ -457,7 +457,7 @@ class Logger {
     if (data && Object.keys(data).length > 0) {
       try {
         output += `\n  ${this.safeStringify(data)}`;
-      } catch (e) {
+      } catch {
         output += `\n  [Data stringify error]`;
       }
     }
@@ -472,7 +472,7 @@ class Logger {
           process.stdout.write(output);
         }
       }
-    } catch (e) {
+    } catch {
       // Fallback to console if process not available
       if (this.enableConsole) {
         const consoleMethod = this.getConsoleMethod(normalizedLevel);
@@ -500,7 +500,7 @@ class Logger {
       if (typeof process !== 'undefined' && process.stdout) {
         process.stdout.write(text);
       }
-    } catch (e) {
+    } catch {
       // Fallback
       if (this.enableConsole) {
         console.log(text);
@@ -512,7 +512,7 @@ class Logger {
       try {
         const fs = require('fs');
         fs.appendFileSync(this.logFile, text);
-      } catch (e) {
+      } catch {
         // Ignore file write errors for raw output
       }
     }

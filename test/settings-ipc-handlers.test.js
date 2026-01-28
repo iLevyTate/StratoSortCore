@@ -129,6 +129,28 @@ jest.mock('../src/shared/securityConfig', () => ({
 jest.mock('../src/shared/validationConstants', () => ({
   THEME_VALUES: ['light', 'dark', 'system'],
   LOGGING_LEVELS: ['error', 'warn', 'info', 'debug'],
+  LENIENT_URL_PATTERN:
+    /^(?:https?:\/\/)?(?:\[[0-9a-f:]+\]|[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/i,
+  MODEL_NAME_PATTERN: /^(?!.*\.\.)[a-zA-Z0-9][a-zA-Z0-9\-_.@:/]*$/,
+  MAX_MODEL_NAME_LENGTH: 100,
+  NOTIFICATION_MODES: ['both', 'ui', 'tray', 'none'],
+  NAMING_CONVENTIONS: [
+    'subject-date',
+    'date-subject',
+    'project-subject-date',
+    'category-subject',
+    'keep-original'
+  ],
+  CASE_CONVENTIONS: [
+    'kebab-case',
+    'snake_case',
+    'camelCase',
+    'PascalCase',
+    'lowercase',
+    'UPPERCASE'
+  ],
+  SMART_FOLDER_ROUTING_MODES: ['auto', 'llm', 'embedding', 'hybrid'],
+  SEPARATOR_PATTERN: /^[^/\\:*?"<>|]+$/,
   NUMERIC_LIMITS: {
     cacheSize: { min: 0, max: 100000 },
     maxBatchSize: { min: 1, max: 1000 }
@@ -648,7 +670,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('alphanumeric');
+      expect(result.error).toContain('textModel');
     });
 
     test('rejects model names that are too long', async () => {
@@ -666,7 +688,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('too long');
+      expect(result.error).toContain('visionModel');
     });
 
     test('rejects non-boolean for boolean settings', async () => {
@@ -684,7 +706,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('must be boolean');
+      expect(result.error).toContain('launchOnStartup');
     });
 
     test('rejects invalid language codes', async () => {
@@ -702,7 +724,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('language code');
+      expect(result.error).toContain('language');
     });
 
     test('rejects invalid logging levels', async () => {
@@ -720,7 +742,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('must be one of');
+      expect(result.error).toContain('loggingLevel');
     });
 
     test('rejects invalid cacheSize values', async () => {
@@ -738,7 +760,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('must be integer');
+      expect(result.error).toContain('cacheSize');
     });
 
     test('rejects invalid maxBatchSize values', async () => {
@@ -756,7 +778,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('must be integer');
+      expect(result.error).toContain('maxBatchSize');
     });
 
     test('rejects invalid notificationMode', async () => {
@@ -772,7 +794,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('must be one of');
+      expect(result.error).toContain('notificationMode');
     });
 
     test('rejects invalid namingConvention', async () => {
@@ -788,7 +810,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('valid naming convention');
+      expect(result.error).toContain('namingConvention');
     });
 
     test('rejects invalid caseConvention', async () => {
@@ -804,7 +826,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('valid case convention');
+      expect(result.error).toContain('caseConvention');
     });
 
     test('rejects invalid separator', async () => {
@@ -820,7 +842,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('safe separator');
+      expect(result.error).toContain('separator');
     });
 
     test('rejects invalid confidenceThreshold', async () => {
@@ -836,7 +858,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('between 0 and 1');
+      expect(result.error).toContain('confidenceThreshold');
     });
 
     test('rejects invalid maxConcurrentAnalysis', async () => {
@@ -852,7 +874,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('integer between 1 and 10');
+      expect(result.error).toContain('maxConcurrentAnalysis');
     });
 
     test('rejects invalid path settings', async () => {
@@ -868,7 +890,7 @@ describe('Settings IPC Handlers', () => {
       const result = await handler({}, importPath);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('max 1000 chars');
+      expect(result.error).toContain('defaultSmartFolderLocation');
     });
 
     test('ignores unknown setting keys', async () => {

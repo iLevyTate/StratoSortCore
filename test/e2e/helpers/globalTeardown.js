@@ -12,8 +12,7 @@ const fs = require('fs');
  * Global teardown function
  * @param {Object} config - Playwright config
  */
-// eslint-disable-next-line no-unused-vars
-async function globalTeardown(config) {
+async function globalTeardown(_config) {
   console.log('\n========================================');
   console.log('StratoSort E2E Test Suite - Teardown');
   console.log('========================================\n');

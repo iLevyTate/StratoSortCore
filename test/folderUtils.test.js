@@ -19,8 +19,18 @@ describe('folderUtils', () => {
         const result = mapFoldersToCategories(folders);
 
         expect(result).toHaveLength(2);
-        expect(result[0]).toEqual({ name: 'Reports', description: 'Monthly reports', id: '1' });
-        expect(result[1]).toEqual({ name: 'Invoices', description: 'Payment invoices', id: '2' });
+        expect(result[0]).toEqual({
+          name: 'Reports',
+          description: 'Monthly reports',
+          path: '/docs/reports',
+          id: '1'
+        });
+        expect(result[1]).toEqual({
+          name: 'Invoices',
+          description: 'Payment invoices',
+          path: '/docs/invoices',
+          id: '2'
+        });
       });
 
       test('handles empty array', () => {

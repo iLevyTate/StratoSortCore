@@ -66,6 +66,7 @@ const WINDOWS_EXECUTABLE_EXTENSIONS = {
   npx: '.cmd',
   yarn: '.cmd',
   pnpm: '.cmd',
+  chroma: '.cmd',
   chromadb: '.cmd',
   pip: '.exe',
   pip3: '.exe'
@@ -246,18 +247,19 @@ async function crossSpawn(command, args = [], options = {}) {
               // On Windows, killing a process tree requires taskkill
               if (isWindows) {
                 try {
-                  const { spawnSync } = require('child_process');
-                  spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
-                    windowsHide: true,
-                    timeout: 1000
+                  const killer = nodeSpawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+                    windowsHide: true
                   });
-                } catch (e) {
+                  killer.on('error', () => {
+                    child.kill('SIGTERM');
+                  });
+                } catch {
                   child.kill('SIGTERM');
                 }
               } else {
                 child.kill('SIGTERM');
               }
-            } catch (e) {
+            } catch {
               // Process may have already exited
             }
             resolve({

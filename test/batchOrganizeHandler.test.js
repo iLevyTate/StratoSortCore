@@ -67,6 +67,14 @@ jest.mock('../src/shared/constants', () => ({
   PROCESSING_LIMITS: {
     MAX_BATCH_OPERATION_SIZE: 1000,
     MAX_BATCH_OPERATION_TIME: 600000
+  },
+  IPC_CHANNELS: {
+    CHROMADB: {
+      STATUS_CHANGED: 'chromadb:status-changed'
+    },
+    DEPENDENCIES: {
+      SERVICE_STATUS_CHANGED: 'dependencies:service-status-changed'
+    }
   }
 }));
 
@@ -77,6 +85,10 @@ jest.mock('../src/shared/performanceConstants', () => ({
   },
   TIMEOUTS: {
     FILE_COPY: 30000
+  },
+  RETRY: {
+    MAX_ATTEMPTS_VERY_HIGH: 3,
+    ATOMIC_BACKOFF_STEP_MS: 1
   }
 }));
 
@@ -267,6 +279,30 @@ describe('Batch Organize Handler', () => {
         oldPath: '/src/file1.txt',
         newPath: '/dest/file1.txt'
       });
+    });
+
+    test('retries rename on transient file lock errors', async () => {
+      const operations = [{ source: '/src/locked.txt', destination: '/dest/locked.txt' }];
+
+      mockFs.rename
+        .mockRejectedValueOnce(Object.assign(new Error('locked'), { code: 'EBUSY' }))
+        .mockResolvedValueOnce(undefined);
+
+      mockFs.access
+        .mockRejectedValueOnce({ code: 'ENOENT' }) // destination missing before move
+        .mockResolvedValueOnce(undefined) // destination exists after move
+        .mockRejectedValueOnce({ code: 'ENOENT' }); // source removed after move
+
+      const result = await handleBatchOrganize({
+        operation: { operations },
+        logger: mockLogger,
+        getServiceIntegration: mockGetServiceIntegration,
+        getMainWindow: mockGetMainWindow
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFs.rename).toHaveBeenCalledTimes(2);
+      expect(result.results[0].success).toBe(true);
     });
 
     test('handles partial failures', async () => {

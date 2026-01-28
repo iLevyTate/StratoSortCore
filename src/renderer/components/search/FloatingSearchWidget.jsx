@@ -25,7 +25,7 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
         const parsed = JSON.parse(saved);
         setPosition(parsed);
       }
-    } catch (error) {
+    } catch {
       // Ignore localStorage errors
     }
   }, []);
@@ -34,7 +34,7 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
   const savePosition = useCallback((pos) => {
     try {
       localStorage.setItem('floatingSearchWidgetPosition', JSON.stringify(pos));
-    } catch (error) {
+    } catch {
       // Ignore localStorage errors
     }
   }, []);

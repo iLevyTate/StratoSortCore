@@ -123,7 +123,6 @@ describe('backgroundSetup automated dependencies', () => {
       const cleaned = String(p).replace(/\\/g, '/');
       // Collapse any ".." segments so "/a/b/../c" resolves correctly in memfs.
       // Use posix normalization regardless of host OS.
-      // eslint-disable-next-line global-require
       return require('path').posix.normalize(cleaned);
     };
     const originalAccess = fs.access.bind(fs);

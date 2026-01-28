@@ -55,6 +55,8 @@ describe('Custom Folders', () => {
     jest.resetModules();
 
     customFolders = require('../src/main/core/customFolders');
+    const enoent = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    mockFs.readFile.mockRejectedValue(enoent);
   });
 
   describe('getCustomFoldersPath', () => {
@@ -85,8 +87,9 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      expect(folders).toHaveLength(2);
-      expect(folders[0].name).toBe('Documents');
+      expect(folders.some((f) => f.name === 'Documents')).toBe(true);
+      expect(folders.some((f) => f.name === 'Archives')).toBe(true);
+      expect(folders.some((f) => f.name === 'Uncategorized')).toBe(true);
     });
 
     test('creates default smart folders when file does not exist', async () => {
@@ -102,7 +105,7 @@ describe('Custom Folders', () => {
       expect(mockFs.mkdir).toHaveBeenCalled();
     });
 
-    test('adds Uncategorized folder if missing from saved data', async () => {
+    test('adds missing default folders if saved data is incomplete', async () => {
       const savedFolders = [
         {
           id: 'folder1',
@@ -115,8 +118,10 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      // Should have original folder plus new Uncategorized
+      // Should have full default set when defaults are partially present
+      expect(folders).toHaveLength(8);
       expect(folders.some((f) => f.name.toLowerCase() === 'uncategorized')).toBe(true);
+      expect(folders.some((f) => f.name === 'Archives')).toBe(true);
     });
 
     test('normalizes folder paths', async () => {
@@ -132,7 +137,79 @@ describe('Custom Folders', () => {
 
       const folders = await customFolders.loadCustomFolders();
 
-      expect(folders[0].path).toBeDefined();
+      const uncategorized = folders.find((folder) => folder.name === 'Uncategorized');
+      expect(uncategorized?.path).toBeDefined();
+    });
+
+    test('does not re-add defaults when custom folders exist', async () => {
+      const savedFolders = [
+        {
+          id: 'custom-projects',
+          name: 'Projects',
+          path: '/custom/projects',
+          isDefault: false
+        },
+        {
+          id: 'uncategorized',
+          name: 'Uncategorized',
+          path: '/custom/uncategorized',
+          isDefault: true
+        }
+      ];
+
+      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(savedFolders));
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders.some((f) => f.name === 'Projects')).toBe(true);
+      expect(folders.some((f) => f.name === 'Documents')).toBe(false);
+      expect(folders.some((f) => f.name === 'Archives')).toBe(false);
+    });
+
+    test('recovers custom folders from legacy userData when current has defaults only', async () => {
+      const currentDefaults = [
+        {
+          id: 'default-documents',
+          name: 'Documents',
+          path: '/test/documents',
+          isDefault: true
+        },
+        {
+          id: 'default-uncategorized',
+          name: 'Uncategorized',
+          path: '/test/uncategorized',
+          isDefault: true
+        }
+      ];
+      const legacyFolders = [
+        {
+          id: 'custom-projects',
+          name: 'Projects',
+          path: '/custom/projects',
+          isDefault: false
+        },
+        {
+          id: 'default-documents-legacy',
+          name: 'Documents',
+          path: '/test/documents',
+          isDefault: true
+        }
+      ];
+
+      mockFs.readFile.mockImplementation((filePath) => {
+        const normalizedPath = String(filePath).replace(/\\/g, '/');
+        if (normalizedPath.endsWith('/userData/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(currentDefaults));
+        }
+        if (normalizedPath.endsWith('/StratoSort/custom-folders.json')) {
+          return Promise.resolve(JSON.stringify(legacyFolders));
+        }
+        return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+      });
+
+      const folders = await customFolders.loadCustomFolders();
+
+      expect(folders.some((folder) => folder.name === 'Projects')).toBe(true);
     });
 
     test('handles invalid JSON gracefully', async () => {

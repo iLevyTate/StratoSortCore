@@ -17,6 +17,7 @@ import Modal, { ConfirmModal } from './ui/Modal';
 import { useNotification } from '../contexts/NotificationContext';
 import { ACTION_TYPES as SHARED_ACTION_TYPES } from '../../shared/constants';
 import Button from './ui/Button';
+import StateMessage from './ui/StateMessage';
 import { Text } from './ui/Typography';
 
 const logger = createLogger('UndoRedoSystem');
@@ -756,17 +757,15 @@ function HistoryModal() {
 
       <div className="space-y-2">
         {fullStack.length === 0 ? (
-          <div className="text-center p-8 bg-system-gray-50/50 rounded-xl border border-dashed border-border-soft">
-            <div className="w-12 h-12 mx-auto mb-3 bg-white rounded-full flex items-center justify-center shadow-sm border border-border-soft/50">
-              <FileText className="w-6 h-6 text-system-gray-300" />
-            </div>
-            <Text variant="body" className="text-system-gray-500 font-medium">
-              No actions recorded
-            </Text>
-            <Text variant="tiny" className="text-system-gray-400 mt-1">
-              Actions you take will appear here
-            </Text>
-          </div>
+          <StateMessage
+            icon={FileText}
+            tone="neutral"
+            size="lg"
+            title="No actions recorded"
+            description="Actions you take will appear here."
+            className="text-center p-8 bg-system-gray-50/50 rounded-xl border border-dashed border-border-soft"
+            contentClassName="max-w-sm"
+          />
         ) : (
           <div className="relative pl-2">
             <div className="absolute left-[35px] top-6 bottom-6 w-0.5 bg-border-soft/50 -z-10" />

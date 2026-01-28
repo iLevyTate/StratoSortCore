@@ -24,7 +24,12 @@ jest.mock('../src/shared/logger', () => ({
 // Mock performanceConstants
 jest.mock('../src/shared/performanceConstants', () => ({
   LIMITS: {
-    MAX_HISTORY_ENTRIES: 10000
+    MAX_HISTORY_ENTRIES: 10000,
+    MAX_QUEUE_SIZE: 3
+  },
+  TIMEOUTS: {
+    MUTEX_ACQUIRE: 50,
+    DELAY_LOCK_RETRY: 5
   }
 }));
 
@@ -323,6 +328,32 @@ describe('AnalysisHistoryServiceCore', () => {
       await recordPromise;
 
       expect(performMaintenanceIfNeeded).toHaveBeenCalled();
+    });
+
+    test('rejects when write buffer is full', async () => {
+      service.MAX_PENDING_WRITES = 1;
+      const firstRecord = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+
+      await expect(service.recordAnalysis(mockFileInfo, mockAnalysisResults)).rejects.toMatchObject(
+        { code: 'WRITE_BUFFER_FULL' }
+      );
+
+      await flushWriteBuffer();
+      await firstRecord;
+    });
+
+    test('recovers from stale write lock after timeout', async () => {
+      service._writeLock = new Promise(() => {});
+
+      const acquirePromise = service._acquireWriteLock('test-timeout');
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+
+      const releaseLock = await acquirePromise;
+      expect(typeof releaseLock).toBe('function');
+
+      releaseLock();
+      expect(service._writeLock).toBeNull();
     });
   });
 

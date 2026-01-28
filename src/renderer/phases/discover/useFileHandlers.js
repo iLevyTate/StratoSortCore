@@ -9,9 +9,10 @@
 
 import { useCallback, useState } from 'react';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
+import { ANALYSIS_SUPPORTED_EXTENSIONS, ALL_SUPPORTED_EXTENSIONS } from '../../../shared/constants';
 import { logger } from '../../../shared/logger';
 import { extractExtension, extractFileName } from './namingUtils';
-import { normalizeText } from '../../../shared/normalization';
+import { normalizePathValue, isAbsolutePath } from '../../utils/pathNormalization';
 
 logger.setContext('DiscoverPhase:FileHandlers');
 
@@ -44,78 +45,12 @@ const ensureSmartFolderApi = (addNotification, actionLabel) => {
 };
 
 /**
- * Supported file extensions for analysis
+ * Supported file extensions for analysis (centralized list)
  */
-const SUPPORTED_EXTENSIONS = [
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.csv',
-  '.json',
-  '.xml',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.txt',
-  '.md',
-  '.rtf',
-  '.odt',
-  '.ods',
-  '.odp',
-  '.epub',
-  '.eml',
-  '.msg',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tiff',
-  '.svg',
-  '.zip',
-  '.rar',
-  '.7z',
-  '.tar',
-  '.gz',
-  '.kml',
-  '.kmz'
-];
+const SUPPORTED_EXTENSIONS = ANALYSIS_SUPPORTED_EXTENSIONS || ALL_SUPPORTED_EXTENSIONS || [];
 
 const SCAN_TIMEOUT = TIMEOUTS.DIRECTORY_SCAN || 30000;
 const FILE_STATS_BATCH_SIZE = 25;
-
-const normalizePathValue = (value) => {
-  if (typeof value !== 'string') return '';
-  const trimmed = normalizeText(value, { maxLength: 2048 }).replace(/^['"](.*)['"]$/, '$1');
-
-  if (trimmed.toLowerCase().startsWith('file://')) {
-    try {
-      const url = new URL(trimmed);
-      // On Windows, URL pathname starts with /C:/... — strip leading slash
-      const pathname = decodeURIComponent(url.pathname);
-      if (/^\/[a-zA-Z]:[\\/]/.test(pathname)) {
-        return pathname.slice(1);
-      }
-      return pathname;
-    } catch {
-      // fall back to trimmed
-    }
-  }
-
-  return trimmed;
-};
-
-const isAbsolutePath = (value) => {
-  const normalized = normalizePathValue(value);
-  if (!normalized) return false;
-  return (
-    /^[a-zA-Z]:[\\/]/.test(normalized) ||
-    normalized.startsWith('\\\\') ||
-    normalized.startsWith('/')
-  );
-};
 
 /**
  * Custom hook for file handling operations
@@ -433,7 +368,7 @@ export function useFileHandlers({
               'drop-folder-empty'
             );
           }
-        } catch (error) {
+        } catch {
           addNotification(
             `Error scanning dropped folder: ${dir.name || 'Selected folder'}`,
             'error',
@@ -698,7 +633,9 @@ export function useFileHandlers({
           );
         }
 
-        const newFiles = filterNewFiles(normalizedFiles, selectedFiles);
+        if (usableFiles.length === 0) return;
+
+        const newFiles = filterNewFiles(usableFiles, selectedFiles);
         if (newFiles.length === 0) return;
 
         const withPath = newFiles; // Already filtered for absolute paths

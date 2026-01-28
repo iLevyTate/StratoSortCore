@@ -237,6 +237,34 @@ const normalizeForComparison = (path) => {
   return isWindowsPath(path) ? normalized.toLowerCase() : normalized;
 };
 
+const COMPRESSED_TAR_EXTENSIONS = ['.gz', '.bz2', '.xz', '.zst', '.lz', '.lzma', '.br', '.z'];
+
+const getCompoundExtension = (fileName) => {
+  if (typeof fileName !== 'string') return '';
+  const lower = fileName.toLowerCase();
+  for (const ext of COMPRESSED_TAR_EXTENSIONS) {
+    const compound = `.tar${ext}`;
+    if (lower.endsWith(compound)) {
+      return fileName.slice(-compound.length);
+    }
+  }
+  return '';
+};
+
+const getFileExtension = (fileName) => {
+  const compound = getCompoundExtension(fileName);
+  if (compound) return compound;
+  const extIdx = typeof fileName === 'string' ? fileName.lastIndexOf('.') : -1;
+  return extIdx > 0 ? fileName.slice(extIdx) : '';
+};
+
+const hasFileExtension = (fileName) => {
+  if (!fileName) return false;
+  if (getCompoundExtension(fileName)) return true;
+  const extIdx = fileName.lastIndexOf('.');
+  return extIdx > 0 && extIdx < fileName.length - 1;
+};
+
 /**
  * Helper to join paths using the correct separator based on the root
  */
@@ -281,13 +309,10 @@ function processFileForOrganization({
 
   const suggestedName = edits.suggestedName || fileWithEdits.analysis?.suggestedName || file.name;
 
-  // Ensure extension is present - use lastIndexOf for more robust extension detection
-  // Check for extensions up to 5 characters (e.g., .html, .jpeg, .xlsx)
-  const originalExtIdx = file.name.lastIndexOf('.');
-  const originalExt = originalExtIdx > 0 ? file.name.slice(originalExtIdx) : '';
-  const suggestedExtIdx = suggestedName.lastIndexOf('.');
-  const hasExtension = suggestedExtIdx > 0 && suggestedExtIdx > suggestedName.length - 6;
-  const newName = hasExtension || !originalExt ? suggestedName : suggestedName + originalExt;
+  // Preserve compound extensions like .tar.gz when suggested name omits extension
+  const originalExt = getFileExtension(file.name);
+  const hasExtension = hasFileExtension(suggestedName);
+  const newName = hasExtension || !originalExt ? suggestedName : `${suggestedName}${originalExt}`;
 
   const dest = joinPath(destinationDir, newName);
   const normalized = window.electronAPI?.files?.normalizePath?.(dest) || dest;
@@ -509,6 +534,24 @@ export function useOrganization({
           findSmartFolderForCategory,
           defaultLocation
         });
+
+        const invalidOperations = operations.filter((op) => !op?.source || !op?.destination);
+        if (invalidOperations.length > 0) {
+          addNotification(
+            `Cannot organize: ${invalidOperations.length} file${invalidOperations.length > 1 ? 's' : ''} had invalid paths.`,
+            'error',
+            5000,
+            'organize-invalid-operations'
+          );
+          logger.warn('[ORGANIZE] Invalid operations detected', {
+            invalidCount: invalidOperations.length,
+            sample: invalidOperations.slice(0, 3)
+          });
+          setIsOrganizing(false);
+          setOrganizingState(false);
+          setBatchProgress({ current: 0, total: 0, currentFile: '' });
+          return;
+        }
 
         // FIX: Notify user when categories were changed due to missing smart folders
         if (categoryChanges && categoryChanges.length > 0) {

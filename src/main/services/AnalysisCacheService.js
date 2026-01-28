@@ -152,7 +152,7 @@ class AnalysisCacheService {
             .join(',')
         : '';
       hasher.update(foldersKey);
-    } catch (error) {
+    } catch {
       // Expected: Continue with partial key if folder data is malformed
     }
     return hasher.digest('hex');

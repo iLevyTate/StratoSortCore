@@ -72,7 +72,7 @@ class ChatService {
       });
       return { success: false, error: 'Query must be at least 2 characters' };
     }
-    if (!this.searchService || !this.ollamaService) {
+    if (!this.ollamaService) {
       logger.error('[ChatService] Service unavailable', {
         hasSearch: Boolean(this.searchService),
         hasOllama: Boolean(this.ollamaService)
@@ -141,7 +141,10 @@ class ChatService {
     }
 
     const parsed = this._parseResponse(ollamaResult.response, retrieval.sources);
-    const assistantForMemory = this._formatForMemory(parsed);
+    if (!retrieval?.sources?.length) {
+      parsed.documentAnswer = [];
+    }
+    let assistantForMemory = this._formatForMemory(parsed);
 
     // FIX: Smart fallback if model returns nothing (improves UX)
     if (parsed.documentAnswer.length === 0 && parsed.modelAnswer.length === 0) {
@@ -155,8 +158,8 @@ class ChatService {
         });
       }
       // Re-format for memory since we added a fallback response
-      const updatedMemory = this._formatForMemory(parsed);
-      await this._saveMemoryTurn(memory, cleanQuery, updatedMemory);
+      assistantForMemory = this._formatForMemory(parsed);
+      await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
     } else {
       await this._saveMemoryTurn(memory, cleanQuery, assistantForMemory);
     }
@@ -268,19 +271,56 @@ class ChatService {
     query,
     { topK, mode, chunkTopK, chunkWeight, contextFileIds, expandSynonyms, correctSpelling, rerank }
   ) {
-    const meta = {};
-    const searchResults = await this.searchService.hybridSearch(query, {
-      topK,
-      mode,
-      chunkWeight,
-      chunkTopK,
-      expandSynonyms,
-      correctSpelling,
-      rerank
-    });
+    const meta = {
+      retrievalAvailable: true
+    };
+
+    if (!this.searchService || typeof this.searchService.hybridSearch !== 'function') {
+      return {
+        sources: [],
+        meta: {
+          ...meta,
+          retrievalAvailable: false,
+          warning: 'Document retrieval unavailable (search service not ready)'
+        }
+      };
+    }
+
+    let searchResults;
+    try {
+      searchResults = await this.searchService.hybridSearch(query, {
+        topK,
+        mode,
+        chunkWeight,
+        chunkTopK,
+        expandSynonyms,
+        correctSpelling,
+        rerank
+      });
+    } catch (error) {
+      logger.warn('[ChatService] Search failed:', error?.message || error);
+      return {
+        sources: [],
+        meta: {
+          ...meta,
+          retrievalAvailable: false,
+          error: error?.message || 'Search failed',
+          warning: `Document retrieval failed: ${error?.message || 'Search failed'}`
+        }
+      };
+    }
 
     if (!searchResults?.success) {
-      return { sources: [], meta: { error: searchResults?.error || 'Search failed' } };
+      const errorMessage = searchResults?.error || 'Search failed';
+      return {
+        sources: [],
+        meta: {
+          ...meta,
+          retrievalAvailable: false,
+          error: errorMessage,
+          warning: `Document retrieval failed: ${errorMessage}`
+        }
+      };
     }
 
     const baseResults = Array.isArray(searchResults.results) ? searchResults.results : [];
@@ -370,13 +410,27 @@ class ChatService {
       };
     });
 
+    const searchMeta = searchResults.meta || null;
+    const fallbackReason = searchMeta?.fallbackReason;
+    const isFallback = Boolean(searchMeta?.fallback || searchResults.mode === 'bm25-fallback');
+
     return {
       sources,
       meta: {
         ...meta,
         mode: searchResults.mode || mode,
         queryMeta: searchResults.queryMeta || null,
-        resultCount: sources.length
+        searchMeta,
+        resultCount: sources.length,
+        ...(isFallback
+          ? {
+              fallback: true,
+              fallbackReason: fallbackReason || 'embedding model unavailable',
+              warning: `Limited document retrieval: ${
+                fallbackReason || 'embedding model unavailable'
+              }`
+            }
+          : {})
       }
     };
   }

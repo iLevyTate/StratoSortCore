@@ -19,21 +19,12 @@ describe('ChromaDB IPC', () => {
   let logger;
   let mockWin;
   let chromaService;
-
-  const IPC_CHANNELS = {
-    CHROMADB: {
-      GET_STATUS: 'chromadb:get-status',
-      GET_CIRCUIT_STATS: 'chromadb:get-circuit-stats',
-      GET_QUEUE_STATS: 'chromadb:get-queue-stats',
-      FORCE_RECOVERY: 'chromadb:force-recovery',
-      HEALTH_CHECK: 'chromadb:health-check',
-      STATUS_CHANGED: 'chromadb-status-changed'
-    }
-  };
+  let IPC_CHANNELS;
 
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    IPC_CHANNELS = require('../src/shared/constants').IPC_CHANNELS;
 
     handlers = {};
     ipcMain = {

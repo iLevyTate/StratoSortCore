@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
 import { List } from 'react-window';
 import { FileText, Compass, AlertTriangle, Eye, FolderOpen, Trash2 } from 'lucide-react';
-import { Button, StatusBadge, Card, IconButton } from '../ui';
+import { Button, StatusBadge, Card, IconButton, StateMessage } from '../ui';
 import { logger } from '../../../shared/logger';
 import { UI_VIRTUALIZATION } from '../../../shared/constants';
 import { formatDisplayPath } from '../../utils/pathDisplay';
@@ -29,23 +29,26 @@ class AnalysisResultsErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="p-4 bg-stratosort-danger/10 border border-stratosort-danger/30 rounded-lg">
-          <div className="flex items-center gap-2 text-stratosort-danger">
-            <AlertTriangle className="w-5 h-5" />
-            <span className="font-medium">Failed to render analysis results</span>
-          </div>
-          <p className="mt-2 text-sm text-stratosort-danger">
-            {this.state.error?.message || 'An unexpected error occurred'}
-          </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="mt-3"
-            onClick={() => this.setState({ hasError: false, error: null })}
-          >
-            Try Again
-          </Button>
-        </div>
+        <StateMessage
+          icon={AlertTriangle}
+          tone="error"
+          variant="card"
+          align="left"
+          size="sm"
+          title="Failed to render analysis results"
+          description={this.state.error?.message || 'An unexpected error occurred'}
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => this.setState({ hasError: false, error: null })}
+            >
+              Try Again
+            </Button>
+          }
+          className="p-4"
+          role="alert"
+        />
       );
     }
     return this.props.children;
@@ -84,7 +87,7 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
     stateDisplay = getFileStateDisplay
       ? getFileStateDisplay(file.path, !!file.analysis)
       : stateDisplay;
-  } catch (err) {
+  } catch {
     stateDisplay = { label: 'Error', icon: null, color: 'text-stratosort-danger', spinning: false };
   }
 
@@ -291,17 +294,14 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
 
   if (isEmpty) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-center p-8">
-        <div className="w-16 h-16 bg-system-gray-100 rounded-full flex items-center justify-center mb-4">
-          <Compass className="w-8 h-8 text-system-gray-400" />
-        </div>
-        <Text variant="body" className="font-medium text-system-gray-900">
-          No analysis results yet
-        </Text>
-        <Text variant="small" className="text-system-gray-500 max-w-sm mt-1">
-          Add files above and start an analysis to see suggestions stream in.
-        </Text>
-      </div>
+      <StateMessage
+        icon={Compass}
+        title="No analysis results yet"
+        description="Add files above and start an analysis to see suggestions stream in."
+        size="lg"
+        className="h-64 flex items-center justify-center"
+        contentClassName="max-w-sm"
+      />
     );
   }
 

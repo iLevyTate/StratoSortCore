@@ -133,6 +133,7 @@ class ChromaDBServiceCore extends EventEmitter {
     // Event handlers registered in constructor can fire before initialize() completes,
     // causing UI events to be emitted when the service state is undefined
     this._initializationComplete = false;
+    this._isShuttingDown = false;
 
     // FIX: Track collection dimensions to detect embedding model changes
     this._collectionDimensions = {
@@ -425,6 +426,17 @@ class ChromaDBServiceCore extends EventEmitter {
       // Retry with incremented count
       return await this._executeWithNotFoundRecovery(operation, fn, retryCount + 1);
     }
+  }
+
+  _shouldSkipOperation(operation, details = {}) {
+    if (!this._isShuttingDown) {
+      return false;
+    }
+    logger.debug('[ChromaDB] Skipping operation during shutdown', {
+      operation,
+      ...details
+    });
+    return true;
   }
 
   /**
@@ -752,6 +764,10 @@ class ChromaDBServiceCore extends EventEmitter {
    * @private
    */
   async _flushOfflineQueue() {
+    if (this._isShuttingDown) {
+      logger.debug('[ChromaDB] Skipping offline queue flush during shutdown');
+      return { processed: 0, failed: 0, remaining: this.offlineQueue.size() };
+    }
     if (this.offlineQueue.isEmpty()) {
       return { processed: 0, failed: 0, remaining: 0 };
     }
@@ -989,7 +1005,7 @@ class ChromaDBServiceCore extends EventEmitter {
         ) {
           return; // Suppress
         }
-        // eslint-disable-next-line no-console
+
         originalWarn.apply(console, args);
       };
 
@@ -1215,6 +1231,9 @@ class ChromaDBServiceCore extends EventEmitter {
     if (!folder.id || !folder.vector || !Array.isArray(folder.vector)) {
       throw new Error('Invalid folder data: missing id or vector');
     }
+    if (this._shouldSkipOperation('upsertFolder', { folderId: folder.id })) {
+      return { queued: false, folderId: folder.id, skipped: true, reason: 'shutdown' };
+    }
 
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing folder upsert', {
@@ -1241,6 +1260,9 @@ class ChromaDBServiceCore extends EventEmitter {
   async batchUpsertFolders(folders) {
     if (!folders || folders.length === 0) {
       return { queued: false, count: 0, skipped: [] };
+    }
+    if (this._shouldSkipOperation('batchUpsertFolders', { count: folders.length })) {
+      return { queued: false, count: 0, skipped: true, reason: 'shutdown' };
     }
 
     if (!this.circuitBreaker.isAllowed()) {
@@ -1458,6 +1480,9 @@ class ChromaDBServiceCore extends EventEmitter {
     if (!file.id || !file.vector || !Array.isArray(file.vector)) {
       throw new Error('Invalid file data: missing id or vector');
     }
+    if (this._shouldSkipOperation('upsertFile', { fileId: file.id })) {
+      return { queued: false, fileId: file.id, skipped: true, reason: 'shutdown' };
+    }
 
     if (!this.circuitBreaker.isAllowed()) {
       logger.debug('[ChromaDB] Circuit open, queueing file upsert', {
@@ -1513,6 +1538,9 @@ class ChromaDBServiceCore extends EventEmitter {
   async batchUpsertFiles(files) {
     if (!files || files.length === 0) {
       return { queued: false, count: 0 };
+    }
+    if (this._shouldSkipOperation('batchUpsertFiles', { count: files.length })) {
+      return { queued: false, count: 0, skipped: true, reason: 'shutdown' };
     }
 
     if (!this.circuitBreaker.isAllowed()) {
@@ -1844,6 +1872,9 @@ class ChromaDBServiceCore extends EventEmitter {
   }
 
   async updateFilePaths(pathUpdates) {
+    if (this._shouldSkipOperation('updateFilePaths', { count: pathUpdates?.length || 0 })) {
+      return 0;
+    }
     await this.initialize();
     const updatedFiles = await updateFilePathsOp({
       pathUpdates,
@@ -1879,6 +1910,9 @@ class ChromaDBServiceCore extends EventEmitter {
 
   async batchUpsertFileChunks(chunks) {
     if (!chunks || chunks.length === 0) {
+      return 0;
+    }
+    if (this._shouldSkipOperation('batchUpsertFileChunks', { count: chunks.length })) {
       return 0;
     }
 
@@ -2411,6 +2445,7 @@ class ChromaDBServiceCore extends EventEmitter {
   // ============== Cleanup ==============
 
   async cleanup() {
+    this._isShuttingDown = true;
     // Stop periodic reconciliation
     this.stopPeriodicReconciliation();
     // FIX: Reset initialization complete flag to prevent events during cleanup

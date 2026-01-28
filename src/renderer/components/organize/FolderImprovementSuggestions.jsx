@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, Lightbulb, Info, Pin, CheckCircle, Folder } from 'lucide-react';
-import { Card, Button } from '../ui';
+import { Card, Button, StateMessage } from '../ui';
 import { Text } from '../ui/Typography';
 
 function FolderImprovementSuggestions({
@@ -51,17 +51,16 @@ function FolderImprovementSuggestions({
 
   if (!improvements || improvements.length === 0) {
     return (
-      <Card className="p-4 bg-stratosort-success/10 border-stratosort-success/20">
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-stratosort-success" />
-          <span className="text-stratosort-success font-medium">
-            Your folder structure is well-organized!
-          </span>
-        </div>
-        <p className="text-sm text-stratosort-success mt-2">
-          No significant improvements needed at this time.
-        </p>
-      </Card>
+      <StateMessage
+        icon={CheckCircle}
+        tone="success"
+        variant="card"
+        size="md"
+        align="left"
+        title="Your folder structure is well-organized!"
+        description="No significant improvements needed at this time."
+        className="p-4"
+      />
     );
   }
 

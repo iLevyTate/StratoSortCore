@@ -94,10 +94,12 @@ describe('StratoSort React App', () => {
         path.join(__dirname, '../src/renderer/phases/discover/useFileHandlers.js'),
         'utf8'
       );
+      const { ALL_SUPPORTED_EXTENSIONS } = require('../src/shared/constants');
       expect(fileHandlersContent).toContain('SUPPORTED_EXTENSIONS');
-      expect(fileHandlersContent.toLowerCase()).toContain('.pdf');
-      expect(fileHandlersContent.toLowerCase()).toContain('.txt');
-      expect(fileHandlersContent.toLowerCase()).toContain('.docx');
+      expect(fileHandlersContent).toContain('ALL_SUPPORTED_EXTENSIONS');
+      ['.pdf', '.txt', '.docx'].forEach((ext) => {
+        expect(ALL_SUPPORTED_EXTENSIONS).toContain(ext);
+      });
     });
   });
 

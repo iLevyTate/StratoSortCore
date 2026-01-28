@@ -353,10 +353,20 @@ class FolderMatchingService {
       });
 
       // embed() returns embeddings array; extract first vector
-      let vector =
-        Array.isArray(response.embeddings) && response.embeddings.length > 0
-          ? response.embeddings[0]
-          : [];
+      const embeddings = response?.embeddings;
+      if (!Array.isArray(embeddings) || embeddings.length === 0 || !Array.isArray(embeddings[0])) {
+        const emptyError = new Error(`Embedding response missing vector for model "${model}"`);
+        emptyError.code = 'EMBEDDING_FAILED';
+        throw emptyError;
+      }
+      let vector = embeddings[0];
+      if (!Array.isArray(vector) || vector.length === 0) {
+        const emptyError = new Error(
+          `Embedding response returned empty vector for model "${model}"`
+        );
+        emptyError.code = 'EMBEDDING_FAILED';
+        throw emptyError;
+      }
       const expectedDim = getEmbeddingDimension(model);
       const actualDim = vector.length;
 

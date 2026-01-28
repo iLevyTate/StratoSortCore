@@ -16,8 +16,7 @@ jest.mock('../src/shared/logger', () => ({
 
 // Force Windows behavior via platform utils
 jest.mock('../src/shared/platformUtils', () => ({
-  isWindows: true,
-  shouldUseShell: jest.fn().mockReturnValue(false)
+  isWindows: true
 }));
 
 // Mock preflight checks used for status

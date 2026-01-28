@@ -113,7 +113,7 @@ class UndoRedoService {
 
       // Fixed: Recalculate memory estimate after loading
       this._recalculateMemoryEstimate();
-    } catch (error) {
+    } catch {
       // File doesn't exist or is corrupted, start fresh
       this.actions = [];
       this.currentIndex = -1;

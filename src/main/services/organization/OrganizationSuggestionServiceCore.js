@@ -295,7 +295,7 @@ class OrganizationSuggestionServiceCore {
     let settings = null;
     try {
       settings = await this.settings?.load?.();
-    } catch (error) {
+    } catch {
       settings = null;
     }
 
@@ -569,10 +569,10 @@ class OrganizationSuggestionServiceCore {
           ? await getLLMAlternativeSuggestions(normalizedFile, smartFolders, this.config)
           : [];
 
-      const llmCategorySuggestion =
-        routing.mode === ROUTING_MODES.LLM
-          ? this._buildLlmCategorySuggestion(normalizedFile, smartFolders)
-          : null;
+      const llmCategorySuggestion = this._buildLlmCategorySuggestion(normalizedFile, smartFolders);
+      const shouldIncludeLlmCategory =
+        Boolean(llmCategorySuggestion) &&
+        (routing.mode === ROUTING_MODES.LLM || semanticMatches.length === 0 || hybridNeedsLlm);
 
       const improvementSuggestions = await this.getImprovementSuggestions(
         normalizedFile,
@@ -604,7 +604,7 @@ class OrganizationSuggestionServiceCore {
         suggestion.source = suggestion.source || 'llm';
         allSuggestions.push(suggestion);
       }
-      if (llmCategorySuggestion) {
+      if (shouldIncludeLlmCategory) {
         allSuggestions.push(llmCategorySuggestion);
       }
       for (const suggestion of improvementSuggestions) {
@@ -860,7 +860,7 @@ class OrganizationSuggestionServiceCore {
             model,
             updatedAt: new Date().toISOString()
           };
-        } catch (error) {
+        } catch {
           // FIX H-1: Use safe access for folder.name in error logging
           logger.warn(
             '[OrganizationSuggestionService] Failed to embed folder:',
@@ -1495,7 +1495,7 @@ class OrganizationSuggestionServiceCore {
           .map((f) => {
             try {
               return getSemanticFileId(f.path);
-            } catch (e) {
+            } catch {
               logger.warn('[OrganizationSuggestionService] Failed to get file ID:', f.path);
               return null;
             }

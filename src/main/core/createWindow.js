@@ -185,7 +185,7 @@ function createMainWindow() {
   win.once('closed', () => {
     try {
       mainWindowState.unmanage();
-    } catch (e) {
+    } catch {
       // State keeper might already be cleaned up
     }
   });

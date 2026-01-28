@@ -132,6 +132,13 @@ jest.mock('../../src/renderer/components/ui', () => ({
       className={className}
       {...props}
     />
+  ),
+  StateMessage: ({ title, description, children, ...props }) => (
+    <div data-testid="state-message" {...props}>
+      {title ? <div>{title}</div> : null}
+      {description ? <div>{description}</div> : null}
+      {children}
+    </div>
   )
 }));
 

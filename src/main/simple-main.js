@@ -32,8 +32,6 @@ const {
 } = require('./ollamaUtils');
 const { buildOllamaOptions } = require('./services/PerformanceService');
 const { getService: getSettingsService } = require('./services/SettingsService');
-const DownloadWatcher = require('./services/DownloadWatcher');
-
 // Import service integration
 const ServiceIntegration = require('./services/ServiceIntegration');
 
@@ -74,6 +72,7 @@ const { initializeLifecycle, registerLifecycleHandlers } = require('./core/lifec
 const { initializeAutoUpdater } = require('./core/autoUpdater');
 const { initializeJumpList, handleCommandLineTasks } = require('./core/jumpList');
 const { runBackgroundSetup } = require('./core/backgroundSetup');
+const { migrateUserDataState } = require('./core/userDataMigration');
 
 // Windows integrations (Jump List, notifications, taskbar grouping) require AppUserModelId.
 // Set it as early as possible so it applies even before any windows are created.
@@ -378,25 +377,20 @@ function updateDownloadWatcher(settings) {
       return;
     }
     if (!downloadWatcher) {
-      // Get notification service from container for user feedback
       const { container, ServiceIds } = require('./services/ServiceContainer');
-      const notificationService = container.tryResolve(ServiceIds.NOTIFICATION_SERVICE);
-      const analysisHistoryService = container.tryResolve(ServiceIds.ANALYSIS_HISTORY);
-      // FIX: Add chromaDbService and folderMatcher for embedding support
-      const chromaDbService = container.tryResolve(ServiceIds.CHROMA_DB);
-      const folderMatcher = container.tryResolve(ServiceIds.FOLDER_MATCHING);
+      downloadWatcher = container.tryResolve(ServiceIds.DOWNLOAD_WATCHER);
+      if (!downloadWatcher) {
+        logger.warn('[AUTO-ORGANIZE] Download watcher not available');
+        return;
+      }
 
-      downloadWatcher = new DownloadWatcher({
-        analyzeDocumentFile,
-        analyzeImageFile,
+      // Ensure container-managed watcher has required dependencies
+      serviceIntegration?.configureDownloadWatcher?.({
         getCustomFolders: () => customFolders,
-        autoOrganizeService: serviceIntegration.autoOrganizeService,
-        settingsService,
-        notificationService,
-        analysisHistoryService,
-        chromaDbService,
-        folderMatcher
+        analyzeDocumentFile,
+        analyzeImageFile
       });
+
       downloadWatcher.start();
       logger.info('[AUTO-ORGANIZE] Download watcher started successfully');
     }
@@ -527,6 +521,9 @@ app.whenReady().then(async () => {
 
     // Clean up old log files (keep last 7 days)
     await errorHandler.cleanupLogs(7);
+
+    // Restore legacy state/history before services read userData
+    await migrateUserDataState();
 
     // Get the startup manager instance
     const startupManager = getStartupManager();
@@ -801,6 +798,13 @@ app.whenReady().then(async () => {
         analyzeImageFile
       });
 
+      // Configure DownloadWatcher with required dependencies
+      serviceIntegration.configureDownloadWatcher({
+        getCustomFolders: () => customFolders,
+        analyzeDocumentFile,
+        analyzeImageFile
+      });
+
       // Configure LearningFeedback to learn from file organization
       serviceIntegration.configureLearningFeedback({
         getSmartFolders: getCustomFolders
@@ -1020,7 +1024,7 @@ app.whenReady().then(async () => {
     }
 
     // Auto-updates (production only) - handled by ./core/autoUpdater module
-    const autoUpdaterResult = await initializeAutoUpdater(isDev);
+    const autoUpdaterResult = await initializeAutoUpdater(isDev, getMainWindow);
     if (autoUpdaterResult.cleanup) {
       eventListeners.push(autoUpdaterResult.cleanup);
     }
@@ -1048,7 +1052,7 @@ logger.info('StratoSort main process initialized');
 
 // All Analysis History and System metrics handlers are registered via ./ipc/* modules
 
-// NOTE: Audio analysis handlers removed - feature disabled for performance optimization
+// Audio analysis is not supported in this build.
 
 // ===== TRAY INTEGRATION =====
 // System tray is now handled by ./core/systemTray

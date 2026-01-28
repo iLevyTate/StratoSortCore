@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector } from 'react-redux';
-import { Send, RefreshCw, FileText } from 'lucide-react';
-import { Button, Textarea, Switch } from '../ui';
+import { Send, RefreshCw, FileText, AlertTriangle } from 'lucide-react';
+import { Button, Textarea, Switch, StateMessage } from '../ui';
 import { formatDisplayPath } from '../../utils/pathDisplay';
 
 function normalizeImageSource(value) {
@@ -63,6 +63,16 @@ function ThinkingDots() {
   );
 }
 
+function ChatWarningBanner({ message }) {
+  if (!message) return null;
+  return (
+    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 text-xs rounded-lg flex items-center gap-2 text-system-gray-600">
+      <AlertTriangle className="w-4 h-4 text-stratosort-warning shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
 function ChatModeToggle({ value, onChange }) {
   const isFast = value === 'fast';
   return (
@@ -88,9 +98,14 @@ function ChatModeToggle({ value, onChange }) {
 function SourceList({ sources, onOpenSource }) {
   if (!sources || sources.length === 0) {
     return (
-      <div className="mt-3 rounded-lg border border-system-gray-200 bg-white px-3 py-3 text-xs text-system-gray-500">
-        No sources found for this response.
-      </div>
+      <StateMessage
+        icon={FileText}
+        tone="neutral"
+        size="sm"
+        align="left"
+        title="No sources found for this response."
+        className="mt-3 px-3 py-3 rounded-lg border border-system-gray-200 bg-white"
+      />
     );
   }
 
@@ -292,6 +307,7 @@ export default function ChatPanel({
   onReset,
   isSending,
   error,
+  warning,
   useSearchContext,
   onToggleSearchContext,
   onOpenSource,
@@ -345,6 +361,12 @@ export default function ChatPanel({
           </Button>
         </div>
       </div>
+
+      {warning ? (
+        <div className="px-4 pt-3">
+          <ChatWarningBanner message={warning} />
+        </div>
+      ) : null}
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 chat-thread">
         {messages.length === 0 ? (
@@ -466,10 +488,16 @@ export default function ChatPanel({
       </div>
 
       {error ? (
-        <div className="px-4 py-2 bg-red-50 border-t border-b border-red-100 text-sm text-red-600 flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-          {error}
-        </div>
+        <StateMessage
+          icon={AlertTriangle}
+          tone="error"
+          size="sm"
+          align="left"
+          title="Chat error"
+          description={error}
+          className="px-4 py-2 bg-red-50 border-t border-b border-red-100"
+          contentClassName="max-w-xl"
+        />
       ) : null}
 
       <div className="border-t border-system-gray-200 px-4 py-3 chat-input">
@@ -519,6 +547,7 @@ ChatPanel.propTypes = {
   onReset: PropTypes.func.isRequired,
   isSending: PropTypes.bool.isRequired,
   error: PropTypes.string,
+  warning: PropTypes.string,
   useSearchContext: PropTypes.bool.isRequired,
   onToggleSearchContext: PropTypes.func.isRequired,
   onOpenSource: PropTypes.func.isRequired,
@@ -531,6 +560,7 @@ ChatPanel.propTypes = {
 
 ChatPanel.defaultProps = {
   error: '',
+  warning: '',
   responseMode: 'fast',
   onResponseModeChange: () => {}
 };

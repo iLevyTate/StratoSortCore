@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { useAppSelector } from './store/hooks';
+import React, { useMemo, useCallback } from 'react';
+import { useAppDispatch, useAppSelector } from './store/hooks';
 import { PHASES } from '../shared/constants';
 
 import PhaseRenderer from './components/PhaseRenderer';
@@ -12,9 +12,24 @@ import AiDependenciesModalManager from './components/AiDependenciesModalManager'
 import AppProviders from './components/AppProviders';
 import ErrorBoundary from './components/ErrorBoundary';
 import AppShell from './components/layout/AppShell';
+import { updateSettings } from './store/slices/uiSlice';
+import { useSettingsSubscription } from './hooks/useSettingsSubscription';
 
 function AppContent() {
+  const dispatch = useAppDispatch();
   const currentPhase = useAppSelector((state) => state.ui.currentPhase);
+  const settingsEventsEnabled =
+    typeof window !== 'undefined' && window.electronAPI?.events?.onSettingsChanged;
+
+  const handleSettingsSync = useCallback(
+    (incomingSettings) => {
+      if (!incomingSettings || typeof incomingSettings !== 'object') return;
+      dispatch(updateSettings(incomingSettings));
+    },
+    [dispatch]
+  );
+
+  useSettingsSubscription(handleSettingsSync, { enabled: Boolean(settingsEventsEnabled) });
 
   // Determine content container classes based on phase
   const contentClassName = useMemo(() => {

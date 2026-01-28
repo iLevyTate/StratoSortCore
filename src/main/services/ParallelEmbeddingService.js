@@ -195,8 +195,7 @@ class ParallelEmbeddingService {
       if (acquiredSlot) {
         this._releaseSlot();
       }
-      // FIX: Invoke concurrency adjustment after each request
-      // This was previously defined but never called (dead code)
+      // Adjust concurrency after each request
       this._adjustConcurrency();
     }
   }
@@ -295,10 +294,6 @@ class ParallelEmbeddingService {
     let completedCount = 0;
     let modelChangedDuringBatch = false;
 
-    // Cache model lookup (Fix 6: Cache model lookup)
-    let lastModelCheck = Date.now();
-    const MODEL_CHECK_INTERVAL = 5000;
-
     logger.info('[ParallelEmbeddingService] Starting batch embedding', {
       itemCount: items.length,
       concurrencyLimit: this.concurrencyLimit,
@@ -308,18 +303,13 @@ class ParallelEmbeddingService {
     // Process all items with semaphore-controlled concurrency
     const processItem = async (item, index) => {
       try {
-        // FIX: Check if model changed during batch - early exit if detected
-        // Cached lookup to avoid reading config on every item
-        const now = Date.now();
-        if (now - lastModelCheck > MODEL_CHECK_INTERVAL) {
-          const currentModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
-          if (currentModel !== batchModel) {
-            modelChangedDuringBatch = true;
-            const errorMsg = `Model changed during batch operation (started with ${batchModel}, now ${currentModel}). Aborting batch to prevent vector dimension mismatch.`;
-            logger.error('[ParallelEmbeddingService] ' + errorMsg);
-            throw new Error(errorMsg);
-          }
-          lastModelCheck = now;
+        // FIX: Check model before each item to prevent mixed-dimension vectors
+        const currentModel = getOllamaEmbeddingModel() || AI_DEFAULTS.EMBEDDING.MODEL;
+        if (currentModel !== batchModel) {
+          modelChangedDuringBatch = true;
+          const errorMsg = `Model changed during batch operation (started with ${batchModel}, now ${currentModel}). Aborting batch to prevent vector dimension mismatch.`;
+          logger.error('[ParallelEmbeddingService] ' + errorMsg);
+          throw new Error(errorMsg);
         }
 
         const { vector, model } = await this.embedText(item.text);

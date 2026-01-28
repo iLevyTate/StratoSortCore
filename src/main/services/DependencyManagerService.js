@@ -14,7 +14,7 @@ const { spawn } = require('child_process');
 
 const { logger } = require('../../shared/logger');
 const { createSingletonHelpers } = require('../../shared/singletonFactory');
-const { isWindows, shouldUseShell } = require('../../shared/platformUtils');
+const { isWindows } = require('../../shared/platformUtils');
 const {
   asyncSpawn,
   hasPythonModuleAsync,
@@ -155,8 +155,7 @@ async function detectOllamaExePath() {
   try {
     const result = await asyncSpawn('ollama', ['--version'], {
       timeout: 2000,
-      windowsHide: true,
-      shell: shouldUseShell()
+      windowsHide: true
     });
     if (result.status === 0) {
       return 'ollama';
@@ -344,7 +343,6 @@ class DependencyManagerService {
           const child = spawn(ollamaExe, ['serve'], {
             detached: false,
             stdio: 'ignore',
-            shell: shouldUseShell(),
             windowsHide: true
           });
           child.unref?.();
@@ -396,7 +394,7 @@ class DependencyManagerService {
       await asyncSpawn(
         pythonLauncher.command,
         [...pythonLauncher.args, '-m', 'pip', 'install', '--upgrade', 'pip'],
-        { timeout: 5 * 60 * 1000, windowsHide: true, shell: shouldUseShell() }
+        { timeout: 5 * 60 * 1000, windowsHide: true }
       ).catch((pipErr) => {
         // Intentionally ignored: pip upgrade failure is non-fatal, chromadb install may still work
         logger.debug('[DependencyManager] pip upgrade failed (non-fatal):', pipErr?.message);
@@ -420,8 +418,7 @@ class DependencyManagerService {
 
       const installRes = await asyncSpawn(pythonLauncher.command, pkgArgs, {
         timeout: 10 * 60 * 1000,
-        windowsHide: true,
-        shell: shouldUseShell()
+        windowsHide: true
       });
 
       if (installRes.status !== 0) {

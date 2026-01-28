@@ -12,7 +12,7 @@ const crypto = require('crypto');
 const { app } = require('electron');
 const { logger } = require('../../../shared/logger');
 const { analysisResultSchema, validateSchema } = require('../../../shared/normalization/schemas');
-const { LIMITS } = require('../../../shared/performanceConstants');
+const { LIMITS, TIMEOUTS } = require('../../../shared/performanceConstants');
 const { CircuitBreaker } = require('../../utils/CircuitBreaker');
 const { traceHistoryUpdate } = require('../../../shared/pathTraceLogger');
 
@@ -80,6 +80,8 @@ class AnalysisHistoryServiceCore {
     this.analysisIndex = null;
     this.config = null;
     this.initialized = false;
+    this._readOnly = false;
+    this._readOnlyReason = null;
 
     // Schema version for future migration support
     this.SCHEMA_VERSION = '1.0.0';
@@ -108,6 +110,7 @@ class AnalysisHistoryServiceCore {
     this._pendingWrites = [];
     this._writeBufferTimer = null;
     this.WRITE_BUFFER_MS = 100;
+    this.MAX_PENDING_WRITES = LIMITS.MAX_QUEUE_SIZE;
 
     // Circuit Breaker for file system operations
     this.circuitBreaker = new CircuitBreaker('AnalysisHistoryService', {
@@ -183,24 +186,62 @@ class AnalysisHistoryServiceCore {
   }
 
   async initialize() {
-    if (this.initialized) return;
+    if (this.initialized && !this._readOnly) return;
+    if (this.initialized && this._readOnly) {
+      logger.info('[AnalysisHistoryService] Attempting to recover from read-only mode');
+    }
 
     try {
       await this.loadConfig();
       await this.loadHistory();
       await this.loadIndex();
       this.initialized = true;
+      if (this._readOnly) {
+        this._readOnly = false;
+        this._readOnlyReason = null;
+        logger.info('[AnalysisHistoryService] Read-only mode cleared after successful reload');
+      }
 
       // Subscribe to cache invalidation bus for cross-service cache coordination
-      this._busUnsubscribe = subscribeToInvalidationBus(this._cache, this);
+      if (!this._busUnsubscribe) {
+        this._busUnsubscribe = subscribeToInvalidationBus(this._cache, this);
+      }
 
       logger.info('[AnalysisHistoryService] Initialized successfully');
     } catch (error) {
       logger.error('[AnalysisHistoryService] Failed to initialize', {
         error: error.message
       });
+      if (error?.transient || error?.preserveOnError) {
+        logger.warn(
+          '[AnalysisHistoryService] Initialization failed; preserving on-disk data and using in-memory defaults',
+          { error: error.message, transient: Boolean(error?.transient) }
+        );
+        this._readOnly = true;
+        this._readOnlyReason = error?.message || 'Initialization failed';
+        this.config = this.config || this.getDefaultConfig();
+        this.analysisHistory = this.analysisHistory || this.createEmptyHistory();
+        this.analysisIndex = this.analysisIndex || createEmptyIndex(this.SCHEMA_VERSION);
+        this._cache = createCacheStore();
+        this._statsNeedFullRecalc = true;
+        this.initialized = true;
+        return;
+      }
       await this.createDefaultStructures({ resetConfig: true });
     }
+  }
+
+  _createReadOnlyError(operation) {
+    const reason = this._readOnlyReason ? `: ${this._readOnlyReason}` : '';
+    const opSuffix = operation ? ` during ${operation}` : '';
+    const error = new Error(`Analysis history is read-only${opSuffix}${reason}`);
+    error.readOnly = true;
+    return error;
+  }
+
+  _assertWritable(operation) {
+    if (!this._readOnly) return;
+    throw this._createReadOnlyError(operation);
   }
 
   async loadConfig() {
@@ -286,11 +327,64 @@ class AnalysisHistoryServiceCore {
   }
 
   async recordAnalysis(fileInfo, analysisResults) {
+    if (this._readOnly) {
+      return Promise.reject(this._createReadOnlyError('recordAnalysis'));
+    }
+    if (this._pendingWrites.length >= this.MAX_PENDING_WRITES) {
+      const error = new Error('Analysis history write buffer is full');
+      error.code = 'WRITE_BUFFER_FULL';
+      return Promise.reject(error);
+    }
     // Fix 9: Buffer writes to reduce lock contention
     return new Promise((resolve, reject) => {
       this._pendingWrites.push({ fileInfo, analysisResults, resolve, reject });
       this._scheduleFlush();
     });
+  }
+
+  async _acquireWriteLock(context) {
+    const maxWaitMs = TIMEOUTS.MUTEX_ACQUIRE;
+    const start = Date.now();
+
+    while (this._writeLock) {
+      const elapsed = Date.now() - start;
+      if (elapsed >= maxWaitMs) {
+        const error = new Error(
+          `Analysis history write lock acquisition timed out${context ? ` (${context})` : ''}`
+        );
+        error.code = 'WRITE_LOCK_TIMEOUT';
+        logger.warn('[AnalysisHistoryService] Write lock wait timed out, recovering', {
+          context,
+          elapsed,
+          error: error.message
+        });
+        this._writeLock = null;
+        break;
+      }
+
+      await Promise.race([
+        this._writeLock,
+        new Promise((resolve) => {
+          const delay = Math.min(TIMEOUTS.DELAY_LOCK_RETRY, maxWaitMs - elapsed);
+          const timeoutId = setTimeout(resolve, delay);
+          if (timeoutId && typeof timeoutId.unref === 'function') {
+            timeoutId.unref();
+          }
+        })
+      ]);
+    }
+
+    let releaseLock;
+    this._writeLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+
+    return () => {
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
+      this._writeLock = null;
+    };
   }
 
   _scheduleFlush() {
@@ -310,21 +404,38 @@ class AnalysisHistoryServiceCore {
 
     const batch = this._pendingWrites.splice(0, this._pendingWrites.length);
 
-    await this.initialize();
-
-    // Acquire write lock
-    while (this._writeLock) {
-      await this._writeLock;
+    try {
+      await this.initialize();
+    } catch (error) {
+      batch.forEach(({ reject }) => reject(error));
+      return;
+    }
+    if (this._readOnly) {
+      const error = this._createReadOnlyError('flushWrites');
+      batch.forEach(({ reject }) => reject(error));
+      return;
     }
 
     let releaseLock;
-    this._writeLock = new Promise((resolve) => {
-      releaseLock = resolve;
-    });
+    try {
+      releaseLock = await this._acquireWriteLock('flushWrites');
+    } catch (error) {
+      batch.forEach(({ reject }) => reject(error));
+      return;
+    }
 
     try {
       const timestamp = new Date().toISOString();
       let hasChanges = false;
+      const originalHistorySnapshot = {
+        totalAnalyzed: this.analysisHistory.totalAnalyzed,
+        totalSize: this.analysisHistory.totalSize,
+        totalEntries: this.analysisHistory.metadata.totalEntries,
+        updatedAt: this.analysisHistory.updatedAt
+      };
+      const originalIndexUpdatedAt = this.analysisIndex.updatedAt;
+      const addedEntries = [];
+      const pendingEntryResolutions = [];
 
       for (const { fileInfo, analysisResults, resolve, reject } of batch) {
         try {
@@ -415,10 +526,8 @@ class AnalysisHistoryServiceCore {
           // Update indexes
           updateIndexes(this.analysisIndex, analysisEntry);
 
-          // Update incremental stats (avoids full recalculation)
-          updateIncrementalStatsOnAdd(this._cache, analysisEntry);
-
-          resolve(analysisEntry.id);
+          addedEntries.push(analysisEntry);
+          pendingEntryResolutions.push({ resolve, reject, id: analysisEntry.id });
           hasChanges = true;
         } catch (err) {
           logger.error('[AnalysisHistoryService] Error processing batched item:', err);
@@ -429,19 +538,37 @@ class AnalysisHistoryServiceCore {
       if (hasChanges) {
         this.analysisHistory.updatedAt = timestamp;
 
-        // Invalidate relevant caches (surgical invalidation, not full)
-        invalidateCachesOnAdd(this._cache);
-
         // Save to disk
         const saveResults = await Promise.allSettled([this.saveHistory(), this.saveIndex()]);
-        saveResults.forEach((result, index) => {
-          if (result.status === 'rejected') {
+        const saveFailures = saveResults.filter((result) => result.status === 'rejected');
+        if (saveFailures.length > 0) {
+          saveFailures.forEach((result, index) => {
             logger.warn(
               `[ANALYSIS-HISTORY] Save operation ${index} failed:`,
               result.reason?.message
             );
-          }
-        });
+          });
+
+          // Roll back in-memory changes to avoid divergence from disk
+          addedEntries.forEach((entry) => {
+            delete this.analysisHistory.entries[entry.id];
+            removeFromIndexes(this.analysisIndex, entry);
+          });
+          this.analysisHistory.totalAnalyzed = originalHistorySnapshot.totalAnalyzed;
+          this.analysisHistory.totalSize = originalHistorySnapshot.totalSize;
+          this.analysisHistory.metadata.totalEntries = originalHistorySnapshot.totalEntries;
+          this.analysisHistory.updatedAt = originalHistorySnapshot.updatedAt;
+          this.analysisIndex.updatedAt = originalIndexUpdatedAt;
+
+          const error = new Error('Failed to persist analysis history');
+          pendingEntryResolutions.forEach(({ reject }) => reject(error));
+          return;
+        }
+
+        // Invalidate relevant caches (surgical invalidation, not full)
+        invalidateCachesOnAdd(this._cache);
+        addedEntries.forEach((entry) => updateIncrementalStatsOnAdd(this._cache, entry));
+        pendingEntryResolutions.forEach(({ resolve, id }) => resolve(id));
 
         // Cleanup if needed
         await performMaintenanceIfNeeded(
@@ -457,8 +584,9 @@ class AnalysisHistoryServiceCore {
       }
     } finally {
       // Release write lock
-      this._writeLock = null;
-      releaseLock();
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
     }
   }
 
@@ -597,20 +725,13 @@ class AnalysisHistoryServiceCore {
    */
   async updateEntryPaths(pathUpdates) {
     await this.initialize();
+    this._assertWritable('updateEntryPaths');
 
     if (!pathUpdates || !Array.isArray(pathUpdates) || pathUpdates.length === 0) {
       return { updated: 0, notFound: 0 };
     }
 
-    // Acquire write lock
-    while (this._writeLock) {
-      await this._writeLock;
-    }
-
-    let releaseLock;
-    this._writeLock = new Promise((resolve) => {
-      releaseLock = resolve;
-    });
+    const releaseLock = await this._acquireWriteLock('updateEntryPaths');
 
     try {
       let updated = 0;
@@ -627,11 +748,17 @@ class AnalysisHistoryServiceCore {
       // Scan through entries and update matching ones
       const entries = this.analysisHistory?.entries || {};
       for (const entry of Object.values(entries)) {
-        // Check if this entry's original path matches any update
-        const update = updateMap.get(entry.originalPath);
+        const actualPath = entry.organization?.actual || null;
+        const updateKey =
+          entry.originalPath && updateMap.has(entry.originalPath)
+            ? entry.originalPath
+            : actualPath && updateMap.has(actualPath)
+              ? actualPath
+              : null;
+        const update = updateKey ? updateMap.get(updateKey) : null;
         if (update) {
           // Track old actual path for index update
-          const oldActualPath = entry.organization?.actual || null;
+          const oldActualPath = actualPath;
 
           // Update the organization fields
           if (!entry.organization) {
@@ -655,7 +782,7 @@ class AnalysisHistoryServiceCore {
           traceHistoryUpdate(update.oldPath, update.newPath, entry.id, true);
 
           updated++;
-          updateMap.delete(entry.originalPath); // Remove to track not found
+          updateMap.delete(updateKey); // Remove to track not found
         }
       }
 
@@ -678,8 +805,9 @@ class AnalysisHistoryServiceCore {
 
       return { updated, notFound };
     } finally {
-      this._writeLock = null;
-      releaseLock();
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
     }
   }
 
@@ -694,18 +822,12 @@ class AnalysisHistoryServiceCore {
    */
   async removeEntriesByPath(filePath) {
     await this.initialize();
+    this._assertWritable('removeEntriesByPath');
 
     const target = typeof filePath === 'string' ? filePath : '';
     if (!target) return { removed: 0 };
 
-    // Acquire write lock
-    while (this._writeLock) {
-      await this._writeLock;
-    }
-    let releaseLock;
-    this._writeLock = new Promise((resolve) => {
-      releaseLock = resolve;
-    });
+    const releaseLock = await this._acquireWriteLock('removeEntriesByPath');
 
     const removedEntries = [];
     try {
@@ -748,8 +870,9 @@ class AnalysisHistoryServiceCore {
 
       return { removed: removedEntries.length };
     } finally {
-      this._writeLock = null;
-      releaseLock();
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
     }
   }
 
@@ -763,6 +886,7 @@ class AnalysisHistoryServiceCore {
    */
   async cloneEntryForCopy(sourcePath, destPath) {
     await this.initialize();
+    this._assertWritable('cloneEntryForCopy');
 
     if (!sourcePath || !destPath) {
       return { success: false, error: 'Source and destination paths required' };
@@ -775,14 +899,7 @@ class AnalysisHistoryServiceCore {
       return { success: true, cloned: false };
     }
 
-    // Acquire write lock
-    while (this._writeLock) {
-      await this._writeLock;
-    }
-    let releaseLock;
-    this._writeLock = new Promise((resolve) => {
-      releaseLock = resolve;
-    });
+    const releaseLock = await this._acquireWriteLock('cloneEntryForCopy');
 
     try {
       // Generate new ID and file hash for the copy
@@ -850,8 +967,9 @@ class AnalysisHistoryServiceCore {
       });
       return { success: false, error: error.message };
     } finally {
-      this._writeLock = null;
-      releaseLock();
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
     }
   }
 }

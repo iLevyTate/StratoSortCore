@@ -137,7 +137,7 @@ function extractAndParseJSON(rawResponse, defaultValue = null, options = {}) {
     cleaned = codeBlockMatch[1].trim();
     try {
       return JSON.parse(cleaned);
-    } catch (e) {
+    } catch {
       // Continue with repair
     }
   }

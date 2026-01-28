@@ -29,14 +29,20 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
             return;
           }
 
-          if (payload.status === 'ready') {
+          if (payload.status === 'ready' || payload.status === 'downloaded') {
             setStatus('ready');
             setVisible(true);
           } else if (payload.status === 'available') {
             setStatus('downloading');
             setVisible(false);
-          } else if (payload.status === 'none') {
+          } else if (payload.status === 'downloading') {
+            setStatus('downloading');
             setVisible(false);
+          } else if (payload.status === 'none' || payload.status === 'not-available') {
+            setVisible(false);
+          } else if (payload.status === 'error') {
+            setStatus('error');
+            setVisible(true);
           }
         } catch (error) {
           logger.error('Error handling update event', {

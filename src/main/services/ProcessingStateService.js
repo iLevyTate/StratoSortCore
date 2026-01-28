@@ -67,7 +67,7 @@ class ProcessingStateService {
       try {
         await this.loadState();
         this.initialized = true;
-      } catch (error) {
+      } catch {
         // FIX: Wrap fallback logic in try-catch to handle save failures
         try {
           this.state = this.createEmptyState();

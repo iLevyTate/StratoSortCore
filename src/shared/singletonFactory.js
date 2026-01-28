@@ -54,7 +54,6 @@ function getNodeRequire() {
     return module.require.bind(module);
   }
   // Last resort: direct require (works in non-bundled Node.js)
-  // eslint-disable-next-line
   if (typeof __webpack_require__ === 'undefined' && typeof require === 'function') {
     return require;
   }

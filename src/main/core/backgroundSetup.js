@@ -249,7 +249,7 @@ async function pullModelsInBackground(models) {
                 progress
               });
             }
-          } catch (ipcErr) {
+          } catch {
             // Intentionally ignored: window may be closing during model pull
             // This is non-fatal for the download process
           }

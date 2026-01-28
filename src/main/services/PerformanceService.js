@@ -81,7 +81,7 @@ async function runCommand(command, args, timeout = 5000) {
       proc.on('close', (code) => {
         safeResolve({ success: code === 0, stdout: stdout.trim() });
       });
-    } catch (spawnErr) {
+    } catch {
       // Intentionally handled: command may not exist on this system (e.g., nvidia-smi on non-NVIDIA)
       // Debug-level logging to avoid noise in logs for expected failures
       safeResolve({ success: false, stdout: '' });

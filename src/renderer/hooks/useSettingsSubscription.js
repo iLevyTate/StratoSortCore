@@ -38,8 +38,18 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
     // FIX: Return empty cleanup function for consistent return
     if (!enabled) return () => {};
 
-    const handleSettingsChanged = (newSettings) => {
+    const handleSettingsChanged = (payload) => {
       try {
+        const normalizedSettings =
+          payload &&
+          typeof payload === 'object' &&
+          payload.settings &&
+          typeof payload.settings === 'object'
+            ? payload.settings
+            : payload;
+        if (!normalizedSettings || typeof normalizedSettings !== 'object') {
+          return;
+        }
         // If watching specific keys, filter to only those changes
         const currentWatchKeys = watchKeysRef.current;
         if (currentWatchKeys && Array.isArray(currentWatchKeys)) {
@@ -47,8 +57,8 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
           let hasRelevantChange = false;
 
           currentWatchKeys.forEach((key) => {
-            if (key in newSettings) {
-              relevantChanges[key] = newSettings[key];
+            if (key in normalizedSettings) {
+              relevantChanges[key] = normalizedSettings[key];
               hasRelevantChange = true;
             }
           });
@@ -58,7 +68,7 @@ export function useSettingsSubscription(onSettingsChanged, options = {}) {
           }
         } else {
           // No filter, pass all settings
-          callbackRef.current?.(newSettings);
+          callbackRef.current?.(normalizedSettings);
         }
       } catch (error) {
         logger.error('Error handling settings change:', error);

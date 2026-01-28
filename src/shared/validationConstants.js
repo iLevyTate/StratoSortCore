@@ -27,6 +27,44 @@ const NUMERIC_LIMITS = {
 };
 
 /**
+ * Notification mode values
+ */
+const NOTIFICATION_MODES = ['both', 'ui', 'tray', 'none'];
+
+/**
+ * File naming conventions
+ */
+const NAMING_CONVENTIONS = [
+  'subject-date',
+  'date-subject',
+  'project-subject-date',
+  'category-subject',
+  'keep-original'
+];
+
+/**
+ * Case conventions for filenames
+ */
+const CASE_CONVENTIONS = [
+  'kebab-case',
+  'snake_case',
+  'camelCase',
+  'PascalCase',
+  'lowercase',
+  'UPPERCASE'
+];
+
+/**
+ * Smart folder routing modes
+ */
+const SMART_FOLDER_ROUTING_MODES = ['auto', 'llm', 'embedding', 'hybrid'];
+
+/**
+ * Filename separator pattern (reject unsafe path characters)
+ */
+const SEPARATOR_PATTERN = /^[^/\\:*?"<>|]+$/;
+
+/**
  * URL validation pattern
  * Matches: http://127.0.0.1:11434, https://localhost:11434, http://hostname:port/path
  * Supports IP addresses, localhost, and hostnames with optional port and path
@@ -100,6 +138,10 @@ function isValidModelName(name) {
 module.exports = {
   // Enum values
   LOGGING_LEVELS,
+  NOTIFICATION_MODES,
+  NAMING_CONVENTIONS,
+  CASE_CONVENTIONS,
+  SMART_FOLDER_ROUTING_MODES,
 
   // Numeric limits
   NUMERIC_LIMITS,
@@ -109,6 +151,7 @@ module.exports = {
   LENIENT_URL_PATTERN,
   MODEL_NAME_PATTERN,
   MAX_MODEL_NAME_LENGTH,
+  SEPARATOR_PATTERN,
 
   // Validation functions
   isValidLoggingLevel,

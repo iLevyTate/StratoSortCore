@@ -39,6 +39,34 @@ const log = {
   }
 };
 
+const buildEmbeddingSearchPayload = (query, options = {}) => {
+  const {
+    topK = 20,
+    mode = 'hybrid',
+    minScore,
+    chunkWeight,
+    chunkTopK,
+    correctSpelling,
+    expandSynonyms,
+    rerank,
+    rerankTopN
+  } = options;
+
+  return {
+    query,
+    topK,
+    mode,
+    // Optional numerical/boolean parameters
+    ...(typeof minScore === 'number' && { minScore }),
+    ...(typeof chunkWeight === 'number' && { chunkWeight }),
+    ...(Number.isInteger(chunkTopK) && { chunkTopK }),
+    ...(typeof correctSpelling === 'boolean' && { correctSpelling }),
+    ...(typeof expandSynonyms === 'boolean' && { expandSynonyms }),
+    ...(typeof rerank === 'boolean' && { rerank }),
+    ...(Number.isInteger(rerankTopN) && { rerankTopN })
+  };
+};
+
 log.info('Secure preload script loaded');
 
 // Dynamically derive allowed send channels from centralized IPC_CHANNELS to prevent drift
@@ -169,7 +197,7 @@ class SecureIPCManager {
       }
     }
 
-    throw lastError;
+    throw lastError || new Error(`IPC invoke failed after ${MAX_RETRIES} attempts for ${channel}`);
   }
 
   /**
@@ -364,7 +392,7 @@ const LISTENER_AUDIT_INTERVAL_MS = 10 * 60 * 1000;
 const listenerAuditIntervalId = setInterval(() => {
   try {
     secureIPC.auditStaleListeners();
-  } catch (err) {
+  } catch {
     // Silently ignore audit errors to avoid disrupting app functionality
   }
 }, LISTENER_AUDIT_INTERVAL_MS);
@@ -519,9 +547,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
 
         const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'tiff'];
+        const audioExts = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'aiff'];
 
         if (imageExts.includes(ext)) {
           return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_IMAGE, filePath);
+        }
+        if (audioExts.includes(ext)) {
+          throw new Error('Audio analysis is not supported in this build.');
         }
         // Audio analysis removed - all non-image files go to document analysis
         return secureIPC.safeInvoke(IPC_CHANNELS.ANALYSIS.ANALYZE_DOCUMENT, filePath);
@@ -590,33 +622,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStats: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_STATS),
     // Enhanced search with hybrid BM25 + vector fusion
     // Options: { topK, mode: 'hybrid'|'vector'|'bm25', minScore, chunkWeight, chunkTopK, ... }
-    search: (query, options = {}) => {
-      const {
-        topK = 20,
-        mode = 'hybrid',
-        minScore,
-        chunkWeight,
-        chunkTopK,
-        correctSpelling,
-        expandSynonyms,
-        rerank,
-        rerankTopN
-      } = options;
-
-      return secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SEARCH, {
-        query,
-        topK,
-        mode,
-        // Optional numerical/boolean parameters
-        ...(typeof minScore === 'number' && { minScore }),
-        ...(typeof chunkWeight === 'number' && { chunkWeight }),
-        ...(Number.isInteger(chunkTopK) && { chunkTopK }),
-        ...(typeof correctSpelling === 'boolean' && { correctSpelling }),
-        ...(typeof expandSynonyms === 'boolean' && { expandSynonyms }),
-        ...(typeof rerank === 'boolean' && { rerank }),
-        ...(Number.isInteger(rerankTopN) && { rerankTopN })
-      });
-    },
+    search: (query, options = {}) =>
+      secureIPC.safeInvoke(
+        IPC_CHANNELS.EMBEDDINGS.SEARCH,
+        buildEmbeddingSearchPayload(query, options)
+      ),
     scoreFiles: (query, fileIds) =>
       secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.SCORE_FILES, {
         query,
@@ -627,7 +637,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         fileId,
         topK
       }),
-    // NOTE: hybridSearch removed - use search() with mode: 'hybrid' instead
+    // Backward compatibility: preserve hybridSearch API with mode override
+    hybridSearch: (query, options = {}) =>
+      secureIPC.safeInvoke(
+        IPC_CHANNELS.EMBEDDINGS.SEARCH,
+        buildEmbeddingSearchPayload(query, { ...options, mode: 'hybrid' })
+      ),
     rebuildBM25Index: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.REBUILD_BM25_INDEX),
     getSearchStatus: () => secureIPC.safeInvoke(IPC_CHANNELS.EMBEDDINGS.GET_SEARCH_STATUS),
     // Diagnostic endpoint for troubleshooting search issues
@@ -768,10 +783,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMetrics: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_METRICS),
     getApplicationStatistics: () =>
       secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_APPLICATION_STATISTICS),
-    applyUpdate: () =>
-      IPC_CHANNELS.SYSTEM.APPLY_UPDATE
-        ? secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.APPLY_UPDATE)
-        : undefined,
+    applyUpdate: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.APPLY_UPDATE),
     // FIX: Expose config handlers that were registered but not exposed
     getConfig: () => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG),
     getConfigValue: (path) => secureIPC.safeInvoke(IPC_CHANNELS.SYSTEM.GET_CONFIG_VALUE, path),
@@ -822,7 +834,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onOperationProgress: (callback) => secureIPC.safeOn('operation-progress', callback),
     onAppError: (callback) => secureIPC.safeOn('app:error', callback),
     onAppUpdate: (callback) => secureIPC.safeOn('app:update', callback),
-    // NOTE: startup-progress and startup-error listeners removed (dead code - events never sent)
     onSystemMetrics: (callback) => secureIPC.safeOn('system-metrics', callback),
     onMenuAction: (callback) => secureIPC.safeOn('menu-action', callback),
     onSettingsChanged: (callback) => secureIPC.safeOn('settings-changed-external', callback),

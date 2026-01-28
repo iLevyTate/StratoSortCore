@@ -24,6 +24,11 @@ jest.mock('../src/shared/errorHandlingUtils', () => ({
   }
 }));
 
+jest.mock('../src/shared/ipcEventSchemas', () => ({
+  validateEventPayload: jest.fn(() => ({ valid: true })),
+  hasEventSchema: jest.fn(() => false)
+}));
+
 // Mock ipcRegistry - must forward to ipcMain.handle
 jest.mock('../src/main/core/ipcRegistry', () => ({
   registerHandler: jest.fn((ipcMain, channel, handler) => {
@@ -89,6 +94,38 @@ describe('IPC Wrappers', () => {
       const result = ipcWrappers.createErrorResponse(error);
 
       expect(result.error.details.validationErrors).toEqual(['field1 required']);
+    });
+  });
+
+  describe('safeSend', () => {
+    test('returns false for invalid webContents', () => {
+      const result = ipcWrappers.safeSend(null, 'event', { ok: true });
+
+      expect(result).toBe(false);
+    });
+
+    test('returns false when webContents is destroyed', () => {
+      const webContents = {
+        send: jest.fn(),
+        isDestroyed: jest.fn(() => true)
+      };
+
+      const result = ipcWrappers.safeSend(webContents, 'event', { ok: true });
+
+      expect(result).toBe(false);
+      expect(webContents.send).not.toHaveBeenCalled();
+    });
+
+    test('sends payload when webContents is valid', () => {
+      const webContents = {
+        send: jest.fn(),
+        isDestroyed: jest.fn(() => false)
+      };
+
+      const result = ipcWrappers.safeSend(webContents, 'event', { ok: true });
+
+      expect(result).toBe(true);
+      expect(webContents.send).toHaveBeenCalledWith('event', { ok: true });
     });
   });
 

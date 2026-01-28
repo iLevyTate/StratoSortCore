@@ -517,7 +517,8 @@ class DownloadWatcher {
       const folderCategories = folders.map((f) => ({
         name: f.name,
         description: f.description || '',
-        id: f.id
+        id: f.id,
+        path: f.path
       }));
 
       try {

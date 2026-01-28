@@ -1,6 +1,6 @@
 {
   "name": "stratosort",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Stratosort - Local AI Document Organizer with Ollama integration. Privacy-focused document organization using AI-powered analysis.",
   "keywords": [
     "electron",
@@ -92,9 +92,12 @@
   },
   "browserslist": [],
   "overrides": {
+    "@electron/rebuild": {
+      "tar": "^6.2.1"
+    },
     "@jridgewell/gen-mapping": "^0.3.5",
     "js-yaml": "^4.1.1",
-    "tar": ">=7.5.3"
+    "tar": "^7.5.7"
   },
   "jest": {
     "projects": [
@@ -159,13 +162,9 @@
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",
-    "@types/react-dropzone": "^5.1.0",
     "@types/react-test-renderer": "^19.1.0",
-    "@types/react-window": "^2.0.0",
     "@types/semver": "^7.7.1",
-    "@types/terser-webpack-plugin": "^5.2.0",
     "@types/tough-cookie": "^4.0.5",
-    "@types/uuid": "^11.0.0",
     "@types/webpack-bundle-analyzer": "^4.7.0",
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.53.1",

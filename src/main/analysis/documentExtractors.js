@@ -796,7 +796,7 @@ async function extractTextFromDocx(filePath) {
       if (ocrText && ocrText.length > 0) {
         return truncateText(cleanWhitespace(ocrText));
       }
-    } catch (ocrErr) {
+    } catch {
       // Ignore OCR error and throw original
     }
 

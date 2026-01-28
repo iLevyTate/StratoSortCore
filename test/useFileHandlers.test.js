@@ -17,9 +17,7 @@ jest.mock('../src/shared/logger', () => ({
 }));
 
 jest.mock('../src/shared/constants', () => ({
-  RENDERER_LIMITS: {
-    FILE_STATS_BATCH_SIZE: 50
-  }
+  ...jest.requireActual('../src/shared/constants')
 }));
 
 jest.mock('../src/renderer/phases/discover/namingUtils', () => ({
@@ -315,6 +313,24 @@ describe('useFileHandlers', () => {
         await result.current.handleFileDrop(null);
       });
 
+      expect(mockSetSelectedFiles).not.toHaveBeenCalled();
+    });
+
+    test('skips dropped items without absolute paths', async () => {
+      const droppedFiles = [{ path: 'relative.txt', name: 'relative.txt' }];
+
+      const { result } = renderHook(() => useFileHandlers(createMockOptions()));
+
+      await act(async () => {
+        await result.current.handleFileDrop(droppedFiles);
+      });
+
+      expect(mockAddNotification).toHaveBeenCalledWith(
+        'Skipped 1 item without a usable absolute path',
+        'warning',
+        2500,
+        'drop-missing-path'
+      );
       expect(mockSetSelectedFiles).not.toHaveBeenCalled();
     });
 

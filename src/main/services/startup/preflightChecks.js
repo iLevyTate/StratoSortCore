@@ -13,7 +13,7 @@ const { app } = require('electron');
 const axios = require('axios');
 const { logger } = require('../../../shared/logger');
 const { asyncSpawn } = require('../../utils/asyncSpawnUtils');
-const { isWindows, shouldUseShell } = require('../../../shared/platformUtils');
+const { isWindows } = require('../../../shared/platformUtils');
 const { withTimeout } = require('../../../shared/promiseUtils');
 
 logger.setContext('StartupManager:Preflight');
@@ -52,8 +52,7 @@ async function checkPythonInstallation() {
       logger.debug(`[PREFLIGHT] Trying Python command: ${cmd} ${args.join(' ')}`);
       const result = await asyncSpawn(cmd, args, {
         timeout: 3000,
-        windowsHide: true,
-        shell: shouldUseShell()
+        windowsHide: true
       });
 
       if (result.status === 0) {
@@ -81,8 +80,7 @@ async function checkOllamaInstallation() {
   try {
     const result = await asyncSpawn('ollama', ['--version'], {
       timeout: 3000,
-      windowsHide: true,
-      shell: shouldUseShell()
+      windowsHide: true
     });
 
     if (result.status === 0) {
@@ -133,12 +131,19 @@ async function isPortAvailable(host, port) {
       return false;
     }
 
-    // FIX 3.2: For unknown errors (e.g., ENOTFOUND for bad hostname), treat as available with warning
-    // This is safer than blocking startup due to DNS issues
+    // FIX: DNS/network errors indicate host is unreachable; treat as not available
+    if (['ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH'].includes(error?.code)) {
+      logger.warn(
+        `[PREFLIGHT] Port check failed for ${host}:${port} (${error.code}); host unreachable`
+      );
+      return false;
+    }
+
+    // Unknown errors - be conservative and treat as occupied to avoid false "free" signal
     logger.warn(
-      `[PREFLIGHT] Port check inconclusive for ${host}:${port} (${error.code || error.message}), treating as available`
+      `[PREFLIGHT] Port check inconclusive for ${host}:${port} (${error.code || error.message}); assuming occupied`
     );
-    return true;
+    return false;
   }
 }
 

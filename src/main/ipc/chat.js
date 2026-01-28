@@ -22,21 +22,55 @@ function registerChatIpc(servicesOrParams) {
     const integration = getServiceIntegration && getServiceIntegration();
     const diContainer = integration?.container || container;
 
-    const searchService = diContainer.resolve(ServiceIds.SEARCH_SERVICE);
-    const chromaDbService = diContainer.resolve(ServiceIds.CHROMA_DB);
-    const embeddingService = diContainer.resolve(ServiceIds.PARALLEL_EMBEDDING);
-    const ollamaService = diContainer.resolve(ServiceIds.OLLAMA_SERVICE);
-    const settingsService = diContainer.resolve(ServiceIds.SETTINGS);
+    if (!diContainer || typeof diContainer.resolve !== 'function') {
+      logger.warn('[Chat] DI container unavailable');
+      return null;
+    }
 
-    chatService = new ChatService({
-      searchService,
-      chromaDbService,
-      embeddingService,
-      ollamaService,
-      settingsService
-    });
+    const safeResolve = (serviceId) => {
+      try {
+        return diContainer.resolve(serviceId);
+      } catch (error) {
+        logger.warn('[Chat] Failed to resolve service', {
+          serviceId,
+          error: error?.message || String(error)
+        });
+        return null;
+      }
+    };
+
+    const searchService = safeResolve(ServiceIds.SEARCH_SERVICE);
+    const chromaDbService = safeResolve(ServiceIds.CHROMA_DB);
+    const embeddingService = safeResolve(ServiceIds.PARALLEL_EMBEDDING);
+    const ollamaService = safeResolve(ServiceIds.OLLAMA_SERVICE);
+    const settingsService = safeResolve(ServiceIds.SETTINGS);
+
+    try {
+      chatService = new ChatService({
+        searchService,
+        chromaDbService,
+        embeddingService,
+        ollamaService,
+        settingsService
+      });
+    } catch (error) {
+      logger.error('[Chat] Failed to initialize ChatService', {
+        error: error?.message || String(error)
+      });
+      chatService = null;
+    }
 
     return chatService;
+  };
+  const getChatServiceSafe = () => {
+    try {
+      return getChatService();
+    } catch (error) {
+      logger.error('[Chat] Failed to access ChatService', {
+        error: error?.message || String(error)
+      });
+      return null;
+    }
   };
 
   registerHandlers({
@@ -46,15 +80,17 @@ function registerChatIpc(servicesOrParams) {
     handlers: {
       [IPC_CHANNELS.CHAT.QUERY]: {
         schema: schemas.chatQuery,
-        handler: async (event, payload) => {
-          const service = getChatService();
-          return service.query(payload);
-        }
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, payload, service) => service.query(payload)
       },
       [IPC_CHANNELS.CHAT.RESET_SESSION]: {
         schema: schemas.chatReset,
-        handler: async (event, { sessionId } = {}) => {
-          const service = getChatService();
+        serviceName: 'chat',
+        getService: getChatServiceSafe,
+        fallbackResponse: { success: false, error: 'Chat service unavailable' },
+        handler: async (event, { sessionId } = {}, service) => {
           await service.resetSession(sessionId);
           return { success: true };
         }

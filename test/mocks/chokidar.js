@@ -76,8 +76,7 @@ class MockWatcher extends EventEmitter {
 // Store the last created watcher for testing
 let lastWatcher = null;
 
-// eslint-disable-next-line no-unused-vars
-const watch = jest.fn((paths, options) => {
+const watch = jest.fn((paths, _options) => {
   lastWatcher = new MockWatcher();
   lastWatcher.add(paths);
 

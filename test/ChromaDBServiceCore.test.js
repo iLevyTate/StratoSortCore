@@ -381,7 +381,6 @@ describe('ChromaDBServiceCore', () => {
       const module = require('../src/main/services/chromadb/ChromaDBServiceCore');
       const emitSpy = jest.spyOn(module.ChromaDBServiceCore.prototype, 'emit');
       // Construct after spying so we catch constructor-time emit
-      // eslint-disable-next-line no-new
       new module.ChromaDBServiceCore();
 
       expect(logger.warn).toHaveBeenCalledWith(
@@ -476,6 +475,16 @@ describe('ChromaDBServiceCore', () => {
 
     test('throws on invalid file data', async () => {
       await expect(service.upsertFile({ id: 'no-vector' })).rejects.toThrow('Invalid file data');
+    });
+
+    test('skips upsert during shutdown', async () => {
+      service._isShuttingDown = true;
+      const { directUpsertFile } = require('../src/main/services/chromadb/fileOperations');
+
+      const result = await service.upsertFile(mockFile);
+
+      expect(result.skipped).toBe(true);
+      expect(directUpsertFile).not.toHaveBeenCalled();
     });
   });
 

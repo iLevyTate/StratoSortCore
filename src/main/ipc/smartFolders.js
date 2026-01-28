@@ -279,7 +279,7 @@ function registerSmartFoldersIpc(servicesOrParams) {
             score: best.score,
             method: 'embeddings'
           };
-        } catch (e) {
+        } catch {
           try {
             const ollama = await getOllama();
             const genPerf = await buildOllamaOptions('text');
@@ -318,7 +318,7 @@ function registerSmartFoldersIpc(servicesOrParams) {
               reason: parsed.reason,
               method: 'llm'
             };
-          } catch (llmErr) {
+          } catch {
             const scored = smartFolders
               .map((f) => {
                 const textLower = text.toLowerCase();

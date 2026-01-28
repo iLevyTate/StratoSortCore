@@ -9,16 +9,20 @@
  * - Renderer: Use validateEventData() in ipcMiddleware.js to validate on receipt
  */
 
+const { logger } = require('./logger');
+
 // Try to load zod for validation
 let z;
+let hasWarnedMissingZod = false;
 try {
   z = require('zod');
 } catch (error) {
   // FIX: Log warning when Zod fails to load so validation bypass is visible
-  // eslint-disable-next-line no-console
-  console.warn('[ipcEventSchemas] Zod not available, schema validation disabled:', error.message);
+  logger.warn('[ipcEventSchemas] Zod not available, schema validation disabled:', error.message);
   z = null;
 }
+
+const { IPC_CHANNELS } = require('./constants');
 
 // Only define schemas if Zod is available
 const schemas = z
@@ -210,7 +214,7 @@ const schemas = z
        * Open Semantic Search Event
        * Emitted from system tray or global shortcut to trigger semantic search UI
        */
-      const openSemanticSearchSchema = z.undefined().optional();
+      const openSemanticSearchSchema = z.void();
 
       /**
        * Batch Results Chunk Event
@@ -287,8 +291,8 @@ const EVENT_SCHEMAS = z
       notification: schemas.notificationSchema,
       'app:error': schemas.appErrorSchema,
       'settings-changed-external': schemas.settingsChangedExternalSchema,
-      'chromadb-status-changed': schemas.chromadbStatusChangedSchema,
-      'dependencies-service-status-changed': schemas.serviceStatusChangedSchema,
+      [IPC_CHANNELS.CHROMADB.STATUS_CHANGED]: schemas.chromadbStatusChangedSchema,
+      [IPC_CHANNELS.DEPENDENCIES.SERVICE_STATUS_CHANGED]: schemas.serviceStatusChangedSchema,
       'menu-action': schemas.menuActionSchema,
       'app:update': schemas.appUpdateSchema,
       'open-semantic-search': schemas.openSemanticSearchSchema,
@@ -306,10 +310,18 @@ const EVENT_SCHEMAS = z
  */
 function validateEventPayload(channel, data) {
   if (!z) {
+    const schema = EVENT_SCHEMAS[channel];
+    if (!schema) {
+      // No schema defined for this channel, allow through
+      return { valid: true, data };
+    }
     // FIX CRIT-19: Log error if Zod is missing (validation bypassed)
-    // eslint-disable-next-line no-console
-    console.error(`[ipcEventSchemas] CRITICAL: Zod missing, validation bypassed for ${channel}`);
-    return { valid: true, data };
+    const error = new Error('Zod is unavailable; IPC payload validation skipped');
+    if (!hasWarnedMissingZod) {
+      hasWarnedMissingZod = true;
+      logger.error(`[ipcEventSchemas] CRITICAL: Zod missing, validation bypassed for ${channel}`);
+    }
+    return { valid: true, data, error };
   }
 
   const schema = EVENT_SCHEMAS[channel];
@@ -345,7 +357,7 @@ function getEventSchema(channel) {
  * @returns {boolean}
  */
 function hasEventSchema(channel) {
-  return channel in EVENT_SCHEMAS;
+  return Object.prototype.hasOwnProperty.call(EVENT_SCHEMAS, channel);
 }
 
 module.exports = {

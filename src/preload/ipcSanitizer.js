@@ -36,7 +36,7 @@ function createIpcSanitizer({ log }) {
     if (/^[A-Za-z]:[\\/]/.test(str)) return true;
 
     // Unix absolute path: starts with /
-    // eslint-disable-next-line no-useless-escape
+
     if (/^\/[\p{L}\p{N}\p{M}\s._-]/u.test(str)) return true;
 
     // UNC paths: \\server\share or //server/share

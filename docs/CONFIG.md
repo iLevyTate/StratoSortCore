@@ -120,6 +120,22 @@ npm run setup:chromadb:check # Verify ChromaDB installation
 | `ANGLE_BACKEND`                 | `d3d11` | ANGLE backend for GPU rendering (Windows) |
 | `STRATOSORT_GL_IMPLEMENTATION`  | -       | Override OpenGL implementation            |
 
+### Feature Flags
+
+| Variable                              | Default | Description                                    |
+| ------------------------------------- | ------- | ---------------------------------------------- |
+| `STRATOSORT_DISABLE_CHROMADB`         | `0`     | Disable ChromaDB integration entirely          |
+| `STRATOSORT_DEBUG`                    | `0`     | Enable debug mode with verbose logging         |
+| `STRATOSORT_ENABLE_TELEMETRY`         | `0`     | Enable anonymous telemetry collection          |
+| `STRATOSORT_REDACT_PATHS`             | `0`     | Redact file/folder paths in the UI (demo-safe) |
+| `STRATOSORT_GRAPH_ENABLED`            | `1`     | Master toggle for graph visualization          |
+| `STRATOSORT_GRAPH_CLUSTERS`           | `1`     | Cluster visualization                          |
+| `STRATOSORT_GRAPH_SIMILARITY_EDGES`   | `1`     | File-to-file similarity edges                  |
+| `STRATOSORT_GRAPH_MULTI_HOP`          | `1`     | Multi-hop expansion                            |
+| `STRATOSORT_GRAPH_PROGRESSIVE_LAYOUT` | `1`     | Progressive disclosure for large graphs        |
+| `STRATOSORT_GRAPH_KEYBOARD_NAV`       | `1`     | Keyboard navigation in graph                   |
+| `STRATOSORT_GRAPH_CONTEXT_MENUS`      | `1`     | Right-click context menus on nodes             |
+
 ### Development
 
 | Variable         | Default      | Description                                   |

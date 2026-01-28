@@ -165,10 +165,15 @@ describe('registerAnalysisIpc', () => {
     test('passes custom folders to analysis', async () => {
       await handlers[ANALYSIS_CHANNELS.ANALYZE_DOCUMENT]({}, '/test/doc.pdf');
 
-      expect(mockAnalyzeDocumentFile).toHaveBeenCalledWith('/test/doc.pdf', [
-        { id: '1', name: 'Documents', description: 'Doc folder' },
-        { id: '2', name: 'Images', description: 'Image folder' }
-      ]);
+      expect(mockAnalyzeDocumentFile).toHaveBeenCalled();
+      const [, folderCategories] = mockAnalyzeDocumentFile.mock.calls[0] || [];
+      expect(folderCategories).toHaveLength(2);
+      expect(folderCategories).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: '1', name: 'Documents', description: 'Doc folder' }),
+          expect.objectContaining({ id: '2', name: 'Images', description: 'Image folder' })
+        ])
+      );
     });
 
     test('records processing time', async () => {

@@ -199,9 +199,18 @@ describe('SearchService', () => {
   });
 
   describe('isIndexStale', () => {
-    test('returns true when index is null', () => {
+    test('returns true when index is null and never built', () => {
       service.bm25Index = null;
+      service.indexBuiltAt = null;
       expect(service.isIndexStale()).toBe(true);
+    });
+
+    test('returns false when index is empty but recently built', () => {
+      service.bm25Index = null;
+      service.documentMap.clear();
+      service.indexBuiltAt = Date.now();
+
+      expect(service.isIndexStale()).toBe(false);
     });
 
     test('returns true when indexBuiltAt is null', () => {
@@ -243,6 +252,7 @@ describe('SearchService', () => {
       expect(result.success).toBe(true);
       expect(result.indexed).toBe(0);
       expect(service.bm25Index).toBeNull();
+      expect(service.indexBuiltAt).not.toBeNull();
     });
 
     test('stores document metadata in documentMap', async () => {

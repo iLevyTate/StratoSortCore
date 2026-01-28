@@ -87,6 +87,50 @@ function setFileCache(signature, value) {
   fileAnalysisCache.set(signature, value);
 }
 
+/**
+ * Cache result only if file remains unchanged, and evict if it changes immediately after.
+ * @param {string} signature
+ * @param {string} filePath
+ * @param {fs.Stats|null} fileStats
+ * @param {Object} value
+ * @returns {Promise<boolean>} whether the cache was written and retained
+ */
+async function setFileCacheIfUnchanged(signature, filePath, fileStats, value) {
+  if (!signature) return false;
+  const unchangedBefore = await isFileUnchangedForCache(filePath, fileStats);
+  if (!unchangedBefore) return false;
+  setFileCache(signature, value);
+  const unchangedAfter = await isFileUnchangedForCache(filePath, fileStats);
+  if (!unchangedAfter) {
+    fileAnalysisCache.delete(signature);
+    return false;
+  }
+  return true;
+}
+/**
+ * Verify the file has not changed since initial stat.
+ * Skips caching if the file was modified during analysis.
+ * @param {string} filePath
+ * @param {fs.Stats|null} fileStats
+ * @returns {Promise<boolean>}
+ */
+async function isFileUnchangedForCache(filePath, fileStats) {
+  if (!filePath || !fileStats) return false;
+  try {
+    const latestStats = await fs.stat(filePath);
+    return (
+      latestStats.size === fileStats.size &&
+      Number(latestStats.mtimeMs) === Number(fileStats.mtimeMs)
+    );
+  } catch (error) {
+    logger.debug('Failed to re-stat file for cache validation', {
+      path: filePath,
+      error: error?.message
+    });
+    return false;
+  }
+}
+
 // Import error handling system
 const { FileProcessingError } = require('../errors/AnalysisError');
 
@@ -247,7 +291,7 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
               suggestion: 'PDF may be corrupted, password-protected, or image-based'
             });
           }
-        } catch (ocrErr) {
+        } catch {
           throw new FileProcessingError('PDF_PROCESSING_FAILURE', fileName, {
             originalError: pdfError.message,
             suggestion: 'PDF may be corrupted, password-protected, or image-based'
@@ -570,7 +614,15 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         );
         // Use pre-computed signature if available, otherwise skip caching
         if (fileSignature) {
-          setFileCache(fileSignature, normalized);
+          const cached = await setFileCacheIfUnchanged(
+            fileSignature,
+            filePath,
+            fileStats,
+            normalized
+          );
+          if (!cached) {
+            logger.warn('File changed during analysis; skipping cache write', { path: filePath });
+          }
         }
         return normalized;
       }
@@ -614,7 +666,10 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
     });
     // Use pre-computed signature if available, otherwise skip caching
     if (fileSignature) {
-      setFileCache(fileSignature, result);
+      const cached = await setFileCacheIfUnchanged(fileSignature, filePath, fileStats, result);
+      if (!cached) {
+        logger.warn('File changed during analysis; skipping cache write', { path: filePath });
+      }
     }
     return result;
   } catch (error) {
@@ -649,7 +704,7 @@ async function tryExtractArchiveMetadata(filePath) {
       info.keywords = deriveKeywordsFromFilenames(names);
       info.summary = `ZIP archive with ${zip.getEntries().length} entries`;
       return info;
-    } catch (e) {
+    } catch {
       info.summary = 'ZIP archive (content listing unavailable)';
       info.keywords = [];
       return info;

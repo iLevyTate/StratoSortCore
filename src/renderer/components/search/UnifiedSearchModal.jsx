@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
+  AlertTriangle,
   ExternalLink,
   FolderOpen,
   FolderInput,
@@ -28,7 +29,7 @@ import {
 
 import Modal, { ConfirmModal } from '../Modal';
 import { ModalLoadingOverlay } from '../LoadingSkeleton';
-import { Button, Input } from '../ui';
+import { Button, Input, StateMessage } from '../ui';
 import HighlightedText from '../ui/HighlightedText';
 import { getFileCategory } from '../ui/FileIcon';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
@@ -457,39 +458,31 @@ function EmptyEmbeddingsBanner({
   isRebuildingFiles
 }) {
   return (
-    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/10 p-4 text-sm text-system-gray-800 rounded-xl">
-      <div className="flex items-start gap-3">
-        <div className="p-2 bg-stratosort-warning/20 rounded-lg shrink-0">
-          <Sparkles className="w-5 h-5 text-stratosort-warning" />
+    <StateMessage
+      icon={Sparkles}
+      tone="warning"
+      size="md"
+      align="left"
+      title="No embeddings yet"
+      description="Knowledge OS requires file embeddings. If you already analyzed files in the past but this number is still zero, your search index was likely reset and needs a one-time rebuild from analysis history."
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onRebuildFolders}
+            disabled={isRebuildingFolders}
+          >
+            {isRebuildingFolders ? 'Building...' : 'Build Folder Embeddings'}
+          </Button>
+          <Button variant="primary" size="sm" onClick={onRebuildFiles} disabled={isRebuildingFiles}>
+            {isRebuildingFiles ? 'Building...' : 'Build File Embeddings'}
+          </Button>
         </div>
-        <div className="flex-1">
-          <div className="font-semibold text-system-gray-900">No embeddings yet</div>
-          <div className="text-xs text-system-gray-600 mt-1 mb-3">
-            Knowledge OS requires file embeddings. If you already analyzed files in the past but
-            this number is still zero, your search index was likely reset and needs a one-time
-            rebuild from analysis history.
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onRebuildFolders}
-              disabled={isRebuildingFolders}
-            >
-              {isRebuildingFolders ? 'Building...' : 'Build Folder Embeddings'}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onRebuildFiles}
-              disabled={isRebuildingFiles}
-            >
-              {isRebuildingFiles ? 'Building...' : 'Build File Embeddings'}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+      }
+      className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/10 p-4 rounded-xl"
+      contentClassName="max-w-xl"
+    />
   );
 }
 
@@ -611,6 +604,7 @@ export default function UnifiedSearchModal({
   const [chatMessages, setChatMessages] = useState([]);
   const [isChatting, setIsChatting] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [chatWarning, setChatWarning] = useState('');
   const [useSearchContext, setUseSearchContext] = useState(true);
   const [responseMode, setResponseMode] = useState('fast');
   const chatSessionRef = useRef(null);
@@ -668,8 +662,7 @@ export default function UnifiedSearchModal({
 
   // Persistence and Notes state
   const [graphNotes, setGraphNotes] = useState({}); // Map of nodeId -> note string
-  // const [showNotesPanel, setShowNotesPanel] = useState(false);
-  const [enableAutoClustering, setEnableAutoClustering] = useState(false);
+  const [enableAutoClustering, setEnableAutoClustering] = useState(true);
   const [showEdgeLabels, setShowEdgeLabels] = useState(true); // Default to showing labels for clarity
   const showEdgeLabelsRef = useRef(true); // Ref for access in callbacks without dependency
 
@@ -725,6 +718,8 @@ export default function UnifiedSearchModal({
 
   // Refs
   const lastSearchRef = useRef(0);
+  const searchRequestCounterRef = useRef(0);
+  const withinRequestCounterRef = useRef(0);
   const withinReqRef = useRef(0);
   const reactFlowInstance = useRef(null);
   const resultListRef = useRef(null);
@@ -742,6 +737,9 @@ export default function UnifiedSearchModal({
 
   // Ref for expandCluster to be used in handleClusterExpand (defined before expandCluster)
   const expandClusterRef = useRef(null);
+
+  // Ref for cluster action callbacks to rehydrate saved graphs
+  const clusterActionRefs = useRef({});
 
   // Refs to access current nodes/edges in callbacks without creating stale closures
   const nodesRef = useRef(nodes);
@@ -838,6 +836,7 @@ export default function UnifiedSearchModal({
       if (!trimmed) return;
 
       setChatError('');
+      setChatWarning('');
       setIsChatting(true);
       setChatMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
 
@@ -886,6 +885,13 @@ export default function UnifiedSearchModal({
           throw new Error(response?.error || 'Chat request failed');
         }
 
+        const nextWarning =
+          response?.meta?.warning ||
+          (response?.meta?.retrievalAvailable === false
+            ? 'Document retrieval unavailable. Responses use model knowledge only.'
+            : '');
+        setChatWarning(nextWarning);
+
         const assistantMessage = {
           role: 'assistant',
           documentAnswer: response.response?.documentAnswer || [],
@@ -898,6 +904,7 @@ export default function UnifiedSearchModal({
       } catch (chatErr) {
         logger.warn('[KnowledgeOS] Chat query failed', { error: chatErr?.message || chatErr });
         setChatError(chatErr?.message || 'Chat request failed');
+        setChatWarning('');
       } finally {
         setIsChatting(false);
       }
@@ -919,12 +926,14 @@ export default function UnifiedSearchModal({
       logger.debug('[UnifiedSearchModal] Failed to save chat response mode', {
         error: err?.message || String(err)
       });
+      setError('Failed to save chat response mode. Please try again.');
     });
   }, []);
 
   const handleChatReset = useCallback(async () => {
     setChatMessages([]);
     setChatError('');
+    setChatWarning('');
     setIsChatting(false);
     const sessionId = ensureChatSession();
     logger.info('[KnowledgeOS] Chat session reset', { sessionId });
@@ -1173,8 +1182,20 @@ export default function UnifiedSearchModal({
         return;
       }
       const state = JSON.parse(saved);
-      if (state.nodes && state.edges) {
-        graphActions.setNodes(state.nodes);
+      if (Array.isArray(state.nodes) && Array.isArray(state.edges)) {
+        const rehydratedNodes = state.nodes.map((node) => {
+          if (node?.type === 'clusterNode' || node?.data?.kind === 'cluster') {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                ...clusterActionRefs.current
+              }
+            };
+          }
+          return node;
+        });
+        graphActions.setNodes(rehydratedNodes);
         // Ensure edge visibility respects current or loaded setting
         const loadedShowLabels = state.settings?.showEdgeLabels ?? true;
 
@@ -1197,6 +1218,14 @@ export default function UnifiedSearchModal({
         }
 
         setGraphStatus(`Loaded graph from ${new Date(state.timestamp).toLocaleTimeString()}`);
+      } else {
+        logger.warn('[UnifiedSearchModal] Saved graph state invalid, resetting', {
+          hasNodes: Array.isArray(state.nodes),
+          hasEdges: Array.isArray(state.edges)
+        });
+        graphActions.setNodes([]);
+        graphActions.setEdges([]);
+        setGraphStatus('Saved graph state was invalid and has been reset');
       }
     } catch (e) {
       logger.error('Failed to load graph', e);
@@ -1320,12 +1349,19 @@ export default function UnifiedSearchModal({
             ]
           : [...queryEdges, ...organizeEdges];
 
-        const layoutedNodes = await debouncedElkLayout(allNodes, allEdges, {
-          direction: 'RIGHT',
-          spacing: GRAPH_LAYOUT_SPACING,
-          layerSpacing: GRAPH_LAYER_SPACING
-        });
+        const { nodes: layoutedNodes, edges: layoutedEdges } = await debouncedElkLayout(
+          allNodes,
+          allEdges,
+          {
+            direction: 'RIGHT',
+            spacing: GRAPH_LAYOUT_SPACING,
+            layerSpacing: GRAPH_LAYER_SPACING
+          }
+        );
         graphActions.setNodes(layoutedNodes);
+        if (layoutedEdges && layoutedEdges.length > 0) {
+          graphActions.setEdges(layoutedEdges);
+        }
       } catch (layoutError) {
         logger.warn('[Graph] Layout after conversion failed:', layoutError);
       }
@@ -2157,6 +2193,26 @@ export default function UnifiedSearchModal({
     [graphActions]
   );
 
+  useEffect(() => {
+    clusterActionRefs.current = {
+      onCreateSmartFolder: handleCreateSmartFolderFromCluster,
+      onMoveAllToFolder: handleMoveAllToFolder,
+      onExportFileList: handleExportFileList,
+      onOpenAllFiles: handleOpenAllFilesInCluster,
+      onSearchWithinCluster: handleSearchWithinCluster,
+      onRenameCluster: handleRenameCluster,
+      onExpand: handleClusterExpand
+    };
+  }, [
+    handleCreateSmartFolderFromCluster,
+    handleMoveAllToFolder,
+    handleExportFileList,
+    handleOpenAllFilesInCluster,
+    handleSearchWithinCluster,
+    handleRenameCluster,
+    handleClusterExpand
+  ]);
+
   /**
    * Find near-duplicate files across the collection
    * Displays them as special clusters in the graph
@@ -2318,7 +2374,7 @@ export default function UnifiedSearchModal({
         return;
       }
 
-      const requestId = Date.now();
+      const requestId = (searchRequestCounterRef.current += 1);
       lastSearchRef.current = requestId;
       setIsSearching(true);
       setError('');
@@ -2377,10 +2433,9 @@ export default function UnifiedSearchModal({
         setSelectedSearchId(null);
         setError(getErrorMessage(e, 'Search'));
       } finally {
-        // FIX: Always reset isSearching for this request to prevent stuck loading state
-        // Even if a newer request has started, we still need to clean up this request's state
-        // The check ensures we only reset if we were the one who set it to true
-        if (lastSearchRef.current === requestId || cancelled) {
+        // Only reset if this request is still the latest.
+        // Avoid clearing the loading state for newer in-flight requests.
+        if (lastSearchRef.current === requestId) {
           setIsSearching(false);
         }
       }
@@ -2457,7 +2512,7 @@ export default function UnifiedSearchModal({
         if (!cancelled && resp?.success) {
           setFreshMetadata(resp.metadata?.[nodeId] || null);
         }
-      } catch (e) {
+      } catch {
         // Silently fail - use cached metadata from node
         if (!cancelled) setFreshMetadata(null);
       } finally {
@@ -2531,13 +2586,16 @@ export default function UnifiedSearchModal({
     setGraphStatus('Applying layout...');
 
     try {
-      const layoutedNodes = await elkLayout(nodes, edges, {
+      const { nodes: layoutedNodes, edges: layoutedEdges } = await elkLayout(nodes, edges, {
         direction: 'RIGHT',
         spacing: GRAPH_LAYOUT_SPACING,
         layerSpacing: GRAPH_LAYER_SPACING
       });
 
       graphActions.setNodes(layoutedNodes);
+      if (layoutedEdges && layoutedEdges.length > 0) {
+        graphActions.setEdges(layoutedEdges);
+      }
       setGraphStatus('Layout applied');
     } catch (error) {
       logger.error('[Graph] Layout failed:', error);
@@ -2694,12 +2752,19 @@ export default function UnifiedSearchModal({
           const allNodes = [...nodes, ...addedNodes];
           const allEdges = [...edges, ...addedEdges];
           try {
-            const layoutedNodes = await debouncedElkLayout(allNodes, allEdges, {
-              direction: 'RIGHT',
-              spacing: GRAPH_LAYOUT_SPACING,
-              layerSpacing: GRAPH_LAYER_SPACING
-            });
+            const { nodes: layoutedNodes, edges: layoutedEdges } = await debouncedElkLayout(
+              allNodes,
+              allEdges,
+              {
+                direction: 'RIGHT',
+                spacing: GRAPH_LAYOUT_SPACING,
+                layerSpacing: GRAPH_LAYER_SPACING
+              }
+            );
             graphActions.setNodes(layoutedNodes);
+            if (layoutedEdges && layoutedEdges.length > 0) {
+              graphActions.setEdges(layoutedEdges);
+            }
           } catch (layoutErr) {
             logger.debug('[Graph] Layout after drop failed:', layoutErr);
           }
@@ -2932,27 +2997,56 @@ export default function UnifiedSearchModal({
   // Real-time updates: Listen for file operations
   useEffect(() => {
     const handleFileOperation = async (event) => {
-      const { operationType, filePath, destPath } = event.detail || {};
-      if (!filePath) return;
+      const detail = event.detail || {};
+      const operationType = detail.operationType || detail.operation;
+
+      if (!operationType) return;
 
       if (operationType === 'delete') {
-        // Remove node from graph if it exists
-        graphActions.setNodes((prev) => prev.filter((n) => n.data?.path !== filePath));
-      } else if (operationType === 'move' && destPath) {
-        // Update node path
+        const deletedPaths = Array.isArray(detail.files)
+          ? detail.files
+          : [detail.filePath || detail.oldPath].filter(Boolean);
+        if (deletedPaths.length === 0) return;
+
+        // Remove nodes for deleted paths
+        graphActions.setNodes((prev) => prev.filter((n) => !deletedPaths.includes(n.data?.path)));
+        return;
+      }
+
+      if (operationType === 'move' || operationType === 'rename') {
+        let pathPairs = [];
+
+        if (
+          Array.isArray(detail.files) &&
+          Array.isArray(detail.destinations) &&
+          detail.files.length === detail.destinations.length
+        ) {
+          pathPairs = detail.files.map((oldPath, index) => ({
+            oldPath,
+            newPath: detail.destinations[index]
+          }));
+        } else {
+          const oldPath = detail.filePath || detail.oldPath;
+          const newPath = detail.destPath || detail.newPath;
+          if (oldPath && newPath) {
+            pathPairs = [{ oldPath, newPath }];
+          }
+        }
+
+        if (pathPairs.length === 0) return;
+
         graphActions.setNodes((prev) =>
           prev.map((n) => {
-            if (n.data?.path === filePath) {
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  path: destPath,
-                  label: safeBasename(destPath)
-                }
-              };
-            }
-            return n;
+            const match = pathPairs.find((pair) => pair.oldPath === n.data?.path);
+            if (!match) return n;
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                path: match.newPath,
+                label: safeBasename(match.newPath)
+              }
+            };
           })
         );
       }
@@ -3207,13 +3301,15 @@ export default function UnifiedSearchModal({
           const edgeMap = new Map(currentEdges.map((e) => [e.id, e]));
           nextEdges.forEach((e) => edgeMap.set(e.id, e));
 
-          // Filter edges to only include those where both source and target exist in finalNodes
-          // This prevents ELK layout errors and orphaned edges
-          const finalNodeIds = new Set(finalNodes.map((n) => n.id));
-          finalEdges = Array.from(edgeMap.values()).filter(
-            (e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target)
-          );
+          finalEdges = Array.from(edgeMap.values());
         }
+
+        // Filter edges to only include those where both source and target exist in finalNodes
+        // This prevents ELK layout errors and orphaned edges (especially after node limiting)
+        const finalNodeIds = new Set(finalNodes.map((n) => n.id));
+        finalEdges = finalEdges.filter(
+          (e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target)
+        );
 
         // Now update state with computed values (only if there are changes)
         graphActions.setNodes((prev) => {
@@ -3259,18 +3355,25 @@ export default function UnifiedSearchModal({
                 progressive: true
               });
               layoutedNodes = result.nodes;
+              if (result.edges && result.edges.length > 0) {
+                graphActions.setEdges(result.edges);
+              }
               if (result.isPartial) {
                 setGraphStatus(
                   `${results.length} results (${result.layoutedCount} laid out, ${finalNodes.length - result.layoutedCount} in grid)`
                 );
               }
             } else {
-              layoutedNodes = await debouncedElkLayout(finalNodes, finalEdges, {
+              const layoutResult = await debouncedElkLayout(finalNodes, finalEdges, {
                 direction: 'RIGHT',
                 spacing: GRAPH_LAYOUT_SPACING,
                 layerSpacing: GRAPH_LAYER_SPACING,
                 debounceMs: 150
               });
+              layoutedNodes = layoutResult.nodes;
+              if (layoutResult.edges && layoutResult.edges.length > 0) {
+                graphActions.setEdges(layoutResult.edges);
+              }
             }
             graphActions.setNodes(layoutedNodes);
             if (finalNodes.length <= LARGE_GRAPH_THRESHOLD) {
@@ -3307,20 +3410,22 @@ export default function UnifiedSearchModal({
                 }
               });
 
-              const similarityEdges = simEdgesResp.edges.map((e) => ({
-                id: e.id,
-                source: e.source,
-                target: e.target,
-                type: 'similarity', // Use custom edge component
-                animated: false,
-                data: {
-                  kind: 'similarity',
-                  similarity: e.similarity,
-                  sourceData: nodeDataMap.get(e.source) || {},
-                  targetData: nodeDataMap.get(e.target) || {},
-                  showEdgeLabels: showEdgeLabelsRef.current
-                }
-              }));
+              const similarityEdges = simEdgesResp.edges
+                .filter((e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target))
+                .map((e) => ({
+                  id: e.id,
+                  source: e.source,
+                  target: e.target,
+                  type: 'similarity', // Use custom edge component
+                  animated: false,
+                  data: {
+                    kind: 'similarity',
+                    similarity: e.similarity,
+                    sourceData: nodeDataMap.get(e.source) || {},
+                    targetData: nodeDataMap.get(e.target) || {},
+                    showEdgeLabels: showEdgeLabelsRef.current
+                  }
+                }));
 
               if (similarityEdges.length > 0) {
                 graphActions.setEdges((prev) => {
@@ -3513,13 +3618,20 @@ export default function UnifiedSearchModal({
             })();
 
             // Use debounced layout for expansion
-            const layoutedNodes = await debouncedElkLayout(finalNodes, finalEdges, {
-              direction: 'RIGHT',
-              spacing: GRAPH_LAYOUT_SPACING,
-              layerSpacing: GRAPH_LAYER_SPACING,
-              debounceMs: 100 // Shorter debounce for explicit user action
-            });
+            const { nodes: layoutedNodes, edges: layoutedEdges } = await debouncedElkLayout(
+              finalNodes,
+              finalEdges,
+              {
+                direction: 'RIGHT',
+                spacing: GRAPH_LAYOUT_SPACING,
+                layerSpacing: GRAPH_LAYER_SPACING,
+                debounceMs: 100 // Shorter debounce for explicit user action
+              }
+            );
             graphActions.setNodes(layoutedNodes);
+            if (layoutedEdges && layoutedEdges.length > 0) {
+              graphActions.setEdges(layoutedEdges);
+            }
             setGraphStatus(`Expanded: +${results.length} (laid out)`);
           } catch (layoutError) {
             logger.warn('[Graph] Auto-layout after expand failed:', layoutError);
@@ -3603,7 +3715,7 @@ export default function UnifiedSearchModal({
     if (activeTab !== 'graph' || !isOpen) return undefined;
 
     let cancelled = false;
-    const requestId = Date.now();
+    const requestId = (withinRequestCounterRef.current += 1);
     withinReqRef.current = requestId;
 
     const run = async () => {
@@ -3950,6 +4062,8 @@ export default function UnifiedSearchModal({
   const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
   const rfProOptions = useMemo(() => ({ hideAttribution: true }), []);
+  const rfNodeTypes = useMemo(() => NODE_TYPES, []);
+  const rfEdgeTypes = useMemo(() => EDGE_TYPES, []);
   const miniMapNodeColor = useCallback((n) => {
     if (n.data?.kind === 'query') return '#6366f1'; // Indigo for queries
     if (n.data?.kind === 'cluster' || n.data?.kind === 'duplicate') return '#f59e0b'; // Amber for clusters
@@ -4033,9 +4147,16 @@ export default function UnifiedSearchModal({
 
         {/* Error banner */}
         {error && (
-          <div className="glass-panel border border-stratosort-danger/30 bg-stratosort-danger/10 p-3 text-sm text-system-gray-800 rounded-xl">
-            {error}
-          </div>
+          <StateMessage
+            icon={AlertTriangle}
+            tone="error"
+            size="sm"
+            align="left"
+            title="Search error"
+            description={error}
+            className="glass-panel border border-stratosort-danger/30 bg-stratosort-danger/10 p-3 rounded-xl"
+            contentClassName="max-w-xl"
+          />
         )}
 
         {/* Search Tab Content */}
@@ -4397,6 +4518,7 @@ export default function UnifiedSearchModal({
               onReset={handleChatReset}
               isSending={isChatting}
               error={chatError}
+              warning={chatWarning}
               useSearchContext={useSearchContext}
               onToggleSearchContext={(next) => setUseSearchContext(next)}
               onOpenSource={handleChatOpenSource}
@@ -4693,48 +4815,6 @@ export default function UnifiedSearchModal({
                         </Button>
                       </div>
 
-                      {/* Auto-clustering Toggle */}
-                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={enableAutoClustering}
-                          onChange={(e) => setEnableAutoClustering(e.target.checked)}
-                          className="rounded"
-                        />
-                        Auto-load clusters
-                      </label>
-
-                      {/* Edge Labels Toggle */}
-                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer mt-1">
-                        <input
-                          type="checkbox"
-                          checked={showEdgeLabels}
-                          onChange={(e) => setShowEdgeLabels(e.target.checked)}
-                          className="rounded"
-                        />
-                        Show connection labels
-                      </label>
-
-                      {/* Save/Load Controls */}
-                      <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleSaveGraph}
-                          className="flex-1 justify-center text-xs"
-                        >
-                          Save State
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleLoadGraph}
-                          className="flex-1 justify-center text-xs"
-                        >
-                          Load State
-                        </Button>
-                      </div>
-
                       <Button
                         variant="secondary"
                         size="sm"
@@ -4902,16 +4982,21 @@ export default function UnifiedSearchModal({
 
                   {/* Empty state guidance */}
                   {stats?.files === 0 && (
-                    <div className="mb-8 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-4 py-3 rounded-lg max-w-xs text-left flex gap-3">
-                      <FolderPlus className="w-5 h-5 shrink-0" />
-                      <div>
-                        <div className="font-medium mb-1">No files indexed yet</div>
-                        <div className="text-amber-600 opacity-90">
+                    <StateMessage
+                      icon={FolderPlus}
+                      tone="warning"
+                      size="sm"
+                      align="left"
+                      title="No files indexed yet"
+                      description={
+                        <>
                           Go to Settings &rarr; Embeddings &rarr; Rebuild Files to index your
                           analyzed files.
-                        </div>
-                      </div>
-                    </div>
+                        </>
+                      }
+                      className="mb-8 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg"
+                      contentClassName="max-w-xs"
+                    />
                   )}
 
                   <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-xs text-system-gray-400 max-w-md border-t border-system-gray-100 pt-6">
@@ -4965,8 +5050,8 @@ export default function UnifiedSearchModal({
                   <ReactFlow
                     nodes={rfNodes}
                     edges={rfEdges}
-                    nodeTypes={NODE_TYPES}
-                    edgeTypes={EDGE_TYPES}
+                    nodeTypes={rfNodeTypes}
+                    edgeTypes={rfEdgeTypes}
                     onNodesChange={onNodesChange}
                     onEdgesChange={graphActions.onEdgesChange}
                     className={`bg-[var(--surface-muted)] ${zoomLevel < 0.6 ? 'graph-zoomed-out' : ''}`}

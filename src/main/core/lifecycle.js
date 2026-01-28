@@ -166,11 +166,12 @@ async function handleBeforeQuit() {
     const downloadWatcher = lifecycleConfig.getDownloadWatcher?.();
     if (downloadWatcher) {
       try {
-        downloadWatcher.stop();
-        lifecycleConfig.setDownloadWatcher?.(null);
+        await Promise.resolve(downloadWatcher.stop?.());
         logger.info('[CLEANUP] Download watcher stopped');
       } catch (error) {
         logger.error('[CLEANUP] Failed to stop download watcher:', error);
+      } finally {
+        lifecycleConfig.setDownloadWatcher?.(null);
       }
     }
 

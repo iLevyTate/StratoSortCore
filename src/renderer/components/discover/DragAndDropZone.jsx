@@ -3,8 +3,8 @@ import PropTypes from 'prop-types';
 import { Download } from 'lucide-react';
 
 /**
- * NOTE: Drag and Drop functionality is currently considered "inactive" / future feature.
- * The code is preserved here for when we want to re-enable or expand it.
+ * Reusable drag-and-drop zone UI.
+ * Not currently wired in the default Discover UI, but kept for reuse.
  */
 const DragAndDropZone = memo(function DragAndDropZone({ isDragging, dragProps, className = '' }) {
   // Add keyboard affordance for accessibility: treat the zone as a button

@@ -12,7 +12,7 @@ import {
   Eye
 } from 'lucide-react';
 import { useNotification } from '../../contexts/NotificationContext';
-import { Card, Button, IconButton } from '../ui';
+import { Card, Button, IconButton, StateMessage } from '../ui';
 import { Text } from '../ui/Typography';
 
 function BatchOrganizationSuggestions({
@@ -54,14 +54,16 @@ function BatchOrganizationSuggestions({
 
   if (!batchSuggestions || !batchSuggestions.groups) {
     return (
-      <Card className="p-8 text-center">
-        <div className="flex flex-col items-center gap-3">
-          <Info className="w-8 h-8 text-muted-foreground" />
-          <p className="text-muted-foreground">
-            No batch suggestions available. Select multiple files to see organization options.
-          </p>
-        </div>
-      </Card>
+      <StateMessage
+        icon={Info}
+        tone="info"
+        variant="card"
+        size="md"
+        title="No batch suggestions available"
+        description="Select multiple files to see organization options."
+        className="p-8"
+        contentClassName="max-w-sm"
+      />
     );
   }
 
@@ -78,7 +80,7 @@ function BatchOrganizationSuggestions({
       if (onMemorySaved) {
         onMemorySaved();
       }
-    } catch (error) {
+    } catch {
       addNotification('Failed to save memory', 'warning');
     } finally {
       setSavingMemory(false);

@@ -38,7 +38,7 @@ export function FloatingSearchProvider({ children }) {
   useEffect(() => {
     try {
       localStorage.setItem(MODAL_OPEN_STATE_KEY, String(isModalOpen));
-    } catch (error) {
+    } catch {
       // Ignore storage errors
     }
   }, [isModalOpen]);

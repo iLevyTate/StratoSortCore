@@ -180,7 +180,9 @@ async function recordAnalysisResult({
     // FIX: Capture comprehensive data for document/image conversations
     // Include all LLM-extracted fields for richer context in chat/queries
     const normalized = {
-      subject: normalizeText(result.suggestedName || path.basename(filePath), { maxLength: 255 }),
+      subject: normalizeText(result.subject || result.suggestedName || path.basename(filePath), {
+        maxLength: 255
+      }),
       category: normalizeText(result.category || 'uncategorized', { maxLength: 100 }),
       tags: normalizeKeywords(Array.isArray(result.keywords) ? result.keywords : []),
       confidence: typeof result.confidence === 'number' ? result.confidence : 0,
@@ -196,12 +198,16 @@ async function recordAnalysisResult({
       newName: normalizeOptionalText(result.suggestedName || null, { maxLength: 255 }),
       renamed: Boolean(result.suggestedName),
       // Additional fields for richer document/image context
-      documentType: normalizeOptionalText(result.type || null, { maxLength: 100 }),
+      documentType: normalizeOptionalText(result.documentType || result.type || null, {
+        maxLength: 100
+      }),
       entity: normalizeOptionalText(result.entity || null, { maxLength: 255 }),
       project: normalizeOptionalText(result.project || null, { maxLength: 255 }),
       purpose: normalizeOptionalText(result.purpose || null, { maxLength: 1000 }),
       reasoning: normalizeOptionalText(result.reasoning || null, { maxLength: 500 }),
-      documentDate: normalizeOptionalText(result.date || null, { maxLength: 50 }),
+      documentDate: normalizeOptionalText(result.documentDate || result.date || null, {
+        maxLength: 50
+      }),
       // Key entities for conversation (people, organizations, dates mentioned)
       keyEntities: Array.isArray(result.keyEntities)
         ? result.keyEntities.slice(0, 20).map((e) => normalizeText(e, { maxLength: 100 }))

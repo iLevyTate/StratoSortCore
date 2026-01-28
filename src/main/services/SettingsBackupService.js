@@ -111,7 +111,7 @@ class SettingsBackupService {
       if (atomicFileOps?.safeWriteFile) {
         try {
           await atomicFileOps.safeWriteFile(backupPath, writeContent);
-        } catch (atomicError) {
+        } catch {
           // Fall back to direct write for test environments
           await fs.writeFile(backupPath, writeContent);
         }

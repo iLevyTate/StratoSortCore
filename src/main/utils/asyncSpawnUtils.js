@@ -1,6 +1,6 @@
 const { spawn } = require('child_process');
 const { logger } = require('../../shared/logger');
-const { isWindows, shouldUseShell } = require('../../shared/platformUtils');
+const { isWindows } = require('../../shared/platformUtils');
 
 logger.setContext('AsyncSpawnUtils');
 
@@ -56,7 +56,7 @@ async function asyncSpawn(command, args = [], options = {}) {
             resolved = true;
             try {
               child.kill('SIGTERM');
-            } catch (e) {
+            } catch {
               // Process may have already exited
             }
             resolve({
@@ -140,6 +140,14 @@ async function asyncSpawn(command, args = [], options = {}) {
  * @returns {Promise<boolean>}
  */
 async function hasPythonModuleAsync(moduleName) {
+  const isValidModuleName =
+    typeof moduleName === 'string' &&
+    /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(moduleName);
+  if (!isValidModuleName) {
+    logger.warn('[STARTUP] Invalid Python module name provided', { moduleName });
+    return false;
+  }
+
   // Use centralized platform utils for Python commands
   const pythonCommands = isWindows
     ? [
@@ -294,8 +302,7 @@ async function checkChromaExecutableAsync() {
     const result = await asyncSpawn(chromaExecutable, ['--help'], {
       stdio: 'pipe',
       windowsHide: true,
-      timeout: 5000,
-      shell: shouldUseShell()
+      timeout: 5000
     });
 
     // Handle timeout case separately from "not found"

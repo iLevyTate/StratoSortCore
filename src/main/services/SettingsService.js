@@ -978,9 +978,27 @@ class SettingsService {
    * Notify renderer process of settings changes via IPC
    * @private
    */
-  async _notifySettingsChanged(payload = null) {
+  async _notifySettingsChanged(payload = null, options = {}) {
     try {
-      const data = payload || (await this.load());
+      const isEnvelope =
+        payload &&
+        typeof payload === 'object' &&
+        Object.prototype.hasOwnProperty.call(payload, 'settings');
+      let settings = isEnvelope ? payload.settings : payload;
+      if (!settings || typeof settings !== 'object') {
+        settings = await this.load();
+      }
+      const source =
+        (isEnvelope && typeof payload.source === 'string' && payload.source) ||
+        options.source ||
+        'external';
+      const timestamp =
+        (isEnvelope && typeof payload.timestamp === 'number' && payload.timestamp) || Date.now();
+      const eventPayload = {
+        settings,
+        source,
+        timestamp
+      };
 
       // Get all BrowserWindows and send event
       const { BrowserWindow } = require('electron');
@@ -989,7 +1007,7 @@ class SettingsService {
         if (win && !win.isDestroyed() && win.webContents) {
           try {
             // FIX: Use safeSend for validated IPC event sending
-            safeSend(win.webContents, 'settings-changed-external', data);
+            safeSend(win.webContents, 'settings-changed-external', eventPayload);
           } catch (error) {
             logger.warn(
               `[SettingsService] Failed to send settings-changed event: ${error.message}`

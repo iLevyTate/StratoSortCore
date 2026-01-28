@@ -14,6 +14,36 @@ const { replaceFileWithRetry } = require('../../../shared/atomicFile');
 
 logger.setContext('AnalysisHistory-Persistence');
 
+const TRANSIENT_ERROR_CODES = new Set([
+  'EACCES',
+  'EPERM',
+  'EBUSY',
+  'EMFILE',
+  'ENFILE',
+  'ETIMEDOUT'
+]);
+
+function isTransientError(error) {
+  return Boolean(error?.code && TRANSIENT_ERROR_CODES.has(error.code));
+}
+
+async function backupCorruptFile(filePath, reason) {
+  const backupPath = `${filePath}.corrupt.${Date.now()}`;
+  try {
+    await fs.copyFile(filePath, backupPath);
+    logger.warn('[AnalysisHistory] Backed up corrupt file', {
+      filePath,
+      backupPath,
+      reason: reason?.message || reason
+    });
+  } catch (backupError) {
+    logger.warn('[AnalysisHistory] Failed to back up corrupt file', {
+      filePath,
+      error: backupError?.message || backupError
+    });
+  }
+}
+
 /**
  * Ensure parent directory exists
  * @param {string} filePath - File path
@@ -56,9 +86,23 @@ async function loadConfig(configPath, getDefaultConfig, saveConfig) {
     const configData = await fs.readFile(configPath, 'utf8');
     return JSON.parse(configData);
   } catch (error) {
-    const config = getDefaultConfig();
-    await saveConfig(config);
-    return config;
+    if (error?.code === 'ENOENT') {
+      const config = getDefaultConfig();
+      await saveConfig(config);
+      return config;
+    }
+    if (isTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    if (error instanceof SyntaxError) {
+      await backupCorruptFile(configPath, error);
+      const config = getDefaultConfig();
+      await saveConfig(config);
+      return config;
+    }
+    error.preserveOnError = true;
+    throw error;
   }
 }
 
@@ -91,18 +135,33 @@ async function loadHistory(
 ) {
   try {
     const historyData = await fs.readFile(historyPath, 'utf8');
-    const history = JSON.parse(historyData);
+    let history = JSON.parse(historyData);
 
     // Validate schema version
     if (history.schemaVersion !== schemaVersion) {
-      await migrateHistory(history);
+      history = await migrateHistory(history);
+      await saveHistory(history);
     }
 
     return history;
   } catch (error) {
-    const history = createEmptyHistory();
-    await saveHistory(history);
-    return history;
+    if (error?.code === 'ENOENT') {
+      const history = createEmptyHistory();
+      await saveHistory(history);
+      return history;
+    }
+    if (isTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    if (error instanceof SyntaxError) {
+      await backupCorruptFile(historyPath, error);
+      const history = createEmptyHistory();
+      await saveHistory(history);
+      return history;
+    }
+    error.preserveOnError = true;
+    throw error;
   }
 }
 
@@ -129,9 +188,23 @@ async function loadIndex(indexPath, createEmptyIndex, saveIndex) {
     const indexData = await fs.readFile(indexPath, 'utf8');
     return JSON.parse(indexData);
   } catch (error) {
-    const index = createEmptyIndex();
-    await saveIndex(index);
-    return index;
+    if (error?.code === 'ENOENT') {
+      const index = createEmptyIndex();
+      await saveIndex(index);
+      return index;
+    }
+    if (isTransientError(error)) {
+      error.transient = true;
+      throw error;
+    }
+    if (error instanceof SyntaxError) {
+      await backupCorruptFile(indexPath, error);
+      const index = createEmptyIndex();
+      await saveIndex(index);
+      return index;
+    }
+    error.preserveOnError = true;
+    throw error;
   }
 }
 

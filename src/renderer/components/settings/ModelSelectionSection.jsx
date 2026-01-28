@@ -7,6 +7,7 @@ import StatusBadge from '../ui/StatusBadge';
 import SettingRow from './SettingRow';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
+import StateMessage from '../ui/StateMessage';
 import { Text } from '../ui/Typography';
 import { logger } from '../../../shared/logger';
 
@@ -145,12 +146,16 @@ function ModelSelectionSection({
               ))}
             </Select>
           ) : (
-            <Text
-              variant="small"
-              className="italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-system-gray-500"
-            >
-              No text models found. Pull a model like llama3.2 or mistral.
-            </Text>
+            <StateMessage
+              icon={FileText}
+              tone="neutral"
+              size="sm"
+              align="left"
+              title="No text models found"
+              description="Pull a model like llama3.2 or mistral."
+              className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
+              contentClassName="max-w-xs"
+            />
           )}
         </SettingRow>
 
@@ -179,12 +184,16 @@ function ModelSelectionSection({
               ))}
             </Select>
           ) : (
-            <Text
-              variant="small"
-              className="italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-system-gray-500"
-            >
-              No vision models found. Pull a model like llava or moondream for image analysis.
-            </Text>
+            <StateMessage
+              icon={Info}
+              tone="neutral"
+              size="sm"
+              align="left"
+              title="No vision models found"
+              description="Pull a model like llava or moondream for image analysis."
+              className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
+              contentClassName="max-w-xs"
+            />
           )}
         </SettingRow>
 
@@ -228,12 +237,16 @@ function ModelSelectionSection({
               )}
             </div>
           ) : (
-            <Text
-              variant="small"
-              className="italic p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-system-gray-500"
-            >
-              No embedding models available. Pull embeddinggemma (recommended) or mxbai-embed-large.
-            </Text>
+            <StateMessage
+              icon={Database}
+              tone="neutral"
+              size="sm"
+              align="left"
+              title="No embedding models available"
+              description="Pull embeddinggemma (recommended) or mxbai-embed-large."
+              className="p-3 bg-system-gray-50 rounded-lg border border-system-gray-100"
+              contentClassName="max-w-xs"
+            />
           )}
         </SettingRow>
       </div>

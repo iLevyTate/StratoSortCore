@@ -6,9 +6,8 @@ const chalk = require('chalk');
 const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
 
 try {
-  // eslint-disable-next-line global-require
   require('dotenv').config({ path: path.join(__dirname, '../.env') });
-} catch (_) {
+} catch {
   // Silently ignore dotenv errors (file may not exist)
 }
 
@@ -19,7 +18,7 @@ function checkFileExists(relativePath) {
 
 function printStatus(ok, label, details) {
   const icon = ok ? chalk.green('✓') : chalk.red('✗');
-  // eslint-disable-next-line no-console
+
   console.log(`${icon} ${label}${details ? chalk.gray(` — ${details}`) : ''}`);
 }
 
@@ -31,7 +30,6 @@ async function runCmd(cmd, args = []) {
 }
 
 async function main() {
-  // eslint-disable-next-line no-console
   console.log(chalk.cyan.bold('\nStratoSort Startup Checklist'));
   // Basic file presence
   const hasDistIndex = checkFileExists('dist/index.html');
@@ -62,7 +60,7 @@ async function main() {
   );
 
   // Final hint
-  // eslint-disable-next-line no-console
+
   console.log(
     `\n${chalk.gray('Tip:')} Run ${chalk.yellow('npm run dev')} to build and launch in development mode.`
   );

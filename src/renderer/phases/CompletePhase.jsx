@@ -22,7 +22,7 @@ function StatPill({ label, value, tone = 'neutral' }) {
   );
 }
 
-function FileRow({ file, index }) {
+function FileRow({ file, index, redactPaths }) {
   if (!file || typeof file !== 'object') {
     return null;
   }
@@ -30,11 +30,13 @@ function FileRow({ file, index }) {
   const displayLocation =
     file.smartFolder || file.path || file.newLocation || file.destination || 'Organized';
   const fullPath = file.path || file.newLocation || file.destination || '';
-  const displayPath = fullPath
-    ? formatDisplayPath(fullPath, { redact: true, segments: 2 })
-    : typeof displayLocation === 'string'
-      ? displayLocation
-      : 'Organized';
+  const basePath = fullPath || (typeof displayLocation === 'string' ? displayLocation : '');
+  const displayPath = basePath
+    ? formatDisplayPath(basePath, { redact: redactPaths, segments: 2 })
+    : 'Organized';
+  const titlePath = basePath
+    ? formatDisplayPath(basePath, { redact: redactPaths, segments: 2 })
+    : '';
 
   return (
     <div
@@ -48,11 +50,11 @@ function FileRow({ file, index }) {
         <Text
           variant="small"
           className="font-medium text-system-gray-900 truncate"
-          title={`${originalName} → ${fullPath}`}
+          title={titlePath ? `${originalName} → ${titlePath}` : originalName}
         >
           {originalName}
         </Text>
-        <Text variant="tiny" className="text-system-gray-500 truncate" title={fullPath || ''}>
+        <Text variant="tiny" className="text-system-gray-500 truncate" title={titlePath}>
           {displayPath}
         </Text>
       </div>
@@ -64,6 +66,7 @@ function FileRow({ file, index }) {
 function CompletePhase() {
   const dispatch = useAppDispatch();
   const organizedFiles = useAppSelector((state) => state.files.organizedFiles);
+  const redactPaths = useAppSelector((state) => Boolean(state?.system?.redactPaths));
 
   const { filesToRender, overflowCount, destinationCount, totalFiles } = useMemo(() => {
     const safeFiles = Array.isArray(organizedFiles) ? organizedFiles : [];
@@ -168,6 +171,7 @@ function CompletePhase() {
                     }
                     file={file}
                     index={index}
+                    redactPaths={redactPaths}
                   />
                 ))}
                 {overflowCount > 0 && (
@@ -277,7 +281,8 @@ FileRow.propTypes = {
     newLocation: PropTypes.string,
     destination: PropTypes.string
   }),
-  index: PropTypes.number.isRequired
+  index: PropTypes.number.isRequired,
+  redactPaths: PropTypes.bool
 };
 
 export default memo(CompletePhase);

@@ -50,7 +50,7 @@ function filterCustomFolders(folders) {
  * @param {number} [options.nameMax] - Max length for name (truncate if set)
  * @param {number} [options.descriptionMax] - Max length for description (truncate if set)
  * @param {number} [options.limit] - Max number of folders to return
- * @returns {Array<{name: string, description: string, id?: string|null}>}
+ * @returns {Array<{name: string, description: string, path?: string|null, id?: string|null}>}
  */
 function mapFoldersToCategories(folders, options = {}) {
   const { includeId = true, nameMax, descriptionMax, limit } = options;
@@ -74,7 +74,7 @@ function mapFoldersToCategories(folders, options = {}) {
       description = description.trim().slice(0, descriptionMax);
     }
 
-    const result = { name, description };
+    const result = { name, description, path: safeGet(f, 'path', '') };
 
     if (includeId) {
       result.id = safeGet(f, 'id', null);

@@ -158,7 +158,6 @@ async function checkExternalChroma(url) {
   const endpoints = ['/api/v2/heartbeat', '/api/v1/heartbeat', '/api/v1'];
 
   for (const endpoint of endpoints) {
-    // eslint-disable-next-line no-await-in-loop
     const ok = await new Promise((resolve) => {
       const req = client.get(new URL(endpoint, baseUrl), (res) => {
         res.resume();
@@ -187,7 +186,7 @@ async function checkChromaExecutable(python) {
     try {
       const res = await tryCmd(exe, ['--help'], 3000);
       if (res.status === 0) return true;
-    } catch (e) {
+    } catch {
       // Ignore
     }
   }
@@ -323,7 +322,7 @@ async function main({
         log.log(chalk.green(`✓ ChromaDB CLI executable found (import failed, but CLI exists)`));
         return 0;
       }
-    } catch (e) {
+    } catch {
       // Ignore
     }
 
@@ -364,7 +363,7 @@ async function main({
       log.log(chalk.bold.green(`✓ ChromaDB CLI executable found (import failed, but CLI exists)`));
       return 0;
     }
-  } catch (e) {
+  } catch {
     // Ignore error
   }
 
@@ -379,13 +378,12 @@ async function main({
 if (require.main === module) {
   main().then(
     (code) => {
-      // eslint-disable-next-line no-process-exit
       process.exit(code);
     },
     (err) => {
       // Best-effort: don't fail developer install
       console.error(chalk.red(`[chromadb] Unexpected error: ${err?.message || err}`));
-      // eslint-disable-next-line no-process-exit
+
       process.exit(0);
     }
   );

@@ -24,6 +24,12 @@ jest.mock('../src/main/services/autoOrganize/namingUtils', () => ({
   generateSuggestedNameFromAnalysis: jest.fn(() => 'mock-suggested.pdf')
 }));
 
+jest.mock('../src/main/ipc/semantic', () => ({
+  getSearchServiceInstance: jest.fn(() => ({
+    invalidateIndex: jest.fn()
+  }))
+}));
+
 // Avoid chokidar touching the filesystem during module init
 jest.mock('chokidar', () => ({
   watch: jest.fn(() => ({
@@ -115,6 +121,58 @@ describe('SmartFolderWatcher analysis history recording', () => {
         keywords: ['invoice', '2026', 'customer']
       })
     );
+  });
+
+  test('detects move and updates paths without re-analysis', async () => {
+    const fs = require('fs').promises;
+    jest.spyOn(fs, 'access').mockResolvedValue(undefined);
+
+    const oldPath = 'C:\\old\\doc.pdf';
+    const newPath = 'C:\\new\\doc.pdf';
+    const mtimeMs = Date.parse('2026-01-02T00:00:00.000Z');
+    const fileSize = 123;
+
+    const SmartFolderWatcher = require('../src/main/services/SmartFolderWatcher');
+
+    const analysisHistoryService = {
+      getAnalysisByPath: jest.fn().mockResolvedValue({
+        originalPath: oldPath,
+        organization: { actual: oldPath },
+        fileSize,
+        lastModified: mtimeMs
+      })
+    };
+
+    const atomicPathUpdate = jest
+      .fn()
+      .mockResolvedValue({ success: true, errors: [], updated: {} });
+
+    const watcher = new SmartFolderWatcher({
+      getSmartFolders: () => [],
+      analysisHistoryService,
+      analyzeDocumentFile: jest.fn(),
+      analyzeImageFile: jest.fn(),
+      settingsService: { load: jest.fn().mockResolvedValue({}) },
+      chromaDbService: null,
+      filePathCoordinator: { atomicPathUpdate },
+      folderMatcher: null,
+      notificationService: null
+    });
+
+    await watcher._handleFileDeletion(oldPath);
+    await watcher._queueFileForAnalysis(newPath, mtimeMs, 'add', {
+      size: fileSize,
+      mtimeMs,
+      mtime: new Date(mtimeMs)
+    });
+
+    expect(atomicPathUpdate).toHaveBeenCalledWith(
+      oldPath,
+      newPath,
+      expect.objectContaining({ type: 'move' })
+    );
+    expect(watcher.analyzeDocumentFile).not.toHaveBeenCalled();
+    expect(watcher._pendingMoveCandidates.size).toBe(0);
   });
 });
 

@@ -7,6 +7,166 @@ describe('Embeddings/Semantic IPC', () => {
     jest.resetModules();
   });
 
+  test('returns unavailable when ChromaDB dependency is missing', async () => {
+    jest.resetModules();
+    const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+
+    jest.doMock('../src/main/services/startup', () => ({
+      getStartupManager: () => ({ chromadbDependencyMissing: true })
+    }));
+
+    // Minimal mocks for module initialization
+    jest.doMock('../src/main/ollamaUtils', () => ({
+      getOllama: jest.fn(() => ({
+        list: jest.fn().mockResolvedValue({
+          models: [{ name: 'embeddinggemma:latest' }]
+        })
+      })),
+      getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+    }));
+
+    jest.doMock('../src/main/services/FolderMatchingService', () => ({
+      getInstance: () => ({
+        initialize: jest.fn(),
+        embedText: jest.fn(),
+        generateFolderId: jest.fn()
+      })
+    }));
+
+    jest.doMock('../src/main/services/ChromaDBService', () => ({
+      getInstance: () => ({
+        initialize: jest.fn(async () => {}),
+        migrateFromJsonl: jest.fn(async () => 0),
+        cleanup: jest.fn(async () => {}),
+        on: jest.fn(),
+        off: jest.fn(),
+        emit: jest.fn(),
+        isOnline: true,
+        initialized: false,
+        isServiceAvailable: jest.fn(() => true),
+        isServerAvailable: jest.fn(async () => true),
+        getCircuitState: jest.fn(() => 'CLOSED'),
+        getCircuitStats: jest.fn(() => ({})),
+        getQueueStats: jest.fn(() => ({ queueSize: 0 })),
+        offlineQueue: { size: () => 0 },
+        serverUrl: 'http://localhost:8000',
+        checkHealth: jest.fn().mockResolvedValue(true),
+        forceRecovery: jest.fn()
+      })
+    }));
+
+    const { registerAllIpc } = require('../src/main/ipc');
+    const { IPC_CHANNELS } = require('../src/shared/constants');
+
+    registerAllIpc({
+      ipcMain,
+      IPC_CHANNELS,
+      logger,
+      systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+      getServiceIntegration: () => ({
+        analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+      }),
+      getCustomFolders: () => [{ id: '1', name: 'Finance', description: 'Invoices' }]
+    });
+
+    const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.REBUILD_FOLDERS);
+    const result = await handler();
+
+    expect(result.success).toBe(false);
+    expect(result.unavailable).toBe(true);
+    expect(result.pending).not.toBe(true);
+  });
+
+  test('retries initialization after failure cooldown', async () => {
+    jest.resetModules();
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2024-01-01T00:00:00.000Z'));
+
+    const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
+    let chromaMissing = true;
+
+    jest.doMock('../src/main/services/startup', () => ({
+      getStartupManager: () => ({ chromadbDependencyMissing: chromaMissing })
+    }));
+
+    jest.doMock('../src/main/ollamaUtils', () => ({
+      getOllama: jest.fn(() => ({
+        list: jest.fn().mockResolvedValue({
+          models: [{ name: 'embeddinggemma:latest' }]
+        })
+      })),
+      getOllamaEmbeddingModel: jest.fn(() => 'embeddinggemma')
+    }));
+
+    const mockChromaService = {
+      initialize: jest.fn(async () => {}),
+      migrateFromJsonl: jest.fn(async () => 0),
+      cleanup: jest.fn(async () => {}),
+      on: jest.fn(),
+      off: jest.fn(),
+      emit: jest.fn(),
+      isOnline: true,
+      initialized: false,
+      isServiceAvailable: jest.fn(() => true),
+      isServerAvailable: jest.fn(async () => true),
+      getCircuitState: jest.fn(() => 'CLOSED'),
+      getCircuitStats: jest.fn(() => ({})),
+      getQueueStats: jest.fn(() => ({ queueSize: 0 })),
+      offlineQueue: { size: () => 0 },
+      serverUrl: 'http://localhost:8000',
+      checkHealth: jest.fn().mockResolvedValue(true),
+      forceRecovery: jest.fn(),
+      getStats: jest.fn().mockResolvedValue({ files: 0, folders: 0 })
+    };
+
+    jest.doMock('../src/main/services/ChromaDBService', () => ({
+      getInstance: () => mockChromaService
+    }));
+
+    jest.doMock('../src/main/services/FolderMatchingService', () => ({
+      getInstance: () => ({
+        initialize: jest.fn(),
+        embedText: jest.fn(),
+        generateFolderId: jest.fn()
+      })
+    }));
+
+    const { registerAllIpc } = require('../src/main/ipc');
+    const { IPC_CHANNELS } = require('../src/shared/constants');
+
+    registerAllIpc({
+      ipcMain,
+      IPC_CHANNELS,
+      logger,
+      systemAnalytics: { collectMetrics: jest.fn(async () => ({})) },
+      getServiceIntegration: () => ({
+        analysisHistory: { getRecentAnalysis: jest.fn(async () => []) }
+      }),
+      getCustomFolders: () => [{ id: '1', name: 'Finance', description: 'Invoices' }]
+    });
+
+    const statsHandler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.GET_STATS);
+
+    const first = await statsHandler();
+    expect(first.success).toBe(false);
+    expect(first.unavailable).toBe(true);
+    expect(mockChromaService.initialize).not.toHaveBeenCalled();
+
+    jest.advanceTimersByTime(5000);
+    const second = await statsHandler();
+    expect(second.success).toBe(false);
+    expect(second.unavailable).toBe(true);
+    expect(mockChromaService.initialize).not.toHaveBeenCalled();
+
+    chromaMissing = false;
+    jest.advanceTimersByTime(10001);
+    const third = await statsHandler();
+    expect(third.success).toBe(true);
+    expect(mockChromaService.initialize).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
+  });
+
   test('REBUILD_FOLDERS calls embedding upsert for custom folders', async () => {
     jest.resetModules();
     const logger = { error: jest.fn(), info: jest.fn(), warn: jest.fn(), debug: jest.fn() };
@@ -26,7 +186,6 @@ describe('Embeddings/Semantic IPC', () => {
 
     const mockFolderMatcher = {
       // New batch processing requires embedText method
-      // eslint-disable-next-line no-unused-vars
       embedText: jest.fn(async (_text) => ({
         vector: [0.1, 0.2, 0.3],
         model: 'mxbai-embed-large'
@@ -120,7 +279,6 @@ describe('Embeddings/Semantic IPC', () => {
 
     const mockFolderMatcher = {
       // New batch processing requires embedText method
-      // eslint-disable-next-line no-unused-vars
       embedText: jest.fn(async (_text) => ({
         vector: [0.1, 0.2, 0.3],
         model: 'mxbai-embed-large'
@@ -201,16 +359,22 @@ describe('Embeddings/Semantic IPC', () => {
     });
 
     const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES);
-    const result = await handler();
-    // IMPROVED: Now validates batch file operations work correctly
-    expect(result.success).toBe(true);
-    expect(result.files).toBe(1);
-    expect(inserted.length).toBe(1); // Only file entries tracked (folders processed separately)
-    expect(result.fileChunks).toBeGreaterThan(0);
-    expect(insertedChunks.length).toBeGreaterThan(0);
-    expect(insertedChunks[0].id).toContain('chunk:');
-    // The file entry should have the correct ID format
-    expect(inserted[0].id).toContain('file:');
+    const fs = require('fs');
+    const accessSpy = jest.spyOn(fs.promises, 'access').mockResolvedValue();
+    try {
+      const result = await handler();
+      // IMPROVED: Now validates batch file operations work correctly
+      expect(result.success).toBe(true);
+      expect(result.files).toBe(1);
+      expect(inserted.length).toBe(1); // Only file entries tracked (folders processed separately)
+      expect(result.fileChunks).toBeGreaterThan(0);
+      expect(insertedChunks.length).toBeGreaterThan(0);
+      expect(insertedChunks[0].id).toContain('chunk:');
+      // The file entry should have the correct ID format
+      expect(inserted[0].id).toContain('file:');
+    } finally {
+      accessSpy.mockRestore();
+    }
   });
 
   test('CLEAR_STORE calls resetAll successfully', async () => {
@@ -787,13 +951,18 @@ describe('Embeddings/Semantic IPC', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const handler = ipcMain._handlers.get(IPC_CHANNELS.EMBEDDINGS.REBUILD_FILES);
-      const result = await handler();
+      const accessSpy = jest.spyOn(fs.promises, 'access').mockResolvedValue();
+      try {
+        const result = await handler();
 
-      expect(result.success).toBe(true);
-      expect(resetFilesCalls).toContain('resetFiles');
-      expect(resetFilesCalls).toContain('resetFileChunks');
-      // Should NOT perform any file system rename operations (DB directory reset)
-      expect(fsOperations.filter((op) => op.op === 'rename')).toHaveLength(0);
+        expect(result.success).toBe(true);
+        expect(resetFilesCalls).toContain('resetFiles');
+        expect(resetFilesCalls).toContain('resetFileChunks');
+        // Should NOT perform any file system rename operations (DB directory reset)
+        expect(fsOperations.filter((op) => op.op === 'rename')).toHaveLength(0);
+      } finally {
+        accessSpy.mockRestore();
+      }
     }, 10000);
   });
 

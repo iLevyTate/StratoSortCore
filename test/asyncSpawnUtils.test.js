@@ -16,8 +16,7 @@ jest.mock('../src/shared/logger', () => ({
 
 // Mock platformUtils
 jest.mock('../src/shared/platformUtils', () => ({
-  isWindows: process.platform === 'win32',
-  shouldUseShell: jest.fn().mockReturnValue(false)
+  isWindows: process.platform === 'win32'
 }));
 
 // We need to create a mock spawn that can be controlled per-test

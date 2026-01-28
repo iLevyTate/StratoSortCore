@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 const { spawnSync } = require('child_process');
 
 function parseBool(value) {
@@ -114,7 +113,6 @@ function main({ env = process.env } = {}) {
 }
 
 if (require.main === module) {
-  // eslint-disable-next-line no-process-exit
   process.exit(main());
 }
 

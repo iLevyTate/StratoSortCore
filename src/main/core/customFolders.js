@@ -2,12 +2,29 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
+const { getLegacyUserDataPaths } = require('./userDataMigration');
 
 logger.setContext('CustomFolders');
 
+const CUSTOM_FOLDERS_FILENAME = 'custom-folders.json';
+
+const normalizeName = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
+
+const normalizeFolderPath = (value) => {
+  if (typeof value !== 'string') return '';
+  const normalized = path.normalize(value);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+};
+
+const buildFolderKey = (folder) =>
+  `${normalizeName(folder?.name)}|${normalizeFolderPath(folder?.path)}`;
+
 function getCustomFoldersPath() {
   const userDataPath = app.getPath('userData');
-  return path.join(userDataPath, 'custom-folders.json');
+  return path.join(userDataPath, CUSTOM_FOLDERS_FILENAME);
 }
 
 function normalizeFolderPaths(folders) {
@@ -24,47 +41,137 @@ function normalizeFolderPaths(folders) {
   }
 }
 
-async function ensureUncategorizedFolder(folders) {
-  // Always ensure the "Uncategorized" default folder exists
-  const hasUncategorized = folders.some(
-    (f) => f.isDefault && f.name.toLowerCase() === 'uncategorized'
+async function ensureDefaultSmartFolders(folders) {
+  const safeFolders = Array.isArray(folders) ? folders : [];
+  const documentsDir = app.getPath('documents');
+  const baseDir = path.join(documentsDir, 'StratoSort');
+  const defaultFolders = getDefaultSmartFolders(baseDir);
+  const defaultNameSet = new Set(defaultFolders.map((folder) => normalizeName(folder.name)));
+  const existingNameSet = new Set(safeFolders.map((folder) => normalizeName(folder?.name)));
+  const isDefaultName = (nameKey) =>
+    nameKey && nameKey !== 'uncategorized' && defaultNameSet.has(nameKey);
+  const hasDefaultFlag = safeFolders.some(
+    (folder) => folder?.isDefault && isDefaultName(normalizeName(folder?.name))
   );
+  const hasDefaultName = safeFolders.some((folder) => isDefaultName(normalizeName(folder?.name)));
+  const hasCustom = safeFolders.some((folder) => {
+    const nameKey = normalizeName(folder?.name);
+    return nameKey && !defaultNameSet.has(nameKey);
+  });
+  const shouldEnsureDefaults =
+    !hasCustom && (hasDefaultFlag || hasDefaultName || !safeFolders.length);
 
-  if (!hasUncategorized) {
-    logger.info('[STORAGE] Adding missing Uncategorized default folder');
-    const documentsDir = app.getPath('documents');
-    const uncategorizedPath = path.join(documentsDir, 'StratoSort', 'Uncategorized');
+  const missingDefaults = defaultFolders.filter((folder) => {
+    const nameKey = normalizeName(folder.name);
+    if (existingNameSet.has(nameKey)) return false;
+    if (!shouldEnsureDefaults && nameKey !== 'uncategorized') return false;
+    return true;
+  });
 
-    // Create physical directory
+  if (missingDefaults.length === 0) return safeFolders;
+
+  logger.info('[STORAGE] Adding missing default smart folders:', {
+    count: missingDefaults.length,
+    names: missingDefaults.map((folder) => folder.name)
+  });
+
+  for (const folder of missingDefaults) {
     try {
-      await fs.mkdir(uncategorizedPath, { recursive: true });
-      logger.info('[STORAGE] Created physical Uncategorized directory at:', uncategorizedPath);
+      await fs.mkdir(folder.path, { recursive: true });
+      logger.info(`[STORAGE] Created physical ${folder.name} directory at:`, folder.path);
     } catch (error) {
-      logger.error('[STORAGE] Failed to create Uncategorized directory:', error);
-    }
-
-    const newFolder = {
-      id: `default-uncategorized-${Date.now()}`,
-      name: 'Uncategorized',
-      path: uncategorizedPath,
-      description: "Default folder for files that don't match any category",
-      keywords: [],
-      isDefault: true,
-      createdAt: new Date().toISOString()
-    };
-
-    folders.push(newFolder);
-
-    // Save to persist the change
-    try {
-      await saveCustomFolders(folders);
-      logger.info('[STORAGE] Persisted Uncategorized folder to custom-folders.json');
-    } catch (error) {
-      logger.error('[STORAGE] Failed to persist Uncategorized folder:', error);
+      logger.error(`[STORAGE] Failed to create ${folder.name} directory:`, error);
     }
   }
 
-  return folders;
+  const updatedFolders = [...safeFolders, ...missingDefaults];
+
+  try {
+    await saveCustomFolders(updatedFolders);
+    logger.info('[STORAGE] Persisted default smart folder updates to custom-folders.json');
+  } catch (error) {
+    logger.error('[STORAGE] Failed to persist default folders:', error);
+  }
+
+  return updatedFolders;
+}
+
+async function readCustomFoldersFile(filePath) {
+  try {
+    const data = await fs.readFile(filePath, 'utf-8');
+    if (!data || typeof data !== 'string') return null;
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function hasCustomFolders(folders, defaultNameSet) {
+  return (Array.isArray(folders) ? folders : []).some((folder) => {
+    const nameKey = normalizeName(folder?.name);
+    if (!nameKey) return false;
+    if (defaultNameSet.has(nameKey)) return false;
+    return true;
+  });
+}
+
+function mergeFolders(currentFolders, legacyFolders) {
+  const merged = [];
+  const seenKeys = new Set();
+
+  for (const folder of currentFolders) {
+    const key = buildFolderKey(folder);
+    if (!key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    merged.push(folder);
+  }
+
+  for (const folder of legacyFolders) {
+    const key = buildFolderKey(folder);
+    if (!key || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    merged.push(folder);
+  }
+
+  return merged;
+}
+
+async function recoverLegacyCustomFolders(currentFolders, defaultNameSet) {
+  if (hasCustomFolders(currentFolders, defaultNameSet)) return currentFolders;
+
+  const legacyPaths = getLegacyUserDataPaths();
+  const recoveredFolders = [];
+  const sources = [];
+
+  for (const legacyPath of legacyPaths) {
+    const legacyFilePath = path.join(legacyPath, CUSTOM_FOLDERS_FILENAME);
+    const legacyData = await readCustomFoldersFile(legacyFilePath);
+    if (!legacyData || legacyData.length === 0) continue;
+    const normalizedLegacy = normalizeFolderPaths(legacyData);
+    if (!hasCustomFolders(normalizedLegacy, defaultNameSet)) continue;
+    recoveredFolders.push(...normalizedLegacy);
+    sources.push(legacyFilePath);
+  }
+
+  if (recoveredFolders.length === 0) return currentFolders;
+
+  const merged = mergeFolders(currentFolders, recoveredFolders);
+  const addedCount = merged.length - currentFolders.length;
+  if (addedCount <= 0) return currentFolders;
+
+  try {
+    await saveCustomFolders(merged);
+    logger.warn('[STORAGE] Recovered custom smart folders from legacy data', {
+      addedCount,
+      sources
+    });
+  } catch (error) {
+    logger.error('[STORAGE] Failed to persist recovered custom folders:', error);
+  }
+
+  return merged;
 }
 
 /**
@@ -163,13 +270,39 @@ async function loadCustomFolders() {
     const data = await fs.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(data);
     const normalized = normalizeFolderPaths(parsed);
-
-    // Always ensure Uncategorized folder exists (creates physical directory + persists)
-    return await ensureUncategorizedFolder(normalized);
-  } catch (error) {
-    logger.info('[STARTUP] No saved custom folders found, creating default smart folders');
     const documentsDir = app.getPath('documents');
     const baseDir = path.join(documentsDir, 'StratoSort');
+    const defaultNameSet = new Set(
+      getDefaultSmartFolders(baseDir).map((folder) => normalizeName(folder.name))
+    );
+
+    const recovered = await recoverLegacyCustomFolders(normalized, defaultNameSet);
+
+    // Ensure missing defaults (including Uncategorized) are added as needed
+    return await ensureDefaultSmartFolders(recovered);
+  } catch {
+    const documentsDir = app.getPath('documents');
+    const baseDir = path.join(documentsDir, 'StratoSort');
+    const defaultNameSet = new Set(
+      getDefaultSmartFolders(baseDir).map((folder) => normalizeName(folder.name))
+    );
+
+    const backupRestore = await restoreFromBackup();
+    if (backupRestore?.success && Array.isArray(backupRestore.folders)) {
+      const normalizedBackup = normalizeFolderPaths(backupRestore.folders);
+      const recoveredFromBackup = await recoverLegacyCustomFolders(
+        normalizedBackup,
+        defaultNameSet
+      );
+      return await ensureDefaultSmartFolders(recoveredFromBackup);
+    }
+
+    const recoveredLegacy = await recoverLegacyCustomFolders([], defaultNameSet);
+    if (recoveredLegacy.length > 0) {
+      return await ensureDefaultSmartFolders(recoveredLegacy);
+    }
+
+    logger.info('[STARTUP] No saved custom folders found, creating default smart folders');
 
     // Create all default smart folders that match the categorization system
     const defaultFolders = getDefaultSmartFolders(baseDir);

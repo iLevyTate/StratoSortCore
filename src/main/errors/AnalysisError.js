@@ -32,7 +32,6 @@ class AnalysisError extends Error {
     const messages = {
       PDF_PROCESSING_FAILURE: 'Failed to extract text from PDF document',
       IMAGE_ANALYSIS_FAILURE: 'Failed to analyze image content',
-      AUDIO_ANALYSIS_FAILURE: 'Failed to process audio file',
       MODEL_NOT_INSTALLED: `AI model not found: ${this.metadata.requiredModel}`,
       OLLAMA_CONNECTION_FAILURE: 'Cannot connect to Ollama AI service',
       DOCUMENT_ANALYSIS_FAILURE: 'Document analysis failed',
@@ -52,8 +51,6 @@ class AnalysisError extends Error {
         "This PDF file couldn't be processed. It may be corrupted or password-protected.",
       IMAGE_ANALYSIS_FAILURE:
         "This image couldn't be analyzed. Please check the file format and try again.",
-      AUDIO_ANALYSIS_FAILURE:
-        "This audio file couldn't be processed. Please verify the format is supported.",
       MODEL_NOT_INSTALLED: `Missing AI model: ${this.metadata.requiredModel}. Please install it to continue.`,
       OLLAMA_CONNECTION_FAILURE: 'Cannot connect to AI service. Please start Ollama and try again.',
       DOCUMENT_ANALYSIS_FAILURE: 'Failed to analyze this document. Please check the file format.',

@@ -18,6 +18,10 @@ const fs = require('fs').promises;
 const path = require('path');
 const chokidar = require('chokidar');
 const { logger: baseLogger, createLogger } = require('../../shared/logger');
+const {
+  SUPPORTED_IMAGE_EXTENSIONS,
+  ANALYSIS_SUPPORTED_EXTENSIONS
+} = require('../../shared/constants');
 const { isNotFoundError } = require('../../shared/errorClassifier');
 const { WatcherError } = require('../errors/FileSystemError');
 const { generateSuggestedNameFromAnalysis } = require('./autoOrganize/namingUtils');
@@ -25,11 +29,13 @@ const { generateFileHash } = require('./analysisHistory/indexManager');
 const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfidence');
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { chunkText } = require('../utils/textChunking');
+const { buildEmbeddingSummary } = require('../analysis/embeddingSummary');
 const { CHUNKING } = require('../../shared/performanceConstants');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
 const { isUNCPath } = require('../../shared/crossPlatformUtils');
+const { normalizeKeywords } = require('../../shared/normalization');
 const {
   getInstance: getLearningFeedbackService,
   FEEDBACK_SOURCES
@@ -44,6 +50,8 @@ if (typeof createLogger !== 'function' && logger?.setContext) {
 // We bound the analysis queue and apply light deduplication by filePath.
 const MAX_ANALYSIS_QUEUE_SIZE = 500;
 const QUEUE_DROP_LOG_INTERVAL_MS = 10_000;
+const MOVE_DETECTION_WINDOW_MS = 3000;
+const MOVE_MTIME_TOLERANCE_MS = 2000;
 
 // Temporary/incomplete file patterns to ignore
 const TEMP_FILE_PATTERNS = [
@@ -64,66 +72,11 @@ const TEMP_FILE_PATTERNS = [
   /desktop\.ini$/i
 ];
 
-// Image file extensions
-const IMAGE_EXTENSIONS = new Set([
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tiff',
-  '.svg',
-  '.heic'
-]);
+// Image file extensions (centralized list)
+const IMAGE_EXTENSIONS = new Set(SUPPORTED_IMAGE_EXTENSIONS || []);
 
-// Supported file extensions for analysis
-const SUPPORTED_EXTENSIONS = new Set([
-  // Documents
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.txt',
-  '.rtf',
-  '.odt',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.csv',
-  '.md',
-  '.json',
-  '.xml',
-  '.html',
-  '.htm',
-  // Images
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.bmp',
-  '.webp',
-  '.tiff',
-  '.svg',
-  '.heic',
-  // Code/text
-  '.js',
-  '.ts',
-  '.jsx',
-  '.tsx',
-  '.py',
-  '.java',
-  '.cpp',
-  '.c',
-  '.h',
-  '.css',
-  '.scss',
-  '.yaml',
-  '.yml',
-  '.ini',
-  '.conf',
-  '.log'
-]);
+// Supported file extensions for analysis (centralized list)
+const SUPPORTED_EXTENSIONS = new Set(ANALYSIS_SUPPORTED_EXTENSIONS || []);
 
 /**
  * Check if file is an image
@@ -169,6 +122,7 @@ class SmartFolderWatcher {
    * @param {Function} deps.analyzeImageFile - Function to analyze image files
    * @param {Object} deps.settingsService - Settings service
    * @param {Object} deps.chromaDbService - ChromaDB service for embeddings
+   * @param {Object} deps.filePathCoordinator - FilePathCoordinator for atomic path updates
    * @param {Object} deps.folderMatcher - FolderMatchingService for generating embeddings
    * @param {Object} deps.notificationService - Notification service for user feedback
    */
@@ -179,6 +133,7 @@ class SmartFolderWatcher {
     analyzeImageFile,
     settingsService,
     chromaDbService,
+    filePathCoordinator,
     folderMatcher,
     notificationService
   }) {
@@ -188,6 +143,7 @@ class SmartFolderWatcher {
     this.analyzeImageFile = analyzeImageFile;
     this.settingsService = settingsService;
     this.chromaDbService = chromaDbService;
+    this.filePathCoordinator = filePathCoordinator || null;
     this.folderMatcher = folderMatcher;
     this.notificationService = notificationService;
 
@@ -207,6 +163,7 @@ class SmartFolderWatcher {
     this.pendingAnalysis = new Map(); // filePath -> { mtime, timeout }
     this.analysisQueue = [];
     this.isProcessingQueue = false;
+    this._pendingMoveCandidates = new Map(); // oldPath -> { size, mtimeMs, ext, createdAt, timeoutId }
 
     // Configuration
     this.debounceDelay = 1000; // 1 second debounce
@@ -215,6 +172,8 @@ class SmartFolderWatcher {
     this.stabilityThreshold = 3000; // 3 seconds - file must be stable for this long
     this.queueProcessInterval = 2000; // Process queue every 2 seconds
     this.maxConcurrentAnalysis = 2; // Max files to analyze at once
+    this._moveDetectionWindowMs = MOVE_DETECTION_WINDOW_MS;
+    this._moveMtimeToleranceMs = MOVE_MTIME_TOLERANCE_MS;
 
     // Timers
     this.queueTimer = null;
@@ -534,7 +493,7 @@ class SmartFolderWatcher {
       if (this._isStopping) {
         return;
       }
-      this._queueFileForAnalysis(filePath, mtime, eventType);
+      this._queueFileForAnalysis(filePath, mtime, eventType, stats);
     }, delay);
 
     this.pendingAnalysis.set(filePath, { mtime, timeout, eventType, firstEventAt });
@@ -544,7 +503,7 @@ class SmartFolderWatcher {
    * Queue a file for analysis
    * @private
    */
-  async _queueFileForAnalysis(filePath, mtime, eventType) {
+  async _queueFileForAnalysis(filePath, mtime, eventType, stats) {
     // Fix: Cleanup any existing timeout to prevent memory leaks or race conditions
     const pending = this.pendingAnalysis.get(filePath);
     if (pending && pending.timeout) {
@@ -555,6 +514,14 @@ class SmartFolderWatcher {
     try {
       // Verify file still exists
       await fs.access(filePath);
+
+      // If this is a move/rename within smart folders, update paths instead of re-analysis
+      if (eventType === 'add') {
+        const moveHandled = await this._attemptMoveResolution(filePath, stats);
+        if (moveHandled) {
+          return;
+        }
+      }
 
       // Check if analysis is needed
       const needsAnalysis = await this._needsAnalysis(filePath, mtime);
@@ -639,6 +606,122 @@ class SmartFolderWatcher {
     }
 
     this.analysisQueue.push(item);
+  }
+
+  /**
+   * Attempt to resolve a move by matching recent deletions.
+   * If matched, update path-dependent systems and skip re-analysis.
+   * @private
+   */
+  async _attemptMoveResolution(filePath, stats) {
+    if (this._pendingMoveCandidates.size === 0) {
+      return false;
+    }
+
+    let fileStats = stats;
+    try {
+      if (!fileStats || !Number.isFinite(fileStats.size)) {
+        fileStats = await fs.stat(filePath);
+      }
+    } catch (error) {
+      if (isNotFoundError(error)) return false;
+      logger.debug('[SMART-FOLDER-WATCHER] Move check stat failed:', error.message);
+      return false;
+    }
+
+    const size = fileStats.size;
+    const mtimeMs = Number.isFinite(fileStats.mtimeMs)
+      ? fileStats.mtimeMs
+      : fileStats.mtime
+        ? new Date(fileStats.mtime).getTime()
+        : null;
+    if (!Number.isFinite(mtimeMs)) return false;
+
+    const ext = path.extname(filePath).toLowerCase();
+
+    const matches = [];
+    let bestDiff = Infinity;
+    for (const candidate of this._pendingMoveCandidates.values()) {
+      if (candidate.size !== size || candidate.ext !== ext) continue;
+      const diff = Math.abs(candidate.mtimeMs - mtimeMs);
+      if (diff <= this._moveMtimeToleranceMs) {
+        matches.push({ candidate, diff });
+        if (diff < bestDiff) {
+          bestDiff = diff;
+        }
+      }
+    }
+
+    if (matches.length === 0) {
+      return false;
+    }
+
+    if (matches.length > 1) {
+      logger.debug('[SMART-FOLDER-WATCHER] Ambiguous move match; skipping auto-update', {
+        newPath: path.basename(filePath),
+        candidates: matches.length,
+        bestDiffMs: bestDiff
+      });
+      return false;
+    }
+
+    const match = matches[0].candidate;
+    if (match.oldPath === filePath) {
+      return false;
+    }
+
+    const coordinator = this.filePathCoordinator;
+    if (!coordinator || typeof coordinator.atomicPathUpdate !== 'function') {
+      logger.warn('[SMART-FOLDER-WATCHER] FilePathCoordinator unavailable for move update', {
+        oldPath: match.oldPath,
+        newPath: filePath
+      });
+      return false;
+    }
+
+    try {
+      await coordinator.atomicPathUpdate(match.oldPath, filePath, { type: 'move' });
+      if (match.timeoutId) clearTimeout(match.timeoutId);
+      this._pendingMoveCandidates.delete(match.oldPath);
+
+      // Prevent re-processing loops for the moved file
+      const tracker = getFileOperationTracker();
+      tracker.recordOperation(match.oldPath, 'move', 'smartFolderWatcher');
+      tracker.recordOperation(filePath, 'move', 'smartFolderWatcher');
+
+      // Invalidate BM25 index so searches reflect the new path
+      try {
+        const { getSearchServiceInstance } = require('../ipc/semantic');
+        const searchService = getSearchServiceInstance?.();
+        if (searchService?.invalidateIndex) {
+          searchService.invalidateIndex({
+            reason: 'smart-folder-move',
+            oldPath: match.oldPath,
+            newPath: filePath
+          });
+        }
+      } catch (indexErr) {
+        logger.debug(
+          '[SMART-FOLDER-WATCHER] Could not invalidate search index after move:',
+          indexErr.message
+        );
+      }
+
+      this.stats.lastActivity = new Date().toISOString();
+      logger.info('[SMART-FOLDER-WATCHER] Resolved move within smart folders', {
+        oldPath: path.basename(match.oldPath),
+        newPath: path.basename(filePath)
+      });
+
+      return true;
+    } catch (error) {
+      logger.warn('[SMART-FOLDER-WATCHER] Move update failed, will re-analyze', {
+        oldPath: match.oldPath,
+        newPath: filePath,
+        error: error.message
+      });
+      return false;
+    }
   }
 
   /**
@@ -754,7 +837,8 @@ class SmartFolderWatcher {
       const folderCategories = smartFolders.map((f) => ({
         name: f.name,
         description: f.description || '',
-        id: f.id
+        id: f.id,
+        path: f.path
       }));
 
       // Choose analysis function based on file type
@@ -998,11 +1082,27 @@ class SmartFolderWatcher {
     try {
       // Extract analysis data - handle different result structures
       const analysis = analysisResult.analysis || analysisResult;
+      const fileExtension = path.extname(filePath).toLowerCase();
+      const rawKeywords = (() => {
+        if (Array.isArray(analysis.keywords)) return analysis.keywords;
+        if (Array.isArray(analysis.tags)) return analysis.tags;
+        if (typeof analysis.tags === 'string' && analysis.tags.trim().length > 0) {
+          try {
+            const parsed = JSON.parse(analysis.tags);
+            if (Array.isArray(parsed)) return parsed;
+          } catch {
+            // Fall back to comma-separated list
+          }
+          return analysis.tags.split(',').map((entry) => entry.trim());
+        }
+        return [];
+      })();
+      const keywords = normalizeKeywords(rawKeywords);
       // FIX: Use purpose as fallback for summary if missing (common in fallback analysis)
       const summary = analysis.summary || analysis.description || analysis.purpose || '';
       const category = analysis.category || 'Uncategorized';
-      const keywords = analysis.keywords || analysis.tags || [];
-      const subject = analysis.subject || analysis.suggestedName || '';
+      const subject =
+        analysis.subject || analysis.suggestedName || analysis.project || analysis.entity || '';
       // FIX: Extract confidence score - normalize to 0-100 integer
       const rawConfidence = analysis.confidence ?? analysisResult.confidence ?? 0;
       const confidence =
@@ -1012,24 +1112,40 @@ class SmartFolderWatcher {
             : Math.round(rawConfidence * 100)
           : 0;
 
-      // Skip if no meaningful content to embed
-      if (!summary && !subject) {
-        logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding - no content:', filePath);
-        return;
-      }
-
       // FIX: Include more context for richer embeddings and conversations
       const purpose = analysis.purpose || '';
       const entity = analysis.entity || '';
       const project = analysis.project || '';
-      const documentType = analysis.type || '';
-      const extractedText = analysis.extractedText || '';
+      const rawType = typeof analysis.type === 'string' ? analysis.type.trim() : '';
+      const isGenericType = ['image', 'document', 'file', 'unknown'].includes(
+        rawType.toLowerCase()
+      );
+      const documentType = analysis.documentType || (!isGenericType && rawType ? rawType : '');
+      const documentDate = analysis.documentDate || analysis.date || null;
+      const extractedText =
+        typeof analysis.extractedText === 'string' ? analysis.extractedText : '';
+      const isImage = isImageFile(filePath);
+      const analysisForEmbedding = {
+        ...analysis,
+        keywords,
+        subject,
+        documentType,
+        documentDate
+      };
 
-      // Generate embedding vector using folderMatcher
-      // Include more context for better semantic matching
-      const textToEmbed = [summary, subject, purpose, keywords?.join(' ')]
-        .filter(Boolean)
-        .join(' ');
+      const embeddingSummary = buildEmbeddingSummary(
+        analysisForEmbedding,
+        extractedText,
+        fileExtension,
+        isImage ? 'image' : 'document'
+      );
+      const textToEmbed = embeddingSummary.text;
+
+      // Skip if no meaningful content to embed
+      if (!textToEmbed || !textToEmbed.trim()) {
+        logger.debug('[SMART-FOLDER-WATCHER] Skipping embedding - no content:', filePath);
+        return;
+      }
       const embedding = await this.folderMatcher.embedText(textToEmbed);
 
       if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
@@ -1043,7 +1159,6 @@ class SmartFolderWatcher {
       const fileName = path.basename(filePath);
 
       // Build metadata object - shared for documents and images
-      const isImage = isImageFile(filePath);
       const baseMeta = {
         path: filePath,
         name: fileName,
@@ -1051,7 +1166,8 @@ class SmartFolderWatcher {
         subject,
         summary: summary.substring(0, 2000), // Increased limit for richer context
         purpose: purpose.substring(0, 1000),
-        tags: JSON.stringify(keywords.slice(0, 15)), // Increased tag limit
+        tags: keywords.slice(0, 15),
+        keywords: keywords.slice(0, 15),
         type: isImage ? 'image' : 'document',
         confidence,
         // Additional fields for document/image conversations
@@ -1063,7 +1179,7 @@ class SmartFolderWatcher {
         extractedText: extractedText.substring(0, 5000),
         extractionMethod: analysis.extractionMethod || 'unknown',
         // Document date for time-based queries
-        date: analysis.date || null
+        date: documentDate
       };
 
       // Add image-specific metadata for richer image conversations
@@ -1254,6 +1370,77 @@ class SmartFolderWatcher {
 
     logger.info('[SMART-FOLDER-WATCHER] Detected external file deletion:', filePath);
 
+    try {
+      const deferred = await this._deferDeletionForMove(filePath);
+      if (deferred) {
+        return;
+      }
+    } catch (deferError) {
+      logger.debug(
+        '[SMART-FOLDER-WATCHER] Move detection setup failed, deleting immediately:',
+        deferError.message
+      );
+    }
+
+    await this._finalizeDeletion(filePath);
+  }
+
+  /**
+   * Defer deletion briefly to detect move/rename events.
+   * @private
+   * @returns {Promise<boolean>} True if deletion was deferred
+   */
+  async _deferDeletionForMove(filePath) {
+    if (!this.analysisHistoryService?.getAnalysisByPath) {
+      return false;
+    }
+
+    const entry = await this.analysisHistoryService.getAnalysisByPath(filePath);
+    if (!entry || !Number.isFinite(entry.fileSize) || !Number.isFinite(entry.lastModified)) {
+      return false;
+    }
+
+    // Replace any existing candidate for the same path
+    const existing = this._pendingMoveCandidates.get(filePath);
+    if (existing?.timeoutId) {
+      clearTimeout(existing.timeoutId);
+    }
+
+    const candidate = {
+      oldPath: filePath,
+      size: entry.fileSize,
+      mtimeMs: entry.lastModified,
+      ext: path.extname(filePath).toLowerCase(),
+      createdAt: Date.now(),
+      timeoutId: null
+    };
+
+    candidate.timeoutId = setTimeout(() => {
+      this._pendingMoveCandidates.delete(filePath);
+      this._finalizeDeletion(filePath).catch((err) => {
+        logger.warn('[SMART-FOLDER-WATCHER] Deferred deletion failed:', err.message);
+      });
+    }, this._moveDetectionWindowMs);
+
+    if (candidate.timeoutId && typeof candidate.timeoutId.unref === 'function') {
+      candidate.timeoutId.unref();
+    }
+
+    this._pendingMoveCandidates.set(filePath, candidate);
+
+    logger.debug('[SMART-FOLDER-WATCHER] Deferring deletion to detect move', {
+      file: path.basename(filePath),
+      windowMs: this._moveDetectionWindowMs
+    });
+
+    return true;
+  }
+
+  /**
+   * Finalize deletion cleanup for a removed file.
+   * @private
+   */
+  async _finalizeDeletion(filePath) {
     try {
       // Remove from ChromaDB (both file: and image: prefixes)
       if (this.chromaDbService) {

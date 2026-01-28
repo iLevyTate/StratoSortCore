@@ -4,7 +4,6 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 try {
-  // eslint-disable-next-line global-require
   require('dotenv').config({ path: path.join(__dirname, '../.env') });
 } catch {
   // Silently ignore dotenv errors
@@ -14,7 +13,6 @@ const args = process.argv.slice(2);
 const jestArgs = [];
 
 if (args.includes('--help')) {
-  // eslint-disable-next-line no-console
   console.log('Usage: node run-tests.js [--coverage] [--bail] [--categories <name>]');
   process.exit(0);
 }
@@ -41,7 +39,6 @@ function runJestDirect() {
     // Prefer running Jest via Node to avoid Windows .cmd spawn issues
     let jestJsPath;
     try {
-      // eslint-disable-next-line global-require
       jestJsPath = require.resolve('jest/bin/jest.js');
     } catch {
       // Fallback to NPM on any error
@@ -71,7 +68,7 @@ function fallbackRunViaNpm() {
     });
     child.on('close', (code) => process.exit(code ?? 0));
     child.on('error', () => process.exit(1));
-  } catch (_) {
+  } catch {
     process.exit(1);
   }
 }

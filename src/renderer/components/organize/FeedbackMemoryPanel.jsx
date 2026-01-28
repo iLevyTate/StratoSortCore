@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
-import { Trash2 } from 'lucide-react';
-import { Card, Button } from '../ui';
+import { Trash2, Info } from 'lucide-react';
+import { Card, Button, StateMessage } from '../ui';
 import { Text } from '../ui/Typography';
 
 function FeedbackMemoryPanel({ className = '', refreshToken }) {
@@ -108,9 +108,15 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
           Loading memories...
         </Text>
       ) : memories.length === 0 ? (
-        <Text variant="tiny" className="text-system-gray-500">
-          No saved memories yet.
-        </Text>
+        <StateMessage
+          icon={Info}
+          tone="neutral"
+          size="sm"
+          align="left"
+          title="No saved memories yet"
+          description="Add a note above to guide future suggestions."
+          className="py-2"
+        />
       ) : (
         <div className="space-y-2 max-h-48 overflow-y-auto modern-scrollbar">
           {memories.map((entry) => (

@@ -7,7 +7,7 @@ import Modal, { ConfirmModal } from './ui/Modal';
 import Button from './ui/Button';
 import Card from './ui/Card';
 import { Heading, Text } from './ui/Typography';
-import { StatusBadge } from './ui';
+import { StatusBadge, StateMessage } from './ui';
 import { Inline, Stack } from './layout';
 
 logger.setContext('AnalysisHistoryModal');
@@ -114,7 +114,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       downloadLink.remove();
       URL.revokeObjectURL(url);
       addNotification(`Analysis history exported as ${format.toUpperCase()}`, 'success');
-    } catch (error) {
+    } catch {
       addNotification('Export failed', 'error');
     } finally {
       if (isMountedRef.current) {
@@ -133,7 +133,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       }
       await loadAnalysisData();
       addNotification('Analysis history cleared', 'success');
-    } catch (error) {
+    } catch {
       addNotification('Failed to clear analysis history', 'error');
     } finally {
       if (isMountedRef.current) {
@@ -405,15 +405,15 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                         </Card>
                       ))}
                       {(Array.isArray(historyData) ? historyData : []).length === 0 && (
-                        <div className="p-8 text-center border-2 border-dashed border-system-gray-200 rounded-xl bg-system-gray-50/50">
-                          <Folder className="w-12 h-12 text-system-gray-400 mx-auto mb-3" />
-                          <Text variant="body" className="font-semibold text-system-gray-800 mb-1">
-                            No analysis history yet
-                          </Text>
-                          <Text variant="small" className="text-system-gray-500 max-w-xs mx-auto">
-                            Run an analysis to see recent activity and export options here.
-                          </Text>
-                        </div>
+                        <StateMessage
+                          icon={Folder}
+                          tone="neutral"
+                          size="lg"
+                          title="No analysis history yet"
+                          description="Run an analysis to see recent activity and export options here."
+                          className="p-8 border-2 border-dashed border-system-gray-200 rounded-xl bg-system-gray-50/50"
+                          contentClassName="max-w-xs"
+                        />
                       )}
                     </div>
                   </Stack>

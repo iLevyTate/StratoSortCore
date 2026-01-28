@@ -67,6 +67,7 @@ class StartupManager {
     this.startupPhase = 'idle';
     this.onProgressCallback = null;
     this.chromadbDependencyMissing = false;
+    this._chromaDependencyCheckInProgress = false;
     this.restartLocks = {
       chromadb: false,
       ollama: false
@@ -266,18 +267,25 @@ class StartupManager {
     // Users can install chromadb from the dependency wizard without restarting the whole app,
     // so we must allow the service to recover automatically.
     if (this.chromadbDependencyMissing) {
-      try {
-        const moduleNowAvailable = await hasPythonModuleAsync('chromadb');
-        if (moduleNowAvailable) {
-          logger.info(
-            '[STARTUP] ChromaDB dependency was previously missing but is now installed. Re-enabling startup.'
-          );
-          this.chromadbDependencyMissing = false;
+      if (this._chromaDependencyCheckInProgress) {
+        logger.debug('[STARTUP] ChromaDB dependency re-check already in progress');
+      } else {
+        try {
+          this._chromaDependencyCheckInProgress = true;
+          const moduleNowAvailable = await hasPythonModuleAsync('chromadb');
+          if (moduleNowAvailable) {
+            logger.info(
+              '[STARTUP] ChromaDB dependency was previously missing but is now installed. Re-enabling startup.'
+            );
+            this.chromadbDependencyMissing = false;
+          }
+        } catch (e) {
+          logger.debug('[STARTUP] Failed to re-check chromadb module availability', {
+            error: e?.message
+          });
+        } finally {
+          this._chromaDependencyCheckInProgress = false;
         }
-      } catch (e) {
-        logger.debug('[STARTUP] Failed to re-check chromadb module availability', {
-          error: e?.message
-        });
       }
     }
 
