@@ -93,14 +93,12 @@ export const createFileAction = ({ actionType, description, source, destination 
     throw new Error('Unsupported operation: destination required for move');
   },
   undo: async () => {
-    if (destination) {
-      return await window.electronAPI.files.performOperation({
-        type: 'move',
-        source: destination,
-        destination: source
-      });
-    }
-    throw new Error('Unsupported undo operation');
+    // Delegate to main process UndoRedoService to maintain history integrity
+    return await window.electronAPI.undoRedo.undo();
+  },
+  redo: async () => {
+    // Delegate to main process UndoRedoService to maintain history integrity
+    return await window.electronAPI.undoRedo.redo();
   },
   metadata: { source, destination }
 });
@@ -135,32 +133,13 @@ export const createOrganizeBatchAction = (description, operations, stateCallback
     return result;
   },
   undo: async (action) => {
-    if (action && action.result && action.result.results) {
-      const reverseOps = action.result.results
-        .filter((r) => r.success && r.source && r.destination)
-        .map((r) => ({
-          source: r.destination,
-          destination: r.source
-        }));
-
-      if (reverseOps.length > 0) {
-        const result = await window.electronAPI.files.performOperation({
-          type: 'batch_organize',
-          operations: reverseOps
-        });
-
-        if (stateCallbacks.onUndo) {
-          try {
-            stateCallbacks.onUndo(result);
-          } catch {
-            // Non-fatal if state callback fails
-          }
-        }
-        return result;
-      }
-    }
-
+    // Delegate to main process UndoRedoService to maintain history integrity
+    // This ensures that:
+    // 1. We don't create a NEW "move" action in the history stack
+    // 2. We use the robust backup/restore logic in the main process
+    // 3. The result structure is consistent (contains originalPath/newPath)
     const result = await window.electronAPI.undoRedo.undo();
+
     if (stateCallbacks.onUndo) {
       try {
         stateCallbacks.onUndo(result);
@@ -171,25 +150,9 @@ export const createOrganizeBatchAction = (description, operations, stateCallback
     return result;
   },
   redo: async (action) => {
-    const opsToRun = (action && action.metadata && action.metadata.operations) || operations;
-
-    if (opsToRun && opsToRun.length > 0) {
-      const result = await window.electronAPI.files.performOperation({
-        type: 'batch_organize',
-        operations: opsToRun
-      });
-
-      if (stateCallbacks.onRedo) {
-        try {
-          stateCallbacks.onRedo(result);
-        } catch {
-          // Non-fatal
-        }
-      }
-      return result;
-    }
-
+    // Delegate to main process UndoRedoService
     const result = await window.electronAPI.undoRedo.redo();
+
     if (stateCallbacks.onRedo) {
       try {
         stateCallbacks.onRedo(result);

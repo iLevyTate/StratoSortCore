@@ -729,11 +729,13 @@ export function useOrganization({
 
               // Use actual results from main process if available
               // For undo operations, the file is moved FROM organized location (source) TO original location (destination)
-              // We want the destination path because that matches the original file path we want to unmark/remove
+              // We rely on 'destination' (restored path) because UndoRedoService guarantees it matches the original file path.
+              // We also check 'originalPath' as a fallback, which UndoRedoService also populates.
               const successfulUndos = result?.results
                 ? result.results
                     .filter((r) => r.success)
                     .map((r) => r.destination || r.originalPath || r.newPath)
+                    .filter(Boolean)
                 : Array.from(sourcePathsSet);
 
               logger.info('[ORGANIZE] onUndo: unmarking files', {
