@@ -853,7 +853,7 @@ async function recordUndoAndUpdateDatabase(
   // files still at their original location, not at the destination
   try {
     const undoOps = results
-      .filter((r) => r.success && r.source && r.destination)
+      .filter((r) => r.success && r.source && r.destination && !r.skipped)
       .map((r) => ({
         type: 'move',
         originalPath: r.source,
@@ -871,7 +871,9 @@ async function recordUndoAndUpdateDatabase(
 
   // Update path-dependent systems for batch moves
   if (successCount > 0) {
-    const successfulResults = results.filter((r) => r.success && r.source && r.destination);
+    const successfulResults = results.filter(
+      (r) => r.success && r.source && r.destination && !r.skipped
+    );
     const pathChanges = successfulResults.map((r) => ({
       oldPath: r.source,
       newPath: r.destination
