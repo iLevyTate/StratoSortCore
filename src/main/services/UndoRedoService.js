@@ -705,6 +705,28 @@ class UndoRedoService {
       } catch {
         // Non-fatal
       }
+
+      // FIX: Trigger search index rebuild to ensure consistency
+      try {
+        const { getSearchServiceInstance } = require('../analysis/semantic');
+        const searchService = getSearchServiceInstance?.();
+        if (searchService?.invalidateAndRebuild) {
+          searchService
+            .invalidateAndRebuild({
+              immediate: true,
+              reason: 'undo-redo-move',
+              oldPath,
+              newPath
+            })
+            .catch((err) => {
+              logger.debug('[UndoRedoService] Search index rebuild failed (non-fatal)', {
+                error: err.message
+              });
+            });
+        }
+      } catch (err) {
+        // Non-fatal
+      }
     } catch (error) {
       // Non-fatal - log but don't fail the undo/redo
       logger.warn('[UndoRedoService] Failed to update ChromaDB path', {
@@ -759,6 +781,26 @@ class UndoRedoService {
         const embeddingQueue = require('../analysis/embeddingQueue');
         embeddingQueue.updateByFilePaths?.(pathChanges);
       } catch {
+        // Non-fatal
+      }
+
+      // FIX: Trigger search index rebuild for batch updates
+      try {
+        const { getSearchServiceInstance } = require('../analysis/semantic');
+        const searchService = getSearchServiceInstance?.();
+        if (searchService?.invalidateAndRebuild) {
+          searchService
+            .invalidateAndRebuild({
+              immediate: true,
+              reason: 'undo-redo-batch'
+            })
+            .catch((err) => {
+              logger.debug('[UndoRedoService] Search index batch rebuild failed (non-fatal)', {
+                error: err.message
+              });
+            });
+        }
+      } catch (err) {
         // Non-fatal
       }
     } catch (error) {
