@@ -12,6 +12,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-01-27
+
+### Added
+
+- **Settings Backup & Restore**: Added backup service with import/export and restore UI.
+- **User Data Migration**: Recover legacy settings/history/undo state before service startup.
+- **Embedding Summaries**: Centralized embedding summary builder for richer semantic matching.
+
+### Improved
+
+- **Search & Chat**: Tuned hybrid retrieval, memory handling, and fallback responses.
+- **Smart Folder Watcher**: Enhanced embedding metadata for better folder suggestions.
+- **IPC & Validation**: Expanded schemas and hardened settings import validation.
+
+### Fixed
+
+- **Auto-Updater**: Listener cleanup and download progress reporting.
+- **Settings Recovery**: Safer corruption recovery and backup integrity checks.
+
 ## [1.2.0] - 2026-01-26
 
 ### Added
@@ -186,7 +205,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Fixed**: Bug fixes
 - **Security**: Security-related changes
 
-[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/iLevyTate/elstratosort/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.1
 [1.2.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.2.0
 [1.1.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.1.0
 [1.0.0]: https://github.com/iLevyTate/elstratosort/releases/tag/v1.0.0

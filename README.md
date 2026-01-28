@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.2.1-blue?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/iLevyTate/elstratosort/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" /></a>
   <a href="https://github.com/iLevyTate/elstratosort/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/elstratosort/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
 </p>
@@ -36,16 +36,13 @@ files without sending data to the cloud. All processing happens on your machine 
 [Ollama](https://ollama.ai) for AI inference and [ChromaDB](https://www.trychroma.com) for semantic
 search.
 
-## What's New in v1.1.0
+## What's New in v1.2.1
 
-- **Smart Folder Watcher** - Automatically analyzes new and modified files in your configured smart
-  folders
-- **Enhanced Knowledge Graph** - Color-coded nodes by category, relationship tooltips explaining
-  _why_ files are connected, and improved layout algorithms
-- **AI Description Generation** - Generate smart folder descriptions with one click using AI
-- **Undo History Navigation** - Jump to specific points in your undo history
-- **Retry Failed Files** - Easily retry analysis for files that encountered errors
-- **Conflict Detection** - Warnings when multiple files target the same destination
+- **Settings Backup & Restore** - Create snapshots, export/import settings, and recover quickly
+- **User Data Migration** - Automatically restores legacy settings, history, and UI state on upgrade
+- **Smarter Semantic Matching** - Richer embedding summaries improve folder suggestions and search
+- **Update Experience** - Better update progress reporting and safer apply flow
+- **Search & Chat Quality** - Improved retrieval tuning and fallback responses for clearer answers
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes.
 

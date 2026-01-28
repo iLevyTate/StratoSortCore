@@ -1,6 +1,6 @@
 {
   "name": "stratosort",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Stratosort - Local AI Document Organizer with Ollama integration. Privacy-focused document organization using AI-powered analysis.",
   "keywords": [
     "electron",
@@ -92,6 +92,9 @@
   },
   "browserslist": [],
   "overrides": {
+    "@electron/rebuild": {
+      "tar": "^6.2.1"
+    },
     "@jridgewell/gen-mapping": "^0.3.5",
     "js-yaml": "^4.1.1",
     "tar": ">=7.5.3"
