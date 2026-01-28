@@ -3,10 +3,23 @@
  * Validates user settings to prevent invalid configurations
  */
 
+const path = require('path');
 const { DEFAULT_SETTINGS } = require('./defaultSettings');
 const { CHAT_PERSONAS } = require('./chatPersonas');
 const { PROTOTYPE_POLLUTION_KEYS } = require('./securityConfig');
-const { LENIENT_URL_PATTERN, LOGGING_LEVELS, NUMERIC_LIMITS } = require('./validationConstants');
+const {
+  LENIENT_URL_PATTERN,
+  LOGGING_LEVELS,
+  NUMERIC_LIMITS,
+  MODEL_NAME_PATTERN,
+  MAX_MODEL_NAME_LENGTH,
+  NOTIFICATION_MODES,
+  NAMING_CONVENTIONS,
+  CASE_CONVENTIONS,
+  SMART_FOLDER_ROUTING_MODES,
+  SEPARATOR_PATTERN
+} = require('./validationConstants');
+const { validateFileOperationPathSync } = require('./pathSanitization');
 const {
   normalizeSlashes,
   normalizeProtocolCase,
@@ -22,6 +35,81 @@ const { isValidEmbeddingModel } = require('./modelCategorization');
  */
 const URL_PATTERN = LENIENT_URL_PATTERN;
 
+const WINDOWS_DRIVE_ABSOLUTE_PATTERN = /^[a-zA-Z]:[\\/]/;
+const WINDOWS_DRIVE_ONLY_PATTERN = /^[A-Za-z]:$/;
+const UNC_PATH_PATTERN = /^\\\\/;
+const URL_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
+const TRAVERSAL_SEGMENT_PATTERN = /(^|[\\/])\.\.([\\/]|$)/;
+
+const hasPathAbsolute = Boolean(path && typeof path.isAbsolute === 'function');
+const hasWin32Absolute = Boolean(path && path.win32 && typeof path.win32.isAbsolute === 'function');
+
+const isWindowsAbsolutePathLike = (value) =>
+  WINDOWS_DRIVE_ABSOLUTE_PATTERN.test(value) || UNC_PATH_PATTERN.test(value);
+
+const isAbsolutePathLike = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (hasPathAbsolute && path.isAbsolute(trimmed)) return true;
+  if (hasWin32Absolute && path.win32.isAbsolute(trimmed)) return true;
+  return isWindowsAbsolutePathLike(trimmed) || trimmed.startsWith('/');
+};
+
+const isSafeWindowsAbsoluteFallback = (value) => {
+  if (!isWindowsAbsolutePathLike(value)) return false;
+  if (URL_SCHEME_PATTERN.test(value)) return false;
+  if (WINDOWS_DRIVE_ONLY_PATTERN.test(value)) return false;
+  if (TRAVERSAL_SEGMENT_PATTERN.test(value)) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[<>:"|?*\x00-\x1f]/.test(value)) return false;
+  return true;
+};
+
+const isSafeAbsolutePath = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  const isWindowsLike = isWindowsAbsolutePathLike(trimmed);
+  if (hasPathAbsolute && (!isWindowsLike || hasWin32Absolute)) {
+    const validation = validateFileOperationPathSync(trimmed, null, {
+      requireAbsolute: true,
+      disallowUNC: false,
+      disallowUrlSchemes: true,
+      allowFileUrl: false
+    });
+    return validation.valid;
+  }
+
+  if (isWindowsLike && !hasWin32Absolute) {
+    return isSafeWindowsAbsoluteFallback(trimmed);
+  }
+
+  if (!hasPathAbsolute && trimmed.startsWith('/')) {
+    if (URL_SCHEME_PATTERN.test(trimmed)) return false;
+    if (TRAVERSAL_SEGMENT_PATTERN.test(trimmed)) return false;
+    return true;
+  }
+
+  return false;
+};
+
+const isSafeDefaultLocation = (value) => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (isAbsolutePathLike(trimmed)) {
+    return isSafeAbsolutePath(trimmed);
+  }
+  if (WINDOWS_DRIVE_ONLY_PATTERN.test(trimmed)) return false;
+  if (trimmed.includes('..')) return false;
+  if (/[\\/]/.test(trimmed)) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[<>:"|?*\x00-\x1f]/.test(trimmed)) return false;
+  return true;
+};
+
 const CHAT_PERSONA_IDS = CHAT_PERSONAS.map((persona) => persona.id);
 
 /**
@@ -36,11 +124,15 @@ const VALIDATION_RULES = {
     type: 'string',
     minLength: 1,
     maxLength: 500,
+    validator: isSafeDefaultLocation,
+    validatorMessage: 'defaultSmartFolderLocation must be an absolute path or a simple folder name',
     required: false
   },
   lastBrowsedPath: {
     type: 'string',
     maxLength: 1000,
+    validator: isSafeAbsolutePath,
+    validatorMessage: 'lastBrowsedPath must be an absolute, safe local path',
     required: false
   },
   maxConcurrentAnalysis: {
@@ -51,6 +143,10 @@ const VALIDATION_RULES = {
     required: false
   },
   autoOrganize: {
+    type: 'boolean',
+    required: false
+  },
+  autoChunkOnAnalysis: {
     type: 'boolean',
     required: false
   },
@@ -70,18 +166,12 @@ const VALIDATION_RULES = {
   },
   smartFolderRoutingMode: {
     type: 'string',
-    enum: ['auto', 'llm', 'embedding', 'hybrid'],
+    enum: SMART_FOLDER_ROUTING_MODES,
     required: false
   },
   namingConvention: {
     type: 'string',
-    enum: [
-      'subject-date',
-      'date-subject',
-      'project-subject-date',
-      'category-subject',
-      'keep-original'
-    ],
+    enum: NAMING_CONVENTIONS,
     required: false
   },
   dateFormat: {
@@ -91,7 +181,7 @@ const VALIDATION_RULES = {
   },
   caseConvention: {
     type: 'string',
-    enum: ['kebab-case', 'snake_case', 'camelCase', 'PascalCase', 'lowercase', 'UPPERCASE'],
+    enum: CASE_CONVENTIONS,
     required: false
   },
   separator: {
@@ -99,7 +189,7 @@ const VALIDATION_RULES = {
     maxLength: 5,
     required: false,
     // Reject unsafe path characters
-    pattern: /^[^/\\:*?"<>|]+$/
+    pattern: SEPARATOR_PATTERN
   },
   ollamaHost: {
     type: 'string',
@@ -111,19 +201,22 @@ const VALIDATION_RULES = {
   textModel: {
     type: 'string',
     minLength: 1,
-    maxLength: 200,
+    maxLength: MAX_MODEL_NAME_LENGTH,
+    pattern: MODEL_NAME_PATTERN,
     required: false
   },
   visionModel: {
     type: 'string',
     minLength: 1,
-    maxLength: 200,
+    maxLength: MAX_MODEL_NAME_LENGTH,
+    pattern: MODEL_NAME_PATTERN,
     required: false
   },
   embeddingModel: {
     type: 'string',
     minLength: 1,
-    maxLength: 200,
+    maxLength: MAX_MODEL_NAME_LENGTH,
+    pattern: MODEL_NAME_PATTERN,
     required: false,
     // Pattern-based validation using modelCategorization.js
     // NOTE: changing models requires re-embedding (dimension mismatch)
@@ -266,7 +359,7 @@ const VALIDATION_RULES = {
   // Notification settings
   notificationMode: {
     type: 'string',
-    enum: ['both', 'ui', 'tray', 'none'],
+    enum: NOTIFICATION_MODES,
     required: false
   },
   notifyOnAutoAnalysis: {
@@ -388,8 +481,6 @@ function validateSettings(settings) {
     const fieldErrors = validateSetting(key, value, rule);
     errors.push(...fieldErrors);
   }
-
-  // Note: Legacy cross-field threshold validations removed - now using single confidenceThreshold
 
   return {
     valid: errors.length === 0,

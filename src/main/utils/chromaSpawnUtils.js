@@ -11,7 +11,7 @@ const {
   asyncSpawn,
   hasPythonModuleAsync
 } = require('./asyncSpawnUtils');
-const { getChromaDbBinName, shouldUseShell } = require('../../shared/platformUtils');
+const { getChromaDbBinCandidates } = require('../../shared/platformUtils');
 
 /**
  * Utility functions for ChromaDB spawning
@@ -32,26 +32,37 @@ function getNodeModulesBinPath() {
 
 async function resolveChromaCliExecutable() {
   try {
-    // Use cross-platform utility for chromadb binary name
-    const binName = getChromaDbBinName();
+    // Try known chroma CLI binary candidates (new + legacy)
     const nodeModulesPath = getNodeModulesBinPath();
-    const cliPath = path.join(nodeModulesPath, binName);
+    const nodeModulesRealPath = await fs.realpath(nodeModulesPath).catch(() => nodeModulesPath);
+    const candidates = getChromaDbBinCandidates();
 
-    // Validate path is within node_modules (prevent traversal)
-    const normalizedCliPath = path.normalize(cliPath);
-    const normalizedNodeModules = path.normalize(nodeModulesPath);
+    for (const binName of candidates) {
+      const cliPath = path.join(nodeModulesPath, binName);
 
-    if (!normalizedCliPath.startsWith(normalizedNodeModules)) {
-      logger.error('[ChromaDB] Potential path traversal detected:', cliPath);
-      return null;
+      // Validate path is within node_modules (prevent traversal)
+      const normalizedCliPath = path.normalize(cliPath);
+      const normalizedNodeModules = path.normalize(nodeModulesPath);
+
+      if (!normalizedCliPath.startsWith(normalizedNodeModules)) {
+        logger.error('[ChromaDB] Potential path traversal detected:', cliPath);
+        return null;
+      }
+
+      try {
+        await fs.access(normalizedCliPath);
+        const resolvedCliPath = await fs.realpath(normalizedCliPath);
+        const resolvedNodeModules = path.normalize(nodeModulesRealPath);
+        if (!resolvedCliPath.startsWith(resolvedNodeModules)) {
+          logger.error('[ChromaDB] Potential symlink traversal detected:', resolvedCliPath);
+          continue;
+        }
+        return resolvedCliPath;
+      } catch {
+        // Continue trying other candidates
+      }
     }
-
-    try {
-      await fs.access(normalizedCliPath);
-      return normalizedCliPath;
-    } catch {
-      return null;
-    }
+    return null;
   } catch (error) {
     logger.warn('[ChromaDB] Failed to resolve local CLI executable:', error?.message || error);
   }
@@ -121,6 +132,7 @@ async function resolveChromaFromPythonUserScripts() {
 
   for (const scriptsDir of scriptsDirs) {
     const candidate = path.join(scriptsDir, exeName);
+    const scriptsRealPath = await fs.realpath(scriptsDir).catch(() => scriptsDir);
 
     // Validate path traversal safety (must remain under scripts dir).
     const normalizedCandidate = path.normalize(candidate);
@@ -135,7 +147,16 @@ async function resolveChromaFromPythonUserScripts() {
 
     try {
       await fs.access(normalizedCandidate);
-      return normalizedCandidate;
+      const resolvedCandidate = await fs.realpath(normalizedCandidate);
+      const resolvedScriptsDir = path.normalize(scriptsRealPath);
+      if (!resolvedCandidate.startsWith(resolvedScriptsDir)) {
+        logger.warn('[ChromaDB] Potential symlink traversal in python scripts resolution', {
+          scriptsDir,
+          candidate: resolvedCandidate
+        });
+        continue;
+      }
+      return resolvedCandidate;
     } catch {
       // try next directory
     }
@@ -223,8 +244,7 @@ async function buildChromaSpawnPlan(config) {
       source: 'system-chroma',
       options: {
         windowsHide: true,
-        // Use cross-platform shell detection
-        shell: shouldUseShell()
+        shell: false
       }
     };
   }

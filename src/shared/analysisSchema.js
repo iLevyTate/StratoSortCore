@@ -15,6 +15,7 @@
  * @property {string} [type] - The specific document type (e.g. "Invoice", "Contract", "Bank Statement")
  * @property {string} [category] - The broader category (e.g. "Finance", "Legal", "Personal")
  * @property {string} [project] - The project or subject this relates to
+ * @property {string} [purpose] - The primary intent or purpose of the document
  * @property {string} [summary] - A brief summary of the content (1-2 sentences)
  * @property {string[]} [keywords] - Key terms for search and filtering
  * @property {number} confidence - Confidence score (0-100)
@@ -33,6 +34,7 @@ const ANALYSIS_SCHEMA_PROMPT = {
   category:
     'The high-level category (must match one of the provided Smart Folder names if applicable).',
   project: 'The specific project, case, or subject matter (2-5 words).',
+  purpose: 'The primary purpose or intent of the document (1 sentence).',
   summary: "A concise 1-2 sentence summary of the document's content.",
   keywords: ['keyword1', 'keyword2', 'keyword3', 'keyword4', 'keyword5'],
   confidence: 'Number 0-100 indicating confidence in the extraction.',
@@ -51,6 +53,7 @@ const DEFAULT_ANALYSIS_RESULT = {
   type: 'Document',
   category: 'Uncategorized',
   project: null,
+  purpose: null,
   summary: '',
   keywords: [],
   confidence: 0,

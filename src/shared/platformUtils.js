@@ -45,6 +45,7 @@ const {
   // Process Management
   getKillCommand: crossGetKillCommand,
   getSleepCommand: crossGetSleepCommand,
+  getSpawnOptions: crossGetSpawnOptions,
 
   // Feature Detection
   isFeatureSupported,
@@ -65,10 +66,20 @@ function getNpmCommand() {
 
 /**
  * Get ChromaDB CLI executable name from node_modules
- * @returns {string} chromadb executable
+ * The npm package 'chromadb' provides a CLI binary named 'chroma' (not 'chromadb')
+ * @returns {string} chroma executable
  */
 function getChromaDbBinName() {
-  return getExecutableName('chromadb');
+  return getExecutableName('chroma');
+}
+
+/**
+ * Get ChromaDB CLI executable candidates (new + legacy)
+ * @returns {string[]} chroma executable candidates
+ */
+function getChromaDbBinCandidates() {
+  const candidates = [getExecutableName('chroma'), getExecutableName('chromadb')];
+  return [...new Set(candidates.filter(Boolean))];
 }
 
 /**
@@ -164,11 +175,8 @@ function normalizePath(inputPath) {
  * @returns {Object} Spawn options
  */
 function getSpawnOptions(options = {}) {
-  return {
-    windowsHide: true,
-    shell: shouldUseShell(options.forceShell),
-    ...options
-  };
+  const { forceShell = false, ...rest } = options;
+  return crossGetSpawnOptions({ useShell: forceShell, ...rest });
 }
 
 // ============================================================================
@@ -186,6 +194,7 @@ module.exports = {
   // Command helpers (legacy API)
   getNpmCommand,
   getChromaDbBinName,
+  getChromaDbBinCandidates,
   getNvidiaSmiCommand,
   getSleepCommand,
   getKillCommand,

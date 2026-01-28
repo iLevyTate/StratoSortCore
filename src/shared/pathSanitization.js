@@ -9,7 +9,7 @@ const os = require('os');
 let fs;
 try {
   fs = require('fs').promises;
-} catch (e) {
+} catch {
   // fs module not available (e.g. in sandboxed environment)
   fs = null;
 }
@@ -207,7 +207,7 @@ function sanitizeMetadata(metadata, allowedFields = null) {
     if (key === 'path' && typeof value === 'string') {
       try {
         sanitized[key] = sanitizePath(value);
-      } catch (error) {
+      } catch {
         // For paths that are invalid due to traversal attempts or other security issues,
         // we skip them entirely. But null bytes are now sanitized, not thrown.
         continue;

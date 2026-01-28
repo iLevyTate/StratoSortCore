@@ -79,6 +79,8 @@ module.exports = [
 
       // React rules
       'react/react-in-jsx-scope': 'off',
+      'react/jsx-uses-react': 'warn',
+      'react/jsx-uses-vars': 'warn',
       'react/prop-types': 'off',
       'react/jsx-props-no-spreading': 'off',
       'react/no-array-index-key': 'off',

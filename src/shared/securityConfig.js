@@ -166,6 +166,7 @@ const SETTINGS_VALIDATION = {
     'defaultSmartFolderLocation',
     'lastBrowsedPath',
     'confidenceThreshold',
+    'smartFolderRoutingMode',
     // Naming convention settings
     'namingConvention',
     'dateFormat',
@@ -239,10 +240,7 @@ const ALLOWED_METADATA_FIELDS = [
   'extractionMethod',
   'keyEntities',
   'dates',
-  'reasoning',
-  // Image-specific fields
-  'has_text',
-  'content_type'
+  'reasoning'
 ];
 
 /**
@@ -261,23 +259,22 @@ const RATE_LIMITS = {
 
 /**
  * IPC receive channels that are safe to expose to renderer
- * FIX: Added chromadb-status-changed for service status tracking
+ * FIX: Added chromadb:status-changed for service status tracking
  */
 const ALLOWED_RECEIVE_CHANNELS = [
   'system-metrics',
   'operation-progress',
   'app:error',
   'app:update',
-  'startup-progress',
-  'startup-error',
   'menu-action',
+  'open-semantic-search',
   'settings-changed-external',
   'operation-error',
   'operation-complete',
   'operation-failed',
   'file-operation-complete', // File move/delete notifications for search invalidation
-  'chromadb-status-changed', // FIX: ChromaDB status events for UI integration
-  'dependencies-service-status-changed', // FIX: Missing channel for dependency status updates
+  'chromadb:status-changed', // FIX: ChromaDB status events for UI integration
+  'dependencies:service-status-changed', // FIX: Missing channel for dependency status updates
   'notification', // Toast notifications from main process
   'undo-redo:state-changed', // FIX: Undo/redo state change notifications
   'batch-results-chunk' // FIX: Batch results streaming for progressive UI updates

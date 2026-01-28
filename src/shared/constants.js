@@ -277,7 +277,8 @@ const SUPPORTED_IMAGE_EXTENSIONS = [
   '.webp',
   '.svg',
   '.tiff',
-  '.ico'
+  '.ico',
+  '.heic'
 ];
 
 const SUPPORTED_DOCUMENT_EXTENSIONS = [
@@ -363,6 +364,16 @@ const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz
 const SUPPORTED_3D_EXTENSIONS = ['.stl', '.obj', '.3mf', '.scad', '.gcode'];
 
 const SUPPORTED_DESIGN_EXTENSIONS = ['.ai', '.eps', '.psd'];
+
+// File types that are currently supported by the analysis pipeline
+const ANALYSIS_SUPPORTED_EXTENSIONS = Array.from(
+  new Set([
+    ...SUPPORTED_TEXT_EXTENSIONS,
+    ...SUPPORTED_DOCUMENT_EXTENSIONS,
+    ...SUPPORTED_IMAGE_EXTENSIONS,
+    ...SUPPORTED_ARCHIVE_EXTENSIONS
+  ])
+);
 
 const ALL_SUPPORTED_EXTENSIONS = Array.from(
   new Set([
@@ -568,6 +579,7 @@ module.exports = {
   SUPPORTED_ARCHIVE_EXTENSIONS,
   SUPPORTED_3D_EXTENSIONS,
   SUPPORTED_DESIGN_EXTENSIONS,
+  ANALYSIS_SUPPORTED_EXTENSIONS,
   ALL_SUPPORTED_EXTENSIONS,
   PHASES,
   PHASE_ORDER,
