@@ -452,6 +452,33 @@ describe('StartupManagerCore', () => {
       jest.useFakeTimers();
     });
 
+    test('logs late failure after timeout', async () => {
+      const { logger } = require('../src/shared/logger');
+      manager.config.startupTimeout = 10;
+      manager.enableGracefulDegradation = jest.fn().mockResolvedValue(undefined);
+
+      manager._runStartupSequence = jest.fn(
+        () =>
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('late failure')), 50);
+          })
+      );
+
+      const startupPromise = manager.startup();
+      jest.advanceTimersByTime(10);
+      await expect(startupPromise).rejects.toThrow('Startup timeout exceeded');
+
+      jest.advanceTimersByTime(50);
+      await Promise.resolve();
+
+      expect(logger.error).toHaveBeenCalledWith(
+        '[STARTUP] Startup sequence failed after timeout',
+        expect.objectContaining({
+          message: 'late failure'
+        })
+      );
+    });
+
     test('enables graceful degradation on failure', async () => {
       const { runPreflightChecks } = require('../src/main/services/startup/preflightChecks');
       runPreflightChecks.mockRejectedValue(new Error('Preflight failed'));

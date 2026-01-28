@@ -57,6 +57,29 @@ jest.mock('../src/main/ipc/files/batchOrganizeHandler', () => ({
   handleBatchOrganize: jest.fn().mockResolvedValue({ success: true })
 }));
 
+// Mock promiseUtils (for embedding sync timeouts)
+jest.mock('../src/shared/promiseUtils', () => ({
+  withTimeout: jest.fn((promise) => promise)
+}));
+
+global.__mockSearchService = {
+  invalidateAndRebuild: jest.fn().mockResolvedValue(undefined)
+};
+global.__mockClusteringService = {
+  invalidateClusters: jest.fn()
+};
+
+// Mock embedding sync
+jest.mock('../src/main/ipc/files/embeddingSync', () => ({
+  syncEmbeddingForMove: jest.fn().mockResolvedValue({ action: 'enqueued' })
+}));
+
+// Mock semantic services
+jest.mock('../src/main/ipc/semantic', () => ({
+  getSearchServiceInstance: jest.fn(() => global.__mockSearchService),
+  getClusteringServiceInstance: jest.fn(() => global.__mockClusteringService)
+}));
+
 // Mock chromadb (both index paths to match production import)
 const chromaMockFactory = () => ({
   getInstance: jest.fn().mockReturnValue({
@@ -104,6 +127,8 @@ describe('File Operation Handlers', () => {
     mockAnalysisHistory = {
       getAnalysisByPath: jest.fn().mockResolvedValue(null)
     };
+    global.__mockSearchService.invalidateAndRebuild.mockClear();
+    global.__mockClusteringService.invalidateClusters.mockClear();
 
     // Re-mock ServiceContainer with the fresh coordinator
     jest.doMock('../src/main/services/ServiceContainer', () => ({
@@ -233,6 +258,25 @@ describe('File Operation Handlers', () => {
 
       expect(result.success).toBe(true);
       expect(mockFs.copyFile).toHaveBeenCalled();
+      expect(global.__mockSearchService.invalidateAndRebuild).toHaveBeenCalledWith(
+        expect.objectContaining({
+          immediate: true,
+          reason: 'file-copy',
+          newPath: '/dest/file.txt'
+        })
+      );
+      expect(global.__mockClusteringService.invalidateClusters).toHaveBeenCalled();
+      expect(mockCoordinator.handleFileCopy).toHaveBeenCalledWith(
+        '/source/file.txt',
+        '/dest/file.txt'
+      );
+      const { syncEmbeddingForMove } = require('../src/main/ipc/files/embeddingSync');
+      expect(syncEmbeddingForMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourcePath: '/source/file.txt',
+          destPath: '/dest/file.txt'
+        })
+      );
     });
 
     test('handles delete operation', async () => {
@@ -434,6 +478,25 @@ describe('File Operation Handlers', () => {
 
       expect(result.success).toBe(true);
       expect(mockFs.copyFile).toHaveBeenCalled();
+      expect(global.__mockSearchService.invalidateAndRebuild).toHaveBeenCalledWith(
+        expect.objectContaining({
+          immediate: true,
+          reason: 'file-copy',
+          newPath: '/dest/file.txt'
+        })
+      );
+      expect(global.__mockClusteringService.invalidateClusters).toHaveBeenCalled();
+      expect(mockCoordinator.handleFileCopy).toHaveBeenCalledWith(
+        '/source/file.txt',
+        '/dest/file.txt'
+      );
+      const { syncEmbeddingForMove } = require('../src/main/ipc/files/embeddingSync');
+      expect(syncEmbeddingForMove).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourcePath: '/source/file.txt',
+          destPath: '/dest/file.txt'
+        })
+      );
     });
 
     test('rejects missing paths', async () => {

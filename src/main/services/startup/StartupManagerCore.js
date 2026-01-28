@@ -451,10 +451,25 @@ class StartupManager {
     this.reportProgress('starting', 'Application starting...', 0);
 
     try {
-      const startupPromise = this._runStartupSequence();
+      let timedOut = false;
+      const startupPromise = this._runStartupSequence().catch((error) => {
+        if (timedOut) {
+          logger.error('[STARTUP] Startup sequence failed after timeout', {
+            message: error?.message || 'Unknown error',
+            stack: error?.stack
+          });
+          return {
+            degraded: true,
+            error: error?.message || 'Startup failed after timeout',
+            lateFailure: true
+          };
+        }
+        throw error;
+      });
       let timeoutId;
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
+          timedOut = true;
           reject(new Error('Startup timeout exceeded'));
         }, this.config.startupTimeout);
       });

@@ -37,6 +37,7 @@ const {
   FEEDBACK_SOURCES
 } = require('../../services/organization/learningFeedback');
 const { syncEmbeddingForMove } = require('./embeddingSync');
+const { withTimeout } = require('../../../shared/promiseUtils');
 
 // Alias for backward compatibility
 const operationSchema = schemas?.fileOperation || null;
@@ -130,6 +131,18 @@ function getAnalysisHistoryService() {
     logger.debug('[FILE-OPS] AnalysisHistoryService unavailable:', error?.message);
   }
   return null;
+}
+
+async function syncEmbeddingsBestEffort({ sourcePath, destPath, log, context }) {
+  const timeoutMs = 5000;
+  const label = context ? `Embedding sync (${context})` : 'Embedding sync';
+  try {
+    await withTimeout(syncEmbeddingForMove({ sourcePath, destPath, log }), timeoutMs, label);
+  } catch (syncErr) {
+    log.debug(`[FILE-OPS] ${label} failed (non-fatal):`, {
+      error: syncErr.message
+    });
+  }
 }
 
 /**
@@ -363,36 +376,25 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
 
               for (let attempt = 1; attempt <= MAX_REBUILD_ATTEMPTS; attempt++) {
                 try {
-                  const rebuildPromise = searchService.invalidateAndRebuild({
-                    immediate: true,
-                    reason: 'file-move',
-                    oldPath: moveValidation.source,
-                    newPath: moveValidation.destination
-                  });
-
-                  // Wait for rebuild but with timeout to prevent blocking UI
-                  const result = await Promise.race([
-                    rebuildPromise.then(() => ({ success: true })),
-                    new Promise((resolve) =>
-                      setTimeout(
-                        () => resolve({ success: false, timeout: true }),
-                        REBUILD_TIMEOUT_MS
-                      )
-                    )
-                  ]);
-
-                  if (result.success) {
-                    break; // Successfully rebuilt
-                  }
-
-                  if (attempt < MAX_REBUILD_ATTEMPTS) {
+                  await withTimeout(
+                    searchService.invalidateAndRebuild({
+                      immediate: true,
+                      reason: 'file-move',
+                      oldPath: moveValidation.source,
+                      newPath: moveValidation.destination
+                    }),
+                    REBUILD_TIMEOUT_MS,
+                    'BM25 rebuild after move'
+                  );
+                  break; // Successfully rebuilt
+                } catch (rebuildErr) {
+                  const isTimeout = rebuildErr?.message?.includes('timed out');
+                  if (attempt < MAX_REBUILD_ATTEMPTS && isTimeout) {
                     log.debug('[FILE-OPS] BM25 rebuild timed out, retrying', {
                       attempt,
                       maxAttempts: MAX_REBUILD_ATTEMPTS
                     });
-                  }
-                } catch (rebuildErr) {
-                  if (attempt === MAX_REBUILD_ATTEMPTS) {
+                  } else if (attempt === MAX_REBUILD_ATTEMPTS) {
                     log.warn('[FILE-OPS] BM25 rebuild failed after retries', {
                       error: rebuildErr?.message,
                       attempts: attempt
@@ -440,22 +442,12 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           }
 
           // Ensure embeddings reflect the final smart folder destination (best effort)
-          try {
-            const syncPromise = syncEmbeddingForMove({
-              sourcePath: moveValidation.source,
-              destPath: moveValidation.destination,
-              log
-            });
-            const EMBEDDING_SYNC_TIMEOUT_MS = 5000;
-            await Promise.race([
-              syncPromise,
-              new Promise((resolve) => setTimeout(resolve, EMBEDDING_SYNC_TIMEOUT_MS))
-            ]);
-          } catch (syncErr) {
-            log.debug('[FILE-OPS] Embedding sync failed (non-fatal):', {
-              error: syncErr.message
-            });
-          }
+          await syncEmbeddingsBestEffort({
+            sourcePath: moveValidation.source,
+            destPath: moveValidation.destination,
+            log,
+            context: 'move'
+          });
 
           return {
             success: true,
@@ -554,21 +546,12 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           }
 
           // Ensure embeddings reflect the final smart folder destination (best effort)
-          try {
-            const syncPromise = syncEmbeddingForMove({
-              destPath: copyValidation.destination,
-              log
-            });
-            const EMBEDDING_SYNC_TIMEOUT_MS = 5000;
-            await Promise.race([
-              syncPromise,
-              new Promise((resolve) => setTimeout(resolve, EMBEDDING_SYNC_TIMEOUT_MS))
-            ]);
-          } catch (syncErr) {
-            log.debug('[FILE-OPS] Embedding sync failed after copy (non-fatal):', {
-              error: syncErr.message
-            });
-          }
+          await syncEmbeddingsBestEffort({
+            sourcePath: copyValidation.source,
+            destPath: copyValidation.destination,
+            log,
+            context: 'copy'
+          });
 
           return {
             success: true,
@@ -871,9 +854,77 @@ function registerFileOperationHandlers(servicesOrParams) {
         const destDir = path.dirname(normalizedDestination);
         await fs.mkdir(destDir, { recursive: true });
 
+        // PATH-TRACE: Log copy start
+        traceCopyStart(normalizedSource, normalizedDestination, 'fileOperationHandlers');
+
         await fs.copyFile(normalizedSource, normalizedDestination);
 
+        // PATH-TRACE: Log copy complete (fs operation)
+        traceCopyComplete(normalizedSource, normalizedDestination, 'fileOperationHandlers', true);
+
         log.info('[FILE-OPS] Copied file:', normalizedSource, 'to', normalizedDestination);
+
+        // Use FilePathCoordinator for atomic copy handling across all systems
+        const coordinator = getFilePathCoordinator();
+        if (coordinator) {
+          log.debug('[FILE-OPS] Using FilePathCoordinator for atomic copy handling');
+          const copyResult = await coordinator.handleFileCopy(
+            normalizedSource,
+            normalizedDestination
+          );
+          if (!copyResult.success && copyResult.errors.length > 0) {
+            log.warn('[FILE-OPS] Some systems failed during copy', {
+              errors: copyResult.errors.map((e) => e.system)
+            });
+          }
+        } else {
+          log.warn(
+            '[FILE-OPS] FilePathCoordinator unavailable, copy operations skipped for database/history'
+          );
+        }
+
+        // Invalidate and rebuild search index to include the copy
+        try {
+          const { getSearchServiceInstance } = require('../semantic');
+          const searchService = getSearchServiceInstance?.();
+          if (searchService) {
+            searchService
+              .invalidateAndRebuild({
+                immediate: true,
+                reason: 'file-copy',
+                newPath: normalizedDestination
+              })
+              .catch((rebuildErr) => {
+                log.warn('[FILE-OPS] Background BM25 rebuild failed after copy', {
+                  error: rebuildErr.message
+                });
+              });
+          }
+        } catch (invalidateErr) {
+          log.warn('[FILE-OPS] Failed to trigger search index rebuild after copy', {
+            error: invalidateErr.message
+          });
+        }
+
+        // Invalidate clustering cache after file copy
+        try {
+          const { getClusteringServiceInstance } = require('../semantic');
+          const clusteringService = getClusteringServiceInstance?.();
+          if (clusteringService) {
+            clusteringService.invalidateClusters();
+          }
+        } catch (invalidateErr) {
+          log.warn('[FILE-OPS] Failed to invalidate clustering cache after copy', {
+            error: invalidateErr.message
+          });
+        }
+
+        await syncEmbeddingsBestEffort({
+          sourcePath: normalizedSource,
+          destPath: normalizedDestination,
+          log,
+          context: 'copy'
+        });
 
         return {
           success: true,

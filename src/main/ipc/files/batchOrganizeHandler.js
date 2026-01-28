@@ -953,15 +953,14 @@ async function recordUndoAndUpdateDatabase(
           });
 
           // Wait for rebuild but with timeout to prevent blocking UI
-          await Promise.race([
-            rebuildPromise,
-            new Promise((resolve) => setTimeout(resolve, REBUILD_TIMEOUT_MS))
-          ]).catch((rebuildErr) => {
-            log.warn('[FILE-OPS] BM25 rebuild failed or timed out after batch', {
-              error: rebuildErr?.message,
-              batchId
-            });
-          });
+          await withTimeout(rebuildPromise, REBUILD_TIMEOUT_MS, 'BM25 rebuild after batch').catch(
+            (rebuildErr) => {
+              log.warn('[FILE-OPS] BM25 rebuild failed or timed out after batch', {
+                error: rebuildErr?.message,
+                batchId
+              });
+            }
+          );
         }
       } catch (invalidateErr) {
         log.warn('[FILE-OPS] Failed to trigger search index rebuild after batch', {

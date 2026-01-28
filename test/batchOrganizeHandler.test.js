@@ -134,6 +134,15 @@ jest.mock('../src/shared/promiseUtils', () => ({
   withTimeout: jest.fn((promise) => promise) // Just pass through the promise
 }));
 
+global.__mockBatchSearchService = {
+  invalidateAndRebuild: jest.fn().mockResolvedValue(undefined)
+};
+
+// Mock semantic search service
+jest.mock('../src/main/ipc/semantic', () => ({
+  getSearchServiceInstance: jest.fn(() => global.__mockBatchSearchService)
+}));
+
 // Mock atomicFileOperations
 jest.mock('../src/shared/atomicFileOperations', () => ({
   crossDeviceMove: jest.fn().mockResolvedValue(undefined)
@@ -166,6 +175,7 @@ describe('Batch Organize Handler', () => {
 
     // Reset hash counter for unique idempotency keys
     global.__hashCounter = 0;
+    global.__mockBatchSearchService.invalidateAndRebuild.mockClear();
 
     mockCoordinator = {
       batchPathUpdate: jest.fn().mockResolvedValue({ success: true, summary: {} })
@@ -316,6 +326,27 @@ describe('Batch Organize Handler', () => {
         oldPath: '/src/file1.txt',
         newPath: '/dest/file1.txt'
       });
+    });
+
+    test('wraps search rebuild in timeout after batch', async () => {
+      const { withTimeout } = require('../src/shared/promiseUtils');
+      const operations = [{ source: '/src/file1.txt', destination: '/dest/file1.txt' }];
+
+      const result = await handleBatchOrganize({
+        operation: { operations },
+        logger: mockLogger,
+        getServiceIntegration: mockGetServiceIntegration,
+        getMainWindow: mockGetMainWindow
+      });
+
+      expect(result.success).toBe(true);
+      expect(global.__mockBatchSearchService.invalidateAndRebuild).toHaveBeenCalledWith(
+        expect.objectContaining({ immediate: true, reason: 'batch-organize' })
+      );
+      const timeoutCalls = withTimeout.mock.calls.filter(
+        (call) => call[2] === 'BM25 rebuild after batch'
+      );
+      expect(timeoutCalls.length).toBe(1);
     });
 
     test('retries rename on transient file lock errors', async () => {

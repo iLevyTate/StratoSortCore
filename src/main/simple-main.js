@@ -558,8 +558,10 @@ app.whenReady().then(async () => {
       // Single timeout for entire coordinated startup (45 seconds)
       const COORDINATED_STARTUP_TIMEOUT = TIMEOUTS.SERVICE_STARTUP + 15000; // 45s
       let timeoutId;
+      let timedOut = false;
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
+          timedOut = true;
           reject(
             new Error(
               `Coordinated startup timeout after ${COORDINATED_STARTUP_TIMEOUT / 1000} seconds`
@@ -569,7 +571,22 @@ app.whenReady().then(async () => {
       });
 
       try {
-        startupResult = await Promise.race([coordinatedStartup(), timeoutPromise]);
+        const coordinatedStartupPromise = coordinatedStartup().catch((error) => {
+          if (timedOut) {
+            logger.error('[STARTUP] Coordinated startup failed after timeout', {
+              message: error?.message || 'Unknown error',
+              stack: error?.stack
+            });
+            return {
+              degraded: true,
+              error: error?.message || 'Coordinated startup failed after timeout',
+              lateFailure: true
+            };
+          }
+          throw error;
+        });
+
+        startupResult = await Promise.race([coordinatedStartupPromise, timeoutPromise]);
         logger.info('[STARTUP] Coordinated startup completed successfully');
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
