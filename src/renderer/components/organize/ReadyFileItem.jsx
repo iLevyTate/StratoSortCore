@@ -19,7 +19,6 @@ function ReadyFileItem({
   smartFolders,
   editing,
   onEdit,
-  destination,
   category: categoryProp,
   onViewDetails
 }) {
@@ -52,10 +51,6 @@ function ReadyFileItem({
 
   const filePath = file.path || '';
   const displayFilePath = formatDisplayPath(filePath, { redact: redactPaths, segments: 2 });
-  const displayDestination = formatDisplayPath(destination || '', {
-    redact: redactPaths,
-    segments: 2
-  });
   const tone = stateDisplay.color?.includes('green')
     ? 'success'
     : stateDisplay.color?.includes('amber') || stateDisplay.color?.includes('warning')
@@ -82,35 +77,27 @@ function ReadyFileItem({
         <div className="flex-1 min-w-0 overflow-visible">
           <Stack gap="cozy" className="w-full">
             {/* Header Section */}
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 min-w-0">
-              <div className="flex items-start gap-3 min-w-0">
-                <FileText className="w-5 h-5 text-system-gray-400 flex-shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  <Text
-                    variant="small"
-                    className="font-medium text-system-gray-900 break-words leading-tight"
-                    title={`${file.name}${displayFilePath ? ` (${displayFilePath})` : ''}`}
-                  >
-                    {file.name}
-                  </Text>
-                  <Text variant="tiny" className="text-system-gray-500 mt-0.5">
-                    {[
-                      file.size ? `${Math.round(file.size / 1024)} KB` : 'Pending size',
-                      file.source && file.source !== 'file_selection'
-                        ? file.source.replace('_', ' ')
-                        : null
-                    ]
-                      .filter(Boolean)
-                      .join(' • ')}
-                  </Text>
-                </div>
+            <div className="flex items-start gap-3 min-w-0">
+              <FileText className="w-5 h-5 text-system-gray-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <Text
+                  variant="small"
+                  className="font-medium text-system-gray-900 break-words leading-tight"
+                  title={`${file.name}${displayFilePath ? ` (${displayFilePath})` : ''}`}
+                >
+                  {file.name}
+                </Text>
+                <Text variant="tiny" className="text-system-gray-500 mt-0.5">
+                  {[
+                    file.size ? `${Math.round(file.size / 1024)} KB` : 'Pending size',
+                    file.source && file.source !== 'file_selection'
+                      ? file.source.replace('_', ' ')
+                      : null
+                  ]
+                    .filter(Boolean)
+                    .join(' • ')}
+                </Text>
               </div>
-              <StatusBadge variant={tone} size="sm" className="shadow-sm whitespace-nowrap">
-                <span className={stateDisplay.spinning ? 'animate-spin mr-1' : 'mr-1'}>
-                  {stateDisplay.icon}
-                </span>
-                <span className="hidden sm:inline">{stateDisplay.label}</span>
-              </StatusBadge>
             </div>
 
             {/* Analysis Section */}
@@ -160,27 +147,13 @@ function ReadyFileItem({
                   </button>
                 </div>
 
-                <div className="flex items-end justify-between gap-3">
-                  {destination ? (
-                    <div className="min-w-0 flex-1">
-                      <Text
-                        as="div"
-                        variant="tiny"
-                        className="text-system-gray-500 font-medium mb-1"
-                      >
-                        Destination
-                      </Text>
-                      <Text
-                        variant="tiny"
-                        className="text-stratosort-blue break-all line-clamp-2"
-                        title={displayDestination}
-                      >
-                        {displayDestination}
-                      </Text>
-                    </div>
-                  ) : (
-                    <div />
-                  )}
+                <div className="flex items-center justify-end gap-3">
+                  <StatusBadge variant={tone} size="sm" className="shadow-sm whitespace-nowrap">
+                    <span className={stateDisplay.spinning ? 'animate-spin mr-1' : 'mr-1'}>
+                      {stateDisplay.icon}
+                    </span>
+                    <span className="hidden sm:inline">{stateDisplay.label}</span>
+                  </StatusBadge>
 
                   {computedConfidence !== null && (
                     <div
@@ -207,9 +180,19 @@ function ReadyFileItem({
                 </div>
               </>
             ) : (
-              <Text variant="small" className="text-system-red-600 mt-2">
-                Analysis failed - will be skipped
-              </Text>
+              <div className="flex flex-col gap-2">
+                <Text variant="small" className="text-system-red-600 mt-2">
+                  Analysis failed - will be skipped
+                </Text>
+                <div className="flex justify-end">
+                  <StatusBadge variant={tone} size="sm" className="shadow-sm whitespace-nowrap">
+                    <span className={stateDisplay.spinning ? 'animate-spin mr-1' : 'mr-1'}>
+                      {stateDisplay.icon}
+                    </span>
+                    <span className="hidden sm:inline">{stateDisplay.label}</span>
+                  </StatusBadge>
+                </div>
+              </div>
             )}
           </Stack>
         </div>
@@ -227,7 +210,6 @@ ReadyFileItem.propTypes = {
   smartFolders: PropTypes.array,
   editing: PropTypes.object,
   onEdit: PropTypes.func.isRequired,
-  destination: PropTypes.string,
   category: PropTypes.string,
   onViewDetails: PropTypes.func
 };
@@ -236,7 +218,6 @@ ReadyFileItem.defaultProps = {
   isSelected: false,
   smartFolders: [],
   editing: null,
-  destination: '',
   category: null,
   onViewDetails: null
 };
@@ -247,7 +228,6 @@ function areReadyFileItemPropsEqual(prev, next) {
   if (prev.onViewDetails !== next.onViewDetails) return false;
   if (prev.index !== next.index) return false;
   if (prev.isSelected !== next.isSelected) return false;
-  if (prev.destination !== next.destination) return false;
   if (prev.category !== next.category) return false;
   if (prev.smartFolders !== next.smartFolders) return false;
 

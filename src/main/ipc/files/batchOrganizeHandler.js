@@ -22,6 +22,7 @@ const { acquireBatchLock, releaseBatchLock } = require('./batchLockManager');
 const { validateBatchOperation, MAX_BATCH_SIZE } = require('./batchValidator');
 const { executeRollback } = require('./batchRollback');
 const { sendOperationProgress, sendChunkedResults } = require('./batchProgressReporter');
+const { getInstance: getFileOperationTracker } = require('../../../shared/fileOperationTracker');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('IPC:Files:BatchOrganize') : baseLogger;
@@ -390,6 +391,18 @@ async function handleBatchOrganize(params) {
 
             op.destination = moveResult.destination;
             processedKeys.add(idempotencyKey);
+
+            // FIX: Record operation in tracker to prevent SmartFolderWatcher from re-analyzing
+            // This prevents "ghost" files or duplicates appearing in the UI
+            try {
+              const tracker = getFileOperationTracker();
+              tracker.recordOperation(op.source, 'move', 'batchOrganize');
+              tracker.recordOperation(op.destination, 'move', 'batchOrganize');
+            } catch (trackerErr) {
+              log.warn('[FILE-OPS] Failed to record operation in tracker', {
+                error: trackerErr.message
+              });
+            }
 
             log.info('[FILE-OPS] Move completed', {
               batchId,
