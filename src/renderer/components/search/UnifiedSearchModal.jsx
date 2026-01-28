@@ -790,9 +790,20 @@ export default function UnifiedSearchModal({
       return;
     }
 
+    // Limit batch size to prevent IPC timeouts
+    const MAX_BATCH_SIZE = 50;
+    const filesToProcess = files.slice(0, MAX_BATCH_SIZE);
+
+    if (files.length > MAX_BATCH_SIZE) {
+      logger.warn('[UnifiedSearchModal] Truncating recommendation request to avoid timeout', {
+        total: files.length,
+        processing: MAX_BATCH_SIZE
+      });
+    }
+
     setIsLoadingRecommendations(true);
     try {
-      const response = await window.electronAPI.suggestions.getBatchSuggestions(files);
+      const response = await window.electronAPI.suggestions.getBatchSuggestions(filesToProcess);
       if (!response?.success || !Array.isArray(response.groups)) {
         setRecommendationMap({});
         return;
