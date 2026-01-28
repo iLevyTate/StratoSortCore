@@ -31,10 +31,10 @@
 
 ---
 
-El StratoSort is a **privacy-first document organizer** that uses local AI to categorize and arrange
-files without sending data to the cloud. All processing happens on your machine using
-[Ollama](https://ollama.ai) for AI inference and [ChromaDB](https://www.trychroma.com) for semantic
-search.
+**El StratoSort** turns file chaos into order using privacy-first local AI. It automatically
+categorizes, tags, and organizes your documents completely offline—leveraging **Ollama** for
+intelligence and **ChromaDB** for semantic search—ensuring your personal data stays 100% on your
+machine.
 
 ## What's New in v1.2.1
 
@@ -48,25 +48,23 @@ See [CHANGELOG.md](CHANGELOG.md) for full release notes.
 
 ## Features
 
-| Feature                  | Description                                                  |
-| ------------------------ | ------------------------------------------------------------ |
-| **Local AI Analysis**    | Powered by Ollama - fully offline, no cloud required         |
-| **Smart Organization**   | Categorizes files based on content, not just filenames       |
-| **Smart Folder Watcher** | Monitors folders and analyzes new files automatically        |
-| **Image Understanding**  | Analyzes visual content to categorize photos and screenshots |
-| **Knowledge Graph**      | Visualize file relationships with color-coded categories     |
-| **Safe Operations**      | Full undo/redo capability with history navigation            |
-| **Privacy-First**        | No data exfiltration - all processing on your machine        |
-| **Vector Search**        | ChromaDB-powered semantic understanding and retrieval        |
+| Feature                      | Description                                                                               |
+| :--------------------------- | :---------------------------------------------------------------------------------------- |
+| **🧠 Local AI Intelligence** | Powered by **Ollama** (LLMs + Vision) to understand file content, not just filenames.     |
+| **🔒 Privacy-First**         | Zero data exfiltration. All processing happens locally on your device.                    |
+| **👀 Smart Folder Watcher**  | Real-time monitoring that automatically analyzes and sorts new files as they arrive.      |
+| **📸 Image Understanding**   | Uses vision models and OCR to categorize screenshots, photos, and scanned documents.      |
+| **🕸️ Knowledge Graph**       | Interactive visualization of your file relationships, clusters, and semantic connections. |
+| **🔍 Semantic Search**       | Find files by _meaning_ (e.g., "vacation photos") using Vector Search and AI Re-Ranking.  |
+| **🛡️ Safe Operations**       | Full Undo/Redo capability for all file moves and renames.                                 |
 
 ## Quick Start
 
 ### Prerequisites
 
-- **OS**: Windows 10/11 (recommended), macOS 10.15+, or Linux
-- **RAM**: 8GB+ recommended
-- **Disk**: 12GB+ free space
-- **Dependencies**: Python 3.9+ (for ChromaDB)
+- **OS**: Windows 10/11 (Recommended), macOS 10.15+, or Linux.
+- **RAM**: 8GB+ recommended.
+- **Tools**: [Ollama](https://ollama.ai) (Required for AI), Python 3.9+ (For ChromaDB).
 
 ### Installation
 
@@ -77,87 +75,53 @@ npm ci
 npm run dev
 ```
 
-**First Launch:** The app will guide you through installing Ollama and downloading AI models. It
-will also attempt to install ChromaDB and Tesseract OCR automatically.
+**First Launch:** The app will guide you through setting up Ollama, downloading the necessary AI
+models, and installing the vector database.
 
 > **Note:** El StratoSort is developed with a Windows-first approach. While releases are published
-> for all major platforms, only the Windows build is robustly tested. macOS and Linux builds are
-> provided on a best-effort basis.
+> for all major platforms, only the Windows build is robustly tested.
 
-For detailed setup instructions, see the **[Getting Started Guide](docs/GETTING_STARTED.md)**.
+For detailed instructions, see the **[Getting Started Guide](docs/GETTING_STARTED.md)**.
 
 ## Privacy & Security
 
 | Principle             | Implementation                                         |
-| --------------------- | ------------------------------------------------------ |
+| :-------------------- | :----------------------------------------------------- |
 | **100% Local**        | No internet required after initial setup               |
 | **No Tracking**       | Zero data collection or telemetry                      |
 | **Open Source**       | Full source code available for inspection              |
 | **Secure by Default** | Context isolation, input validation, path sanitization |
 
-See [SECURITY.md](SECURITY.md) for our security policy and vulnerability reporting.
+See [SECURITY.md](SECURITY.md) for our security policy.
 
-## Advanced Features
+## Advanced Capabilities
 
-### Smart Folders
+### 📂 Smart Folders & Watchers
 
-Configure keywords and descriptions for your folders. The AI learns from your selections and
-improves suggestions over time.
+Define categories with natural language descriptions. The **Smart Folder Watcher** monitors your
+downloads or designated folders, automatically analyzing new items and moving them to the right
+place based on their content.
 
-### Auto-Organization
+### 🖼️ Vision & OCR
 
-Enable "Watch Downloads Folder" or "Watch Smart Folders" in Settings to automatically analyze and
-organize new files as they arrive.
+El StratoSort doesn't just read text files. It uses computer vision to "see" your images and
+Tesseract OCR to read text inside them, allowing you to organize receipts, screenshots, and scanned
+PDFs automatically.
 
-### Batch Operations
+### 🧠 Semantic Search & Re-Ranking
 
-Select multiple files or folders, analyze them together, and apply suggestions in bulk with full
-undo support.
+Search implies meaning. The built-in **ReRanker Service** uses a small LLM to evaluate search
+results, ensuring the top results are conceptually relevant to your query, not just keyword matches.
 
 ## Documentation
 
-| Document                                       | Description                   |
-| ---------------------------------------------- | ----------------------------- |
-| [Getting Started](docs/GETTING_STARTED.md)     | Installation and setup guide  |
-| [Architecture](docs/ARCHITECTURE.md)           | System design and data flow   |
-| [Learning Guide](docs/LEARNING_GUIDE.md)       | Codebase onboarding           |
-| [Testing](TESTING.md)                          | Test patterns and coverage    |
-| [Code Quality](docs/CODE_QUALITY_STANDARDS.md) | Style and review standards    |
-| [DI Patterns](docs/DI_PATTERNS.md)             | Dependency injection patterns |
-| [Error Handling](docs/ERROR_HANDLING_GUIDE.md) | Error handling standards      |
-| [IPC Contracts](docs/IPC_CONTRACTS.md)         | IPC communication specs       |
-
-## For Developers
-
-### Tech Stack
-
-| Technology            | Purpose                              |
-| --------------------- | ------------------------------------ |
-| **Electron**          | Cross-platform desktop framework     |
-| **React 19**          | UI library with Redux Toolkit        |
-| **Ollama**            | Local AI inference (text and vision) |
-| **ChromaDB**          | Vector database for semantic search  |
-| **Tailwind CSS**      | Utility-first styling                |
-| **Jest + Playwright** | Testing infrastructure               |
-
-### Key Scripts
-
-```bash
-npm run dev            # Development mode with hot reload
-npm run lint           # ESLint code quality check
-npm test               # Run Jest unit/integration tests
-npm run build          # Production webpack build
-npm run dist:win       # Create Windows installer
-npm run dist:mac       # Create macOS installer
-npm run dist:linux     # Create Linux packages
-npm run setup:deps     # Install Ollama + ChromaDB + Tesseract
-```
-
-### Building Installers
-
-- **Windows (preferred)**: Run the GitHub Actions workflow "Windows Dist (Manual)" or locally with
-  `npm run dist:win`
-- **macOS/Linux**: Build on the target OS with `npm run dist:mac` or `npm run dist:linux`
+| Document                                   | Description                  |
+| :----------------------------------------- | :--------------------------- |
+| [Getting Started](docs/GETTING_STARTED.md) | Installation and setup guide |
+| [Architecture](docs/ARCHITECTURE.md)       | System design and data flow  |
+| [Learning Guide](docs/LEARNING_GUIDE.md)   | Codebase onboarding          |
+| [Graph Features](docs/FEATURES_GRAPH.md)   | Knowledge Graph capabilities |
+| [IPC Contracts](docs/IPC_CONTRACTS.md)     | IPC communication specs      |
 
 ## Contributing
 
