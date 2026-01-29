@@ -7,59 +7,52 @@ between the Renderer (UI), the IPC Bridge, and the specialized background servic
 
 ```mermaid
 graph LR
-    %% --- Styling & Theme ---
-    classDef frontend fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1,rx:10,ry:10
-    classDef backend fill:#f1f8e9,stroke:#33691e,stroke-width:2px,color:#33691e,rx:10,ry:10
-    classDef core fill:#eceff1,stroke:#455a64,stroke-width:2px,color:#455a64,rx:10,ry:10
-    classDef ai fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c,rx:10,ry:10
+  classDef frontend fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+  classDef backend fill:#f1f8e9,stroke:#33691e,stroke-width:2px,color:#33691e
+  classDef core fill:#eceff1,stroke:#455a64,stroke-width:2px,color:#455a64
+  classDef ai fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
 
-    %% --- 1. FRONTEND ---
-    subgraph UI_Layer ["🖥️ Renderer Process"]
-        direction TB
-        AppEntry([App Entry])
-        GraphView("🕸️ Knowledge Graph")
-        ReduxStore[[Redux Store]]
+  subgraph UI_Layer["Renderer Process"]
+    direction TB
+    AppEntry([App Entry])
+    GraphView["Knowledge Graph"]
+    ReduxStore[[Redux Store]]
 
-        AppEntry --> ReduxStore
-        AppEntry --> GraphView
+    AppEntry --> ReduxStore
+    AppEntry --> GraphView
+  end
+
+  subgraph Main_Process["Main Process"]
+    direction LR
+
+    subgraph Services["Core Services"]
+      Watcher{{Smart Folder Watcher}}
+      ReRanker{{Re-Ranking Service}}
+      Matcher{{Folder Matcher}}
     end
 
-    %% --- 2. BACKEND ---
-    subgraph Main_Process ["⚙️ Main Process"]
-        direction LR
+    subgraph Intelligence["AI & Analysis"]
+      Vision["Ollama Vision"]
+      LLM["Ollama Text"]
+      Embeddings["Vector Embeddings"]
 
-        %% Core Services
-        subgraph Services ["Core Services"]
-            Watcher{{Smart Folder Watcher}}
-            ReRanker{{Re-Ranking Service}}
-            Matcher{{Folder Matcher}}
-        end
-
-        %% Intelligence
-        subgraph Intelligence ["🧠 AI & Analysis"]
-            Vision("Ollama Vision")
-            LLM("Ollama Text")
-            Embeddings("Vector Embeddings")
-
-            Watcher --> Vision
-            Watcher --> LLM
-            ReRanker --> LLM
-        end
-
-        %% Data
-        subgraph Data ["💾 Persistence"]
-            ChromaDB[(ChromaDB)]
-            History("Analysis History")
-
-            Embeddings <--> ChromaDB
-            Vision --> History
-        end
+      Watcher --> Vision
+      Watcher --> LLM
+      ReRanker --> LLM
     end
 
-    %% Connections
-    ReduxStore <==> Services
-    GraphView <.-.> ChromaDB
-    Matcher --> Embeddings
+    subgraph Data["Persistence"]
+      ChromaDB[(ChromaDB)]
+      History["Analysis History"]
+
+      Embeddings <--> ChromaDB
+      Vision --> History
+    end
+  end
+
+  ReduxStore <--> Services
+  GraphView -.-> ChromaDB
+  Matcher --> Embeddings
 ```
 
 ## Key Architectural Components
