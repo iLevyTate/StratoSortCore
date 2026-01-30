@@ -130,9 +130,42 @@ function validateEmbeddingVector(vector) {
   return { valid: true };
 }
 
+/**
+ * Pad or truncate a vector to match the expected dimension.
+ * - If vector is shorter than expectedDim, pads with zeros
+ * - If vector is longer than expectedDim, truncates to expectedDim
+ * - Returns null if vector is empty/invalid or expectedDim is invalid
+ *
+ * FIX: Extracted from ChatService and SearchService to eliminate duplication.
+ *
+ * @param {number[]} vector - The embedding vector to adjust
+ * @param {number|null|undefined} expectedDim - Target dimension (null/undefined/invalid returns vector as-is)
+ * @returns {number[]|null} Adjusted vector, original vector if no adjustment needed, or null if invalid
+ */
+function padOrTruncateVector(vector, expectedDim) {
+  if (!Array.isArray(vector) || vector.length === 0) {
+    return null;
+  }
+  // If expectedDim is not a valid positive integer, return vector unchanged
+  if (!Number.isInteger(expectedDim) || expectedDim <= 0) {
+    return vector;
+  }
+  // Already correct dimension
+  if (vector.length === expectedDim) {
+    return vector;
+  }
+  // Pad with zeros if too short
+  if (vector.length < expectedDim) {
+    return vector.concat(new Array(expectedDim - vector.length).fill(0));
+  }
+  // Truncate if too long
+  return vector.slice(0, expectedDim);
+}
+
 module.exports = {
   cosineSimilarity,
   squaredEuclideanDistance,
   validateEmbeddingDimensions,
-  validateEmbeddingVector
+  validateEmbeddingVector,
+  padOrTruncateVector
 };

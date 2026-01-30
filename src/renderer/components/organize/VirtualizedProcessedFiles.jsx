@@ -54,9 +54,9 @@ const ProcessedFileRow = memo(function ProcessedFileRow({ index, style, data }) 
         <div className="flex items-center gap-4">
           <StatusBadge variant="success">OK</StatusBadge>
           <div>
-            <div className="text-sm font-medium text-system-gray-900">
+            <Text variant="small" className="font-medium text-system-gray-900">
               {originalName} -&gt; {newName}
-            </div>
+            </Text>
             <Text variant="tiny" className="text-system-gray-500">
               Moved to {smartFolder} | {organizedDate}
             </Text>
@@ -151,9 +151,9 @@ function VirtualizedProcessedFiles({ files, isLoading = false }) {
             <div className="flex items-center gap-4">
               <StatusBadge variant="success">OK</StatusBadge>
               <div>
-                <div className="text-sm font-medium text-system-gray-900">
+                <Text variant="small" className="font-medium text-system-gray-900">
                   {originalName} -&gt; {newName}
-                </div>
+                </Text>
                 <Text variant="tiny" className="text-system-gray-500">
                   Moved to {smartFolder} | {organizedDate}
                 </Text>

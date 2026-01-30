@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.2.1-blue?style=flat-square" alt="Version" /></a>
+  <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.2.2-blue?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/iLevyTate/elstratosort/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Personal_Use_Only-blue?style=flat-square" alt="License" /></a>
   <a href="https://github.com/iLevyTate/elstratosort/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/iLevyTate/elstratosort/ci.yml?style=flat-square&label=CI" alt="CI Status" /></a>
 </p>
@@ -36,13 +36,12 @@ categorizes, tags, and organizes your documents completely offline—leveraging 
 intelligence and **ChromaDB** for semantic search—ensuring your personal data stays 100% on your
 machine.
 
-## What's New in v1.2.1
+## What's New in v1.2.2
 
-- **Settings Backup & Restore** - Create snapshots, export/import settings, and recover quickly
-- **User Data Migration** - Automatically restores legacy settings, history, and UI state on upgrade
-- **Smarter Semantic Matching** - Richer embedding summaries improve folder suggestions and search
-- **Update Experience** - Better update progress reporting and safer apply flow
-- **Search & Chat Quality** - Improved retrieval tuning and fallback responses for clearer answers
+- **UI Consistency Pass** - Standardized typography, spacing tokens, and button styles across views
+- **Search + Graph Polish** - Unified metadata labels, banners, and empty states
+- **Organize UX Fix** - Restored missing button import to prevent ReadyFileItem crash
+- **Modal + Loading UI** - Aligned modal descriptions and loading text with shared Typography
 
 See [CHANGELOG.md](CHANGELOG.md) for full release notes.
 
@@ -64,7 +63,9 @@ See [CHANGELOG.md](CHANGELOG.md) for full release notes.
 
 - **OS**: Windows 10/11 (Recommended), macOS 10.15+, or Linux.
 - **RAM**: 8GB+ recommended.
-- **Tools**: [Ollama](https://ollama.ai) (Required for AI), Python 3.9+ (For ChromaDB).
+- **Tools**: [Ollama](https://ollama.ai) (Required for AI), Python 3.9+ (For ChromaDB).  
+  _Windows installer can bundle portable Ollama + embeddable Python; otherwise the app
+  installs/downloads on first run without CLI steps._
 
 ### Installation
 
@@ -76,7 +77,18 @@ npm run dev
 ```
 
 **First Launch:** The app will guide you through setting up Ollama, downloading the necessary AI
-models, and installing the vector database.
+models, and installing the vector database. On Windows, setup can run fully in the background with a
+single consent (use “Install All” in the AI setup modal)—no CLI required.
+
+### Platform Setup Notes
+
+- **Windows:** Fully bundled AI runtime. Portable Ollama + embeddable Python are included; click
+  “Install All (Background)” on first launch. No CLI or admin prompts; models download on first use.
+- **macOS:** Uses system Python 3.9+ and Homebrew/manual Ollama. “Install All” will guide you; brew
+  may prompt. Tesseract auto-installs via brew and falls back to the built-in OCR fallback if
+  missing. Models download on first use.
+- **In-app installs:** The AI Setup modal includes an “Install All (Background)” option that
+  downloads/installs Ollama, ChromaDB, and the recommended models directly from the app UI.
 
 > **Note:** El StratoSort is developed with a Windows-first approach. While releases are published
 > for all major platforms, only the Windows build is robustly tested.

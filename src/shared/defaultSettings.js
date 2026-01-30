@@ -63,7 +63,13 @@ const DEFAULT_SETTINGS = {
   retryAttempts: 3, // Number of retry attempts for failed operations
   // UI Limits
   workflowRestoreMaxAge: 60 * 60 * 1000, // 1 hour - how long to keep workflow state
-  saveDebounceMs: 1000 // Debounce delay for auto-save
+  saveDebounceMs: 1000, // Debounce delay for auto-save
+
+  // Learning/Feedback ChromaDB Sync
+  // When enabled, learning patterns and feedback are dual-written to ChromaDB in addition to JSON
+  // This enables semantic retrieval of learned patterns in the future
+  enableChromaLearningSync: false, // Default off - JSON primary for backward compatibility
+  enableChromaLearningDryRun: false // When true, logs ChromaDB operations without executing
 };
 
 module.exports = {

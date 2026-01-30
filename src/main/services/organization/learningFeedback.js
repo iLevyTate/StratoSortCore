@@ -15,6 +15,7 @@
 const path = require('path');
 const { logger: baseLogger, createLogger } = require('../../../shared/logger');
 const { findContainingSmartFolder: findSmartFolderInList } = require('../../../shared/folderUtils');
+const { DEBOUNCE } = require('../../../shared/performanceConstants');
 
 const logger =
   typeof createLogger === 'function' ? createLogger('Organization:LearningFeedback') : baseLogger;
@@ -59,7 +60,8 @@ const SOURCE_CONFIDENCE_WEIGHTS = Object.freeze({
 function buildFileMetadata(filePath, analysis = null) {
   const fileName = path.basename(filePath);
   const extension = path.extname(filePath).toLowerCase().replace('.', '');
-  const _dirName = path.basename(path.dirname(filePath)); // Reserved for future pattern matching
+  // FIX LOW-9: Removed unused _dirName variable
+  // If parent directory pattern matching is needed later, add it then
 
   return {
     name: fileName,
@@ -75,6 +77,7 @@ function buildFileMetadata(filePath, analysis = null) {
 
 /**
  * Build a suggestion object representing the destination folder
+ * FIX MED-7: Handle edge case where folder name is empty and path ends with separator
  * @param {Object} smartFolder - Smart folder object
  * @param {number} confidenceWeight - Confidence multiplier from source
  * @returns {Object} Suggestion object for pattern recording
@@ -84,8 +87,19 @@ function buildFolderSuggestion(smartFolder, confidenceWeight = 1.0) {
     return null;
   }
 
+  // FIX MED-7: Handle edge cases where name is falsy and path.basename returns empty
+  // This can happen if path ends with a separator (e.g., '/documents/')
+  let folderName = smartFolder.name;
+  if (!folderName) {
+    folderName = path.basename(smartFolder.path);
+  }
+  if (!folderName) {
+    // Last resort: use the full path or a default
+    folderName = smartFolder.path || 'Unknown';
+  }
+
   return {
-    folder: smartFolder.name || path.basename(smartFolder.path),
+    folder: folderName,
     path: smartFolder.path,
     folderId: smartFolder.id || null,
     // Base confidence adjusted by source weight
@@ -111,7 +125,8 @@ class LearningFeedbackService {
 
     // Debounce tracking to prevent duplicate learning for the same file
     this._recentlyLearned = new Map(); // filePath -> timestamp
-    this._dedupeWindowMs = 5000; // 5 second window
+    // FIX LOW-10: Use centralized constant
+    this._dedupeWindowMs = DEBOUNCE.LEARNING_DEDUPE_WINDOW;
 
     // Stats for monitoring
     this.stats = {
@@ -134,6 +149,26 @@ class LearningFeedbackService {
   }
 
   /**
+   * Check if a folder is still in the registered smart folders list.
+   * FIX MEDIUM-7: Prevents recording feedback for folders that have been removed.
+   *
+   * @param {Object} folder - Folder object to validate
+   * @returns {boolean} True if folder is registered
+   * @private
+   */
+  _isValidSmartFolder(folder) {
+    if (!folder || !folder.path) return false;
+
+    const smartFolders = this.getSmartFolders();
+    if (!smartFolders || smartFolders.length === 0) return false;
+
+    // Check if the folder path matches any registered smart folder
+    return smartFolders.some(
+      (sf) => sf && sf.path && (sf.path === folder.path || (sf.id && sf.id === folder.id))
+    );
+  }
+
+  /**
    * Record implicit feedback when a file is placed in a smart folder
    *
    * @param {Object} params - Learning parameters
@@ -152,6 +187,15 @@ class LearningFeedbackService {
     // Validate inputs
     if (!filePath || !smartFolder || !smartFolder.path) {
       logger.debug('[LearningFeedback] Missing required parameters', { filePath, smartFolder });
+      return false;
+    }
+
+    // FIX MEDIUM-7: Validate that smartFolder is still registered
+    // This prevents accumulating stale patterns for removed/renamed folders
+    if (!this._isValidSmartFolder(smartFolder)) {
+      logger.debug('[LearningFeedback] Folder not in registered smart folders', {
+        folder: smartFolder.path
+      });
       return false;
     }
 
@@ -217,7 +261,10 @@ class LearningFeedbackService {
     } catch (error) {
       logger.warn('[LearningFeedback] Failed to record feedback', {
         filePath,
-        error: error.message
+        error: error.message,
+        hint: error.message?.includes('Pattern storage failed to load')
+          ? 'User patterns not loaded; retry after storage recovers'
+          : undefined
       });
       return false;
     }

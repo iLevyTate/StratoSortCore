@@ -463,11 +463,11 @@ function SetupPhase() {
                 action={
                   <Inline gap="default">
                     <Button onClick={handleResetToDefaults} variant="secondary">
-                      <RotateCcw className="w-4 h-4 mr-1.5" />
+                      <RotateCcw className="w-4 h-4" />
                       Load Defaults
                     </Button>
                     <Button onClick={handleOpenAddModal} variant="primary">
-                      <Plus className="w-4 h-4 mr-1.5" />
+                      <Plus className="w-4 h-4" />
                       Add Custom Folder
                     </Button>
                   </Inline>
@@ -478,7 +478,9 @@ function SetupPhase() {
           ) : (
             <div
               className={`grid grid-cols-1 ${
-                isCompactMode ? 'md:grid-cols-2 gap-4' : 'md:grid-cols-2 xl:grid-cols-3 gap-6'
+                isCompactMode
+                  ? 'md:grid-cols-2 gap-default'
+                  : 'md:grid-cols-2 xl:grid-cols-3 gap-relaxed'
               }`}
             >
               {smartFolders.map((folder, index) => (

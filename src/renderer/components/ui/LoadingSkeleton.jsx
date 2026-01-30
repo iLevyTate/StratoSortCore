@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { Text } from './Typography';
 
 /**
  * LoadingSkeleton component for displaying placeholder content while data loads
@@ -234,7 +235,9 @@ export function LazyLoadingSpinner({ message = 'Loading...' }) {
     <div className="flex items-center justify-center py-12" role="status" aria-label={message}>
       <div className="text-center">
         <div className="animate-spin w-12 h-12 border-4 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-8" />
-        <p className="text-system-gray-700">{message}</p>
+        <Text variant="small" className="text-system-gray-700">
+          {message}
+        </Text>
         <span className="sr-only">{message}</span>
       </div>
     </div>
@@ -256,7 +259,9 @@ export function ModalLoadingOverlay({ message = 'Loading...' }) {
     >
       <div className="bg-white rounded-xl shadow-xl px-8 py-6 text-center animate-modal-enter">
         <div className="animate-spin w-10 h-10 border-3 border-stratosort-blue border-t-transparent rounded-full mx-auto mb-3" />
-        <p className="text-sm text-system-gray-600">{message}</p>
+        <Text variant="small" className="text-system-gray-600">
+          {message}
+        </Text>
         <span className="sr-only">{message}</span>
       </div>
     </div>

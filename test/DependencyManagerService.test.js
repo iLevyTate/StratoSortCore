@@ -16,7 +16,8 @@ jest.mock('../src/shared/logger', () => ({
 
 // Force Windows behavior via platform utils
 jest.mock('../src/shared/platformUtils', () => ({
-  isWindows: true
+  isWindows: true,
+  isMacOS: false
 }));
 
 // Mock preflight checks used for status
@@ -67,7 +68,8 @@ jest.mock('../src/main/utils/ollamaDetection', () => ({
   isOllamaInstalled: jest.fn().mockResolvedValue(true),
   getOllamaVersion: jest.fn().mockResolvedValue('0.1.0'),
   isOllamaRunning: jest.fn().mockResolvedValue(true),
-  getInstalledModels: jest.fn().mockResolvedValue([])
+  getInstalledModels: jest.fn().mockResolvedValue([]),
+  findOllamaBinary: jest.fn()
 }));
 
 describe('DependencyManagerService', () => {
@@ -77,20 +79,28 @@ describe('DependencyManagerService', () => {
   let ollamaService;
   // let chromaService;
   let childProcess;
+  let ollamaDetection;
+  function reloadService() {
+    jest.resetModules();
+    preflight = require('../src/main/services/startup/preflightChecks');
+    asyncSpawnUtils = require('../src/main/utils/asyncSpawnUtils');
+    ollamaService = require('../src/main/services/startup/ollamaService');
+    childProcess = require('child_process');
+    ollamaDetection = require('../src/main/utils/ollamaDetection');
+    // default asyncSpawn to resolve success to avoid undefined catches
+    asyncSpawnUtils.asyncSpawn.mockImplementation(() => Promise.resolve({ status: 0 }));
+    const svc = require('../src/main/services/DependencyManagerService').DependencyManagerService;
+    return svc;
+  }
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.resetModules();
 
-    preflight = require('../src/main/services/startup/preflightChecks');
-    asyncSpawnUtils = require('../src/main/utils/asyncSpawnUtils');
-    ollamaService = require('../src/main/services/startup/ollamaService');
-    // chromaService = require('../src/main/services/startup/chromaService');
-    childProcess = require('child_process');
+    // Default resources path (can be overridden per test)
+    process.resourcesPath = undefined;
 
-    // Re-require after resetModules so it picks up mocks.
-    DependencyManagerService =
-      require('../src/main/services/DependencyManagerService').DependencyManagerService;
+    DependencyManagerService = reloadService();
   });
 
   test('getStatus aggregates python/ollama/chromadb status', async () => {
@@ -130,12 +140,13 @@ describe('DependencyManagerService', () => {
 
   test('installChromaDb returns error when Python is missing', async () => {
     preflight.checkPythonInstallation.mockResolvedValue({ installed: false, version: null });
+    asyncSpawnUtils.findPythonLauncherAsync.mockResolvedValue(null);
 
     const svc = new DependencyManagerService();
     const result = await svc.installChromaDb();
 
     expect(result.success).toBe(false);
-    expect(String(result.error)).toContain('Python 3 is required');
+    expect(String(result.error)).toContain('No Python runtime available');
   });
 
   test('installChromaDb runs pip install with --user and --upgrade when requested', async () => {
@@ -152,6 +163,8 @@ describe('DependencyManagerService', () => {
       stderr: ''
     });
     asyncSpawnUtils.hasPythonModuleAsync.mockResolvedValue(true);
+    // Module check with launcher
+    asyncSpawnUtils.asyncSpawn.mockResolvedValueOnce({ status: 0 });
 
     const svc = new DependencyManagerService();
     const result = await svc.installChromaDb({ upgrade: true, userInstall: true });
@@ -164,6 +177,112 @@ describe('DependencyManagerService', () => {
     const args = installCall[1];
     expect(args).toEqual(
       expect.arrayContaining(['-m', 'pip', 'install', '--upgrade', '--user', 'chromadb'])
+    );
+  });
+
+  test('getStatus prefers embedded Python when present and reports module found', async () => {
+    process.resourcesPath = '/app';
+    DependencyManagerService = reloadService();
+    preflight.checkPythonInstallation.mockResolvedValue({ installed: false, version: null });
+    preflight.checkOllamaInstallation.mockResolvedValue({ installed: false, version: null });
+
+    // Embedded python present
+    mockFsPromises.access.mockResolvedValue(undefined);
+
+    // asyncSpawn handles version + import check
+    asyncSpawnUtils.asyncSpawn.mockImplementation((cmd, args) => {
+      const cmdStr = String(cmd).toLowerCase();
+      if (cmdStr.includes('python') && args?.includes('--version')) {
+        return Promise.resolve({ status: 0, stdout: 'Python 3.10.0' });
+      }
+      if (args && args.includes('-c') && String(args[args.length - 1]).includes('chromadb')) {
+        return Promise.resolve({ status: 0 });
+      }
+      return Promise.resolve({ status: 0 });
+    });
+
+    const svc = new DependencyManagerService();
+    const status = await svc.getStatus();
+
+    expect(status.python.installed).toBe(true);
+    expect(status.python.version).toBeTruthy();
+    expect(status.chromadb.pythonModuleInstalled).toBe(true);
+  });
+
+  test('installChromaDb uses embedded python without --user and sets PYTHONHOME', async () => {
+    process.resourcesPath = '/app';
+    DependencyManagerService = reloadService();
+    preflight.checkPythonInstallation.mockResolvedValue({ installed: false, version: null });
+    asyncSpawnUtils.findPythonLauncherAsync.mockResolvedValue(null);
+
+    asyncSpawnUtils.asyncSpawn.mockImplementation((cmd, args, opts) => {
+      const cmdStr = String(cmd).toLowerCase();
+      if (cmdStr.includes('python') && args?.includes('--version')) {
+        return Promise.resolve({ status: 0, stdout: 'Python 3.10.0' });
+      }
+      if (args && args.includes('pip') && args.includes('install') && args.includes('chromadb')) {
+        return Promise.resolve({ status: 0, stdout: '', stderr: '', env: opts?.env });
+      }
+      if (args && args.includes('-c') && String(args[args.length - 1]).includes('importlib')) {
+        return Promise.resolve({ status: 0 });
+      }
+      return Promise.resolve({ status: 0 });
+    });
+
+    const svc = new DependencyManagerService();
+    const result = await svc.installChromaDb({ upgrade: false, userInstall: true });
+    expect(result.success).toBe(true);
+
+    const installCall = asyncSpawnUtils.asyncSpawn.mock.calls.find((c) =>
+      Array.isArray(c[1]) ? c[1].includes('chromadb') : false
+    );
+    expect(installCall).toBeDefined();
+    const args = installCall[1];
+    expect(args).not.toContain('--user'); // embedded runtime should not use --user
+    const opts = installCall[2];
+    expect((opts?.env?.PYTHONHOME || '').replace(/\\\\/g, '/').replace(/\\/g, '/')).toContain(
+      '/app/assets/runtime/python'
+    );
+  });
+
+  test('installOllama uses bundled portable binary when present', async () => {
+    process.resourcesPath = '/app';
+    DependencyManagerService = reloadService();
+    preflight.checkOllamaInstallation.mockResolvedValue({ installed: false, version: null });
+    ollamaDetection.isOllamaInstalled.mockResolvedValue(false);
+    ollamaDetection.findOllamaBinary.mockResolvedValue({
+      found: true,
+      path: '/app/assets/runtime/ollama/ollama.exe',
+      source: 'embedded'
+    });
+
+    // allow version check on embedded binary
+    asyncSpawnUtils.asyncSpawn.mockImplementation((cmd, args) => {
+      const cmdStr = String(cmd).toLowerCase();
+      if (cmdStr.includes('ollama') && args?.includes('--version')) {
+        return Promise.resolve({ status: 0, stdout: 'ollama 0.2.0' });
+      }
+      if (args && args[0] === '/S') {
+        return Promise.resolve({ status: 0 });
+      }
+      return Promise.resolve({ status: 0 });
+    });
+
+    const svc = new DependencyManagerService();
+    const result = await svc.installOllama();
+
+    expect(result.success).toBe(true);
+    expect(result.bundled).toBe(true);
+    expect(result.version).toContain('0.2.0');
+
+    const spawnCall = childProcess.spawn.mock.calls[0];
+    expect(spawnCall).toBeDefined();
+    expect(String(spawnCall[0]).replace(/\\/g, '/')).toContain(
+      '/app/assets/runtime/ollama/ollama.exe'
+    );
+    expect(spawnCall[1]).toEqual(['serve']);
+    expect(String(spawnCall[2]?.cwd || '').replace(/\\/g, '/')).toContain(
+      '/app/assets/runtime/ollama'
     );
   });
 
@@ -312,6 +431,6 @@ describe('DependencyManagerService', () => {
     const svc = new DependencyManagerService();
     const result = await svc.installChromaDb();
     expect(result.success).toBe(false);
-    expect(String(result.error)).toContain('Python launcher');
+    expect(String(result.error)).toContain('No Python runtime available');
   });
 });

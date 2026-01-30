@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 import { CheckCircle, AlertTriangle, Clock } from 'lucide-react';
 import Button from '../ui/Button';
+import { Heading, Text } from '../ui/Typography';
 // FIX: Import useSafeState to prevent state updates on unmounted components
 import { useSafeState } from '../../utils/reactEdgeCaseUtils';
 import { DEFAULT_AI_MODELS } from '../../../shared/constants';
@@ -106,10 +107,12 @@ export default function FirstRunWizard({ onComplete }) {
       <div className="bg-white rounded-xl shadow-xl w-full max-w-xl p-5">
         {step === 0 && (
           <div>
-            <h2 className="text-heading-2 mb-8">Set up AI locally</h2>
-            <p className="text-body mb-8">
+            <Heading as="h2" variant="h3" className="mb-8">
+              Set up AI locally
+            </Heading>
+            <Text variant="small" className="mb-8">
               StratoSort uses Ollama to run models locally. We can pull the base models for you.
-            </p>
+            </Text>
             <div className="space-y-2 mb-3">
               {models.map((m) => (
                 <label key={m.id} className="flex items-center gap-2">
@@ -125,7 +128,9 @@ export default function FirstRunWizard({ onComplete }) {
                       );
                     }}
                   />
-                  <span>{m.label}</span>
+                  <Text as="span" variant="small">
+                    {m.label}
+                  </Text>
                 </label>
               ))}
             </div>
@@ -141,12 +146,12 @@ export default function FirstRunWizard({ onComplete }) {
         )}
         {step === 1 && (
           <div>
-            <h2 className="text-heading-2 mb-8">
+            <Heading as="h2" variant="h3" className="mb-8">
               {pulling ? `Pulling models (${progress.current}/${progress.total})` : 'Model setup'}
-            </h2>
+            </Heading>
             <div className="space-y-5">
               {results.map((r) => (
-                <div key={r.model} className="text-sm">
+                <Text key={r.model} variant="small" className="text-system-gray-700">
                   <span className="inline-flex items-center gap-1">
                     {r.status === 'ready' ? (
                       <CheckCircle className="w-4 h-4 text-stratosort-success" />
@@ -157,13 +162,13 @@ export default function FirstRunWizard({ onComplete }) {
                     )}
                     {r.model} {r.status === 'ready' ? 'ready' : r.status}
                   </span>
-                </div>
+                </Text>
               ))}
             </div>
             {pulling && (
-              <p className="text-body mt-5">
+              <Text variant="small" className="mt-5">
                 This may take a few minutes depending on your connection.
-              </p>
+              </Text>
             )}
             <div className="flex items-center justify-end gap-2 mt-3">
               <Button onClick={onComplete} variant="primary" disabled={pulling}>

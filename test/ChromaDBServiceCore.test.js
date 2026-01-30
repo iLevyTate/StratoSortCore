@@ -273,6 +273,18 @@ describe('ChromaDBServiceCore', () => {
     });
   });
 
+  describe('getCollectionDimension', () => {
+    test('reads learningPatterns dimension from the correct collection', async () => {
+      service.learningPatternCollection = {
+        peek: jest.fn().mockResolvedValue({ embeddings: [[0.1, 0.2, 0.3, 0.4]] })
+      };
+
+      const dim = await service.getCollectionDimension('learningPatterns');
+      expect(dim).toBe(4);
+      expect(service._collectionDimensions.learningPatterns).toBe(4);
+    });
+  });
+
   describe('_executeWithNotFoundRecovery', () => {
     test('reinitializes once and retries on not-found error', async () => {
       const forceSpy = jest.spyOn(service, '_forceReinitialize').mockResolvedValue(undefined);

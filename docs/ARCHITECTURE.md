@@ -1,3 +1,20 @@
+- ### Learning/feedback persistence flags
+  - `enableChromaLearningSync`: when true, feedback memory is dual-written to ChromaDB and JSON.
+    Default: false (JSON primary).
+  - `enableChromaLearningDryRun`: when true, logs Chroma upserts/deletes without executing them.
+  - Feedback collection: `feedback_memory` in Chroma; JSON files remain in `userData` for
+    backup/export.
+  - These settings can be configured in Settings (Advanced section) or via the service config.
+  - Metrics are exposed via OrganizationSuggestionService.\_getChromaSyncMetrics() for monitoring.
+
+- ### Graph UX notes
+  - **Bridge files**: Cross-cluster edges include a small sample of "bridge files" picked by
+    similarity to opposing cluster centroids. This is best-effort and not an exhaustive list.
+  - **Guide intents**: "Expand from selection" and "bridges-only" intents are supported; the
+    bridges-only overlay dims non-bridge edges.
+  - **Filter visibility**: Active graph filters are surfaced as chips on the graph (top-left
+    overlay) and can be reset from there.
+
 # Stratosort Architecture
 
 ## High-Level Information Flow

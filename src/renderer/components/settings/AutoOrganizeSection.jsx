@@ -73,8 +73,12 @@ function AutoOrganizeSection({ settings, setSettings }) {
       {settings.autoOrganize && (
         <div className="ml-0 pl-4 border-l-2 border-system-gray-100 space-y-2">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-medium text-system-gray-700">Minimum confidence</span>
-            <span className="text-sm font-medium text-stratosort-blue">{confidencePercent}%</span>
+            <Text as="span" variant="small" className="font-medium text-system-gray-700">
+              Minimum confidence
+            </Text>
+            <Text as="span" variant="small" className="font-medium text-stratosort-blue">
+              {confidencePercent}%
+            </Text>
           </div>
           <Text variant="tiny" className="text-system-gray-500 mb-3">
             Files must meet this confidence level to be automatically organized. Lower confidence

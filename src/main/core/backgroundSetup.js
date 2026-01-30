@@ -141,11 +141,13 @@ async function installTesseractIfMissing() {
     logger.info('[BACKGROUND] Tesseract installation complete');
   } else {
     emitDependencyProgress({
-      message: 'Tesseract install failed or skipped. OCR will use tesseract.js.',
+      message: 'Tesseract install failed or skipped. Falling back to bundled tesseract.js.',
       dependency: 'tesseract',
-      stage: 'error'
+      stage: 'fallback'
     });
     logger.warn('[BACKGROUND] Tesseract install failed or skipped');
+    // Signal downstream to prefer JS fallback where supported
+    process.env.USE_TESSERACT_JS = '1';
   }
 }
 

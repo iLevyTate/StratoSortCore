@@ -374,6 +374,17 @@ const VALIDATION_RULES = {
   smartFolderWatchEnabled: {
     type: 'boolean',
     required: false
+  },
+
+  // Learning/Feedback ChromaDB Sync Settings
+  // See ARCHITECTURE.md for details on dual-write behavior
+  enableChromaLearningSync: {
+    type: 'boolean',
+    required: false
+  },
+  enableChromaLearningDryRun: {
+    type: 'boolean',
+    required: false
   }
 };
 

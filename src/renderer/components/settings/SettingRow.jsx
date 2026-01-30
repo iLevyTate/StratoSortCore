@@ -16,7 +16,7 @@ function SettingRow({ label, description, children, className = '', layout = 'ro
     >
       <div className={`${layout === 'row' ? 'flex-1' : ''} min-w-0`}>
         {label && (
-          <Heading as="h3" variant="h6" className="text-sm font-medium text-system-gray-900">
+          <Heading as="h3" variant="h6" className="text-system-gray-900">
             {label}
           </Heading>
         )}

@@ -3,7 +3,7 @@ import { logger } from '../../shared/logger';
 import { PHASES, PHASE_METADATA } from '../../shared/constants';
 import { useAppSelector } from '../store/hooks';
 import { Heading, Text } from './ui/Typography';
-import { IconButton } from './ui';
+import { Button, IconButton } from './ui';
 import { ChevronDown } from 'lucide-react';
 
 logger.setContext('ProgressIndicator');
@@ -101,8 +101,10 @@ function ProgressIndicator() {
 
                 {showPhaseMenu && (
                   <div className="absolute left-0 mt-2 bg-white border border-border-soft rounded-lg shadow-lg z-overlay min-w-[140px] py-1 overflow-hidden">
-                    <button
-                      className="w-full text-left px-4 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50 transition-colors focus:bg-system-gray-50 focus:outline-none"
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start px-4 py-2 text-system-gray-700 hover:bg-system-gray-50 rounded-none"
                       ref={firstMenuItemRef}
                       onClick={() => {
                         applyPhaseExpandCollapse(true);
@@ -110,16 +112,18 @@ function ProgressIndicator() {
                       }}
                     >
                       Expand all
-                    </button>
-                    <button
-                      className="w-full text-left px-4 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50 transition-colors focus:bg-system-gray-50 focus:outline-none"
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start px-4 py-2 text-system-gray-700 hover:bg-system-gray-50 rounded-none"
                       onClick={() => {
                         applyPhaseExpandCollapse(false);
                         setShowPhaseMenu(false);
                       }}
                     >
                       Collapse all
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>

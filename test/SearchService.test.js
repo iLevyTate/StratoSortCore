@@ -1047,6 +1047,7 @@ describe('SearchService', () => {
           corrections: [{ original: 'vacaton', corrected: 'vacation' }],
           synonymsAdded: [{ word: 'vacation', synonym: 'holiday' }]
         }),
+        extractFilters: jest.fn().mockReturnValue({}),
         extendVocabulary: jest.fn().mockResolvedValue(undefined),
         clearCache: jest.fn()
       };
@@ -1100,14 +1101,14 @@ describe('SearchService', () => {
       });
 
       test('uses queryProcessor when provided', async () => {
-        await serviceWithEnhancements.hybridSearch('vacaton photos');
+        await serviceWithEnhancements.hybridSearch('vacaton photos', { correctSpelling: true });
 
         // processQuery is called with query and options object
         expect(mockQueryProcessor.processQuery).toHaveBeenCalledWith(
           'vacaton photos',
           expect.objectContaining({
             expandSynonyms: true,
-            correctSpelling: false // Default is now false (disabled)
+            correctSpelling: true // Spell correction enabled with stricter length checks
           })
         );
       });
@@ -1119,6 +1120,18 @@ describe('SearchService', () => {
         expect(result.queryMeta).toBeDefined();
         expect(result.queryMeta.corrections.length).toBeGreaterThan(0);
         expect(result.queryMeta.original).toBe('vacaton photos');
+      });
+
+      test('applies year boosting without lunr caret syntax', async () => {
+        mockQueryProcessor.extractFilters.mockReturnValue({ year: '2021' });
+        const bm25Spy = jest.spyOn(serviceWithEnhancements, 'bm25Search');
+
+        await serviceWithEnhancements.hybridSearch('reports 2021');
+
+        const bm25Arg = bm25Spy.mock.calls[0][0];
+        expect(bm25Arg).toContain('2021 2021');
+        expect(bm25Arg).toMatch(/\s2021 2021\b/);
+        expect(bm25Arg).not.toMatch(/\^/);
       });
 
       test('uses expanded query for BM25 search', async () => {

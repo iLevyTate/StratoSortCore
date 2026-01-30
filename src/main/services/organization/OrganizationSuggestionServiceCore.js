@@ -31,12 +31,13 @@ const {
 } = require('./strategies');
 
 const { PatternMatcher } = require('./patternMatcher');
-const { FeedbackMemoryStore } = require('./feedbackMemoryStore');
+const { FeedbackMemoryStore, getMetrics: getFeedbackMetrics } = require('./feedbackMemoryStore');
 const {
   buildMemoryEntry,
   applyMemoryRuleAdjustments,
   normalizeText
 } = require('./feedbackMemoryUtils');
+const { getMetrics: getPatternMetrics } = require('./persistence');
 
 const { rankSuggestions, calculateConfidence, generateExplanation } = require('./suggestionRanker');
 
@@ -188,6 +189,7 @@ class OrganizationSuggestionServiceCore {
       clusterBoostFactor: config.clusterBoostFactor || 1.3, // Boost for cluster-consistent suggestions
       minClusterConfidence: config.minClusterConfidence || 0.5,
       outlierThreshold: config.outlierThreshold || 0.3, // Below this = outlier
+      enableChromaLearningSync: config.enableChromaLearningSync === true,
       ...config
     };
 
@@ -202,15 +204,23 @@ class OrganizationSuggestionServiceCore {
       maxFeedbackHistory: this.config.maxFeedbackHistory
     });
 
-    // Initialize persistence
+    // Initialize persistence with dual-write support
     this.persistence = new PatternPersistence({
       filename: 'user-patterns.json',
-      saveThrottleMs: 5000
+      saveThrottleMs: 5000,
+      chromaDbService: chromaDbService,
+      enableChromaSync: this.config.enableChromaLearningSync,
+      enableChromaDryRun: this.config.enableChromaLearningDryRun === true,
+      chromaPrimary: this.config.chromaLearningPrimary === true
     });
 
     this.feedbackMemoryStore = new FeedbackMemoryStore({
       filename: 'feedback-memory.json',
-      saveThrottleMs: 5000
+      saveThrottleMs: 5000,
+      chromaDbService: chromaDbService,
+      enableChromaSync: this.config.enableChromaLearningSync,
+      enableChromaDryRun: this.config.enableChromaLearningDryRun === true,
+      chromaPrimary: this.config.chromaLearningPrimary === true
     });
 
     // FIX: CRITICAL - Track loading promise to prevent race condition
@@ -332,12 +342,88 @@ class OrganizationSuggestionServiceCore {
 
     const lowCoverage = fileCount < this.config.embeddingFirstMinFileEmbeddings;
 
+    // FIX GAP-5: Include ChromaDB sync metrics for monitoring
+    const learningSyncMetrics = this._getChromaSyncMetrics();
+
     return {
       available: true,
       reason: lowCoverage ? 'partial_embeddings' : 'healthy_embeddings',
       stats,
       embeddingIndex,
-      lowCoverage
+      lowCoverage,
+      enableChromaLearningSync: this.config.enableChromaLearningSync,
+      enableChromaLearningDryRun: this.config.enableChromaLearningDryRun === true,
+      learningSyncMetrics
+    };
+  }
+
+  /**
+   * Get ChromaDB learning sync metrics for monitoring and debugging
+   * FIX GAP-5: Expose sync success/failure counters for production monitoring
+   *
+   * @returns {Object} Combined metrics from feedback and pattern persistence
+   */
+  _getChromaSyncMetrics() {
+    const emptyMetrics = {
+      jsonWrites: 0,
+      jsonReads: 0,
+      chromaWrites: 0,
+      chromaReads: 0,
+      chromaWriteFailures: 0,
+      chromaReadFailures: 0,
+      migrationRuns: 0,
+      lastSyncAt: null,
+      lastError: null
+    };
+
+    let feedbackMetrics = emptyMetrics;
+    let patternMetrics = emptyMetrics;
+
+    try {
+      if (typeof getFeedbackMetrics === 'function') {
+        feedbackMetrics = getFeedbackMetrics();
+      }
+    } catch (err) {
+      logger.debug('[OrganizationSuggestionService] Feedback metrics unavailable', {
+        error: err?.message
+      });
+    }
+
+    try {
+      if (typeof getPatternMetrics === 'function') {
+        patternMetrics = getPatternMetrics();
+      }
+    } catch (err) {
+      logger.debug('[OrganizationSuggestionService] Pattern metrics unavailable', {
+        error: err?.message
+      });
+    }
+
+    return {
+      feedback: {
+        chromaWrites: feedbackMetrics.chromaWrites,
+        chromaWriteFailures: feedbackMetrics.chromaWriteFailures,
+        chromaReads: feedbackMetrics.chromaReads,
+        chromaReadFailures: feedbackMetrics.chromaReadFailures,
+        jsonWrites: feedbackMetrics.jsonWrites,
+        jsonReads: feedbackMetrics.jsonReads,
+        migrationRuns: feedbackMetrics.migrationRuns,
+        lastSyncAt: feedbackMetrics.lastSyncAt,
+        lastError: feedbackMetrics.lastError
+      },
+      patterns: {
+        chromaWrites: patternMetrics.chromaWrites,
+        chromaWriteFailures: patternMetrics.chromaWriteFailures,
+        chromaReads: patternMetrics.chromaReads,
+        chromaReadFailures: patternMetrics.chromaReadFailures,
+        jsonWrites: patternMetrics.jsonWrites,
+        jsonReads: patternMetrics.jsonReads,
+        migrationRuns: patternMetrics.migrationRuns,
+        lastSyncAt: patternMetrics.lastSyncAt,
+        lastError: patternMetrics.lastError
+      },
+      enabled: this.config.enableChromaLearningSync,
+      dryRun: this.config.enableChromaLearningDryRun === true
     };
   }
 
@@ -1014,6 +1100,13 @@ class OrganizationSuggestionServiceCore {
     // This prevents overwriting patterns that haven't been loaded yet
     await this._ensurePatternsLoaded();
 
+    // FIX CRITICAL: Check for successful load to prevent data loss
+    if (!this._patternsLoadedSuccessfully) {
+      throw new Error(
+        'Cannot record feedback: Pattern storage failed to load. Saving now would overwrite with empty state.'
+      );
+    }
+
     this.patternMatcher.recordFeedback(file, suggestion, accepted);
     if (suggestion?.note || suggestion?.feedbackNote) {
       logger.debug(
@@ -1044,7 +1137,7 @@ class OrganizationSuggestionServiceCore {
     // FIX H-2: Wrap feedbackMemoryStore.add in try-catch to handle storage failures
     let stored;
     try {
-      stored = await this.feedbackMemoryStore.add(entry);
+      stored = await this.feedbackMemoryStore.add(entry, { skipChromaSync: true });
     } catch (storeError) {
       logger.error('[OrganizationSuggestionService] Failed to add feedback memory to store:', {
         error: storeError.message
@@ -1066,7 +1159,11 @@ class OrganizationSuggestionServiceCore {
           document: stored.text
         };
         await this.chromaDb.upsertFeedbackMemory(payload);
-        await this.feedbackMemoryStore.update(stored.id, { embeddingModel: model });
+        await this.feedbackMemoryStore.update(
+          stored.id,
+          { embeddingModel: model },
+          { skipChromaSync: true }
+        );
       } catch (error) {
         if (String(error.message).includes('dimension mismatch')) {
           logger.warn('[OrganizationSuggestionService] Resetting feedback memory collection');
@@ -1083,7 +1180,11 @@ class OrganizationSuggestionServiceCore {
               },
               document: stored.text
             });
-            await this.feedbackMemoryStore.update(stored.id, { embeddingModel: model });
+            await this.feedbackMemoryStore.update(
+              stored.id,
+              { embeddingModel: model },
+              { skipChromaSync: true }
+            );
           } catch (retryError) {
             logger.warn('[OrganizationSuggestionService] Retry upsert failed', {
               error: retryError.message
@@ -1124,14 +1225,18 @@ class OrganizationSuggestionServiceCore {
 
     const { rules, targetFolder } = buildMemoryEntry(normalized, metadata) || {};
     const updatedAt = new Date().toISOString();
-    const updated = await this.feedbackMemoryStore.update(id, {
-      text: normalized,
-      rules: rules || [],
-      targetFolder: metadata.targetFolder || targetFolder || existing.targetFolder || null,
-      scope: metadata.scope || existing.scope,
-      source: metadata.source || existing.source,
-      updatedAt
-    });
+    const updated = await this.feedbackMemoryStore.update(
+      id,
+      {
+        text: normalized,
+        rules: rules || [],
+        targetFolder: metadata.targetFolder || targetFolder || existing.targetFolder || null,
+        scope: metadata.scope || existing.scope,
+        source: metadata.source || existing.source,
+        updatedAt
+      },
+      { skipChromaSync: true }
+    );
 
     if (updated && this.chromaDb && this.folderMatcher) {
       try {
@@ -1146,7 +1251,11 @@ class OrganizationSuggestionServiceCore {
           },
           document: updated.text
         });
-        await this.feedbackMemoryStore.update(updated.id, { embeddingModel: model });
+        await this.feedbackMemoryStore.update(
+          updated.id,
+          { embeddingModel: model },
+          { skipChromaSync: true }
+        );
       } catch (error) {
         if (String(error.message).includes('dimension mismatch')) {
           await this.rebuildFeedbackMemoryEmbeddings();
@@ -1166,7 +1275,7 @@ class OrganizationSuggestionServiceCore {
 
   async deleteFeedbackMemory(id) {
     await this._ensureFeedbackMemoryLoaded();
-    const removed = await this.feedbackMemoryStore.remove(id);
+    const removed = await this.feedbackMemoryStore.remove(id, { skipChromaSync: true });
     if (removed && this.chromaDb) {
       try {
         await this.chromaDb.deleteFeedbackMemory(id);
@@ -1302,7 +1411,11 @@ class OrganizationSuggestionServiceCore {
             },
             document: entry.text
           });
-          await this.feedbackMemoryStore.update(entry.id, { embeddingModel: model });
+          await this.feedbackMemoryStore.update(
+            entry.id,
+            { embeddingModel: model },
+            { skipChromaSync: true }
+          );
         } catch (error) {
           logger.warn('[OrganizationSuggestionService] Failed to rebuild memory entry', {
             id: entry.id,

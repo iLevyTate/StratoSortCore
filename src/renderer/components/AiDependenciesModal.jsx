@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { Info } from 'lucide-react';
+import { Download, Info, RefreshCw } from 'lucide-react';
 import Modal from './ui/Modal';
 import Button from './ui/Button';
 import Card from './ui/Card';
@@ -29,10 +29,13 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [installing, setInstalling] = useState({ ollama: false, chromadb: false });
+  const [installingAll, setInstallingAll] = useState(false);
   const [downloadingModels, setDownloadingModels] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const [installedModels, setInstalledModels] = useState([]);
   const [downloadProgress, setDownloadProgress] = useState(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const [lastInstallError, setLastInstallError] = useState(null);
   const unsubRef = useRef(null);
   const statusUnsubRef = useRef(null);
   const logContainerRef = useRef(null);
@@ -281,6 +284,50 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
     }
   };
 
+  const installAll = async () => {
+    if (installingAll) return;
+    setInstallingAll(true);
+    setLastInstallError(null);
+    addLogEntry('[info] Starting full AI setup (background)…');
+    try {
+      if (!status?.ollama?.installed) {
+        addLogEntry('[info] Installing Ollama…');
+        const res = await installOllama();
+        if (res && res.success === false) {
+          setLastInstallError(res.error || 'Ollama install failed');
+          return;
+        }
+      }
+      if (!status?.chromadb?.pythonModuleInstalled && !status?.chromadb?.external) {
+        addLogEntry('[info] Installing ChromaDB…');
+        const res = await installChromaDb();
+        if (res && res.success === false) {
+          setLastInstallError(res.error || 'ChromaDB install failed');
+          return;
+        }
+      }
+      if (recommendedModels.length) {
+        addLogEntry('[info] Pulling recommended models…');
+        const res = await window.electronAPI?.ollama?.pullModels?.(recommendedModels);
+        if (res && res.success === false) {
+          setLastInstallError(res.error || 'Model download failed');
+          return;
+        }
+      } else {
+        addLogEntry('[info] No recommended models configured; skipping model download.');
+      }
+      await refresh();
+      if (!lastInstallError) {
+        addLogEntry('[success] AI setup completed (background).');
+      }
+    } catch (e) {
+      setLastInstallError(e?.message || 'Install failed');
+      addLogEntry(`[error] Full setup failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setInstallingAll(false);
+    }
+  };
+
   const ollamaOk = Boolean(status?.ollama?.installed);
   const ollamaRunning = Boolean(status?.ollama?.running);
   const ollamaVersion = status?.ollama?.version || null;
@@ -344,9 +391,53 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   (semantic search + RAG). These are optional but unlock powerful organization
                   features.
                 </Text>
+                <Text variant="tiny" className="text-system-gray-500 mt-2">
+                  By continuing, StratoSort will download and install required AI components
+                  (Ollama, ChromaDB) and fetch recommended models in the background.
+                </Text>
               </div>
             </div>
           </div>
+
+          <Card variant="default" className="p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex flex-col gap-1">
+                <Heading as="h4" variant="h6" className="text-sm">
+                  One-click background setup
+                </Heading>
+                <Text variant="tiny" className="text-system-gray-600">
+                  Installs Ollama, ChromaDB, and pulls recommended models without leaving the UI.
+                </Text>
+                {lastInstallError && (
+                  <div className="mt-2">
+                    <StateMessage variant="error" title="Install incomplete">
+                      {lastInstallError}
+                    </StateMessage>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={installAll}
+                  aria-label="Retry install all"
+                  data-testid="retry-install-all"
+                  disabled={!lastInstallError || installingAll}
+                >
+                  Retry
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={installAll}
+                  disabled={installingAll || loading}
+                >
+                  {installingAll ? 'Installing All…' : 'Install All (Background)'}
+                </Button>
+              </div>
+            </div>
+          </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card variant="default" className="p-0 overflow-hidden">
@@ -393,35 +484,19 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   className="w-full justify-center"
                   disabled={installing.ollama || status === null}
                   onClick={installOllama}
+                  isLoading={installing.ollama}
+                  leftIcon={
+                    !installing.ollama && !ollamaOk ? <Download className="w-4 h-4" /> : null
+                  }
                   title={
                     status === null ? 'Checking status...' : 'Download and install Ollama silently'
                   }
                 >
-                  {installing.ollama ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                      Installing...
-                    </>
-                  ) : ollamaOk ? (
-                    'Reinstall / Repair'
-                  ) : (
-                    <>
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                        />
-                      </svg>
-                      Install Ollama
-                    </>
-                  )}
+                  {installing.ollama
+                    ? 'Installing...'
+                    : ollamaOk
+                      ? 'Reinstall / Repair'
+                      : 'Install Ollama'}
                 </Button>
 
                 {ollamaOk && (
@@ -597,6 +672,10 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   className="w-full justify-center"
                   disabled={installing.chromadb || !pythonOk || chromaExternal || status === null}
                   onClick={installChromaDb}
+                  isLoading={installing.chromadb}
+                  leftIcon={
+                    !installing.chromadb && !chromaOk ? <Download className="w-4 h-4" /> : null
+                  }
                   title={
                     status === null
                       ? 'Checking status...'
@@ -607,31 +686,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                           : 'Install Python 3 first'
                   }
                 >
-                  {installing.chromadb ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                      Installing...
-                    </>
-                  ) : chromaOk ? (
-                    'Reinstall / Upgrade'
-                  ) : (
-                    <>
-                      <svg
-                        className="w-4 h-4 mr-2"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                        />
-                      </svg>
-                      Install ChromaDB
-                    </>
-                  )}
+                  {installing.chromadb
+                    ? 'Installing...'
+                    : chromaOk
+                      ? 'Reinstall / Upgrade'
+                      : 'Install ChromaDB'}
                 </Button>
 
                 {!pythonOk && !chromaExternal && status !== null && (
@@ -675,7 +734,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                 </svg>
               </div>
               <div>
-                <Heading as="h4" variant="h6" className="text-sm">
+                <Heading as="h4" variant="h6">
                   Automatic Updates
                 </Heading>
                 <Text variant="tiny" className="text-system-gray-500">
@@ -684,7 +743,11 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
               </div>
             </div>
             <div className="flex flex-wrap gap-4 ml-11">
-              <label className="flex items-center gap-2 text-sm text-system-gray-700 cursor-pointer group">
+              <Text
+                as="label"
+                variant="small"
+                className="flex items-center gap-2 text-system-gray-700 cursor-pointer group"
+              >
                 <input
                   type="checkbox"
                   checked={Boolean(settings?.autoUpdateOllama)}
@@ -692,8 +755,12 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   className="w-4 h-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue cursor-pointer"
                 />
                 <span className="group-hover:text-system-gray-900 transition-colors">Ollama</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-system-gray-700 cursor-pointer group">
+              </Text>
+              <Text
+                as="label"
+                variant="small"
+                className="flex items-center gap-2 text-system-gray-700 cursor-pointer group"
+              >
                 <input
                   type="checkbox"
                   checked={Boolean(settings?.autoUpdateChromaDb)}
@@ -701,7 +768,7 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   className="w-4 h-4 rounded border-system-gray-300 text-stratosort-blue focus:ring-stratosort-blue cursor-pointer"
                 />
                 <span className="group-hover:text-system-gray-900 transition-colors">ChromaDB</span>
-              </label>
+              </Text>
             </div>
           </Card>
 
@@ -732,70 +799,68 @@ export default function AiDependenciesModal({ isOpen, onClose }) {
                   </Text>
                 </div>
               </div>
-              <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
-                {loading ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />
-                    Checking
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="w-3 h-3 mr-1.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
-                    Refresh
-                  </>
-                )}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={refresh}
+                  disabled={loading}
+                  isLoading={loading}
+                  leftIcon={!loading ? <RefreshCw className="w-3.5 h-3.5" /> : null}
+                >
+                  {loading ? 'Checking' : 'Refresh'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowLogs((prev) => !prev)}
+                  data-testid="toggle-log"
+                >
+                  {showLogs ? 'Hide details' : 'Show details'}
+                </Button>
+              </div>
             </div>
 
-            <div
-              ref={logContainerRef}
-              className="p-4 bg-system-gray-900 max-h-32 overflow-auto text-xs font-mono modern-scrollbar"
-            >
-              {logLines.length === 0 ? (
-                <StateMessage
-                  icon={Info}
-                  tone="neutral"
-                  surface="inverse"
-                  size="sm"
-                  title="No activity yet"
-                  description="Install or refresh to see updates."
-                  className="py-4"
-                />
-              ) : (
-                <ul className="space-y-1">
-                  {logLines.map((entry) => (
-                    <li
-                      key={entry.id}
-                      className={`${
-                        entry.text.includes('[error]')
-                          ? 'text-stratosort-danger'
-                          : entry.text.includes('[success]')
-                            ? 'text-stratosort-success'
-                            : entry.text.includes('[warning]')
-                              ? 'text-stratosort-warning'
-                              : entry.text.includes('[status]')
-                                ? 'text-stratosort-blue'
-                                : 'text-system-gray-300'
-                      }`}
-                    >
-                      {entry.text}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {showLogs && (
+              <div
+                ref={logContainerRef}
+                className="p-4 bg-system-gray-900 max-h-32 overflow-auto text-xs font-mono modern-scrollbar"
+                data-testid="ai-deps-log"
+              >
+                {logLines.length === 0 ? (
+                  <StateMessage
+                    icon={Info}
+                    tone="neutral"
+                    surface="inverse"
+                    size="sm"
+                    title="No activity yet"
+                    description="Install or refresh to see updates."
+                    className="py-4"
+                  />
+                ) : (
+                  <ul className="space-y-1">
+                    {logLines.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className={`${
+                          entry.text.includes('[error]')
+                            ? 'text-stratosort-danger'
+                            : entry.text.includes('[success]')
+                              ? 'text-stratosort-success'
+                              : entry.text.includes('[warning]')
+                                ? 'text-stratosort-warning'
+                                : entry.text.includes('[status]')
+                                  ? 'text-stratosort-blue'
+                                  : 'text-system-gray-300'
+                        }`}
+                      >
+                        {entry.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </Card>
         </div>
       </ErrorBoundary>

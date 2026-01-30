@@ -18,6 +18,7 @@ import { setPhase, toggleSettings } from '../store/slices/uiSlice';
 import { updateHealth } from '../store/slices/systemSlice';
 import { useFloatingSearch } from '../contexts/FloatingSearchContext';
 import UpdateIndicator from './UpdateIndicator';
+import { Button, IconButton } from './ui';
 import { Text } from './ui/Typography';
 import { isMac } from '../utils/platform';
 
@@ -259,42 +260,25 @@ const NavActions = memo(function NavActions({ onSettingsClick }) {
   return (
     <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
       <UpdateIndicator />
-      <button
-        type="button"
+      <Button
         onClick={isWidgetOpen ? closeWidget : openWidget}
-        className={`
-          h-9 px-2 sm:px-3 rounded-lg flex items-center justify-center gap-2
-          text-system-gray-500 hover:text-stratosort-blue
-          bg-white/80 hover:bg-white border border-system-gray-200 hover:border-stratosort-blue/30
-          shadow-sm hover:shadow-md
-          transition-all duration-200 ease-out
-          focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
-          ${isWidgetOpen ? 'bg-stratosort-blue/10 border-stratosort-blue/50 text-stratosort-blue' : ''}
-        `}
+        variant="secondary"
+        size="sm"
+        leftIcon={<SearchIcon className="h-4 w-4" />}
+        className={`shadow-sm ${isWidgetOpen ? 'bg-stratosort-blue/10 border-stratosort-blue/30 text-stratosort-blue hover:bg-stratosort-blue/15' : ''}`}
         aria-label={isWidgetOpen ? 'Close Search Widget' : 'Open Search Widget (Ctrl+K)'}
         title={isWidgetOpen ? 'Close Search Widget' : 'Search files (Ctrl+K)'}
       >
-        <SearchIcon className="h-4 w-4" />
-        <Text as="span" variant="tiny" className="font-medium hidden sm:inline">
-          Search
-        </Text>
-      </button>
-      <button
-        type="button"
+        <span className="hidden sm:inline">Search</span>
+      </Button>
+      <IconButton
+        icon={<SettingsIcon className="h-4 w-4" />}
+        size="sm"
+        variant="secondary"
         onClick={onSettingsClick}
-        className="
-          h-9 w-9 rounded-lg flex items-center justify-center
-          text-system-gray-500 hover:text-stratosort-blue
-          bg-white/80 hover:bg-white border border-system-gray-200 hover:border-stratosort-blue/30
-          shadow-sm hover:shadow-md
-          transition-all duration-200 ease-out
-          focus:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue focus-visible:ring-offset-2
-        "
         aria-label="Open Settings"
         title="Settings"
-      >
-        <SettingsIcon className="h-5 w-5" />
-      </button>
+      />
     </div>
   );
 });

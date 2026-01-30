@@ -117,8 +117,11 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
 
   const chromaDbService = services.chromaDbService;
   if (!chromaDbService) {
-    log.debug('[EmbeddingSync] ChromaDB unavailable for embedding removal', { filePath });
-    return { removed: embeddingQueueRemoved, skipped: true };
+    log.warn(
+      '[EmbeddingSync] ChromaDB service unavailable for embedding removal - potential orphaned embeddings',
+      { filePath }
+    );
+    return { removed: embeddingQueueRemoved, error: 'service_unavailable' };
   }
 
   try {
@@ -130,11 +133,23 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
     }
 
     const ids = Array.from(idsToDelete);
+    let dbRemovedCount = 0;
+
     if (typeof chromaDbService.batchDeleteFileEmbeddings === 'function') {
-      await chromaDbService.batchDeleteFileEmbeddings(ids);
+      const result = await chromaDbService.batchDeleteFileEmbeddings(ids);
+      // FIX: Check return value for success/queued status
+      if (result && (result.success || result.queued)) {
+        dbRemovedCount = ids.length;
+      } else if (result && result.error) {
+        log.warn('[EmbeddingSync] Batch delete failed', { error: result.error });
+      }
     } else if (typeof chromaDbService.deleteFileEmbedding === 'function') {
       for (const id of ids) {
-        await chromaDbService.deleteFileEmbedding(id);
+        const result = await chromaDbService.deleteFileEmbedding(id);
+        // FIX: Check return value
+        if (result === true || (result && (result.success || result.queued))) {
+          dbRemovedCount++;
+        }
       }
     }
 
@@ -145,7 +160,7 @@ async function removeEmbeddingsForPath(filePath, services, log = logger) {
       }
     }
 
-    return { removed: ids.length + embeddingQueueRemoved };
+    return { removed: dbRemovedCount + embeddingQueueRemoved };
   } catch (error) {
     log.warn('[EmbeddingSync] Failed to remove embeddings', {
       filePath,

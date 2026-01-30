@@ -10,7 +10,7 @@
 import React, { useState, useEffect, memo } from 'react';
 import PropTypes from 'prop-types';
 import { Search, Clock, Lightbulb, FolderPlus, X, ArrowRight } from 'lucide-react';
-import { StateMessage } from '../ui';
+import { Button, IconButton, StateMessage } from '../ui';
 import { Text } from '../ui/Typography';
 
 // Storage key matches SearchAutocomplete
@@ -47,7 +47,8 @@ const EmptySearchState = memo(function EmptySearchState({
   query,
   hasIndexedFiles = true,
   onSearchClick,
-  className = ''
+  className = '',
+  corrections = []
 }) {
   const [recentSearches, setRecentSearches] = useState([]);
 
@@ -82,8 +83,8 @@ const EmptySearchState = memo(function EmptySearchState({
         size="lg"
         title="No files indexed yet"
         description="Add folders to your library to start searching. Files will be automatically indexed for Knowledge OS."
-        className={`py-12 px-6 ${className}`.trim()}
-        contentClassName="max-w-xs"
+        className={`py-spacious px-relaxed ${className}`.trim()}
+        contentClassName="max-w-sm"
       />
     );
   }
@@ -91,15 +92,19 @@ const EmptySearchState = memo(function EmptySearchState({
   // No query - show recent searches and tips
   if (!query || query.trim().length < 2) {
     return (
-      <div className={`py-6 px-4 ${className}`}>
+      <div className={`p-relaxed ${className}`.trim()}>
         {/* Recent searches */}
         {recentSearches.length > 0 && (
           <div className="mb-6">
-            <h4 className="text-xs font-medium text-system-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Text
+              as="div"
+              variant="tiny"
+              className="font-semibold text-system-gray-500 uppercase tracking-wide mb-3 flex items-center gap-compact"
+            >
               <Clock className="w-3.5 h-3.5" />
               Recent Searches
-            </h4>
-            <div className="space-y-1">
+            </Text>
+            <div className="space-y-compact">
               {recentSearches.slice(0, 5).map((search) => (
                 <div
                   key={`recent-${search}`}
@@ -112,19 +117,21 @@ const EmptySearchState = memo(function EmptySearchState({
                       handleRecentClick(search);
                     }
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-system-gray-700 hover:bg-system-gray-50 rounded-lg group transition-colors text-left cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-system-gray-700 hover:bg-system-gray-50 rounded-lg group transition-colors text-left cursor-pointer"
                 >
                   <Clock className="w-4 h-4 text-system-gray-400 shrink-0" />
-                  <span className="flex-1 truncate">{search}</span>
+                  <Text as="span" variant="small" className="flex-1 truncate text-system-gray-700">
+                    {search}
+                  </Text>
                   <ArrowRight className="w-4 h-4 text-system-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                  <button
-                    type="button"
+                  <IconButton
+                    icon={<X className="w-3.5 h-3.5" />}
+                    size="sm"
+                    variant="ghost"
                     onClick={(e) => handleRemoveRecent(e, search)}
-                    className="p-0.5 rounded hover:bg-system-gray-200 text-system-gray-400 hover:text-system-gray-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 h-6 w-6 text-system-gray-400 hover:text-system-gray-600"
                     aria-label="Remove from history"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  />
                 </div>
               ))}
             </div>
@@ -133,11 +140,15 @@ const EmptySearchState = memo(function EmptySearchState({
 
         {/* Search tips */}
         <div>
-          <h4 className="text-xs font-medium text-system-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <Text
+            as="div"
+            variant="tiny"
+            className="font-semibold text-system-gray-500 uppercase tracking-wide mb-3 flex items-center gap-compact"
+          >
             <Lightbulb className="w-3.5 h-3.5" />
             Search Tips
-          </h4>
-          <ul className="space-y-2 text-sm text-system-gray-600">
+          </Text>
+          <Text as="ul" variant="small" className="space-y-cozy text-system-gray-600">
             <li className="flex items-start gap-2">
               <span className="text-system-gray-400 mt-0.5">•</span>
               <span>Use natural language like &quot;vacation photos from beach&quot;</span>
@@ -150,13 +161,31 @@ const EmptySearchState = memo(function EmptySearchState({
               <span className="text-system-gray-400 mt-0.5">•</span>
               <span>Describe content: &quot;spreadsheet with budget&quot;</span>
             </li>
-          </ul>
+          </Text>
         </div>
       </div>
     );
   }
 
   // Has query but no results
+
+  // Construct a suggested query from corrections if available
+  let suggestedQuery = null;
+  if (corrections && corrections.length > 0) {
+    // Basic reconstruction: replace misspelled words in original query
+    let fixed = query;
+    for (const { original, corrected } of corrections) {
+      if (original && corrected) {
+        // Case-insensitive replacement
+        const regex = new RegExp(`\\b${original}\\b`, 'gi');
+        fixed = fixed.replace(regex, corrected);
+      }
+    }
+    if (fixed.toLowerCase() !== query.toLowerCase()) {
+      suggestedQuery = fixed;
+    }
+  }
+
   return (
     <StateMessage
       icon={Search}
@@ -169,25 +198,43 @@ const EmptySearchState = memo(function EmptySearchState({
           &quot;
         </>
       }
-      description="Try different keywords or check your spelling"
+      description={
+        suggestedQuery ? (
+          <span className="flex flex-col gap-compact items-center">
+            <span>We couldn&apos;t find exact matches.</span>
+            <Button
+              onClick={() => handleSuggestionClick(suggestedQuery)}
+              variant="ghost"
+              size="sm"
+              className="h-auto px-1 py-0 text-sm text-stratosort-blue hover:underline"
+            >
+              Did you mean: <span className="italic">{suggestedQuery}</span>?
+            </Button>
+          </span>
+        ) : (
+          'Try different keywords or check your spelling'
+        )
+      }
       size="lg"
-      className={`py-12 px-6 ${className}`.trim()}
-      contentClassName="max-w-xs"
+      className={`py-spacious px-relaxed ${className}`.trim()}
+      contentClassName="max-w-sm"
     >
       <div className="w-full">
         <Text variant="tiny" className="uppercase tracking-wide font-medium text-system-gray-500">
           Try searching for
         </Text>
-        <div className="flex flex-wrap gap-2 justify-center mt-2">
+        <div className="flex flex-wrap gap-compact justify-center mt-2">
           {['documents', 'images', 'recent files', 'projects'].map((suggestion) => (
-            <button
+            <Button
               key={suggestion}
               type="button"
               onClick={() => handleSuggestionClick(suggestion)}
-              className="px-3 py-1.5 text-sm text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue/20 rounded-full transition-colors"
+              variant="subtle"
+              size="sm"
+              className="text-stratosort-blue bg-stratosort-blue/10 border-stratosort-blue/20 hover:bg-stratosort-blue/20"
             >
               {suggestion}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -203,7 +250,14 @@ EmptySearchState.propTypes = {
   /** Callback when user clicks a search suggestion or recent search */
   onSearchClick: PropTypes.func,
   /** Additional CSS classes */
-  className: PropTypes.string
+  className: PropTypes.string,
+  /** Spell corrections from search service */
+  corrections: PropTypes.arrayOf(
+    PropTypes.shape({
+      original: PropTypes.string,
+      corrected: PropTypes.string
+    })
+  )
 };
 
 export default EmptySearchState;

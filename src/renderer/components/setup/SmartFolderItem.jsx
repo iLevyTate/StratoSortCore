@@ -134,7 +134,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
             placeholder="Describe what types of files should go in this folder..."
             rows={2}
           />
-          <button
+          <IconButton
             type="button"
             onClick={async () => {
               try {
@@ -151,11 +151,13 @@ const SmartFolderItem = memo(function SmartFolderItem({
                 addNotification?.('Failed to generate description', 'error');
               }
             }}
-            className="absolute right-2 top-2 p-1.5 text-system-gray-400 hover:text-stratosort-blue hover:bg-stratosort-blue/10 rounded-lg transition-colors"
+            icon={<Sparkles className="w-4 h-4" />}
+            size="sm"
+            variant="ghost"
+            className="absolute right-2 top-2 h-7 w-7 text-system-gray-400 hover:text-stratosort-blue hover:bg-stratosort-blue/10"
             title="Generate description with AI"
-          >
-            <Sparkles className="w-4 h-4" />
-          </button>
+            aria-label="Generate description with AI"
+          />
         </div>
 
         <div className="flex justify-end gap-2">
@@ -185,12 +187,14 @@ const SmartFolderItem = memo(function SmartFolderItem({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               {compact && onToggleExpand && (
-                <button
+                <IconButton
                   onClick={() => onToggleExpand(folder.id)}
-                  className="p-1 -ml-1 text-system-gray-400 hover:text-system-gray-600 rounded"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
+                  icon={<ChevronUp className="w-4 h-4" />}
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 -ml-1 text-system-gray-400 hover:text-system-gray-600"
+                  aria-label="Collapse folder"
+                />
               )}
               <Heading as="h3" variant="h6" className="truncate">
                 {folder.name}
@@ -220,7 +224,7 @@ const SmartFolderItem = memo(function SmartFolderItem({
       </div>
 
       {folder.description && (
-        <div className="text-sm text-system-gray-600 bg-stratosort-blue/5 rounded-xl border border-stratosort-blue/10 p-3">
+        <div className="text-system-gray-600 bg-stratosort-blue/5 rounded-xl border border-stratosort-blue/10 p-3">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-3.5 h-3.5 text-stratosort-blue" />
             <Caption className="text-stratosort-blue">AI Context</Caption>

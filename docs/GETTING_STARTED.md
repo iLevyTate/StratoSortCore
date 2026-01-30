@@ -21,14 +21,14 @@ several local AI tools that need to be configured correctly.
 
 ### System Dependencies Chart
 
-| Component     | Purpose                  | Requirement / Setup                                    |
-| :------------ | :----------------------- | :----------------------------------------------------- |
-| **Node.js**   | Core Application Runtime | v18+ (Included in installer; dev needs node installed) |
-| **Python**    | Vector Database Runtime  | v3.9+ (Must be installed & added to PATH)              |
-| **Ollama**    | Local AI Engine          | Auto-installed by App (or manual from ollama.ai)       |
-| **ChromaDB**  | Semantic Search DB       | Auto-installed via pip (Requires Python 3.9+)          |
-| **Tesseract** | Image Text Recognition   | Auto-installed (Win/Mac/Linux) or manual install       |
-| **GPU**       | AI Acceleration          | Optional but recommended (4GB+ VRAM)                   |
+| Component     | Purpose                  | Requirement / Setup                                       |
+| :------------ | :----------------------- | :-------------------------------------------------------- |
+| **Node.js**   | Core Application Runtime | v18+ (Included in installer; dev needs node installed)    |
+| **Python**    | Vector Database Runtime  | v3.9+ (bundled on Win if provided; else system PATH)      |
+| **Ollama**    | Local AI Engine          | Bundled portable (if provided) or auto-installed          |
+| **ChromaDB**  | Semantic Search DB       | Auto-installed via pip (uses bundled Python when present) |
+| **Tesseract** | Image Text Recognition   | Auto-installed (Win/Mac/Linux) with tesseract.js fallback |
+| **GPU**       | AI Acceleration          | Optional but recommended (4GB+ VRAM)                      |
 
 ---
 
@@ -60,7 +60,18 @@ npm run dev
 On the first launch, the application will attempt to automatically set up all necessary AI
 dependencies.
 
-### Setup Workflow
+### Platform Notes
+
+- **Windows:** Fully bundled AI runtime. Portable Ollama + embeddable Python are included in the
+  installer; click “Install All (Background)” on first launch. No CLI or admin prompts; models
+  download on first use.
+- **macOS:** Uses system Python 3.9+ and Homebrew/manual Ollama. “Install All” will guide you; brew
+  may prompt. Tesseract auto-installs via brew and falls back to the built-in OCR fallback if
+  missing. Models download on first use.
+- **In-app installs:** The AI Setup modal’s “Install All (Background)” triggers downloads/installs
+  of Ollama, ChromaDB, and recommended models entirely from the UI.
+
+### Setup Workflow (No-CLI first run)
 
 The following flowchart illustrates the automated setup process that runs on first launch:
 
@@ -80,7 +91,7 @@ graph TD
     PullModels --> CheckPython
 
     %% ChromaDB Flow
-    CheckPython{Python 3.9+?}
+    CheckPython{Python 3.9+?<br/>or Bundled Runtime?}
     CheckPython -- No --> FailPython[User Action Required:<br/>Install Python 3.9+]
     CheckPython -- Yes --> CheckChroma{ChromaDB Pkg?}
     CheckChroma -- No --> PipInstall[pip install chromadb]
@@ -104,22 +115,23 @@ graph TD
     class FailPython,ManualTess warning;
 ```
 
-### ChromaDB Setup
+### ChromaDB Setup (bundled-friendly)
 
-El StratoSort uses **ChromaDB** for vector storage (semantic search). The setup script attempts to
-install the Python package automatically using `pip`.
-
-**Requirement:** Python 3.9+ must be installed and added to your system PATH.
+El StratoSort uses **ChromaDB** for vector storage (semantic search). The setup script prefers a
+bundled embeddable Python runtime (if placed in `assets/runtime/python/`) and installs the Python
+package automatically using that interpreter. If no bundled runtime is present, it falls back to
+system Python 3.9+ on PATH.
 
 If automatic installation fails:
 
-1.  Ensure Python 3.9+ is installed: `python --version`
+1.  Ensure Python 3.9+ is installed (or provide a bundled runtime): `python --version`
 2.  Install ChromaDB manually: `pip install chromadb`
 
 ### Tesseract OCR Setup
 
 El StratoSort uses **Tesseract OCR** to read text from images. The setup script attempts to install
-it automatically:
+it automatically and falls back to the bundled `tesseract.js` implementation if native install is
+unavailable:
 
 - **Windows**: Uses `winget` or `chocolatey`
 - **macOS**: Uses `brew`
@@ -133,6 +145,16 @@ If automatic installation fails, please install Tesseract manually:
 - **Linux**: `sudo apt-get install tesseract-ocr`
 
 After manual installation, restart the application.
+
+### One-click background setup
+
+On first launch, open the AI Setup modal and click **Install All (Background)**. This will:
+
+- Install Ollama (bundled portable binary if present, otherwise downloaded)
+- Install ChromaDB using bundled Python if available (otherwise system Python 3.9+)
+- Pull the recommended text/vision/embedding models
+
+The UI stays usable while installs/downloads run in the background.
 
 ---
 

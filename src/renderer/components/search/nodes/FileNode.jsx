@@ -7,6 +7,7 @@ import { useAppSelector } from '../../../store/hooks';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { logger } from '../../../../shared/logger';
 import FileIcon, { getFileCategory } from '../../ui/FileIcon';
+import { IconButton } from '../../ui';
 import { formatDisplayPath } from '../../../utils/pathDisplay';
 
 const CATEGORY_STYLES = {
@@ -179,41 +180,51 @@ const FileNode = memo(({ data, selected }) => {
     >
       <NodeToolbar isVisible={selected} position={Position.Top}>
         <div className="flex gap-1 bg-white shadow-lg rounded-lg border border-system-gray-200 p-1">
-          <button
+          <IconButton
             onClick={() => handleMenuAction(handleOpen)}
-            className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors"
+            icon={<ExternalLink className="w-4 h-4 text-blue-600" />}
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-blue-50"
             title="Open File"
-          >
-            <ExternalLink className="w-4 h-4" />
-          </button>
-          <button
+            aria-label="Open File"
+          />
+          <IconButton
             onClick={() => handleMenuAction(handleReveal)}
-            className="p-1.5 rounded hover:bg-amber-50 text-amber-600 transition-colors"
+            icon={<FolderOpen className="w-4 h-4 text-amber-600" />}
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-amber-50"
             title="Reveal in Folder"
-          >
-            <FolderOpen className="w-4 h-4" />
-          </button>
-          <button
+            aria-label="Reveal in Folder"
+          />
+          <IconButton
             onClick={() => handleMenuAction(handleFindSimilar)}
-            className="p-1.5 rounded hover:bg-emerald-50 text-emerald-600 transition-colors"
+            icon={<GitBranch className="w-4 h-4 text-emerald-600" />}
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-emerald-50"
             title="Find Similar"
-          >
-            <GitBranch className="w-4 h-4" />
-          </button>
-          <button
+            aria-label="Find Similar"
+          />
+          <IconButton
             onClick={() => handleMenuAction(handleFocusOnNode)}
-            className="p-1.5 rounded hover:bg-indigo-50 text-indigo-600 transition-colors"
+            icon={<Focus className="w-4 h-4 text-indigo-600" />}
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-indigo-50"
             title="Focus on Node"
-          >
-            <Focus className="w-4 h-4" />
-          </button>
-          <button
+            aria-label="Focus on Node"
+          />
+          <IconButton
             onClick={() => handleMenuAction(handleCopyPath)}
-            className="p-1.5 rounded hover:bg-system-gray-50 text-system-gray-500 transition-colors"
+            icon={<Copy className="w-4 h-4 text-system-gray-500" />}
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-system-gray-50"
             title="Copy Path"
-          >
-            <Copy className="w-4 h-4" />
-          </button>
+            aria-label="Copy Path"
+          />
         </div>
       </NodeToolbar>
 
@@ -226,20 +237,24 @@ const FileNode = memo(({ data, selected }) => {
       {/* Quick actions on hover */}
       {showActions && filePath && !selected && (
         <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex gap-1 bg-white shadow-md rounded-lg px-2 py-1.5 border border-[var(--color-border-soft)] z-20">
-          <button
+          <IconButton
             onClick={handleOpen}
-            className="p-1 rounded hover:bg-[var(--color-stratosort-blue)]/10 transition-colors"
+            icon={<ExternalLink className="w-3.5 h-3.5 text-[var(--color-stratosort-blue)]" />}
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 hover:bg-[var(--color-stratosort-blue)]/10"
             title="Open file"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-[var(--color-stratosort-blue)]" />
-          </button>
-          <button
+            aria-label="Open file"
+          />
+          <IconButton
             onClick={handleReveal}
-            className="p-1 rounded hover:bg-[var(--color-stratosort-blue)]/10 transition-colors"
+            icon={<FolderOpen className="w-3.5 h-3.5 text-[var(--color-stratosort-blue)]" />}
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 hover:bg-[var(--color-stratosort-blue)]/10"
             title="Reveal in folder"
-          >
-            <FolderOpen className="w-3.5 h-3.5 text-[var(--color-stratosort-blue)]" />
-          </button>
+            aria-label="Reveal in folder"
+          />
         </div>
       )}
 

@@ -363,6 +363,27 @@ class QueryProcessor {
   }
 
   /**
+   * Extract potential filters from query (e.g. years)
+   *
+   * @param {string} query - Search query
+   * @returns {Object} Extracted filters
+   */
+  extractFilters(query) {
+    const filters = {};
+    if (!query) return filters;
+
+    // Extract years (1900-2099)
+    // Matches 4 digits bounded by word boundaries
+    const yearMatch = query.match(/\b(19|20)\d{2}\b/g);
+    if (yearMatch) {
+      // Use the last mentioned year as the primary filter intent
+      filters.year = yearMatch[yearMatch.length - 1];
+    }
+
+    return filters;
+  }
+
+  /**
    * Process a search query with spell correction and synonym expansion
    *
    * @param {string} query - Raw user query
@@ -468,21 +489,21 @@ class QueryProcessor {
       return word;
     }
 
-    // Rule 3: Short words (< 6 chars) are too risky to correct
+    // Rule 3: Short words (< 4 chars) are too risky to correct
     // They're usually valid abbreviations, acronyms, or common words
     // This prevents "are" -> "api", "that" -> "tax", "like" -> "file"
-    if (word.length < 6) {
+    if (word.length < 4) {
       return word;
     }
 
     // Find closest match using edit distance (Levenshtein)
     // ONLY consider corrections with 1 character difference (single typo)
-    // ONLY match against longer domain words (>= 5 chars) to avoid contamination
+    // ONLY match against longer domain words (>= 4 chars) to avoid contamination
     let bestMatch = word;
 
     for (const known of this.domainWords) {
       // Skip short domain words - they cause false matches
-      if (known.length < 5) continue;
+      if (known.length < 4) continue;
 
       // Quick length check to avoid unnecessary distance calculations
       // Only consider words within 1 character of length difference

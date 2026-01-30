@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, Lightbulb, Info, Pin, CheckCircle, Folder } from 'lucide-react';
 import { Card, Button, StateMessage } from '../ui';
-import { Text } from '../ui/Typography';
+import { Heading, Text } from '../ui/Typography';
 
 function FolderImprovementSuggestions({
   improvements = [],
@@ -67,10 +67,12 @@ function FolderImprovementSuggestions({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-system-gray-900">Folder Structure Improvements</h3>
-        <span className="text-sm text-system-gray-600">
+        <Heading as="h3" variant="h6" className="text-system-gray-900">
+          Folder Structure Improvements
+        </Heading>
+        <Text as="span" variant="small" className="text-system-gray-600">
           {improvements.length} suggestion{improvements.length !== 1 ? 's' : ''}
-        </span>
+        </Text>
       </div>
 
       {/* FIX: Use stable identifier instead of array index as key */}
@@ -120,10 +122,10 @@ function FolderImprovementSuggestions({
                   </Text>
                 </div>
               </div>
-              <div className="text-sm text-system-gray-500">
+              <Text variant="small" className="text-system-gray-500">
                 {improvement.suggestions?.length || 0} item
                 {improvement.suggestions?.length !== 1 ? 's' : ''}
-              </div>
+              </Text>
             </div>
           </div>
 
@@ -140,7 +142,9 @@ function FolderImprovementSuggestions({
                         <div className="font-medium flex items-center gap-1">
                           <Folder className="w-4 h-4" /> {category.name}
                         </div>
-                        <div className="text-sm text-system-gray-600 mt-1">{category.reason}</div>
+                        <Text variant="small" className="text-system-gray-600 mt-1">
+                          {category.reason}
+                        </Text>
                       </div>
                       <Button
                         size="sm"
@@ -164,12 +168,12 @@ function FolderImprovementSuggestions({
                     >
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium text-sm">
+                          <Text variant="small" className="font-medium text-system-gray-900">
                             {(overlap.folders || []).join(' ↔ ')}
-                          </div>
-                          <div className="text-sm text-system-gray-600 mt-1">
+                          </Text>
+                          <Text variant="small" className="text-system-gray-600 mt-1">
                             {Math.round((overlap.similarity || 0) * 100)}% similar
-                          </div>
+                          </Text>
                           <Text variant="tiny" className="text-system-gray-500 mt-1">
                             {overlap.suggestion}
                           </Text>
@@ -256,8 +260,12 @@ function FolderImprovementSuggestions({
       <Card className="p-4 sm:p-6 bg-gradient-to-r from-stratosort-blue/5 to-stratosort-blue/10">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="font-medium text-system-gray-900">Organization Health Score</h4>
-            <p className="text-sm text-system-gray-600 mt-1">Based on folder structure analysis</p>
+            <Heading as="h4" variant="h6" className="text-system-gray-900">
+              Organization Health Score
+            </Heading>
+            <Text variant="small" className="text-system-gray-600 mt-1">
+              Based on folder structure analysis
+            </Text>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-stratosort-blue">

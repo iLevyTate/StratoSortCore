@@ -119,8 +119,16 @@ jest.mock('../../src/renderer/components/Modal', () => ({
 
 // Mock UI components
 jest.mock('../../src/renderer/components/ui', () => ({
-  Button: ({ children, onClick, disabled, className, ...props }) => (
+  Button: ({ children, onClick, disabled, className, leftIcon, rightIcon, ...props }) => (
     <button onClick={onClick} disabled={disabled} className={className} {...props}>
+      {leftIcon ? <span data-testid="button-left-icon">{leftIcon}</span> : null}
+      {children}
+      {rightIcon ? <span data-testid="button-right-icon">{rightIcon}</span> : null}
+    </button>
+  ),
+  IconButton: ({ children, onClick, disabled, className, icon, ...props }) => (
+    <button onClick={onClick} disabled={disabled} className={className} {...props}>
+      {icon ? <span data-testid="icon-button-icon">{icon}</span> : null}
       {children}
     </button>
   ),

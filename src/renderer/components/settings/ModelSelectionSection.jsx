@@ -261,25 +261,27 @@ function ModelSelectionSection({
         <div className="space-y-4">
           <div className="flex items-start gap-3 p-3 bg-stratosort-warning/10 border border-stratosort-warning/20 rounded-lg">
             <AlertTriangle className="w-5 h-5 text-stratosort-warning mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-stratosort-warning">
-              <p className="font-medium mb-1">This will invalidate existing embeddings.</p>
-              <p>
+            <div>
+              <Text variant="small" className="font-medium text-stratosort-warning mb-1">
+                This will invalidate existing embeddings.
+              </Text>
+              <Text variant="small" className="text-stratosort-warning">
                 Switching from <strong>{settings.embeddingModel}</strong> to{' '}
                 <strong>{pendingModel}</strong> changes the vector dimensions. You will need to
                 rebuild the vector database to search existing files.
-              </p>
+              </Text>
             </div>
           </div>
 
           {stats &&
             (stats.files > 0 || stats.chunks > 0 || stats.analysisHistory?.totalFiles > 0) && (
-              <div className="flex items-center gap-2 p-3 bg-system-gray-50 rounded-lg border border-system-gray-100 text-sm text-system-gray-600">
+              <div className="flex items-center gap-2 p-3 bg-system-gray-50 rounded-lg border border-system-gray-100">
                 <FileText className="w-4 h-4" />
-                <span>
+                <Text as="span" variant="small" className="text-system-gray-600">
                   {stats.files || 0} files ({stats.chunks || 0} chunks) currently indexed.
                   {stats.analysisHistory?.totalFiles > 0 &&
                     ` (~${stats.analysisHistory.totalFiles} files in history)`}
-                </span>
+                </Text>
               </div>
             )}
 

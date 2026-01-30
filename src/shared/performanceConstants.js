@@ -289,7 +289,11 @@ const DEBOUNCE = {
   CACHE_BATCH_WAIT: 100,
   CACHE_BATCH_MAX_WAIT: 5000,
   REFRESH_INTERVAL: 60000,
-  ERROR_RETRY_INTERVAL: 5000
+  ERROR_RETRY_INTERVAL: 5000,
+  // FIX LOW-10: Centralized learning/feedback throttling constants
+  LEARNING_DEDUPE_WINDOW: 5000, // Prevent duplicate learning for same file within 5s
+  FEEDBACK_MEMORY_SAVE: 5000, // Throttle feedback memory persistence
+  PERSISTENCE_SAVE: 5000 // Throttle pattern persistence saves
 };
 
 const CONCURRENCY = {

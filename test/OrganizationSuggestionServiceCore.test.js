@@ -602,6 +602,20 @@ describe('OrganizationSuggestionServiceCore', () => {
 
       expect(mockPersistence.save).toHaveBeenCalled();
     });
+
+    test('rejects feedback when patterns failed to load to avoid overwriting disk state', async () => {
+      // Simulate a failed pattern load
+      service._patternsLoaded = true;
+      service._patternsLoadedSuccessfully = false;
+      service._loadingPatterns = null;
+      service._loadPatternsAsync = jest.fn().mockResolvedValue();
+
+      await expect(service.recordFeedback({ name: 'a' }, { folder: 'Docs' }, true)).rejects.toThrow(
+        'Pattern storage failed to load'
+      );
+      expect(service._loadPatternsAsync).toHaveBeenCalled();
+      expect(mockPatternMatcher.recordFeedback).not.toHaveBeenCalled();
+    });
   });
 
   describe('analyzeFolderStructure', () => {

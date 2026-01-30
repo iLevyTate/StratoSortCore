@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { logger } from '../../shared/logger';
-import { RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Text } from './ui/Typography';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { Button } from './ui';
 
 logger.setContext('UpdateIndicator');
 
@@ -76,10 +76,24 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
 
   if (!visible) return null;
 
+  const isApplying = status === 'applying';
+  const isError = status === 'error';
+  const label =
+    status === 'applying'
+      ? 'Updating…'
+      : status === 'ready'
+        ? 'Update Ready'
+        : status === 'error'
+          ? 'Retry Update'
+          : 'Update';
+  const toneClass = isError
+    ? 'bg-stratosort-danger/10 text-stratosort-danger border-stratosort-danger/30 hover:bg-stratosort-danger/20'
+    : 'bg-stratosort-success/10 text-stratosort-success border-stratosort-success/30 hover:bg-stratosort-success/20';
+
   return (
-    <button
+    <Button
       onClick={async () => {
-        if (status === 'applying') return;
+        if (isApplying) return;
 
         try {
           if (!window?.electronAPI?.system?.applyUpdate) {
@@ -116,40 +130,23 @@ const UpdateIndicator = React.memo(function UpdateIndicator() {
           });
         }
       }}
-      className={`
-        relative px-3 py-1.5 h-9
-        font-medium rounded-lg
-        overflow-hidden group
-        transition-all duration-200 ease-out
-        flex items-center gap-2
-        ${
-          status === 'error'
-            ? 'bg-stratosort-danger/10 text-stratosort-danger border border-stratosort-danger/30 hover:bg-stratosort-danger/20'
-            : 'bg-stratosort-success/10 text-stratosort-success border border-stratosort-success/30 hover:bg-stratosort-success/20'
-        }
-        shadow-sm hover:shadow active:scale-95
-      `}
+      variant="subtle"
+      size="sm"
+      isLoading={isApplying}
+      disabled={isApplying}
+      leftIcon={
+        isApplying ? null : isError ? (
+          <AlertCircle className="w-4 h-4" />
+        ) : (
+          <CheckCircle2 className="w-4 h-4" />
+        )
+      }
+      className={`border shadow-sm hover:shadow ${toneClass}`}
       title={status === 'error' ? 'Update failed' : 'Apply downloaded update'}
       aria-label="Apply update"
     >
-      {status === 'applying' ? (
-        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-      ) : status === 'error' ? (
-        <AlertCircle className="w-3.5 h-3.5" />
-      ) : (
-        <CheckCircle2 className="w-3.5 h-3.5" />
-      )}
-
-      <Text as="span" variant="tiny" className="relative z-10 font-medium">
-        {status === 'applying'
-          ? 'Updating…'
-          : status === 'ready'
-            ? 'Update Ready'
-            : status === 'error'
-              ? 'Retry Update'
-              : 'Update'}
-      </Text>
-    </button>
+      {label}
+    </Button>
   );
 });
 

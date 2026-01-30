@@ -121,4 +121,18 @@ describe('ChatService', () => {
     expect(result.meta.fallbackReason).toBe('vector search timeout');
     expect(result.meta.warning).toMatch(/Limited document retrieval/i);
   });
+
+  test('returns friendly error when chitchat requested but ollama is unavailable', async () => {
+    const service = new ChatService({
+      searchService: {},
+      chromaDbService: {},
+      embeddingService: {},
+      ollamaService: null
+    });
+
+    const result = await service.query({ query: 'hello' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Chat service unavailable/i);
+  });
 });

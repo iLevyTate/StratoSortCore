@@ -33,6 +33,9 @@ const { getChromaUrl } = require('../../shared/config/chromaDefaults');
 logger.setContext('DependencyManager');
 
 const OLLAMA_WINDOWS_INSTALLER_URL = 'https://ollama.com/download/OllamaSetup.exe';
+const RUNTIME_ROOT =
+  process.env.STRATOSORT_RUNTIME_DIR ||
+  (process.resourcesPath ? path.join(process.resourcesPath, 'assets', 'runtime') : null);
 
 async function checkOllamaInstallation() {
   const installed = await isOllamaInstalled();
@@ -151,7 +154,137 @@ async function downloadToFile(url, destPath, { onProgress } = {}) {
   });
 }
 
+function getEmbeddedPythonLauncher() {
+  if (!RUNTIME_ROOT) return null;
+  const exe = isWindows ? 'python.exe' : 'python3';
+  const candidate = path.join(RUNTIME_ROOT, 'python', exe);
+  return { command: candidate, args: [], fromEmbedded: true };
+}
+
+function getEmbeddedOllamaBinary() {
+  if (!RUNTIME_ROOT) return null;
+  const exe = isWindows ? 'ollama.exe' : 'ollama';
+  return path.join(RUNTIME_ROOT, 'ollama', exe);
+}
+
+async function getPythonVersionWithLauncher(launcher) {
+  if (!launcher) return null;
+  try {
+    const res = await asyncSpawn(launcher.command, [...(launcher.args || []), '--version'], {
+      timeout: 3000,
+      windowsHide: true
+    });
+    if (res.status === 0) {
+      return (res.stdout || res.stderr || '').toString().trim() || null;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function hasPythonModuleWithLauncher(launcher, moduleName) {
+  if (!launcher || !moduleName) return false;
+  const moduleValid =
+    typeof moduleName === 'string' &&
+    /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(moduleName);
+  if (!moduleValid) return false;
+
+  const res = await asyncSpawn(
+    launcher.command,
+    [
+      ...(launcher.args || []),
+      '-c',
+      `import importlib; importlib.import_module(${JSON.stringify(moduleName)})`
+    ],
+    {
+      timeout: 5000,
+      windowsHide: true
+    }
+  );
+  return res.status === 0;
+}
+
+/**
+ * Parse Python version string (e.g., "Python 3.9.7") into components
+ * @param {string} versionString - Raw version output
+ * @returns {{ major: number, minor: number, patch: number } | null}
+ */
+function parsePythonVersion(versionString) {
+  if (!versionString) return null;
+  const match = versionString.match(/Python\s*(\d+)\.(\d+)(?:\.(\d+))?/i);
+  if (!match) return null;
+  return {
+    major: parseInt(match[1], 10),
+    minor: parseInt(match[2], 10),
+    patch: parseInt(match[3] || '0', 10)
+  };
+}
+
+/**
+ * Check if Python version meets minimum requirement (3.9+)
+ * @param {string} versionString - Raw version output
+ * @returns {boolean}
+ */
+function meetsMinimumPythonVersion(versionString) {
+  const version = parsePythonVersion(versionString);
+  if (!version) return false;
+  // Require Python 3.9+
+  if (version.major < 3) return false;
+  if (version.major === 3 && version.minor < 9) return false;
+  return true;
+}
+
+async function resolvePythonLauncher() {
+  const embedded = getEmbeddedPythonLauncher();
+  if (embedded && (await fileExists(embedded.command))) {
+    // FIX HIGH-4: Validate embedded Python version meets minimum requirement
+    const version = await getPythonVersionWithLauncher(embedded);
+    if (!version) {
+      logger.warn('[DependencyManager] Embedded Python version unknown, proceeding with caution');
+      return embedded;
+    }
+    if (meetsMinimumPythonVersion(version)) {
+      return embedded;
+    }
+    logger.warn('[DependencyManager] Embedded Python version too old:', version);
+  }
+
+  const launcher = await findPythonLauncherAsync();
+  if (launcher) {
+    // FIX HIGH-4: Validate system Python version meets minimum requirement
+    const version = await getPythonVersionWithLauncher(launcher);
+    if (!version) {
+      logger.warn('[DependencyManager] System Python version unknown, proceeding with caution');
+      return launcher;
+    }
+    if (meetsMinimumPythonVersion(version)) {
+      return launcher;
+    }
+    logger.warn('[DependencyManager] System Python version too old:', version);
+  }
+
+  return null;
+}
+
+async function getOllamaVersionFromBinary(binPath) {
+  try {
+    const res = await asyncSpawn(binPath, ['--version'], { timeout: 3000, windowsHide: true });
+    if (res.status === 0) {
+      return (res.stdout || res.stderr || '').toString().trim() || null;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 async function detectOllamaExePath() {
+  const embedded = getEmbeddedOllamaBinary();
+  if (embedded && (await fileExists(embedded))) {
+    return embedded;
+  }
+
   // Prefer PATH
   try {
     const result = await asyncSpawn('ollama', ['--version'], {
@@ -245,12 +378,21 @@ class DependencyManagerService {
   }
 
   async getStatus() {
-    const [python, ollama] = await Promise.all([
+    const [pythonDetected, ollama] = await Promise.all([
       checkPythonInstallation(),
       checkOllamaInstallation()
     ]);
+
+    const pythonLauncher = await resolvePythonLauncher();
+    const pythonVersion =
+      pythonLauncher?.fromEmbedded || pythonLauncher
+        ? await getPythonVersionWithLauncher(pythonLauncher)
+        : pythonDetected?.version || null;
+
     const [chromaModuleInstalled, ollamaRunning, chromaRunning] = await Promise.all([
-      hasPythonModuleAsync('chromadb'),
+      pythonLauncher
+        ? hasPythonModuleWithLauncher(pythonLauncher, 'chromadb')
+        : hasPythonModuleAsync('chromadb'),
       isOllamaRunning(),
       isChromaDBRunning()
     ]);
@@ -258,8 +400,8 @@ class DependencyManagerService {
     return {
       platform: process.platform,
       python: {
-        installed: Boolean(python?.installed),
-        version: python?.version || null
+        installed: Boolean(pythonLauncher) || Boolean(pythonDetected?.installed),
+        version: pythonVersion
       },
       chromadb: {
         pythonModuleInstalled: Boolean(chromaModuleInstalled),
@@ -293,6 +435,25 @@ class DependencyManagerService {
       const pre = await checkOllamaInstallation();
       if (pre?.installed) {
         return { success: true, alreadyInstalled: true, version: pre.version || null };
+      }
+
+      // Prefer bundled portable Ollama if present
+      const embeddedOllama = getEmbeddedOllamaBinary();
+      if (embeddedOllama && (await fileExists(embeddedOllama))) {
+        this._emitProgress('Using bundled Ollama runtime…', {
+          kind: 'dependency',
+          dependency: 'ollama',
+          stage: 'embedded'
+        });
+
+        try {
+          await this._startOllamaBinary(embeddedOllama);
+        } catch (e) {
+          logger.warn('[DependencyManager] Bundled Ollama failed to start', { error: e?.message });
+        }
+
+        const version = (await getOllamaVersionFromBinary(embeddedOllama)) || pre?.version || null;
+        return { success: true, bundled: true, version };
       }
 
       const tempDir = path.join(os.tmpdir(), 'stratosort');
@@ -344,19 +505,7 @@ class DependencyManagerService {
       });
       const ollamaExe = await detectOllamaExePath();
       if (ollamaExe) {
-        try {
-          // fire-and-forget; StartupManager / health monitoring will keep it alive
-          const child = spawn(ollamaExe, ['serve'], {
-            detached: false,
-            stdio: 'ignore',
-            windowsHide: true
-          });
-          child.unref?.();
-        } catch (e) {
-          logger.warn('[DependencyManager] Failed to spawn Ollama after install', {
-            error: e?.message
-          });
-        }
+        await this._startOllamaBinary(ollamaExe);
       }
 
       // Wait briefly for health to flip
@@ -368,6 +517,20 @@ class DependencyManagerService {
       const post = await checkOllamaInstallation();
       return { success: Boolean(post?.installed), version: post?.version || null };
     });
+  }
+
+  async _startOllamaBinary(binaryPath) {
+    try {
+      const child = spawn(binaryPath, ['serve'], {
+        detached: false,
+        stdio: 'ignore',
+        windowsHide: true,
+        cwd: path.dirname(binaryPath)
+      });
+      child.unref?.();
+    } catch (e) {
+      logger.warn('[DependencyManager] Failed to spawn Ollama', { error: e?.message });
+    }
   }
 
   async _installOllamaMac() {
@@ -458,18 +621,22 @@ class DependencyManagerService {
 
   async installChromaDb({ upgrade = false, userInstall = true } = {}) {
     return this._withLock(async () => {
-      const python = await checkPythonInstallation();
-      if (!python?.installed) {
+      const pythonLauncher = await resolvePythonLauncher();
+      if (!pythonLauncher) {
+        // FIX HIGH-4: Provide more helpful error message distinguishing missing vs old Python
+        const anyLauncher = await findPythonLauncherAsync();
+        if (anyLauncher) {
+          const version = await getPythonVersionWithLauncher(anyLauncher);
+          return {
+            success: false,
+            error: `Python version ${version || 'unknown'} is too old. ChromaDB requires Python 3.9 or newer. Please upgrade your Python installation.`
+          };
+        }
         return {
           success: false,
           error:
-            'Python 3 is required for ChromaDB. Please install Python 3 and ensure it is available as `py -3` (Windows) or `python3`.'
+            'No Python runtime available. Please install Python 3.9+ or include the bundled runtime.'
         };
-      }
-
-      const pythonLauncher = await findPythonLauncherAsync();
-      if (!pythonLauncher) {
-        return { success: false, error: 'Could not locate a Python launcher (py/python3/python).' };
       }
 
       // Upgrade pip first (best-effort)
@@ -493,7 +660,7 @@ class DependencyManagerService {
         'pip',
         'install',
         ...(upgrade ? ['--upgrade'] : []),
-        ...(userInstall ? ['--user'] : []),
+        ...(pythonLauncher.fromEmbedded ? [] : userInstall ? ['--user'] : []),
         'chromadb'
       ];
 
@@ -505,7 +672,13 @@ class DependencyManagerService {
 
       const installRes = await asyncSpawn(pythonLauncher.command, pkgArgs, {
         timeout: 10 * 60 * 1000,
-        windowsHide: true
+        windowsHide: true,
+        env: pythonLauncher.fromEmbedded
+          ? {
+              ...process.env,
+              PYTHONHOME: path.dirname(pythonLauncher.command)
+            }
+          : process.env
       });
 
       if (installRes.status !== 0) {
@@ -516,7 +689,7 @@ class DependencyManagerService {
         };
       }
 
-      const moduleInstalled = await hasPythonModuleAsync('chromadb');
+      const moduleInstalled = await hasPythonModuleWithLauncher(pythonLauncher, 'chromadb');
       return { success: Boolean(moduleInstalled) };
     });
   }

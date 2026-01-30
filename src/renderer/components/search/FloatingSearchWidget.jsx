@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { X, GripVertical, Network } from 'lucide-react';
 import { Button, IconButton } from '../ui';
+import { Heading, Text } from '../ui/Typography';
 import { isMac } from '../../utils/platform';
 
 /**
@@ -125,7 +126,9 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
-              <h4 className="text-sm font-semibold text-system-gray-900">Looking for a file?</h4>
+              <Heading as="h4" variant="h6" className="text-system-gray-900">
+                Looking for a file?
+              </Heading>
               <IconButton
                 onClick={onClose}
                 variant="ghost"
@@ -134,23 +137,23 @@ function FloatingSearchWidget({ isOpen, onClose, onOpenSearch }) {
                 icon={<X className="w-3.5 h-3.5" />}
               />
             </div>
-            <p className="text-xs text-system-gray-600 mb-3">
+            <Text variant="tiny" className="text-system-gray-600 mb-3">
               Use Knowledge OS to explore the semantic graph and RAG results — describe what you are
               looking for in natural language.
-            </p>
+            </Text>
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" size="sm" onClick={onOpenSearch} className="text-xs">
                 <Network className="w-3.5 h-3.5" />
                 <span>Open Knowledge OS</span>
               </Button>
             </div>
-            <div className="mt-2 text-[10px] text-system-gray-400">
+            <Text variant="tiny" className="mt-2 text-system-gray-400">
               Tip: Press{' '}
               <kbd className="px-1 py-0.5 bg-system-gray-100 rounded text-system-gray-600 font-mono">
                 {isMac ? '⌘K' : 'Ctrl+K'}
               </kbd>{' '}
               anytime to search
-            </div>
+            </Text>
           </div>
         </div>
       </div>

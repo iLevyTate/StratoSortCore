@@ -278,7 +278,7 @@ function OrganizePhase() {
   }, [selectedFiles.size, approveSelectedFiles, handleOrganizeFiles]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 gap-6 lg:gap-8 pb-6">
+    <div className="flex flex-col flex-1 min-h-0 gap-relaxed lg:gap-spacious pb-6">
       {/* Header */}
       <Stack className="text-center flex-shrink-0" gap="compact">
         <Heading as="h1" variant="display">
@@ -289,8 +289,8 @@ function OrganizePhase() {
           ready.
         </Text>
         {isAnalysisRunning && (
-          <div className="flex items-center justify-center gap-2 mt-2">
-            <div className="flex items-center border border-stratosort-blue/30 bg-stratosort-blue/5 text-sm text-stratosort-blue gap-2 rounded-lg px-3 py-1.5">
+          <div className="flex items-center justify-center gap-compact mt-2">
+            <div className="flex items-center border border-stratosort-blue/30 bg-stratosort-blue/5 text-sm text-stratosort-blue gap-compact rounded-lg px-3 py-1.5">
               <span className="loading-spinner h-4 w-4 border-t-transparent" />
               Analysis continuing in background: {analysisProgressFromDiscover.current}/
               {analysisProgressFromDiscover.total} files
@@ -312,7 +312,6 @@ function OrganizePhase() {
               variant="secondary"
               size="sm"
               onClick={() => setShowFoldersModal(true)}
-              className="gap-2"
               aria-label={`View ${safeSmartFolders.length} smart folders`}
             >
               <FolderOpen className="w-4 h-4" aria-hidden="true" />
@@ -323,7 +322,6 @@ function OrganizePhase() {
             variant="secondary"
             size="sm"
             onClick={() => setShowStatusModal(true)}
-            className="gap-2"
             aria-label={`View file status: ${unprocessedFiles.length} ready, ${processedFiles.length} done, ${failedCount} failed`}
           >
             <BarChart3 className="w-4 h-4" aria-hidden="true" />
@@ -340,7 +338,7 @@ function OrganizePhase() {
               variant="secondary"
               size="sm"
               onClick={() => setShowHistoryModal(true)}
-              className="gap-2 text-stratosort-success border-stratosort-success/20 bg-stratosort-success/5 hover:bg-stratosort-success/10 hover:border-stratosort-success/40"
+              className="text-stratosort-success border-stratosort-success/20 bg-stratosort-success/5 hover:bg-stratosort-success/10 hover:border-stratosort-success/40"
               aria-label={`View ${processedFiles.length} organized files history`}
             >
               <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
@@ -374,7 +372,7 @@ function OrganizePhase() {
 
         {/* Files Ready - Main Focus Area */}
         <Card className="flex-1 min-h-0 flex flex-col overflow-hidden p-0">
-          <div className="flex items-center justify-between p-4 border-b border-border-soft/70 bg-white/50 flex-shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border-soft/70 bg-white/50 flex-shrink-0">
             <div className="flex items-center gap-3">
               <Heading as="h2" variant="h5">
                 Files Ready for Organization
@@ -401,7 +399,7 @@ function OrganizePhase() {
 
           <div className="flex-1 min-h-0 bg-system-gray-50/30 overflow-hidden">
             {unprocessedFiles.length === 0 ? (
-              <div className="h-full flex items-center justify-center p-8">
+              <div className="h-full flex items-center justify-center p-6">
                 <StateMessage
                   icon={processedFiles.length > 0 ? CheckCircle2 : Inbox}
                   tone={processedFiles.length > 0 ? 'success' : 'neutral'}
@@ -426,7 +424,7 @@ function OrganizePhase() {
                 />
               </div>
             ) : (
-              <div className="flex-1 min-h-0 p-4">
+              <div className="flex-1 min-h-0 p-6">
                 <ErrorBoundaryCore variant="simple" contextName="File Grid">
                   <VirtualizedFileGrid
                     files={unprocessedFiles}

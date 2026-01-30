@@ -34,6 +34,7 @@ import ModelSelectionSection from './settings/ModelSelectionSection';
 import ChatPersonaSection from './settings/ChatPersonaSection';
 import ModelManagementSection from './settings/ModelManagementSection';
 import EmbeddingRebuildSection from './settings/EmbeddingRebuildSection';
+import LearningSyncSection from './settings/LearningSyncSection';
 import DefaultLocationsSection from './settings/DefaultLocationsSection';
 import NamingSettingsSection from './settings/NamingSettingsSection';
 import ApplicationSection from './settings/ApplicationSection';
@@ -563,7 +564,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
 
   return (
     <div
-      className="settings-modal fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-6"
+      className="settings-modal fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-4 sm:p-6"
       style={{
         paddingTop: 'calc(var(--app-nav-height) + 1rem)',
         paddingBottom: '1.5rem'
@@ -616,7 +617,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </div>
         </div>
 
-        <div className="px-6 py-6 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
+        <div className="p-6 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto modern-scrollbar">
           <Collapsible
             title={
               <div className="flex items-center gap-2">
@@ -655,6 +656,9 @@ const SettingsPanel = React.memo(function SettingsPanel() {
                 onAddModel={addOllamaModel}
               />
               <EmbeddingRebuildSection addNotification={addNotification} />
+              <div className="pt-6 border-t border-system-gray-200">
+                <LearningSyncSection settings={settings} setSettings={applySettingsUpdate} />
+              </div>
             </Stack>
           </Collapsible>
 
@@ -754,7 +758,7 @@ const SettingsPanel = React.memo(function SettingsPanel() {
           </Collapsible>
         </div>
 
-        <div className="px-6 py-4 border-t border-border-soft/70 bg-white flex items-center justify-end gap-3 flex-shrink-0 rounded-b-2xl">
+        <div className="px-6 py-4 border-t border-system-gray-100 bg-system-gray-50 flex items-center justify-end gap-cozy flex-shrink-0 rounded-b-2xl">
           <Button
             onClick={handleToggleSettings}
             variant="secondary"

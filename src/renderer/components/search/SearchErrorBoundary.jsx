@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { logger } from '../../../shared/logger';
 import Button from '../ui/Button';
+import { Heading, Text } from '../ui/Typography';
 
 /**
  * Error boundary specifically for the search modal
@@ -73,12 +74,14 @@ class SearchErrorBoundary extends React.Component {
                 </svg>
               </div>
 
-              <h2 className="heading-tertiary dark:text-white mb-2">Search encountered an error</h2>
+              <Heading as="h2" variant="h5" className="dark:text-white mb-2">
+                Search encountered an error
+              </Heading>
 
-              <p className="text-sm text-system-gray-600 dark:text-system-gray-300 mb-4">
+              <Text variant="small" className="text-system-gray-600 dark:text-system-gray-300 mb-4">
                 Something went wrong while loading the search. You can try again or close the search
                 modal.
-              </p>
+              </Text>
 
               {/* Show error details in development */}
               {process.env.NODE_ENV === 'development' && this.state.error && (

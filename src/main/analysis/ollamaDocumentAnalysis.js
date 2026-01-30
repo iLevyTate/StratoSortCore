@@ -9,6 +9,7 @@ const {
   AI_DEFAULTS
 } = require('../../shared/constants');
 const { TRUNCATION, TIMEOUTS } = require('../../shared/performanceConstants');
+const { withTimeout } = require('../../shared/promiseUtils');
 const { logger } = require('../../shared/logger');
 const { getOllamaModel, loadOllamaConfig } = require('../ollamaUtils');
 const { AppConfig } = require('./documentLlm');
@@ -269,10 +270,22 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
     if (fileExtension === '.pdf') {
       try {
-        extractedText = await extractTextFromPdf(filePath, fileName);
+        // FIX: Wrap long-running PDF extraction with timeout
+        // PDF extraction can hang indefinitely on malformed files
+        extractedText = await withTimeout(
+          extractTextFromPdf(filePath, fileName),
+          TIMEOUTS.FILE_READ || 30000,
+          `PDF extraction for ${fileName}`
+        );
+
         if (!extractedText || extractedText.trim().length === 0) {
           // Try OCR fallback for image-only PDFs
-          const ocrText = await ocrPdfIfNeeded(filePath);
+          // OCR is also heavy, so it needs its own timeout
+          const ocrText = await withTimeout(
+            ocrPdfIfNeeded(filePath),
+            TIMEOUTS.AI_ANALYSIS_MEDIUM || 60000,
+            `OCR for ${fileName}`
+          );
           extractedText = ocrText || '';
         }
       } catch (pdfError) {
@@ -280,9 +293,13 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
           fileName,
           error: pdfError.message
         });
-        // Attempt OCR fallback before giving up
+        // Attempt OCR fallback before giving up (with timeout)
         try {
-          const ocrText = await ocrPdfIfNeeded(filePath);
+          const ocrText = await withTimeout(
+            ocrPdfIfNeeded(filePath),
+            TIMEOUTS.AI_ANALYSIS_MEDIUM || 60000,
+            `Fallback OCR for ${fileName}`
+          );
           if (ocrText && ocrText.trim().length > 0) {
             extractedText = ocrText;
           } else {
@@ -302,9 +319,17 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       // Read text files directly
       try {
         if (fileExtension === '.doc') {
-          extractedText = await extractTextFromDoc(filePath);
+          extractedText = await withTimeout(
+            extractTextFromDoc(filePath),
+            TIMEOUTS.FILE_READ || 10000,
+            'DOC extraction'
+          );
         } else if (fileExtension === '.csv') {
-          extractedText = await extractTextFromCsv(filePath);
+          extractedText = await withTimeout(
+            extractTextFromCsv(filePath),
+            TIMEOUTS.FILE_READ || 10000,
+            'CSV extraction'
+          );
         } else if (fileExtension === '.xml') {
           const raw = await fs.readFile(filePath, 'utf8');
           extractedText = extractPlainTextFromXml(raw);
@@ -366,7 +391,11 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
 
       try {
         logExtraction();
-        extractedText = await extractOfficeContent();
+        extractedText = await withTimeout(
+          extractOfficeContent(),
+          TIMEOUTS.FILE_READ || 30000,
+          `Office extraction for ${fileName}`
+        );
 
         logger.debug(`Extracted characters from office document`, {
           fileName,
@@ -385,7 +414,11 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
         try {
           await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.DELAY_LOCK_RETRY));
           logExtraction();
-          extractedText = await extractOfficeContent();
+          extractedText = await withTimeout(
+            extractOfficeContent(),
+            TIMEOUTS.FILE_READ || 30000,
+            `Retry office extraction for ${fileName}`
+          );
           logger.info(`Office extraction recovered after retry`, {
             fileName,
             fileExtension
@@ -490,15 +523,8 @@ async function analyzeDocumentFile(filePath, smartFolders = [], options = {}) {
       });
     }
 
-    // If PDF had no extractable text, attempt OCR on a rasterized page
-    // REDUNDANT: OCR is already attempted in the PDF extraction block above.
-    // Removing to prevent double-processing and performance waste.
-    /*
-    if (fileExtension === '.pdf' && (!extractedText || extractedText.trim().length === 0)) {
-      const ocrText = await ocrPdfIfNeeded(filePath);
-      if (ocrText) extractedText = ocrText;
-    }
-    */
+    // FIX MEDIUM-5: Removed dead code block - OCR is already attempted in the PDF extraction block above (lines 271-317)
+    // The redundant OCR fallback was commented out but left in codebase, now fully removed.
 
     if (extractedText && extractedText.trim().length > 0) {
       logger.info(`[CONTENT-ANALYSIS] Processing`, {

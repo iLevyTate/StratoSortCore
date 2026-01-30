@@ -20,12 +20,13 @@
  */
 
 const { logger } = require('../../shared/logger');
-const { THRESHOLDS } = require('../../shared/performanceConstants');
+const { THRESHOLDS, TIMEOUTS } = require('../../shared/performanceConstants');
 const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
 const { findContainingSmartFolder } = require('../../shared/folderUtils');
 const { buildEmbeddingSummary } = require('./embeddingSummary');
 const { container, ServiceIds } = require('../services/ServiceContainer');
 const embeddingQueue = require('./embeddingQueue');
+const { withTimeout } = require('../../shared/promiseUtils');
 
 logger.setContext('SemanticFolderMatcher');
 
@@ -182,7 +183,11 @@ async function applySemanticFolderMatching(params) {
     }
 
     // Generate embedding
-    const embeddingResult = await matcher.embedText(summaryForEmbedding);
+    const embeddingResult = await withTimeout(
+      matcher.embedText(summaryForEmbedding),
+      TIMEOUTS.EMBEDDING_REQUEST || 30000,
+      'folder matcher embedText'
+    );
     // FIX #2: Also check for empty array to prevent downstream failures
     if (
       !embeddingResult ||
@@ -202,7 +207,11 @@ async function applySemanticFolderMatching(params) {
     const { vector, model } = embeddingResult;
 
     // Match against folders
-    const candidates = await matcher.matchVectorToFolders(vector, 5);
+    const candidates = await withTimeout(
+      matcher.matchVectorToFolders(vector, 5),
+      TIMEOUTS.SEMANTIC_QUERY || 30000,
+      'folder matcher matchVectorToFolders'
+    );
 
     // Generate file ID based on type
     const fileId =

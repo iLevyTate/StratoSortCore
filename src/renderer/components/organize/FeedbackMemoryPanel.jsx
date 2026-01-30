@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
-import { Trash2, Info } from 'lucide-react';
-import { Card, Button, StateMessage } from '../ui';
-import { Text } from '../ui/Typography';
+import { Trash2, Info, Pencil } from 'lucide-react';
+import { Card, Button, IconButton, StateMessage, Textarea } from '../ui';
+import { Heading, Text } from '../ui/Typography';
 
 function FeedbackMemoryPanel({ className = '', refreshToken }) {
   const [memories, setMemories] = useState([]);
@@ -78,18 +78,20 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
   return (
     <Card className={`p-4 border-system-gray-200 ${className}`}>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-system-gray-900">Memory & Rules</h3>
+        <Heading as="h3" variant="h6" className="text-system-gray-900">
+          Memory & Rules
+        </Heading>
         <Button size="sm" variant="ghost" onClick={loadMemories} disabled={loading}>
           Refresh
         </Button>
       </div>
 
       <div className="space-y-2 mb-4">
-        <textarea
+        <Textarea
           value={newText}
           onChange={(event) => setNewText(event.target.value)}
           placeholder='e.g., "All .stl files go to 3D Prints"'
-          className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+          className="w-full text-sm"
           rows={2}
         />
         <Button
@@ -126,10 +128,10 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
             >
               {editingId === entry.id ? (
                 <div className="flex-1 space-y-2">
-                  <textarea
+                  <Textarea
                     value={editingText}
                     onChange={(event) => setEditingText(event.target.value)}
-                    className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+                    className="w-full text-sm"
                     rows={2}
                   />
                   <div className="flex gap-2">
@@ -154,22 +156,26 @@ function FeedbackMemoryPanel({ className = '', refreshToken }) {
                     )}
                   </Text>
                   <div className="flex items-center gap-1">
-                    <button
+                    <Button
                       type="button"
-                      className="p-1 rounded-md text-system-gray-400 hover:text-stratosort-blue hover:bg-stratosort-blue/10"
+                      variant="ghost"
+                      size="sm"
+                      leftIcon={<Pencil className="w-3.5 h-3.5" />}
+                      className="text-system-gray-500 hover:text-stratosort-blue"
                       onClick={() => startEditing(entry)}
                       aria-label="Edit memory"
                     >
                       Edit
-                    </button>
-                    <button
+                    </Button>
+                    <IconButton
                       type="button"
-                      className="p-1 rounded-md text-system-gray-400 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
+                      icon={<Trash2 className="w-4 h-4" />}
+                      size="sm"
+                      variant="ghost"
+                      className="text-system-gray-400 hover:text-stratosort-danger hover:bg-stratosort-danger/10"
                       onClick={() => handleDelete(entry.id)}
                       aria-label="Delete memory"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    />
                   </div>
                 </>
               )}

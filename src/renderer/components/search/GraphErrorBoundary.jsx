@@ -2,6 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '../ui';
+import { Heading, Text } from '../ui/Typography';
 import { logger } from '../../../shared/logger';
 
 /**
@@ -45,12 +46,14 @@ class GraphErrorBoundary extends React.Component {
             <AlertTriangle className="w-8 h-8 text-amber-600" />
           </div>
 
-          <h3 className="heading-tertiary mb-2">Graph Visualization Error</h3>
+          <Heading as="h3" variant="h5" className="mb-2">
+            Graph Visualization Error
+          </Heading>
 
-          <p className="text-sm text-system-gray-500 max-w-md mb-6">
+          <Text variant="small" className="text-system-gray-500 max-w-md mb-6">
             Something went wrong while rendering the graph. This might be caused by invalid data or
             a temporary issue.
-          </p>
+          </Text>
 
           <div className="flex gap-3">
             <Button variant="secondary" size="sm" onClick={this.handleReset}>
@@ -64,9 +67,13 @@ class GraphErrorBoundary extends React.Component {
 
           {process.env.NODE_ENV === 'development' && this.state.error && (
             <details className="mt-6 text-left max-w-lg w-full">
-              <summary className="text-xs text-system-gray-500 cursor-pointer hover:text-system-gray-700">
+              <Text
+                as="summary"
+                variant="tiny"
+                className="text-system-gray-500 cursor-pointer hover:text-system-gray-700"
+              >
                 Show error details (dev only)
-              </summary>
+              </Text>
               <pre className="mt-2 p-3 bg-system-gray-900 text-red-400 text-xs rounded-lg overflow-auto max-h-48">
                 {this.state.error?.message}
                 {this.state.errorInfo?.componentStack}

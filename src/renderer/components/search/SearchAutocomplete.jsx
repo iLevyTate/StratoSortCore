@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import PropTypes from 'prop-types';
 import { Search, Clock, FileText, Tag, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { IconButton } from '../ui';
 import { Text } from '../ui/Typography';
 
 const RECENT_SEARCHES_KEY = 'stratosort-recent-searches';
@@ -93,28 +94,96 @@ const SearchAutocomplete = memo(
       fetchTimeoutRef.current = setTimeout(async () => {
         const queryAtScheduleTime = trimmed;
         try {
-          const result = await window.electronAPI?.embeddings?.search?.(queryAtScheduleTime, {
-            topK: MAX_SUGGESTIONS,
-            mode: 'hybrid',
-            rerank: false
+          // Fetch file suggestions (best-effort; tag search placeholder removed to avoid unused result)
+          const [fileResult] = await Promise.allSettled([
+            window.electronAPI?.embeddings?.search?.(queryAtScheduleTime, {
+              topK: MAX_SUGGESTIONS,
+              mode: 'hybrid',
+              rerank: false
+            })
+          ]);
+
+          if (isCancelled || latestQueryRef.current !== queryAtScheduleTime) return;
+
+          const newSuggestions = [];
+
+          // 1. File matches
+          if (fileResult.status === 'fulfilled' && fileResult.value?.success) {
+            fileResult.value.results.forEach((r, index) => {
+              newSuggestions.push({
+                type: 'file',
+                label: r.metadata?.name || r.id,
+                value: r.metadata?.name || r.id,
+                path: r.metadata?.path,
+                score: r.score,
+                rank: index
+              });
+            });
+          }
+
+          // 2. Tag/Category matches (Mock logic - ideally fetch from Redux store or API)
+          // We can infer tags from the file results we just got
+          const seenTags = new Set();
+          if (fileResult.status === 'fulfilled' && fileResult.value?.success) {
+            fileResult.value.results.forEach((r) => {
+              const tags = r.metadata?.tags || [];
+              const category = r.metadata?.category;
+
+              if (
+                category &&
+                !seenTags.has(category) &&
+                category.toLowerCase().includes(trimmed.toLowerCase())
+              ) {
+                seenTags.add(category);
+                newSuggestions.push({
+                  type: 'category',
+                  label: category,
+                  value: category,
+                  score: 1.0
+                });
+              }
+
+              // Handle tags array or string
+              let parsedTags = [];
+              if (Array.isArray(tags)) parsedTags = tags;
+              else if (typeof tags === 'string') {
+                try {
+                  parsedTags = JSON.parse(tags);
+                } catch {
+                  parsedTags = [];
+                }
+              }
+
+              parsedTags.forEach((tag) => {
+                if (
+                  tag &&
+                  !seenTags.has(tag) &&
+                  tag.toLowerCase().includes(trimmed.toLowerCase())
+                ) {
+                  seenTags.add(tag);
+                  newSuggestions.push({
+                    type: 'tag',
+                    label: tag,
+                    value: tag,
+                    score: 0.9
+                  });
+                }
+              });
+            });
+          }
+
+          // Sort: Tags/Categories first, then Files
+          newSuggestions.sort((a, b) => {
+            if (a.type !== b.type) {
+              if (a.type === 'category') return -1;
+              if (b.type === 'category') return 1;
+              if (a.type === 'tag') return -1;
+              if (b.type === 'tag') return 1;
+            }
+            return (b.score || 0) - (a.score || 0);
           });
 
-          if (
-            !isCancelled &&
-            latestQueryRef.current === queryAtScheduleTime &&
-            result?.success &&
-            result.results
-          ) {
-            const fileSuggestions = result.results.map((r, index) => ({
-              type: 'file',
-              label: r.metadata?.name || r.id,
-              value: r.metadata?.name || r.id,
-              path: r.metadata?.path,
-              score: r.score,
-              rank: index
-            }));
-            setSuggestions(fileSuggestions);
-          }
+          setSuggestions(newSuggestions.slice(0, 8));
         } catch {
           // Ignore fetch errors
         }
@@ -291,17 +360,17 @@ const SearchAutocomplete = memo(
           />
 
           {value && (
-            <button
-              type="button"
+            <IconButton
+              icon={<X className="w-3.5 h-3.5" />}
+              size="sm"
+              variant="ghost"
               onClick={() => {
                 onChange('');
                 inputRef.current?.focus();
               }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-system-gray-100 text-system-gray-400 hover:text-system-gray-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 text-system-gray-400 hover:text-system-gray-600"
               aria-label="Clear search"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            />
           )}
 
           {!value && !disabled && (
@@ -360,6 +429,11 @@ const SearchAutocomplete = memo(
                     <FileText className="w-4 h-4 text-stratosort-blue shrink-0" />
                   )}
                   {item.type === 'tag' && <Tag className="w-4 h-4 text-emerald-500 shrink-0" />}
+                  {item.type === 'category' && (
+                    <div className="w-4 h-4 rounded bg-amber-100 flex items-center justify-center text-[10px] font-bold text-amber-600 shrink-0">
+                      C
+                    </div>
+                  )}
 
                   <Text variant="small" className="flex-1 truncate">
                     {item.label}
@@ -382,14 +456,14 @@ const SearchAutocomplete = memo(
                   )}
 
                   {item.type === 'recent' && (
-                    <button
-                      type="button"
+                    <IconButton
+                      icon={<X className="w-3 h-3" />}
+                      size="sm"
+                      variant="ghost"
                       onClick={(e) => handleClearRecent(e, item.value)}
-                      className="p-0.5 rounded hover:bg-system-gray-200 text-system-gray-400 hover:text-system-gray-600 shrink-0"
+                      className="shrink-0 h-6 w-6 text-system-gray-400 hover:text-system-gray-600"
                       aria-label="Remove from history"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    />
                   )}
                 </li>
               ))}

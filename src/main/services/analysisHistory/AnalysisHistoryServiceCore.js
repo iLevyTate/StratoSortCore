@@ -427,13 +427,13 @@ class AnalysisHistoryServiceCore {
     try {
       const timestamp = new Date().toISOString();
       let hasChanges = false;
-      const originalHistorySnapshot = {
+      const _originalHistorySnapshot = {
         totalAnalyzed: this.analysisHistory.totalAnalyzed,
         totalSize: this.analysisHistory.totalSize,
         totalEntries: this.analysisHistory.metadata.totalEntries,
         updatedAt: this.analysisHistory.updatedAt
       };
-      const originalIndexUpdatedAt = this.analysisIndex.updatedAt;
+      const _originalIndexUpdatedAt = this.analysisIndex.updatedAt;
       const addedEntries = [];
       const pendingEntryResolutions = [];
 
@@ -549,16 +549,12 @@ class AnalysisHistoryServiceCore {
             );
           });
 
-          // Roll back in-memory changes to avoid divergence from disk
-          addedEntries.forEach((entry) => {
-            delete this.analysisHistory.entries[entry.id];
-            removeFromIndexes(this.analysisIndex, entry);
-          });
-          this.analysisHistory.totalAnalyzed = originalHistorySnapshot.totalAnalyzed;
-          this.analysisHistory.totalSize = originalHistorySnapshot.totalSize;
-          this.analysisHistory.metadata.totalEntries = originalHistorySnapshot.totalEntries;
-          this.analysisHistory.updatedAt = originalHistorySnapshot.updatedAt;
-          this.analysisIndex.updatedAt = originalIndexUpdatedAt;
+          // FIX: Persistence failed, force re-initialization to ensure memory matches disk consistency
+          // Rolling back complex in-memory state is error-prone; reloading from disk is safer.
+          logger.error(
+            '[AnalysisHistoryService] Persistence failed, forcing re-initialization to ensure consistency'
+          );
+          this.initialized = false;
 
           const error = new Error('Failed to persist analysis history');
           pendingEntryResolutions.forEach(({ reject }) => reject(error));

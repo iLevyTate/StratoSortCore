@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
+import ReactFlow, { Background, Controls, MiniMap, Panel } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
   AlertTriangle,
@@ -29,9 +29,10 @@ import {
 
 import Modal, { ConfirmModal } from '../Modal';
 import { ModalLoadingOverlay } from '../LoadingSkeleton';
-import { Button, Input, StateMessage } from '../ui';
+import { Button, IconButton, Input, StateMessage, Textarea } from '../ui';
 import HighlightedText from '../ui/HighlightedText';
 import { getFileCategory } from '../ui/FileIcon';
+import { Heading, Text } from '../ui/Typography';
 import { TIMEOUTS } from '../../../shared/performanceConstants';
 import { logger } from '../../../shared/logger';
 import { GRAPH_FEATURE_FLAGS } from '../../../shared/featureFlags';
@@ -299,20 +300,24 @@ function ResultRow({
       `}
     >
       {/* Bulk Selection Checkbox */}
-      <button
+      <IconButton
         onClick={(e) => {
           e.stopPropagation();
           onToggleBulk(result.id);
         }}
-        className={`absolute top-4 left-3 z-10 p-0.5 rounded transition-opacity ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+        icon={
+          isBulkSelected ? (
+            <CheckSquare className="w-5 h-5 text-stratosort-blue bg-white rounded-sm" />
+          ) : (
+            <Square className="w-5 h-5 text-system-gray-300 bg-white rounded-sm" />
+          )
+        }
+        size="sm"
+        variant="ghost"
+        className={`absolute top-4 left-3 z-10 h-7 w-7 p-0.5 transition-opacity ${isBulkSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         title={isBulkSelected ? 'Deselect' : 'Select'}
-      >
-        {isBulkSelected ? (
-          <CheckSquare className="w-5 h-5 text-stratosort-blue bg-white rounded-sm" />
-        ) : (
-          <Square className="w-5 h-5 text-system-gray-300 bg-white rounded-sm" />
-        )}
-      </button>
+        aria-label={isBulkSelected ? 'Deselect result' : 'Select result'}
+      />
 
       <div className="pl-7">
         {/* Header: Name and Date */}
@@ -325,35 +330,53 @@ function ResultRow({
             />
           </div>
           {dateStr && (
-            <span className="text-xs text-system-gray-400 whitespace-nowrap pt-1 font-medium">
+            <Text
+              as="span"
+              variant="tiny"
+              className="text-system-gray-400 whitespace-nowrap pt-1 font-medium"
+            >
               {dateStr}
-            </span>
+            </Text>
           )}
         </div>
 
         {/* Sub-header: Category and Confidence */}
         <div className="flex items-center gap-3 mb-3">
-          <span className="text-sm text-stratosort-blue font-medium">{category}</span>
-          <span className="text-sm text-system-gray-400">Confidence: {confidence}%</span>
+          <Text as="span" variant="small" className="text-stratosort-blue font-medium">
+            {category}
+          </Text>
+          <Text as="span" variant="small" className="text-system-gray-400">
+            Confidence: {confidence}%
+          </Text>
         </div>
 
         {/* Keywords / Tags */}
         {keywords.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {keywords.map((keyword, idx) => (
-              <span
+              <Text
+                as="span"
+                variant="tiny"
                 key={`${result.id}-kw-${idx}`}
-                className="px-3 py-1 rounded-full bg-blue-50 text-stratosort-blue text-xs font-medium"
+                className="px-3 py-1 rounded-full bg-blue-50 text-stratosort-blue font-medium"
               >
                 {keyword}
-              </span>
+              </Text>
             ))}
           </div>
         )}
         {(entities.length > 0 || dates.length > 0) && (
-          <div className="mt-2 text-xs text-system-gray-500 space-y-1">
-            {entities.length > 0 && <div>Entities: {entities.join(', ')}</div>}
-            {dates.length > 0 && <div>Dates: {dates.join(', ')}</div>}
+          <div className="mt-2 space-y-1">
+            {entities.length > 0 && (
+              <Text as="div" variant="tiny" className="text-system-gray-500">
+                Entities: {entities.join(', ')}
+              </Text>
+            )}
+            {dates.length > 0 && (
+              <Text as="div" variant="tiny" className="text-system-gray-500">
+                Dates: {dates.join(', ')}
+              </Text>
+            )}
           </div>
         )}
       </div>
@@ -361,36 +384,42 @@ function ResultRow({
       {/* Quick actions - only on selected */}
       {isSelected && (
         <div className="absolute bottom-4 right-4 flex gap-1 bg-white/80 backdrop-blur-sm rounded-lg p-1 shadow-sm border border-system-gray-100">
-          <button
+          <IconButton
             onClick={(e) => {
               e.stopPropagation();
               onOpen(path);
             }}
-            className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
             title="Open file"
-          >
-            <ExternalLink className="w-4 h-4 text-stratosort-blue" />
-          </button>
-          <button
+            aria-label="Open file"
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-stratosort-blue/10"
+            icon={<ExternalLink className="w-4 h-4 text-stratosort-blue" />}
+          />
+          <IconButton
             onClick={(e) => {
               e.stopPropagation();
               onReveal(path);
             }}
-            className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
             title="Show in folder"
-          >
-            <FolderOpen className="w-4 h-4 text-stratosort-blue" />
-          </button>
-          <button
+            aria-label="Show in folder"
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-stratosort-blue/10"
+            icon={<FolderOpen className="w-4 h-4 text-stratosort-blue" />}
+          />
+          <IconButton
             onClick={(e) => {
               e.stopPropagation();
               onCopyPath(path);
             }}
-            className="p-1.5 rounded-md hover:bg-stratosort-blue/10 transition-colors"
             title="Copy path"
-          >
-            <Copy className="w-4 h-4 text-stratosort-blue" />
-          </button>
+            aria-label="Copy path"
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 hover:bg-stratosort-blue/10"
+            icon={<Copy className="w-4 h-4 text-stratosort-blue" />}
+          />
         </div>
       )}
     </div>
@@ -416,30 +445,37 @@ function StatsDisplay({ stats, isLoadingStats, onRefresh }) {
   return (
     <div className="flex items-center gap-2">
       {stats ? (
-        <span className="flex items-center gap-1 text-xs text-system-gray-500">
-          <span className="font-medium text-system-gray-700">{stats.folders}</span>
+        <Text as="span" variant="tiny" className="flex items-center gap-1 text-system-gray-500">
+          <Text as="span" variant="tiny" className="font-medium text-system-gray-700">
+            {stats.folders}
+          </Text>
           <span>folder{stats.folders !== 1 ? 's' : ''}</span>
           <span className="text-system-gray-300">•</span>
-          <span className="font-medium text-system-gray-700">{stats.files}</span>
+          <Text as="span" variant="tiny" className="font-medium text-system-gray-700">
+            {stats.files}
+          </Text>
           <span>file{stats.files !== 1 ? 's' : ''} indexed</span>
-        </span>
+        </Text>
       ) : isLoadingStats ? (
-        <span className="flex items-center gap-2 text-xs text-system-gray-400">
+        <Text as="span" variant="tiny" className="flex items-center gap-2 text-system-gray-400">
           <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-system-gray-300" />
           Loading index...
-        </span>
+        </Text>
       ) : (
-        <span className="text-xs text-system-gray-400">No embeddings</span>
+        <Text as="span" variant="tiny" className="text-system-gray-400">
+          No embeddings
+        </Text>
       )}
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 text-xs text-system-gray-400 hover:text-system-gray-700 p-1 rounded hover:bg-system-gray-100 transition-colors"
+      <IconButton
+        icon={<RefreshCw className={`h-3.5 w-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />}
+        size="sm"
+        variant="ghost"
         onClick={onRefresh}
         disabled={isLoadingStats}
         title="Refresh embeddings status"
-      >
-        <RefreshCw className={`h-3.5 w-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />
-      </button>
+        aria-label="Refresh embeddings status"
+        className="h-7 w-7 text-system-gray-400 hover:text-system-gray-700"
+      />
     </div>
   );
 }
@@ -502,13 +538,13 @@ function SearchModeBanner({ meta }) {
   if (!meta?.fallback) return null;
 
   return (
-    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 text-xs rounded-lg flex items-center gap-2">
+    <div className="glass-panel border border-stratosort-warning/30 bg-stratosort-warning/5 px-3 py-2 rounded-lg flex items-center gap-compact">
       <MessageSquare className="w-4 h-4 text-stratosort-warning shrink-0" />
-      <span className="text-system-gray-600">
+      <Text as="span" variant="tiny" className="text-system-gray-600">
         <strong>Limited search:</strong> Using keyword search only
         {meta.fallbackReason ? ` (${meta.fallbackReason})` : ' (embedding model unavailable)'}.
         Knowledge OS semantic matching is disabled.
-      </span>
+      </Text>
     </div>
   );
 }
@@ -525,21 +561,16 @@ SearchModeBanner.displayName = 'SearchModeBanner';
 
 function TabButton({ active, onClick, icon: Icon, label }) {
   return (
-    <button
+    <Button
       type="button"
       onClick={onClick}
-      className={`
-        flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all
-        ${
-          active
-            ? 'bg-stratosort-blue text-white shadow-md'
-            : 'bg-system-gray-100 text-system-gray-600 hover:bg-system-gray-200 hover:text-system-gray-900'
-        }
-      `}
+      variant={active ? 'primary' : 'ghost'}
+      size="sm"
+      leftIcon={<Icon className="w-4 h-4" />}
+      className={`rounded-lg px-3 ${active ? 'shadow-md' : 'bg-system-gray-100 text-system-gray-600 hover:bg-system-gray-200'}`}
     >
-      <Icon className="w-4 h-4" />
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -552,6 +583,21 @@ TabButton.propTypes = {
 TabButton.displayName = 'TabButton';
 
 // SearchExplainer and SearchProcessCard removed - users don't need to understand how search works
+
+// ============================================================================
+// Graph filter defaults
+// ============================================================================
+const DEFAULT_CLUSTER_MODE = 'topic';
+const getDefaultClusterFilters = () => ({
+  confidence: ['high', 'medium', 'low'],
+  minSize: 1,
+  fileType: 'all',
+  search: ''
+});
+const getDefaultActiveFilters = () => ({
+  types: ['cluster', 'file', 'query', 'folder'],
+  confidence: ['high', 'medium', 'low']
+});
 
 // ============================================================================
 // Main Component
@@ -573,6 +619,13 @@ export default function UnifiedSearchModal({
       ? 'search'
       : initialTab;
   const [activeTab, setActiveTab] = useState(effectiveInitialTab);
+
+  // Reset tabs when modal opens to avoid stale/hidden tabs on reopen
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(effectiveInitialTab);
+    }
+  }, [isOpen, effectiveInitialTab]);
 
   // Shared state
   const [query, setQuery] = useState('');
@@ -666,6 +719,41 @@ export default function UnifiedSearchModal({
   const [showEdgeLabels, setShowEdgeLabels] = useState(true); // Default to showing labels for clarity
   const showEdgeLabelsRef = useRef(true); // Ref for access in callbacks without dependency
 
+  // Cluster configuration state
+  const [clusterMode, setClusterMode] = useState(DEFAULT_CLUSTER_MODE); // topic | time | type | tag
+  const [clusterFilters, setClusterFilters] = useState(getDefaultClusterFilters);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  // Guide assistant state
+  const [showGuidePanel, setShowGuidePanel] = useState(false);
+  const [guideInput, setGuideInput] = useState('');
+
+  // Persist cluster preferences locally (simple best-effort)
+  useEffect(() => {
+    try {
+      const raw = window.localStorage?.getItem('graph.clusterPrefs');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.mode) setClusterMode(parsed.mode);
+        if (parsed?.filters) setClusterFilters((prev) => ({ ...prev, ...parsed.filters }));
+        if (typeof parsed.showGuidePanel === 'boolean') setShowGuidePanel(parsed.showGuidePanel);
+      }
+    } catch (err) {
+      logger.debug('[Graph] Failed to load cluster prefs', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage?.setItem(
+        'graph.clusterPrefs',
+        JSON.stringify({ mode: clusterMode, filters: clusterFilters, showGuidePanel })
+      );
+    } catch (err) {
+      logger.debug('[Graph] Failed to save cluster prefs', err);
+    }
+  }, [clusterMode, clusterFilters, showGuidePanel]);
+
   // Sync ref with state
   useEffect(() => {
     showEdgeLabelsRef.current = showEdgeLabels;
@@ -678,10 +766,10 @@ export default function UnifiedSearchModal({
   }, [dispatch, onClose]);
 
   // Graph filtering state
-  const [activeFilters, setActiveFilters] = useState({
-    types: ['cluster', 'file', 'query', 'folder'],
-    confidence: ['high', 'medium', 'low']
-  });
+  const [activeFilters, setActiveFilters] = useState(getDefaultActiveFilters);
+
+  // Bridge overlay state (used for Guide "bridges only" intent)
+  const [bridgeOverlayEnabled, setBridgeOverlayEnabled] = useState(false);
 
   // Zoom state
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -701,6 +789,15 @@ export default function UnifiedSearchModal({
         : [...current, value];
       return { ...prev, [category]: newValues };
     });
+  }, []);
+
+  // Reset graph filters to defaults (cluster + active filters)
+  const resetGraphFilters = useCallback(() => {
+    setClusterMode(DEFAULT_CLUSTER_MODE);
+    setClusterFilters(getDefaultClusterFilters());
+    setActiveFilters(getDefaultActiveFilters());
+    setBridgeOverlayEnabled(false);
+    setGuideInput('');
   }, []);
 
   // Duplicates detection state (duplicateGroups stored for potential future export feature)
@@ -2303,6 +2400,110 @@ export default function UnifiedSearchModal({
     graphActions
   ]);
 
+  // NOTE: selectedNode must be defined before callbacks that reference it
+  const selectedNode = useMemo(
+    () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) : null),
+    [nodes, selectedNodeId]
+  );
+
+  /**
+   * Guide assistant intent handler
+   */
+  const handleGuideIntent = useCallback(
+    async (intent, payload = {}) => {
+      const applyAndLoad = (mode, nextFilters = {}) => {
+        setClusterMode(mode);
+        setClusterFilters((prev) => ({ ...prev, ...nextFilters }));
+        // Defer load to allow state to update
+        setTimeout(() => {
+          loadClustersRef.current?.();
+        }, 0);
+      };
+
+      // Guide overlays (e.g., bridges-only)
+      setBridgeOverlayEnabled(intent === 'bridgesOnly');
+
+      if (intent === 'related') {
+        applyAndLoad('topic', { minSize: 1, confidence: ['high', 'medium', 'low'] });
+        setGraphStatus('Showing related topics');
+        return;
+      }
+
+      if (intent === 'recent') {
+        applyAndLoad('time', { minSize: 1, confidence: ['high', 'medium', 'low'] });
+        setGraphStatus('Showing recent changes (time clusters)');
+        return;
+      }
+
+      if (intent === 'type') {
+        applyAndLoad('type', { fileType: 'all' });
+        setGraphStatus('Grouping by file type');
+        return;
+      }
+
+      if (intent === 'bridges') {
+        applyAndLoad('topic', { minSize: 1, confidence: ['high', 'medium'] });
+        setGraphStatus('Highlighting bridges between clusters');
+        return;
+      }
+
+      if (intent === 'bridgesOnly') {
+        setFocusNodeId(null);
+        setActiveFilters((prev) => ({ ...prev, types: ['cluster'] }));
+        applyAndLoad('topic', { minSize: 1, confidence: ['high', 'medium'] });
+        // Hide cluster nodes? keep clusters; show only cross edges by dimming others
+        setShowClusters(true);
+        setGraphStatus('Showing bridges only');
+        return;
+      }
+
+      if (intent === 'expand') {
+        if (selectedNode?.id && selectedNode?.data?.kind === 'cluster') {
+          handleClusterExpand(selectedNode.id, selectedNode.data.memberIds || []);
+          setGraphStatus('Expanding from selection');
+        } else if (selectedNode?.id && selectedNode?.data?.kind === 'file') {
+          expandFromSelectedRef.current?.();
+          setGraphStatus('Expanding from file selection');
+        } else {
+          setGraphStatus('Select a node to expand');
+        }
+        return;
+      }
+
+      if (intent === 'custom' && typeof payload.text === 'string') {
+        const text = payload.text.trim().toLowerCase();
+        if (text.includes('recent') || text.includes('new')) {
+          applyAndLoad('time', { minSize: 1 });
+          setGraphStatus('Showing recent clusters');
+        } else if (text.includes('type') || text.includes('doc')) {
+          applyAndLoad('type', {});
+          setGraphStatus('Grouping by file type');
+        } else if (text.includes('bridge') || text.includes('gap')) {
+          applyAndLoad('topic', { confidence: ['high', 'medium'] });
+          setGraphStatus('Surfacing bridges and strong clusters');
+        } else {
+          applyAndLoad('topic', {});
+          setGraphStatus('Showing topic clusters');
+        }
+        return;
+      }
+
+      // Default
+      applyAndLoad('topic', {});
+      setGraphStatus('Showing topic clusters');
+    },
+    [
+      setClusterMode,
+      setClusterFilters,
+      setGraphStatus,
+      setFocusNodeId,
+      setActiveFilters,
+      setShowClusters,
+      handleClusterExpand,
+      selectedNode
+    ]
+  );
+
   // ============================================================================
   // Debounce query
   // ============================================================================
@@ -2319,12 +2520,6 @@ export default function UnifiedSearchModal({
   const selectedSearchResult = useMemo(
     () => (selectedSearchId ? searchResults.find((r) => r?.id === selectedSearchId) : null),
     [searchResults, selectedSearchId]
-  );
-
-  // NOTE: selectedNode must be defined before the useEffect below that uses it
-  const selectedNode = useMemo(
-    () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) : null),
-    [nodes, selectedNodeId]
   );
 
   // Fetch full details (including extracted text) when selection changes
@@ -2802,7 +2997,8 @@ export default function UnifiedSearchModal({
     setError('');
 
     try {
-      // First compute clusters
+      // First compute clusters. The IPC only accepts 'auto' or a numeric k; our UI "clusterMode"
+      // is a display/filter choice, so keep computation on auto to avoid invalid k errors.
       const computeResp = await window.electronAPI?.embeddings?.computeClusters?.('auto');
       if (!computeResp || computeResp.success !== true) {
         throw new Error(computeResp?.error || 'Failed to compute clusters');
@@ -2822,8 +3018,26 @@ export default function UnifiedSearchModal({
         return;
       }
 
+      // Apply filters (confidence, size, type, search)
+      const normalizedSearch = (clusterFilters.search || '').trim().toLowerCase();
+      const filteredClusters = clusters.filter((cluster) => {
+        const confOk = clusterFilters.confidence.includes(cluster.confidence || 'low');
+        const sizeOk = (cluster.memberCount || 0) >= (clusterFilters.minSize || 1);
+        const typeOk =
+          clusterFilters.fileType === 'all' ||
+          (cluster.dominantCategory || '').toLowerCase() ===
+            (clusterFilters.fileType || '').toLowerCase();
+        const searchOk =
+          !normalizedSearch ||
+          (cluster.label || '').toLowerCase().includes(normalizedSearch) ||
+          (cluster.commonTags || [])
+            .map((t) => (t || '').toLowerCase())
+            .some((t) => t.includes(normalizedSearch));
+        return confOk && sizeOk && searchOk && typeOk;
+      });
+
       // Create cluster nodes with rich metadata
-      const clusterNodes = clusters.map((cluster, idx) => ({
+      const clusterNodes = filteredClusters.map((cluster, idx) => ({
         id: cluster.id,
         type: 'clusterNode',
         position: defaultNodePosition(idx),
@@ -2835,6 +3049,7 @@ export default function UnifiedSearchModal({
           memberCount: cluster.memberCount,
           memberIds: cluster.memberIds,
           expanded: false,
+          topTerms: cluster.topTerms || cluster.commonTags || [],
           // Rich metadata for meaningful cluster display
           confidence: cluster.confidence || 'low',
           dominantCategory: cluster.dominantCategory || null,
@@ -2858,20 +3073,53 @@ export default function UnifiedSearchModal({
       // Dynamic filtering: reduce clutter by keeping only top connections per cluster
 
       // 1. Deduplicate edges (A->B and B->A are the same connection)
+      const filteredClusterIds = new Set(filteredClusters.map((c) => c.id));
       const uniqueEdgesMap = new Map();
-      crossClusterEdges.forEach((edge) => {
-        // Create a sorted key so A->B and B->A produce the same key "A-B" (if A < B)
-        const [u, v] = [edge.source, edge.target].sort();
-        const key = `${u}|${v}`;
+      crossClusterEdges
+        .filter(
+          (edge) => filteredClusterIds.has(edge.source) && filteredClusterIds.has(edge.target)
+        )
+        .forEach((edge) => {
+          // Create a sorted key so A->B and B->A produce the same key "A-B" (if A < B)
+          const [u, v] = [edge.source, edge.target].sort();
+          const key = `${u}|${v}`;
 
-        // Keep the one with higher similarity if duplicates exist (though usually they are equal)
-        if (
-          !uniqueEdgesMap.has(key) ||
-          (edge.similarity || 0) > (uniqueEdgesMap.get(key).similarity || 0)
-        ) {
-          uniqueEdgesMap.set(key, edge);
-        }
-      });
+          // Keep the one with higher similarity if duplicates exist (though usually they are equal)
+          const current = uniqueEdgesMap.get(key) || {
+            similarity: 0,
+            count: 0,
+            sharedTerms: [],
+            bridgeFiles: []
+          };
+          const mergedBridgeFiles = [
+            ...(current.bridgeFiles || []),
+            ...(edge.bridgeFiles || []).slice(0, 6)
+          ].filter(Boolean);
+          const uniqueBridgeFiles = Array.from(
+            new Map(
+              mergedBridgeFiles.map((file) => [file?.id || file?.path || file, file])
+            ).values()
+          );
+          const merged = {
+            ...current,
+            source: u,
+            target: v,
+            similarity: Math.max(current.similarity || 0, edge.similarity || 0),
+            bridgeFiles: uniqueBridgeFiles,
+            count:
+              uniqueBridgeFiles.length > 0
+                ? uniqueBridgeFiles.length
+                : (current.count || 0) + (edge.count || 0),
+            sharedTerms: [
+              ...(current.sharedTerms || []),
+              ...(edge.commonTerms || edge.sharedTerms || edge.tags || edge.labels || []).slice(
+                0,
+                3
+              )
+            ].filter(Boolean)
+          };
+          uniqueEdgesMap.set(key, merged);
+        });
       const uniqueEdges = Array.from(uniqueEdgesMap.values());
 
       // 2. Group by source to limit connections per cluster
@@ -2919,12 +3167,16 @@ export default function UnifiedSearchModal({
           stroke: '#9ca3af',
           strokeWidth: Math.max(1, (edge.similarity || 0.5) * 1.5), // Even thinner
           strokeDasharray: '4,8', // Very sparse dashing
-          opacity: 0 // Hidden by default (faded out), will be shown on hover via class/state
+          opacity: 0.35 // Subtle by default to reduce clutter
         },
-        className: 'cross-cluster-edge opacity-0 transition-opacity duration-300', // CSS class for control
+        className: 'cross-cluster-edge', // Subtle by default
         data: {
           kind: 'cross_cluster',
-          similarity: edge.similarity || 0.5
+          similarity: edge.similarity || 0.5,
+          bridgeCount: edge.count || 0,
+          sharedTerms: Array.from(new Set(edge.sharedTerms || [])).slice(0, 3),
+          bridgeFiles: edge.bridgeFiles || [],
+          showEdgeLabels: false
         }
       }));
 
@@ -2932,7 +3184,7 @@ export default function UnifiedSearchModal({
       graphActions.setNodes(clusterNodes);
       graphActions.setEdges(clusterEdges);
       setShowClusters(true);
-      setGraphStatus(`Found ${clusters.length} groups of related files`);
+      setGraphStatus(`Found ${filteredClusters.length} groups of related files`);
 
       // Apply intelligent layout for better cluster visualization
       // Layout considers: confidence levels (inner/outer rings), relationships (connected clusters nearby)
@@ -2954,8 +3206,8 @@ export default function UnifiedSearchModal({
           graphActions.setNodes(layoutedNodes);
 
           // Update status with celebration or regular info
-          const highCount = clusters.filter((c) => c.confidence === 'high').length;
-          const firstClusterLabel = clusters[0]?.label || 'your files';
+          const highCount = filteredClusters.filter((c) => c.confidence === 'high').length;
+          const firstClusterLabel = filteredClusters[0]?.label || 'your files';
 
           // First time celebration - explain what happened
           if (!hasShownClusterCelebration.current) {
@@ -2986,7 +3238,8 @@ export default function UnifiedSearchModal({
     handleSearchWithinCluster,
     handleRenameCluster,
     handleClusterExpand,
-    graphActions
+    graphActions,
+    clusterFilters
   ]);
 
   // Assign to ref so keyboard shortcuts can access it
@@ -4064,11 +4317,33 @@ export default function UnifiedSearchModal({
 
   // FIX: Filter edges based on visible nodes to prevent "dangling" edges
   const rfEdges = useMemo(() => {
-    if (showClusters) return edges;
+    const baseEdges = showClusters
+      ? edges
+      : (() => {
+          const visibleNodeIds = new Set(rfNodes.map((n) => n.id));
+          return edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+        })();
 
-    const visibleNodeIds = new Set(rfNodes.map((n) => n.id));
-    return edges.filter((e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
-  }, [edges, rfNodes, showClusters]);
+    // Bridge overlay: dim non-bridge edges when showing cluster bridges only
+    if (!bridgeOverlayEnabled || !showClusters) {
+      return baseEdges;
+    }
+
+    return baseEdges.map((edge) => {
+      const isBridge = edge.data?.kind === 'cross_cluster';
+      return {
+        ...edge,
+        style: {
+          ...edge.style,
+          opacity: isBridge ? 0.9 : 0.05
+        },
+        data: {
+          ...edge.data,
+          showEdgeLabels: Boolean(isBridge)
+        }
+      };
+    });
+  }, [edges, rfNodes, showClusters, bridgeOverlayEnabled]);
 
   const rfFitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const rfDefaultViewport = useMemo(() => ({ x: 0, y: 0, zoom: 1 }), []);
@@ -4080,12 +4355,78 @@ export default function UnifiedSearchModal({
     return '#3b82f6'; // Blue for files
   }, []);
 
+  // Helper to compute visible filters as chips
+  const activeClusterFilterChips = useMemo(() => {
+    const chips = [];
+    const conf = clusterFilters.confidence || [];
+    if (!conf.includes('high') || !conf.includes('medium') || !conf.includes('low')) {
+      chips.push(`Conf: ${conf.join(', ')}`);
+    }
+    if ((clusterFilters.minSize || 1) > 1) chips.push(`Min ${clusterFilters.minSize}`);
+    if (clusterFilters.fileType && clusterFilters.fileType !== 'all') {
+      chips.push(`Type: ${clusterFilters.fileType}`);
+    }
+    if (clusterFilters.search) chips.push(`Search: ${clusterFilters.search}`);
+    return chips;
+  }, [clusterFilters]);
+
+  const activeGraphFilterChips = useMemo(() => {
+    const chips = [];
+    const types = activeFilters.types || [];
+    const conf = activeFilters.confidence || [];
+    if (types.length > 0 && types.length < 4) {
+      chips.push(`Nodes: ${types.join(', ')}`);
+    }
+    if (conf.length > 0 && conf.length < 3) {
+      chips.push(`Conf: ${conf.join(', ')}`);
+    }
+    return chips;
+  }, [activeFilters]);
+
+  const hasGraphFilterIndicators = useMemo(
+    () =>
+      bridgeOverlayEnabled ||
+      clusterMode !== DEFAULT_CLUSTER_MODE ||
+      activeClusterFilterChips.length > 0 ||
+      activeGraphFilterChips.length > 0,
+    [bridgeOverlayEnabled, clusterMode, activeClusterFilterChips, activeGraphFilterChips]
+  );
+
   const showEmptyBanner =
     hasLoadedStats && stats && typeof stats.files === 'number' && stats.files === 0 && !error;
   // Use fresh metadata from ChromaDB when available (for current file paths after moves)
   const selectedPath = freshMetadata?.path || selectedNode?.data?.path || '';
   const selectedLabel = freshMetadata?.name || selectedNode?.data?.label || selectedNode?.id || '';
   const selectedKind = selectedNode?.data?.kind || '';
+
+  // Cluster-specific derived data
+  const selectedClusterInfo = useMemo(() => {
+    if (selectedKind !== 'cluster' || !selectedNode) return null;
+    const neighborEdges = edges.filter(
+      (e) =>
+        e.data?.kind === 'cross_cluster' &&
+        (e.source === selectedNode.id || e.target === selectedNode.id)
+    );
+    const neighborIds = new Set(
+      neighborEdges.map((e) => (e.source === selectedNode.id ? e.target : e.source))
+    );
+    const neighborNodes = rfNodes.filter((n) => neighborIds.has(n.id));
+    const bridges = neighborEdges.map((edge) => ({
+      id: edge.id,
+      similarity: edge.data?.similarity || 0,
+      bridgeCount: edge.data?.bridgeCount || 0,
+      sharedTerms: edge.data?.sharedTerms || [],
+      targetId: edge.source === selectedNode.id ? edge.target : edge.source,
+      targetLabel: neighborNodes.find(
+        (n) => n.id === (edge.source === selectedNode.id ? edge.target : edge.source)
+      )?.data?.label,
+      bridgeFiles: edge.data?.bridgeFiles || []
+    }));
+    return {
+      bridges,
+      neighbors: neighborNodes
+    };
+  }, [edges, rfNodes, selectedKind, selectedNode]);
 
   // ============================================================================
   // Render
@@ -4131,18 +4472,25 @@ export default function UnifiedSearchModal({
             <StatsDisplay stats={stats} isLoadingStats={isLoadingStats} onRefresh={refreshStats} />
           </div>
         ) : (
-          <div className="flex items-center justify-between text-xs text-system-gray-400">
+          <Text
+            as="div"
+            variant="tiny"
+            className="flex items-center justify-between text-system-gray-400"
+          >
             <span>
               {hasLoadedStats ? `${stats?.files || 0} files indexed` : 'Loading index...'}
             </span>
-            <button
+            <IconButton
               onClick={refreshStats}
               disabled={isLoadingStats}
-              className="hover:text-system-gray-600 transition-colors"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 text-system-gray-400 hover:text-system-gray-600"
+              title="Refresh embeddings status"
+              aria-label="Refresh embeddings status"
+              icon={<RefreshCw className={`h-3.5 w-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />}
+            />
+          </Text>
         )}
 
         {/* Empty embeddings banner */}
@@ -4186,10 +4534,14 @@ export default function UnifiedSearchModal({
                 autoFocus
               />
               {isSearching && (
-                <div className="flex items-center gap-2 text-xs text-system-gray-400 shrink-0">
+                <Text
+                  as="div"
+                  variant="tiny"
+                  className="flex items-center gap-2 text-system-gray-400 shrink-0"
+                >
                   <RefreshCw className="h-4 w-4 animate-spin" />
                   <span>Searching...</span>
-                </div>
+                </Text>
               )}
             </div>
 
@@ -4199,7 +4551,9 @@ export default function UnifiedSearchModal({
             {/* Results header with view toggle */}
             {searchResults.length > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-sm text-system-gray-500">{searchStatusLabel}</span>
+                <Text as="span" variant="small" className="text-system-gray-500">
+                  {searchStatusLabel}
+                </Text>
                 <div className="flex items-center gap-2">
                   {/* View in Graph button */}
                   {GRAPH_FEATURE_FLAGS.SHOW_GRAPH && (
@@ -4234,34 +4588,30 @@ export default function UnifiedSearchModal({
                     role="group"
                     aria-label="View mode"
                   >
-                    <button
+                    <Button
                       type="button"
                       onClick={() => setViewMode('all')}
                       aria-label="View all results"
                       aria-pressed={viewMode === 'all'}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
-                        viewMode === 'all'
-                          ? 'bg-white text-system-gray-900 shadow-sm'
-                          : 'text-system-gray-500 hover:text-system-gray-700'
-                      }`}
+                      variant={viewMode === 'all' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      leftIcon={<List className="w-3.5 h-3.5" />}
+                      className={`rounded-md px-2.5 py-1 text-xs h-auto ${viewMode === 'all' ? 'bg-white text-system-gray-900 shadow-sm' : 'text-system-gray-500 hover:text-system-gray-700'}`}
                     >
-                      <List className="w-3.5 h-3.5 -mt-0.5" />
-                      <span>All</span>
-                    </button>
-                    <button
+                      All
+                    </Button>
+                    <Button
                       type="button"
                       onClick={() => setViewMode('grouped')}
                       aria-label="Group results by type"
                       aria-pressed={viewMode === 'grouped'}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
-                        viewMode === 'grouped'
-                          ? 'bg-white text-system-gray-900 shadow-sm'
-                          : 'text-system-gray-500 hover:text-system-gray-700'
-                      }`}
+                      variant={viewMode === 'grouped' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      leftIcon={<LayoutGrid className="w-3.5 h-3.5" />}
+                      className={`rounded-md px-2.5 py-1 text-xs h-auto ${viewMode === 'grouped' ? 'bg-white text-system-gray-900 shadow-sm' : 'text-system-gray-500 hover:text-system-gray-700'}`}
                     >
-                      <LayoutGrid className="w-3.5 h-3.5 -mt-0.5" />
-                      <span>By Type</span>
-                    </button>
+                      By Type
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -4308,6 +4658,7 @@ export default function UnifiedSearchModal({
                     query={debouncedQuery}
                     hasIndexedFiles={stats?.files > 0}
                     onSearchClick={setQuery}
+                    corrections={queryMeta?.corrections}
                   />
                 ) : null}
 
@@ -4338,12 +4689,20 @@ export default function UnifiedSearchModal({
                   Object.entries(groupedResults).map(([category, results]) => (
                     <div key={category} className="mb-4">
                       <div className="flex items-center gap-2 mb-2 sticky top-0 bg-white py-1 z-10">
-                        <h4 className="text-xs font-semibold text-system-gray-500 uppercase tracking-wide">
+                        <Text
+                          as="h4"
+                          variant="tiny"
+                          className="font-semibold text-system-gray-500 uppercase tracking-wide"
+                        >
                           {category}
-                        </h4>
-                        <span className="text-xs text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded-full">
+                        </Text>
+                        <Text
+                          as="span"
+                          variant="tiny"
+                          className="text-system-gray-400 bg-system-gray-100 px-1.5 py-0.5 rounded-full"
+                        >
                           {results.length}
-                        </span>
+                        </Text>
                       </div>
                       <div className="flex flex-col gap-2">
                         {results.map((r) => {
@@ -4379,17 +4738,17 @@ export default function UnifiedSearchModal({
                   <div className="flex flex-col gap-4 flex-1">
                     {/* File info header */}
                     <div>
-                      <h3 className="heading-tertiary break-words">
+                      <Heading as="h3" variant="h5" className="break-words">
                         {selectedSearchResult?.metadata?.name ||
                           safeBasename(selectedSearchResult?.metadata?.path) ||
                           'File'}
-                      </h3>
-                      <p className="text-xs text-system-gray-500 mt-1 break-all">
+                      </Heading>
+                      <Text variant="tiny" className="text-system-gray-500 mt-1 break-all">
                         {formatDisplayPath(selectedSearchResult?.metadata?.path || '', {
                           redact: redactPaths,
                           segments: 2
                         })}
-                      </p>
+                      </Text>
                     </div>
 
                     {/* Subject/summary - the main content */}
@@ -4406,10 +4765,14 @@ export default function UnifiedSearchModal({
                       return (
                         <div className="bg-system-gray-50 rounded-lg p-3">
                           {subject && (
-                            <p className="text-sm font-medium text-system-gray-800">{subject}</p>
+                            <Text variant="small" className="font-medium text-system-gray-800">
+                              {subject}
+                            </Text>
                           )}
                           {summary && (
-                            <p className="text-sm text-system-gray-600 mt-1">{summary}</p>
+                            <Text variant="small" className="text-system-gray-600 mt-1">
+                              {summary}
+                            </Text>
                           )}
                         </div>
                       );
@@ -4425,17 +4788,19 @@ export default function UnifiedSearchModal({
                       return (
                         <div className="flex flex-wrap gap-1.5">
                           {tags.slice(0, 6).map((tag) => (
-                            <span
+                            <Text
+                              as="span"
+                              variant="tiny"
                               key={tag}
-                              className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 text-xs"
+                              className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600"
                             >
                               {tag}
-                            </span>
+                            </Text>
                           ))}
                           {tags.length > 6 && (
-                            <span className="text-xs text-system-gray-400">
+                            <Text as="span" variant="tiny" className="text-system-gray-400">
                               +{tags.length - 6} more
-                            </span>
+                            </Text>
                           )}
                         </div>
                       );
@@ -4454,7 +4819,10 @@ export default function UnifiedSearchModal({
                           <div className="text-[10px] uppercase text-system-gray-400 font-semibold mb-1 tracking-wider">
                             Content Preview
                           </div>
-                          <p className="text-xs text-system-gray-600 whitespace-pre-wrap leading-relaxed">
+                          <Text
+                            variant="tiny"
+                            className="text-system-gray-600 whitespace-pre-wrap leading-relaxed"
+                          >
                             {String(
                               selectedDocumentDetails?.analysis?.extractedText ||
                                 selectedSearchResult?.matchDetails?.bestSnippet ||
@@ -4465,7 +4833,7 @@ export default function UnifiedSearchModal({
                                 selectedSearchResult?.matchDetails?.bestSnippet ||
                                 selectedSearchResult?.document
                             ).length > 1000 && '...'}
-                          </p>
+                          </Text>
                         </div>
                       )
                     )}
@@ -4500,7 +4868,9 @@ export default function UnifiedSearchModal({
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-center">
                     <FileText className="w-12 h-12 text-system-gray-200 mb-3" />
-                    <p className="text-sm text-system-gray-500">Select a file to preview</p>
+                    <Text variant="small" className="text-system-gray-500">
+                      Select a file to preview
+                    </Text>
                   </div>
                 )}
               </div>
@@ -4512,11 +4882,11 @@ export default function UnifiedSearchModal({
         {activeTab === 'chat' && (
           <div className="flex-1 min-h-[60vh] surface-panel flex flex-col overflow-hidden">
             {hasLoadedStats && (!stats || stats.files === 0) && (
-              <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 text-xs text-system-gray-700 flex items-center justify-between gap-3">
-                <span>
+              <div className="mx-4 mt-4 rounded-lg border border-stratosort-warning/30 bg-stratosort-warning/10 px-3 py-2 flex items-center justify-between gap-3">
+                <Text as="span" variant="tiny" className="text-system-gray-700">
                   Embeddings are not ready yet. Build your embeddings in Settings to enable document
                   citations and sources.
-                </span>
+                </Text>
                 <Button variant="secondary" size="sm" onClick={handleOpenSettings}>
                   Open Settings
                 </Button>
@@ -4557,10 +4927,14 @@ export default function UnifiedSearchModal({
               >
                 {/* 1. Primary Action: Add to Graph */}
                 <div>
-                  <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Text
+                    as="div"
+                    variant="tiny"
+                    className="font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"
+                  >
                     <SearchIcon className="w-3.5 h-3.5" />
                     Add to Graph
-                  </div>
+                  </Text>
                   <SearchAutocomplete
                     value={query}
                     onChange={setQuery}
@@ -4569,7 +4943,11 @@ export default function UnifiedSearchModal({
                     ariaLabel="Search to add nodes"
                   />
                   <div className="mt-2 flex items-center justify-between gap-2">
-                    <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                    <Text
+                      as="label"
+                      variant="tiny"
+                      className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                    >
                       <input
                         type="checkbox"
                         checked={addMode}
@@ -4577,7 +4955,7 @@ export default function UnifiedSearchModal({
                         className="rounded"
                       />
                       Add to existing
-                    </label>
+                    </Text>
                     <Button variant="primary" size="sm" onClick={runGraphSearch}>
                       Add
                     </Button>
@@ -4586,9 +4964,220 @@ export default function UnifiedSearchModal({
 
                 {/* 2. Exploration Tools */}
                 <div className="pt-3 border-t border-system-gray-200">
-                  <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Text
+                    as="div"
+                    variant="tiny"
+                    className="font-semibold text-system-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"
+                  >
                     <Network className="w-3.5 h-3.5" />
                     <span>Explore</span>
+                  </Text>
+
+                  {/* Cluster mode (minimal) */}
+                  <div className="space-y-2 mb-3">
+                    <label className="text-[11px] text-system-gray-500">Cluster by</label>
+                    <select
+                      value={clusterMode}
+                      onChange={(e) => setClusterMode(e.target.value)}
+                      className="w-full text-xs border border-system-gray-200 rounded px-2 py-1 bg-white text-system-gray-800"
+                      style={{ colorScheme: 'light' }}
+                    >
+                      <option value="topic">Topic (semantic)</option>
+                      <option value="time">Time (recency)</option>
+                      <option value="type">Type (file category)</option>
+                      <option value="tag">Tag/Folder</option>
+                    </select>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-between text-xs"
+                    onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                    aria-expanded={showAdvancedFilters}
+                    aria-controls="advanced-cluster-filters"
+                  >
+                    <span>
+                      {showAdvancedFilters ? 'Hide advanced filters' : 'Show advanced filters'}
+                    </span>
+                    <ChevronDown
+                      className={`h-3 w-3 transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`}
+                    />
+                  </Button>
+
+                  {showAdvancedFilters && (
+                    <div
+                      id="advanced-cluster-filters"
+                      className="space-y-3 mt-2 border border-system-gray-200 rounded-lg p-3 bg-system-gray-50"
+                    >
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        {['high', 'medium', 'low'].map((conf) => (
+                          <label
+                            key={conf}
+                            className="flex items-center gap-1 text-system-gray-600"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={clusterFilters.confidence.includes(conf)}
+                              onChange={(e) =>
+                                setClusterFilters((prev) => {
+                                  const current = prev.confidence;
+                                  const next = e.target.checked
+                                    ? Array.from(new Set([...current, conf]))
+                                    : current.filter((c) => c !== conf);
+                                  return { ...prev, confidence: next };
+                                })
+                              }
+                              className="rounded"
+                            />
+                            <span className="capitalize">{conf} conf.</span>
+                          </label>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-system-gray-500 whitespace-nowrap">
+                          Min size
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={clusterFilters.minSize}
+                          onChange={(e) =>
+                            setClusterFilters((prev) => ({
+                              ...prev,
+                              minSize: Math.max(1, Number(e.target.value) || 1)
+                            }))
+                          }
+                          className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1 bg-white"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-system-gray-500 whitespace-nowrap">
+                          Type
+                        </label>
+                        <select
+                          value={clusterFilters.fileType}
+                          onChange={(e) =>
+                            setClusterFilters((prev) => ({ ...prev, fileType: e.target.value }))
+                          }
+                          className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1 bg-white text-system-gray-800"
+                          style={{ colorScheme: 'light' }}
+                        >
+                          <option value="all">All</option>
+                          <option value="document">Document</option>
+                          <option value="spreadsheet">Spreadsheet</option>
+                          <option value="code">Code</option>
+                          <option value="image">Image</option>
+                          <option value="audio">Audio</option>
+                          <option value="video">Video</option>
+                        </select>
+                      </div>
+
+                      <Input
+                        value={clusterFilters.search}
+                        onChange={(e) =>
+                          setClusterFilters((prev) => ({ ...prev, search: e.target.value }))
+                        }
+                        placeholder="Search clusters..."
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  )}
+
+                  {/* Guide assistant */}
+                  <div className="space-y-2 bg-system-gray-50 border border-system-gray-200 rounded-lg p-2">
+                    <Text
+                      as="div"
+                      variant="tiny"
+                      className="flex items-center justify-between text-system-gray-600"
+                    >
+                      <span>Guide me</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowGuidePanel((v) => !v)}
+                        className="h-auto px-2 py-0 text-system-gray-500 hover:text-stratosort-blue"
+                      >
+                        {showGuidePanel ? 'Hide' : 'Show'}
+                      </Button>
+                    </Text>
+                    {showGuidePanel && (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleGuideIntent('related')}
+                          >
+                            Related topics
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleGuideIntent('recent')}
+                          >
+                            Recent changes
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleGuideIntent('type')}
+                          >
+                            By type
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleGuideIntent('bridges')}
+                          >
+                            Bridges/gaps
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleGuideIntent('expand')}
+                          >
+                            Expand selection
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleGuideIntent('bridgesOnly')}
+                          >
+                            Bridges only
+                          </Button>
+                        </div>
+                        <div className="flex gap-1">
+                          <Input
+                            value={guideInput}
+                            onChange={(e) => setGuideInput(e.target.value)}
+                            placeholder="Describe what you need..."
+                            className="h-8 text-xs"
+                          />
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() =>
+                              guideInput.trim() && handleGuideIntent('custom', { text: guideInput })
+                            }
+                          >
+                            Go
+                          </Button>
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs"
+                            onClick={resetGraphFilters}
+                          >
+                            Reset filters
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-3">
@@ -4720,43 +5309,55 @@ export default function UnifiedSearchModal({
 
                 {/* 3. Advanced / Secondary Controls (Collapsible) */}
                 <div className="pt-2 border-t border-system-gray-200">
-                  <button
+                  <Button
                     onClick={() => setShowAdvancedControls(!showAdvancedControls)}
-                    className="flex items-center w-full text-left text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 hover:text-system-gray-800 transition-colors"
+                    variant="ghost"
+                    size="sm"
+                    rightIcon={
+                      showAdvancedControls ? (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      )
+                    }
+                    className="w-full justify-start text-xs font-semibold text-system-gray-500 uppercase tracking-wider mb-2 hover:text-system-gray-800"
                   >
-                    {showAdvancedControls ? (
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    )}
-                    <span>Advanced Options</span>
-                  </button>
+                    Advanced Options
+                  </Button>
 
                   {showAdvancedControls && (
                     <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200 pl-1">
                       {/* Filter */}
                       <div>
-                        <div className="text-xs font-medium text-system-gray-700 mb-1.5">
+                        <Text
+                          as="div"
+                          variant="tiny"
+                          className="font-medium text-system-gray-700 mb-1.5"
+                        >
                           Filter Visibility
-                        </div>
+                        </Text>
                         <Input
                           value={withinQuery}
                           onChange={(e) => setWithinQuery(e.target.value)}
                           placeholder="Filter nodes..."
-                          className="h-8 text-xs"
+                          className="h-8"
                         />
                       </div>
 
                       {/* Expansion Settings */}
                       <div>
-                        <div className="text-xs font-medium text-system-gray-700 mb-1.5">
+                        <Text
+                          as="div"
+                          variant="tiny"
+                          className="font-medium text-system-gray-700 mb-1.5"
+                        >
                           Connection Depth
-                        </div>
+                        </Text>
                         <div className="flex items-center gap-2 mb-2">
                           <select
                             value={hopCount}
                             onChange={(e) => setHopCount(Number(e.target.value))}
-                            className="flex-1 text-xs border border-system-gray-200 rounded px-2 py-1.5 bg-white text-system-gray-900"
+                            className="flex-1 border border-system-gray-200 rounded px-2 py-1.5 bg-white text-system-gray-900"
                             style={{ colorScheme: 'light' }}
                           >
                             <option value={1} className="bg-white text-system-gray-900">
@@ -4773,7 +5374,11 @@ export default function UnifiedSearchModal({
                       </div>
 
                       {/* Auto-layout Toggle */}
-                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                      <Text
+                        as="label"
+                        variant="tiny"
+                        className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                      >
                         <input
                           type="checkbox"
                           checked={autoLayout}
@@ -4781,10 +5386,14 @@ export default function UnifiedSearchModal({
                           className="rounded"
                         />
                         Auto-layout on changes
-                      </label>
+                      </Text>
 
                       {/* Auto-clustering Toggle */}
-                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer">
+                      <Text
+                        as="label"
+                        variant="tiny"
+                        className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer"
+                      >
                         <input
                           type="checkbox"
                           checked={enableAutoClustering}
@@ -4792,10 +5401,14 @@ export default function UnifiedSearchModal({
                           className="rounded"
                         />
                         Auto-load clusters
-                      </label>
+                      </Text>
 
                       {/* Edge Labels Toggle */}
-                      <label className="text-xs text-system-gray-600 flex items-center gap-2 select-none cursor-pointer mt-1">
+                      <Text
+                        as="label"
+                        variant="tiny"
+                        className="text-system-gray-600 flex items-center gap-2 select-none cursor-pointer mt-1"
+                      >
                         <input
                           type="checkbox"
                           checked={showEdgeLabels}
@@ -4803,7 +5416,7 @@ export default function UnifiedSearchModal({
                           className="rounded"
                         />
                         Show connection labels
-                      </label>
+                      </Text>
 
                       {/* Save/Load Controls */}
                       <div className="pt-2 mt-2 border-t border-system-gray-100 flex gap-2">
@@ -4811,7 +5424,7 @@ export default function UnifiedSearchModal({
                           variant="secondary"
                           size="sm"
                           onClick={handleSaveGraph}
-                          className="flex-1 justify-center text-xs"
+                          className="flex-1 justify-center"
                         >
                           Save State
                         </Button>
@@ -4819,7 +5432,7 @@ export default function UnifiedSearchModal({
                           variant="secondary"
                           size="sm"
                           onClick={handleLoadGraph}
-                          className="flex-1 justify-center text-xs"
+                          className="flex-1 justify-center"
                         >
                           Load State
                         </Button>
@@ -4840,7 +5453,11 @@ export default function UnifiedSearchModal({
                 </div>
 
                 {/* Status Footer */}
-                <div className="mt-auto pt-4 text-xs text-system-gray-400 border-t border-system-gray-100">
+                <Text
+                  as="div"
+                  variant="tiny"
+                  className="mt-auto pt-4 text-system-gray-400 border-t border-system-gray-100"
+                >
                   {nodes.length > 0 ? (
                     <div className="flex justify-between items-center">
                       <span>{nodes.length} nodes</span>
@@ -4849,7 +5466,7 @@ export default function UnifiedSearchModal({
                   ) : (
                     <div className="italic text-center">Empty graph</div>
                   )}
-                </div>
+                </Text>
               </div>
             )}
 
@@ -4879,11 +5496,14 @@ export default function UnifiedSearchModal({
                 )}
                 {/* Toggle Clusters Button - Progressive Disclosure */}
                 {nodes.some((n) => n.data?.kind === 'cluster') && (
-                  <button
+                  <Button
                     onClick={() => setShowClusters(!showClusters)}
-                    className={`p-1.5 backdrop-blur-sm border rounded-lg shadow-sm transition-all flex items-center gap-1.5 px-2 ${
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<Layers className="w-4 h-4" />}
+                    className={`h-8 px-2 backdrop-blur-sm shadow-sm ${
                       showClusters
-                        ? 'bg-amber-50 border-amber-200 text-amber-700'
+                        ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
                         : 'bg-white/90 border-system-gray-200 text-system-gray-600 hover:text-system-gray-800 hover:bg-white'
                     }`}
                     title={
@@ -4892,22 +5512,23 @@ export default function UnifiedSearchModal({
                         : 'Show clusters (reveal structure)'
                     }
                   >
-                    <Layers className="w-4 h-4" />
-                    <span className="text-xs font-medium hidden sm:inline">
+                    <Text as="span" variant="tiny" className="font-medium hidden sm:inline">
                       {showClusters ? 'Clusters On' : 'Clusters Off'}
-                    </span>
-                  </button>
+                    </Text>
+                  </Button>
                 )}
 
                 {/* Help button to re-show tour */}
-                <button
+                <IconButton
                   onClick={() => setShowTourManually(true)}
-                  className="p-1.5 bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg shadow-sm text-system-gray-600 hover:text-stratosort-blue hover:bg-white transition-all"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 w-8 bg-white/90 text-system-gray-600 hover:text-stratosort-blue hover:bg-white"
                   title="Show graph tour"
-                >
-                  <HelpCircle className="w-4 h-4" />
-                </button>
-                <button
+                  aria-label="Show graph tour"
+                  icon={<HelpCircle className="w-4 h-4" />}
+                />
+                <IconButton
                   onClick={() => {
                     setIsGraphMaximized(!isGraphMaximized);
                     // Wait for layout transition then fit view
@@ -4915,15 +5536,19 @@ export default function UnifiedSearchModal({
                       reactFlowInstance.current?.fitView({ padding: 0.2, duration: 800 });
                     }, 300);
                   }}
-                  className="p-1.5 bg-white/90 backdrop-blur-sm border border-system-gray-200 rounded-lg shadow-sm text-system-gray-600 hover:text-system-gray-900 hover:bg-white transition-all"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 w-8 bg-white/90 text-system-gray-600 hover:text-system-gray-900 hover:bg-white"
                   title={isGraphMaximized ? 'Exit Full View' : 'Maximize Graph View'}
-                >
-                  {isGraphMaximized ? (
-                    <Minimize2 className="w-4 h-4" />
-                  ) : (
-                    <Maximize2 className="w-4 h-4" />
-                  )}
-                </button>
+                  aria-label={isGraphMaximized ? 'Exit full view' : 'Maximize graph view'}
+                  icon={
+                    isGraphMaximized ? (
+                      <Minimize2 className="w-4 h-4" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4" />
+                    )
+                  }
+                />
               </div>
 
               {/* Drag overlay indicator */}
@@ -4933,10 +5558,12 @@ export default function UnifiedSearchModal({
                     <div className="w-12 h-12 rounded-full bg-stratosort-blue/10 flex items-center justify-center">
                       <FolderPlus className="w-6 h-6 text-stratosort-blue" />
                     </div>
-                    <div className="text-sm font-medium text-system-gray-900">
+                    <Text variant="small" className="font-medium text-system-gray-900">
                       Drop files to add to graph
-                    </div>
-                    <div className="text-xs text-system-gray-500">Files must be indexed first</div>
+                    </Text>
+                    <Text variant="tiny" className="text-system-gray-500">
+                      Files must be indexed first
+                    </Text>
                   </div>
                 </div>
               )}
@@ -4947,11 +5574,16 @@ export default function UnifiedSearchModal({
                     <Network className="w-10 h-10 text-stratosort-blue opacity-50" />
                   </div>
 
-                  <h3 className="heading-secondary mb-2">Stop Searching. Start Finding.</h3>
-                  <p className="text-sm text-system-gray-500 max-w-md mb-8 leading-relaxed">
+                  <Heading as="h3" variant="h4" className="mb-2">
+                    Stop Searching. Start Finding.
+                  </Heading>
+                  <Text
+                    variant="small"
+                    className="text-system-gray-500 max-w-md mb-8 leading-relaxed"
+                  >
                     Your files are scattered across folders. Clustering reveals how they naturally
                     belong together—even files you forgot you had.
-                  </p>
+                  </Text>
 
                   {/* Inline Search for Empty State */}
                   <div className="w-full max-w-sm mb-8 relative z-10">
@@ -4965,9 +5597,13 @@ export default function UnifiedSearchModal({
                         autoFocus
                       />
                     </div>
-                    <div className="text-xs text-system-gray-400 mt-2 flex justify-center gap-4">
+                    <Text
+                      as="div"
+                      variant="tiny"
+                      className="text-system-gray-400 mt-2 flex justify-center gap-4"
+                    >
                       <span>or drag files here from the list</span>
-                    </div>
+                    </Text>
                   </div>
 
                   {/* Quick start options */}
@@ -5009,7 +5645,11 @@ export default function UnifiedSearchModal({
                     />
                   )}
 
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-xs text-system-gray-400 max-w-md border-t border-system-gray-100 pt-6">
+                  <Text
+                    as="div"
+                    variant="tiny"
+                    className="grid grid-cols-2 gap-x-8 gap-y-3 text-system-gray-400 max-w-md border-t border-system-gray-100 pt-6"
+                  >
                     <div className="flex items-center gap-2">
                       <kbd className="px-1.5 py-0.5 rounded bg-system-gray-100 border border-system-gray-200 font-mono text-system-gray-600">
                         Click
@@ -5034,7 +5674,7 @@ export default function UnifiedSearchModal({
                       </kbd>
                       <span>to center</span>
                     </div>
-                  </div>
+                  </Text>
                 </div>
               ) : (
                 <GraphErrorBoundary
@@ -5084,21 +5724,84 @@ export default function UnifiedSearchModal({
                     <MiniMap pannable zoomable nodeColor={miniMapNodeColor} />
                     <Controls showInteractive={false} />
 
+                    {/* Active filter chips (top-left) */}
+                    {hasGraphFilterIndicators && (
+                      <Panel position="top-left" className="pointer-events-auto">
+                        <div className="flex flex-wrap items-center gap-1.5 bg-white/90 backdrop-blur border border-system-gray-200 rounded-lg px-2 py-1 shadow-sm">
+                          {clusterMode !== DEFAULT_CLUSTER_MODE && (
+                            <span className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-[10px] text-system-gray-600">
+                              Mode: {clusterMode}
+                            </span>
+                          )}
+                          {bridgeOverlayEnabled && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] text-amber-700">
+                              Bridges only
+                            </span>
+                          )}
+                          {activeClusterFilterChips.map((chip) => (
+                            <span
+                              key={`cluster-${chip}`}
+                              className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-[10px] text-system-gray-600"
+                            >
+                              {chip}
+                            </span>
+                          ))}
+                          {activeGraphFilterChips.map((chip) => (
+                            <span
+                              key={`graph-${chip}`}
+                              className="px-2 py-0.5 rounded-full bg-system-gray-50 border border-system-gray-200 text-[10px] text-system-gray-600"
+                            >
+                              {chip}
+                            </span>
+                          ))}
+                          <Button variant="ghost" size="xs" onClick={resetGraphFilters}>
+                            Reset
+                          </Button>
+                        </div>
+                      </Panel>
+                    )}
+
                     {/* Zoom Level Indicator */}
                     {zoomLevel < 0.6 && (
-                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10">
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-system-gray-900/75 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-300 z-50 border border-white/10"
+                      >
                         Labels hidden at this zoom • Scroll to zoom in
-                      </div>
+                      </Text>
                     )}
 
                     {/* Keyboard shortcuts hint (subtle, bottom-left) */}
                     {nodes.length > 0 && zoomLevel >= 0.6 && (
-                      <div className="absolute bottom-3 left-3 text-[10px] text-system-gray-400 pointer-events-none z-10 flex items-center gap-1.5">
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="absolute bottom-3 left-3 text-system-gray-400 pointer-events-none z-10 flex items-center gap-1.5"
+                      >
                         <kbd className="px-1 py-0.5 rounded bg-white/80 border border-system-gray-200 text-system-gray-500 font-mono shadow-sm">
                           ?
                         </kbd>
                         <span>for help</span>
-                      </div>
+                      </Text>
+                    )}
+
+                    {/* Filter chips */}
+                    {activeClusterFilterChips.length > 0 && (
+                      <Text
+                        as="div"
+                        variant="tiny"
+                        className="absolute top-3 left-3 flex flex-wrap gap-2 text-system-gray-600"
+                      >
+                        {activeClusterFilterChips.map((chip) => (
+                          <span
+                            key={chip}
+                            className="px-2 py-0.5 bg-white/80 border border-system-gray-200 rounded-full shadow-sm"
+                          >
+                            {chip}
+                          </span>
+                        ))}
+                      </Text>
                     )}
                   </ReactFlow>
                 </GraphErrorBoundary>
@@ -5114,9 +5817,9 @@ export default function UnifiedSearchModal({
               >
                 <div className="p-4 border-b border-system-gray-100 bg-system-gray-50/50 flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-stratosort-blue" aria-hidden="true" />
-                  <div className="text-sm font-semibold text-system-gray-900">
+                  <Text as="div" variant="small" className="font-semibold text-system-gray-900">
                     {selectedNode ? 'Node Details' : 'Legend'}
-                  </div>
+                  </Text>
                 </div>
 
                 <div className="p-4 overflow-y-auto flex-1">
@@ -5131,6 +5834,176 @@ export default function UnifiedSearchModal({
                           <div className="flex gap-2 pt-2">
                             <div className="h-8 bg-system-gray-200 rounded w-20" />
                             <div className="h-8 bg-system-gray-200 rounded w-20" />
+                          </div>
+                        </div>
+                      ) : selectedKind === 'cluster' ? (
+                        <div className="flex flex-col gap-6">
+                          <div className="flex items-start gap-3 mb-2">
+                            <div className="mt-1 p-2 bg-white border border-system-gray-200 rounded-lg shadow-sm text-amber-600">
+                              <Layers className="h-5 w-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <Text
+                                variant="small"
+                                className="font-semibold text-system-gray-900 break-words leading-snug"
+                              >
+                                {selectedLabel}
+                              </Text>
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="text-system-gray-500 mt-1 flex flex-wrap gap-2"
+                              >
+                                <span className="px-2 py-0.5 bg-system-gray-100 rounded-full">
+                                  {selectedNode.data?.memberCount || 0} files
+                                </span>
+                                <span className="px-2 py-0.5 bg-system-gray-100 rounded-full capitalize">
+                                  {selectedNode.data?.confidence || 'low'} confidence
+                                </span>
+                                {selectedNode.data?.dominantCategory && (
+                                  <span className="px-2 py-0.5 bg-system-gray-100 rounded-full">
+                                    {selectedNode.data.dominantCategory}
+                                  </span>
+                                )}
+                              </Text>
+                            </div>
+                          </div>
+
+                          {(selectedNode.data?.topTerms?.length > 0 ||
+                            selectedNode.data?.commonTags?.length > 0) && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Why this cluster
+                              </Text>
+                              <div className="flex flex-wrap gap-1.5">
+                                {(
+                                  selectedNode.data?.topTerms ||
+                                  selectedNode.data?.commonTags ||
+                                  []
+                                )
+                                  .slice(0, 8)
+                                  .map((term) => (
+                                    <span
+                                      key={term}
+                                      className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[11px]"
+                                    >
+                                      {term}
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedClusterInfo?.bridges?.length > 0 && (
+                            <div className="space-y-2">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
+                                Related clusters
+                              </Text>
+                              <div className="space-y-2">
+                                {selectedClusterInfo.bridges.map((bridge) => (
+                                  <div
+                                    key={bridge.id}
+                                    className="border border-system-gray-200 rounded-lg p-2 bg-system-gray-50"
+                                  >
+                                    <Text
+                                      as="div"
+                                      variant="small"
+                                      className="flex items-center justify-between text-system-gray-800"
+                                    >
+                                      <span>{bridge.targetLabel || bridge.targetId}</span>
+                                      <Text
+                                        as="span"
+                                        variant="tiny"
+                                        className="text-system-gray-500"
+                                      >
+                                        {Math.round((bridge.similarity || 0) * 100)}% match
+                                      </Text>
+                                    </Text>
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-600 mt-1 flex flex-wrap gap-1"
+                                    >
+                                      {bridge.sharedTerms?.slice(0, 3)?.map((t) => (
+                                        <span
+                                          key={t}
+                                          className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded"
+                                        >
+                                          {t}
+                                        </span>
+                                      ))}
+                                      {bridge.bridgeCount > 0 && (
+                                        <span className="px-1.5 py-0.5 bg-white border border-system-gray-200 rounded">
+                                          {bridge.bridgeCount} bridge file
+                                          {bridge.bridgeCount === 1 ? '' : 's'}
+                                        </span>
+                                      )}
+                                    </Text>
+                                    {Array.isArray(bridge.bridgeFiles) &&
+                                      bridge.bridgeFiles.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                          {bridge.bridgeFiles.slice(0, 3).map((file) => (
+                                            <div
+                                              key={file?.path || file?.id || file}
+                                              className="flex items-center justify-between text-[11px] text-system-gray-700 bg-white border border-system-gray-100 rounded px-2 py-1"
+                                            >
+                                              <span className="truncate flex-1 mr-2">
+                                                {file?.name || file?.path || file}
+                                              </span>
+                                              {file?.path && (
+                                                <div className="flex gap-1">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="xs"
+                                                    onClick={() => openFile(file.path)}
+                                                  >
+                                                    <ExternalLink className="h-3 w-3" />
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="xs"
+                                                    onClick={() => revealFile(file.path)}
+                                                  >
+                                                    <FolderOpen className="h-3 w-3" />
+                                                  </Button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                          {bridge.bridgeFiles.length > 3 && (
+                                            <div className="text-[11px] text-system-gray-500">
+                                              +{bridge.bridgeFiles.length - 3} more
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setFocusNodeId(selectedNode.id)}
+                            >
+                              <Maximize2 className="h-4 w-4" />
+                              <span>Show only cluster</span>
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setFocusNodeId(null)}>
+                              <Layers className="h-4 w-4" />
+                              <span>Show neighbors</span>
+                            </Button>
                           </div>
                         </div>
                       ) : (
@@ -5148,12 +6021,19 @@ export default function UnifiedSearchModal({
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-system-gray-900 break-words leading-snug">
+                                <Text
+                                  variant="small"
+                                  className="font-semibold text-system-gray-900 break-words leading-snug"
+                                >
                                   {selectedLabel}
-                                </div>
-                                <div className="text-xs text-system-gray-500 mt-1 capitalize px-2 py-0.5 bg-system-gray-100 rounded-full inline-block">
+                                </Text>
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="text-system-gray-500 mt-1 capitalize px-2 py-0.5 bg-system-gray-100 rounded-full inline-block"
+                                >
                                   {selectedKind} Node
-                                </div>
+                                </Text>
                               </div>
                             </div>
                           </div>
@@ -5169,19 +6049,29 @@ export default function UnifiedSearchModal({
                             if (!subject && !summary) return null;
                             return (
                               <div className="space-y-2">
-                                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider">
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                                >
                                   Analysis
-                                </div>
+                                </Text>
                                 <div className="bg-system-gray-50 rounded-lg p-3 border border-system-gray-100">
                                   {subject && (
-                                    <p className="text-sm font-medium text-system-gray-800 mb-1">
+                                    <Text
+                                      variant="small"
+                                      className="font-medium text-system-gray-800 mb-1"
+                                    >
                                       {subject}
-                                    </p>
+                                    </Text>
                                   )}
                                   {summary && (
-                                    <p className="text-xs text-system-gray-600 leading-relaxed">
+                                    <Text
+                                      variant="tiny"
+                                      className="text-system-gray-600 leading-relaxed"
+                                    >
                                       {summary}
-                                    </p>
+                                    </Text>
                                   )}
                                 </div>
                               </div>
@@ -5195,17 +6085,23 @@ export default function UnifiedSearchModal({
                             if (!Array.isArray(tags) || tags.length === 0) return null;
                             return (
                               <div className="space-y-2">
-                                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider">
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                                >
                                   Tags
-                                </div>
+                                </Text>
                                 <div className="flex flex-wrap gap-1.5">
                                   {tags.map((tag) => (
-                                    <span
+                                    <Text
+                                      as="span"
+                                      variant="tiny"
                                       key={tag}
-                                      className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 text-[10px] border border-system-gray-200"
+                                      className="px-2 py-0.5 rounded-full bg-system-gray-100 text-system-gray-600 border border-system-gray-200"
                                     >
                                       {tag}
-                                    </span>
+                                    </Text>
                                   ))}
                                 </div>
                               </div>
@@ -5221,11 +6117,18 @@ export default function UnifiedSearchModal({
                             (selectedDocumentDetails?.analysis?.extractedText ||
                               selectedNode.data?.content) && (
                               <div className="space-y-2">
-                                <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider">
+                                <Text
+                                  as="div"
+                                  variant="tiny"
+                                  className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                                >
                                   Content Preview
-                                </div>
+                                </Text>
                                 <div className="bg-white border border-system-gray-100 rounded-lg p-3 max-h-48 overflow-y-auto">
-                                  <p className="text-xs text-system-gray-600 whitespace-pre-wrap leading-relaxed">
+                                  <Text
+                                    variant="tiny"
+                                    className="text-system-gray-600 whitespace-pre-wrap leading-relaxed"
+                                  >
                                     {String(
                                       selectedDocumentDetails?.analysis?.extractedText ||
                                         selectedNode.data?.content
@@ -5234,7 +6137,7 @@ export default function UnifiedSearchModal({
                                       selectedDocumentDetails?.analysis?.extractedText ||
                                         selectedNode.data?.content
                                     ).length > 500 && '...'}
-                                  </p>
+                                  </Text>
                                 </div>
                               </div>
                             )
@@ -5243,26 +6146,42 @@ export default function UnifiedSearchModal({
                           {/* Properties Section */}
                           {selectedPath && (
                             <div className="space-y-2">
-                              <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider">
+                              <Text
+                                as="div"
+                                variant="tiny"
+                                className="font-semibold text-system-gray-500 uppercase tracking-wider"
+                              >
                                 Properties
-                              </div>
+                              </Text>
                               <div className="bg-system-gray-50 rounded-lg p-3 border border-system-gray-100 space-y-2">
                                 <div>
-                                  <div className="text-[10px] text-system-gray-400 uppercase tracking-wide mb-0.5">
+                                  <Text
+                                    as="div"
+                                    variant="tiny"
+                                    className="text-system-gray-400 uppercase tracking-wide mb-0.5"
+                                  >
                                     Path
-                                  </div>
-                                  <div className="text-xs text-system-gray-700 font-mono break-all leading-relaxed select-all">
+                                  </Text>
+                                  <Text
+                                    as="div"
+                                    variant="tiny"
+                                    className="text-system-gray-700 font-mono break-all leading-relaxed select-all"
+                                  >
                                     {selectedPath}
-                                  </div>
+                                  </Text>
                                 </div>
                                 {selectedNode.data?.score > 0 && (
                                   <div>
-                                    <div className="text-[10px] text-system-gray-400 uppercase tracking-wide mb-0.5">
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-400 uppercase tracking-wide mb-0.5"
+                                    >
                                       Relevance Score
-                                    </div>
-                                    <div className="text-xs text-system-gray-700">
+                                    </Text>
+                                    <Text as="div" variant="tiny" className="text-system-gray-700">
                                       {Math.round(selectedNode.data.score * 100)}%
-                                    </div>
+                                    </Text>
                                   </div>
                                 )}
                               </div>
@@ -5271,11 +6190,15 @@ export default function UnifiedSearchModal({
 
                           {/* Notes Section */}
                           <div className="space-y-2">
-                            <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between"
+                            >
                               <span>Notes</span>
-                            </div>
-                            <textarea
-                              className="w-full text-xs p-2 border border-system-gray-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-stratosort-blue/20 focus:border-stratosort-blue/50"
+                            </Text>
+                            <Textarea
+                              className="w-full text-sm"
                               rows={3}
                               placeholder="Add notes about this node or connection..."
                               value={graphNotes[selectedNode.id] || ''}
@@ -5290,7 +6213,11 @@ export default function UnifiedSearchModal({
 
                           {/* Connections Section */}
                           <div className="space-y-2">
-                            <div className="text-xs font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between">
+                            <Text
+                              as="div"
+                              variant="tiny"
+                              className="font-semibold text-system-gray-500 uppercase tracking-wider flex justify-between"
+                            >
                               <span>Connections</span>
                               <span className="text-system-gray-400 font-normal">
                                 {
@@ -5301,7 +6228,7 @@ export default function UnifiedSearchModal({
                                 }{' '}
                                 links
                               </span>
-                            </div>
+                            </Text>
                             <div className="flex flex-col gap-1.5 mt-1">
                               {(() => {
                                 const neighborsMap = new Map();
@@ -5341,38 +6268,44 @@ export default function UnifiedSearchModal({
 
                                 if (neighbors.length === 0)
                                   return (
-                                    <div className="text-xs text-system-gray-400 italic">
+                                    <Text
+                                      as="div"
+                                      variant="tiny"
+                                      className="text-system-gray-400 italic"
+                                    >
                                       No direct connections
-                                    </div>
+                                    </Text>
                                   );
 
-                                return neighbors.slice(0, 10).map((n) => (
-                                  <button
-                                    key={n.id}
-                                    onClick={() => graphActions.selectNode(n.id)}
-                                    className="flex items-center gap-2 p-1.5 rounded-md hover:bg-system-gray-100 text-left transition-colors group"
-                                  >
-                                    <div className="shrink-0">
-                                      {n.kind === 'query' ? (
-                                        <SearchIcon className="h-3 w-3 text-system-gray-400" />
-                                      ) : n.kind === 'cluster' ? (
-                                        <Layers className="h-3 w-3 text-system-gray-400" />
-                                      ) : (
-                                        <FileText className="h-3 w-3 text-system-gray-400" />
-                                      )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-[11px] font-medium text-system-gray-700 truncate group-hover:text-stratosort-blue">
+                                return neighbors.slice(0, 10).map((n) => {
+                                  const icon =
+                                    n.kind === 'query' ? (
+                                      <SearchIcon className="h-3 w-3 text-system-gray-400" />
+                                    ) : n.kind === 'cluster' ? (
+                                      <Layers className="h-3 w-3 text-system-gray-400" />
+                                    ) : (
+                                      <FileText className="h-3 w-3 text-system-gray-400" />
+                                    );
+                                  return (
+                                    <Button
+                                      key={n.id}
+                                      variant="ghost"
+                                      size="sm"
+                                      leftIcon={icon}
+                                      onClick={() => graphActions.selectNode(n.id)}
+                                      className="w-full justify-between h-auto px-2 py-1.5 rounded-md text-left text-[11px] text-system-gray-700 hover:bg-system-gray-100"
+                                    >
+                                      <span className="flex-1 min-w-0 truncate group-hover:text-stratosort-blue">
                                         {n.label}
-                                      </div>
-                                    </div>
-                                    {typeof n.similarity === 'number' && (
-                                      <div className="text-[10px] text-system-gray-400">
-                                        {Math.round(n.similarity * 100)}%
-                                      </div>
-                                    )}
-                                  </button>
-                                ));
+                                      </span>
+                                      {typeof n.similarity === 'number' ? (
+                                        <span className="text-[10px] text-system-gray-400">
+                                          {Math.round(n.similarity * 100)}%
+                                        </span>
+                                      ) : null}
+                                    </Button>
+                                  );
+                                });
                               })()}
                               {edges.filter(
                                 (e) => e.source === selectedNode.id || e.target === selectedNode.id
@@ -5471,7 +6404,7 @@ export default function UnifiedSearchModal({
                             className="shadow-none border-none p-0 bg-transparent w-full"
                             activeFilters={activeFilters}
                             onToggleFilter={handleToggleFilter}
-                            compact={false}
+                            compact
                           />
                         </div>
                       ) : nodes.length > 0 ? (
@@ -5480,7 +6413,7 @@ export default function UnifiedSearchModal({
                             Graph Legend
                           </div>
                           <ClusterLegend
-                            compact={false}
+                            compact
                             className="shadow-none border-none p-0 bg-transparent w-full"
                             activeFilters={activeFilters}
                             onToggleFilter={handleToggleFilter}
@@ -5491,10 +6424,12 @@ export default function UnifiedSearchModal({
                           <div className="w-12 h-12 rounded-full bg-system-gray-100 flex items-center justify-center mb-3">
                             <Sparkles className="w-6 h-6 text-system-gray-300" />
                           </div>
-                          <p className="text-sm font-medium text-system-gray-600">No Selection</p>
-                          <p className="text-xs text-system-gray-400 mt-1 max-w-[200px]">
+                          <Text variant="small" className="font-medium text-system-gray-600">
+                            No Selection
+                          </Text>
+                          <Text variant="tiny" className="text-system-gray-400 mt-1 max-w-[200px]">
                             Select a node to view details, or run a search to populate the graph.
-                          </p>
+                          </Text>
                         </div>
                       )}
                     </div>

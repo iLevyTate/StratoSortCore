@@ -87,7 +87,11 @@ function OrganizeProgress({
       </div>
 
       <div className="mb-8">
-        <div className="flex justify-between text-sm text-system-gray-600 mb-2 font-medium">
+        <Text
+          as="div"
+          variant="small"
+          className="flex justify-between text-system-gray-600 mb-2 font-medium"
+        >
           <span>
             {hasTotals ? (
               <>
@@ -98,7 +102,7 @@ function OrganizeProgress({
             )}
           </span>
           <span>{Math.round(percentToShow)}%</span>
-        </div>
+        </Text>
 
         <div className="h-3 w-full bg-system-gray-100 rounded-full overflow-hidden mb-3">
           {hasTotals ? (

@@ -105,10 +105,10 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
   const keywords = file.analysis?.keywords || [];
 
   return (
-    <div style={style} className="px-2 py-2">
+    <div style={style} className="px-cozy py-compact">
       <Card
         variant="interactive"
-        className="flex items-center p-3 gap-3 h-full group transition-all duration-200 hover:border-stratosort-blue/30"
+        className="flex items-start p-3 gap-3 h-full group transition-all duration-200 hover:border-stratosort-blue/30"
         onClick={() => handleAction && handleAction('open', file.path)}
       >
         {/* Icon */}
@@ -117,43 +117,59 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-          <div className="flex items-center gap-2">
-            <Text variant="body" className="font-medium text-system-gray-900 truncate">
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
+          <div className="flex flex-wrap items-start gap-2 sm:gap-3">
+            <Text
+              variant="body"
+              className="font-medium text-system-gray-900 truncate flex-1 min-w-[180px]"
+            >
               {file.name || 'Unknown File'}
             </Text>
-            <StatusBadge
-              variant={tone}
-              size="sm"
-              className="px-1.5 py-0.5 text-[10px] h-5 border-0 bg-opacity-50"
-            >
-              <span className={stateDisplay?.spinning ? 'animate-spin mr-1' : 'mr-1'}>
-                {stateDisplay?.icon}
-              </span>
-              {stateDisplay?.label || 'Status'}
-            </StatusBadge>
-            {confidence !== null && (
-              <Text variant="tiny" className="text-system-gray-400">
-                {confidence}%
-              </Text>
-            )}
+            <div className="flex items-center gap-2 flex-shrink-0 whitespace-nowrap">
+              <StatusBadge
+                variant={tone}
+                size="sm"
+                title={stateDisplay?.label || 'Status'}
+                className="px-1.5 py-0.5 text-[10px] h-5 border-0 bg-opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
+              >
+                <span className={stateDisplay?.spinning ? 'animate-spin' : ''}>
+                  {stateDisplay?.icon}
+                </span>
+                {stateDisplay?.label || 'Status'}
+              </StatusBadge>
+              {confidence !== null && (
+                <Text
+                  variant="tiny"
+                  className="text-system-gray-500 font-medium whitespace-nowrap"
+                  title={`Confidence ${confidence}%`}
+                >
+                  Conf. {confidence}%
+                </Text>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 text-system-gray-500">
-            <Text variant="tiny" className="truncate max-w-[300px]" title={displayPath}>
+          <div className="flex flex-wrap items-center gap-2 text-system-gray-500">
+            <Text variant="tiny" className="truncate flex-[2_1_240px] min-w-0" title={displayPath}>
               {displayPath}
             </Text>
             {file.analysis?.category && (
               <>
                 <span className="w-1 h-1 rounded-full bg-system-gray-300" />
-                <span className="text-[10px] px-1.5 py-0.5 bg-system-gray-100 rounded-md text-system-gray-600 font-medium border border-system-gray-200">
-                  {file.analysis.category}
+                <span
+                  className="text-[10px] px-1.5 py-0.5 bg-system-gray-100 rounded-md text-system-gray-600 font-medium border border-system-gray-200 whitespace-nowrap"
+                  title={`Category: ${file.analysis.category}`}
+                >
+                  Category: {file.analysis.category}
                 </span>
               </>
             )}
             {keywords.length > 0 && (
-              <span className="text-[10px] text-system-gray-400 truncate max-w-[150px]">
-                {keywords.join(', ')}
+              <span
+                className="text-[10px] text-system-gray-400 truncate flex-1 min-w-[120px] max-w-full sm:max-w-[200px]"
+                title={`Keywords: ${keywords.join(', ')}`}
+              >
+                Keywords: {keywords.join(', ')}
               </span>
             )}
           </div>
@@ -290,7 +306,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   };
 
   const shouldVirtualize = items.length > VIRTUALIZATION_THRESHOLD;
-  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-4`;
+  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-default`;
 
   if (isEmpty) {
     return (
@@ -299,7 +315,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
         title="No analysis results yet"
         description="Add files above and start an analysis to see suggestions stream in."
         size="lg"
-        className="h-64 flex items-center justify-center"
+        className="h-64 flex items-center justify-center px-relaxed"
         contentClassName="max-w-sm"
       />
     );
@@ -330,7 +346,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   }
 
   return (
-    <div className={`${listContainerClass} p-4`}>
+    <div className={`${listContainerClass} p-default`}>
       {items.map((file, index) => (
         <AnalysisResultRow
           key={file.path || file.id || index}

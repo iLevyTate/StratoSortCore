@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Folder, CheckCircle, XCircle } from 'lucide-react';
 import { Card, Button } from '../ui';
-import { Text } from '../ui/Typography';
+import { Heading, Text } from '../ui/Typography';
 import { ErrorBoundaryCore } from '../ErrorBoundary';
 
 function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel }) {
@@ -121,14 +121,16 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
           <Card className="flex-1 p-4 bg-stratosort-blue/5 border-stratosort-blue/30 mr-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium text-system-gray-900">
+                <Heading as="h3" variant="h6" className="text-system-gray-900">
                   Organization Preview: {strategy.name}
-                </h3>
-                <p className="text-sm text-system-gray-600 mt-1">{strategy.description}</p>
+                </Heading>
+                <Text variant="small" className="text-system-gray-600 mt-1">
+                  {strategy.description}
+                </Text>
               </div>
-              <div className="text-sm text-system-gray-500">
+              <Text as="div" variant="small" className="text-system-gray-500">
                 Pattern: <code className="bg-white px-2 py-1 rounded-md">{strategy.pattern}</code>
-              </div>
+              </Text>
             </div>
           </Card>
         ) : (
@@ -175,7 +177,9 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
 
       {/* Preview Tree */}
       <Card className="p-4">
-        <h4 className="font-medium text-system-gray-900 mb-3">Preview of Organization Structure</h4>
+        <Heading as="h4" variant="h6" className="text-system-gray-900 mb-3">
+          Preview of Organization Structure
+        </Heading>
         <div className="space-y-2 max-h-96 overflow-y-auto">
           {Object.entries(previewTree).map(([folderPath, folder]) => (
             <div key={folderPath} className="border rounded-lg overflow-hidden">
@@ -195,9 +199,9 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
                   </span>
                   <Folder className="w-4 h-4 text-stratosort-accent" />
                   <span className="font-medium">{folder.name}</span>
-                  <span className="text-sm text-system-gray-500">
+                  <Text as="span" variant="small" className="text-system-gray-500">
                     ({folder.files.length} files)
-                  </span>
+                  </Text>
                 </div>
                 <div className="flex items-center gap-2">
                   <Text
@@ -282,7 +286,9 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
 
       {/* Visual Tree Diagram */}
       <Card className="p-4 bg-system-gray-50">
-        <h4 className="font-medium text-system-gray-900 mb-3">Folder Structure Visualization</h4>
+        <Heading as="h4" variant="h6" className="text-system-gray-900 mb-3">
+          Folder Structure Visualization
+        </Heading>
         <div className="font-mono text-sm">
           <div className="text-system-gray-700 flex items-center gap-1">
             <Folder className="w-4 h-4 inline" />
@@ -307,10 +313,14 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
 
       {/* Comparison View */}
       <Card className="p-4">
-        <h4 className="font-medium text-system-gray-900 mb-3">Before & After Comparison</h4>
+        <Heading as="h4" variant="h6" className="text-system-gray-900 mb-3">
+          Before & After Comparison
+        </Heading>
         <div className="grid grid-cols-2 gap-6">
           <div>
-            <h5 className="text-sm font-medium text-system-gray-700 mb-2">Current State</h5>
+            <Heading as="h5" variant="h6" className="text-system-gray-700 mb-2">
+              Current State
+            </Heading>
             <div className="bg-stratosort-danger/5 border border-stratosort-danger/20 rounded-md p-3 text-sm">
               <div className="text-stratosort-danger font-medium mb-2 flex items-center gap-1">
                 <XCircle className="w-4 h-4" />
@@ -325,7 +335,9 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
             </div>
           </div>
           <div>
-            <h5 className="text-sm font-medium text-system-gray-700 mb-2">After Organization</h5>
+            <Heading as="h5" variant="h6" className="text-system-gray-700 mb-2">
+              After Organization
+            </Heading>
             <div className="bg-stratosort-success/5 border border-stratosort-success/20 rounded-md p-3 text-sm">
               <div className="text-stratosort-success font-medium mb-2 flex items-center gap-1">
                 <CheckCircle className="w-4 h-4" />
@@ -344,9 +356,9 @@ function OrganizationPreview({ files, strategy, suggestions, onConfirm, onCancel
 
       {/* Actions */}
       <div className="flex justify-between items-center pt-4 border-t">
-        <div className="text-sm text-system-gray-600">
+        <Text variant="small" className="text-system-gray-600">
           Review the preview above before confirming the organization
-        </div>
+        </Text>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={onCancel}>
             Cancel

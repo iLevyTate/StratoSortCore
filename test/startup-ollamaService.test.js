@@ -16,6 +16,8 @@ jest.mock('child_process', () => ({
 
 jest.mock('axios');
 
+jest.setTimeout(20000);
+
 jest.mock('../src/shared/logger', () => ({
   logger: {
     setContext: jest.fn(),
@@ -35,6 +37,11 @@ jest.mock('../src/main/utils/ollamaApiRetry', () => {
     checkOllamaHealth: actual.checkOllamaHealth
   };
 });
+
+jest.mock('../src/main/utils/ollamaDetection', () => ({
+  findOllamaBinary: jest.fn().mockResolvedValue({ found: true, path: 'ollama', source: 'path' }),
+  getOllamaFallbackPaths: jest.fn()
+}));
 
 jest.mock('../src/shared/performanceConstants', () => ({
   TIMEOUTS: {

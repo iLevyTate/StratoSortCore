@@ -7,6 +7,8 @@
  */
 
 const { logger } = require('../../../shared/logger');
+const { withTimeout } = require('../../../shared/promiseUtils');
+const { TIMEOUTS } = require('../../../shared/performanceConstants');
 
 /**
  * Process items in parallel with semaphore-based concurrency control
@@ -51,9 +53,27 @@ async function processItemsInParallel({
           model: item.model,
           updatedAt: item.updatedAt
         }));
-        await chromaDbService[batchMethod](formattedItems);
+        const result = await withTimeout(
+          chromaDbService[batchMethod](formattedItems),
+          TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000,
+          `Batch ${type} upsert`
+        );
+        // FIX CRITICAL: Check batch operation result for data loss prevention
+        // If the service returns success: false (e.g. dimension mismatch), we must treat it as a failure
+        // so items go to the failed queue instead of being silently dropped.
+        if (result && result.success === false) {
+          throw new Error(result.error || 'Batch folder upsert failed');
+        }
       } else {
-        await chromaDbService[batchMethod](items);
+        const result = await withTimeout(
+          chromaDbService[batchMethod](items),
+          TIMEOUTS.BATCH_EMBEDDING_MAX || 5 * 60 * 1000,
+          `Batch ${type} upsert`
+        );
+        // FIX CRITICAL: Check batch operation result for data loss prevention
+        if (result && result.success === false) {
+          throw new Error(result.error || 'Batch file upsert failed');
+        }
       }
 
       // All items processed successfully
@@ -138,7 +158,16 @@ async function processItemsInParallel({
               updatedAt: item.updatedAt
             };
 
-      await chromaDbService[singleMethod](payload);
+      const result = await withTimeout(
+        chromaDbService[singleMethod](payload),
+        TIMEOUTS.EMBEDDING_REQUEST || 30000,
+        `Upsert ${type}`
+      );
+
+      // FIX CRITICAL: Check operation result for data loss prevention
+      if (result && result.success === false) {
+        throw new Error(result.error || `Upsert ${type} failed`);
+      }
 
       onProgress({
         phase: 'processing',

@@ -105,7 +105,7 @@ const VirtualizedFileRow = memo(function VirtualizedFileRow({ index, style, data
   }
 
   return (
-    <div style={style} className="flex gap-8 pb-8 box-border">
+    <div style={style} className="flex gap-spacious pb-spacious box-border">
       {rowItems}
     </div>
   );

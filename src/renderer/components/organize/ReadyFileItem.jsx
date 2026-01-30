@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import { FileText, Play } from 'lucide-react';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
-import { StatusBadge } from '../ui';
+import { Button, StatusBadge } from '../ui';
 import Card from '../ui/Card';
 import { Text } from '../ui/Typography';
 import { Stack } from '../layout';
@@ -62,9 +62,9 @@ function ReadyFileItem({
   return (
     <Card
       variant={isSelected ? 'interactive' : 'default'}
-      className={`h-full p-4 sm:p-5 relative ${isSelected ? 'ring-2 ring-stratosort-blue/25' : ''}`}
+      className={`h-full p-4 sm:p-6 relative ${isSelected ? 'ring-2 ring-stratosort-blue/25' : ''}`}
     >
-      <div className="flex flex-col sm:flex-row gap-3 h-full">
+      <div className="flex flex-col sm:flex-row gap-cozy h-full">
         <div className="pt-1 flex-shrink-0">
           <input
             type="checkbox"
@@ -77,7 +77,7 @@ function ReadyFileItem({
         <div className="flex-1 min-w-0 overflow-visible">
           <Stack gap="cozy" className="w-full">
             {/* Header Section */}
-            <div className="flex items-start gap-3 min-w-0">
+            <div className="flex items-start gap-cozy min-w-0">
               <FileText className="w-5 h-5 text-system-gray-400 flex-shrink-0 mt-0.5" />
               <div className="min-w-0">
                 <Text
@@ -103,7 +103,7 @@ function ReadyFileItem({
             {/* Analysis Section */}
             {analysis ? (
               <>
-                <div className="grid grid-cols-2 gap-3 w-full">
+                <div className="grid grid-cols-2 gap-default w-full">
                   <div className="w-full min-w-0">
                     <Input
                       label="Suggested Name"
@@ -134,20 +134,22 @@ function ReadyFileItem({
                 </div>
 
                 <div className="pt-3 border-t border-border-soft/70">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={
+                      <Play className="w-3 h-3 fill-current opacity-70" aria-hidden="true" />
+                    }
                     onClick={() => onViewDetails && onViewDetails(file)}
-                    className="text-system-gray-600 hover:text-system-gray-900 font-medium flex items-center gap-1.5 w-full transition-colors"
+                    className="w-full justify-start text-system-gray-600 hover:text-system-gray-900"
                     aria-label={`View analysis details for ${file.name}`}
                   >
-                    <Play className="w-3 h-3 fill-current opacity-70" aria-hidden="true" />
-                    <Text as="span" variant="tiny">
-                      View Analysis Details
-                    </Text>
-                  </button>
+                    View Analysis Details
+                  </Button>
                 </div>
 
-                <div className="flex items-center justify-end gap-3">
+                <div className="flex items-center justify-end gap-default">
                   <StatusBadge variant={tone} size="sm" className="shadow-sm whitespace-nowrap">
                     <span className={stateDisplay.spinning ? 'animate-spin mr-1' : 'mr-1'}>
                       {stateDisplay.icon}
@@ -157,7 +159,7 @@ function ReadyFileItem({
 
                   {computedConfidence !== null && (
                     <div
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border flex-shrink-0 ${
+                      className={`flex items-center gap-compact px-2.5 py-1 rounded-full text-xs font-medium border flex-shrink-0 ${
                         computedConfidence >= 80
                           ? 'bg-stratosort-success/10 text-stratosort-success border-stratosort-success/20'
                           : computedConfidence >= 50

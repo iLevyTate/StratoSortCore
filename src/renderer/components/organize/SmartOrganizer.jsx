@@ -17,8 +17,8 @@ import {
 } from 'lucide-react';
 import { logger } from '../../../shared/logger';
 import { useNotification } from '../../contexts/NotificationContext';
-import { Card, Button, IconButton } from '../ui';
-import { Text } from '../ui/Typography';
+import { Card, Button, IconButton, Input } from '../ui';
+import { Heading, Text } from '../ui/Typography';
 import OrganizationSuggestions from './OrganizationSuggestions';
 import FeedbackMemoryPanel from './FeedbackMemoryPanel';
 import BatchOrganizationSuggestions from './BatchOrganizationSuggestions';
@@ -315,37 +315,45 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
       {/* Header with Mode Toggle */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-2xl font-bold text-system-gray-900">Smart File Organizer</h2>
-          <p className="text-sm text-system-gray-600 mt-1">
+          <Heading as="h2" variant="h3">
+            Smart File Organizer
+          </Heading>
+          <Text variant="small" className="text-system-gray-600 mt-1">
             {files.length} file{files.length !== 1 ? 's' : ''} ready to organize
-          </p>
+          </Text>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-sm text-system-gray-600">Mode:</span>
+          <Text as="span" variant="small" className="text-system-gray-600">
+            Mode:
+          </Text>
           <div className="flex bg-system-gray-100 rounded-lg p-1">
-            <button
-              className={`px-3 py-1 text-sm rounded-md flex items-center gap-1.5 ${
+            <Button
+              variant={mode === 'quick' ? 'secondary' : 'ghost'}
+              size="sm"
+              leftIcon={<Zap className="w-3.5 h-3.5" />}
+              className={`rounded-md px-3 py-1 text-sm h-auto ${
                 mode === 'quick'
                   ? 'bg-white text-stratosort-blue font-medium shadow-sm'
                   : 'text-system-gray-600'
               }`}
               onClick={() => setMode('quick')}
             >
-              <Zap className="w-3.5 h-3.5" />
-              <span>Quick</span>
-            </button>
-            <button
-              className={`px-3 py-1 text-sm rounded-md flex items-center gap-1.5 ${
+              Quick
+            </Button>
+            <Button
+              variant={mode === 'detailed' ? 'secondary' : 'ghost'}
+              size="sm"
+              leftIcon={<Search className="w-3.5 h-3.5" />}
+              className={`rounded-md px-3 py-1 text-sm h-auto ${
                 mode === 'detailed'
                   ? 'bg-white text-stratosort-blue font-medium shadow-sm'
                   : 'text-system-gray-600'
               }`}
               onClick={() => setMode('detailed')}
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>Detailed</span>
-            </button>
+              Detailed
+            </Button>
           </div>
         </div>
       </div>
@@ -359,22 +367,26 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
           {isAnalyzing ? (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-stratosort-blue mx-auto mb-4" />
-              <p className="text-system-gray-600">Analyzing your files...</p>
-              <p className="text-sm text-system-gray-500 mt-2">
+              <Text variant="small" className="text-system-gray-600">
+                Analyzing your files...
+              </Text>
+              <Text variant="tiny" className="text-system-gray-500 mt-2">
                 Finding the best organization strategy
-              </p>
+              </Text>
             </div>
           ) : (
             <div className="text-center py-8">
               <div className="mb-4 flex justify-center">
                 <Target className="w-16 h-16 text-stratosort-blue" />
               </div>
-              <h3 className="heading-secondary mb-2">Ready to Organize!</h3>
-              <p className="text-system-gray-600 mb-6">
+              <Heading as="h3" variant="h4" className="mb-2">
+                Ready to Organize!
+              </Heading>
+              <Text variant="small" className="text-system-gray-600 mb-6">
                 {mode === 'quick'
                   ? "We'll automatically organize files with high confidence matches"
                   : "You'll review each suggestion before organizing"}
-              </p>
+              </Text>
 
               <div className="flex gap-4 justify-center">
                 {mode === 'quick' ? (
@@ -416,13 +428,13 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium text-system-gray-900">
+                      <Heading as="h4" variant="h6" className="text-system-gray-900">
                         Folder Structure Improvements Available
-                      </h4>
-                      <p className="text-sm text-system-gray-600 mt-1">
+                      </Heading>
+                      <Text variant="small" className="text-system-gray-600 mt-1">
                         We found {folderImprovements.length} way
                         {folderImprovements.length !== 1 ? 's' : ''} to improve your organization
-                      </p>
+                      </Text>
                     </div>
                     <Button
                       size="sm"
@@ -454,11 +466,11 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
                         >
                           <div className="flex items-start gap-3">
                             <div className="flex-1">
-                              <h5 className="font-medium text-sm text-system-gray-900">
+                              <Heading as="h5" variant="h6" className="text-system-gray-900">
                                 {improvement.title ||
                                   improvement.type ||
                                   `Improvement ${index + 1}`}
-                              </h5>
+                              </Heading>
                               <Text variant="tiny" className="text-system-gray-600 mt-1">
                                 {improvement.description ||
                                   improvement.reason ||
@@ -574,12 +586,14 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
           <div className="flex items-start gap-3">
             <Lightbulb className="w-5 h-5 text-stratosort-blue flex-shrink-0" />
             <div>
-              <h4 className="font-medium text-stratosort-blue">Pro Tip</h4>
-              <p className="text-sm text-stratosort-blue/80 mt-1">
+              <Heading as="h4" variant="h6" className="text-stratosort-blue">
+                Pro Tip
+              </Heading>
+              <Text variant="small" className="text-stratosort-blue/80 mt-1">
                 {mode === 'quick'
                   ? 'Quick mode automatically organizes files with confidence scores above 80%. Perfect for routine cleanup!'
                   : 'Detailed mode lets you review every suggestion. Great for important files or learning the system.'}
-              </p>
+              </Text>
             </div>
           </div>
         </Card>
@@ -587,7 +601,11 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
 
       {/* Stats Bar */}
       {(suggestions || batchSuggestions) && (
-        <div className="flex items-center justify-between text-sm text-system-gray-600 pt-4 border-t">
+        <Text
+          as="div"
+          variant="small"
+          className="flex items-center justify-between text-system-gray-600 pt-4 border-t"
+        >
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
               <BarChart3 className="w-4 h-4" />
@@ -605,7 +623,7 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
           <Text variant="tiny" className="text-system-gray-500">
             The system learns from your choices
           </Text>
-        </div>
+        </Text>
       )}
 
       {/* Group Customization Modal */}
@@ -613,7 +631,9 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <Card className="w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="heading-secondary">Customize Group</h3>
+              <Heading as="h3" variant="h5">
+                Customize Group
+              </Heading>
               <IconButton
                 onClick={handleCancelGroupCustomization}
                 variant="ghost"
@@ -625,21 +645,25 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
 
             <div className="space-y-4">
               <div>
-                <p className="text-sm text-system-gray-600 mb-2">
+                <Text variant="small" className="text-system-gray-600 mb-2">
                   {customizingGroup.group.files?.length || 0} file
                   {(customizingGroup.group.files?.length || 0) !== 1 ? 's' : ''} in this group
-                </p>
+                </Text>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-system-gray-700 mb-2">
+                <Text
+                  as="label"
+                  variant="small"
+                  className="block font-medium text-system-gray-700 mb-2"
+                >
                   Destination Folder
-                </label>
-                <input
+                </Text>
+                <Input
                   type="text"
                   value={customGroupFolder}
                   onChange={(e) => setCustomGroupFolder(e.target.value)}
-                  className="w-full px-3 py-2 border border-system-gray-300 rounded-lg focus:ring-2 focus:ring-stratosort-blue focus:border-transparent"
+                  className="w-full"
                   placeholder="Enter folder name..."
                 />
               </div>
@@ -647,22 +671,28 @@ function SmartOrganizer({ files = [], smartFolders = [], onOrganize, onCancel })
               {/* Alternative folders from smart folders */}
               {smartFolders.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-system-gray-700 mb-2">
+                  <Text
+                    as="label"
+                    variant="small"
+                    className="block font-medium text-system-gray-700 mb-2"
+                  >
                     Or choose from Smart Folders:
-                  </label>
+                  </Text>
                   <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                     {smartFolders.slice(0, 10).map((folder) => (
-                      <button
+                      <Button
                         key={folder.id || folder.name}
                         onClick={() => setCustomGroupFolder(folder.name)}
-                        className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                        size="sm"
+                        variant={customGroupFolder === folder.name ? 'primary' : 'ghost'}
+                        className={`px-3 py-1.5 rounded-lg border transition-colors ${
                           customGroupFolder === folder.name
-                            ? 'bg-stratosort-blue text-white border-stratosort-blue'
+                            ? 'bg-stratosort-blue text-white border-stratosort-blue hover:bg-stratosort-blue/90'
                             : 'bg-white border-system-gray-300 hover:border-stratosort-blue'
                         }`}
                       >
                         {folder.name}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </div>

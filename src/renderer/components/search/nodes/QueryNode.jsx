@@ -2,6 +2,7 @@ import React, { memo, useState, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { Handle, Position } from 'reactflow';
 import { MessageSquare, Copy, Search } from 'lucide-react';
+import { Button } from '../../ui';
 import { useMenuAutoClose } from '../../../hooks';
 
 const QueryNode = memo(({ data, selected }) => {
@@ -82,28 +83,32 @@ const QueryNode = memo(({ data, selected }) => {
           className="absolute bg-white shadow-lg rounded-lg border border-system-gray-200 z-50 w-40 py-1 animate-in fade-in zoom-in-95 duration-100"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          <button
+          <Button
             role="menuitem"
+            variant="ghost"
+            size="sm"
+            leftIcon={<Copy className="w-4 h-4 text-system-gray-500" />}
             onClick={(e) => {
               e.stopPropagation();
               handleMenuAction(handleCopyQuery);
             }}
-            className="w-full text-left px-3 py-2 text-sm text-system-gray-700 hover:bg-stratosort-indigo-50 flex items-center gap-2"
+            className="w-full justify-start px-3 py-2 text-system-gray-700 hover:bg-stratosort-indigo-50 rounded-none"
           >
-            <Copy className="w-4 h-4 text-system-gray-500" />
             Copy Query
-          </button>
-          <button
+          </Button>
+          <Button
             role="menuitem"
+            variant="ghost"
+            size="sm"
+            leftIcon={<Search className="w-4 h-4 text-indigo-600" />}
             onClick={(e) => {
               e.stopPropagation();
               handleMenuAction(handleSearchAgain);
             }}
-            className="w-full text-left px-3 py-2 text-sm text-system-gray-700 hover:bg-stratosort-indigo-50 flex items-center gap-2"
+            className="w-full justify-start px-3 py-2 text-system-gray-700 hover:bg-stratosort-indigo-50 rounded-none"
           >
-            <Search className="w-4 h-4 text-indigo-600" />
             Search Again
-          </button>
+          </Button>
         </div>
       )}
 

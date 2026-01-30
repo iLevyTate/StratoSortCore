@@ -201,9 +201,9 @@ function AddSmartFolderModal({
         />
 
         <div className="flex flex-col gap-1.5">
-          <label className="block text-sm font-medium text-system-gray-700">
+          <Text as="label" variant="small" className="block font-medium text-system-gray-700">
             Target Path <span className="text-system-gray-400 font-normal ml-1">(optional)</span>
-          </label>
+          </Text>
           <div className="flex gap-2">
             <Input
               type={redactPaths ? 'password' : 'text'}
@@ -224,7 +224,7 @@ function AddSmartFolderModal({
               title="Browse for folder"
               className="shrink-0"
             >
-              <FolderOpen className="w-4 h-4 mr-2" />
+              <FolderOpen className="w-4 h-4" />
               Browse
             </Button>
           </div>
@@ -232,32 +232,22 @@ function AddSmartFolderModal({
 
         <div className="relative">
           <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-sm font-medium text-system-gray-700">
+            <Text as="label" variant="small" className="block font-medium text-system-gray-700">
               Description{' '}
               <span className="text-stratosort-blue font-medium ml-1">(AI uses this)</span>
-            </label>
-            <button
+            </Text>
+            <Button
               type="button"
               onClick={handleGenerateDescription}
               disabled={isGeneratingDescription || !folderName.trim()}
-              className="inline-flex items-center gap-1.5 px-2 py-1 font-medium text-stratosort-blue bg-stratosort-blue/10 hover:bg-stratosort-blue/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              isLoading={isGeneratingDescription}
+              variant="subtle"
+              size="sm"
+              leftIcon={!isGeneratingDescription ? <Sparkles className="w-4 h-4" /> : null}
+              className="text-stratosort-blue bg-stratosort-blue/10 border-stratosort-blue/20 hover:bg-stratosort-blue/20"
             >
-              {isGeneratingDescription ? (
-                <>
-                  <span className="inline-block w-3 h-3 border-2 border-stratosort-blue border-t-transparent rounded-full animate-spin" />
-                  <Text as="span" variant="tiny">
-                    Generating...
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3 h-3" />
-                  <Text as="span" variant="tiny">
-                    Generate with AI
-                  </Text>
-                </>
-              )}
-            </button>
+              {isGeneratingDescription ? 'Generating...' : 'Generate with AI'}
+            </Button>
           </div>
           <Textarea
             value={description}

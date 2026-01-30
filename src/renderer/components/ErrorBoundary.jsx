@@ -203,10 +203,14 @@ class ErrorBoundaryCore extends React.Component {
             >
               Show stack trace
             </Text>
-            <pre className="mt-2 text-xs text-system-gray-600 overflow-auto max-h-40 p-2 bg-white rounded border border-border-soft">
+            <Text
+              as="pre"
+              variant="tiny"
+              className="mt-2 text-system-gray-600 overflow-auto max-h-40 p-2 bg-white rounded border border-border-soft"
+            >
               {error.stack}
               {errorInfo?.componentStack}
-            </pre>
+            </Text>
           </details>
         )}
       </div>

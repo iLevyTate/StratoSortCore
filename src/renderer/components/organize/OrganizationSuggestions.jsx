@@ -1,7 +1,7 @@
 import React, { useState, memo, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { Card, Button } from '../ui';
-import { Text } from '../ui/Typography';
+import { Card, Button, Textarea } from '../ui';
+import { Heading, Text } from '../ui/Typography';
 
 const OrganizationSuggestions = memo(function OrganizationSuggestions({
   file,
@@ -114,11 +114,12 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h4 className="font-medium text-system-gray-900">Suggested Organization</h4>
-              <span className={`text-sm ${getConfidenceColor(confidenceFraction)}`}>
-                {getConfidenceLabel(confidenceFraction)} ({confidencePercent}
-                %)
-              </span>
+              <Heading as="h4" variant="h6" className="text-system-gray-900">
+                Suggested Organization
+              </Heading>
+              <Text as="span" variant="small" className={getConfidenceColor(confidenceFraction)}>
+                {getConfidenceLabel(confidenceFraction)} ({confidencePercent}%)
+              </Text>
             </div>
 
             <div className="mb-3">
@@ -133,7 +134,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
               </div>
 
               {explanation && (
-                <p className="text-sm text-system-gray-600 mt-2 italic">{explanation}</p>
+                <Text variant="small" className="text-system-gray-600 mt-2 italic">
+                  {explanation}
+                </Text>
               )}
 
               {primary.strategy && (
@@ -189,7 +192,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-sm font-medium">{Math.round(safeConfidence * 100)}%</span>
+                <Text as="span" variant="small" className="font-medium">
+                  {Math.round(safeConfidence * 100)}%
+                </Text>
               </div>
             </div>
           </div>
@@ -198,14 +203,14 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
 
       {/* Feedback Note */}
       <Card className="p-4 sm:p-6 bg-system-gray-50 border-system-gray-200">
-        <div className="text-sm font-medium text-system-gray-700 mb-2">
+        <Text variant="small" className="text-system-gray-700 font-medium mb-2">
           Feedback note (optional)
-        </div>
-        <textarea
+        </Text>
+        <Textarea
           value={feedbackNote}
           onChange={(event) => setFeedbackNote(event.target.value)}
           placeholder='e.g., "3D files go to 3D Prints"'
-          className="w-full rounded-md border border-system-gray-200 bg-white p-2 text-sm text-system-gray-800 focus:outline-none focus:ring-2 focus:ring-stratosort-blue/30"
+          className="w-full text-sm"
           rows={2}
         />
         <Text variant="tiny" className="mt-2 text-system-gray-500">
@@ -216,9 +221,11 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
       {/* Alternative Suggestions */}
       {alternatives.length > 0 && (
         <div>
-          <button
+          <Button
             onClick={() => setExpandedAlternatives(!expandedAlternatives)}
-            className="flex items-center gap-2 text-sm text-system-gray-600 hover:text-stratosort-blue transition-colors"
+            variant="ghost"
+            size="sm"
+            className="text-system-gray-600 hover:text-stratosort-blue h-auto px-1 py-0"
           >
             <span
               className={`transform transition-transform ${expandedAlternatives ? 'rotate-90' : ''}`}
@@ -227,7 +234,7 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
             </span>
             View {alternatives.length} alternative suggestion
             {alternatives.length > 1 ? 's' : ''}
-          </button>
+          </Button>
 
           {expandedAlternatives && (
             <div className="mt-3 space-y-2">
@@ -288,7 +295,9 @@ const OrganizationSuggestions = memo(function OrganizationSuggestions({
       {/* Organization Strategies */}
       {strategies.length > 0 && (
         <Card className="p-4 sm:p-6 bg-system-gray-50">
-          <h5 className="text-sm font-medium text-system-gray-700 mb-3">Organization Strategies</h5>
+          <Heading as="h5" variant="h6" className="text-system-gray-700 mb-3">
+            Organization Strategies
+          </Heading>
           <div className="space-y-2">
             {strategies.map((strategy) => (
               <div

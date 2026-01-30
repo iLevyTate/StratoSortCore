@@ -145,6 +145,11 @@
         "icons/png/*.png",
         "entitlements.mac.plist"
       ]
+    },
+    {
+      "from": "assets/runtime/",
+      "to": "assets/runtime/",
+      "filter": ["**/*"]
     }
   ]
 }

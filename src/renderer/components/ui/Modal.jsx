@@ -4,7 +4,7 @@ import PropTypes from 'prop-types';
 import { X, AlertTriangle, Info, HelpCircle, FileText } from 'lucide-react';
 import IconButton from './IconButton';
 import Button from './Button';
-import { Heading } from './Typography';
+import { Heading, Text } from './Typography';
 import { logger } from '../../../shared/logger';
 
 const SIZES = {
@@ -145,9 +145,9 @@ const Modal = memo(function Modal({
               {title}
             </Heading>
             {description && (
-              <p id="modal-description" className="mt-1 text-sm text-system-gray-500">
+              <Text id="modal-description" variant="small" className="mt-1 text-system-gray-500">
                 {description}
-              </p>
+              </Text>
             )}
           </div>
           <IconButton

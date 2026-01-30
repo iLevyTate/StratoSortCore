@@ -34,9 +34,9 @@ const NamingSettingsModal = memo(function NamingSettingsModal({
       }
     >
       <Stack gap="default">
-        <p className="text-sm text-system-gray-600">
+        <Text variant="small" className="text-system-gray-600">
           Configure how StratoSort will rename your files during analysis.
-        </p>
+        </Text>
 
         <NamingSettings
           namingConvention={namingConvention}

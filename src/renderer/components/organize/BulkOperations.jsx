@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Check, Pencil } from 'lucide-react';
 import Button from '../ui/Button';
 import Select from '../ui/Select';
+import { Text } from '../ui/Typography';
 import { Inline, Stack } from '../layout';
 
 function BulkOperations({
@@ -32,22 +33,24 @@ function BulkOperations({
               selectedCount > 0 ? `${selectedCount} of ${total} items selected` : 'Select all items'
             }
           />
-          <label
+          <Text
+            as="label"
             htmlFor="bulk-select-all"
-            className="text-sm font-medium cursor-pointer text-system-gray-700 select-none"
+            variant="small"
+            className="font-medium cursor-pointer text-system-gray-700 select-none"
           >
             {selectedCount > 0 ? `${selectedCount} selected` : 'Select all'}
-          </label>
+          </Text>
         </Inline>
 
         {selectedCount > 0 && (
           <Inline gap="cozy">
             <Button onClick={onApproveSelected} variant="primary" size="sm" disabled={isProcessing}>
-              <Check className="w-4 h-4 mr-2" aria-hidden="true" />
+              <Check className="w-4 h-4" aria-hidden="true" />
               {isProcessing ? 'Processing...' : 'Approve Selected'}
             </Button>
             <Button onClick={() => setBulkEditMode(!bulkEditMode)} variant="secondary" size="sm">
-              <Pencil className="w-4 h-4 mr-2" aria-hidden="true" />
+              <Pencil className="w-4 h-4" aria-hidden="true" />
               Bulk Edit
             </Button>
           </Inline>
@@ -55,7 +58,7 @@ function BulkOperations({
       </Inline>
 
       {bulkEditMode && (
-        <div className="bg-system-gray-50 p-3 rounded-lg border border-border-soft animate-fade-in">
+        <div className="bg-system-gray-50 p-default rounded-lg border border-border-soft animate-fade-in">
           <Inline gap="cozy" className="w-full items-end">
             <div className="flex-1">
               <Select
@@ -75,6 +78,7 @@ function BulkOperations({
             <Button
               onClick={onApplyBulkCategory}
               variant="primary"
+              size="sm"
               disabled={!bulkCategory || isProcessing}
               title={!bulkCategory ? 'Select a category first' : 'Apply category to selected items'}
             >
@@ -86,6 +90,7 @@ function BulkOperations({
                 setBulkCategory('');
               }}
               variant="secondary"
+              size="sm"
             >
               Cancel
             </Button>

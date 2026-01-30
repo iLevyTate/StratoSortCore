@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { X, ChevronRight, ChevronLeft, Search, Layers, Map, EyeOff } from 'lucide-react';
-import { Button } from '../ui';
+import { Button, IconButton } from '../ui';
+import { Heading, Text } from '../ui/Typography';
 
 const TOUR_STORAGE_KEY = 'graphTourDismissed';
 
@@ -120,25 +121,30 @@ const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
               <StepIcon className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-white font-semibold">{step.title}</h3>
-              <p className="text-white/70 text-xs">
+              <Heading as="h3" variant="h6" className="text-white">
+                {step.title}
+              </Heading>
+              <Text as="p" variant="tiny" className="text-white/70">
                 Step {currentStep + 1} of {TOUR_STEPS.length}
-              </p>
+              </Text>
             </div>
           </div>
-          <button
+          <IconButton
             onClick={handleClose}
-            className="p-1.5 rounded-lg hover:bg-white/20 text-white/70 hover:text-white transition-colors"
+            icon={<X className="w-5 h-5" />}
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 text-white/70 hover:text-white hover:bg-white/20"
             title="Close tour"
             aria-label="Close tour"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          />
         </div>
 
         {/* Content */}
         <div className="px-6 py-5">
-          <p className="text-system-gray-600 leading-relaxed">{step.content}</p>
+          <Text variant="small" className="text-system-gray-600 leading-relaxed">
+            {step.content}
+          </Text>
         </div>
 
         {/* Progress dots */}
@@ -161,7 +167,11 @@ const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
         <div className="border-t border-system-gray-100 px-6 py-4 bg-system-gray-50/50">
           {/* Don't show again checkbox */}
           <div className="flex items-center gap-2 mb-3">
-            <label className="flex items-center gap-2 text-sm text-system-gray-600 cursor-pointer select-none">
+            <Text
+              as="label"
+              variant="small"
+              className="flex items-center gap-2 text-system-gray-600 cursor-pointer select-none"
+            >
               <input
                 type="checkbox"
                 checked={dontShowAgain}
@@ -170,17 +180,19 @@ const GraphTour = ({ isOpen, onComplete, forceShow = false }) => {
               />
               <EyeOff className="w-3.5 h-3.5" />
               <span>Don&apos;t show this again</span>
-            </label>
+            </Text>
           </div>
 
           {/* Navigation buttons */}
           <div className="flex justify-between items-center">
-            <button
+            <Button
               onClick={handleClose}
-              className="text-sm text-system-gray-500 hover:text-system-gray-700 transition-colors"
+              variant="ghost"
+              size="sm"
+              className="text-system-gray-500 hover:text-system-gray-700"
             >
               Close
-            </button>
+            </Button>
             <div className="flex gap-2">
               {!isFirstStep && (
                 <Button

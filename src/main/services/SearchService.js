@@ -16,7 +16,7 @@ const fs = require('fs').promises;
 const { logger } = require('../../shared/logger');
 const { THRESHOLDS, TIMEOUTS, SEARCH } = require('../../shared/performanceConstants');
 const { normalizePathForIndex } = require('../../shared/pathSanitization');
-const { validateEmbeddingDimensions } = require('../../shared/vectorMath');
+const { validateEmbeddingDimensions, padOrTruncateVector } = require('../../shared/vectorMath');
 const { getSemanticFileId } = require('../../shared/fileIdUtils');
 
 // Optional services for enhanced query processing
@@ -50,7 +50,8 @@ const DEFAULT_OPTIONS = {
   chunkWeight: 0.5,
   // Query processing options
   expandSynonyms: true, // Expand query with WordNet synonyms
-  correctSpelling: false, // DISABLED - causes false corrections on common words (are->api, that->tax)
+  // Spell correction enabled by default with strict length checks (min 4 chars)
+  correctSpelling: true,
   // Re-ranking options
   rerank: true, // Enable LLM re-ranking of top results
   rerankTopN: 10 // Number of top results to re-rank
@@ -429,14 +430,9 @@ class SearchService {
     return text.length > maxLength ? text.slice(0, maxLength) : text;
   }
 
+  // FIX: Use shared padOrTruncateVector from vectorMath.js to eliminate duplication
   _padOrTruncateVector(vector, expectedDim) {
-    if (!Array.isArray(vector) || vector.length === 0) return null;
-    if (!Number.isInteger(expectedDim) || expectedDim <= 0) return vector;
-    if (vector.length === expectedDim) return vector;
-    if (vector.length < expectedDim) {
-      return vector.concat(new Array(expectedDim - vector.length).fill(0));
-    }
-    return vector.slice(0, expectedDim);
+    return padOrTruncateVector(vector, expectedDim);
   }
 
   /**
@@ -807,6 +803,12 @@ class SearchService {
    * RRF formula: score(d) = sum(1 / (k + rank_i(d)))
    * Enhanced with optional weighted score blending for better ranking
    *
+   * NOTE: This method is currently unused internally - hybrid search uses weighted sum fusion.
+   * Kept for API consumers who may want RRF-style fusion.
+   *
+   * FIX MEDIUM-8: If calling with pre-normalized results, pass { normalizeScores: false }
+   * to avoid double normalization and score distortion.
+   *
    * @param {Array<Array>} resultSets - Arrays of ranked results
    * @param {number} k - RRF constant (default: 60)
    * @param {Object} options - Fusion options
@@ -1077,23 +1079,39 @@ class SearchService {
     let queryMeta = null;
     const queryProcessor = this._getQueryProcessor();
 
-    if (queryProcessor && (expandSynonyms || correctSpelling)) {
+    if (queryProcessor) {
       try {
-        const processed = await queryProcessor.processQuery(query, {
-          expandSynonyms,
-          correctSpelling,
-          maxSynonymsPerWord: 3
-        });
-        processedQuery = processed.expanded || query;
-        queryMeta = {
-          original: processed.original,
-          expanded: processed.expanded,
-          corrections: processed.corrections,
-          synonymsAdded: processed.synonymsAdded?.length || 0
-        };
+        // Extract filters (years) to boost relevance
+        const filters = queryProcessor.extractFilters(query);
+        const boostedYear = filters.year ? `${filters.year} ${filters.year}` : '';
+        if (filters.year) {
+          logger.debug('[SearchService] Detected year filter:', filters.year);
+          // Boost year in BM25 query by duplicating the token (lunr-safe)
+          // Avoid caret syntax because _escapeLunrQuery strips ^ and leaves stray numbers
+          processedQuery = `${processedQuery} ${boostedYear}`.trim();
+        }
 
-        if (processed.corrections?.length > 0) {
-          logger.debug('[SearchService] Query corrections applied:', processed.corrections);
+        if (expandSynonyms || correctSpelling) {
+          const processed = await queryProcessor.processQuery(query, {
+            expandSynonyms,
+            correctSpelling,
+            maxSynonymsPerWord: 3
+          });
+          // If we added a year boost, append it to the processed expansion
+          const baseExpanded = processed.expanded || query;
+          processedQuery = filters.year ? `${baseExpanded} ${boostedYear}` : baseExpanded;
+
+          queryMeta = {
+            original: processed.original,
+            expanded: processed.expanded,
+            corrections: processed.corrections,
+            synonymsAdded: processed.synonymsAdded?.length || 0,
+            filters
+          };
+
+          if (processed.corrections?.length > 0) {
+            logger.debug('[SearchService] Query corrections applied:', processed.corrections);
+          }
         }
       } catch (procErr) {
         logger.debug('[SearchService] Query processing failed, using original:', procErr.message);

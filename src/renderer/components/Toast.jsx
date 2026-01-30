@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X, Bell } from 'lucide-react';
 import { logger } from '../../shared/logger';
 import { TIMEOUTS } from '../../shared/performanceConstants';
+import { IconButton } from './ui';
 import { Text } from './ui/Typography';
 
 logger.setContext('Toast');
@@ -165,14 +166,14 @@ function Toast({
             </Text>
           )}
         </Text>
-        <button
-          type="button"
+        <IconButton
           onClick={handleClose}
-          className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-current/70 hover:text-current hover:bg-current/10 focus-visible:outline-none transition-colors"
+          icon={<X className="w-3.5 h-3.5" aria-hidden="true" />}
+          size="sm"
+          variant="ghost"
+          className="ml-1 h-6 w-6 text-current/70 hover:text-current hover:bg-current/10"
           aria-label="Dismiss"
-        >
-          <X className="w-3.5 h-3.5" aria-hidden="true" />
-        </button>
+        />
       </div>
     </div>
   );
@@ -245,18 +246,23 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
     >
       {/* Compact toggle button */}
       <div className="pointer-events-auto mb-2 flex items-center justify-end">
-        <button
-          onClick={toggleCollapsed}
-          className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 border border-system-gray-200/80 text-system-gray-600 hover:bg-white hover:text-system-gray-800 shadow-sm backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stratosort-blue/60 transition-all"
-          aria-label={collapsed ? 'Show notifications' : 'Hide notifications'}
-          aria-expanded={!collapsed}
-          aria-controls="toast-panel"
-        >
-          {collapsed ? (
-            <Bell className="w-4 h-4" aria-hidden="true" />
-          ) : (
-            <X className="w-4 h-4" aria-hidden="true" />
-          )}
+        <div className="relative">
+          <IconButton
+            onClick={toggleCollapsed}
+            icon={
+              collapsed ? (
+                <Bell className="w-4 h-4" aria-hidden="true" />
+              ) : (
+                <X className="w-4 h-4" aria-hidden="true" />
+              )
+            }
+            size="sm"
+            variant="ghost"
+            className="h-8 w-8 rounded-full bg-white/95 border border-system-gray-200/80 text-system-gray-600 hover:bg-white hover:text-system-gray-800 shadow-sm backdrop-blur-sm"
+            aria-label={collapsed ? 'Show notifications' : 'Hide notifications'}
+            aria-expanded={!collapsed}
+            aria-controls="toast-panel"
+          />
           {toasts.length > 0 && collapsed && (
             <Text
               as="span"
@@ -266,7 +272,7 @@ export function ToastContainer({ toasts = [], onRemoveToast }) {
               {toasts.length}
             </Text>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Toast stack */}

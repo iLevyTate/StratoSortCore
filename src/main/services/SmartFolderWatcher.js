@@ -30,7 +30,7 @@ const { deriveWatcherConfidencePercent } = require('./confidence/watcherConfiden
 const { recordAnalysisResult } = require('../ipc/analysisUtils');
 const { chunkText } = require('../utils/textChunking');
 const { buildEmbeddingSummary } = require('../analysis/embeddingSummary');
-const { CHUNKING } = require('../../shared/performanceConstants');
+const { CHUNKING, TIMEOUTS } = require('../../shared/performanceConstants');
 const { AI_DEFAULTS } = require('../../shared/constants');
 const { getInstance: getFileOperationTracker } = require('../../shared/fileOperationTracker');
 const { normalizePathForIndex, getCanonicalFileId } = require('../../shared/pathSanitization');
@@ -40,11 +40,15 @@ const {
   getInstance: getLearningFeedbackService,
   FEEDBACK_SOURCES
 } = require('./organization/learningFeedback');
+const { withTimeout } = require('../../shared/promiseUtils');
 
 const logger = typeof createLogger === 'function' ? createLogger('SmartFolderWatcher') : baseLogger;
 if (typeof createLogger !== 'function' && logger?.setContext) {
   logger.setContext('SmartFolderWatcher');
 }
+
+// Limit how many times a file is retried after transient failures (timeouts, embed errors)
+const MAX_ANALYSIS_RETRIES = 3;
 
 // CRITICAL: Prevent unbounded memory growth under heavy file activity (e.g., large archive extraction).
 // We bound the analysis queue and apply light deduplication by filePath.
@@ -329,6 +333,7 @@ class SmartFolderWatcher {
 
   /**
    * Stop watching
+   * FIX MED-6: Clean up pending move detection timeouts to prevent callbacks after stop
    */
   stop() {
     logger.info('[SMART-FOLDER-WATCHER] Stopping...');
@@ -347,6 +352,15 @@ class SmartFolderWatcher {
       }
     }
     this.pendingAnalysis.clear();
+
+    // FIX MED-6: Clear pending move detection timeouts to prevent
+    // callbacks firing after watcher is stopped
+    for (const candidate of this._pendingMoveCandidates.values()) {
+      if (candidate.timeoutId) {
+        clearTimeout(candidate.timeoutId);
+      }
+    }
+    this._pendingMoveCandidates.clear();
 
     // Stop watcher
     if (this.watcher) {
@@ -611,6 +625,10 @@ class SmartFolderWatcher {
   /**
    * Attempt to resolve a move by matching recent deletions.
    * If matched, update path-dependent systems and skip re-analysis.
+   *
+   * FIX: When multiple candidates match, attempt to disambiguate by base name
+   * before falling back to full re-analysis.
+   *
    * @private
    */
   async _attemptMoveResolution(filePath, stats) {
@@ -639,6 +657,7 @@ class SmartFolderWatcher {
 
     const ext = path.extname(filePath).toLowerCase();
 
+    // First pass: find candidates matching size, extension, and mtime tolerance
     const matches = [];
     let bestDiff = Infinity;
     for (const candidate of this._pendingMoveCandidates.values()) {
@@ -656,16 +675,32 @@ class SmartFolderWatcher {
       return false;
     }
 
+    // FIX: When multiple candidates match, try base-name match to disambiguate
+    let match = null;
     if (matches.length > 1) {
-      logger.debug('[SMART-FOLDER-WATCHER] Ambiguous move match; skipping auto-update', {
-        newPath: path.basename(filePath),
-        candidates: matches.length,
-        bestDiffMs: bestDiff
-      });
-      return false;
-    }
+      const newBaseName = path.basename(filePath).toLowerCase();
+      const nameMatches = matches.filter(
+        (m) => String(m.candidate.baseName || '').toLowerCase() === newBaseName
+      );
 
-    const match = matches[0].candidate;
+      if (nameMatches.length === 1) {
+        match = nameMatches[0].candidate;
+        logger.debug('[SMART-FOLDER-WATCHER] Resolved ambiguous move via base-name match', {
+          newPath: path.basename(filePath),
+          matchedName: newBaseName
+        });
+      } else {
+        logger.debug('[SMART-FOLDER-WATCHER] Ambiguous move match; skipping auto-update', {
+          newPath: path.basename(filePath),
+          candidates: matches.length,
+          baseNameMatches: nameMatches.length,
+          bestDiffMs: bestDiff
+        });
+        return false;
+      }
+    } else {
+      match = matches[0].candidate;
+    }
     if (match.oldPath === filePath) {
       return false;
     }
@@ -799,7 +834,34 @@ class SmartFolderWatcher {
       const batch = this.analysisQueue.splice(0, batchSize);
 
       for (const item of batch) {
-        await this._analyzeFile(item);
+        try {
+          await withTimeout(
+            this._analyzeFile(item),
+            TIMEOUTS.GLOBAL_ANALYSIS || 10 * 60 * 1000,
+            `SmartFolderWatcher analyze ${item.filePath}`
+          );
+        } catch (error) {
+          logger.warn('[SMART-FOLDER-WATCHER] Analysis timed out or failed', {
+            filePath: item.filePath,
+            error: error.message
+          });
+          this.stats.errors++;
+
+          const nextRetry = (item.retryCount || 0) + 1;
+          if (nextRetry <= MAX_ANALYSIS_RETRIES) {
+            // Requeue for a later attempt to avoid permanent drop
+            this.analysisQueue.push({ ...item, retryCount: nextRetry });
+            logger.debug('[SMART-FOLDER-WATCHER] Re-queued file after failure', {
+              filePath: item.filePath,
+              retryCount: nextRetry
+            });
+          } else {
+            logger.error('[SMART-FOLDER-WATCHER] Max retries reached, giving up', {
+              filePath: item.filePath,
+              retries: nextRetry
+            });
+          }
+        }
       }
     } catch (error) {
       logger.error('[SMART-FOLDER-WATCHER] Queue processing error:', error.message);
@@ -1150,9 +1212,10 @@ class SmartFolderWatcher {
       }
       const embedding = await this.folderMatcher.embedText(textToEmbed);
 
+      // FIX: Throw error on embedding failure to prevent "analyzed but not embedded" state
+      // This ensures the file is retried later instead of being marked as done
       if (!embedding || !embedding.vector || !Array.isArray(embedding.vector)) {
-        logger.warn('[SMART-FOLDER-WATCHER] Failed to generate embedding for:', filePath);
-        return;
+        throw new Error('Failed to generate embedding vector');
       }
 
       // Prepare metadata for ChromaDB
@@ -1287,25 +1350,12 @@ class SmartFolderWatcher {
         }
       }
     } catch (error) {
-      // Non-fatal - embedding failure shouldn't block analysis
+      // FIX: Propagate error so analysis is not marked as complete
       logger.warn('[SMART-FOLDER-WATCHER] Failed to embed file:', {
         filePath,
         error: error.message
       });
-
-      // FIX: Notify user about search index failure
-      if (
-        this.notificationService &&
-        typeof this.notificationService.notifyWatcherError === 'function'
-      ) {
-        // Use fire-and-forget to not block
-        this.notificationService
-          .notifyWatcherError(
-            'Smart Folders',
-            `Search indexing failed for ${path.basename(filePath)}: ${error.message}`
-          )
-          .catch(() => {});
-      }
+      throw error;
     }
   }
 
@@ -1391,6 +1441,9 @@ class SmartFolderWatcher {
 
   /**
    * Defer deletion briefly to detect move/rename events.
+   *
+   * FIX: Store baseName for disambiguation when multiple candidates exist.
+   *
    * @private
    * @returns {Promise<boolean>} True if deletion was deferred
    */
@@ -1415,6 +1468,7 @@ class SmartFolderWatcher {
       size: entry.fileSize,
       mtimeMs: entry.lastModified,
       ext: path.extname(filePath).toLowerCase(),
+      baseName: path.basename(filePath),
       createdAt: Date.now(),
       timeoutId: null
     };
@@ -1495,9 +1549,19 @@ class SmartFolderWatcher {
       }
 
       // Remove from analysis history
+      // FIX MEDIUM-6: Wrap in try-catch for consistent error handling with other operations
       if (this.analysisHistoryService?.removeEntriesByPath) {
-        await this.analysisHistoryService.removeEntriesByPath(filePath);
-        logger.debug('[SMART-FOLDER-WATCHER] Removed history for deleted file:', filePath);
+        try {
+          await this.analysisHistoryService.removeEntriesByPath(filePath);
+          logger.debug('[SMART-FOLDER-WATCHER] Removed history for deleted file:', filePath);
+        } catch (historyErr) {
+          logger.debug(
+            '[SMART-FOLDER-WATCHER] Failed to remove history:',
+            filePath,
+            historyErr.message
+          );
+          // Continue with remaining cleanup
+        }
       }
 
       // Invalidate BM25 search index

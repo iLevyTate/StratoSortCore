@@ -155,9 +155,9 @@ function SettingsBackupSection({ addNotification }) {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <label className="block text-sm font-medium text-system-gray-700 mb-2">
+          <Text as="label" variant="small" className="block font-medium text-system-gray-700 mb-2">
             Settings Backup & Restore
-          </label>
+          </Text>
           <Text variant="tiny" className="text-system-gray-500">
             Create backups of your settings or export/import to share across devices.
           </Text>
@@ -220,9 +220,9 @@ function SettingsBackupSection({ addNotification }) {
                 className="flex items-center justify-between gap-2 p-2 bg-white rounded border border-system-gray-100"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-system-gray-700 truncate">
+                  <Text variant="small" className="font-medium text-system-gray-700 truncate">
                     {backup.name || 'Backup'}
-                  </div>
+                  </Text>
                   <Text variant="tiny" className="text-system-gray-500">
                     {formatDate(backup.timestamp || backup.created)}
                   </Text>

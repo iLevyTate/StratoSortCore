@@ -180,30 +180,34 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
       <Modal isOpen onClose={onClose} title="Analysis History & Statistics" size="lg">
         <Stack gap="default">
           {/* Tabs */}
-          <div className="flex border-b border-system-gray-200">
-            <button
+          <Inline gap="compact" className="border-b border-system-gray-200 pb-2">
+            <Button
               onClick={() => setSelectedTab('statistics')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              variant="ghost"
+              size="sm"
+              leftIcon={<TrendingUp className="w-4 h-4" />}
+              className={
                 selectedTab === 'statistics'
-                  ? 'border-stratosort-blue text-stratosort-blue'
-                  : 'border-transparent text-system-gray-500 hover:text-system-gray-700'
-              }`}
+                  ? 'text-stratosort-blue bg-stratosort-blue/10 border-stratosort-blue/20'
+                  : 'text-system-gray-600'
+              }
             >
-              <TrendingUp className="w-4 h-4" />
-              <span>Statistics</span>
-            </button>
-            <button
+              Statistics
+            </Button>
+            <Button
               onClick={() => setSelectedTab('history')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              variant="ghost"
+              size="sm"
+              leftIcon={<ClipboardList className="w-4 h-4" />}
+              className={
                 selectedTab === 'history'
-                  ? 'border-stratosort-blue text-stratosort-blue'
-                  : 'border-transparent text-system-gray-500 hover:text-system-gray-700'
-              }`}
+                  ? 'text-stratosort-blue bg-stratosort-blue/10 border-stratosort-blue/20'
+                  : 'text-system-gray-600'
+              }
             >
-              <ClipboardList className="w-4 h-4" />
-              <span>History</span>
-            </button>
-          </div>
+              History
+            </Button>
+          </Inline>
 
           {/* Content */}
           <div className="min-h-[300px]">
@@ -342,7 +346,11 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                                   >
                                     {entry.fileName || 'Unknown File'}
                                   </Text>
-                                  <div className="flex items-center gap-2 mt-1 text-sm text-system-gray-500 flex-wrap">
+                                  <Text
+                                    as="div"
+                                    variant="small"
+                                    className="flex items-center gap-2 mt-1 text-system-gray-500 flex-wrap"
+                                  >
                                     <Text
                                       as="span"
                                       variant="tiny"
@@ -359,7 +367,7 @@ function AnalysisHistoryModal({ onClose, analysisStats, setAnalysisStats }) {
                                         ? new Date(entry.timestamp).toLocaleDateString()
                                         : 'Unknown Date'}
                                     </Text>
-                                  </div>
+                                  </Text>
                                 </div>
                                 {(entry?.analysis?.confidence || entry?.confidence) && (
                                   <StatusBadge

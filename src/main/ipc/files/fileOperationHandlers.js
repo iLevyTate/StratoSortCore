@@ -442,6 +442,7 @@ function createPerformOperationHandler({ logger: log, getServiceIntegration, get
           }
 
           // Ensure embeddings reflect the final smart folder destination (best effort)
+          // Required to update metadata (smartFolder field) and handle "move out" cleanup
           await syncEmbeddingsBestEffort({
             sourcePath: moveValidation.source,
             destPath: moveValidation.destination,
@@ -919,6 +920,8 @@ function registerFileOperationHandlers(servicesOrParams) {
           });
         }
 
+        // Ensure embeddings reflect the final smart folder destination (best effort)
+        // Required to update metadata (smartFolder field)
         await syncEmbeddingsBestEffort({
           sourcePath: normalizedSource,
           destPath: normalizedDestination,

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import { ChevronDown } from 'lucide-react';
 import Button from '../ui/Button';
 import Switch from '../ui/Switch';
 import { logger } from '../../../shared/logger';
@@ -209,9 +210,9 @@ function EmbeddingRebuildSection({ addNotification }) {
   return (
     <Stack gap="default">
       <div>
-        <label className="block text-sm font-medium text-system-gray-700 mb-2">
+        <Text as="label" variant="small" className="block font-medium text-system-gray-700 mb-2">
           Embeddings maintenance
-        </label>
+        </Text>
         <Text variant="small" className="text-system-gray-500">
           {statsLabel}
           {stats?.serverUrl ? ` • ${stats.serverUrl}` : ''}
@@ -249,22 +250,19 @@ function EmbeddingRebuildSection({ addNotification }) {
 
       {/* Advanced Options Toggle */}
       <div className="pt-4 border-t border-system-gray-100">
-        <button
+        <Button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="text-stratosort-blue hover:text-stratosort-blue/80 flex items-center gap-1 font-medium focus:outline-none"
+          variant="ghost"
+          size="sm"
+          rightIcon={
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+            />
+          }
+          className="text-stratosort-blue hover:text-stratosort-blue/80"
         >
-          <Text as="span" variant="tiny">
-            {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
-          </Text>
-          <svg
-            className={`w-3 h-3 transform transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+          {showAdvanced ? 'Hide Advanced Options' : 'Show Advanced Options'}
+        </Button>
 
         {showAdvanced && (
           <div className="mt-4 space-y-4 pl-4 border-l-2 border-system-gray-100">
@@ -290,12 +288,14 @@ function EmbeddingRebuildSection({ addNotification }) {
                     onChange={setApplyNamingOnReanalyze}
                     disabled={isReanalyzingAll || analysisIsActive || isFullRebuilding}
                   />
-                  <label
+                  <Text
+                    as="label"
                     htmlFor="apply-naming-on-reanalyze"
-                    className="text-sm font-medium text-system-gray-700"
+                    variant="small"
+                    className="font-medium text-system-gray-700"
                   >
                     Apply naming conventions to files during reanalysis
-                  </label>
+                  </Text>
                 </div>
                 <Text variant="tiny" className="text-system-gray-400 mt-1 ml-14">
                   When enabled, files will be renamed according to your naming convention settings.

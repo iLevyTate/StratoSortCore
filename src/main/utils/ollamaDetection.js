@@ -5,6 +5,19 @@ const fs = require('fs').promises;
 const os = require('os');
 const { asyncSpawn } = require('./asyncSpawnUtils');
 
+function getEmbeddedOllamaPath() {
+  const resourcesPath = process.resourcesPath;
+  if (!resourcesPath) return null;
+  const candidate = path.join(
+    resourcesPath,
+    'assets',
+    'runtime',
+    'ollama',
+    process.platform === 'win32' ? 'ollama.exe' : 'ollama'
+  );
+  return candidate;
+}
+
 /**
  * Get platform-specific fallback paths for Ollama binary
  * @returns {string[]} List of potential binary paths
@@ -43,6 +56,23 @@ function getOllamaFallbackPaths() {
  * @returns {Promise<{found: boolean, path: string|null, source: 'path'|'fallback'|null}>}
  */
 async function findOllamaBinary() {
+  // Prefer embedded portable binary if present
+  try {
+    const embedded = getEmbeddedOllamaPath();
+    if (embedded) {
+      await fs.access(embedded);
+      const embeddedResult = await asyncSpawn(embedded, ['--version'], {
+        timeout: 5000,
+        windowsHide: true
+      });
+      if (embeddedResult.status === 0) {
+        return { found: true, path: embedded, source: 'embedded' };
+      }
+    }
+  } catch {
+    // fall through to other detection paths
+  }
+
   // First try PATH
   const pathResult = await asyncSpawn('ollama', ['--version'], {
     timeout: 5000,
