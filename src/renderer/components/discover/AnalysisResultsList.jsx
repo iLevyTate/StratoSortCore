@@ -103,9 +103,13 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
         : 'info';
 
   const keywords = file.analysis?.keywords || [];
+  const displayKeywords =
+    keywords.slice(0, 10).join(', ') +
+    (keywords.length > 10 ? ` (+${keywords.length - 10} more)` : '');
+  const fullKeywords = keywords.slice(0, 50).join(', ') + (keywords.length > 50 ? '...' : '');
 
   return (
-    <div style={style} className="px-cozy py-compact">
+    <div style={style} className="px-cozy py-default">
       <Card
         variant="interactive"
         className="flex items-start p-3 gap-3 h-full group transition-all duration-200 hover:border-stratosort-blue/30"
@@ -167,9 +171,9 @@ const AnalysisResultRow = memo(function AnalysisResultRow({ index, style, data }
             {keywords.length > 0 && (
               <span
                 className="text-[10px] text-system-gray-400 truncate flex-1 min-w-[120px] max-w-full sm:max-w-[200px]"
-                title={`Keywords: ${keywords.join(', ')}`}
+                title={`Keywords: ${fullKeywords}`}
               >
-                Keywords: {keywords.join(', ')}
+                Keywords: {displayKeywords}
               </span>
             )}
           </div>
@@ -306,7 +310,7 @@ function AnalysisResultsList({ results = [], onFileAction, getFileStateDisplay }
   };
 
   const shouldVirtualize = items.length > VIRTUALIZATION_THRESHOLD;
-  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col gap-default`;
+  const listContainerClass = `w-full h-full modern-scrollbar overflow-y-auto flex flex-col`;
 
   if (isEmpty) {
     return (
