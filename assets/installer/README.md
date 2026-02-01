@@ -40,7 +40,8 @@ The installer includes:
 ## Building
 
 ```bash
-npm run build:win
+npm run setup:runtime
+npm run dist:win
 ```
 
 The installer will be output to `release/build/StratoSort-Setup-{version}.exe`

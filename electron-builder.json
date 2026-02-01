@@ -4,11 +4,12 @@
   "publish": [
     {
       "provider": "github",
-      "owner": "stratosort",
-      "repo": "stratosort"
+      "owner": "iLevyTate",
+      "repo": "elstratosort"
     }
   ],
   "artifactName": "StratoSort-${version}-${os}-${arch}.${ext}",
+  "compression": "maximum",
   "asar": true,
   "asarUnpack": [
     "**/*.{node,dll}",
@@ -25,7 +26,16 @@
     "!test/**",
     "!coverage/**",
     "!**/*.test.*",
-    "!**/__tests__/**"
+    "!**/__tests__/**",
+    "!**/node_modules/**/docs/**",
+    "!**/node_modules/**/doc/**",
+    "!**/node_modules/**/examples/**",
+    "!**/node_modules/**/example/**",
+    "!**/node_modules/**/coverage/**",
+    "!**/node_modules/**/benchmark/**",
+    "!**/node_modules/**/benchmarks/**",
+    "!**/node_modules/**/demo/**",
+    "!**/node_modules/**/demos/**"
   ],
   "extraMetadata": {
     "main": "dist/main.js"

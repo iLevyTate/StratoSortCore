@@ -13,7 +13,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/6] Installing dependencies...
+echo [1/7] Installing dependencies...
 call npm ci
 
 if errorlevel 1 (
@@ -23,7 +23,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/6] Generating assets...
+echo [2/7] Generating assets...
 call npm run generate:assets
 
 if errorlevel 1 (
@@ -33,7 +33,17 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/6] Building application...
+echo [3/7] Staging embedded runtimes...
+call npm run setup:runtime
+
+if errorlevel 1 (
+    echo ERROR: Failed to stage embedded runtimes
+    pause
+    exit /b 1
+)
+
+echo.
+echo [4/7] Building application...
 call npm run build
 
 if errorlevel 1 (
@@ -43,7 +53,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/6] Checking Ollama setup...
+echo [5/7] Checking Ollama setup...
 call node scripts/setup-ollama.js --check >nul 2>&1
 if errorlevel 1 (
     echo WARNING: Ollama not configured. AI features will be limited.
@@ -53,7 +63,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [5/6] Creating Windows installer...
+echo [6/7] Creating Windows installer...
 call npm run dist:win
 
 if errorlevel 1 (
@@ -63,7 +73,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [6/6] Build complete!
+echo [7/7] Build complete!
 echo.
 echo ============================================
 echo   SUCCESS! Installer created

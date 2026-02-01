@@ -16,7 +16,7 @@ try {
 }
 
 # Install dependencies
-Write-Host "[1/6] Installing dependencies..." -ForegroundColor Yellow
+Write-Host "[1/7] Installing dependencies..." -ForegroundColor Yellow
 npm ci
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to install dependencies" -ForegroundColor Red
@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[2/6] Generating assets..." -ForegroundColor Yellow
+Write-Host "[2/7] Generating assets..." -ForegroundColor Yellow
 npm run generate:assets
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to generate assets" -ForegroundColor Red
@@ -34,7 +34,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[3/6] Building application..." -ForegroundColor Yellow
+Write-Host "[3/7] Staging embedded runtimes..." -ForegroundColor Yellow
+npm run setup:runtime
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Failed to stage embedded runtimes" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+Write-Host ""
+Write-Host "[4/7] Building application..." -ForegroundColor Yellow
 npm run build
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Build failed" -ForegroundColor Red
@@ -43,7 +52,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[4/6] Checking Ollama setup..." -ForegroundColor Yellow
+Write-Host "[5/7] Checking Ollama setup..." -ForegroundColor Yellow
 node scripts/setup-ollama.js --check 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNING: Ollama not configured. AI features will be limited." -ForegroundColor Yellow
@@ -53,7 +62,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[5/6] Creating Windows installer..." -ForegroundColor Yellow
+Write-Host "[6/7] Creating Windows installer..." -ForegroundColor Yellow
 npm run dist:win
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Installer creation failed" -ForegroundColor Red
@@ -62,7 +71,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "[6/6] Build complete!" -ForegroundColor Green
+Write-Host "[7/7] Build complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  SUCCESS! Installer created" -ForegroundColor Green

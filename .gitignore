@@ -103,6 +103,11 @@ tmpUserData/
 assets/c__Users_*_workspaceStorage_*_images_*.png
 assets/**/workspaceStorage_*/*
 
+# Embedded runtime payloads (downloaded during build)
+assets/runtime/**
+!assets/runtime/README.md
+!assets/runtime/runtime-manifest.json
+
 # Internal planning documents
 .internal/
 

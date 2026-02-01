@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "windows": {
+    "ollama": {
+      "type": "exe",
+      "url": "https://ollama.com/download/OllamaSetup.exe",
+      "sha256": null,
+      "install": {
+        "type": "nsis",
+        "silentArgs": ["/S"],
+        "dirArg": "/D="
+      },
+      "targetDir": "ollama",
+      "exe": "ollama.exe"
+    },
+    "python": {
+      "type": "zip",
+      "url": "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip",
+      "sha256": "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b",
+      "targetDir": "python",
+      "exe": "python.exe",
+      "version": "3.11.9",
+      "pthFile": "python311._pth"
+    },
+    "tesseract": {
+      "type": "exe",
+      "url": "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.4.0.20240606.exe",
+      "sha256": null,
+      "install": {
+        "type": "inno",
+        "silentArgs": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
+        "dirArg": "/DIR="
+      },
+      "targetDir": "tesseract",
+      "exe": "tesseract.exe"
+    }
+  },
+  "pip": {
+    "getPipUrl": "https://bootstrap.pypa.io/get-pip.py",
+    "sha256": null
+  }
+}

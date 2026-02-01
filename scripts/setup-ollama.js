@@ -104,9 +104,10 @@ const MINIMUM_REQUIREMENT = {
 
 // Helper functions
 async function run(cmd, args = [], opts = {}) {
+  const useShell = process.platform === 'win32' && !path.isAbsolute(cmd);
   const res = await asyncSpawn(cmd, args, {
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: useShell,
     ...opts
   });
   return res.status === 0;
@@ -143,7 +144,7 @@ async function startOllamaServer() {
   const ollamaProcess = spawn(ollamaPath, ['serve'], {
     detached: true,
     stdio: 'ignore',
-    shell: process.platform === 'win32'
+    shell: process.platform === 'win32' && !path.isAbsolute(ollamaPath)
   });
 
   ollamaProcess.unref();
@@ -162,13 +163,17 @@ async function startOllamaServer() {
 }
 
 // Pull a model with progress indication
+async function resolveOllamaCommand() {
+  const detection = await findOllamaBinary();
+  return detection?.path || 'ollama';
+}
+
 async function pullModel(modelName) {
+  const command = await resolveOllamaCommand();
   return new Promise((resolve) => {
     console.log(chalk.cyan(`Pulling model: ${modelName}...`));
-
-    const pullProcess = spawn('ollama', ['pull', modelName], {
-      shell: process.platform === 'win32'
-    });
+    const useShell = process.platform === 'win32' && !path.isAbsolute(command);
+    const pullProcess = spawn(command, ['pull', modelName], { shell: useShell });
 
     let lastError = '';
     let downloadStarted = false;
@@ -197,39 +202,36 @@ async function pullModel(modelName) {
       if (code === 0) {
         console.log(chalk.green(`✓ Successfully pulled ${modelName}`));
         resolve(true);
-      } else {
-        console.log(chalk.yellow(`⚠ Failed to pull ${modelName}`));
-
-        // Provide helpful error messages
-        if (lastError.includes('connection refused') || lastError.includes('ECONNREFUSED')) {
-          console.log(chalk.gray('  → Ollama server is not running. Start it with: ollama serve'));
-        } else if (lastError.includes('not found') || lastError.includes('does not exist')) {
-          console.log(chalk.gray(`  → Model "${modelName}" not found. Check the model name.`));
-        } else if (lastError.includes('timeout') || lastError.includes('deadline exceeded')) {
-          console.log(chalk.gray('  → Download timed out. Check your internet connection.'));
-        } else if (
-          lastError.includes('disk') ||
-          lastError.includes('space') ||
-          lastError.includes('ENOSPC')
-        ) {
-          console.log(chalk.gray('  → Insufficient disk space. Free up some space and try again.'));
-        } else if (!downloadStarted) {
-          console.log(chalk.gray('  → Could not connect to Ollama. Ensure the server is running.'));
-        } else if (lastError) {
-          console.log(chalk.gray(`  → ${lastError.slice(0, 100)}`));
-        }
-
-        resolve(false);
+        return;
       }
+
+      console.log(chalk.yellow(`⚠ Failed to pull ${modelName}`));
+      if (lastError.includes('connection refused') || lastError.includes('ECONNREFUSED')) {
+        console.log(chalk.gray('  → Ollama server is not running. Start it with: ollama serve'));
+      } else if (lastError.includes('not found') || lastError.includes('does not exist')) {
+        console.log(chalk.gray(`  → Model "${modelName}" not found. Check the model name.`));
+      } else if (lastError.includes('timeout') || lastError.includes('deadline exceeded')) {
+        console.log(chalk.gray('  → Download timed out. Check your internet connection.'));
+      } else if (
+        lastError.includes('disk') ||
+        lastError.includes('space') ||
+        lastError.includes('ENOSPC')
+      ) {
+        console.log(chalk.gray('  → Insufficient disk space. Free up some space and try again.'));
+      } else if (!downloadStarted) {
+        console.log(chalk.gray('  → Could not connect to Ollama. Ensure the server is running.'));
+      } else if (lastError) {
+        console.log(chalk.gray(`  → ${lastError.slice(0, 100)}`));
+      }
+
+      resolve(false);
     });
 
     pullProcess.on('error', (err) => {
       console.log(chalk.red(`✗ Error pulling ${modelName}: ${err.message}`));
-
       if (err.message.includes('ENOENT')) {
         console.log(chalk.gray('  → Ollama command not found. Is Ollama installed?'));
       }
-
       resolve(false);
     });
   });

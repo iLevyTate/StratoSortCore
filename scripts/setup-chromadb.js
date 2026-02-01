@@ -14,7 +14,10 @@
 
 const http = require('http');
 const https = require('https');
+const path = require('path');
+const fs = require('fs');
 const { asyncSpawn, checkPythonVersionAsync } = require('../src/main/utils/asyncSpawnUtils');
+const { resolveRuntimeRoot } = require('../src/main/utils/runtimePaths');
 
 // Simple color output without external dependencies
 const colors = {
@@ -59,7 +62,19 @@ async function tryCmd(cmd, args, timeout = 5000, options = {}) {
   return res;
 }
 
+function getEmbeddedPythonLauncher() {
+  const runtimeRoot = resolveRuntimeRoot();
+  const exe = process.platform === 'win32' ? 'python.exe' : 'python3';
+  const candidate = path.join(runtimeRoot, 'python', exe);
+  if (fs.existsSync(candidate)) {
+    return { command: candidate, args: [], fromEmbedded: true };
+  }
+  return null;
+}
+
 async function findPythonLauncher() {
+  const embedded = getEmbeddedPythonLauncher();
+  if (embedded) return embedded;
   const candidates =
     process.platform === 'win32'
       ? [
@@ -99,12 +114,24 @@ async function pipInstallChroma(
   python,
   { upgradePip = true, userInstall = true, log = console } = {}
 ) {
+  const useShell = python?.fromEmbedded ? false : undefined;
+  const env = python?.fromEmbedded
+    ? {
+        ...process.env,
+        PYTHONHOME: path.dirname(python.command),
+        PATH: `${path.dirname(python.command)};${path.join(path.dirname(python.command), 'Scripts')};${
+          process.env.PATH || ''
+        }`
+      }
+    : process.env;
+
   if (upgradePip) {
     log.log(chalk.gray('[chromadb] Upgrading pip...'));
     await tryCmd(
       python.command,
       [...python.args, '-m', 'pip', 'install', '--upgrade', 'pip'],
-      5 * 60 * 1000
+      5 * 60 * 1000,
+      { env, shell: useShell }
     )
       .then(() => {})
       .catch(() => {});
@@ -120,7 +147,7 @@ async function pipInstallChroma(
   ];
 
   log.log(chalk.cyan('[chromadb] Running: pip install chromadb...'));
-  const res = await tryCmd(python.command, args, 10 * 60 * 1000);
+  const res = await tryCmd(python.command, args, 10 * 60 * 1000, { env, shell: useShell });
 
   // Provide helpful error messages for common failures
   if (res.status !== 0) {
@@ -286,7 +313,8 @@ async function main({
     return check && !auto ? 1 : 0;
   }
 
-  log.log(chalk.green(`✓ Found Python: ${python.command} ${python.args.join(' ')}`));
+  const pythonLabel = `${python.command} ${python.args.join(' ')}`.trim();
+  log.log(chalk.green(`✓ Found Python: ${pythonLabel}${python.fromEmbedded ? ' (embedded)' : ''}`));
 
   // FIX: Verify Python version meets ChromaDB requirements (3.9+)
   const versionCheck = await checkPythonVersionAsync(python, 3, 9);
@@ -339,8 +367,17 @@ async function main({
     return 0;
   }
 
-  log.log(chalk.cyan('[chromadb] Installing via pip (user install)…'));
-  const ok = await deps.pipInstallChroma(python, { upgradePip: true, userInstall: true, log });
+  const useUserInstall = !python.fromEmbedded;
+  log.log(
+    chalk.cyan(
+      `[chromadb] Installing via pip (${useUserInstall ? 'user install' : 'embedded env'})…`
+    )
+  );
+  const ok = await deps.pipInstallChroma(python, {
+    upgradePip: true,
+    userInstall: useUserInstall,
+    log
+  });
   if (!ok) {
     log.log(
       chalk.yellow(
