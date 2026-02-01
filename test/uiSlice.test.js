@@ -305,7 +305,8 @@ describe('uiSlice', () => {
       const result = uiReducer(state, goBack());
 
       expect(result.currentPhase).toBe('welcome');
-      expect(result.previousPhase).toBe('setup');
+      // goBack is single-step: once used, it clears previousPhase to prevent ping-pong
+      expect(result.previousPhase).toBeNull();
     });
 
     test('goes to welcome if no previous phase', () => {

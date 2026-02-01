@@ -359,12 +359,12 @@ class AnalysisHistoryServiceCore {
           error: error.message
         });
         const lockMeta = this._writeLockMeta;
-        // If there's no meta, the lock is untracked/corrupted; treat it as stale and recover.
-        // If there is meta, only force-release when the lock has exceeded the same timeout.
+        // If lock meta is missing, treat it as stale/corrupted and recover.
+        // If meta exists, only force-release when it's older than our max wait.
         if (!lockMeta || Date.now() - lockMeta.startedAt >= maxWaitMs) {
           logger.error('[AnalysisHistoryService] Forcing release of stale write lock', {
             context,
-            lockContext: lockMeta?.context,
+            lockContext: lockMeta?.context ?? null,
             lockAgeMs: lockMeta ? Date.now() - lockMeta.startedAt : null,
             untrackedLock: !lockMeta
           });

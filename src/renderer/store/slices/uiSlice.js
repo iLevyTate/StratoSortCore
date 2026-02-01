@@ -230,10 +230,8 @@ const uiSlice = createSlice({
     // Go back to previous phase (if valid)
     goBack: (state) => {
       if (state.previousPhase && isValidPhase(state.previousPhase)) {
-        const fromPhase = state.currentPhase;
         state.currentPhase = state.previousPhase;
-        // Keep a single-step "forward" history so repeated back/forward works predictably
-        state.previousPhase = fromPhase;
+        state.previousPhase = null;
         state.navigationError = null;
       } else {
         // Default to welcome if no previous phase
