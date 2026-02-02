@@ -8,6 +8,15 @@
   <strong>Smart File Organization with Local AI</strong>
 </p>
 
+### 🎬 Demo
+
+> **High-level overview of StratoSort in action.**
+>
+> 🖥️ **Desktop/Laptop:** The video will play directly below. 📱 **Mobile:** Click the filename below
+> the player to watch.
+
+https://github.com/user-attachments/assets/43fcf6bc-3568-4b8e-874b-77043bcd4a63
+
 <p align="center">
   <a href="https://github.com/iLevyTate/elstratosort/releases"><img src="https://img.shields.io/badge/version-1.2.2-blue?style=flat-square" alt="Version" /></a>
   <a href="https://github.com/iLevyTate/elstratosort/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Personal_Use_Only-blue?style=flat-square" alt="License" /></a>
