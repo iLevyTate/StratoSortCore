@@ -64,7 +64,7 @@ if errorlevel 1 (
 
 echo.
 echo [6/7] Creating Windows installer...
-call npm run dist:win
+call npx electron-builder --win --publish never --config electron-builder.json
 
 if errorlevel 1 (
     echo ERROR: Installer creation failed
@@ -80,7 +80,8 @@ echo   SUCCESS! Installer created
 echo ============================================
 echo.
 echo Installer location:
-echo   release\build\StratoSort-Setup-1.0.0.exe
+echo   release\build\StratoSort-Setup-{version}.exe
+echo   (Check release\build\ for the exact filename)
 echo.
 echo You can now:
 echo   1. Run the installer to install StratoSort

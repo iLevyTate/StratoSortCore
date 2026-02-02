@@ -37,7 +37,7 @@ module.exports = (env, argv) => {
                 [
                   '@babel/preset-env',
                   {
-                    targets: { electron: '39.0' }
+                    targets: { electron: '40.0' }
                   }
                 ],
                 '@babel/preset-react',
@@ -196,7 +196,7 @@ module.exports = (env, argv) => {
               extractComments: false,
               terserOptions: {
                 compress: {
-                  drop_console: true
+                  drop_console: false
                 }
               }
             })

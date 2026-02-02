@@ -1,15 +1,12 @@
 {
   "version": 1,
+  "_hashNote": "Set sha256 to null for rolling URLs (always-latest). Run setup:runtime to see computed hashes in output.",
   "windows": {
     "ollama": {
-      "type": "exe",
-      "url": "https://ollama.com/download/OllamaSetup.exe",
+      "type": "zip",
+      "url": "https://sourceforge.net/projects/ollama.mirror/files/v0.12.3/ollama-windows-amd64.zip/download",
       "sha256": null,
-      "install": {
-        "type": "nsis",
-        "silentArgs": ["/S"],
-        "dirArg": "/D="
-      },
+      "_urlNote": "Version-pinned portable zip. Pin sha256 for reproducible builds.",
       "targetDir": "ollama",
       "exe": "ollama.exe"
     },
@@ -26,6 +23,7 @@
       "type": "exe",
       "url": "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.4.0.20240606.exe",
       "sha256": null,
+      "_urlNote": "Version-pinned URL. Compute hash with: Get-FileHash <file> -Algorithm SHA256",
       "install": {
         "type": "inno",
         "silentArgs": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
@@ -37,6 +35,7 @@
   },
   "pip": {
     "getPipUrl": "https://bootstrap.pypa.io/get-pip.py",
-    "sha256": null
+    "sha256": null,
+    "_urlNote": "Rolling latest URL; hash changes frequently."
   }
 }

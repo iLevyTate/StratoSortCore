@@ -63,7 +63,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "[6/7] Creating Windows installer..." -ForegroundColor Yellow
-npm run dist:win
+npx electron-builder --win --publish never --config electron-builder.json
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Installer creation failed" -ForegroundColor Red
     Read-Host "Press Enter to exit"
@@ -77,8 +77,9 @@ Write-Host "============================================" -ForegroundColor Green
 Write-Host "  SUCCESS! Installer created" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
+$pkgVersion = (Get-Content package.json | ConvertFrom-Json).version
 Write-Host "Installer location:" -ForegroundColor Cyan
-Write-Host "  release\build\StratoSort-Setup-1.0.0.exe" -ForegroundColor White
+Write-Host "  release\build\StratoSort-Setup-$pkgVersion.exe" -ForegroundColor White
 Write-Host ""
 Write-Host "You can now:" -ForegroundColor Cyan
 Write-Host "  1. Run the installer to install StratoSort" -ForegroundColor White

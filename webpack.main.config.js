@@ -32,7 +32,7 @@ const commonConfig = (isProduction) => ({
         extractComments: false,
         terserOptions: {
           compress: {
-            drop_console: isProduction
+            drop_console: false
           }
         }
       })

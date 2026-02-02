@@ -36,20 +36,21 @@ async function main() {
   }
 
   await ensureDir(outDir);
-  const headerBmp = path.join(outDir, 'header.bmp');
-  const welcomeBmp = path.join(outDir, 'welcome.bmp');
-  const finishBmp = path.join(outDir, 'finish.bmp');
+  const headerPng = path.join(outDir, 'header.bmp');
+  const welcomePng = path.join(outDir, 'welcome.bmp');
+  const finishPng = path.join(outDir, 'finish.bmp');
 
   // Recommended sizes for NSIS MUI2
-  // header.bmp ~150x57, welcome/finish left bitmap ~164x314
-  await toBmp(logoPng, headerBmp, 150, 57);
-  await toBmp(logoPng, welcomeBmp, 164, 314);
-  await toBmp(logoPng, finishBmp, 164, 314);
+  // header ~150x57, welcome/finish left bitmap ~164x314
+  // Note: toBmp() outputs .png (NSIS MUI2 accepts PNG); paths are renamed internally
+  await toBmp(logoPng, headerPng, 150, 57);
+  await toBmp(logoPng, welcomePng, 164, 314);
+  await toBmp(logoPng, finishPng, 164, 314);
 
-  console.log('[nsis-assets] Generated:', { headerBmp, welcomeBmp, finishBmp });
+  console.log('[nsis-assets] Generated PNG assets in:', outDir);
 }
 
 main().catch((err) => {
   console.error('[nsis-assets] Error generating assets', err);
-  process.exit(0); // Do not fail the build if generation fails
+  process.exit(1);
 });

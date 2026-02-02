@@ -2,8 +2,16 @@
 
 const path = require('path');
 const fs = require('fs');
-const chalk = require('chalk');
 const { asyncSpawn } = require('../src/main/utils/asyncSpawnUtils');
+
+// Inline ANSI helpers (chalk v5+ is ESM-only, incompatible with require())
+const ansi = {
+  green: (s) => `\x1b[32m${s}\x1b[0m`,
+  red: (s) => `\x1b[31m${s}\x1b[0m`,
+  gray: (s) => `\x1b[90m${s}\x1b[0m`,
+  yellow: (s) => `\x1b[33m${s}\x1b[0m`,
+  cyanBold: (s) => `\x1b[1;36m${s}\x1b[0m`
+};
 
 try {
   require('dotenv').config({ path: path.join(__dirname, '../.env') });
@@ -17,9 +25,9 @@ function checkFileExists(relativePath) {
 }
 
 function printStatus(ok, label, details) {
-  const icon = ok ? chalk.green('✓') : chalk.red('✗');
+  const icon = ok ? ansi.green('✓') : ansi.red('✗');
 
-  console.log(`${icon} ${label}${details ? chalk.gray(` — ${details}`) : ''}`);
+  console.log(`${icon} ${label}${details ? ansi.gray(` — ${details}`) : ''}`);
 }
 
 async function runCmd(cmd, args = []) {
@@ -30,7 +38,7 @@ async function runCmd(cmd, args = []) {
 }
 
 async function main() {
-  console.log(chalk.cyan.bold('\nStratoSort Startup Checklist'));
+  console.log(ansi.cyanBold('\nStratoSort Startup Checklist'));
   // Basic file presence
   const hasDistIndex = checkFileExists('dist/index.html');
   const hasWebpackConfig = checkFileExists('webpack.config.js');
@@ -62,7 +70,7 @@ async function main() {
   // Final hint
 
   console.log(
-    `\n${chalk.gray('Tip:')} Run ${chalk.yellow('npm run dev')} to build and launch in development mode.`
+    `\n${ansi.gray('Tip:')} Run ${ansi.yellow('npm run dev')} to build and launch in development mode.`
   );
 }
 
