@@ -428,6 +428,50 @@ describe('ClusteringService', () => {
         expect(graphData[0]).toHaveProperty('memberIds');
       }
     });
+
+    test('includes topTerms derived from metadata (distinctive terms)', () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            {
+              id: 'file:a',
+              embedding: [1, 0],
+              metadata: {
+                name: 'q4_finance_report.pdf',
+                subject: 'Q4 Finance',
+                summary: 'Revenue EBITDA forecast',
+                category: 'Finance',
+                tags: JSON.stringify(['finance', 'q4', 'revenue']),
+                path: 'C:\\Docs\\Finance\\q4_finance_report.pdf',
+                updatedAt: '2025-11-01T00:00:00.000Z'
+              }
+            },
+            {
+              id: 'file:b',
+              embedding: [1, 0.05],
+              metadata: {
+                name: 'q4_budget.xlsx',
+                subject: 'Budget',
+                summary: 'Budget and revenue projections',
+                category: 'Finance',
+                tags: JSON.stringify(['budget', 'finance', 'q4']),
+                path: 'C:\\Docs\\Finance\\q4_budget.xlsx',
+                updatedAt: '2025-11-05T00:00:00.000Z'
+              }
+            }
+          ]
+        }
+      ];
+      service.centroids = [[1, 0]];
+
+      const graphData = service.getClustersForGraph();
+      expect(Array.isArray(graphData)).toBe(true);
+      expect(graphData).toHaveLength(1);
+      expect(Array.isArray(graphData[0].topTerms)).toBe(true);
+      // Should contain at least one distinctive finance-related token
+      expect(graphData[0].topTerms.join(' ')).toMatch(/finance|revenue|budget|ebitda|forecast/i);
+    });
   });
 
   describe('duplicate detection thresholds', () => {
@@ -482,6 +526,64 @@ describe('ClusteringService', () => {
       // Should have limited results (MAX_PAIRS_LIMIT = 10000)
       expect(result.success).toBe(true);
       expect(result.groups.length).toBeLessThanOrEqual(10000);
+    });
+  });
+
+  describe('cross-cluster edges include sharedTerms', () => {
+    test('attaches sharedTerms when clusters share topTerms/commonTags', () => {
+      service.clusters = [
+        {
+          id: 0,
+          members: [
+            {
+              id: 'file:a',
+              embedding: [1, 0],
+              metadata: {
+                name: 'project_alpha_notes.txt',
+                subject: 'Project Alpha',
+                summary: 'Alpha roadmap and milestones',
+                category: 'Work',
+                tags: JSON.stringify(['alpha', 'roadmap', 'milestones']),
+                path: 'C:\\Docs\\Work\\project_alpha_notes.txt',
+                updatedAt: '2025-10-01T00:00:00.000Z'
+              }
+            }
+          ],
+          // pre-seed to avoid relying on getClustersForGraph ordering
+          topTerms: ['alpha', 'roadmap', 'milestones'],
+          commonTags: ['alpha']
+        },
+        {
+          id: 1,
+          members: [
+            {
+              id: 'file:b',
+              embedding: [0.9, 0.1],
+              metadata: {
+                name: 'alpha_status_update.txt',
+                subject: 'Alpha status',
+                summary: 'Milestones and blockers',
+                category: 'Work',
+                tags: JSON.stringify(['alpha', 'status', 'milestones']),
+                path: 'C:\\Docs\\Work\\alpha_status_update.txt',
+                updatedAt: '2025-10-10T00:00:00.000Z'
+              }
+            }
+          ],
+          topTerms: ['alpha', 'status', 'milestones'],
+          commonTags: ['alpha']
+        }
+      ];
+      service.centroids = [
+        [1, 0],
+        [0.9, 0.1]
+      ];
+
+      const edges = service.findCrossClusterEdges(0.1, { includeBridgeFiles: false });
+      expect(Array.isArray(edges)).toBe(true);
+      expect(edges.length).toBeGreaterThan(0);
+      expect(Array.isArray(edges[0].sharedTerms)).toBe(true);
+      expect(edges[0].sharedTerms.join(' ')).toMatch(/alpha|milestones/i);
     });
   });
 });
