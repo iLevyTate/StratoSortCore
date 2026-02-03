@@ -256,6 +256,16 @@ const VALIDATION_RULES = {
     validatorMessage:
       'embeddingModel must be a valid embedding model (e.g., embeddinggemma, mxbai-embed-large, nomic-embed-text)'
   },
+  embeddingTiming: {
+    type: 'string',
+    enum: ['during_analysis', 'after_organize', 'manual'],
+    required: false
+  },
+  defaultEmbeddingPolicy: {
+    type: 'string',
+    enum: ['embed', 'skip', 'web_only'],
+    required: false
+  },
   chatPersona: {
     type: 'string',
     enum: CHAT_PERSONA_IDS,

@@ -80,6 +80,7 @@ const IPC_CHANNELS = {
     SEARCH: 'analysis-history:search',
     GET_STATISTICS: 'analysis-history:get-statistics',
     GET_FILE_HISTORY: 'analysis-history:get-file-history',
+    SET_EMBEDDING_POLICY: 'analysis-history:set-embedding-policy',
     CLEAR: 'analysis-history:clear',
     EXPORT: 'analysis-history:export'
   },

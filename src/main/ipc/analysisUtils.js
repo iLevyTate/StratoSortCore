@@ -197,6 +197,9 @@ async function recordAnalysisResult({
       smartFolder: normalizeOptionalText(result.smartFolder || null, { maxLength: 255 }),
       newName: normalizeOptionalText(result.suggestedName || null, { maxLength: 255 }),
       renamed: Boolean(result.suggestedName),
+      // Embedding preference/state (staged pipeline)
+      embeddingPolicy: normalizeOptionalText(result.embeddingPolicy || null, { maxLength: 20 }),
+      embeddingStatus: normalizeOptionalText(result.embeddingStatus || null, { maxLength: 20 }),
       // Additional fields for richer document/image context
       documentType: normalizeOptionalText(result.documentType || result.type || null, {
         maxLength: 100

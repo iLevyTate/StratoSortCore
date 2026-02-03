@@ -98,7 +98,9 @@ describe('registerAnalysisHistoryIpc', () => {
       getServiceIntegration: mockGetServiceIntegration
     });
 
-    expect(mockIpcMain.handle).toHaveBeenCalledTimes(6);
+    expect(mockIpcMain.handle).toHaveBeenCalledTimes(7);
+    // Includes embedding policy update handler
+    expect(handlers[HISTORY_CHANNELS.SET_EMBEDDING_POLICY]).toBeInstanceOf(Function);
   });
 
   describe('getStatistics handler', () => {

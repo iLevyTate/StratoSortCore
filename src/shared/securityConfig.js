@@ -203,6 +203,9 @@ const SETTINGS_VALIDATION = {
     'textModel',
     'visionModel',
     'embeddingModel',
+    // Embedding workflow controls
+    'embeddingTiming',
+    'defaultEmbeddingPolicy',
     'chatPersona',
     'chatResponseMode',
     // Dependency lifecycle consent + UX cadence

@@ -356,6 +356,34 @@ describe('AnalysisHistoryServiceCore', () => {
       releaseLock();
       expect(service._writeLock).toBeNull();
     });
+
+    test('persists embedding policy/status updates by path', async () => {
+      const recordPromise = service.recordAnalysis(mockFileInfo, mockAnalysisResults);
+      await flushWriteBuffer();
+      await recordPromise;
+
+      const before = Object.values(service.analysisHistory?.entries || {}).find(
+        (e) =>
+          e?.originalPath === mockFileInfo.path || e?.organization?.actual === mockFileInfo.path
+      );
+      expect(before).toBeTruthy();
+
+      await service.updateEmbeddingStateByPath(mockFileInfo.path, {
+        policy: 'web_only',
+        status: 'skipped',
+        model: 'nomic-embed-text'
+      });
+
+      const after = Object.values(service.analysisHistory?.entries || {}).find(
+        (e) =>
+          e?.originalPath === mockFileInfo.path || e?.organization?.actual === mockFileInfo.path
+      );
+      expect(after?.embedding).toBeTruthy();
+      expect(after.embedding.policy).toBe('web_only');
+      expect(after.embedding.status).toBe('skipped');
+      expect(after.embedding.model).toBe('nomic-embed-text');
+      expect(typeof after.embedding.updatedAt).toBe('string');
+    });
   });
 
   describe('searchAnalysis', () => {

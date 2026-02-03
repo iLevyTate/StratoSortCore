@@ -550,7 +550,16 @@ class AnalysisHistoryServiceCore {
             },
 
             // Future expansion fields
-            embedding: null, // For RAG functionality
+            embedding: {
+              // User preference (per-file override). When null, treat as "inherit default".
+              policy: safeResults.embeddingPolicy || null,
+              // Operational status used by staged embedding pipeline.
+              status: safeResults.embeddingStatus || 'unknown',
+              // Model name used for last successful embed (when known).
+              model: safeResults.embeddingModel || null,
+              // ISO timestamp of last embedding state update.
+              updatedAt: timestamp
+            },
             relations: [], // Related files
             userFeedback: null, // User corrections/ratings
             exportHistory: [], // Export/share history
@@ -896,6 +905,105 @@ class AnalysisHistoryServiceCore {
         releaseLock();
       }
     }
+  }
+
+  /**
+   * Update embedding preference/state for an entry identified by path.
+   *
+   * This is the persistence layer for staged embedding workflows.
+   *
+   * Matches either the original path or the organization.actual path.
+   *
+   * @param {string} filePath
+   * @param {{policy?: 'embed'|'skip'|'web_only'|null, status?: 'unknown'|'pending'|'done'|'skipped'|'error'|null, model?: string|null, error?: string|null}} update
+   * @returns {Promise<{updated: number, notFound: number}>}
+   */
+  async updateEmbeddingStateByPath(filePath, update = {}) {
+    await this.initialize();
+    this._assertWritable('updateEmbeddingStateByPath');
+
+    const target = typeof filePath === 'string' ? filePath : '';
+    if (!target) return { updated: 0, notFound: 1 };
+
+    const releaseLock = await this._acquireWriteLock('updateEmbeddingStateByPath');
+    try {
+      const entries = this.analysisHistory?.entries || {};
+      let updated = 0;
+
+      const now = new Date().toISOString();
+      const normalizePolicy = (value) => {
+        if (value === 'embed' || value === 'skip' || value === 'web_only') return value;
+        return null;
+      };
+      const normalizeStatus = (value) => {
+        if (
+          value === 'unknown' ||
+          value === 'pending' ||
+          value === 'done' ||
+          value === 'skipped' ||
+          value === 'error'
+        )
+          return value;
+        return null;
+      };
+
+      for (const entry of Object.values(entries)) {
+        const original = entry?.originalPath;
+        const actual = entry?.organization?.actual;
+        if (original !== target && actual !== target) continue;
+
+        if (!entry.embedding || typeof entry.embedding !== 'object') {
+          entry.embedding = { policy: null, status: 'unknown', model: null, updatedAt: now };
+        }
+
+        const nextPolicy = normalizePolicy(update.policy);
+        const nextStatus = normalizeStatus(update.status);
+        if (nextPolicy !== null) entry.embedding.policy = nextPolicy;
+        if (nextStatus !== null) entry.embedding.status = nextStatus;
+        if (typeof update.model === 'string') entry.embedding.model = update.model;
+        if (update.model === null) entry.embedding.model = null;
+        if (typeof update.error === 'string') entry.embedding.error = update.error;
+        if (update.error === null && entry.embedding.error) delete entry.embedding.error;
+
+        entry.embedding.updatedAt = now;
+        updated++;
+        break; // One path maps to one primary entry
+      }
+
+      if (updated > 0) {
+        const prevUpdatedAt = this.analysisHistory.updatedAt;
+        this.analysisHistory.updatedAt = now;
+
+        const saveResult = await Promise.allSettled([this.saveHistory()]);
+        const failures = saveResult.filter((r) => r.status === 'rejected');
+        if (failures.length > 0) {
+          // Keep behavior consistent with other update methods: log + force re-init.
+          logger.error('[AnalysisHistoryService] updateEmbeddingStateByPath persistence failed', {
+            error: failures.map((r) => r.reason?.message).join('; ')
+          });
+          this.analysisHistory.updatedAt = prevUpdatedAt;
+          this.initialized = false;
+        }
+
+        clearCachesHelper(this._cache, this);
+      }
+
+      return { updated, notFound: updated > 0 ? 0 : 1 };
+    } finally {
+      if (typeof releaseLock === 'function') {
+        releaseLock();
+      }
+    }
+  }
+
+  /**
+   * Convenience helper: set per-file embedding policy.
+   *
+   * @param {string} filePath
+   * @param {'embed'|'skip'|'web_only'|null} policy
+   */
+  async setEmbeddingPolicyByPath(filePath, policy) {
+    return this.updateEmbeddingStateByPath(filePath, { policy });
   }
 
   /**

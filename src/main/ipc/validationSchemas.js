@@ -295,6 +295,9 @@ if (!z) {
       textModel: modelNameSchema,
       visionModel: modelNameSchema,
       embeddingModel: modelNameSchema,
+      // Embedding workflow controls
+      embeddingTiming: z.enum(['during_analysis', 'after_organize', 'manual']).nullish(),
+      defaultEmbeddingPolicy: z.enum(['embed', 'skip', 'web_only']).nullish(),
       chatPersona: chatPersonaSchema,
       chatResponseMode: z.enum(['fast', 'deep']).nullish(),
       autoUpdateOllama: z.boolean().nullish(),

@@ -18,6 +18,12 @@ const analysisResultSchema = z
       smartFolder: z.string().nullable().optional(),
       newName: z.string().nullable().optional(),
       renamed: z.boolean().optional(),
+      // Embedding preference/state (used by staged pipelines)
+      embeddingPolicy: z.enum(['embed', 'skip', 'web_only']).nullable().optional(),
+      embeddingStatus: z
+        .enum(['unknown', 'pending', 'done', 'skipped', 'error'])
+        .nullable()
+        .optional(),
       // Extended fields for richer document/image conversations
       documentType: z.string().nullable().optional(),
       entity: z.string().nullable().optional(),
