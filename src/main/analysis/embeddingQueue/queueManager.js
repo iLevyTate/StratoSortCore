@@ -47,5 +47,15 @@ module.exports = {
       analysis: analysisQueue?.getStats ? analysisQueue.getStats() : null,
       organize: organizeQueue?.getStats ? organizeQueue.getStats() : null
     };
+  },
+
+  async forceFlush() {
+    const results = await Promise.allSettled(queues.map((q) => safeCall(q, 'forceFlush')));
+    return results;
+  },
+
+  async shutdown() {
+    const results = await Promise.allSettled(queues.map((q) => safeCall(q, 'shutdown')));
+    return results;
   }
 };

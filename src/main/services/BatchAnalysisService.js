@@ -6,6 +6,7 @@ const { analyzeDocumentFile } = require('../analysis/ollamaDocumentAnalysis');
 const { analyzeImageFile } = require('../analysis/ollamaImageAnalysis');
 const { getInstance: getParallelEmbeddingService } = require('./ParallelEmbeddingService');
 const { analysisQueue } = require('../analysis/embeddingQueue/stageQueues');
+const embeddingQueueManager = require('../analysis/embeddingQueue/queueManager');
 const path = require('path');
 const os = require('os');
 const { get: getConfig } = require('../../shared/config/index');
@@ -542,7 +543,7 @@ class BatchAnalysisService {
    */
   async flushEmbeddings() {
     logger.info('[BATCH-ANALYSIS] Force flushing embedding queue');
-    await analysisQueue.forceFlush();
+    await embeddingQueueManager.forceFlush();
   }
 
   /**
@@ -559,7 +560,7 @@ class BatchAnalysisService {
     }
 
     // Flush embeddings
-    await analysisQueue.shutdown();
+    await embeddingQueueManager.shutdown();
 
     logger.info('[BATCH-ANALYSIS] Shutdown complete');
   }
